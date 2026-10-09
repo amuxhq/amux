@@ -15,14 +15,11 @@ use std::path::PathBuf;
 use store::{BlobLru, Store as _, Sweep};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use wire::{AgentRemoved, inventory_event};
+use wire::{AgentRemoved, RemovalReason, inventory_event};
 
 use crate::install::REPLICAS;
 use crate::runtime::{ProfileRuntime, RegistryError};
 use crate::serve::inventory;
-
-/// What the fleet is told when retention removes an agent.
-pub const REMOVED_BY_RETENTION: &str = "removed by retention";
 
 /// The retention sweeps run so far.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -55,7 +52,7 @@ impl ProfileRuntime {
                         AgentRemoved {
                             host_id: key.host.clone(),
                             agent_id: key.agent.clone(),
-                            reason: Some(REMOVED_BY_RETENTION.to_owned()),
+                            reason: RemovalReason::Retention as i32,
                         },
                     )));
             }

@@ -262,7 +262,8 @@ impl Server {
                 if let Some(working_on) = &agent.working_on {
                     row["working_on"] = json!(working_on.text);
                 }
-                if let Some(cause) = &agent.exit_cause {
+                let cause = wire::exit_words(agent.exit_cause, agent.exit_detail.as_deref());
+                if !cause.is_empty() {
                     row["exit_cause"] = json!(cause);
                 }
                 if let Some(parent) = &agent.parent {

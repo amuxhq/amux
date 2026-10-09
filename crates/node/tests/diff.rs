@@ -102,7 +102,7 @@ fn exited(install: &Install) -> SyntheticAgent {
     let agent = SyntheticAgent::new(install, "coder", SEGMENTS);
     let mut row = agent.row(install);
     row.lifecycle = Lifecycle::Exited as i32;
-    row.exit_cause = Some("finished".to_owned());
+    row.exit_cause = wire::ExitCause::Finished as i32;
     let mut store = store::Sqlite::open(
         &install.profile_dir().join(node::STORE),
         host(install).as_bytes().to_vec(),

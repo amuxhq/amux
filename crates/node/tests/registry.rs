@@ -5,15 +5,12 @@ mod support;
 
 use std::time::Duration;
 
-use node::{
-    ActivationError, ActivationPipe, CAUSE_ABORTED, CAUSE_EXITED_AWAY, CAUSE_KILLED,
-    CAUSE_NO_DIRECTORY, CAUSE_STOPPED, Generation, LockError, RegistryError, StartError,
-};
+use node::{ActivationError, ActivationPipe, Generation, LockError, RegistryError, StartError};
 use prost::Message as _;
 use store::{AgentKey, AgentRow, Marker, Store as _};
 use support::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use wire::{AgentSpec, Lifecycle, Phase, StopMode};
+use wire::{AgentSpec, ExitCause, Lifecycle, Phase, StopMode};
 
 fn spec(dir: &std::path::Path, n: u32) -> AgentSpec {
     let bytes = std::fs::read(dir.join(format!("spec.{n}"))).expect("the spec exists");
@@ -223,7 +220,7 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
     let store = runtime.store().await;
     let row = store.agent(&key(&runtime, away)).unwrap().unwrap();
     assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
-    assert_eq!(row.exit_cause.as_deref(), Some(CAUSE_EXITED_AWAY));
+    assert_eq!(row.exit_cause, ExitCause::EndedWhileAway as i32);
     assert_eq!(row.ingest_cursor, written, "the remainder is ingested");
     assert_eq!(row.phase, Phase::Idle as i32);
     assert_eq!(
@@ -232,7 +229,8 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
         "an agent the sweep finds exited is caught up"
     );
     let row = store.agent(&key(&runtime, missing)).unwrap().unwrap();
-    assert_eq!(row.exit_cause.as_deref(), Some(CAUSE_NO_DIRECTORY));
+    assert_eq!(row.exit_cause, ExitCause::DirectoryFailed as i32);
+    assert_eq!(row.exit_detail.as_deref(), Some("it is gone"));
     drop(store);
     drop(runtime);
     daemon.shutdown().await.unwrap();
@@ -353,13 +351,23 @@ async fn stop_modes_end_the_process_and_record_why() {
         .await;
     let runtime = runtime(&daemon, &install);
 
-    for (mode, cause, prompt) in [
-        (StopMode::Graceful, CAUSE_STOPPED, None),
-        (StopMode::Abort, CAUSE_ABORTED, Some("work until stopped")),
-        (StopMode::Kill, CAUSE_KILLED, Some("work until killed")),
+    for (mode, cause, name, prompt) in [
+        (StopMode::Graceful, ExitCause::Stopped, "stopped", None),
+        (
+            StopMode::Abort,
+            ExitCause::Aborted,
+            "aborted",
+            Some("work until stopped"),
+        ),
+        (
+            StopMode::Kill,
+            ExitCause::Killed,
+            "killed",
+            Some("work until killed"),
+        ),
     ] {
         let agent = runtime
-            .spawn(create(&install.work, cause, prompt), None)
+            .spawn(create(&install.work, name, prompt), None)
             .await
             .unwrap();
         let id = id_of(&agent);
@@ -371,7 +379,7 @@ async fn stop_modes_end_the_process_and_record_why() {
         }
         let stopped = runtime.stop(id, mode).await.expect("the stop completes");
         assert_eq!(stopped.lifecycle, Lifecycle::Exited as i32, "{mode:?}");
-        assert_eq!(stopped.exit_cause.as_deref(), Some(cause), "{mode:?}");
+        assert_eq!(stopped.exit_cause(), cause, "{mode:?}");
         assert!(!node::locked(&dir), "{mode:?}: the lock is released");
         assert!(
             !listens(&dir.join(agent_dir::TOOLS_SOCK)).await
@@ -391,7 +399,7 @@ async fn stop_modes_end_the_process_and_record_why() {
         );
         // Stopping an exited agent leaves it as it is.
         let again = runtime.stop(id, StopMode::Kill).await.unwrap();
-        assert_eq!(again.exit_cause.as_deref(), Some(cause));
+        assert_eq!(again.exit_cause(), cause);
     }
     drop(runtime);
     daemon.shutdown().await.unwrap();
@@ -717,7 +725,7 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
     let store = runtime.store().await;
     let row = store.agent(&key(&runtime, leaves)).unwrap().unwrap();
     assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
-    assert_eq!(row.exit_cause.as_deref(), Some(CAUSE_EXITED_AWAY));
+    assert_eq!(row.exit_cause, ExitCause::EndedWhileAway as i32);
     assert_eq!(
         row.ingest_cursor,
         journal_end(&leaves_dir),
@@ -738,7 +746,155 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
 
     // The adopted agent is the registry's like any other: it stops.
     let stopped = runtime.stop(stays, StopMode::Graceful).await.unwrap();
-    assert_eq!(stopped.exit_cause.as_deref(), Some(CAUSE_STOPPED));
+    assert_eq!(stopped.exit_cause(), ExitCause::Stopped);
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// Whether the agent's journal holds a daemon-lost boundary: the agent
+/// gave up on its daemon and is draining.
+fn lost_its_daemon(dir: &std::path::Path) -> Result<(), String> {
+    let mut reader = journal::Reader::new(dir.join(agent_dir::JOURNAL), 0);
+    let frames = reader
+        .read_to_end()
+        .map_err(|error| error.to_string())?
+        .frames;
+    frames
+        .into_iter()
+        .flat_map(|(_, step)| step.items)
+        .filter_map(|item| {
+            match wire::ClaudeSdkItem::decode(item.body.as_slice())
+                .ok()?
+                .kind?
+            {
+                wire::claude_sdk_item::Kind::Boundary(boundary) => Some(boundary.kind()),
+                _ => None,
+            }
+        })
+        .any(|kind| kind == wire::BoundaryKind::DaemonLost)
+        .then_some(())
+        .ok_or_else(|| "no daemon-lost boundary yet".to_owned())
+}
+
+/// The agent's own account of its exit reaches its row: an agent that
+/// drains after losing its daemon, and one whose open ask is orphaned, end
+/// while a daemon that came back is connected, and their last frame says
+/// why. The daemon could not tell either from a plain exit.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_cause_reaches_the_row() {
+    let install = Install::new();
+    let gate = install.path("gate");
+    let short = |mut launch: node::Launch| {
+        launch.agent.grace_secs = 1;
+        launch.agent.drain_secs = 5;
+        launch
+    };
+    let held = short(install.launch(
+        "held",
+        vec![
+            wait_for(&gate),
+            text("done after the daemon left"),
+            wire_turn_end(),
+        ],
+    ));
+    let asking = short(install.launch(
+        "asking",
+        vec![provider_fakes::script::Step::Ask(
+            provider_fakes::script::Ask::Permission(provider_fakes::script::Tool {
+                name: None,
+                class: provider_fakes::script::ToolClass::Consequential,
+                input: None,
+                outcome: Default::default(),
+                wait_for: None,
+            }),
+        )],
+    ));
+    let daemon = install.start("boot-1", held.clone()).await;
+    let runtime = runtime(&daemon, &install);
+    let drains = id_of(
+        &runtime
+            .spawn(
+                create(&install.work, "drains", Some("work through the gap")),
+                None,
+            )
+            .await
+            .unwrap(),
+    );
+    runtime.set_launch(asking);
+    let orphaned = id_of(
+        &runtime
+            .spawn(
+                create(&install.work, "orphaned", Some("ask me first")),
+                None,
+            )
+            .await
+            .unwrap(),
+    );
+    until("the held turn to start", || working(&runtime, drains))
+        .await
+        .unwrap();
+    until("the ask to open", || async {
+        let phase = runtime.agent(orphaned).await.unwrap().phase;
+        (phase == Phase::NeedsYou as i32)
+            .then_some(())
+            .ok_or_else(|| format!("phase {phase}"))
+    })
+    .await
+    .unwrap();
+
+    // The daemon dies; past the grace both agents drain, one through its
+    // running turn, one with an ask nobody can answer.
+    let gone = std::sync::Arc::downgrade(&runtime);
+    drop(runtime);
+    drop(daemon);
+    until("the crashed daemon to let go", || async {
+        gone.upgrade()
+            .map_or(Ok(()), |_| Err("the runtime is still held"))
+    })
+    .await
+    .unwrap();
+    for id in [drains, orphaned] {
+        let dir = install.agent_dir(id);
+        until("the agent to lose its daemon", || {
+            std::future::ready(lost_its_daemon(&dir))
+        })
+        .await
+        .unwrap();
+    }
+
+    // A daemon comes back before either has exited.
+    let daemon = install.start("boot-1", held).await;
+    let runtime = support::runtime(&daemon, &install);
+    let report = daemon.sweep(install.profile).unwrap().clone();
+    let mut live = report.live.clone();
+    live.sort();
+    let mut both = vec![drains, orphaned];
+    both.sort();
+    assert_eq!(live, both, "both agents answered the new daemon");
+
+    std::fs::write(&gate, "").unwrap();
+    for id in [drains, orphaned] {
+        until("the agent to exit", || async {
+            let lifecycle = runtime.agent(id).await.unwrap().lifecycle;
+            (lifecycle == Lifecycle::Exited as i32)
+                .then_some(())
+                .ok_or("still live")
+        })
+        .await
+        .unwrap();
+    }
+    let drained = runtime.agent(drains).await.unwrap();
+    assert_eq!(drained.exit_cause(), ExitCause::DaemonLost);
+    assert_eq!(
+        wire::exit_words(drained.exit_cause, drained.exit_detail.as_deref()),
+        "while the daemon was away"
+    );
+    let orphan = runtime.agent(orphaned).await.unwrap();
+    assert_eq!(orphan.exit_cause(), ExitCause::Orphaned);
+    assert_eq!(
+        wire::exit_words(orphan.exit_cause, orphan.exit_detail.as_deref()),
+        "orphaned while waiting for you"
+    );
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }

@@ -662,7 +662,7 @@ impl State {
         if self.early_boundary.is_none()
             && let Some(kind) = self.coming_boundary()
         {
-            self.early_boundary = Some(self.boundary(emit, kind, String::new()));
+            self.early_boundary = Some(self.boundary(emit, kind, wire::Exiting::default()));
         }
         let uuid = client_uuid(&entry.input_id);
         if entry.text.starts_with('/') {
@@ -981,10 +981,15 @@ impl State {
     }
 
     /// Writes a new boundary item; returns its key.
-    fn boundary(&mut self, emit: &mut Emit, kind: wire::BoundaryKind, cause: String) -> String {
+    fn boundary(
+        &mut self,
+        emit: &mut Emit,
+        kind: wire::BoundaryKind,
+        exit: wire::Exiting,
+    ) -> String {
         self.next_boundary += 1;
         let key = format!("boundary:{}", self.next_boundary);
-        self.boundary_at(emit, key.clone(), kind, cause);
+        self.boundary_at(emit, key.clone(), kind, exit);
         key
     }
 
@@ -993,7 +998,7 @@ impl State {
         emit: &mut Emit,
         key: String,
         kind: wire::BoundaryKind,
-        cause: String,
+        exit: wire::Exiting,
     ) {
         self.shared.item(
             emit,
@@ -1003,7 +1008,8 @@ impl State {
                     kind: kind as i32,
                     provider_session: self.session.clone().unwrap_or_default(),
                     provider_version: self.version.clone().unwrap_or_default(),
-                    cause,
+                    cause: exit.cause,
+                    cause_detail: exit.detail,
                     keymap: String::new(),
                 })),
                 complete: true,
@@ -1261,10 +1267,14 @@ impl Interpreter for ClaudeSdk {
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             // Claude has no name of its own to take.
             Event::Rename { .. } => {}
-            Event::ProviderExit { code } => state.exited(&mut emit, crate::exit_cause(code)),
-            Event::Exiting { cause } => state.exited(&mut emit, cause),
+            Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
+            Event::Exiting(exiting) => state.exited(&mut emit, exiting),
             Event::DaemonLost => {
-                state.boundary(&mut emit, wire::BoundaryKind::DaemonLost, String::new());
+                state.boundary(
+                    &mut emit,
+                    wire::BoundaryKind::DaemonLost,
+                    wire::Exiting::default(),
+                );
             }
             Event::StopRequested(wire::StopMode::Abort) => state.interrupt(&mut emit),
             Event::StopRequested(_) => {}
@@ -1358,11 +1368,7 @@ fn describe_item(body: &[u8]) -> ItemView {
                 wire::BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
                 or_dash(&boundary.provider_session),
                 or_dash(&boundary.provider_version),
-                if boundary.cause.is_empty() {
-                    String::new()
-                } else {
-                    format!(" cause={}", Value::String(boundary.cause))
-                }
+                crate::claude_common::describe_cause(&boundary)
             ),
         ),
         Some(Kind::AgentMessage(message)) => (

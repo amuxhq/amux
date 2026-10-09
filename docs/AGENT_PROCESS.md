@@ -135,8 +135,9 @@ After every event the host calls `settle`, the only place that decides
 whether this incarnation ends, and every decision to end goes through one
 action, `exit(cause)`:
 
-1. feed the interpreter `Exiting { cause }`, which closes every open ask and
-   writes the final `Exited` boundary with the cause;
+1. feed the interpreter `Exiting { cause, detail }`, which closes every open
+   ask and writes the final `Exited` boundary with the cause (an `ExitCause`)
+   and its own words;
 2. close the provider's input: end of input for a child on pipes, a
    terminate signal to the process group for terminal Claude;
 3. enter `Exiting` with a ten-second deadline, after which the provider's
@@ -152,13 +153,25 @@ provider's process group at once and writes nothing.
 | `Running`, no daemon connected | The grace timer runs out | The interpreter writes a daemon-lost boundary; `Draining` (daemon lost) |
 | `Running` | `Stop(Graceful)` arrives | `Draining` (graceful) |
 | `Running` | `Stop(Abort)` arrives | The interpreter cancels the turn the provider's own way; `Draining` (abort) |
-| `Draining` | The turn ends, or no turn is running | `exit` with "daemon lost", "stopped" or "aborted" |
-| `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with "orphaned while waiting for you" |
-| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued and no accepted agent message still unconsumed | `exit` with "finished" (the one-shot rule) |
-| Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with the interpreter's cause |
-| Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with "could not write to its directory: …"; if even that cannot be written, the provider is killed |
-| Any | The provider exits | The loop ends |
-| Any | `Stop(Kill)` arrives | The provider's process group is killed; "killed" |
+| `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST`, `STOPPED` or `ABORTED` |
+| `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
+| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued and no accepted agent message still unconsumed | `exit` with `FINISHED` (the one-shot rule) |
+| Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
+| Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed |
+| Any | The provider exits | The loop ends; `PROVIDER_EXITED` with the exit code or signal |
+| Any | `Stop(Kill)` arrives | The provider's process group is killed; `KILLED` |
+| Start | The provider cannot be started | `COULD_NOT_START`, with why |
+
+Whatever ends the loop, the last thing the agent does is tell its daemon why:
+an `exiting` frame on `ctl.sock` with the cause and its detail, which the
+daemon records on the agent's inventory row. A daemon that dialled in but was
+not yet taken is taken first, and an agent that no daemon has dialled yet
+gives the one that started it a moment, because a short-lived incarnation (a
+child with one short turn) can end before its loop took the connection. With
+no daemon connected the frame is not sent, and the daemon that comes next
+records that the agent ended while it was away. An incarnation that ended
+with no final boundary at all (killed, or crashed) gets one with
+`ENDED_UNEXPECTEDLY` when the next incarnation starts.
 | `Exiting` | Ten seconds pass | The provider's process group is killed |
 
 A dump request is answered in every mode, since a draining agent is often the
@@ -197,6 +210,7 @@ version integer, and a frame a reader does not know is ignored.
 | `stop` | daemon → agent | `Stop { mode }`: `STOP_MODE_GRACEFUL`, `STOP_MODE_ABORT` or `STOP_MODE_KILL`; a mode this agent cannot read is ignored, never taken as another |
 | `dump` | agent → daemon | `DumpPart`, answering a dump request |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
+| `exiting` | agent → daemon | `Exiting { cause, detail }`, the last frame: why this incarnation ended. The daemon records it on the row; when the connection ends without one, it records the stop it asked for, or `ENDED_UNEXPECTEDLY` |
 
 Within one step the order is fixed: blobs the step refers to are written
 first, then the step is appended to the journal, then the daemon is nudged,
@@ -524,17 +538,20 @@ back:
    happened.
 3. When it runs out, the interpreter writes a daemon-lost boundary and the
    agent drains: the turn in progress finishes, the agent writes its final
-   boundary with the cause "daemon lost", and it exits.
+   boundary with the cause `DAEMON_LOST`, and it exits.
 4. A pending ask is mid-turn, not an end. An agent draining after the daemon
    was lost with an ask open waits for the drain deadline (the
-   `agent.drain_secs` setting, five minutes by default) and exits "orphaned
-   while waiting for you". A resume asks again, since providers drop an
-   unanswered tool call when they resume.
+   `agent.drain_secs` setting, five minutes by default) and exits `ORPHANED`
+   ("orphaned while waiting for you"). A resume asks again, since providers
+   drop an unanswered tool call when they resume.
 
 The finished turn is in the journal. Whichever daemon comes next ingests the
-rest of it, shows the agent as exited with its cause, and a resume (from any
-client) writes the next `spec.<n>` and starts the directory again with the
-same id.
+rest of it, shows the agent as exited, and a resume (from any client) writes
+the next `spec.<n>` and starts the directory again with the same id. A daemon
+that came back during the drain hears the agent's own cause in its last frame,
+so the row says "while the daemon was away" or "orphaned while waiting for
+you"; one that finds the process already gone records `ENDED_WHILE_AWAY`,
+which reads the same "while the daemon was away".
 
 On the way out, the listeners are dropped before the lock is released, which
 removes the sockets, so the next incarnation never has its socket removed by

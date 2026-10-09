@@ -324,20 +324,34 @@ impl SyntheticAgent {
 
     /// Tells the daemon the journal grew. Waits for a connection first.
     pub async fn nudge(&self) {
+        self.send(ctl_frame::Of::Nudge(Nudge {})).await;
+    }
+
+    /// Sends one frame to the daemon, once one is connected.
+    async fn send(&self, of: ctl_frame::Of) {
         let live = self.live.as_ref().expect("a live agent");
-        until("a daemon to connect for the nudge", || async {
+        let frame = CtlFrame { of: Some(of) };
+        until("a daemon to connect for the frame", || async {
             let mut conn = live.conn.lock().await;
             let Some(writer) = conn.as_mut() else {
                 return Err("no daemon connected");
             };
-            let nudge = CtlFrame {
-                of: Some(ctl_frame::Of::Nudge(Nudge {})),
-            };
-            agent_dir::write_frame(writer, &nudge).await.unwrap();
+            agent_dir::write_frame(writer, &frame).await.unwrap();
             Ok(())
         })
         .await
         .unwrap();
+    }
+
+    /// The process ends the way an agent does: its last frame says why,
+    /// then it dies.
+    pub async fn exit(&mut self, cause: wire::ExitCause, detail: Option<&str>) {
+        self.send(ctl_frame::Of::Exiting(wire::Exiting {
+            cause: cause as i32,
+            detail: detail.map(str::to_owned),
+        }))
+        .await;
+        self.die().await;
     }
 
     /// Closes the control connection with the process still alive: the

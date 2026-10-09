@@ -33,8 +33,9 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
     Agent, AgentHello, AgentParent, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest,
-    CtlFrame, DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, Kind, Lifecycle, Rename,
-    SendInputResponse, Stop, StopMode, WorkingOn, ctl_frame, inventory_event, session_event,
+    CtlFrame, DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, ExitCause, Kind, Lifecycle,
+    RemovalReason, Rename, SendInputResponse, Stop, StopMode, WorkingOn, ctl_frame,
+    inventory_event, session_event,
 };
 
 use crate::fanout::Fanout;
@@ -89,19 +90,15 @@ pub const FANOUT_CAPACITY: usize = 4 * INGEST_BATCH;
 /// several screens of scroll-back.
 pub const TAIL_ROWS: u32 = 200;
 
-/// The exit causes the daemon records. It knows only what it asked for and
-/// what it saw; the agent's own account of its exit is its final boundary
-/// item. Clients show a cause after the word "exited", so none repeats it.
-pub const CAUSE_STOPPED: &str = "stopped";
-pub const CAUSE_ABORTED: &str = "aborted";
-pub const CAUSE_KILLED: &str = "killed";
-pub const CAUSE_EXITED: &str = "exited";
-/// A one-shot child that exited by its own rule after its turn ended: it
-/// finished its work, and clients say so in place of "exited".
-pub const CAUSE_FINISHED: &str = "finished";
-pub const CAUSE_EXITED_AWAY: &str = "while the daemon was away";
-pub const CAUSE_NO_DIRECTORY: &str = "its directory is gone";
-pub const CAUSE_UNSTARTED: &str = "the agent process could not start";
+/// An exit cause the daemon records itself, where the agent's own word
+/// cannot or did not arrive: the process could not be spawned, was found
+/// dead, its directory is gone, or it ended without its last frame.
+fn daemon_cause(cause: ExitCause, detail: Option<String>) -> wire::Exiting {
+    wire::Exiting {
+        cause: cause as i32,
+        detail,
+    }
+}
 
 /// What the daemon starts agents with; read at every spawn and resume, so
 /// a change affects the next incarnation and never a running agent.
@@ -393,8 +390,11 @@ pub(crate) struct AgentHandle {
     /// connection ends.
     dumps: Mutex<HashMap<Vec<u8>, oneshot::Sender<DumpPart>>>,
     hello: watch::Sender<Option<AgentHello>>,
-    /// The stop the daemon asked for, which names the exit's cause.
+    /// The stop the daemon asked for, which names the exit's cause when
+    /// the agent's own word does not arrive.
     stopping: Mutex<Option<StopMode>>,
+    /// The cause the agent's last frame gave: what the row records.
+    farewell: Mutex<Option<wire::Exiting>>,
     /// The agent refused an input as exiting: it is on its way out.
     exiting: AtomicBool,
     /// The process id, when this daemon started the process.
@@ -419,6 +419,7 @@ impl AgentHandle {
             dumps: Mutex::new(HashMap::new()),
             hello: watch::Sender::new(None),
             stopping: Mutex::new(None),
+            farewell: Mutex::new(None),
             exiting: AtomicBool::new(false),
             caught_up_due: AtomicBool::new(false),
             pid,
@@ -1025,7 +1026,8 @@ impl ProfileRuntime {
         {
             let mut store = self.store.lock().await;
             row.lifecycle = Lifecycle::Live as i32;
-            row.exit_cause = None;
+            row.exit_cause = ExitCause::Unspecified as i32;
+            row.exit_detail = None;
             row.incarnation = next;
             self.put_row(&mut store, &row)?;
             // The next CaughtUp comes from this incarnation's journal.
@@ -1059,7 +1061,11 @@ impl ProfileRuntime {
             Ok(child) => child,
             Err(error) => {
                 drop(tools);
-                self.mark_exited(id, CAUSE_UNSTARTED).await?;
+                let cause = daemon_cause(
+                    ExitCause::CouldNotStart,
+                    Some(format!("the agent process: {error}")),
+                );
+                self.mark_exited(id, cause).await?;
                 return Err(error.into());
             }
         };
@@ -1201,7 +1207,7 @@ impl ProfileRuntime {
                 .publish_inventory(inventory(inventory_event::Of::AgentRemoved(AgentRemoved {
                     host_id: key.host.clone(),
                     agent_id: key.agent.clone(),
-                    reason: Some("deleted".to_owned()),
+                    reason: RemovalReason::Deleted as i32,
                 })));
         }
         match std::fs::remove_dir_all(self.agent_dir(id)) {
@@ -1328,11 +1334,13 @@ impl ProfileRuntime {
                 }
                 Look::Exited => {
                     self.ingest(id).await?;
-                    self.mark_exited_if_live(id, CAUSE_EXITED_AWAY).await?;
+                    let cause = daemon_cause(ExitCause::EndedWhileAway, None);
+                    self.mark_exited_if_live(id, cause).await?;
                     report.exited.push(id);
                 }
                 Look::NoDirectory => {
-                    self.mark_exited_if_live(id, CAUSE_NO_DIRECTORY).await?;
+                    let cause = daemon_cause(ExitCause::DirectoryFailed, Some("it is gone".into()));
+                    self.mark_exited_if_live(id, cause).await?;
                     report.exited.push(id);
                 }
             }
@@ -1700,6 +1708,11 @@ impl ProfileRuntime {
                             }
                         }
                         Ok(Some(CtlFrame {
+                            of: Some(ctl_frame::Of::Exiting(exiting)),
+                        })) => {
+                            *watched.farewell.lock().unwrap() = Some(exiting);
+                        }
+                        Ok(Some(CtlFrame {
                             of: Some(ctl_frame::Of::Dump(part)),
                         })) => {
                             let waiting = watched.dumps.lock().unwrap().remove(&part.dump_id);
@@ -1744,12 +1757,18 @@ impl ProfileRuntime {
         if let Err(error) = self.ingest(id).await {
             tracing::warn!(agent = %id, %error, "ingesting an exited agent's journal failed");
         }
-        let cause = match *handle.stopping.lock().unwrap() {
-            Some(StopMode::Graceful) => CAUSE_STOPPED,
-            Some(StopMode::Abort) => CAUSE_ABORTED,
-            Some(StopMode::Kill) => CAUSE_KILLED,
-            None => CAUSE_EXITED,
-        };
+        // The agent's own word when it gave one; else what the daemon
+        // asked for; else the process ended without saying why.
+        let farewell = handle.farewell.lock().unwrap().take();
+        let cause = farewell.unwrap_or_else(|| {
+            let cause = match *handle.stopping.lock().unwrap() {
+                Some(StopMode::Graceful) => ExitCause::Stopped,
+                Some(StopMode::Abort) => ExitCause::Aborted,
+                Some(StopMode::Kill) => ExitCause::Killed,
+                None => ExitCause::EndedUnexpectedly,
+            };
+            daemon_cause(cause, None)
+        });
         if let Err(error) = self.mark_exited(id, cause).await {
             tracing::warn!(agent = %id, %error, "marking an agent exited failed");
         }
@@ -1776,7 +1795,7 @@ impl ProfileRuntime {
         handle.exited.send_replace(true);
     }
 
-    async fn mark_exited(&self, id: AgentId, cause: &str) -> Result<(), StoreError> {
+    async fn mark_exited(&self, id: AgentId, cause: wire::Exiting) -> Result<(), StoreError> {
         let key = self.key(id);
         let mut store = self.store.lock().await;
         let Some(row) = store.agent(&key)? else {
@@ -1787,7 +1806,11 @@ impl ProfileRuntime {
         self.caught_up(&mut store, &key)
     }
 
-    async fn mark_exited_if_live(&self, id: AgentId, cause: &str) -> Result<(), StoreError> {
+    async fn mark_exited_if_live(
+        &self,
+        id: AgentId,
+        cause: wire::Exiting,
+    ) -> Result<(), StoreError> {
         let key = self.key(id);
         let mut store = self.store.lock().await;
         let Some(row) = store.agent(&key)? else {
@@ -1817,18 +1840,12 @@ impl ProfileRuntime {
         &self,
         store: &mut Sqlite,
         mut row: AgentRow,
-        cause: &str,
+        cause: wire::Exiting,
     ) -> Result<(), StoreError> {
-        // A child exits unasked only once its turn ended with nothing left
-        // to do, or when its process failed mid-turn; the first is its
-        // finish.
-        let cause = if cause == CAUSE_EXITED && row.parent.is_some() && !row.turn_open {
-            CAUSE_FINISHED
-        } else {
-            cause
-        };
+        let words = wire::exit_words(cause.cause, cause.detail.as_deref());
         row.lifecycle = Lifecycle::Exited as i32;
-        row.exit_cause = Some(cause.to_owned());
+        row.exit_cause = cause.cause;
+        row.exit_detail = cause.detail;
         self.put_row(store, &row)?;
         store.remove_notifications(&row.agent.agent)?;
         let Some(parent) = &row.parent else {
@@ -1849,7 +1866,7 @@ impl ProfileRuntime {
             parent: parent.clone(),
             parent_incarnation,
             kind: EnvelopeKind::Failed as i32,
-            body: cause.to_owned(),
+            body: words,
         })?;
         self.deliveries_due.notify_one();
         Ok(())
@@ -2063,7 +2080,8 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         }),
         created_at_ms: row.created_at,
         lifecycle: row.lifecycle,
-        exit_cause: row.exit_cause.clone(),
+        exit_cause: row.exit_cause,
+        exit_detail: row.exit_detail.clone(),
         phase: row.phase,
         working_on: row.working_on.as_ref().map(|text| WorkingOn {
             text: text.clone(),

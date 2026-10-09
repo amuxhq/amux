@@ -37,16 +37,24 @@ pub fn attention(agent: &Agent) -> Attention {
     }
 }
 
-/// How an agent ended, from the cause its host recorded. The host's
-/// vocabulary: "finished" for a one-shot agent that ended after its turn;
-/// "stopped", "aborted", "killed" and "exited" for an ordinary end; any other
-/// cause is the host's own account of something going wrong. A row with no
-/// cause ended without one known.
-pub fn exit_cause(cause: Option<&str>) -> ExitCause {
-    match cause.filter(|cause| !cause.is_empty()) {
-        Some("finished") => ExitCause::Finished,
-        None | Some("stopped" | "aborted" | "killed" | "exited") => ExitCause::Ended,
-        Some(cause) => ExitCause::Failed(cause.to_owned()),
+/// How an agent ended, from the cause its host recorded: finished for a
+/// one-shot agent that ended after its turn; ended for a stop, and for a
+/// cause unknown or not given, since unknown is not failure; anything else
+/// failed, in the cause's words followed by its own.
+pub fn exit_cause(agent: &Agent) -> ExitCause {
+    match wire::ExitCause::try_from(agent.exit_cause) {
+        Ok(wire::ExitCause::Finished) => ExitCause::Finished,
+        Ok(
+            wire::ExitCause::Stopped
+            | wire::ExitCause::Aborted
+            | wire::ExitCause::Killed
+            | wire::ExitCause::Unspecified,
+        )
+        | Err(_) => ExitCause::Ended,
+        Ok(_) => ExitCause::Failed(wire::exit_words(
+            agent.exit_cause,
+            agent.exit_detail.as_deref(),
+        )),
     }
 }
 

@@ -42,8 +42,11 @@ pub enum Entry {
     Stop {
         mode: i32,
     },
+    /// The cause's raw value, so one this build does not know is kept.
     Exiting {
-        cause: String,
+        cause: i32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
     },
     /// The encoded `wire::Git`, absent outside a repository.
     Git {
@@ -78,8 +81,9 @@ impl Entry {
             Event::ProviderExit { code } => Entry::ProviderExit { code: *code },
             Event::DaemonLost => Entry::DaemonLost,
             Event::StopRequested(mode) => Entry::Stop { mode: *mode as i32 },
-            Event::Exiting { cause } => Entry::Exiting {
-                cause: cause.clone(),
+            Event::Exiting(exiting) => Entry::Exiting {
+                cause: exiting.cause,
+                detail: exiting.detail.clone(),
             },
             Event::Git(git) => Entry::Git {
                 hex: git.as_ref().map(|git| crate::to_hex(&git.encode_to_vec())),
@@ -109,7 +113,7 @@ impl Entry {
             Entry::ProviderExit { code } => Event::ProviderExit { code },
             Entry::DaemonLost => Event::DaemonLost,
             Entry::Stop { mode } => Event::StopRequested(StopMode::try_from(mode).ok()?),
-            Entry::Exiting { cause } => Event::Exiting { cause },
+            Entry::Exiting { cause, detail } => Event::Exiting(wire::Exiting { cause, detail }),
             Entry::Git { hex: None } => Event::Git(None),
             Entry::Git { hex: Some(hex) } => Event::Git(Some(
                 wire::Git::decode(crate::from_hex(&hex).ok()?.as_slice()).ok()?,

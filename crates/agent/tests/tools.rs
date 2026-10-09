@@ -415,7 +415,7 @@ fn fleet() -> Fleet {
         agent_id: ME.to_vec(),
     });
     child.lifecycle = Lifecycle::Exited as i32;
-    child.exit_cause = Some("finished".into());
+    child.exit_cause = wire::ExitCause::Finished as i32;
     Fleet {
         hosts: vec![
             host(&HERE, "laptop", Trust::Trusted, Presence::Online),

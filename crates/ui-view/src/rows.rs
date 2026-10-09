@@ -168,6 +168,7 @@ pub enum RowKind {
     },
     Boundary {
         kind: BoundaryKind,
+        /// For an exit: its cause in words, then the cause's own.
         cause: String,
     },
     AgentMessage {
@@ -912,7 +913,7 @@ fn error(e: &wire::ApiError) -> (RowKind, Option<Decision>, bool) {
 fn boundary(b: &wire::Boundary) -> RowKind {
     RowKind::Boundary {
         kind: b.kind(),
-        cause: b.cause.clone(),
+        cause: wire::exit_words(b.cause, b.cause_detail.as_deref()),
     }
 }
 

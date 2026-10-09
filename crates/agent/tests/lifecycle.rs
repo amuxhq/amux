@@ -50,7 +50,7 @@ async fn with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_gr
         vec![
             "STARTED".to_owned(),
             "DAEMON_LOST".to_owned(),
-            "EXITED daemon lost".to_owned()
+            "EXITED while the daemon was away".to_owned()
         ]
     );
     agent.assert_released();
@@ -149,7 +149,7 @@ async fn an_orphan_finishes_its_turn_before_it_exits() {
             "boundary STARTED".to_owned(),
             "boundary DAEMON_LOST".to_owned(),
             "turn end".to_owned(),
-            "boundary EXITED daemon lost".to_owned()
+            "boundary EXITED while the daemon was away".to_owned()
         ]
     );
     agent.assert_released();
@@ -478,7 +478,7 @@ fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
     assert!(agent.terminal_bytes().contains("started"));
     assert_eq!(
         agent.log().boundaries().last().map(String::as_str),
-        Some("EXITED exit code 3")
+        Some("EXITED the provider exited: exit code 3")
     );
     agent.assert_released();
 }

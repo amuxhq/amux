@@ -553,18 +553,21 @@ fn put_agent_keeps_committed_state<S: Store>(store: S) {
     let mut rename = AgentRow::new(agent.clone(), wire::Kind::ClaudeSdk, "/src/amux");
     rename.name = Some("renamed".into());
     rename.lifecycle = wire::Lifecycle::Exited as i32;
-    rename.exit_cause = Some("stopped".into());
+    rename.exit_cause = wire::ExitCause::Stopped as i32;
+    rename.exit_detail = Some("its words".into());
     store.put_agent(&rename).unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.name.as_deref(), Some("renamed"));
-    assert_eq!(row.exit_cause.as_deref(), Some("stopped"));
+    assert_eq!(row.exit_cause, wire::ExitCause::Stopped as i32);
+    assert_eq!(row.exit_detail.as_deref(), Some("its words"));
     assert_eq!((row.ingest_cursor, row.next_revision), (42, 3));
     assert_eq!(row.phase, Phase::Idle as i32);
     assert!(row.snapshot.is_some());
 
     // A resume: the next incarnation has said nothing yet.
     rename.lifecycle = wire::Lifecycle::Live as i32;
-    rename.exit_cause = None;
+    rename.exit_cause = wire::ExitCause::Unspecified as i32;
+    rename.exit_detail = None;
     rename.incarnation = 2;
     store.put_agent(&rename).unwrap();
     let row = store.agent(&agent).unwrap().unwrap();

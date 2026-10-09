@@ -764,7 +764,7 @@ impl State {
         }
     }
 
-    fn boundary(&mut self, emit: &mut Emit, kind: wire::BoundaryKind, cause: String) {
+    fn boundary(&mut self, emit: &mut Emit, kind: wire::BoundaryKind, exit: wire::Exiting) {
         self.next_boundary += 1;
         self.emit_item(
             emit,
@@ -774,7 +774,8 @@ impl State {
                     kind: kind as i32,
                     provider_session: self.thread_id.clone().unwrap_or_default(),
                     provider_version: self.version.clone().unwrap_or_default(),
-                    cause,
+                    cause: exit.cause,
+                    cause_detail: exit.detail,
                     keymap: String::new(),
                 })),
                 complete: true,
@@ -1547,11 +1548,13 @@ impl<A: Arm> Interpreter for CodexWith<A> {
             Event::Input(input) => state.input(&mut emit, input),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             Event::Rename { name } => state.rename(&mut emit, name),
-            Event::ProviderExit { code } => state.exited(&mut emit, crate::exit_cause(code)),
-            Event::Exiting { cause } => state.exited(&mut emit, cause),
-            Event::DaemonLost => {
-                state.boundary(&mut emit, wire::BoundaryKind::DaemonLost, String::new())
-            }
+            Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
+            Event::Exiting(exiting) => state.exited(&mut emit, exiting),
+            Event::DaemonLost => state.boundary(
+                &mut emit,
+                wire::BoundaryKind::DaemonLost,
+                wire::Exiting::default(),
+            ),
             Event::StopRequested(wire::StopMode::Abort) => state.interrupt(&mut emit),
             Event::StopRequested(_) => {}
             Event::Git(git) => state.shared.set_git(git),
@@ -1742,11 +1745,7 @@ fn describe_item(body: &[u8]) -> ItemView {
                 wire::BoundaryKind::try_from(boundary.kind).map_or("?", |kind| kind.as_str_name()),
                 or_dash(&boundary.provider_session),
                 or_dash(&boundary.provider_version),
-                if boundary.cause.is_empty() {
-                    String::new()
-                } else {
-                    format!(" cause={}", Value::String(boundary.cause))
-                }
+                crate::claude_common::describe_cause(&boundary)
             ),
         ),
         Some(Kind::AgentMessage(message)) => (

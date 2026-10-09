@@ -1078,7 +1078,7 @@ impl State {
         }
     }
 
-    fn boundary(&mut self, emit: &mut Emit, kind: BoundaryKind, cause: String) {
+    fn boundary(&mut self, emit: &mut Emit, kind: BoundaryKind, exit: wire::Exiting) {
         self.next_boundary += 1;
         let key = format!("boundary:{}", self.next_boundary);
         self.shared.item(
@@ -1089,7 +1089,8 @@ impl State {
                     kind: kind as i32,
                     provider_session: self.provider.session.clone().unwrap_or_default(),
                     provider_version: self.provider.version.clone().unwrap_or_default(),
-                    cause,
+                    cause: exit.cause,
+                    cause_detail: exit.detail,
                     keymap: self.provider.keymap.clone(),
                 })),
                 complete: true,
@@ -1503,11 +1504,13 @@ impl Interpreter for ClaudePty {
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             // Claude has no name of its own to take.
             Event::Rename { .. } => {}
-            Event::ProviderExit { code } => state.exited(&mut emit, crate::exit_cause(code)),
-            Event::Exiting { cause } => state.exited(&mut emit, cause),
-            Event::DaemonLost => {
-                state.boundary(&mut emit, wire::BoundaryKind::DaemonLost, String::new())
-            }
+            Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
+            Event::Exiting(exiting) => state.exited(&mut emit, exiting),
+            Event::DaemonLost => state.boundary(
+                &mut emit,
+                wire::BoundaryKind::DaemonLost,
+                wire::Exiting::default(),
+            ),
             Event::StopRequested(wire::StopMode::Abort) => state.interrupt(&mut emit),
             Event::StopRequested(_) => {}
             Event::Git(git) => state.shared.set_git(git),
@@ -1625,11 +1628,7 @@ fn describe_item(body: &[u8]) -> ItemView {
                 or_dash(&boundary.provider_session),
                 or_dash(&boundary.provider_version),
                 or_dash(&boundary.keymap),
-                if boundary.cause.is_empty() {
-                    String::new()
-                } else {
-                    format!(" cause={}", Value::String(boundary.cause))
-                }
+                crate::claude_common::describe_cause(&boundary)
             ),
         ),
         Some(Kind::Slash(slash)) => (

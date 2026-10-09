@@ -101,7 +101,8 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
             text: WORKING_ON.into(),
             updated_at_ms: 1,
         }),
-        exit_cause: Some(EXIT.into()),
+        exit_cause: wire::ExitCause::ProviderExited as i32,
+        exit_detail: Some(EXIT.into()),
         ..named(b"a")
     }));
     feed.send(inventory_caught_up());

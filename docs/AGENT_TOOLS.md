@@ -75,8 +75,9 @@ Every agent in the fleet, own and replicated from paired hosts. Each row has
 `name` (the id in hex when the agent has no name), `id`, `kind` (`claude_pty`,
 `claude_sdk` or `codex`), `host` (the host's name), `live`, and `phase`
 (`starting`, `idle`, `working` or `needs_you`); and, when they apply,
-`working_on`, `exit_cause`, `parent` (the parent's name), and `you: true` on
-the caller's own row. Both read-only tools are marked with MCP's
+`working_on`, `exit_cause` (how an exited agent ended, in the words the fleet
+shows: `finished`, `stopped`, `the provider exited: exit code 1`), `parent`
+(the parent's name), and `you: true` on the caller's own row. Both read-only tools are marked with MCP's
 `readOnlyHint`.
 
 ### hosts
@@ -252,7 +253,8 @@ parent hears that it failed.
 
 **One-shot.** An agent with a parent exits when a turn ends with nothing
 queued, nothing running and no accepted message still pending (the
-interpreter's `quiescent`); its exit cause is `finished`. Input that arrives
+interpreter's `quiescent`); its exit cause is `FINISHED`, which the agent
+process tells the daemon in its last control frame. Input that arrives
 while it exits is answered `rejected{exiting}`. Its transcript and its parent
 edge stay.
 
@@ -289,7 +291,8 @@ A parent hears one thing per event, from the daemon, through an outbox: the
   away host.
 - **Failed.** When a child's process ends while a turn is open (a crash, a
   stop, a child that never came up) the daemon writes a row of kind `failed`
-  with the cause as its body. A one-shot exit after a finished turn sends
+  whose body is the cause in words, followed by its own words when it has
+  any ("the provider exited: exit code 1"). A one-shot exit after a finished turn sends
   nothing more.
 
 A row records the parent's incarnation as it was when the row was written, or

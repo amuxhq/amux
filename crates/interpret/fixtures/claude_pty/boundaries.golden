@@ -17,7 +17,7 @@ effect follow "/t/s2.jsonl"
 item boundary:4 boundary final at=1800000000000 text="" BOUNDARY_KIND_CLEARED session=s2 version=2.1.282 keymap=claude-2.1
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s2 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 6 provider_exit {"code":1}
-item boundary:5 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=s2 version=2.1.282 keymap=claude-2.1 cause="exit code 1"
+item boundary:5 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=s2 version=2.1.282 keymap=claude-2.1 cause=PROVIDER_EXITED detail="exit code 1"
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=s2 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 ## 7 input {"id":"p1","prompt":{"text":"after the restart"}}
 effect reply p1 queued
@@ -34,5 +34,5 @@ item turn:1 turn final at=1800000000020 text="" #1 TURN_OUTCOME_COMPLETED starte
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s2 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 turn_end 1 last=-
 ## 12 provider_exit {}
-item boundary:7 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=s2 version=2.1.283 keymap=claude-2.1 cause="killed by a signal"
+item boundary:7 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=s2 version=2.1.283 keymap=claude-2.1 cause=PROVIDER_EXITED detail="killed by a signal"
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=s2 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]

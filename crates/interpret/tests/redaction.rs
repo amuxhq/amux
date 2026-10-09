@@ -519,7 +519,8 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             text: format!("mailing {EMAIL}"),
             updated_at_ms: 1,
         }),
-        exit_cause: Some(format!("export AWS_SECRET_ACCESS_KEY={ASSIGNED}")),
+        exit_cause: wire::ExitCause::CouldNotStart as i32,
+        exit_detail: Some(format!("export AWS_SECRET_ACCESS_KEY={ASSIGNED}")),
         kind: wire::Kind::ClaudeSdk as i32,
         ..wire::Agent::default()
     };

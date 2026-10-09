@@ -306,7 +306,7 @@ fn second_line(
 ) -> SecondLine {
     let attention = ui_state::attention(agent);
     if attention == Attention::Exited {
-        return SecondLine::Exited(ui_state::exit_cause(agent.exit_cause.as_deref()));
+        return SecondLine::Exited(ui_state::exit_cause(agent));
     }
     if !reach(fleet, local_host, &agent.host_id).online() {
         return SecondLine::HostAway;
@@ -342,8 +342,7 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         name: agent.name.clone(),
         kind: agent.kind(),
         attention,
-        exit_cause: (attention == Attention::Exited)
-            .then(|| ui_state::exit_cause(agent.exit_cause.as_deref())),
+        exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
         branch: agent.git.as_ref().and_then(|git| git.branch.clone()),
         cwd: agent.cwd.clone(),
         phase_since_ms: agent.phase_since_ms,

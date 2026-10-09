@@ -141,7 +141,7 @@
       }
     },
     {
-      "exiting": "orphaned while waiting for you",
+      "exiting": "orphaned",
       "expect": {
         "asks": [],
         "phase": "STARTING"

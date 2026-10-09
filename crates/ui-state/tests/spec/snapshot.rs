@@ -223,7 +223,7 @@ fn the_chat_header_reads_the_snapshot_while_the_row_says_otherwise() {
         assert_eq!(state.phase(), PhaseView::Working);
         apply_checked(
             &mut state,
-            ui_state::Msg::Entry(exited(agent(kind), "stopped")),
+            ui_state::Msg::Entry(exited(agent(kind), wire::ExitCause::Stopped)),
         );
         assert_eq!(
             state.phase(),

@@ -16,7 +16,7 @@
 ## 7 daemon_lost {}
   row    3 t1 Command { command: "rm -rf target", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
   row    4 boundary:2 Boundary { kind: DaemonLost, cause: "" }
-## 10 exiting "orphaned while waiting for you"
+## 10 exiting "orphaned"
   row    3 t1 Command { command: "rm -rf target", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   row    5 boundary:3 Boundary { kind: Exited, cause: "orphaned while waiting for you" }
   ask none

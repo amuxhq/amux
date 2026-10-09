@@ -872,7 +872,7 @@ fn authored(kind: Kind) -> String {
 
     state.update(Msg::Entry(wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
-        exit_cause: Some("killed".into()),
+        exit_cause: wire::ExitCause::Killed as i32,
         ..agent(kind)
     }));
     show(
@@ -2031,9 +2031,10 @@ fn each_row_says_what_its_state_calls_for() {
     }
     fleet.update(FleetMsg::Event(far));
     let entry = |id: &str, phase| fleet_entry("a", id, phase, None, 1);
-    let ended = |id: &str, cause: Option<&str>| wire::Agent {
+    let ended = |id: &str, cause: wire::ExitCause, detail: Option<&str>| wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
-        exit_cause: cause.map(str::to_owned),
+        exit_cause: cause as i32,
+        exit_detail: detail.map(str::to_owned),
         ..entry(id, Phase::Idle)
     };
     let mut branched = entry("idle", Phase::Idle);
@@ -2130,7 +2131,7 @@ fn each_row_says_what_its_state_calls_for() {
             vec![],
         ),
         (
-            ended("finished", Some("finished")),
+            ended("finished", wire::ExitCause::Finished, None),
             wire::ClaudeSdkSnapshot::default(),
             vec![said(1, 1, "All done.", true)],
         ),
@@ -2147,14 +2148,28 @@ fn each_row_says_what_its_state_calls_for() {
         fleet.update(listed(entry));
     }
     // Exited agents need no session to say why they ended.
-    fleet.update(listed(ended("stopped", Some("stopped"))));
-    fleet.update(listed(ended("crashed", Some("provider crashed"))));
+    fleet.update(listed(ended("stopped", wire::ExitCause::Stopped, None)));
+    fleet.update(listed(ended(
+        "crashed",
+        wire::ExitCause::ProviderExited,
+        Some("exit code 1"),
+    )));
+    // A cause from a newer host is not a failure.
+    fleet.update(listed(ended(
+        "newer",
+        wire::ExitCause::Unspecified,
+        Some("its words"),
+    )));
+    fleet.update(listed(wire::Agent {
+        exit_cause: 99,
+        ..ended("newer-value", wire::ExitCause::Unspecified, None)
+    }));
     // A live agent whose session has not opened says nothing yet.
     fleet.update(listed(entry("unopened", Phase::Idle)));
     // An exited agent's row is history: how it ended, whatever its host.
     fleet.update(listed(wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
-        exit_cause: Some("exited".into()),
+        exit_cause: wire::ExitCause::Unspecified as i32,
         ..fleet_entry("b", "far-done", Phase::Idle, None, 1)
     }));
 
@@ -2201,8 +2216,10 @@ fn each_row_says_what_its_state_calls_for() {
     assert_eq!(said["stopped"], SecondLine::Exited(ExitCause::Ended));
     assert_eq!(
         said["crashed"],
-        SecondLine::Exited(ExitCause::Failed("provider crashed".into()))
+        SecondLine::Exited(ExitCause::Failed("the provider exited: exit code 1".into()))
     );
+    assert_eq!(said["newer"], SecondLine::Exited(ExitCause::Ended));
+    assert_eq!(said["newer-value"], SecondLine::Exited(ExitCause::Ended));
     assert_eq!(said["far"], SecondLine::HostAway);
     assert_eq!(said["far-done"], SecondLine::Exited(ExitCause::Ended));
     let far = fleet_card(&fleet, b"a", b"far-done").unwrap();

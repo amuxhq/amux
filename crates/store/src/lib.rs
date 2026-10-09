@@ -48,8 +48,8 @@ impl AgentKey {
     }
 }
 
-/// The agents row. Kind, lifecycle and phase are kept as their wire
-/// integers so a value from a newer peer is stored and served, never
+/// The agents row. Kind, lifecycle, exit cause and phase are kept as their
+/// wire integers so a value from a newer peer is stored and served, never
 /// refused.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentRow {
@@ -59,7 +59,9 @@ pub struct AgentRow {
     pub cwd: String,
     pub parent: Option<AgentKey>,
     pub lifecycle: i32,
-    pub exit_cause: Option<String>,
+    pub exit_cause: i32,
+    /// The exit cause's own words, when it has any.
+    pub exit_detail: Option<String>,
     /// Copied from the snapshot envelope at commit.
     pub phase: i32,
     pub working_on: Option<String>,
@@ -107,7 +109,8 @@ impl AgentRow {
             cwd: cwd.into(),
             parent: None,
             lifecycle: wire::Lifecycle::Live as i32,
-            exit_cause: None,
+            exit_cause: 0,
+            exit_detail: None,
             phase: wire::Phase::Starting as i32,
             working_on: None,
             last_activity: None,
@@ -617,7 +620,8 @@ impl<B: Backend> Store for B {
                     held.cwd = row.cwd.clone();
                     held.parent = row.parent.clone();
                     held.lifecycle = row.lifecycle;
-                    held.exit_cause = row.exit_cause.clone();
+                    held.exit_cause = row.exit_cause;
+                    held.exit_detail = row.exit_detail.clone();
                     held.created_at = row.created_at;
                     held.producer_version = row.producer_version.clone();
                     if own && row.incarnation > held.incarnation {

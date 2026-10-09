@@ -29,5 +29,5 @@ item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_DAEMON_LOS
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/interrupt\",\"params\":{\"threadId\":\"t1\",\"turnId\":\"turn-1\"}}"
 ## 10 exiting "stopped"
 item cmd-1 work final at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_CANCELLED
-item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=t1 version=0.157.0 cause="stopped"
+item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=t1 version=0.157.0 cause=STOPPED
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=[]

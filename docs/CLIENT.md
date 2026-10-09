@@ -79,8 +79,8 @@ cancelled, deadline exceeded, internal, aborted); any other code maps to the mat
 entry and the window's cap with `SessionState::new(agent, cap)` and changes only through `update(msg)`. Its
 parts:
 
-- **The entry and host.** The agent's inventory row (lifecycle, phase, incarnation, exit cause) and its host's
-  entry, both fed from the fleet.
+- **The entry and host.** The agent's inventory row (lifecycle, phase, incarnation, exit cause and its detail)
+  and its host's entry, both fed from the fleet.
 - **`AgentState`**, the newest snapshot decoded. [`body.rs`](../crates/ui-state/src/body.rs) is the thin
   per-kind layer: `decode_snapshot` reads a `ClaudePtySnapshot`, `ClaudeSdkSnapshot` or `CodexSnapshot` into one
   shape (phase, queue, working-on, open asks, model and its display name, effort, mode, sandbox, the
@@ -451,8 +451,10 @@ Each row's second line goes by the state the inventory row says, in words its se
 when it needs you; the step it is running (the chat's activity line, with the step's command or file) when
 working; when idle, why it is stuck (signed out, a spent usage window) or else the first line of what it last
 said; nothing while starting or before its session opens; how it ended once exited, whatever its host is doing;
-and that its host is away when the host is out of reach. How an agent ended is typed (finished, ended, or failed
-with the host's own account of why), as on the chat's phase. What an agent is working on is how agents find each
+and that its host is away when the host is out of reach. How an agent ended is typed from the row's `ExitCause`
+(`ui_state::exit_cause`): finished for `FINISHED`; ended for a stop, for `UNSPECIFIED` and for a cause this build
+does not know, since unknown is not failure; failed for every other cause, carrying the cause's words followed by
+its own ("the provider exited: exit code 1"), as on the chat's phase. What an agent is working on is how agents find each
 other and is not shown.
 A client reads each session with `session_line` on its own, then the fleet, so it never holds both at once.
 

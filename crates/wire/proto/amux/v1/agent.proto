@@ -150,6 +150,10 @@ message CtlFrame {
     // input's verdict as the SendInput reply and uses a message's verdict
     // to settle its delivery.
     Verdict reply = 9;
+    // Agent to daemon, last frame: why this incarnation is ending. The
+    // daemon records it on the row; when the socket closes without one,
+    // the daemon records its own cause.
+    Exiting exiting = 10;
   }
 }
 
@@ -159,6 +163,11 @@ message AgentDumpRequest {
 
 message Rename {
   string name = 1;
+}
+
+message Exiting {
+  ExitCause cause = 1;
+  optional string detail = 2;
 }
 
 message AgentHello {

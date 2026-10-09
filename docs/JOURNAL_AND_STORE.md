@@ -325,7 +325,7 @@ The schema is the migrations in
 | `kind` | The agent's `Kind`, as its wire integer |
 | `name`, `cwd` | As the registry holds them |
 | `parent`, `parent_host` | A child records its parent as host and id, because families cross hosts |
-| `lifecycle`, `exit_cause` | Live or exited, and why. Owned by the daemon. |
+| `lifecycle`, `exit_cause`, `exit_detail` | Live or exited, and why: the `ExitCause` as its wire integer, so a cause from a newer host is kept and served as it came, and the cause's own words. Owned by the daemon, which records the agent's own cause from its last control frame. |
 | `phase`, `working_on`, `phase_since`, `git`, `last_activity` | Copied from the newest snapshot's envelope at commit; `last_activity` is the snapshot's `at_ms`, never commit time, and orders retention. A replica row takes `phase`, `working_on`, `phase_since` and `git` from the origin's inventory row and has no `last_activity` |
 | `snapshot`, `snapshot_revision` | The newest snapshot, body opaque |
 | `ingest_cursor` | Own rows: the journal offset committed through |
@@ -337,7 +337,7 @@ The schema is the migrations in
 | `created_at`, `producer_version`, `incarnation` | Creation time, the agent binary's version from its Hello, and the `spec.<n>` it is running |
 | `turn_open` | Own rows: the incarnation has a turn it has not ended. An incarnation that exits with one open tells its parent it failed. |
 
-Kind, lifecycle and phase are stored as their wire integers, so a value from
+Kind, lifecycle, exit cause and phase are stored as their wire integers, so a value from
 a newer peer is stored and served rather than refused.
 
 `items`: one row per item, keyed by `(origin_host, agent_id, key)`.
@@ -363,7 +363,7 @@ The rest:
 
 | Table | Rows |
 | --- | --- |
-| `deliveries` | The daemon's outbox to parents: a child's `finished` (turn ended; body is its last message) or `failed` (the incarnation ended without one; body is the cause). Keyed by child, incarnation, kind and turn id. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
+| `deliveries` | The daemon's outbox to parents: a child's `finished` (turn ended; body is its last message) or `failed` (the incarnation ended without one; body is the cause in words, followed by its own). Keyed by child, incarnation, kind and turn id. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
 | `notifications` | The push outbox: one row per turn into `needs_you`, keyed by agent and snapshot revision, with a due time and a body built from envelope fields only. Deleted unsent if the phase leaves `needs_you` first, and with the agent. |
 | `hosts` | One row per peer host: the generation its inventory last reported, for the host entry this machine publishes. |
 | `schema_migrations` | Each applied migration's number and SHA-256 |
@@ -440,7 +440,7 @@ Retention runs when the runtime's background work starts and then every ten
 minutes (`ProfileRuntime::start_retention` in
 [`crates/node/src/retention.rs`](../crates/node/src/retention.rs)). The store
 decides what goes; the daemon then closes the removed agents' streams, tells the
-fleet (`AgentRemoved` with reason "removed by retention") and deletes their
+fleet (`AgentRemoved` with reason `REMOVAL_REASON_RETENTION`) and deletes their
 directories, which takes their blobs with them. Row cost is `store::item_bytes`:
 the envelope's variable fields plus a fixed 48 bytes a row.
 

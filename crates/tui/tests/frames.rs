@@ -675,7 +675,7 @@ async fn a_fleet_of_every_standing_matches_its_golden() {
         let exited = |id: &[u8]| {
             fleet
                 .find(id)
-                .map(|agent| (agent.lifecycle(), agent.exit_cause.clone()))
+                .map(|agent| (agent.lifecycle(), agent.exit_cause))
         };
         phase(&fixer) == Some(wire::Phase::NeedsYou)
             && phase(&runner) == Some(wire::Phase::Working)

@@ -89,18 +89,14 @@ pub use profiles::{
     PROFILE_SOCKET, ProfileEntry, ProfileId, Registry, create_profile, host_id, profile_dir,
 };
 pub use relay::RelayError;
-pub use retention::{REMOVED_BY_RETENTION, Retention};
+pub use retention::Retention;
 pub use routing::local_kinds;
 pub use runtime::{
-    AGENT_LOG, AgentId, CAUSE_ABORTED, CAUSE_EXITED, CAUSE_EXITED_AWAY, CAUSE_FINISHED,
-    CAUSE_KILLED, CAUSE_NO_DIRECTORY, CAUSE_STOPPED, CAUSE_UNSTARTED, FANOUT_CAPACITY,
-    INGEST_BATCH, JoinHook, KEPT_SEGMENTS, Launch, Profile, ProfileRuntime, RegistryError,
-    SweepReport, TAIL_ROWS, locked, to_wire,
+    AGENT_LOG, AgentId, FANOUT_CAPACITY, INGEST_BATCH, JoinHook, KEPT_SEGMENTS, Launch, Profile,
+    ProfileRuntime, RegistryError, SweepReport, TAIL_ROWS, locked, to_wire,
 };
 pub use serve::{InventorySubscription, MAX_PAGE, ServeError, Subscription};
-pub use sources::{
-    InventoryHook, NO_LONGER_LISTED, NOT_TRUSTED, SourceHook, SourcePolicy, SourceVerdict,
-};
+pub use sources::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
 pub use telemetry::Telemetry;
 pub use worktree::{GitWorktrees, MakeWorktree, WORKTREES};
 

@@ -26,7 +26,6 @@ mod ring;
 mod terminal;
 mod tools;
 
-use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -47,8 +46,8 @@ pub use crate::tools::{
 /// The version this agent reports in its Hello and stamps on what it writes.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Why an agent process ended. Its text is the cause the final boundary
-/// records.
+/// Why an agent process ended: the cause its final boundary records and
+/// its last ctl frame tells the daemon.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExitCause {
     /// The provider exited on its own, with its code when it had one.
@@ -75,19 +74,32 @@ pub enum ExitCause {
     WriteFailed(String),
 }
 
-impl fmt::Display for ExitCause {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExitCause::ProviderExited(code) => f.write_str(&interpret::exit_cause(*code)),
-            ExitCause::DaemonLost => f.write_str("daemon lost"),
-            ExitCause::Orphaned => f.write_str("orphaned while waiting for you"),
-            ExitCause::Stopped => f.write_str("stopped"),
-            ExitCause::Aborted => f.write_str("aborted"),
-            ExitCause::Killed => f.write_str("killed"),
-            ExitCause::Finished => f.write_str("finished"),
-            ExitCause::Unstarted(why) => write!(f, "could not start the provider: {why}"),
-            ExitCause::Interpreter(why) => f.write_str(why),
-            ExitCause::WriteFailed(why) => write!(f, "could not write to its directory: {why}"),
+impl ExitCause {
+    /// The cause as the wire carries it, with its own words as the detail.
+    pub fn exiting(&self) -> wire::Exiting {
+        let (cause, detail) = match self {
+            ExitCause::ProviderExited(code) => return interpret::provider_exit(*code),
+            ExitCause::DaemonLost => (wire::ExitCause::DaemonLost, None),
+            ExitCause::Orphaned => (wire::ExitCause::Orphaned, None),
+            ExitCause::Stopped => (wire::ExitCause::Stopped, None),
+            ExitCause::Aborted => (wire::ExitCause::Aborted, None),
+            ExitCause::Killed => (wire::ExitCause::Killed, None),
+            ExitCause::Finished => (wire::ExitCause::Finished, None),
+            ExitCause::Unstarted(why) => (
+                wire::ExitCause::CouldNotStart,
+                Some(format!("the provider: {why}")),
+            ),
+            // No interpreter asks to exit today; were one to, its words are
+            // all that says why.
+            ExitCause::Interpreter(why) => (wire::ExitCause::EndedUnexpectedly, Some(why.clone())),
+            ExitCause::WriteFailed(why) => (
+                wire::ExitCause::DirectoryFailed,
+                Some(format!("could not write to it: {why}")),
+            ),
+        };
+        wire::Exiting {
+            cause: cause as i32,
+            detail,
         }
     }
 }

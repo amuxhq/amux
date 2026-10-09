@@ -49,8 +49,9 @@ const DEFAULT_RING_BYTES: u64 = 4 * 1024 * 1024;
 /// Terminal log segments: enough to rebuild a screen.
 const PTY_SEGMENT_BYTES: u64 = 256 * 1024;
 const PTY_SEGMENTS_KEPT: usize = 4;
-/// The final boundary's cause for an incarnation that never wrote one.
-const UNENDED: &str = "ended unexpectedly";
+/// How long the daemon's connection gets to take the last frame, which
+/// says why the incarnation ended, before the process exits anyway.
+const FAREWELL_PATIENCE: std::time::Duration = std::time::Duration::from_secs(1);
 
 enum Mode {
     Running,
@@ -84,10 +85,12 @@ impl Drain {
 }
 
 /// The daemon's connection: its id, so frames from a replaced one are
-/// ignored, and its outgoing frames.
+/// ignored, its outgoing frames, and the task writing them, which the last
+/// frame is waited on through.
 struct Daemon {
     id: u64,
     frames: mpsc::UnboundedSender<CtlFrame>,
+    writer: tokio::task::JoinHandle<()>,
 }
 
 pub(crate) struct Host<I: Interpreter> {
@@ -271,10 +274,8 @@ impl<I: Interpreter> Host<I> {
             Ok(provider) => self.provider = Some(provider),
             Err(error) => {
                 let cause = ExitCause::Unstarted(error.to_string());
-                self.feed(Event::Exiting {
-                    cause: cause.to_string(),
-                })
-                .await?;
+                self.feed(Event::Exiting(cause.exiting())).await?;
+                self.farewell(&cause, channels).await;
                 return Ok(cause);
             }
         }
@@ -325,6 +326,7 @@ impl<I: Interpreter> Host<I> {
                 self.write_failed(error).await?;
             }
             if let Some(cause) = self.done.take() {
+                self.farewell(&cause, channels).await;
                 return Ok(cause);
             }
         }
@@ -429,7 +431,7 @@ impl<I: Interpreter> Host<I> {
             }
         });
         let (frames, mut outgoing) = mpsc::unbounded_channel::<CtlFrame>();
-        tokio::spawn(async move {
+        let writer = tokio::spawn(async move {
             while let Some(frame) = outgoing.recv().await {
                 if ctl::write_frame(&mut writer, &frame).await.is_err() {
                     return;
@@ -438,7 +440,7 @@ impl<I: Interpreter> Host<I> {
         });
         // A new connection replaces the old: a restarted daemon dials in
         // while the old one's socket may not have closed yet.
-        self.daemon = Some(Daemon { id, frames });
+        self.daemon = Some(Daemon { id, frames, writer });
         self.grace_until = None;
         self.send(ctl_frame::Of::Hello(AgentHello {
             agent_id: self.spec.agent_id.clone(),
@@ -621,10 +623,7 @@ impl<I: Interpreter> Host<I> {
 
     /// Writes the final boundary and asks the provider to finish.
     async fn exit(&mut self, cause: ExitCause) -> Result<(), AgentError> {
-        self.feed(Event::Exiting {
-            cause: cause.to_string(),
-        })
-        .await?;
+        self.feed(Event::Exiting(cause.exiting())).await?;
         if let Some(provider) = &mut self.provider {
             provider.close();
         }
@@ -750,6 +749,38 @@ impl<I: Interpreter> Host<I> {
 
     // --- the daemon ------------------------------------------------------
 
+    /// The last frame: tells a connected daemon why this incarnation ends,
+    /// so its row says so, and waits for it to be written. The daemon reads
+    /// only envelopes, never the final boundary's body, so this is the one
+    /// way the agent's own cause reaches the row.
+    ///
+    /// A daemon whose dial is still waiting to be taken is taken first: a
+    /// short-lived incarnation (a child whose one turn ended, a provider
+    /// that could not start) can be over before its loop took the
+    /// connection of the daemon that started it. When no daemon has dialled
+    /// yet, the one that started this process is about to, and is given a
+    /// moment; a daemon that came and went is not waited for.
+    async fn farewell(&mut self, cause: &ExitCause, channels: &mut Channels) {
+        while let Ok(stream) = channels.connections.try_recv() {
+            self.on_connect(stream, &channels.frames_tx);
+        }
+        if self.connections == 0
+            && let Ok(Some(stream)) =
+                tokio::time::timeout(FAREWELL_PATIENCE, channels.connections.recv()).await
+        {
+            self.on_connect(stream, &channels.frames_tx);
+        }
+        let Some(Daemon { frames, writer, .. }) = self.daemon.take() else {
+            return;
+        };
+        let _ = frames.send(CtlFrame {
+            of: Some(ctl_frame::Of::Exiting(cause.exiting())),
+        });
+        // The writer ends once the frames before it are written.
+        drop(frames);
+        let _ = tokio::time::timeout(FAREWELL_PATIENCE, writer).await;
+    }
+
     /// A verdict, keyed by the input id or the envelope id it answers.
     fn reply(&self, id: Vec<u8>, verdict: wire::SendInputResponse) {
         self.send(ctl_frame::Of::Reply(Verdict {
@@ -825,9 +856,10 @@ fn start<I: Interpreter>(facts: &std::path::Path, spec: &AgentSpec) -> (I::State
     if !ended {
         let stepped = I::step(
             &mut state,
-            Event::Exiting {
-                cause: UNENDED.to_owned(),
-            },
+            Event::Exiting(wire::Exiting {
+                cause: wire::ExitCause::EndedUnexpectedly as i32,
+                detail: None,
+            }),
         );
         steps.push(stepped.step);
     }

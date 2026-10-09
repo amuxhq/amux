@@ -758,7 +758,7 @@ fn an_exited_entry_offers_resume_with_the_draft() {
     let mut state = chat(replies(1, 3));
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
-    exited.exit_cause = Some("finished".into());
+    exited.exit_cause = wire::ExitCause::Finished as i32;
     state.update(Msg::Entry(exited));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
@@ -1812,7 +1812,7 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     let mut state = chat(replies(1, 3));
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
-    exited.exit_cause = Some("stopped".into());
+    exited.exit_cause = wire::ExitCause::Stopped as i32;
     state.update(Msg::Entry(exited));
     state.update(Msg::Host(wire::HostEntry {
         host_id: b"host".to_vec(),
@@ -1853,7 +1853,7 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
     // The daemon's cause for an agent it found gone when it came back.
-    exited.exit_cause = Some("while the daemon was away".into());
+    exited.exit_cause = wire::ExitCause::EndedWhileAway as i32;
     state.update(Msg::Entry(exited.clone()));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
@@ -2309,7 +2309,7 @@ fn home_fleet() -> FleetState {
     let mut archive = home_agent(b"old", "archive", Phase::Idle, None, now - 2 * 86_400_000);
     if let wire::inventory_event::Of::Agent(agent) = &mut archive {
         agent.lifecycle = wire::Lifecycle::Exited as i32;
-        agent.exit_cause = Some("stopped".into());
+        agent.exit_cause = wire::ExitCause::Stopped as i32;
     }
     inventory(&mut fleet, archive);
     inventory(
@@ -3557,7 +3557,7 @@ fn the_keys_under_the_composer_follow_what_is_happening() {
     // Exited: Enter resumes.
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
-    exited.exit_cause = Some("finished".into());
+    exited.exit_cause = wire::ExitCause::Finished as i32;
     state.update(Msg::Entry(exited));
     let keys = keys_of(&feed(&mut view, &state).0);
     assert!(keys.contains("enter resume"), "{keys}");

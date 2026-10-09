@@ -9,7 +9,7 @@
 ## 5 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s2","source":"clear","transcript_path":"/t/s2.jsonl"}}
   row    4 boundary:4 Boundary { kind: Cleared, cause: "" }
 ## 6 provider_exit {"code":1}
-  row    5 boundary:5 Boundary { kind: Exited, cause: "exit code 1" }
+  row    5 boundary:5 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
 ## 7 input {"id":"p1","prompt":{"text":"after the restart"}}
   composer Send activity=None queue=[QueuedRow { input_id: [112, 49], text: [Text("after the restart")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 9 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s2","source":"resume","transcript_path":"/t/s2.jsonl"}}
@@ -21,17 +21,17 @@
   row    8 turn:1 TurnEnd { duration_ms: Some(10), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 12 provider_exit {}
-  row    9 boundary:7 Boundary { kind: Exited, cause: "killed by a signal" }
+  row    9 boundary:7 Boundary { kind: Exited, cause: "the provider exited: killed by a signal" }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 boundary:2 Boundary { kind: Resumed, cause: "" }
      3 boundary:3 Boundary { kind: Compacted, cause: "" }
      4 boundary:4 Boundary { kind: Cleared, cause: "" }
-     5 boundary:5 Boundary { kind: Exited, cause: "exit code 1" }
+     5 boundary:5 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
      6 boundary:6 Boundary { kind: Restarted, cause: "" }
      7 u1 Prompt { text: [Text("after the restart")], steered: false }
      8 turn:1 TurnEnd { duration_ms: Some(10), cost_usd: None, failed: false }
-     9 boundary:7 Boundary { kind: Exited, cause: "killed by a signal" }
+     9 boundary:7 Boundary { kind: Exited, cause: "the provider exited: killed by a signal" }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

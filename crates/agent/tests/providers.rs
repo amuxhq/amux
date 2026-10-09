@@ -648,7 +648,7 @@ async fn headless_claude_replays_transport_loss_mid_turn() {
     let log = agent.log();
     assert_eq!(
         log.boundaries().last().map(String::as_str),
-        Some("EXITED exit code 1")
+        Some("EXITED the provider exited: exit code 1")
     );
     assert!(log.ask_keys().is_empty(), "the open ask is closed");
     assert_no_drift(&agent);
@@ -703,7 +703,7 @@ async fn codex_replays_transport_loss_mid_turn() {
     let log = agent.log();
     assert_eq!(
         log.boundaries().last().map(String::as_str),
-        Some("EXITED exit code 1")
+        Some("EXITED the provider exited: exit code 1")
     );
     assert!(log.ask_keys().is_empty(), "the open ask is closed");
     assert_no_drift(&agent);
@@ -1106,7 +1106,7 @@ fn terminal_claude_replays_transport_loss_mid_turn() {
         let log = agent.log();
         assert_eq!(
             log.boundaries().last().map(String::as_str),
-            Some("EXITED exit code 1")
+            Some("EXITED the provider exited: exit code 1")
         );
         assert!(log.ask_keys().is_empty(), "the open ask is closed");
         assert_no_drift(&agent);
@@ -1128,7 +1128,10 @@ async fn windows_refuses_terminal_claude_and_names_the_platform() {
         "terminal Claude is not hosted on Windows in this build; headless Claude and Codex are";
     assert_eq!(cause, ExitCause::Unstarted(why.to_owned()));
     assert_eq!(
-        cause.to_string(),
-        format!("could not start the provider: {why}")
+        cause.exiting(),
+        wire::Exiting {
+            cause: wire::ExitCause::CouldNotStart as i32,
+            detail: Some(format!("the provider: {why}")),
+        }
     );
 }

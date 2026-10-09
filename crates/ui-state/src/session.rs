@@ -400,7 +400,7 @@ impl SessionState {
     pub fn phase(&self) -> PhaseView {
         if self.exited() {
             return PhaseView::Exited {
-                cause: crate::exit_cause(self.agent.exit_cause.as_deref()),
+                cause: crate::exit_cause(&self.agent),
             };
         }
         let phase = if self.has_snapshot {

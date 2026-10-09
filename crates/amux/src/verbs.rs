@@ -92,9 +92,10 @@ fn kind_word(kind: i32) -> String {
 
 fn state(agent: &Agent) -> String {
     if Lifecycle::try_from(agent.lifecycle) == Ok(Lifecycle::Exited) {
-        return match agent.exit_cause.as_deref() {
-            Some(cause) if !cause.is_empty() => format!("exited: {cause}"),
-            _ => "exited".to_owned(),
+        let cause = wire::exit_words(agent.exit_cause, agent.exit_detail.as_deref());
+        return match cause.as_str() {
+            "" => "exited".to_owned(),
+            cause => format!("exited: {cause}"),
         };
     }
     let phase = match Phase::try_from(agent.phase).unwrap_or(Phase::Starting) {

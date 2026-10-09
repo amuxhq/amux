@@ -910,9 +910,10 @@ async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
         .await
         .unwrap();
 
-    // One dies mid-turn; the other exits after its finished turn.
+    // One dies mid-turn without a word; the other exits by the one-shot
+    // rule after its finished turn.
     crashed.die().await;
-    finished.die().await;
+    finished.exit(wire::ExitCause::Finished, None).await;
     until("both exits", || async {
         exited(&runtime, crashed.id).await?;
         exited(&runtime, finished.id).await
@@ -928,28 +929,19 @@ async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
         heard,
         vec![
             (EnvelopeKind::Finished, "done".to_owned()),
-            (EnvelopeKind::Failed, node::CAUSE_EXITED.to_owned()),
+            (EnvelopeKind::Failed, "ended unexpectedly".to_owned()),
         ],
         "one thing per event: finished once, failed only for the child that never finished"
     );
     // The row says which one finished its work.
     assert_eq!(
-        runtime
-            .agent(finished.id)
-            .await
-            .unwrap()
-            .exit_cause
-            .as_deref(),
-        Some(node::CAUSE_FINISHED)
+        runtime.agent(finished.id).await.unwrap().exit_cause(),
+        wire::ExitCause::Finished
     );
     assert_eq!(
-        runtime
-            .agent(crashed.id)
-            .await
-            .unwrap()
-            .exit_cause
-            .as_deref(),
-        Some(node::CAUSE_EXITED)
+        runtime.agent(crashed.id).await.unwrap().exit_cause(),
+        wire::ExitCause::EndedUnexpectedly,
+        "a process gone without its last frame said nothing of why"
     );
     crash(daemon, runtime).await;
 }

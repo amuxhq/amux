@@ -295,7 +295,7 @@ pub fn agent(kind: Kind) -> Agent {
 
 pub fn exited(mut agent: Agent) -> Agent {
     agent.lifecycle = Lifecycle::Exited as i32;
-    agent.exit_cause = Some("finished".into());
+    agent.exit_cause = wire::ExitCause::Finished as i32;
     agent
 }
 

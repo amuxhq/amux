@@ -446,9 +446,9 @@ fn home_rows(theme: Theme) -> Buffer {
     ];
     for (name, host, kind, phase, branch, minutes, parent, said) in agents {
         let exit_cause = match name {
-            "doc-sweep" => Some("finished"),
-            "crasher" => Some("provider exited with code 1"),
-            "clean-up" => Some("stopped"),
+            "doc-sweep" => Some((wire::ExitCause::Finished, None)),
+            "crasher" => Some((wire::ExitCause::ProviderExited, Some("exit code 1"))),
+            "clean-up" => Some((wire::ExitCause::Stopped, None)),
             _ => None,
         };
         let agent = wire::Agent {
@@ -462,7 +462,8 @@ fn home_rows(theme: Theme) -> Buffer {
             } else {
                 Lifecycle::Live
             } as i32,
-            exit_cause: exit_cause.map(str::to_owned),
+            exit_cause: exit_cause.map_or(0, |(cause, _)| cause as i32),
+            exit_detail: exit_cause.and_then(|(_, detail)| detail.map(str::to_owned)),
             phase: phase as i32,
             phase_since_ms: NOW - minutes * MINUTE,
             parent: parent.map(|parent| wire::AgentParent {

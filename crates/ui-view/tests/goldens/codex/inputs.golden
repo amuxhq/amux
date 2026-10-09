@@ -41,7 +41,7 @@
   row   11 turn:4 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 32 provider_exit {"code":1}
-  row   12 boundary:3 Boundary { kind: Exited, cause: "exit code 1" }
+  row   12 boundary:3 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
 ## 33 agent_message {"envelope":"e9","from":"lead","text":"Status?"}
   row   13 agent-message:6539 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
 ## 34 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
@@ -59,7 +59,7 @@
      9 prompt:7035 Prompt { text: [Text("/compact")], steered: false }
     10 boundary:2 Boundary { kind: Compacted, cause: "" }
     11 turn:4 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
-    12 boundary:3 Boundary { kind: Exited, cause: "exit code 1" }
+    12 boundary:3 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
     13 agent-message:6539 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
     14 boundary:4 Boundary { kind: Resumed, cause: "" }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

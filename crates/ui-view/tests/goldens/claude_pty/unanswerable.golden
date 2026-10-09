@@ -98,7 +98,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 40 provider_exit {"code":1}
   row   15 ask:ask:6 Ask(Unanswerable { reason: "Claude is showing a link from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Dismissed })
-  row   16 boundary:2 Boundary { kind: Exited, cause: "exit code 1" }
+  row   16 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
   ask none
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
@@ -116,7 +116,7 @@
     13 ask:ask:5 Ask(Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Dismissed })
     14 u3 Prompt { text: [Text("once more")], steered: false }
     15 ask:ask:6 Ask(Unanswerable { reason: "Claude is showing a link from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Dismissed })
-    16 boundary:2 Boundary { kind: Exited, cause: "exit code 1" }
+    16 boundary:2 Boundary { kind: Exited, cause: "the provider exited: exit code 1" }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

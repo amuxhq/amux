@@ -590,9 +590,18 @@ fn scripted<I: Interpreter>(value: &Value) -> Result<Scripted, String> {
                 .map(|code| code as i32),
         }),
         "daemon_lost" => Action::Event(Event::DaemonLost),
-        "exiting" => Action::Event(Event::Exiting {
-            cause: body.as_str().ok_or("exiting takes a cause")?.to_owned(),
-        }),
+        "exiting" => {
+            let word = body.as_str().ok_or("exiting takes a cause")?;
+            let cause = wire::ExitCause::from_str_name(&format!(
+                "EXIT_CAUSE_{}",
+                word.to_ascii_uppercase().replace(' ', "_")
+            ))
+            .ok_or_else(|| format!("no exit cause is named {word}"))?;
+            Action::Event(Event::Exiting(wire::Exiting {
+                cause: cause as i32,
+                detail: None,
+            }))
+        }
         "stop" => Action::Event(Event::StopRequested(
             match body.as_str().ok_or("stop takes a mode")? {
                 "graceful" => StopMode::Graceful,
@@ -1670,7 +1679,17 @@ fn event_label(event: &Event) -> String {
         Event::Tick { at_ms } => format!("tick {at_ms}"),
         Event::ProviderExit { code } => format!("provider_exit {code:?}"),
         Event::DaemonLost => "daemon_lost".into(),
-        Event::Exiting { cause } => format!("exiting {cause:?}"),
+        Event::Exiting(exiting) => format!(
+            "exiting {}{}",
+            wire::ExitCause::try_from(exiting.cause).map_or("?", |cause| cause
+                .as_str_name()
+                .trim_start_matches("EXIT_CAUSE_")),
+            exiting
+                .detail
+                .as_ref()
+                .map(|detail| format!(" {detail:?}"))
+                .unwrap_or_default()
+        ),
         Event::StopRequested(mode) => format!(
             "stop {}",
             mode.as_str_name().trim_start_matches("STOP_MODE_")

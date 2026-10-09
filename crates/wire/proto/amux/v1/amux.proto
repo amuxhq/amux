@@ -344,16 +344,18 @@ message Agent {
   optional AgentParent parent = 6;
   int64 created_at_ms = 7;
   Lifecycle lifecycle = 8;
-  optional string exit_cause = 9;
-  Phase phase = 10;
-  optional WorkingOn working_on = 11;
+  ExitCause exit_cause = 9;
+  // The cause's own words, when it has any.
+  optional string exit_detail = 10;
+  Phase phase = 11;
+  optional WorkingOn working_on = 12;
   // The snapshot's phase_since_ms: when the agent entered its phase, on the
   // clock of the host where it runs.
-  int64 phase_since_ms = 12;
-  string producer_version = 13;
-  uint32 incarnation = 14;
+  int64 phase_since_ms = 13;
+  string producer_version = 14;
+  uint32 incarnation = 15;
   // The snapshot's git facts; absent outside a repository.
-  optional Git git = 15;
+  optional Git git = 16;
 }
 
 enum Lifecycle {
@@ -367,10 +369,21 @@ message WorkingOn {
   int64 updated_at_ms = 2;
 }
 
+// Why the row left this daemon's view, which is not always deletion at
+// the origin: a host that stops listing an agent, or that this machine
+// stops trusting, takes its rows with it.
+enum RemovalReason {
+  REMOVAL_REASON_UNSPECIFIED = 0;
+  REMOVAL_REASON_DELETED = 1;
+  REMOVAL_REASON_RETENTION = 2;
+  REMOVAL_REASON_NO_LONGER_LISTED = 3;
+  REMOVAL_REASON_HOST_UNTRUSTED = 4;
+}
+
 message AgentRemoved {
   bytes host_id = 1;
   bytes agent_id = 2;
-  optional string reason = 3;
+  RemovalReason reason = 3;
 }
 
 // ---------------------------------------------------------------------------

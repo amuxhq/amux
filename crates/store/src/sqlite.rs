@@ -187,7 +187,7 @@ struct SqlTables<'a> {
 const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent, parent_host, \
     lifecycle, exit_cause, phase, working_on, last_activity, snapshot, snapshot_revision, \
     ingest_cursor, next_revision, source_cursor, complete_from_order, exhausted, created_at, \
-    producer_version, incarnation, turn_open, source_generation, phase_since, git";
+    producer_version, incarnation, turn_open, source_generation, phase_since, git, exit_detail";
 
 /// `crate::item_bytes`, in SQL: byte lengths, not character counts.
 const ITEM_BYTES: &str = "(length(CAST(key AS BLOB)) + length(CAST(text AS BLOB)) + length(body) \
@@ -230,6 +230,7 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             source_generation: row.get::<_, i64>(23)? as u64,
             phase_since: row.get(24)?,
             git: None,
+            exit_detail: row.get(26)?,
         },
         snapshot,
         row.get(25)?,
@@ -302,7 +303,7 @@ impl Tables for SqlTables<'_> {
     }
 
     fn put_agent(&mut self, row: &AgentRow) -> Result<(), StoreError> {
-        let placeholders = (1..=26)
+        let placeholders = (1..=27)
             .map(|n| format!("?{n}"))
             .collect::<Vec<_>>()
             .join(", ");
@@ -337,6 +338,7 @@ impl Tables for SqlTables<'_> {
                 row.source_generation as i64,
                 row.phase_since,
                 row.git.as_ref().map(|git| git.encode_to_vec()),
+                row.exit_detail,
             ],
         )?;
         Ok(())

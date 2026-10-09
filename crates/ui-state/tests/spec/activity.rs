@@ -182,7 +182,7 @@ fn nothing_shows_unless_the_agent_works() {
         let mut state = working(kind);
         apply_checked(
             &mut state,
-            ui_state::Msg::Entry(exited(agent(kind), "killed")),
+            ui_state::Msg::Entry(exited(agent(kind), wire::ExitCause::Killed)),
         );
         assert_eq!(state.activity(5_000), None);
     }

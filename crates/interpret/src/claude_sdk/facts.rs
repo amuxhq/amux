@@ -131,7 +131,7 @@ impl State {
             Message::ConversationReset(reset) => {
                 self.session = written(&reset.new_conversation_id);
                 self.context_tokens = None;
-                self.boundary(emit, BoundaryKind::Cleared, String::new());
+                self.boundary(emit, BoundaryKind::Cleared, wire::Exiting::default());
             }
             Message::Status(status) => {
                 if let Some(mode) = status
@@ -161,7 +161,7 @@ impl State {
                         ..Default::default()
                     },
                 );
-                self.boundary(emit, BoundaryKind::Compacted, String::new());
+                self.boundary(emit, BoundaryKind::Compacted, wire::Exiting::default());
             }
             Message::ApiRetry(retry) => {
                 let error = retry.error.as_str();
@@ -315,9 +315,9 @@ impl State {
         }
     }
 
-    pub(super) fn exited(&mut self, emit: &mut Emit, cause: String) {
+    pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::Exiting) {
         self.dismiss_asks(emit);
-        self.boundary(emit, BoundaryKind::Exited, cause);
+        self.boundary(emit, BoundaryKind::Exited, exit);
         self.shared.provider_exited();
         self.jobs.clear();
         self.exited = true;
@@ -385,10 +385,10 @@ impl State {
         // A prompt that went in first already drew this boundary above it.
         match self.early_boundary.take() {
             Some(key) if kind != BoundaryKind::Forked => {
-                self.boundary_at(emit, key, kind, String::new())
+                self.boundary_at(emit, key, kind, wire::Exiting::default())
             }
             _ => {
-                self.boundary(emit, kind, String::new());
+                self.boundary(emit, kind, wire::Exiting::default());
             }
         }
     }

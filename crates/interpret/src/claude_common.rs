@@ -294,6 +294,30 @@ pub(crate) struct Task {
     pub active_form: String,
 }
 
+/// A golden's words for an exit boundary's cause: its value's name and its
+/// own words, or nothing for a boundary that is not an exit.
+pub(crate) fn describe_cause(boundary: &wire::Boundary) -> String {
+    if boundary.cause == 0 && boundary.cause_detail.is_none() {
+        return String::new();
+    }
+    let name = wire::ExitCause::try_from(boundary.cause).map_or_else(
+        |_| boundary.cause.to_string(),
+        |cause| {
+            cause
+                .as_str_name()
+                .trim_start_matches("EXIT_CAUSE_")
+                .to_owned()
+        },
+    );
+    match &boundary.cause_detail {
+        Some(detail) => format!(
+            " cause={name} detail={}",
+            serde_json::Value::String(detail.clone())
+        ),
+        None => format!(" cause={name}"),
+    }
+}
+
 pub(crate) fn or_dash(text: &str) -> &str {
     if text.is_empty() { "-" } else { text }
 }

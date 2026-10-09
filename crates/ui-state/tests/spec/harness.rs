@@ -37,9 +37,9 @@ pub fn with_phase(mut agent: Agent, phase: Phase) -> Agent {
     agent
 }
 
-pub fn exited(mut agent: Agent, cause: &str) -> Agent {
+pub fn exited(mut agent: Agent, cause: wire::ExitCause) -> Agent {
     agent.lifecycle = Lifecycle::Exited as i32;
-    agent.exit_cause = Some(cause.into());
+    agent.exit_cause = cause as i32;
     agent
 }
 

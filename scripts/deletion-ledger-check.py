@@ -404,6 +404,18 @@ ROWS = [
         ],
     ),
     Row(
+        "the exit-cause words",
+        "exit causes and removal reasons carried as the daemon's sentences, which only the daemon could write and clients matched word for word",
+        [
+            r"([^_]|^)CAUSE_(STOPPED|ABORTED|KILLED|EXITED|FINISHED|UNSTARTED|NO_DIRECTORY)",
+            r"CAUSE_EXITED_AWAY",
+            r"REMOVED_BY_RETENTION",
+            r"([^_]|^)NO_LONGER_LISTED([^A-Za-z_]|$)",
+            r"([^_A-Z]|^)NOT_TRUSTED([^A-Za-z_]|$)",
+            r"optional string exit_cause",
+        ],
+    ),
+    Row(
         "docs",
         "the chapter on agent messaging and remote sessions",
         [

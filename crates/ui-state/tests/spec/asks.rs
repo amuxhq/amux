@@ -161,7 +161,10 @@ fn an_exited_agents_open_asks_are_drawn_dismissed() {
         );
         apply_checked(&mut state, caught_up(5));
         assert!(!state.asks_dismissed());
-        apply_checked(&mut state, Msg::Entry(exited(agent(kind), "killed")));
+        apply_checked(
+            &mut state,
+            Msg::Entry(exited(agent(kind), wire::ExitCause::Killed)),
+        );
         assert_eq!(state.open_asks().len(), 1);
         assert!(state.asks_dismissed());
         assert_eq!(

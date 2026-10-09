@@ -724,7 +724,7 @@ impl State {
             // or on its own; a thread started anywhere else is a child's.
             if response.is_some() && *known == id {
                 self.shared.provider_started();
-                self.boundary(emit, wire::BoundaryKind::Resumed, String::new());
+                self.boundary(emit, wire::BoundaryKind::Resumed, wire::Exiting::default());
                 self.release_held(emit);
             }
             return;
@@ -741,7 +741,7 @@ impl State {
         } else {
             wire::BoundaryKind::Started
         };
-        self.boundary(emit, kind, String::new());
+        self.boundary(emit, kind, wire::Exiting::default());
         self.release_held(emit);
     }
 
@@ -1540,7 +1540,11 @@ impl State {
             }
             ThreadItem::ContextCompaction(_) => {
                 if completed {
-                    self.boundary(emit, wire::BoundaryKind::Compacted, String::new());
+                    self.boundary(
+                        emit,
+                        wire::BoundaryKind::Compacted,
+                        wire::Exiting::default(),
+                    );
                 }
             }
             ThreadItem::CommandExecution(_)
@@ -2184,7 +2188,7 @@ impl State {
         }
     }
 
-    pub(super) fn exited(&mut self, emit: &mut Emit, cause: String) {
+    pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::Exiting) {
         self.offers_asked = false;
         // The next server is asked afresh; this one will answer nothing.
         self.skills_asked = 0;
@@ -2204,7 +2208,7 @@ impl State {
         self.shared.provider_exited();
         self.active_turn = None;
         self.interrupt_pending = false;
-        self.boundary(emit, wire::BoundaryKind::Exited, cause);
+        self.boundary(emit, wire::BoundaryKind::Exited, exit);
     }
 }
 

@@ -46,7 +46,8 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
     Agent, AgentRemoved, Detached, Empty, FetchRequest, FetchResponse, InventoryEvent, Item,
-    PeerSubscribeRequest, SessionEvent, inventory_event, peer_subscribe_request, session_event,
+    PeerSubscribeRequest, RemovalReason, SessionEvent, inventory_event, peer_subscribe_request,
+    session_event,
 };
 
 use crate::HostId;
@@ -60,10 +61,6 @@ use crate::serve::{event, inventory};
 const ROUTE_POLL: Duration = Duration::from_millis(25);
 /// How long a Fetch waits on the origin before it answers unreachable.
 const FETCH_PATIENCE: Duration = Duration::from_secs(10);
-/// What an agent removed because its host stopped listing it is told.
-pub const NO_LONGER_LISTED: &str = "its host no longer lists it";
-/// What an agent removed because its host is no longer trusted is told.
-pub const NOT_TRUSTED: &str = "its host is no longer trusted";
 
 /// Which replica agents the runtime keeps a source open for.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -349,7 +346,8 @@ impl ProfileRuntime {
         for key in rows.into_iter().map(|row| row.agent) {
             if key.host != own
                 && !trusted.contains(&key.host)
-                && let Err(error) = self.drop_replica(&mut store, &key, NOT_TRUSTED)
+                && let Err(error) =
+                    self.drop_replica(&mut store, &key, RemovalReason::HostUntrusted)
             {
                 tracing::warn!(%error, "dropping an untrusted host's replica failed");
             }
@@ -475,7 +473,7 @@ impl ProfileRuntime {
             self.host_generation_changed(&host_bytes, generation);
         }
         for key in &unlisted {
-            self.drop_replica(&mut store, key, NO_LONGER_LISTED)?;
+            self.drop_replica(&mut store, key, RemovalReason::NoLongerListed)?;
         }
         for agent in &listed {
             self.put_replica_row(&mut store, agent)?;
@@ -506,7 +504,7 @@ impl ProfileRuntime {
         &self,
         store: &mut store::Sqlite,
         key: &AgentKey,
-        reason: &str,
+        reason: RemovalReason,
     ) -> Result<(), StoreError> {
         let source = {
             let mut sources = self.sources.lock().unwrap();
@@ -540,7 +538,7 @@ impl ProfileRuntime {
             .publish_inventory(inventory(inventory_event::Of::AgentRemoved(AgentRemoved {
                 host_id: key.host.clone(),
                 agent_id: key.agent.clone(),
-                reason: Some(reason.to_owned()),
+                reason: reason as i32,
             })));
         Ok(())
     }
@@ -1042,7 +1040,7 @@ async fn follow_once(runtime: &Weak<ProfileRuntime>, host: HostId) -> bool {
                 let mut store = me.store.lock().await;
                 let key = AgentKey::new(removed.host_id, removed.agent_id);
                 match store.agent(&key) {
-                    Ok(Some(_)) => me.drop_replica(&mut store, &key, NO_LONGER_LISTED),
+                    Ok(Some(_)) => me.drop_replica(&mut store, &key, RemovalReason::NoLongerListed),
                     Ok(None) => Ok(()),
                     Err(error) => Err(error),
                 }
@@ -1306,7 +1304,8 @@ pub(crate) fn from_wire(agent: &Agent) -> AgentRow {
         .as_ref()
         .map(|parent| AgentKey::new(parent.host_id.clone(), parent.agent_id.clone()));
     row.lifecycle = agent.lifecycle;
-    row.exit_cause = agent.exit_cause.clone();
+    row.exit_cause = agent.exit_cause;
+    row.exit_detail = agent.exit_detail.clone();
     row.phase = agent.phase;
     row.working_on = agent.working_on.as_ref().map(|on| on.text.clone());
     row.phase_since = Some(agent.phase_since_ms);
@@ -1388,6 +1387,41 @@ mod tests {
             "listed with its kind, not unspecified"
         );
         assert_eq!(store.get(&key, "said").unwrap().unwrap().kind, UNKNOWN);
+    }
+
+    /// An exit cause this daemon has no name for is a number it carries,
+    /// with the origin's own words beside it: stored, read back after the
+    /// store is opened again, and listed with the value the origin gave.
+    #[test]
+    fn unknown_exit_cause_survives_replication() {
+        const UNKNOWN: i32 = 99;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("store.db");
+        let origin = Agent {
+            host_id: b"there".to_vec(),
+            agent_id: b"agent".to_vec(),
+            kind: wire::Kind::Codex as i32,
+            cwd: "/elsewhere".to_owned(),
+            lifecycle: wire::Lifecycle::Exited as i32,
+            exit_cause: UNKNOWN,
+            exit_detail: Some("a newer daemon's words".to_owned()),
+            ..Agent::default()
+        };
+        let row = from_wire(&origin);
+        let key = row.agent.clone();
+        {
+            let mut store = store::Sqlite::open(&path, b"here".to_vec()).unwrap();
+            store.put_agent(&row).unwrap();
+            // The origin lists it again: the held row takes the same values.
+            store.put_agent(&from_wire(&origin)).unwrap();
+        }
+        let store = store::Sqlite::open(&path, b"here".to_vec()).unwrap();
+        let listed = crate::runtime::to_wire(&store.agent(&key).unwrap().unwrap());
+        assert_eq!(
+            (listed.exit_cause, listed.exit_detail.as_deref()),
+            (UNKNOWN, Some("a newer daemon's words")),
+            "listed with its cause, not unspecified"
+        );
     }
 
     #[tokio::test]

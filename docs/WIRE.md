@@ -563,13 +563,29 @@ stream of it carries only the answering host's own entry and agents.
 
 `Agent` is the inventory row. It carries `kind`, `name` (always set),
 `cwd`, `parent` (a host and an id, since families cross hosts), `lifecycle`
-and `exit_cause`, `phase`, `working_on`, `phase_since_ms` (on the origin
-host's clock; the row's creation time until its first snapshot) and `git`
-copied from the agent's newest snapshot envelope, `producer_version` and
-`incarnation`. It never carries a snapshot: a client reads an agent's
-conversation from the agent's own session, which the client library keeps open
-for every live agent (see [the client library](CLIENT.md#the-fleet)), so the
-row stays small.
+with `exit_cause` and `exit_detail`, `phase`, `working_on`, `phase_since_ms`
+(on the origin host's clock; the row's creation time until its first
+snapshot) and `git` copied from the agent's newest snapshot envelope,
+`producer_version` and `incarnation`. It never carries a snapshot: a client
+reads an agent's conversation from the agent's own session, which the client
+library keeps open for every live agent (see [the client
+library](CLIENT.md#the-fleet)), so the row stays small.
+
+`exit_cause` is an `ExitCause`, and `exit_detail` the cause's own words when it
+has any (a provider's exit code, why a provider could not start). Most causes
+are the agent's own, sent in its last control frame (see [the agent
+process](AGENT_PROCESS.md#lifecycle)): `FINISHED` (a child's one-shot
+exit), `STOPPED`, `ABORTED`, `KILLED`, `PROVIDER_EXITED`, `DAEMON_LOST`,
+`ORPHANED`, `COULD_NOT_START` and `DIRECTORY_FAILED`. The daemon records its
+own only where no frame can arrive: `COULD_NOT_START` when the agent process
+cannot be spawned, `DIRECTORY_FAILED` when the agent's directory is gone,
+`ENDED_WHILE_AWAY` for a process found dead when a daemon starts, a stop it
+asked for when the process ended without a word, and `ENDED_UNEXPECTEDLY`
+otherwise. `UNSPECIFIED` is a live agent's, and a cause a client does not know
+reads as an ordinary end, not a failure: clients draw `FINISHED` as finished,
+the stops and unknown causes as ended, and every other cause as a failure in
+its words followed by its own. The `Boundary` that ends an incarnation in the
+journal carries the same cause and detail.
 
 `HostEntry` carries the host's name, version, platform and capabilities, its
 `trust` (`TRUST_TRUSTED` or `TRUST_CANDIDATE`), its `presence`
@@ -579,8 +595,12 @@ Its `providers` list, per provider the host has been asked about, the hash of
 what that provider offers there and whether it is signed in; a paired host's
 come from that host's own entry.
 
-`AgentRemoved` names a reason when there is one, such as retention or a host
-that stopped listing the agent. A client subscribed to that agent sees its
+`AgentRemoved` carries a `RemovalReason`: why the row left this daemon's
+view, which is not always deletion at the origin. `REMOVAL_REASON_DELETED`
+and `REMOVAL_REASON_RETENTION` are this host's own;
+`REMOVAL_REASON_NO_LONGER_LISTED` is a paired host that stopped listing the
+agent (whatever the reason there), and `REMOVAL_REASON_HOST_UNTRUSTED` is every
+row of a host this machine stopped trusting. A client subscribed to that agent sees its
 stream end.
 
 An inventory stream that falls behind simply ends; the client subscribes again

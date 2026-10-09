@@ -232,10 +232,10 @@ impl State {
         );
     }
 
-    pub(super) fn exited(&mut self, emit: &mut Emit, cause: String) {
+    pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::Exiting) {
         self.running.clear();
         self.close_all_unknown(emit);
-        self.boundary(emit, BoundaryKind::Exited, cause);
+        self.boundary(emit, BoundaryKind::Exited, exit);
         self.shared.provider_exited();
         self.jobs.clear();
         self.local_turn = false;
@@ -345,7 +345,7 @@ impl State {
                 self.tasks = Some(Vec::new());
             }
         }
-        self.boundary(emit, kind, String::new());
+        self.boundary(emit, kind, wire::Exiting::default());
     }
 
     /// A call inside a subagent: a step on its Agent row, and an ask it

@@ -268,7 +268,10 @@ fn a_prompt_withdrawn_before_a_reset_is_never_shown_as_queued() {
 fn an_exited_chat_offers_resume_for_the_draft() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
-        apply_checked(&mut state, Msg::Entry(exited(agent(kind), "finished")));
+        apply_checked(
+            &mut state,
+            Msg::Entry(exited(agent(kind), wire::ExitCause::Finished)),
+        );
         assert_eq!(state.composer(), Composer::Resume);
         assert!(!state.can_send());
         // Resume starts a new incarnation; the entry flips live.

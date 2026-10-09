@@ -221,9 +221,19 @@ mod tests {
             Event::ProviderExit { code: Some(3) },
             Event::DaemonLost,
             Event::StopRequested(StopMode::Abort),
-            Event::Exiting {
-                cause: "stopped".into(),
-            },
+            Event::Exiting(wire::Exiting {
+                cause: wire::ExitCause::Stopped as i32,
+                detail: None,
+            }),
+            Event::Exiting(wire::Exiting {
+                cause: wire::ExitCause::ProviderExited as i32,
+                detail: Some("exit code 3".into()),
+            }),
+            // A cause a newer build wrote is kept as its value.
+            Event::Exiting(wire::Exiting {
+                cause: 99,
+                detail: None,
+            }),
         ];
         for event in events {
             let line = serde_json::to_vec(&Entry::of(&event)).unwrap();

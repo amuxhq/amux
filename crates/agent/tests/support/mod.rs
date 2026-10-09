@@ -948,9 +948,10 @@ pub fn boundary(item: &wire::Item) -> Option<String> {
         .as_str_name()
         .trim_start_matches("BOUNDARY_KIND_")
         .to_owned();
-    Some(if boundary.cause.is_empty() {
+    let cause = wire::exit_words(boundary.cause, boundary.cause_detail.as_deref());
+    Some(if cause.is_empty() {
         kind
     } else {
-        format!("{kind} {}", boundary.cause)
+        format!("{kind} {cause}")
     })
 }

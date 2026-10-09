@@ -1,3 +1,27 @@
+2026-10-09 — **An agent tells its daemon why it ended, and the row says so; exit causes and removal reasons are enums.**
+The inventory row's exit cause was a sentence only the daemon wrote, from
+what it had asked for and what it saw, so a provider crash and a drain after
+the daemon was lost both read "exited", and the fleet never showed "while the
+daemon was away" for an agent that drained or "orphaned while waiting for
+you" though the docs promised both: the agent's own cause reached only its
+final boundary in the journal, whose body the daemon does not read. The agent
+now sends one last control frame, `Exiting { cause, detail }`, before it
+closes its socket, and the daemon records it on the row. A short-lived
+incarnation that ends before its loop took the daemon's connection takes it
+first, so a child whose one turn was quick still says it finished. The daemon
+records its own cause only where no frame can arrive: the process could not
+be spawned, its directory is gone, it was found dead when a daemon started,
+a stop it asked for when the process ended without a word, and "ended
+unexpectedly" otherwise; it no longer infers that a child finished. The cause
+is an `ExitCause` enum with the cause's own words beside it (`exit_detail` on
+the row, `cause_detail` on the boundary), and the store keeps it as its wire
+integer, so a cause from a newer host is kept and listed as it came. Clients
+draw finished, ended (a stop, or a cause they do not know) and failed in the
+cause's words followed by its own ("the provider exited: exit code 1"), and a
+parent hears a failed child in the same words. `AgentRemoved.reason` is a
+`RemovalReason` enum: deleted, retention, no longer listed by its host, or a
+host no longer trusted.
+
 2026-10-09 — **Kinds, providers, refusals, scope destinations and reviewer verdicts are enums; a host's capabilities say what it can do.**
 A kind travelled as a string (`"claude_sdk"`) on items, snapshots, specs and
 agent senders, and a replica of an agent of a kind this daemon had no name

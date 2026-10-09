@@ -849,11 +849,13 @@ pub struct Boundary {
     pub provider_session: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub provider_version: ::prost::alloc::string::String,
-    /// For EXITED: why.
-    #[prost(string, tag = "4")]
-    pub cause: ::prost::alloc::string::String,
+    /// For EXITED: why, and the cause's own words.
+    #[prost(enumeration = "ExitCause", tag = "4")]
+    pub cause: i32,
+    #[prost(string, optional, tag = "5")]
+    pub cause_detail: ::core::option::Option<::prost::alloc::string::String>,
     /// The keymap the agent process resolved for the observed provider version.
-    #[prost(string, tag = "5")]
+    #[prost(string, tag = "6")]
     pub keymap: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Boundary {
@@ -2420,6 +2422,75 @@ impl DecisionOutcome {
             "DECISION_OUTCOME_DENIED" => Some(Self::Denied),
             "DECISION_OUTCOME_AUTO_APPROVED" => Some(Self::AutoApproved),
             "DECISION_OUTCOME_UNKNOWN" => Some(Self::Unknown),
+            _ => None,
+        }
+    }
+}
+/// Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a
+/// cause this build does not know: unknown is not failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ExitCause {
+    Unspecified = 0,
+    /// A child's turn ended with nothing queued: the one-shot rule.
+    Finished = 1,
+    Stopped = 2,
+    Aborted = 3,
+    Killed = 4,
+    /// The provider process ended on its own; the detail is its exit code
+    /// or signal.
+    ProviderExited = 5,
+    /// The agent drained after its daemon was gone past the grace period.
+    DaemonLost = 6,
+    /// An ask was open with nobody to answer it when the daemon was lost.
+    Orphaned = 7,
+    /// The agent process or its provider could not start; the detail says
+    /// which and why.
+    CouldNotStart = 8,
+    /// Its directory is gone, or a write to it failed; the detail says which.
+    DirectoryFailed = 9,
+    /// The process was found dead when a daemon returned, with no record of
+    /// why.
+    EndedWhileAway = 10,
+    /// The provider loop ended without any of the above.
+    EndedUnexpectedly = 11,
+}
+impl ExitCause {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "EXIT_CAUSE_UNSPECIFIED",
+            Self::Finished => "EXIT_CAUSE_FINISHED",
+            Self::Stopped => "EXIT_CAUSE_STOPPED",
+            Self::Aborted => "EXIT_CAUSE_ABORTED",
+            Self::Killed => "EXIT_CAUSE_KILLED",
+            Self::ProviderExited => "EXIT_CAUSE_PROVIDER_EXITED",
+            Self::DaemonLost => "EXIT_CAUSE_DAEMON_LOST",
+            Self::Orphaned => "EXIT_CAUSE_ORPHANED",
+            Self::CouldNotStart => "EXIT_CAUSE_COULD_NOT_START",
+            Self::DirectoryFailed => "EXIT_CAUSE_DIRECTORY_FAILED",
+            Self::EndedWhileAway => "EXIT_CAUSE_ENDED_WHILE_AWAY",
+            Self::EndedUnexpectedly => "EXIT_CAUSE_ENDED_UNEXPECTEDLY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "EXIT_CAUSE_UNSPECIFIED" => Some(Self::Unspecified),
+            "EXIT_CAUSE_FINISHED" => Some(Self::Finished),
+            "EXIT_CAUSE_STOPPED" => Some(Self::Stopped),
+            "EXIT_CAUSE_ABORTED" => Some(Self::Aborted),
+            "EXIT_CAUSE_KILLED" => Some(Self::Killed),
+            "EXIT_CAUSE_PROVIDER_EXITED" => Some(Self::ProviderExited),
+            "EXIT_CAUSE_DAEMON_LOST" => Some(Self::DaemonLost),
+            "EXIT_CAUSE_ORPHANED" => Some(Self::Orphaned),
+            "EXIT_CAUSE_COULD_NOT_START" => Some(Self::CouldNotStart),
+            "EXIT_CAUSE_DIRECTORY_FAILED" => Some(Self::DirectoryFailed),
+            "EXIT_CAUSE_ENDED_WHILE_AWAY" => Some(Self::EndedWhileAway),
+            "EXIT_CAUSE_ENDED_UNEXPECTEDLY" => Some(Self::EndedUnexpectedly),
             _ => None,
         }
     }
@@ -4459,7 +4530,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -4500,6 +4571,11 @@ pub mod ctl_frame {
         /// to settle its delivery.
         #[prost(message, tag = "9")]
         Reply(super::Verdict),
+        /// Agent to daemon, last frame: why this incarnation is ending. The
+        /// daemon records it on the row; when the socket closes without one,
+        /// the daemon records its own cause.
+        #[prost(message, tag = "10")]
+        Exiting(super::Exiting),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -4540,6 +4616,23 @@ impl ::prost::Name for Rename {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.Rename".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Exiting {
+    #[prost(enumeration = "ExitCause", tag = "1")]
+    pub cause: i32,
+    #[prost(string, optional, tag = "2")]
+    pub detail: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for Exiting {
+    const NAME: &'static str = "Exiting";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Exiting".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Exiting".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5430,22 +5523,25 @@ pub struct Agent {
     pub created_at_ms: i64,
     #[prost(enumeration = "Lifecycle", tag = "8")]
     pub lifecycle: i32,
-    #[prost(string, optional, tag = "9")]
-    pub exit_cause: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(enumeration = "Phase", tag = "10")]
+    #[prost(enumeration = "ExitCause", tag = "9")]
+    pub exit_cause: i32,
+    /// The cause's own words, when it has any.
+    #[prost(string, optional, tag = "10")]
+    pub exit_detail: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(enumeration = "Phase", tag = "11")]
     pub phase: i32,
-    #[prost(message, optional, tag = "11")]
+    #[prost(message, optional, tag = "12")]
     pub working_on: ::core::option::Option<WorkingOn>,
     /// The snapshot's phase_since_ms: when the agent entered its phase, on the
     /// clock of the host where it runs.
-    #[prost(int64, tag = "12")]
+    #[prost(int64, tag = "13")]
     pub phase_since_ms: i64,
-    #[prost(string, tag = "13")]
+    #[prost(string, tag = "14")]
     pub producer_version: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "14")]
+    #[prost(uint32, tag = "15")]
     pub incarnation: u32,
     /// The snapshot's git facts; absent outside a repository.
-    #[prost(message, optional, tag = "15")]
+    #[prost(message, optional, tag = "16")]
     pub git: ::core::option::Option<Git>,
 }
 impl ::prost::Name for Agent {
@@ -5481,8 +5577,8 @@ pub struct AgentRemoved {
     pub host_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, optional, tag = "3")]
-    pub reason: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(enumeration = "RemovalReason", tag = "3")]
+    pub reason: i32,
 }
 impl ::prost::Name for AgentRemoved {
     const NAME: &'static str = "AgentRemoved";
@@ -7253,6 +7349,44 @@ impl Lifecycle {
             "LIFECYCLE_UNSPECIFIED" => Some(Self::Unspecified),
             "LIFECYCLE_LIVE" => Some(Self::Live),
             "LIFECYCLE_EXITED" => Some(Self::Exited),
+            _ => None,
+        }
+    }
+}
+/// Why the row left this daemon's view, which is not always deletion at
+/// the origin: a host that stops listing an agent, or that this machine
+/// stops trusting, takes its rows with it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RemovalReason {
+    Unspecified = 0,
+    Deleted = 1,
+    Retention = 2,
+    NoLongerListed = 3,
+    HostUntrusted = 4,
+}
+impl RemovalReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "REMOVAL_REASON_UNSPECIFIED",
+            Self::Deleted => "REMOVAL_REASON_DELETED",
+            Self::Retention => "REMOVAL_REASON_RETENTION",
+            Self::NoLongerListed => "REMOVAL_REASON_NO_LONGER_LISTED",
+            Self::HostUntrusted => "REMOVAL_REASON_HOST_UNTRUSTED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "REMOVAL_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "REMOVAL_REASON_DELETED" => Some(Self::Deleted),
+            "REMOVAL_REASON_RETENTION" => Some(Self::Retention),
+            "REMOVAL_REASON_NO_LONGER_LISTED" => Some(Self::NoLongerListed),
+            "REMOVAL_REASON_HOST_UNTRUSTED" => Some(Self::HostUntrusted),
             _ => None,
         }
     }

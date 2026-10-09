@@ -442,10 +442,39 @@ message Boundary {
   BoundaryKind kind = 1;
   string provider_session = 2;
   string provider_version = 3;
-  // For EXITED: why.
-  string cause = 4;
+  // For EXITED: why, and the cause's own words.
+  ExitCause cause = 4;
+  optional string cause_detail = 5;
   // The keymap the agent process resolved for the observed provider version.
-  string keymap = 5;
+  string keymap = 6;
+}
+
+// Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a
+// cause this build does not know: unknown is not failure.
+enum ExitCause {
+  EXIT_CAUSE_UNSPECIFIED = 0;
+  // A child's turn ended with nothing queued: the one-shot rule.
+  EXIT_CAUSE_FINISHED = 1;
+  EXIT_CAUSE_STOPPED = 2;
+  EXIT_CAUSE_ABORTED = 3;
+  EXIT_CAUSE_KILLED = 4;
+  // The provider process ended on its own; the detail is its exit code
+  // or signal.
+  EXIT_CAUSE_PROVIDER_EXITED = 5;
+  // The agent drained after its daemon was gone past the grace period.
+  EXIT_CAUSE_DAEMON_LOST = 6;
+  // An ask was open with nobody to answer it when the daemon was lost.
+  EXIT_CAUSE_ORPHANED = 7;
+  // The agent process or its provider could not start; the detail says
+  // which and why.
+  EXIT_CAUSE_COULD_NOT_START = 8;
+  // Its directory is gone, or a write to it failed; the detail says which.
+  EXIT_CAUSE_DIRECTORY_FAILED = 9;
+  // The process was found dead when a daemon returned, with no record of
+  // why.
+  EXIT_CAUSE_ENDED_WHILE_AWAY = 10;
+  // The provider loop ended without any of the above.
+  EXIT_CAUSE_ENDED_UNEXPECTEDLY = 11;
 }
 
 enum BoundaryKind {

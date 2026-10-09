@@ -203,7 +203,7 @@ impl ProfileRuntime {
         };
         {
             let store = self.store().await;
-            let rows = store::Store::agents(&*store).unwrap_or_default();
+            let rows = store.agents().unwrap_or_default();
             let own = self.host().as_bytes().to_vec();
             for row in rows.iter().filter(|row| row.agent.host == own) {
                 let Some(kind) = kind_coded(row.kind) else {
@@ -214,7 +214,7 @@ impl ProfileRuntime {
                 if running {
                     check_in.agents_running.add(kind, 1);
                 }
-                if row.created_at >= now - CHECK_IN_EVERY_MS {
+                if row.created_at_ms >= now - CHECK_IN_EVERY_MS {
                     check_in.agents_created_24h.add(kind, 1);
                 }
             }

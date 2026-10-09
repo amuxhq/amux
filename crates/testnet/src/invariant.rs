@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use store::{AgentKey, PageEnd, Store as _};
+use store::{AgentKey, PageEnd};
 use wire::Item;
 
 /// How a replica's rows broke the invariant, with both sides for the

@@ -69,6 +69,17 @@ class DeletionLedgerCheckTest(unittest.TestCase):
             f'const CACHE: &str = "{RETIRED_KEY}";\n')
         self.assertEqual(self.check(), 1)
 
+    def test_a_directory_exemption_covers_only_what_is_under_it(self):
+        column = "last_activity" "_ms"
+        (self.root / "crates" / "store" / "src").mkdir(parents=True)
+        (self.root / "crates" / "store" / "src" / "rows.rs").write_text(
+            f'const COLUMN: &str = "{column}";\n')
+        self.assertEqual(self.check(), 0)
+        (self.root / "crates" / "storefront").mkdir(parents=True)
+        (self.root / "crates" / "storefront" / "lib.rs").write_text(
+            f'const FIELD: &str = "{column}";\n')
+        self.assertEqual(self.check(), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

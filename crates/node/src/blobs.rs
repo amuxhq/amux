@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use git_facts::{Change, Comparison};
 use sha2::{Digest as _, Sha256};
-use store::{AgentRow, Store as _, StoreError};
+use store::{AgentRow, StoreError};
 use uuid::Uuid;
 use wire::{
     BlobRef, DiffBase, DiffFile, DiffFileChange, DiffRequest, ErrorCode, GetBlobRequest,
@@ -211,16 +211,10 @@ impl ProfileRuntime {
 
     /// The row of the agent a blob call names, own or replica.
     pub(crate) async fn blob_owner(&self, agent_id: &[u8]) -> Result<AgentRow, BlobError> {
-        let store = self.store.lock().await;
-        if let Ok(id) = Uuid::from_slice(agent_id)
-            && let Some(row) = store.agent(&self.key(id))?
-        {
-            return Ok(row);
-        }
-        store
-            .agents()?
-            .into_iter()
-            .find(|row| row.agent.agent == agent_id)
+        self.store
+            .lock()
+            .await
+            .agent_by_id(agent_id)?
             .ok_or(BlobError::NoAgent)
     }
 

@@ -28,7 +28,7 @@ section = "Replication and the client model"
 claim = "Opening a chat against a replica an hour stale: the source asks after its cursor with a cap, a gap beyond the cap answers Reset with a fresh tail and CaughtUp, a gap within it answers the delta; a chat opened before the source answers paints the stale rows unmarked and swaps the new block in at CaughtUp; with the origin asleep it paints the held rows and Detached, send disabled and the draft kept."
 tests = [
   "testnet/spec_replication::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
-  "store/conformance::sqlite::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+  "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
   "ui-state/spec::open::reset_swaps_at_caught_up",
   "ui-state/spec::open::a_retail_past_a_gap_builds_apart_and_swaps_at_caught_up",
   "ui-state/spec::open::a_subscribe_to_an_away_host_paints_held_rows_then_detached",
@@ -73,7 +73,7 @@ section = "Replication"
 claim = "A link dies halfway through a catch-up delta or right after the Snapshot: the cursor has not moved, the source replays after the old cursor, absorbs what it already holds by key and stores the cursor only at CaughtUp, while a page landing a newer revision of an old row moves no cursor; a client whose own stream lags re-tails and dedupes the overlap by key."
 tests = [
   "testnet/spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
-  "store/conformance::sqlite::a_delta_joins_above_and_only_live_records_move_the_cursor",
+  "store/conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
   "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
   "ui-state/spec::properties::catch_up_plus_live_equals_uninterrupted_delivery_at_every_cut",
 ]
@@ -242,8 +242,8 @@ section = "Daemon"
 claim = "Order is assigned once per key at first commit and never moves; one key per order."
 tests = [
   "node/single_daemon::order_is_assigned_once_per_key_and_kept_across_a_re_derivation",
-  "store/conformance::sqlite::commit_assigns_revisions_per_record_and_orders_once_per_key",
-  "store/sqlite::the_unique_order_index_trips_on_a_second_key_at_one_order",
+  "store/conformance::commit_assigns_revisions_per_record_and_orders_once_per_key",
+  "store/sqlite::the_unique_position_index_trips_on_a_second_key_at_one_position",
 ]
 
 [[contract]]
@@ -252,9 +252,19 @@ source = "invariant"
 section = "Daemon"
 claim = "Revisions rise in commit order; an older revision never overwrites a newer one."
 tests = [
-  "store/conformance::sqlite::commit_assigns_revisions_per_record_and_orders_once_per_key",
-  "store/conformance::sqlite::older_revisions_never_overwrite_newer",
-  "store/conformance::both_implementations_answer_a_mixed_history_identically",
+  "store/conformance::commit_assigns_revisions_per_record_and_orders_once_per_key",
+  "store/conformance::older_revisions_never_overwrite_newer",
+]
+
+[[contract]]
+id = "a-store-with-another-history-is-refused"
+source = "invariant"
+section = "Daemon"
+claim = "A profile store whose recorded migrations are not this build's, as every store written before the release schema is, is refused at open with a message that names the file and says it predates the schema; the daemon does not start on it and the file is left exactly as it was."
+tests = [
+  "store/sqlite::a_store_with_another_history_is_refused_and_named",
+  "store/sqlite::a_store_migrated_by_different_text_is_refused",
+  "node/registry::a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept",
 ]
 
 [[contract]]
@@ -275,7 +285,7 @@ source = "invariant"
 section = "Daemon"
 claim = "What a subscriber receives at open, Snapshot, held rows and marker, is one commit-lock cut."
 tests = [
-  "store/conformance::sqlite::cut_reads_snapshot_rows_and_marker_together",
+  "store/conformance::cut_reads_snapshot_rows_and_marker_together",
   "node/single_daemon::a_snapshot_committed_between_join_and_cut_arrives_once",
 ]
 
@@ -332,7 +342,7 @@ tests = [
   "node/messaging::a_crash_between_hand_off_and_delete_yields_one_item",
   "node/messaging::a_resumed_parent_receives_nothing",
   "node/messaging::a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_known",
-  "store/conformance::sqlite::delete_removes_an_agent_whole",
+  "store/conformance::delete_removes_an_agent_whole",
 ]
 
 [[contract]]
@@ -342,7 +352,7 @@ section = "Daemon"
 claim = "A notifications row never outlives its agent."
 tests = [
   "node/push::a_needs_you_push_is_sent_once_due_and_cancelled_by_an_answer_exit_or_delete",
-  "store/conformance::sqlite::turning_to_needs_you_inserts_one_notification_and_leaving_removes_it",
+  "store/conformance::turning_to_needs_you_inserts_one_notification_and_leaving_removes_it",
 ]
 
 # --- Invariants: runtime ----------------------------------------------------
@@ -365,9 +375,9 @@ source = "invariant"
 section = "Runtime"
 claim = "Only a replica's source writes the top of its block and only a Reset replaces it; pages extend it downward only."
 tests = [
-  "store/conformance::sqlite::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
-  "store/conformance::sqlite::pages_extend_the_block_downwards_only_when_they_join",
-  "store/conformance::sqlite::absorb_refuses_own_rows",
+  "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+  "store/conformance::pages_extend_the_block_downwards_only_when_they_join",
+  "store/conformance::absorb_refuses_own_rows",
   "testnet/spec_replication::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
 ]
 
@@ -377,8 +387,8 @@ source = "invariant"
 section = "Runtime"
 claim = "A replica's cursor advances by the stream alone."
 tests = [
-  "store/conformance::sqlite::a_delta_joins_above_and_only_live_records_move_the_cursor",
-  "store/conformance::sqlite::rewind_cursor_moves_only_the_cursor_and_only_back",
+  "store/conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
+  "store/conformance::rewind_cursor_moves_only_the_cursor_and_only_back",
   "testnet/spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
 ]
 
@@ -412,7 +422,7 @@ tests = [
   "testnet/spec_inventory::a_generation_change_resets_one_hosts_replicas_and_nothing_else",
   "testnet/spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
   "testnet/spec_replication::a_rewound_origin_resets_a_settled_replica_too",
-  "store/conformance::sqlite::a_reset_under_another_generation_forgets_every_held_row",
+  "store/conformance::a_reset_under_another_generation_forgets_every_held_row",
 ]
 
 [[contract]]
@@ -618,9 +628,9 @@ claim = "Single daemon: ingest opaque framed steps; commit a step's items, snaps
 tests = [
   "node/single_daemon::torn_tails_are_never_read_whether_the_writer_lives_or_dies",
   "node/single_daemon::a_failure_before_or_after_each_write_commit_and_cursor_step_changes_nothing",
-  "store/conformance::sqlite::snapshots_copy_their_envelope_onto_the_row",
+  "store/conformance::snapshots_copy_their_envelope_onto_the_row",
   "node/single_daemon::retention_sweep",
-  "store/retention::sqlite::retention_never_trims_below_the_protected_rows",
+  "store/retention::retention_never_trims_below_the_protected_rows",
 ]
 
 [[contract]]
@@ -686,7 +696,7 @@ source = "testing page"
 section = "Boundaries"
 claim = "Store, effects, bridge: effects reach the intended service; identity and cancellation reach the right client; Swift decodes and applies the Rust view and command contract; the phone's embedded runtime is the daemon's runtime in process and no client opens a store."
 tests = [
-  "store/conformance::both_implementations_answer_a_mixed_history_identically",
+  "store/sqlite::rows_survive_a_reopen",
   "client/seam::the_in_process_and_socket_clients_answer_alike",
   "app-runtime/runtime::changes_wait_for_the_hosts_turn_and_rows_are_read_by_key",
   "app-ffi/lib::tests::the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi",

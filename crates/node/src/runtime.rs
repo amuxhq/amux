@@ -24,8 +24,7 @@ use std::time::Duration;
 use agent_dir::Clock;
 use agent_dir::local_socket::{self, LocalListener, LocalStream};
 use store::{
-    AgentKey, AgentRow, Backend as _, CommitClock, Committed, Delivery, Marker, Record, Sqlite,
-    Store as _, StoreError,
+    AgentKey, AgentRow, CommitClock, Committed, Delivery, Marker, Record, Sqlite, StoreError,
 };
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::{Notify, oneshot, watch};
@@ -825,11 +824,11 @@ impl ProfileRuntime {
         let now = self.clock.now_ms();
         let row_for = |name: &str, cwd: &str| {
             let mut row = AgentRow::new(key.clone(), kind, cwd);
-            row.name = Some(name.to_owned());
+            row.name = name.to_owned();
             row.parent = parent
                 .as_ref()
                 .map(|parent| AgentKey::new(parent.host_id.clone(), parent.agent_id.clone()));
-            row.created_at = now;
+            row.created_at_ms = now;
             row.incarnation = 1;
             row
         };
@@ -847,7 +846,7 @@ impl ProfileRuntime {
                         .agents()?
                         .into_iter()
                         .filter(|row| row.agent.host == key.host)
-                        .filter_map(|row| row.name.map(|name| name.to_lowercase()))
+                        .map(|row| row.name.to_lowercase())
                         .collect();
                     crate::names::assign_name(&|candidate| {
                         names.contains(candidate) || branches.contains(candidate)
@@ -1012,7 +1011,7 @@ impl ProfileRuntime {
                 cwd: &previous.cwd,
                 // The name it has now: a rename while it was not running
                 // reaches its Codex thread this way.
-                name: row.name.as_deref().unwrap_or(&previous.name),
+                name: &row.name,
                 parent: previous.parent.clone(),
                 resolved: &resolved,
                 created_at_ms: self.clock.now_ms(),
@@ -1169,14 +1168,7 @@ impl ProfileRuntime {
         // wait on an ask nobody will answer.
         self.stop_locked(id, StopMode::Abort).await?;
 
-        let children: Vec<AgentRow> = self
-            .store
-            .lock()
-            .await
-            .agents()?
-            .into_iter()
-            .filter(|row| row.parent.as_ref() == Some(&key))
-            .collect();
+        let children: Vec<AgentRow> = self.store.lock().await.agents_of_parent(&key)?;
         for child in children {
             let wire = to_wire(&child);
             if child.agent.host != self.host.as_bytes() {
@@ -1232,7 +1224,7 @@ impl ProfileRuntime {
         let row = {
             let mut store = self.store.lock().await;
             let mut row = store.agent(&key)?.ok_or(RegistryError::NotFound(id))?;
-            row.name = Some(name.to_owned());
+            row.name = name.to_owned();
             self.put_row(&mut store, &row)?;
             row
         };
@@ -1242,7 +1234,7 @@ impl ProfileRuntime {
         {
             let frame = CtlFrame {
                 of: Some(ctl_frame::Of::Rename(Rename {
-                    name: row.name.clone().unwrap_or_default(),
+                    name: row.name.clone(),
                 })),
             };
             let _ = handle
@@ -2057,13 +2049,13 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         agent_id: row.agent.agent.clone(),
         host_id: row.agent.host.clone(),
         kind: row.kind,
-        name: row.name.clone().unwrap_or_default(),
+        name: row.name.clone(),
         cwd: row.cwd.clone(),
         parent: row.parent.as_ref().map(|parent| AgentRef {
             host_id: parent.host.clone(),
             agent_id: parent.agent.clone(),
         }),
-        created_at_ms: row.created_at,
+        created_at_ms: row.created_at_ms,
         lifecycle: row.lifecycle,
         exit_cause: row.exit_cause,
         exit_detail: row.exit_detail.clone(),
@@ -2071,7 +2063,7 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         working_on: row.working_on.clone(),
         // Before its first snapshot an agent has been starting since it
         // was created.
-        phase_since_ms: row.phase_since.unwrap_or(row.created_at),
+        phase_since_ms: row.phase_since_ms.unwrap_or(row.created_at_ms),
         incarnation: row.incarnation,
         git: row.git.clone(),
     }

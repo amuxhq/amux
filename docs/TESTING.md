@@ -93,7 +93,7 @@ Renaming a test means updating its contract entry; CI runs both checks.
 just test                                  # every ordinary workspace target
 just test -- --test spec_replication       # one Cargo target across the workspace
 just test-crate interpret -- --test codex  # one crate, then Cargo arguments
-just test-store                            # one reader and writer suite against both store implementations
+just test-store                            # the store's reader and writer suite, retention and SQLite file
 just test-ui                               # the client model spec
 just test-tui                              # terminal presentation and goldens
 just offline-test                          # workspace tests with isolated config and no network

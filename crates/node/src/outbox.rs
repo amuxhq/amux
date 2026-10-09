@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 
-use store::{Delivery, Notification, Store as _};
+use store::{Delivery, Notification};
 use uuid::Uuid;
 use wire::{AgentRef, Envelope, ErrorCode, Lifecycle};
 
@@ -297,8 +297,8 @@ impl ProfileRuntime {
         };
         let mut next: Option<i64> = None;
         for row in rows {
-            if row.due_at > now {
-                next = Some(next.map_or(row.due_at, |next| next.min(row.due_at)));
+            if row.due_at_ms > now {
+                next = Some(next.map_or(row.due_at_ms, |next| next.min(row.due_at_ms)));
                 continue;
             }
             let push = self.push_for(&row);
@@ -323,9 +323,9 @@ impl ProfileRuntime {
             host_id: self.host().as_bytes().to_vec(),
             agent_id: row.agent_id.clone(),
             revision: row.revision,
-            name: row.body.name.clone(),
-            working_on: row.body.working_on.clone(),
-            text: row.body.text.clone(),
+            name: row.name.clone(),
+            working_on: row.working_on.clone(),
+            text: row.text.clone(),
         }
     }
 }

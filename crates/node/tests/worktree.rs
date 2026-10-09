@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use prost::Message as _;
-use store::Store as _;
 use support::synthetic::{quiet_launch, read_until};
 use support::*;
 use wire::client_service_server::ClientService as _;

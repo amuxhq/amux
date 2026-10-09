@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 
 use agent_dir::{Clock as _, ManualClock};
 use node::{Daemon, NoopSender, ProfileRuntime, Push, PushFuture, PushSender, StartOptions};
-use store::Store as _;
 use support::synthetic::*;
 use support::*;
 use wire::Phase;
@@ -86,7 +85,7 @@ impl Rig {
             .notifications()
             .unwrap()
             .into_iter()
-            .map(|row| (row.revision, row.due_at - T0))
+            .map(|row| (row.revision, row.due_at_ms - T0))
             .collect()
     }
 

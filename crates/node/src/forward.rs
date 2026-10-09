@@ -8,7 +8,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use store::{AgentKey, AgentRow, Store as _, StoreError};
+use store::{AgentRow, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
 use wire::{
@@ -173,15 +173,7 @@ impl ProfileRuntime {
 
     /// The row an agent id names, own or replica.
     pub(crate) async fn row_by_id(&self, agent_id: &[u8]) -> Result<Option<AgentRow>, StoreError> {
-        let store = self.store.lock().await;
-        let own = AgentKey::new(self.host().as_bytes().to_vec(), agent_id.to_vec());
-        if let Some(row) = store.agent(&own)? {
-            return Ok(Some(row));
-        }
-        Ok(store
-            .agents()?
-            .into_iter()
-            .find(|row| row.agent.agent == agent_id))
+        self.store.lock().await.agent_by_id(agent_id)
     }
 
     /// Makes one call on `host`'s daemon. Reaching the host and waiting for

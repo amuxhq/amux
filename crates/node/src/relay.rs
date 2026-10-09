@@ -13,7 +13,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use store::{AgentKey, Store as _, StoreError};
+use store::{AgentKey, StoreError};
 use tokio::sync::oneshot;
 use uuid::Uuid;
 use wire::{
@@ -141,18 +141,11 @@ impl ProfileRuntime {
     /// An own agent's id from request bytes: not found, or on another host.
     async fn own_agent(&self, agent_id: &[u8]) -> Result<AgentId, RelayError> {
         let id = Uuid::from_slice(agent_id).map_err(|_| RelayError::NoAgent)?;
-        let store = self.store.lock().await;
-        if store.agent(&self.key(id))?.is_some() {
-            return Ok(id);
+        match self.store.lock().await.agent_by_id(agent_id)? {
+            Some(row) if row.agent.host == self.host().as_bytes() => Ok(id),
+            Some(_) => Err(RelayError::OtherHost),
+            None => Err(RelayError::NoAgent),
         }
-        if store
-            .agents()?
-            .iter()
-            .any(|row| row.agent.agent == agent_id)
-        {
-            return Err(RelayError::OtherHost);
-        }
-        Err(RelayError::NoAgent)
     }
 
     /// Relays a person's input and returns the interpreter's verdict. An
@@ -356,7 +349,7 @@ impl ProfileRuntime {
             value: Some(sender::Value::Agent(AgentSender {
                 agent_id: id.as_bytes().to_vec(),
                 host_id: self.host().as_bytes().to_vec(),
-                name: row.and_then(|row| row.name.clone()).unwrap_or_default(),
+                name: row.map(|row| row.name.clone()).unwrap_or_default(),
             })),
         }
     }

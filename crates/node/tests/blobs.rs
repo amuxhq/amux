@@ -8,7 +8,7 @@ use std::path::Path;
 
 use node::BlobError;
 use sha2::{Digest as _, Sha256};
-use store::{AgentKey, AgentRow, Store as _};
+use store::{AgentKey, AgentRow};
 use support::synthetic::*;
 use support::*;
 use uuid::Uuid;

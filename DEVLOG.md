@@ -1,3 +1,33 @@
+2026-10-09 — **The profile store is one SQLite schema, and a store from before it is refused by name.**
+The store's schema had grown as a base and six alterations, three of them
+written this week to turn kinds and exit causes into wire integers and to
+drop a column nothing read. They are now one migration, the schema the first
+release ships, with every column commented in its SQL text. Column names
+say what they hold: times end in `_ms`, the item's wire order is `position`,
+a parent is `parent_host` and `parent_id`, a name is never null, and a push
+notification's name, working-on and text are three columns instead of JSON.
+The snapshot's revision is read from the snapshot itself rather than kept
+twice. A store written before this schema records a different first
+migration, so opening it fails with an error that names the file and says
+it predates the release schema; the daemon does not start on it and the
+file is left untouched, for the person to move aside. The history is now
+checked before the schema stamp, so such a store no longer reads as one from
+a newer build. From the first release on, migrations only add.
+
+The store itself is now the SQLite type alone. The in-memory copy that only
+the store's tests used, and the row-primitive traits that let both share one
+body of logic, are gone, so SQL does the work the traits kept from it: a
+commit writes each item as one upsert that keeps a held key's position, a
+replica takes an item only over an older revision in one statement, a pool's
+bytes are one sum, and a cursor rewind is one update. Every row write to
+agents and items stays an insert that updates on conflict, which is what the
+daemon's crash-injection tests hook. Writing an agent's row updates only the
+columns its writer owns, which fixes a replica losing its last activity each
+time its origin's inventory row was put. Looking up an agent by id, a
+parent's children and agents by name are queries, where seven daemon paths
+used to load every row to find one. The conformance and retention suites run
+once, against a temporary database file.
+
 2026-10-09 — **The record of an ask says when it opened and when it closed.**
 Once an ask closed, nothing said how long a person took to answer it: an
 ask's item keeps the time it was first written, a Codex ask's item was

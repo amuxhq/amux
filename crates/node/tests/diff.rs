@@ -108,7 +108,7 @@ fn exited(install: &Install) -> SyntheticAgent {
         host(install).as_bytes().to_vec(),
     )
     .unwrap();
-    store::Store::put_agent(&mut store, &row).unwrap();
+    store.put_agent(&row).unwrap();
     agent
 }
 

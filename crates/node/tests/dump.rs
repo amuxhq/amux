@@ -10,7 +10,6 @@ use std::sync::Arc;
 
 use node::{DAEMON_LOG, MANIFEST};
 use prost::Message as _;
-use store::Store as _;
 use support::*;
 use wire::{DumpRequest, Lifecycle, Phase, StopMode};
 

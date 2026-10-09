@@ -10,7 +10,7 @@ use std::time::Duration;
 use agent_dir::local_socket::{LocalListener, LocalStream};
 use journal::synthetic::SyntheticWriter;
 use node::{Launch, ProfileRuntime};
-use store::{AgentKey, AgentRow, Store as _};
+use store::{AgentKey, AgentRow};
 use tokio::io::WriteHalf;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -180,10 +180,10 @@ impl SyntheticAgent {
 
     pub fn row(&self, install: &Install) -> AgentRow {
         let mut row = AgentRow::new(self.key(install), KIND, self.cwd.to_string_lossy());
-        row.name = Some(self.name.clone());
+        row.name = self.name.clone();
         row.parent = self.parent.clone();
         row.incarnation = self.incarnation;
-        row.created_at = 1;
+        row.created_at_ms = 1;
         row
     }
 

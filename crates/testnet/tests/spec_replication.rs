@@ -20,7 +20,7 @@ use std::time::Duration;
 use node::{Launch, SourcePolicy, SourceVerdict};
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Step};
-use store::{AgentKey, CommitClock, Marker, PageEnd, Store as _};
+use store::{AgentKey, CommitClock, Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
 use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, holds_for, until};
 use wire::client_service_server::ClientService as _;

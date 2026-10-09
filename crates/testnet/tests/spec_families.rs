@@ -15,7 +15,7 @@ use std::time::Duration;
 use node::SourceVerdict;
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Script, Step};
-use store::{AgentKey, AgentRow, Store as _};
+use store::{AgentKey, AgentRow};
 use testnet::{AgentDecl, Net, PATIENCE, Topology, holds_for, observe, until};
 use tonic::{Code, Request};
 use ui_state::{Attention, FleetMsg, FleetState};

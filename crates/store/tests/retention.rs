@@ -1,11 +1,11 @@
-//! Retention against both store implementations, on a driven clock: every
+//! Retention against a temp-file SQLite store, on a driven clock: every
 //! time here is a snapshot's at_ms or a value handed to the sweep.
 
 use std::collections::{HashMap, HashSet};
 
 use store::{
-    Absorb, AgentKey, AgentRow, BlobLru, CommitClock, ITEM_OVERHEAD_BYTES, PageEnd, Store, Sweep,
-    SweepStep,
+    Absorb, AgentKey, AgentRow, BlobLru, CommitClock, ITEM_OVERHEAD_BYTES, KIND_BYTES, PageEnd,
+    Sqlite, Sweep, SweepStep,
 };
 use wire::{Item, Lifecycle, Phase, Snapshot, Step, TurnEnd};
 
@@ -17,7 +17,7 @@ const CLOCK: CommitClock = CommitClock {
 };
 /// Text bytes per row; each row then costs ROW bytes.
 const TEXT: usize = 1000;
-const ROW: u64 = 2 + TEXT as u64 + ITEM_OVERHEAD_BYTES;
+const ROW: u64 = 2 + TEXT as u64 + KIND_BYTES + ITEM_OVERHEAD_BYTES;
 
 fn own(name: &str) -> AgentKey {
     AgentKey::new(OWN, name.as_bytes())
@@ -28,8 +28,8 @@ fn peer(name: &str) -> AgentKey {
 }
 
 /// An own agent with `rows` rows of ROW bytes, last active at `at_ms`.
-fn add<S: Store>(
-    store: &mut S,
+fn add(
+    store: &mut Sqlite,
     agent: &AgentKey,
     rows: usize,
     at_ms: i64,
@@ -65,7 +65,7 @@ fn add<S: Store>(
 }
 
 /// A replica with rows at orders 1..=rows, as a source's Reset left it.
-fn replica<S: Store>(store: &mut S, agent: &AgentKey, rows: u64, at_ms: i64) {
+fn replica(store: &mut Sqlite, agent: &AgentKey, rows: u64, at_ms: i64) {
     store
         .put_agent(&AgentRow::new(agent.clone(), wire::Kind::Codex, "/src"))
         .unwrap();
@@ -99,6 +99,33 @@ fn name(agent: &AgentKey) -> String {
     String::from_utf8_lossy(&agent.agent).into_owned()
 }
 
+/// A store in its own temporary directory, which lives as long as it does.
+struct Fresh {
+    store: Sqlite,
+    _dir: tempfile::TempDir,
+}
+
+impl std::ops::Deref for Fresh {
+    type Target = Sqlite;
+    fn deref(&self) -> &Sqlite {
+        &self.store
+    }
+}
+
+impl std::ops::DerefMut for Fresh {
+    fn deref_mut(&mut self) -> &mut Sqlite {
+        &mut self.store
+    }
+}
+
+fn fresh() -> Fresh {
+    let dir = tempfile::tempdir().unwrap();
+    Fresh {
+        store: Sqlite::open(&dir.path().join("store.sqlite"), OWN).unwrap(),
+        _dir: dir,
+    }
+}
+
 fn describe(sweep: &Sweep) -> Vec<String> {
     sweep
         .steps
@@ -121,40 +148,14 @@ fn describe(sweep: &Sweep) -> Vec<String> {
         .collect()
 }
 
-macro_rules! both {
-    ($($name:ident),* $(,)?) => {
-        mod in_memory {
-            $(#[test] fn $name() { super::$name(store::InMemory::new(super::OWN)); })*
-        }
-        mod sqlite {
-            $(#[test] fn $name() {
-                let dir = tempfile::tempdir().unwrap();
-                super::$name(store::Sqlite::open(&dir.path().join("store.sqlite"), super::OWN).unwrap());
-            })*
-        }
-    };
-}
-
-both!(
-    retention_sweep_order,
-    retention_stops_as_soon_as_the_pool_fits,
-    retention_keeps_a_live_parents_exited_children_and_frees_an_exited_parents,
-    retention_takes_a_family_whole_unless_a_member_is_live,
-    retention_never_trims_below_the_protected_rows,
-    retention_of_replicas_evicts_unfollowed_agents_by_last_use_then_trims_to_k,
-    retention_of_a_replica_keeps_its_agents_row_for_the_children_here,
-    retention_of_a_replica_drops_rows_a_reset_left_below_the_block_before_trimming_it,
-    retention_of_a_replica_block_under_the_floor_takes_only_the_stale_rows_below_it,
-);
-
 /// A Reset whose tail is smaller than the floor, over stale rows: the
 /// stale rows are not the block's, so they go whole and the block, under
 /// the floor, is never trimmed. Counted as the block's oldest rows they
 /// would lift it over the floor and the boundary would land among them,
 /// below the hole, claiming history the replica does not hold.
-fn retention_of_a_replica_block_under_the_floor_takes_only_the_stale_rows_below_it<S: Store>(
-    mut store: S,
-) {
+#[test]
+fn retention_of_a_replica_block_under_the_floor_takes_only_the_stale_rows_below_it() {
+    let mut store = fresh();
     let followed = peer("followed");
     // Orders 1..=4, then a Reset whose tail is orders 13..=14.
     replica(&mut store, &followed, 4, 100);
@@ -184,7 +185,7 @@ fn retention_of_a_replica_block_under_the_floor_takes_only_the_stale_rows_below_
         .unwrap();
     assert_eq!(store.pool_bytes(false).unwrap(), 6 * ROW);
     let sourced = HashSet::from([followed.clone()]);
-    let block = |store: &S| {
+    let block = |store: &Sqlite| {
         let row = store.agent(&followed).unwrap().unwrap();
         let page = store.page(&followed, None, 10).unwrap();
         let orders: Vec<u64> = page.items.iter().map(|item| item.order).collect();
@@ -224,9 +225,9 @@ fn retention_of_a_replica_block_under_the_floor_takes_only_the_stale_rows_below_
 /// not history. Trimming takes them first and whole, then trims the block
 /// itself, and the boundary only ever lands on a row inside the block, so
 /// paging down from the top never skips an order.
-fn retention_of_a_replica_drops_rows_a_reset_left_below_the_block_before_trimming_it<S: Store>(
-    mut store: S,
-) {
+#[test]
+fn retention_of_a_replica_drops_rows_a_reset_left_below_the_block_before_trimming_it() {
+    let mut store = fresh();
     let followed = peer("followed");
     // Orders 1..=4, then a Reset whose tail is orders 9..=14: 5..=8 are
     // missing, and 1..=4 are stale rows below the new block.
@@ -296,7 +297,9 @@ fn retention_of_a_replica_drops_rows_a_reset_left_below_the_block_before_trimmin
 /// its finished children and old exited agents. The old exited agents go
 /// first, the children stay, the largest live agent is trimmed in chunks
 /// down to its protected rows, and the parent can still resume a child.
-fn retention_sweep_order<S: Store>(mut store: S) {
+#[test]
+fn retention_sweep_order() {
+    let mut store = fresh();
     let parent = own("parent");
     let children = [own("child-1"), own("child-2")];
     // Oldest activity of all: they would go first if they were not live work.
@@ -395,7 +398,9 @@ fn retention_sweep_order<S: Store>(mut store: S) {
     );
 }
 
-fn retention_stops_as_soon_as_the_pool_fits<S: Store>(mut store: S) {
+#[test]
+fn retention_stops_as_soon_as_the_pool_fits() {
+    let mut store = fresh();
     add(&mut store, &own("a"), 2, 10, false, None);
     add(&mut store, &own("b"), 2, 20, false, None);
     add(&mut store, &own("c"), 2, 30, false, None);
@@ -406,9 +411,9 @@ fn retention_stops_as_soon_as_the_pool_fits<S: Store>(mut store: S) {
     assert_eq!(sweep.pool_after, 4 * ROW);
 }
 
-fn retention_keeps_a_live_parents_exited_children_and_frees_an_exited_parents<S: Store>(
-    mut store: S,
-) {
+#[test]
+fn retention_keeps_a_live_parents_exited_children_and_frees_an_exited_parents() {
+    let mut store = fresh();
     // A parent on another host whose replica row says live protects its
     // children here; its stale row errs toward keeping them.
     let remote_parent = peer("remote-parent");
@@ -431,7 +436,9 @@ fn retention_keeps_a_live_parents_exited_children_and_frees_an_exited_parents<S:
     assert!(store.agent(&own("kept")).unwrap().is_some());
 }
 
-fn retention_takes_a_family_whole_unless_a_member_is_live<S: Store>(mut store: S) {
+#[test]
+fn retention_takes_a_family_whole_unless_a_member_is_live() {
+    let mut store = fresh();
     let parent = own("parent");
     add(&mut store, &parent, 1, 10, false, None);
     add(&mut store, &own("child"), 1, 500, false, Some(&parent));
@@ -456,7 +463,9 @@ fn retention_takes_a_family_whole_unless_a_member_is_live<S: Store>(mut store: S
     assert!(store.agent(&own("running-child")).unwrap().is_some());
 }
 
-fn retention_never_trims_below_the_protected_rows<S: Store>(mut store: S) {
+#[test]
+fn retention_never_trims_below_the_protected_rows() {
+    let mut store = fresh();
     add(&mut store, &own("a"), 10, 1, true, None);
     add(&mut store, &own("b"), 6, 2, true, None);
     add(&mut store, &own("c"), 2, 3, true, None);
@@ -480,9 +489,9 @@ fn retention_never_trims_below_the_protected_rows<S: Store>(mut store: S) {
     assert!(sweep.removed.is_empty());
 }
 
-fn retention_of_replicas_evicts_unfollowed_agents_by_last_use_then_trims_to_k<S: Store>(
-    mut store: S,
-) {
+#[test]
+fn retention_of_replicas_evicts_unfollowed_agents_by_last_use_then_trims_to_k() {
+    let mut store = fresh();
     add(&mut store, &own("mine"), 10, 1, true, None);
     replica(&mut store, &peer("read-long-ago"), 4, 900);
     replica(&mut store, &peer("read-recently"), 4, 100);
@@ -527,7 +536,9 @@ fn retention_of_replicas_evicts_unfollowed_agents_by_last_use_then_trims_to_k<S:
 /// Evicting a live parent's replica frees its rows, not its registry entry:
 /// its exited child here is still live work, and the child's next turn end
 /// still names the parent's incarnation.
-fn retention_of_a_replica_keeps_its_agents_row_for_the_children_here<S: Store>(mut store: S) {
+#[test]
+fn retention_of_a_replica_keeps_its_agents_row_for_the_children_here() {
+    let mut store = fresh();
     let parent = peer("parent");
     replica(&mut store, &parent, 4, 100);
     store.absorb(&parent, Absorb::CaughtUp(5)).unwrap();

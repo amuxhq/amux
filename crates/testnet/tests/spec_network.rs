@@ -18,7 +18,6 @@ use std::time::Duration;
 
 use node::RelayCarrier;
 use node::harness::{Advertisement, LiveRoute};
-use store::Store as _;
 use support::*;
 use testnet::{Net, RELAY_HOST, Topology, holds_for, until};
 use wire::begin_pair_request;

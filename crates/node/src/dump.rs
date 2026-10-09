@@ -60,7 +60,7 @@ use std::time::Duration;
 
 use interpret::RedactTarget;
 use prost::Message as _;
-use store::{AgentRow, Store as _};
+use store::AgentRow;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 use wire::{AgentDumpRequest, CtlFrame, DumpFile, DumpPart, DumpRequest, Kind, Step, ctl_frame};
@@ -252,20 +252,17 @@ impl ProfileRuntime {
 
     /// The rows a dump covers, own and replica.
     async fn dump_rows(&self, ids: &[Vec<u8>]) -> Result<Vec<AgentRow>, DumpError> {
-        let rows = self.store.lock().await.agents()?;
+        let store = self.store.lock().await;
         if ids.is_empty() {
-            return Ok(rows);
+            return Ok(store.agents()?);
         }
         ids.iter()
             .map(|id| {
-                rows.iter()
-                    .find(|row| &row.agent.agent == id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        DumpError::NoAgent(
-                            Uuid::from_slice(id).map_or_else(|_| hex(id), |id| id.to_string()),
-                        )
-                    })
+                store.agent_by_id(id)?.ok_or_else(|| {
+                    DumpError::NoAgent(
+                        Uuid::from_slice(id).map_or_else(|_| hex(id), |id| id.to_string()),
+                    )
+                })
             })
             .collect()
     }

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use prost::Message as _;
 use provider_fakes::script::Step;
 use serde_json::{Value, json};
-use store::{Absorb, AgentRow, Store as _};
+use store::{Absorb, AgentRow};
 use testnet::door::{CAPABILITIES, Control, ErrorKind, Readiness, Reply};
 use testnet::observe::{self, Mark, marks};
 use testnet::{

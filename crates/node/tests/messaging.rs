@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use node::{ClientApi, Daemon, Launch, ProfileRuntime, RegistryError, RelayError};
-use store::{AgentKey, Store as _};
+use store::AgentKey;
 use support::synthetic::*;
 use support::*;
 use tonic::{Code, Request};

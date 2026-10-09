@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use prost::{Message as _, Name as _};
-use store::{AgentKey, AgentRow, Marker, PageEnd, Sqlite, Store as _, StoreError};
+use store::{AgentKey, AgentRow, Marker, PageEnd, Sqlite, StoreError};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::{self};
 use wire::{
@@ -175,15 +175,8 @@ pub(crate) fn inventory(of: inventory_event::Of) -> InventoryEvent {
 }
 
 /// The row for an agent id, whichever host owns it.
-fn row_by_id(store: &Sqlite, own_host: &[u8], agent_id: &[u8]) -> Result<AgentRow, ServeError> {
-    if let Some(row) = store.agent(&AgentKey::new(own_host, agent_id))? {
-        return Ok(row);
-    }
-    store
-        .agents()?
-        .into_iter()
-        .find(|row| row.agent.agent == agent_id)
-        .ok_or(ServeError::NoAgent)
+fn row_by_id(store: &Sqlite, agent_id: &[u8]) -> Result<AgentRow, ServeError> {
+    store.agent_by_id(agent_id)?.ok_or(ServeError::NoAgent)
 }
 
 impl ProfileRuntime {
@@ -235,7 +228,7 @@ impl ProfileRuntime {
         // into memory, so nothing here waits on the client with the lock
         // held; do not release it between the marker read and the row read.
         let store = self.store.lock().await;
-        let row = row_by_id(&store, store.own_host(), agent_id)?;
+        let row = row_by_id(&store, agent_id)?;
         let own = row.agent.host == store.own_host();
         if !own {
             self.used(&row.agent);
@@ -341,7 +334,7 @@ impl ProfileRuntime {
         let limit = request.limit.min(MAX_PAGE);
         let (row, page) = {
             let store = self.store.lock().await;
-            let row = row_by_id(&store, store.own_host(), &request.agent_id)?;
+            let row = row_by_id(&store, &request.agent_id)?;
             let page = store.page(&row.agent, request.before_order, limit)?;
             (row, page)
         };
@@ -391,7 +384,7 @@ impl ProfileRuntime {
     /// One item in full.
     pub async fn get(&self, request: &GetRequest) -> Result<Item, ServeError> {
         let store = self.store.lock().await;
-        let row = row_by_id(&store, store.own_host(), &request.agent_id)?;
+        let row = row_by_id(&store, &request.agent_id)?;
         store
             .get(&row.agent, &request.key)?
             .ok_or_else(|| ServeError::NoItem(request.key.clone()))
@@ -451,9 +444,8 @@ impl ProfileRuntime {
             .store
             .lock()
             .await
-            .agents()?
+            .agent_by_name(name)?
             .iter()
-            .filter(|row| row.name.as_deref() == Some(name))
             .map(to_wire)
             .collect();
         match matches.len() {

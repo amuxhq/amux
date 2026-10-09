@@ -1,136 +1,108 @@
 //! The store's schema, as forward-only migrations.
 //!
-//! Migrations are append-only and additive (a column with a default, a
-//! table, an index), each one transaction, and shipped text is never edited:
-//! the store records each applied migration's hash and refuses a file whose
-//! history disagrees, and a test pins the hash of every shipped migration.
-//! A drop, rename or rewrite ships only after the schema stamp has been
-//! raised past every binary that read the old shape.
+//! The first migration is the schema the first release ships. From that
+//! release on, migrations are append-only and additive (a column with a
+//! default, a table, an index), each one transaction, and shipped text is
+//! never edited: the store records each applied migration's hash and refuses
+//! a file whose history disagrees, and a test pins the hash of every shipped
+//! migration. A drop, rename or rewrite ships only after the schema stamp
+//! has been raised past every binary that read the old shape. The same hash
+//! check refuses a store written before the first release, whose history
+//! is a different first migration: no such store is carried forward.
 
 use sha2::{Digest, Sha256};
 
 /// The minimum number of migrations a binary must know to read a store it
 /// writes. Stored as `user_version`; a binary opens any store whose stamp is
 /// at most the migrations it has, so an older binary opens a newer store.
-pub const SCHEMA_STAMP: u32 = 7;
+pub const SCHEMA_STAMP: u32 = 1;
 
-/// Every migration ever shipped, in order. Append only.
-pub const MIGRATIONS: &[&str] = &[
-    r#"
+/// Every migration shipped, in order. Append only from the first release.
+pub const MIGRATIONS: &[&str] = &[r#"
+-- One profile's store: this host's own agents and the replicas it follows.
+-- Enum-valued columns hold the wire integer and are never interpreted by
+-- the store, so a value this binary does not know is stored and served.
 CREATE TABLE agents (
-  origin_host   BLOB NOT NULL,
-  agent_id      BLOB NOT NULL,
-  kind          TEXT NOT NULL,
-  name          TEXT,
-  cwd           TEXT NOT NULL,
-  parent        BLOB, parent_host BLOB,
-  lifecycle     INTEGER NOT NULL,
-  exit_cause    TEXT,
-  phase         INTEGER NOT NULL,
-  working_on    TEXT,
-  last_activity INTEGER,
-  snapshot      BLOB,
-  snapshot_revision INTEGER NOT NULL DEFAULT 0,
-  ingest_cursor INTEGER NOT NULL DEFAULT 0,
-  next_revision INTEGER NOT NULL DEFAULT 1,
-  source_cursor INTEGER NOT NULL DEFAULT 0,
-  complete_from_order INTEGER,
-  exhausted     INTEGER NOT NULL DEFAULT 0,
-  created_at    INTEGER NOT NULL,
-  producer_version TEXT NOT NULL,
-  incarnation   INTEGER NOT NULL,
+  origin_host         BLOB    NOT NULL,  -- the host that runs the agent
+  agent_id            BLOB    NOT NULL,  -- the agent's id, unique across hosts
+  kind                INTEGER NOT NULL,  -- amux.v1.Kind
+  name                TEXT    NOT NULL,  -- every agent has one: given, or chosen by the daemon
+  cwd                 TEXT    NOT NULL,  -- the directory the agent works in
+  parent_host         BLOB,              -- the parent's host and id, when it has one
+  parent_id           BLOB,
+  lifecycle           INTEGER NOT NULL,  -- amux.v1.Lifecycle
+  exit_cause          INTEGER NOT NULL DEFAULT 0, -- amux.v1.ExitCause; 0 while live or unknown
+  exit_detail         TEXT,              -- the cause's own words, when it has any
+  phase               INTEGER NOT NULL,  -- amux.v1.Phase, copied from the newest snapshot
+  working_on          TEXT,              -- copied from the newest snapshot
+  phase_since_ms      INTEGER,           -- copied from the newest snapshot
+  git                 BLOB,              -- amux.v1.Git, copied from the newest snapshot
+  last_activity_ms    INTEGER,           -- the newest snapshot's at_ms, never commit time
+  snapshot            BLOB,              -- amux.v1.Snapshot, body opaque; carries its revision
+  ingest_cursor       INTEGER NOT NULL DEFAULT 0, -- own rows: the journal offset committed through
+  next_revision       INTEGER NOT NULL DEFAULT 1, -- own rows: the next revision to mint
+  source_cursor       INTEGER NOT NULL DEFAULT 0, -- replica rows: the origin revision complete through
+  source_generation   INTEGER NOT NULL DEFAULT 0, -- replica rows: the origin generation of the block
+  complete_from_order INTEGER,           -- the block runs from here; NULL means all history (own) or no block (replica)
+  exhausted           INTEGER NOT NULL DEFAULT 0, -- no older history exists (replica) or retention trimmed it (own)
+  turn_open           INTEGER NOT NULL DEFAULT 0, -- own rows: the incarnation has a turn it has not ended
+  created_at_ms       INTEGER NOT NULL,  -- when the agent was created, on its origin's clock
+  incarnation         INTEGER NOT NULL,  -- the agent's spec.<n>, counting resumes from 1
   PRIMARY KEY (origin_host, agent_id)
 );
+
+-- Finished and failed messages owed to a parent, kept until delivered.
 CREATE TABLE deliveries (
-  child_id      BLOB NOT NULL,
-  incarnation   INTEGER NOT NULL,
-  turn_id       INTEGER NOT NULL,
-  parent_host   BLOB NOT NULL, parent_id BLOB NOT NULL,
-  parent_incarnation INTEGER NOT NULL,
-  kind          INTEGER NOT NULL,
-  body          TEXT,
+  child_id            BLOB    NOT NULL,  -- the own agent whose turn or incarnation ended
+  incarnation         INTEGER NOT NULL,  -- the child's incarnation that ended it
+  turn_id             INTEGER NOT NULL,  -- the turn that finished; 0 for a failed incarnation
+  parent_host         BLOB    NOT NULL,  -- the parent the message is owed to
+  parent_id           BLOB    NOT NULL,
+  parent_incarnation  INTEGER NOT NULL,  -- 0 until the parent's row is held, then stamped
+  kind                INTEGER NOT NULL,  -- amux.v1.EnvelopeKind: finished or failed
+  body                TEXT,              -- the child's last message, or the failure's cause
   PRIMARY KEY (child_id, incarnation, kind, turn_id)
 );
+
+-- A needs-you transition owed to the person, keyed by the snapshot that
+-- raised it; built from envelope fields only.
 CREATE TABLE notifications (
-  agent_id      BLOB NOT NULL,
-  revision      INTEGER NOT NULL,
-  due_at        INTEGER NOT NULL,
-  body          TEXT,
+  agent_id            BLOB    NOT NULL,  -- the own agent that needs the person
+  revision            INTEGER NOT NULL,  -- the snapshot's revision that turned to needs-you
+  due_at_ms           INTEGER NOT NULL,  -- sent no earlier, so an answer at the desk cancels it
+  name                TEXT,              -- the agent's name when it turned
+  working_on          TEXT,              -- the snapshot's working_on
+  text                TEXT    NOT NULL DEFAULT '', -- the newest item's text: usually the question
   PRIMARY KEY (agent_id, revision)
 );
+
+-- The generation last seen from each origin; bumped only after that
+-- host's unclean reboot.
 CREATE TABLE hosts (
-  host_id       BLOB PRIMARY KEY,
-  generation    INTEGER NOT NULL
+  host_id             BLOB    PRIMARY KEY, -- a paired host, never this one
+  generation          INTEGER NOT NULL   -- the generation its inventory last reported
 );
+
+-- Items: full state per key, newest revision only.
 CREATE TABLE items (
-  origin_host   BLOB NOT NULL,
-  agent_id      BLOB NOT NULL,
-  key           TEXT NOT NULL,
-  "order"       INTEGER NOT NULL,
-  revision      INTEGER NOT NULL,
-  at_ms         INTEGER NOT NULL,
-  producer_version TEXT NOT NULL,
-  input_id      BLOB,
-  text          TEXT NOT NULL DEFAULT '',
-  kind          TEXT NOT NULL,
-  attachments   BLOB,
-  body          BLOB NOT NULL,
+  origin_host         BLOB    NOT NULL,  -- the agent's row this item belongs to
+  agent_id            BLOB    NOT NULL,
+  key                 TEXT    NOT NULL,  -- the interpreter's key
+  position            INTEGER NOT NULL,  -- the wire `order`: once per key, in arrival order
+  revision            INTEGER NOT NULL,  -- on every upsert
+  at_ms               INTEGER NOT NULL,  -- when it happened, from the envelope
+  producer_version    TEXT    NOT NULL,  -- the agent binary that wrote it
+  input_id            BLOB,              -- the prompt or message this item reflects, when any
+  text                TEXT    NOT NULL DEFAULT '', -- the one appendable field
+  kind                INTEGER NOT NULL,  -- amux.v1.Kind: which per-kind body this is
+  attachments         BLOB,              -- amux.v1.Attachment list, length-delimited
+  body                BLOB    NOT NULL,  -- the per-kind item, opaque
   PRIMARY KEY (origin_host, agent_id, key)
 );
-CREATE UNIQUE INDEX items_by_order ON items (origin_host, agent_id, "order");
+CREATE UNIQUE INDEX items_by_position ON items (origin_host, agent_id, position);
 CREATE INDEX items_by_revision ON items (origin_host, agent_id, revision);
 CREATE INDEX items_by_input ON items (origin_host, agent_id, input_id) WHERE input_id IS NOT NULL;
-"#,
-    r#"
-ALTER TABLE agents ADD COLUMN turn_open INTEGER NOT NULL DEFAULT 0;
-"#,
-    r#"
-ALTER TABLE agents ADD COLUMN source_generation INTEGER NOT NULL DEFAULT 0;
-"#,
-    r#"
-ALTER TABLE agents ADD COLUMN phase_since INTEGER;
-ALTER TABLE agents ADD COLUMN git BLOB;
-"#,
-    // A kind is its wire integer, so a kind this build does not know is
-    // stored and served with the value its origin gave it. Raises the stamp:
-    // a build that read the kind as text cannot read this store.
-    r#"
-ALTER TABLE agents ADD COLUMN kind_code INTEGER NOT NULL DEFAULT 0;
-UPDATE agents SET kind_code = CASE kind
-  WHEN 'claude_pty' THEN 1 WHEN 'claude_sdk' THEN 2 WHEN 'codex' THEN 3 ELSE 0 END;
-ALTER TABLE agents DROP COLUMN kind;
-ALTER TABLE agents RENAME COLUMN kind_code TO kind;
-ALTER TABLE items ADD COLUMN kind_code INTEGER NOT NULL DEFAULT 0;
-UPDATE items SET kind_code = CASE kind
-  WHEN 'claude_pty' THEN 1 WHEN 'claude_sdk' THEN 2 WHEN 'codex' THEN 3 ELSE 0 END;
-ALTER TABLE items DROP COLUMN kind;
-ALTER TABLE items RENAME COLUMN kind_code TO kind;
-"#,
-    // An exit cause is its wire integer, so a cause this build does not know
-    // is stored and served with the value its origin gave it, and its own
-    // words are a column beside it. The words the daemon wrote before map
-    // to their values; any other is kept as the words of an unknown cause.
-    // Raises the stamp: a build that read the cause as text cannot read
-    // this store.
-    r#"
-ALTER TABLE agents ADD COLUMN exit_code INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE agents ADD COLUMN exit_detail TEXT;
-UPDATE agents SET exit_code = CASE exit_cause
-  WHEN 'finished' THEN 1 WHEN 'stopped' THEN 2 WHEN 'aborted' THEN 3 WHEN 'killed' THEN 4
-  WHEN 'the agent process could not start' THEN 8 WHEN 'its directory is gone' THEN 9
-  WHEN 'while the daemon was away' THEN 10 ELSE 0 END;
-UPDATE agents SET exit_detail = exit_cause
-  WHERE exit_code = 0 AND exit_cause IS NOT NULL AND exit_cause <> 'exited';
-ALTER TABLE agents DROP COLUMN exit_cause;
-ALTER TABLE agents RENAME COLUMN exit_code TO exit_cause;
-"#,
-    // Nothing read the agent binary's version on the row; an item's own
-    // producer_version is the record of what wrote it. Raises the stamp: a
-    // build that reads the column cannot read this store.
-    r#"
-ALTER TABLE agents DROP COLUMN producer_version;
-"#,
-];
+"#];
 
 /// The hex SHA-256 of a migration's text, as recorded when it is applied.
 pub fn migration_hash(text: &str) -> String {

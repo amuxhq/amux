@@ -1,10 +1,11 @@
-//! What only the profile file does: migrations, the order tripwire, one
-//! transaction per commit, and surviving a reopen.
+//! What the profile file does beyond the reader and writer suite:
+//! migrations, refusing a store with another history, the position
+//! tripwire, one transaction per commit, and surviving a reopen.
 
 use rusqlite::{Connection, params};
 use store::{
-    AgentKey, AgentRow, CommitClock, MIGRATIONS, OpenError, SCHEMA_STAMP, Sqlite, Store,
-    StoreError, migration_hash,
+    AgentKey, AgentRow, CommitClock, MIGRATIONS, OpenError, SCHEMA_STAMP, Sqlite, StoreError,
+    migration_hash,
 };
 use wire::{Item, Phase, Snapshot, Step};
 
@@ -14,9 +15,14 @@ const CLOCK: CommitClock = CommitClock {
     notify_delay_ms: 0,
 };
 
-/// The hash of every migration ever shipped. A shipped migration is never
-/// edited; append a new one and its hash here instead.
-const SHIPPED: &[&str] = &[
+/// The hash of every migration shipped. From the first release on a
+/// shipped migration is never edited; append a new one and pin its hash
+/// here instead.
+const SHIPPED: &[&str] = &["ecfce9d245060565ffe4e3efd23cecc13d898b451f9c5f45fe8b6d6959beea1a"];
+
+/// What stores written before the release schema recorded: seven
+/// migrations, whose first differs from this build's.
+const PRE_RELEASE: &[&str] = &[
     "c12ecbd4ad0f378ef242319c0f137863c19e1dc5ef5a7310deeb951276b15a04",
     "e7e1f74cead2bc6888769d611d8b6b898af1854422011a20ab6e021460b60a11",
     "8cd1a05a538c061607a3b2d959d6aebe18e8ffbe6df773b733c8d4b733ff8b37",
@@ -64,12 +70,6 @@ fn shipped_migrations_are_never_edited() {
 }
 
 #[test]
-fn an_edited_migration_changes_its_hash() {
-    let edited = MIGRATIONS[0].replace("exit_cause    TEXT", "exit_cause    TEXT NOT NULL");
-    assert_ne!(migration_hash(&edited), SHIPPED[0]);
-}
-
-#[test]
 fn a_store_migrated_by_different_text_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     drop(open(&dir));
@@ -82,8 +82,72 @@ fn a_store_migrated_by_different_text_is_refused() {
     drop(conn);
     assert!(matches!(
         Sqlite::open(&dir.path().join("store.sqlite"), OWN),
-        Err(OpenError::EditedMigration { id: 1 })
+        Err(OpenError::EditedMigration { id: 1, .. })
     ));
+}
+
+/// A store written before the release schema records a history this build
+/// does not share. Opening it is refused with a message that names the
+/// file and says why, and the file is left exactly as it was: the person
+/// decides what to do with it.
+#[test]
+fn a_store_with_another_history_is_refused_and_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, sha256 TEXT NOT NULL);
+             CREATE TABLE agents (origin_host BLOB NOT NULL, agent_id BLOB NOT NULL,
+               kind INTEGER NOT NULL, PRIMARY KEY (origin_host, agent_id));
+             INSERT INTO agents VALUES (x'01', x'02', 2);",
+        )
+        .unwrap();
+        for (index, hash) in PRE_RELEASE.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO schema_migrations (id, sha256) VALUES (?1, ?2)",
+                params![index as u32 + 1, hash],
+            )
+            .unwrap();
+        }
+        conn.pragma_update(None, "application_id", 0x616d_7578)
+            .unwrap();
+        conn.pragma_update(None, "user_version", PRE_RELEASE.len() as u32)
+            .unwrap();
+    }
+    let before = std::fs::read(&path).unwrap();
+
+    let error = Sqlite::open(&path, OWN).unwrap_err();
+    assert!(
+        matches!(error, OpenError::EditedMigration { id: 1, .. }),
+        "refused for its history, not as too new: {error:?}"
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains(&path.display().to_string()),
+        "names the file: {message}"
+    );
+    assert!(
+        message.contains("predates this release's store schema"),
+        "says why: {message}"
+    );
+
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "the refused store is not rewritten"
+    );
+    let conn = Connection::open(&path).unwrap();
+    let recorded: u32 = conn
+        .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let agents: u32 = conn
+        .query_row("SELECT COUNT(*) FROM agents", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!((recorded, agents), (PRE_RELEASE.len() as u32, 1));
 }
 
 #[test]
@@ -154,7 +218,7 @@ fn a_file_that_is_not_a_profile_store_is_refused() {
 }
 
 #[test]
-fn the_unique_order_index_trips_on_a_second_key_at_one_order() {
+fn the_unique_position_index_trips_on_a_second_key_at_one_position() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = open(&dir);
     let agent = AgentKey::new(OWN, b"a".to_vec());
@@ -165,7 +229,7 @@ fn the_unique_order_index_trips_on_a_second_key_at_one_order() {
     let error = store
         .connection()
         .execute(
-            "INSERT INTO items (origin_host, agent_id, key, \"order\", revision, at_ms, \
+            "INSERT INTO items (origin_host, agent_id, key, position, revision, at_ms, \
              producer_version, kind, body) VALUES (?1, ?2, 'k2', 1, 9, 0, '', 3, x'')",
             params![OWN, b"a".to_vec()],
         )

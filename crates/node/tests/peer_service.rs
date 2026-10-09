@@ -9,7 +9,6 @@ mod support;
 use std::sync::Arc;
 
 use node::{Daemon, Edge, Owner, ProfileRuntime};
-use store::Store as _;
 use support::synthetic::*;
 use support::*;
 use tonic::Code;

@@ -15,7 +15,6 @@ mod support;
 use std::time::Duration;
 
 use provider_fakes::script::Step;
-use store::Store as _;
 use testnet::observe::{self, Mark, inventory_agents, inventory_hosts, marks};
 use testnet::{
     AgentDecl, HostDecl, JournalCut, Net, PATIENCE, Stuck, Topology, holds_for, withdraw,

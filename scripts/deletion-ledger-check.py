@@ -378,6 +378,19 @@ ROWS = [
             r"config\.hooks",
             r"repeated string hooks",
             r"map<string, string> env",
+            r"snapshot_revision",
+        ],
+    ),
+    Row(
+        "the in-memory store",
+        "a second store implementation kept only for the store's own tests, and the row-primitive traits it shared with SQLite",
+        [
+            r"InMemory([^A-Za-z_]|$)",
+            r"trait Tables([^A-Za-z_]|$)",
+            r"trait Backend([^A-Za-z_]|$)",
+            r"both_implementations_answer",
+            r"SqlTables",
+            r"NotificationBody",
         ],
     ),
     Row(
@@ -532,6 +545,14 @@ EXEMPTIONS = [
         "crates/settings/src/lib.rs",
         "the retired-key table names the old key so an old config fails with the reason",
     ),
+    *(
+        Exemption(
+            r"last_activity_ms|lastActivityMs",
+            path,
+            "the store's agents column: the newest snapshot's at_ms retention orders by, not the phone's fleet row",
+        )
+        for path in ("crates/store/", "crates/node/tests/single_daemon.rs", "docs/JOURNAL_AND_STORE.md")
+    ),
 ]
 
 
@@ -543,9 +564,14 @@ def grep(pattern: str) -> list[str]:
     )
     if result.returncode not in (0, 1):
         raise SystemExit(f"git grep failed on {pattern!r}: {result.stderr.strip()}")
-    exempt = {e.path for e in EXEMPTIONS if e.pattern == pattern}
+    # An exempt path ending in "/" exempts everything under it.
+    exempt = [e.path for e in EXEMPTIONS if e.pattern == pattern]
+
+    def exempted(path: str) -> bool:
+        return any(path == e or (e.endswith("/") and path.startswith(e)) for e in exempt)
+
     return [line for line in result.stdout.splitlines()
-            if line.split(":", 1)[0] not in exempt]
+            if not exempted(line.split(":", 1)[0])]
 
 
 def workspace_drift() -> list[str]:

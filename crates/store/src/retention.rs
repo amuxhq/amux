@@ -12,7 +12,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{AgentKey, AgentRow, StoreError, Tables};
+use crate::rows::{self, BLOCK, EVICTED, Rows};
+use crate::{AgentKey, AgentRow, StoreError};
 
 /// What a sweep did, in order.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -47,44 +48,29 @@ fn is_live(row: &AgentRow) -> bool {
     row.lifecycle == wire::Lifecycle::Live as i32
 }
 
-pub(crate) fn pool_bytes(
-    tables: &dyn Tables,
-    own_host: &[u8],
-    own: bool,
-) -> Result<u64, StoreError> {
-    let mut total = 0;
-    for row in tables.agents()? {
-        if (row.agent.host == own_host) == own {
-            total += tables.agent_bytes(&row.agent)?.0;
-        }
-    }
-    Ok(total)
-}
-
 pub(crate) fn sweep_own(
-    tables: &mut dyn Tables,
-    own_host: &[u8],
+    rows: &Rows<'_>,
     budget: u64,
     chunk: u64,
     floor_k: u32,
 ) -> Result<Sweep, StoreError> {
-    let mut pool = pool_bytes(tables, own_host, true)?;
+    let mut pool = rows.pool_bytes(true)?;
     let mut sweep = Sweep {
         pool_before: pool,
         ..Sweep::default()
     };
     if pool > budget {
-        pool = remove_finished(tables, own_host, budget, pool, &mut sweep)?;
+        pool = remove_finished(rows, budget, pool, &mut sweep)?;
     }
     if pool > budget {
-        let candidates = tables
+        let candidates = rows
             .agents()?
             .into_iter()
-            .filter(|row| row.agent.host == own_host && is_live(row))
+            .filter(|row| rows.is_own(&row.agent) && is_live(row))
             .map(|row| row.agent)
             .collect::<Vec<_>>();
         pool = trim_rounds(
-            tables,
+            rows,
             &candidates,
             budget,
             pool,
@@ -102,8 +88,7 @@ pub(crate) fn sweep_own(
 /// fits. A parent goes with its descendants, as delete takes them; one with
 /// a live descendant is still live work and stays.
 fn remove_finished(
-    tables: &mut dyn Tables,
-    own_host: &[u8],
+    tables: &Rows<'_>,
     budget: u64,
     mut pool: u64,
     sweep: &mut Sweep,
@@ -124,7 +109,7 @@ fn remove_finished(
         let mut stack = vec![root];
         while let Some(row) = stack.pop() {
             for child in children.get(&row.agent).into_iter().flatten() {
-                if child.agent.host == own_host {
+                if tables.is_own(&child.agent) {
                     all.push(*child);
                     stack.push(child);
                 }
@@ -140,10 +125,10 @@ fn remove_finished(
     };
     let mut candidates = rows
         .iter()
-        .filter(|row| row.agent.host == own_host && !is_live(row) && !protected(row))
+        .filter(|row| tables.is_own(&row.agent) && !is_live(row) && !protected(row))
         .filter(|row| descendants(row).iter().all(|child| !is_live(child)))
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|row| (row.last_activity.unwrap_or(i64::MIN), row.agent.clone()));
+    candidates.sort_by_key(|row| (row.last_activity_ms.unwrap_or(i64::MIN), row.agent.clone()));
 
     let mut gone = HashSet::new();
     for row in candidates {
@@ -177,7 +162,7 @@ fn remove_finished(
 /// chunk a round trims the agent straight down to its floor.
 #[allow(clippy::too_many_arguments)]
 fn trim_rounds(
-    tables: &mut dyn Tables,
+    tables: &Rows<'_>,
     candidates: &[AgentKey],
     budget: u64,
     mut pool: u64,
@@ -222,7 +207,7 @@ fn trim_rounds(
         // Own history below the boundary is gone for good; a replica's is
         // still at the origin.
         row.exhausted = own;
-        tables.put_agent(&row)?;
+        tables.upsert_agent(&row, &rows::update_of(BLOCK))?;
         pool = pool.saturating_sub(removed_bytes);
         sweep.steps.push(SweepStep::Trimmed {
             agent: agent.clone(),
@@ -238,27 +223,24 @@ fn trim_rounds(
 /// the row is the origin's registry entry, which says whether a parent is
 /// live and which incarnation a child's delivery names. It goes only when
 /// the origin stops listing the agent or its host rewinds.
-fn evict_replica(tables: &mut dyn Tables, row: &AgentRow) -> Result<(), StoreError> {
-    if let Some(max) = tables.max_order(&row.agent)? {
-        tables.remove_items_below(&row.agent, max + 1)?;
-    }
+fn evict_replica(tables: &Rows<'_>, row: &AgentRow) -> Result<(), StoreError> {
+    tables.remove_items(&row.agent)?;
     let mut row = row.clone();
     row.complete_from_order = None;
     row.exhausted = false;
     row.source_cursor = 0;
     row.source_generation = 0;
-    tables.put_agent(&row)
+    tables.upsert_agent(&row, &rows::update_of(EVICTED))
 }
 
 pub(crate) fn sweep_replicas(
-    tables: &mut dyn Tables,
-    own_host: &[u8],
+    tables: &Rows<'_>,
     budget: u64,
     floor_k: u32,
     sourced: &HashSet<AgentKey>,
     last_used: &HashMap<AgentKey, i64>,
 ) -> Result<Sweep, StoreError> {
-    let mut pool = pool_bytes(tables, own_host, false)?;
+    let mut pool = tables.pool_bytes(false)?;
     let mut sweep = Sweep {
         pool_before: pool,
         ..Sweep::default()
@@ -266,18 +248,20 @@ pub(crate) fn sweep_replicas(
     let replicas = tables
         .agents()?
         .into_iter()
-        .filter(|row| row.agent.host != own_host)
+        .filter(|row| !tables.is_own(&row.agent))
         .collect::<Vec<_>>();
     let mut unsourced = replicas
         .iter()
         .filter(|row| !sourced.contains(&row.agent))
         .collect::<Vec<_>>();
+    // A replica row holds no last activity (its inventory row does not
+    // carry one), so one never read here goes by when its phase began.
     unsourced.sort_by_key(|row| {
         (
             last_used
                 .get(&row.agent)
                 .copied()
-                .or(row.phase_since)
+                .or(row.phase_since_ms)
                 .unwrap_or(i64::MIN),
             row.agent.clone(),
         )
@@ -319,7 +303,7 @@ pub(crate) fn sweep_replicas(
             let floor = match row.complete_from_order {
                 Some(floor) => floor,
                 // No block yet: nothing held is part of one.
-                None => tables.max_order(agent)?.map_or(0, |order| order + 1),
+                None => tables.max_position(agent)?.map_or(0, |order| order + 1),
             };
             let (before_bytes, before_rows) = tables.agent_bytes(agent)?;
             tables.remove_items_below(agent, floor)?;

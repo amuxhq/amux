@@ -13,7 +13,6 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use store::Store as _;
 use wire::{HostEntry, HostRemoved, Presence, ProviderOnHost, Trust, inventory_event};
 
 use crate::Tier;

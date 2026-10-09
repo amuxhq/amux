@@ -39,9 +39,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use store::{
-    Absorb, AgentKey, AgentRow, Backend as _, Marker, Record, SourceEvent, Store as _, StoreError,
-};
+use store::{Absorb, AgentKey, AgentRow, Marker, Record, SourceEvent, StoreError};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
@@ -1346,7 +1344,7 @@ pub(crate) fn from_wire(agent: &Agent) -> AgentRow {
         agent.kind,
         agent.cwd.clone(),
     );
-    row.name = Some(agent.name.clone()).filter(|name| !name.is_empty());
+    row.name = agent.name.clone();
     row.parent = agent
         .parent
         .as_ref()
@@ -1356,9 +1354,9 @@ pub(crate) fn from_wire(agent: &Agent) -> AgentRow {
     row.exit_detail = agent.exit_detail.clone();
     row.phase = agent.phase;
     row.working_on = agent.working_on.clone();
-    row.phase_since = Some(agent.phase_since_ms);
+    row.phase_since_ms = Some(agent.phase_since_ms);
     row.git = agent.git.clone();
-    row.created_at = agent.created_at_ms;
+    row.created_at_ms = agent.created_at_ms;
     row.incarnation = agent.incarnation;
     row
 }

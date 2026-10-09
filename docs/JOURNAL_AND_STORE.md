@@ -14,7 +14,7 @@ This page covers the three crates on that path:
 | Crate | What it holds |
 | --- | --- |
 | [`journal`](../crates/journal/src/lib.rs) | Segment files, frames, the `Writer` the agent appends with and the `Reader` ingest reads with |
-| [`store`](../crates/store/src/lib.rs) | The schema, the `Store` trait, commit for own rows, absorb for replica rows, retention |
+| [`store`](../crates/store/src/lib.rs) | The schema, the `Sqlite` store the runtime calls, commit for own rows, absorb for replica rows, retention |
 | [`node`](../crates/node/src/runtime.rs) | Ingest (`ProfileRuntime::ingest`), the generation file, fan-out, the retention sweeps, peer sources |
 
 How the agent process produces steps is in [the agent process](AGENT_PROCESS.md)
@@ -142,7 +142,7 @@ One ingest pass:
 1. Lock the store and read the agent's `ingest_cursor` from its row.
 2. Read whole frames from that offset with `journal::Reader::read_up_to`, at
    most `INGEST_BATCH` (256) frames.
-3. Commit them in one transaction (`Store::commit`), which also writes the
+3. Commit them in one transaction (`Sqlite::commit`), which also writes the
    advanced cursor.
 4. Still holding the store, broadcast each committed record once on the
    agent's fan-out channel, and publish the agent's inventory row if a
@@ -171,14 +171,14 @@ next nudge brings the rest.
 
 ### Commit and revisions
 
-`Store::commit` ([`crates/store/src/lib.rs`](../crates/store/src/lib.rs))
+`Sqlite::commit` ([`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs))
 processes the frames in journal order, inside one transaction:
 
 | Record | What commit does |
 | --- | --- |
 | Item | Assigns the agent's next revision. A key the agent already holds keeps its order; a key not held yet takes the next order above the highest committed. Upserts by key. |
 | Append | Appends the text to the held item and assigns it the next revision. The broadcast `Append` carries the item's previous revision as `base_revision`. An append naming a key the store does not hold is skipped and counted. |
-| Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms` (as `phase_since`), `git` and `at_ms` (as `last_activity`) from its envelope onto the row. |
+| Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms`, `git` and `at_ms` (as `last_activity_ms`) from its envelope onto the row. |
 | Snapshot turning the phase to `PHASE_NEEDS_YOU` | Inserts a `notifications` row due after the push delay. Leaving `PHASE_NEEDS_YOU` deletes the agent's pending rows. |
 | `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message. |
 
@@ -195,9 +195,9 @@ Three consequences follow:
 - Nothing is deleted by commit. An older revision never overwrites a newer one
   in the store or in a client.
 
-The unique index `items_by_order` holds one key per order, so a bug that would
-place two keys at one order fails the transaction instead of corrupting the
-transcript.
+The unique index `items_by_position` holds one key per order (the store keeps
+the wire `order` in its `position` column), so a bug that would place two keys
+at one order fails the transaction instead of corrupting the transcript.
 
 ### At-least-once emission
 
@@ -252,7 +252,7 @@ The counter is the host's generation. It travels on the host's inventory entry
 origin answers a cursor of another generation with a Reset and a fresh tail,
 which forgets every row held under the old one, so each replica is reset on
 its own stream. The inventory's `CaughtUp` records the new
-generation (`Store::record_host_generation`) for the host entry this machine
+generation (`Sqlite::record_host_generation`) for the host entry this machine
 publishes. That invalidation restores consistency between machines; it cannot
 recover work whose only copies were lost.
 
@@ -263,7 +263,7 @@ After power loss on the origin:
 - Ingest finds the cursor either still inside the journal, and re-reads the
   same frames from there, producing the same revisions with the same content;
   or beyond the journal's end (`journal::end`), because the unsynced journal
-  lost its tail. In that case `Store::rewind_cursor` moves the cursor back to
+  lost its tail. In that case `Sqlite::rewind_cursor` moves the cursor back to
   the last whole frame and keeps `next_revision`, so whatever the agent writes
   again takes revisions every reader has not seen.
 - Raw terminal bytes from those seconds are gone.
@@ -288,12 +288,13 @@ an in-process call. The runtime holds the store behind one async mutex, and
 every read the runtime serves runs in one read transaction, so each read sees
 one commit point.
 
-The runtime's interface is the `Store` trait in
-[`crates/store/src/lib.rs`](../crates/store/src/lib.rs):
+The runtime's interface is `store::Sqlite`, in
+[`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs):
 
 | Method | Use |
 | --- | --- |
 | `agent`, `agents` | Agent rows, own and replica |
+| `agent_by_id`, `agents_of_parent`, `agent_by_name` | The row an agent id names (this host's own first), a parent's children on any host, and every row with a name |
 | `cut(agent, n)` | The snapshot, the newest `n` rows of the block and the marker, read together: what a subscription opens with |
 | `page(agent, before_order, limit)` | Older rows by order, newest first, from the block only; says whether it ended at the limit, at the block's boundary, or at the end of history |
 | `get(agent, key)` | One held item, in the block or not |
@@ -303,18 +304,22 @@ The runtime's interface is the `Store` trait in
 | `rewind_cursor`, `record_host_generation` | Power-loss recovery on this host; the generation a peer last reported |
 | `sweep_own`, `sweep_replicas` | Retention |
 
-The logic is written once over a small `Tables` trait of row primitives.
-`Sqlite` is the profile file; `InMemory` keeps the same rows in memory for the
-store's tests. The conformance suite in
+Each call is one transaction, and SQL does the work: an item is one upsert
+that keeps a held key's order, a replica's item is written only over an older
+revision, and a pool's bytes are one sum. Every write to `agents` and `items`
+is an `INSERT ... ON CONFLICT DO UPDATE` that names the columns its writer
+owns: an own row's registry columns come from the daemon, a replica's from its
+origin's inventory row, and the snapshot envelope and cursors from commit or
+absorb. The conformance suite in
 [`crates/store/tests/conformance.rs`](../crates/store/tests/conformance.rs)
-holds both to the same answers.
+holds the store to its answers against a temporary database file.
 
 The CaughtUp and Detached markers are not persisted. They live in memory beside
 the connection and are rebuilt as ingest and sources run.
 
 ### Schema
 
-The schema is the migrations in
+The schema is the migration in
 [`crates/store/src/migrations.rs`](../crates/store/src/migrations.rs).
 
 `agents`: one row per agent, own or replica, keyed by `(origin_host, agent_id)`.
@@ -323,19 +328,19 @@ The schema is the migrations in
 | --- | --- |
 | `origin_host`, `agent_id` | This host for own rows; the owning host for replicas |
 | `kind` | The agent's `Kind`, as its wire integer |
-| `name`, `cwd` | As the registry holds them |
-| `parent`, `parent_host` | A child records its parent as host and id, because families cross hosts |
+| `name`, `cwd` | As the registry holds them; every agent has a name, given or chosen by the daemon |
+| `parent_host`, `parent_id` | A child records its parent as host and id, because families cross hosts |
 | `lifecycle`, `exit_cause`, `exit_detail` | Live or exited, and why: the `ExitCause` as its wire integer, so a cause from a newer host is kept and served as it came, and the cause's own words. Owned by the daemon, which records the agent's own cause from its last control frame. |
-| `phase`, `working_on`, `phase_since`, `git`, `last_activity` | Copied from the newest snapshot's envelope at commit; `last_activity` is the snapshot's `at_ms`, never commit time, and orders retention. A replica row takes `phase`, `working_on`, `phase_since` and `git` from the origin's inventory row and has no `last_activity` |
-| `snapshot`, `snapshot_revision` | The newest snapshot, body opaque |
+| `phase`, `working_on`, `phase_since_ms`, `git`, `last_activity_ms` | Copied from the newest snapshot's envelope at commit; `last_activity_ms` is the snapshot's `at_ms`, never commit time, and orders retention. A replica row takes `phase`, `working_on`, `phase_since_ms` and `git` from the origin's inventory row, which carries no last activity |
+| `snapshot` | The newest snapshot, body opaque; it carries its own revision |
 | `ingest_cursor` | Own rows: the journal offset committed through |
 | `next_revision` | Own rows: the revision the next record takes |
 | `source_cursor` | Replica rows: the origin revision this agent's source is complete through |
 | `source_generation` | Replica rows: the origin generation the block was taken under, from the `Opening` of the stream whose `Reset` began it |
 | `complete_from_order` | The order from which the held rows are known to be contiguous up to the newest (see below) |
 | `exhausted` | No older history exists: the origin said so, or retention trimmed it |
-| `created_at`, `incarnation` | Creation time and the `spec.<n>` it is running |
 | `turn_open` | Own rows: the incarnation has a turn it has not ended. An incarnation that exits with one open tells its parent it failed. |
+| `created_at_ms`, `incarnation` | Creation time and the `spec.<n>` it is running |
 
 Kind, lifecycle, exit cause and phase are stored as their wire integers, so a value from
 a newer peer is stored and served rather than refused.
@@ -345,17 +350,17 @@ a newer peer is stored and served rather than refused.
 | Column | Meaning |
 | --- | --- |
 | `key` | The interpreter's key |
-| `"order"` | Transcript position, assigned once per key |
+| `position` | The wire `order`: transcript position, assigned once per key |
 | `revision` | Assigned on every upsert |
 | `at_ms` | When it happened, from the envelope |
 | `producer_version` | The agent binary that wrote it |
 | `input_id` | Set on a prompt's reflection and on an agent message's item |
 | `text` | The one appendable field |
-| `kind` | The envelope's kind tag |
+| `kind` | The envelope's `Kind`, as its wire integer: which per-kind body this is |
 | `attachments` | The envelope's attachment list, encoded |
 | `body` | The per-kind body, never decoded or re-encoded by the store |
 
-Three indexes sit on `items`: `items_by_order` (unique: one key per order),
+Three indexes sit on `items`: `items_by_position` (unique: one key per order),
 `items_by_revision` (what `after` reads) and `items_by_input` (partial, where
 `input_id` is set: the agent-message dedupe).
 
@@ -364,9 +369,11 @@ The rest:
 | Table | Rows |
 | --- | --- |
 | `deliveries` | The daemon's outbox to parents: a child's `finished` (turn ended; body is its last message) or `failed` (the incarnation ended without one; body is the cause in words, followed by its own). Keyed by child, incarnation, kind and turn id. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
-| `notifications` | The push outbox: one row per turn into `needs_you`, keyed by agent and snapshot revision, with a due time and a body built from envelope fields only. Deleted unsent if the phase leaves `needs_you` first, and with the agent. |
+| `notifications` | The push outbox: one row per turn into `needs_you`, keyed by agent and snapshot revision, with a due time (`due_at_ms`) and the push's `name`, `working_on` and `text`, built from envelope fields only. Deleted unsent if the phase leaves `needs_you` first, and with the agent. |
 | `hosts` | One row per peer host: the generation its inventory last reported, for the host entry this machine publishes. |
 | `schema_migrations` | Each applied migration's number and SHA-256 |
+
+The schema's own text comments every column.
 
 There are no blob tables. A blob is a file in its agent's directory; its name,
 mime type and size are on the attachment in the item that references it, and it
@@ -379,18 +386,27 @@ push being sent.
 
 ### Migrations
 
-Migrations are forward only, append only and additive: a column with a
+The first migration is the schema the first release ships. From that release
+on, migrations are forward only, append only and additive: a column with a
 default, a table, an index. Each runs in its own transaction. Shipped text is
 never edited: the store records each migration's hash in `schema_migrations`
 and refuses to open a file whose history disagrees (`OpenError::EditedMigration`).
 
+That refusal is also what happens to a store written before the release
+schema: its history is a different first migration, so it is never carried
+forward. Opening it fails with an error that names the file and says it
+predates the release schema; the daemon does not start, and the file is left
+exactly as it was, for the person to move aside.
+
 `user_version` holds the schema stamp, `SCHEMA_STAMP`: the minimum number of
 migrations a binary must know to read the file. A binary opens any store whose
 stamp is at most the migrations it ships, so an older binary opens a store a
-later one migrated; one that is too old fails with `OpenError::TooNew`. A drop,
-rename or rewrite ships only after the stamp has been raised past every binary
-that read the earlier shape. The file's `application_id` marks it as an amux store;
-any other SQLite file is refused as foreign.
+later one migrated; one that is too old fails with `OpenError::TooNew`. The
+history is checked before the stamp, so a store from before the release reads
+as that, not as one from a newer build. A drop, rename or rewrite ships only
+after the stamp has been raised past every binary that read the earlier shape.
+The file's `application_id` marks it as an amux store; any other SQLite file is
+refused as foreign.
 
 ### Own rows and replica rows
 
@@ -417,7 +433,7 @@ That is what lets many subscriptions and any number of pages share one cache
 with no reconciliation: a page inside the block is served from it; a page below
 it is fetched from the origin and extends the block.
 
-**Absorb.** Every write into a replica goes through `Store::absorb`:
+**Absorb.** Every write into a replica goes through `Sqlite::absorb`:
 
 | `Absorb` | Effect |
 | --- | --- |
@@ -442,9 +458,10 @@ minutes (`ProfileRuntime::start_retention` in
 decides what goes; the daemon then closes the removed agents' streams, tells the
 fleet (`AgentRemoved` with reason `REMOVAL_REASON_RETENTION`) and deletes their
 directories, which takes their blobs with them. Row cost is `store::item_bytes`:
-the envelope's variable fields plus a fixed 48 bytes a row.
+the envelope's variable fields, 4 bytes for its kind and a fixed 48 bytes a
+row; the store's SQL counts the same.
 
-**Own rows** (`Store::sweep_own`, in
+**Own rows** (`Sqlite::sweep_own`, in
 [`crates/store/src/retention.rs`](../crates/store/src/retention.rs)), against
 the profile's own budget:
 
@@ -462,9 +479,11 @@ A trim sets the agent's `complete_from_order` and `exhausted`, so `Fetch`
 truthfully reports no older history. Trimmed own history is gone for good,
 since the journal below the cursor was already deleted.
 
-**Replica rows** (`Store::sweep_replicas`), against the replica budget:
+**Replica rows** (`Sqlite::sweep_replicas`), against the replica budget:
 
-1. Agents with no open source lose all their rows, least recently used first.
+1. Agents with no open source lose all their rows, least recently used first:
+   by when this host last read them, or, for one it has not read, by when its
+   phase began.
    Their agents row stays, with an empty block, because it is the origin's
    registry entry: it says whether a parent is live and which incarnation a
    child's delivery names.
@@ -500,7 +519,8 @@ The claims on this page are held by named tests, mapped in
 | Where | What it holds |
 | --- | --- |
 | [`crates/journal/tests/journal.rs`](../crates/journal/tests/journal.rs) | Segment naming, rotation, torn tails, reclaim below a cursor |
-| [`crates/store/tests/conformance.rs`](../crates/store/tests/conformance.rs) | Commit, absorb, pages, cuts and deletes, for both store implementations |
+| [`crates/store/tests/conformance.rs`](../crates/store/tests/conformance.rs) | Commit, absorb, pages, cuts, lookups and deletes |
+| [`crates/store/tests/sqlite.rs`](../crates/store/tests/sqlite.rs) | Migrations, refusing a store with another history, one transaction per commit, reopening |
 | [`crates/store/tests/retention.rs`](../crates/store/tests/retention.rs) | Own and replica sweeps |
 | [`crates/node/tests/single_daemon.rs`](../crates/node/tests/single_daemon.rs) | Ingest, re-derivation, power loss and the generation bump |
 

@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use std::io;
 use std::path::PathBuf;
 
-use store::{BlobLru, Store as _, Sweep};
+use store::{BlobLru, Sweep};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{AgentRemoved, RemovalReason, inventory_event};

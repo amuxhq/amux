@@ -155,7 +155,8 @@ three things:
 A daemon with no pipe has no supervisor and goes straight on. Before `go`,
 nothing the daemon has done needs undoing if the supervisor puts the previous
 binary back: the only writes are the generation file and the store migration,
-which is additive. That is what makes activation the rollback checkpoint. The
+which from the first release on is additive. That is what makes activation the
+rollback checkpoint. The
 daemon's startup order is described in [Architecture](ARCHITECTURE.md).
 
 ## Restarts
@@ -274,8 +275,8 @@ three ways:
 
 Rollback restores the binary only, and only before activation. There is no
 store backup: the store the previous binary reopens holds nothing the new one
-wrote except its migration, which is additive, transactional and stamped as a
-minimum version. A bad release that has already activated is fixed by a
+wrote except its migration, which from the first release on is additive,
+transactional and stamped as a minimum version. A bad release that has already activated is fixed by a
 corrective release with a higher version, never by moving back.
 
 The supervisor needs write access to the directory holding the `amux` binary,

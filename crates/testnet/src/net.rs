@@ -24,7 +24,7 @@ use node::{
 };
 use provider_fakes::script::{INPUT_LOG_ENV, SCRIPT_ENV, Script, Step};
 use serde::{Deserialize, Serialize};
-use store::{AgentKey, Marker, Store as _};
+use store::{AgentKey, Marker};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use wire::client_service_server::ClientService as _;

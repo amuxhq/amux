@@ -75,8 +75,8 @@ def run_on_simulator(udid: str, executable: Path) -> None:
 
 def main() -> None:
     executables = build_tests()
-    # The sqlite suite opens real databases, so its binary must carry
-    # SQLite itself rather than load the system's.
+    # Every suite opens real databases, so each binary must carry SQLite
+    # itself rather than load the system's; the sqlite suite's is shown.
     print(sqlite_linkage.inspect(executables["sqlite"]).render(), end="", flush=True)
 
     udid = ios_simulators.ensure("golden")

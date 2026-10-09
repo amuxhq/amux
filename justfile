@@ -33,7 +33,7 @@ test *ARGS:
 test-crate CRATE *ARGS:
     crate=$1; shift; if [ "${1-}" = -- ]; then shift; fi; feature=; if grep -q '^bundled *=' "crates/$crate/Cargo.toml"; then feature='{{desktop_features}}'; fi; {{bounded}} 900 cargo test --locked -p "$crate" $feature "$@"
 
-# Exercise the profile store against both of its implementations.
+# Exercise the profile store: its reader and writer suite, retention and the SQLite file.
 test-store *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 cargo test --locked -p store --features bundled "$@"
 

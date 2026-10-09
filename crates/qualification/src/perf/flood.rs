@@ -21,7 +21,6 @@ use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
 use node::Launch;
 use provider_fakes::script::{Script, Step};
-use store::Store as _;
 use testnet::observe::{self, Mark, marks};
 use testnet::{AgentDecl, ClockMode, HostDecl, Net, NetOptions, PATIENCE, Topology};
 use wire::{InventoryEvent, SessionEvent, inventory_event};

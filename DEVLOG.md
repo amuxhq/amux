@@ -1,3 +1,11 @@
+2026-10-09 — **The phone's bridge names a provider through the app runtime again.**
+Asking a host's catalogue by provider made the bridge crate depend on the
+wire crate directly, which the dependency policy refuses: the bridge is a C
+surface over the embedded runtime and the app runtime, and takes its types
+from them. The app runtime now names the provider its catalogue call takes,
+and the bridge uses that; the wire crate is back to a test-only dependency
+of the bridge.
+
 2026-10-09 — **A thinking row's "thought for" counts from the item before Claude's request again.**
 Headless Claude's request status became a hidden item in the previous
 change, and a thinking row measured its duration from whatever item came

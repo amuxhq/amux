@@ -29,6 +29,10 @@ use ui_runtime::{Fleet, Window};
 use ui_view::{FamilyHeader, FleetCard, FleetView};
 use values::{AgentAct, Directories, Directory, NewAgent, ProviderSignIn};
 pub use values::{FleetChanges, HostView};
+/// The provider whose catalogue `host_catalogue` reads, named here so the
+/// phone's bridge passes it on without a dependency of its own on the wire
+/// crate.
+pub use wire::Provider;
 use wire::{
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Kind, ListRepositoriesRequest,
     ProjectEntry, RenameAgentRequest, StopAgentRequest, StopMode, Trust,
@@ -244,7 +248,7 @@ impl AppRuntime {
     pub async fn host_catalogue(
         &self,
         host_id: &[u8],
-        provider: wire::Provider,
+        provider: Provider,
     ) -> Result<wire::Catalogue, RpcError> {
         let blob = self
             .client

@@ -1489,7 +1489,7 @@ pub unsafe extern "C" fn amux_profile_host_catalogue(
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
         // SAFETY: the caller's contract.
-        let provider: Option<wire::Provider> = unsafe { parse(provider) };
+        let provider: Option<app_runtime::Provider> = unsafe { parse(provider) };
         let app = profile.app.clone();
         profile.spawn(callback, context, async move {
             let Some(host_id) = host_id else {

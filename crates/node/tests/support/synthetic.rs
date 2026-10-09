@@ -242,7 +242,6 @@ impl SyntheticAgent {
         let reading = Arc::new(Mutex::new(None));
         let hellos = Arc::new(AtomicUsize::new(0));
         let id = self.id;
-        let offset = self.journal().offset();
         let journal = self.journal.clone();
         let answer = self.answer.clone();
         let inputs = self.inputs.clone();
@@ -259,7 +258,6 @@ impl SyntheticAgent {
                         of: Some(ctl_frame::Of::Hello(AgentHello {
                             agent_id: id.as_bytes().to_vec(),
                             agent_version: "synthetic".to_owned(),
-                            journal_offset: offset,
                         })),
                     };
                     if agent_dir::write_frame(&mut writer, &hello).await.is_err() {

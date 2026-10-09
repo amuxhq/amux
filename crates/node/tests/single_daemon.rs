@@ -1320,7 +1320,7 @@ fn describe_inventory(event: &InventoryEvent) -> String {
             agent.name,
             Lifecycle::try_from(agent.lifecycle).unwrap(),
             Phase::try_from(agent.phase).unwrap(),
-            agent.working_on.as_ref().map(|w| w.text.as_str())
+            agent.working_on.as_deref()
         ),
         inventory_event::Of::AgentRemoved(removed) => {
             format!("agent removed {:?}", removed.reason())

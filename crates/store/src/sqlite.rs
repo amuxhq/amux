@@ -187,7 +187,7 @@ struct SqlTables<'a> {
 const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent, parent_host, \
     lifecycle, exit_cause, phase, working_on, last_activity, snapshot, snapshot_revision, \
     ingest_cursor, next_revision, source_cursor, complete_from_order, exhausted, created_at, \
-    producer_version, incarnation, turn_open, source_generation, phase_since, git, exit_detail";
+    incarnation, turn_open, source_generation, phase_since, git, exit_detail";
 
 /// `crate::item_bytes`, in SQL: byte lengths, not character counts.
 const ITEM_BYTES: &str = "(length(CAST(key AS BLOB)) + length(CAST(text AS BLOB)) + length(body) \
@@ -224,16 +224,15 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             complete_from_order: row.get::<_, Option<i64>>(17)?.map(|order| order as u64),
             exhausted: row.get::<_, i64>(18)? != 0,
             created_at: row.get(19)?,
-            producer_version: row.get(20)?,
-            incarnation: row.get(21)?,
-            turn_open: row.get::<_, i64>(22)? != 0,
-            source_generation: row.get::<_, i64>(23)? as u64,
-            phase_since: row.get(24)?,
+            incarnation: row.get(20)?,
+            turn_open: row.get::<_, i64>(21)? != 0,
+            source_generation: row.get::<_, i64>(22)? as u64,
+            phase_since: row.get(23)?,
             git: None,
-            exit_detail: row.get(26)?,
+            exit_detail: row.get(25)?,
         },
         snapshot,
-        row.get(25)?,
+        row.get(24)?,
     ))
 }
 
@@ -303,7 +302,7 @@ impl Tables for SqlTables<'_> {
     }
 
     fn put_agent(&mut self, row: &AgentRow) -> Result<(), StoreError> {
-        let placeholders = (1..=27)
+        let placeholders = (1..=26)
             .map(|n| format!("?{n}"))
             .collect::<Vec<_>>()
             .join(", ");
@@ -332,7 +331,6 @@ impl Tables for SqlTables<'_> {
                 row.complete_from_order.map(|order| order as i64),
                 i64::from(row.exhausted),
                 row.created_at,
-                row.producer_version,
                 row.incarnation,
                 i64::from(row.turn_open),
                 row.source_generation as i64,

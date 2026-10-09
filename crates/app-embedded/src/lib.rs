@@ -773,7 +773,6 @@ fn account_view(info: &ProfileInfo) -> AccountView {
         Observed::Retrying => RelayLink::Retrying,
         Observed::AuthenticationRequired => RelayLink::SignInAgain,
         Observed::VersionMismatch => RelayLink::VersionMismatch,
-        Observed::StartupFailed => RelayLink::Failed,
     };
     let pro = match info.tier() {
         Tier::Pro => Some(true),

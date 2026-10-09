@@ -44,6 +44,8 @@ effect reply stdin-4 accepted
 effect user 73746469-6e2d-4400-8000-000000000000 "/compact"
 item 73746469-6e2d-4400-8000-000000000000 prompt final input=stdin-4 at=1787961190777 text="/compact"
 snapshot WORKING queue=[] working_on=- at=1787961190777 asks=[] session=7405faae-434c-4c77-aaf9-569fb25a8b24 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=28483/200000 tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 52 recorded 51: fact Stream type=system subtype=status uuid=00d461b3-c569-43f4-80ff-33ac9a87bfaf
+item 00d461b3-c569-43f4-80ff-33ac9a87bfaf status final at=1787961190783 text="" SDK_STATUS_COMPACTING compacting
 ## 58 recorded 57: fact Stream type=system subtype=compact_boundary uuid=115f463b-1a4e-4a07-bf00-88e995d814ac
 item 115f463b-1a4e-4a07-bf00-88e995d814ac compaction final at=1787961211950 text="" 29543→2963
 item boundary:2 boundary final at=1787961211950 text="" BOUNDARY_KIND_COMPACTED session=7405faae-434c-4c77-aaf9-569fb25a8b24 version=2.1.247

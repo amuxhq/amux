@@ -513,10 +513,8 @@ impl Provider {
                 .to_string(),
         ]);
         let mut env: Vec<(std::ffi::OsString, std::ffi::OsString)> = spec
-            .config
+            .provider_env
             .iter()
-            .flat_map(|config| config.env.iter())
-            .chain(spec.provider_env.iter())
             .map(|(key, value)| (key.into(), value.into()))
             .collect();
         env.push((
@@ -1103,14 +1101,10 @@ fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<S
         } else {
             Vec::new()
         },
-        hook_events: if config.hooks.is_empty() {
-            HOOK_EVENTS
-                .iter()
-                .map(|event| (*event).to_owned())
-                .collect()
-        } else {
-            config.hooks
-        },
+        hook_events: HOOK_EVENTS
+            .iter()
+            .map(|event| (*event).to_owned())
+            .collect(),
         accept_cross_session: true,
         permissions_allow: tools
             .iter()
@@ -1156,10 +1150,8 @@ pub fn codex_view(
         args,
         cwd: PathBuf::from(&spec.cwd),
         env: spec
-            .config
+            .provider_env
             .iter()
-            .flat_map(|config| config.env.iter())
-            .chain(spec.provider_env.iter())
             .map(|(key, value)| (key.into(), value.into()))
             .collect(),
         env_remove: claude::launch::CHILD_SESSION_ENV_SCRUB
@@ -1310,11 +1302,6 @@ fn session_began(spec: &AgentSpec, session: &str) -> bool {
     let configured = spec
         .provider_env
         .get(CONFIG_DIR)
-        .or_else(|| {
-            spec.config
-                .as_ref()
-                .and_then(|config| config.env.get(CONFIG_DIR))
-        })
         .map(PathBuf::from)
         .or_else(|| std::env::var_os(CONFIG_DIR).map(PathBuf::from));
     let Some(config) = configured
@@ -1343,9 +1330,6 @@ fn provider_log(dir: &Path) -> io::Result<std::fs::File> {
 fn environment(command: &mut tokio::process::Command, spec: &AgentSpec) {
     for key in claude::launch::CHILD_SESSION_ENV_SCRUB {
         command.env_remove(key);
-    }
-    if let Some(config) = &spec.config {
-        command.envs(&config.env);
     }
     command.envs(&spec.provider_env);
 }

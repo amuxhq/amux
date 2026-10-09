@@ -4438,7 +4438,6 @@ public enum RelayLink: String, Codable, Hashable, Sendable, CaseIterable {
     case connecting = "Connecting"
     case connected = "Connected"
     case retrying = "Retrying"
-    case failed = "Failed"
     /// The account service wants the person to sign in again.
     case signInAgain = "SignInAgain"
     /// The account service refuses this build as too old.

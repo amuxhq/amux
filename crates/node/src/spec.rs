@@ -169,11 +169,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
             .collect::<HashMap<_, _>>(),
         provider_binary: resolve_binary(&command),
         provider_command: command,
-        // The agent observes and records the version it actually runs, on
-        // its boundary item; probing it here would start the provider.
-        provider_version: String::new(),
         config: Some(EffectiveConfig {
-            hooks: Vec::new(),
             grace_ms: millis(agent.grace_secs),
             drain_ms: millis(agent.drain_secs),
             facts_ring_bytes: agent.facts_ring_mib.saturating_mul(1024 * 1024),
@@ -181,7 +177,6 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
             model: at.resolved.model.clone(),
             permission: at.resolved.permission.clone(),
             mode: at.resolved.mode.clone(),
-            env: HashMap::new(),
             install_path: launch.install_path.to_string_lossy().into_owned(),
         }),
         daemon_version: crate::version().to_owned(),

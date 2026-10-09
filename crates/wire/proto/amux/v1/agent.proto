@@ -63,20 +63,18 @@ message AgentSpec {
   uint32 incarnation = 13;
   // The path that ran for this incarnation: a record, not an instruction.
   string provider_binary = 14;
-  // What that binary reported, for the same reason.
-  string provider_version = 15;
   // What seeds the child's queue: the spawn's prompt, or a parent's
   // message on a parent-driven resume. Daemon-owned; a client never
   // supplies an envelope.
-  optional Bootstrap bootstrap = 16;
+  optional Bootstrap bootstrap = 15;
   // What the host's provider offers, from the daemon's copy for the host,
   // for a kind that cannot be asked itself: terminal Claude. Absent when
   // the host has no copy.
-  optional Catalogue offered = 17;
+  optional Catalogue offered = 16;
   // The branch the agent's worktree was made from, when its host made one:
   // what its git facts measure the branch against. Absent otherwise, and
   // the repository's default branch is the base.
-  optional string base_branch = 18;
+  optional string base_branch = 17;
 }
 
 message Bootstrap {
@@ -100,25 +98,21 @@ message ProviderOffer {
 }
 
 message EffectiveConfig {
-  // Hook policy: which provider hooks the agent process installs.
-  repeated string hooks = 1;
   // How long the agent waits for a daemon after ctl.sock closes (or before
   // one first dials in) before it drains.
-  uint32 grace_ms = 2;
+  uint32 grace_ms = 1;
   // How long a draining agent with no daemon keeps an ask open before it
   // exits orphaned.
-  uint32 drain_ms = 3;
-  uint64 facts_ring_bytes = 4;
-  uint64 journal_segment_bytes = 5;
-  optional string model = 6;
+  uint32 drain_ms = 2;
+  uint64 facts_ring_bytes = 3;
+  uint64 journal_segment_bytes = 4;
+  optional string model = 5;
   // The permission and mode the agent was created with, as its catalogue
   // names them.
-  optional string permission = 7;
-  optional string mode = 8;
-  // Environment additions for the provider child.
-  map<string, string> env = 9;
+  optional string permission = 6;
+  optional string mode = 7;
   // The canonical install path the hook binary and tool server run from.
-  string install_path = 10;
+  string install_path = 8;
 }
 
 // ctl.sock frames, length-prefixed, no version integer.
@@ -173,7 +167,6 @@ message Exiting {
 message AgentHello {
   bytes agent_id = 1;
   string agent_version = 2;
-  uint64 journal_offset = 3;
 }
 
 message Nudge {}

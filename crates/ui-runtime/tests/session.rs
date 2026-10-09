@@ -645,10 +645,7 @@ async fn the_dump_part_writes_structure_and_no_content() {
     session.set_entry(wire::Agent {
         name: ENTRY.into(),
         cwd: format!("/Users/{ENTRY}"),
-        working_on: Some(wire::WorkingOn {
-            text: ENTRY.into(),
-            updated_at_ms: 1,
-        }),
+        working_on: Some(ENTRY.into()),
         ..agent(KIND)
     });
     session.set_host(wire::HostEntry {

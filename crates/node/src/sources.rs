@@ -1307,11 +1307,10 @@ pub(crate) fn from_wire(agent: &Agent) -> AgentRow {
     row.exit_cause = agent.exit_cause;
     row.exit_detail = agent.exit_detail.clone();
     row.phase = agent.phase;
-    row.working_on = agent.working_on.as_ref().map(|on| on.text.clone());
+    row.working_on = agent.working_on.clone();
     row.phase_since = Some(agent.phase_since_ms);
     row.git = agent.git.clone();
     row.created_at = agent.created_at_ms;
-    row.producer_version = agent.producer_version.clone();
     row.incarnation = agent.incarnation;
     row
 }

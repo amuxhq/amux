@@ -23,6 +23,7 @@ const SHIPPED: &[&str] = &[
     "34ceffe9be496cf6e18ab79165f57986857a8d0606556580dde9f871fab48ea7",
     "7276e37dc4a8bf957b51e74d46e1d693931842acf807d32d480659cdb96347f9",
     "1606e14ec49d85ada1c2e62d8339027123a6dd77ad237fa2089b927ab9a4cebe",
+    "0b971d0ce2daa44ab2c6eb0711dd1ed26b937cb74e7935c55b10b29fb81cb483",
 ];
 
 fn step(keys: &[&str]) -> Step {

@@ -34,8 +34,8 @@ use uuid::Uuid;
 use wire::{
     Agent, AgentHello, AgentParent, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest,
     CtlFrame, DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, ExitCause, Kind, Lifecycle,
-    RemovalReason, Rename, SendInputResponse, Stop, StopMode, WorkingOn, ctl_frame,
-    inventory_event, session_event,
+    RemovalReason, Rename, SendInputResponse, Stop, StopMode, ctl_frame, inventory_event,
+    session_event,
 };
 
 use crate::fanout::Fanout;
@@ -1659,9 +1659,6 @@ impl ProfileRuntime {
             writer,
             hello,
         } = connected;
-        if let Err(error) = self.hello_received(id, &hello).await {
-            tracing::warn!(agent = %id, %error, "recording an agent's Hello failed");
-        }
         *handle.ctl.lock().await = Some(writer);
         handle.hello.send_replace(Some(hello));
         handle.caught_up_due.store(true, Ordering::SeqCst);
@@ -1737,18 +1734,6 @@ impl ProfileRuntime {
             }
         });
         handle.tasks.lock().unwrap().push(task);
-    }
-
-    async fn hello_received(&self, id: AgentId, hello: &AgentHello) -> Result<(), StoreError> {
-        let key = self.key(id);
-        let mut store = self.store.lock().await;
-        if let Some(mut row) = store.agent(&key)?
-            && row.producer_version != hello.agent_version
-        {
-            row.producer_version = hello.agent_version.clone();
-            self.put_row(&mut store, &row)?;
-        }
-        Ok(())
     }
 
     /// The process is gone: ingest what it left, record the exit, close its
@@ -2083,14 +2068,10 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         exit_cause: row.exit_cause,
         exit_detail: row.exit_detail.clone(),
         phase: row.phase,
-        working_on: row.working_on.as_ref().map(|text| WorkingOn {
-            text: text.clone(),
-            updated_at_ms: row.last_activity.unwrap_or_default(),
-        }),
+        working_on: row.working_on.clone(),
         // Before its first snapshot an agent has been starting since it
         // was created.
         phase_since_ms: row.phase_since.unwrap_or(row.created_at),
-        producer_version: row.producer_version.clone(),
         incarnation: row.incarnation,
         git: row.git.clone(),
     }

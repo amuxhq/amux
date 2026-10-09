@@ -6,29 +6,32 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 12 recorded 11: fact Stream type=system subtype=init uuid=ba31c9e8-2a1e-4af7-bafc-51450f200ed3
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
+## 14 recorded 13: fact Stream type=system subtype=status uuid=dcc25386-8007-415b-a050-6a20aa2ad90d
+  row    3 dcc25386-8007-415b-a050-6a20aa2ad90d Hidden collapsed
 ## 19 recorded 18: fact Stream type=stream_event uuid=fbd9b443-97c4-430f-a268-eacbc3636fbc
-  row    3 msg_011CfnB8bBxxdP3V7Kho83NX:0 Thinking { text: "", open: true, duration_ms: None }
+  row    4 msg_011CfnB8bBxxdP3V7Kho83NX:0 Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
 ## 21 recorded 20: fact Stream type=stream_event uuid=2cb0bf69-141d-4eb0-83ac-310819250271
-  row    3 msg_011CfnB8bBxxdP3V7Kho83NX:0 Thinking { text: "", open: true, duration_ms: None }
+  row    4 msg_011CfnB8bBxxdP3V7Kho83NX:0 Thinking { text: "", open: true, duration_ms: None }
 ## 24 recorded 23: fact Stream type=assistant uuid=08b25e61-dcd6-4321-801b-acff5c2f9fc0
-  row    3 msg_011CfnB8bBxxdP3V7Kho83NX:0 Thinking { text: "", open: false, duration_ms: Some(596) }
+  row    4 msg_011CfnB8bBxxdP3V7Kho83NX:0 Thinking { text: "", open: false, duration_ms: Some(572) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 27 recorded 26: fact Stream type=stream_event uuid=fb6bb76e-f293-4002-98aa-7cdabef7708d
-  row    4 msg_011CfnB8bBxxdP3V7Kho83NX:1 Prose { text: [], streaming: true, working_note: false }
+  row    5 msg_011CfnB8bBxxdP3V7Kho83NX:1 Prose { text: [], streaming: true, working_note: false }
 ## 28 recorded 27: fact Stream type=stream_event uuid=06e0b21d-d9ed-4d2e-942c-a0814e0e34be
-  row    4 msg_011CfnB8bBxxdP3V7Kho83NX:1 Prose { text: [Text("pong")], streaming: true, working_note: false }
+  row    5 msg_011CfnB8bBxxdP3V7Kho83NX:1 Prose { text: [Text("pong")], streaming: true, working_note: false }
 ## 30 recorded 29: fact Stream type=assistant uuid=210e7934-315b-4a69-9427-8c8127aeed2c
-  row    4 msg_011CfnB8bBxxdP3V7Kho83NX:1 Prose { text: [Text("pong")], streaming: false, working_note: false }
+  row    5 msg_011CfnB8bBxxdP3V7Kho83NX:1 Prose { text: [Text("pong")], streaming: false, working_note: false }
 ## 38 recorded 37: fact Stream type=result subtype=success uuid=36a9bfb0-8808-4c5b-a8c7-02f01b9c7c19
-  row    5 turn:1 TurnEnd { duration_ms: Some(892), cost_usd: Some(0.016752700000000002), failed: false }
+  row    6 turn:1 TurnEnd { duration_ms: Some(892), cost_usd: Some(0.016752700000000002), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 140eeb39-640d-4f7a-ac6f-55ae1a8ef150 Prompt { text: [Text("Reply with the single word pong and nothing else.")], steered: false }
-     3 msg_011CfnB8bBxxdP3V7Kho83NX:0 Thinking { text: "", open: false, duration_ms: Some(596) }
-     4 msg_011CfnB8bBxxdP3V7Kho83NX:1 Prose { text: [Text("pong")], streaming: false, working_note: false }
-     5 turn:1 TurnEnd { duration_ms: Some(892), cost_usd: Some(0.016752700000000002), failed: false }
+     3 dcc25386-8007-415b-a050-6a20aa2ad90d Hidden collapsed
+     4 msg_011CfnB8bBxxdP3V7Kho83NX:0 Thinking { text: "", open: false, duration_ms: Some(572) }
+     5 msg_011CfnB8bBxxdP3V7Kho83NX:1 Prose { text: [Text("pong")], streaming: false, working_note: false }
+     6 turn:1 TurnEnd { duration_ms: Some(892), cost_usd: Some(0.016752700000000002), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 22428, window_tokens: Some(200000), percent: Some(11), near_full: false }) sign-in None
 == settings

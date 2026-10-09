@@ -687,3 +687,46 @@ fn a_permission_claude_does_not_offer_is_refused() {
         "{written:?}"
     );
 }
+
+/// Claude says it is compacting before the compaction lands: the status is
+/// an item, typed with Claude's word kept, ahead of the compaction row, so
+/// the activity line can say "Compacting" meanwhile. The status that only
+/// ends the compaction (a null status) is no item.
+#[test]
+fn compacting_status_is_an_item() {
+    use prost::Message as _;
+    use wire::claude_sdk_item::Kind;
+
+    let replayed =
+        interpret::replay::<ClaudeSdk>(&fixtures().join("recorded_compacted.json")).unwrap();
+    let kinds: Vec<(String, Kind)> = replayed
+        .iter()
+        .flat_map(|frame| &frame.step.items)
+        .filter_map(|item| {
+            let kind = wire::ClaudeSdkItem::decode(item.body.as_slice())
+                .ok()?
+                .kind?;
+            matches!(kind, Kind::Status(_) | Kind::Compaction(_)).then(|| (item.key.clone(), kind))
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            (
+                "00d461b3-c569-43f4-80ff-33ac9a87bfaf".to_owned(),
+                Kind::Status(wire::Status {
+                    status: wire::SdkStatus::Compacting as i32,
+                    word: "compacting".into(),
+                }),
+            ),
+            (
+                "115f463b-1a4e-4a07-bf00-88e995d814ac".to_owned(),
+                Kind::Compaction(wire::Compaction {
+                    tokens_before: Some(29_543),
+                    tokens_after: Some(2_963),
+                    automatic: false,
+                }),
+            ),
+        ]
+    );
+}

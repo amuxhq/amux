@@ -1253,6 +1253,80 @@ fn relay_host(name: &str, account: &str) -> testnet::HostDecl {
     }
 }
 
+/// On a free account the relay lists a host it cannot open a tunnel to:
+/// a trusted host only the relay reaches is away, which the phone draws as
+/// its away banner and host group. A direct link to the same host makes it
+/// online again, and so does the account going Pro.
+#[tokio::test(flavor = "multi_thread")]
+async fn free_tier_relay_only_host_is_away() {
+    let mut topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(relay_host("desk", "ada"))
+        .host_decl(relay_host("laptop", "ada"))
+        .link("desk", "laptop");
+    topology.relay.as_mut().unwrap().accounts[0].tier = testnet::TierDecl::Free;
+    let mut net = Net::start(topology).await.unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    assert_eq!(tier(&net, "laptop"), Some(node::Tier::Free));
+    let mut fleet = net.observe_inventory("laptop").await.unwrap();
+    let presence = |row: &wire::HostEntry| (row.presence(), row.via());
+
+    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    let row = row_until(&mut fleet, desk, "the desk online over its link", |row| {
+        presence(row) == (wire::Presence::Online, wire::HostVia::Direct)
+    })
+    .await;
+    println!("linked: the desk is {:?}", presence(&row));
+
+    net.sever_link("desk", "laptop").unwrap();
+    until_via(&net, "laptop", "desk", HostVia::Relay).await;
+    let row = row_until(
+        &mut fleet,
+        desk,
+        "the desk away on the relay alone",
+        |row| presence(row) == (wire::Presence::Away, wire::HostVia::Relay),
+    )
+    .await;
+    let own = row_until(&mut fleet, laptop, "the laptop's own entry", |_| true).await;
+    assert_eq!(
+        own.presence(),
+        wire::Presence::Online,
+        "a host is online to itself"
+    );
+    println!("relay only, free: the desk is {:?}", presence(&row));
+
+    net.restore_link("desk", "laptop").await.unwrap();
+    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    let row = row_until(
+        &mut fleet,
+        desk,
+        "the desk online over its link again",
+        |row| presence(row) == (wire::Presence::Online, wire::HostVia::Direct),
+    )
+    .await;
+    println!("linked again: the desk is {:?}", presence(&row));
+
+    net.sever_link("desk", "laptop").unwrap();
+    until_via(&net, "laptop", "desk", HostVia::Relay).await;
+    row_until(&mut fleet, desk, "the desk away again", |row| {
+        presence(row) == (wire::Presence::Away, wire::HostVia::Relay)
+    })
+    .await;
+    net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
+    let row = row_until(
+        &mut fleet,
+        desk,
+        "the desk online through the relay on Pro",
+        |row| presence(row) == (wire::Presence::Online, wire::HostVia::Relay),
+    )
+    .await;
+    println!("relay only, Pro: the desk is {:?}", presence(&row));
+
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pro() {
     // The desk listens on the local network; the phone is on the relay

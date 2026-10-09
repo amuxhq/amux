@@ -150,7 +150,9 @@ through a relay when that relay says it has an adjacent link to the host. This
 can make an untrusted host a pairing candidate, but does not grant authority or
 make a discovery result online. A trusted host stays in the inventory whatever
 its presence; losing the last route shows it offline, and only untrusting it
-removes it.
+removes it. A host the relay alone reaches while the account is on the free
+tier shows away: the relay lists it but carries no stream to it. A profile is
+one account, so this host's own tier is the peer's.
 
 Each `Host` in a handshake or neighbor message carries the host's name, its
 build version, its capabilities (whether it serves as a cloud relay, and the

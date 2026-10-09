@@ -90,7 +90,6 @@ pub struct AgentRow {
     /// retention trimmed the older history away.
     pub exhausted: bool,
     pub created_at: i64,
-    pub producer_version: String,
     pub incarnation: u32,
     /// Own rows: the incarnation has a turn it has not ended, from its
     /// start until its first turn end and again whenever a later turn
@@ -125,7 +124,6 @@ impl AgentRow {
             complete_from_order: None,
             exhausted: false,
             created_at: 0,
-            producer_version: String::new(),
             incarnation: 1,
             turn_open: true,
         }
@@ -623,7 +621,6 @@ impl<B: Backend> Store for B {
                     held.exit_cause = row.exit_cause;
                     held.exit_detail = row.exit_detail.clone();
                     held.created_at = row.created_at;
-                    held.producer_version = row.producer_version.clone();
                     if own && row.incarnation > held.incarnation {
                         held.phase = wire::Phase::Starting as i32;
                         held.turn_open = true;

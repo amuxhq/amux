@@ -131,7 +131,6 @@ message NeighborUp {
 // "I lost my last direct link to this host."
 message NeighborDown {
   bytes host_id = 1;
-  optional string reason = 2;
 }
 
 // Written by the opener as the first bytes of every non-control stream. The
@@ -183,13 +182,11 @@ message LinkClose {
 enum LinkCloseReason {
   LINK_CLOSE_REASON_UNSPECIFIED = 0;
   LINK_CLOSE_REASON_USER_SHUTDOWN = 1;
-  LINK_CLOSE_REASON_UPDATING = 2;
-  LINK_CLOSE_REASON_RESTARTING = 3;
-  LINK_CLOSE_REASON_AUTH_EXPIRED = 4;
-  LINK_CLOSE_REASON_PROTOCOL_ERROR = 5;
+  LINK_CLOSE_REASON_AUTH_EXPIRED = 2;
+  LINK_CLOSE_REASON_PROTOCOL_ERROR = 3;
   // The peers share no protocol version; the older one needs updating.
-  LINK_CLOSE_REASON_VERSION_MISMATCH = 6;
-  LINK_CLOSE_REASON_USER_REVOKED = 7;
+  LINK_CLOSE_REASON_VERSION_MISMATCH = 4;
+  LINK_CLOSE_REASON_USER_REVOKED = 5;
 }
 
 message Host {
@@ -357,25 +354,19 @@ message Agent {
   // The cause's own words, when it has any.
   optional string exit_detail = 10;
   Phase phase = 11;
-  optional WorkingOn working_on = 12;
+  optional string working_on = 12;
   // The snapshot's phase_since_ms: when the agent entered its phase, on the
   // clock of the host where it runs.
   int64 phase_since_ms = 13;
-  string producer_version = 14;
-  uint32 incarnation = 15;
+  uint32 incarnation = 14;
   // The snapshot's git facts; absent outside a repository.
-  optional Git git = 16;
+  optional Git git = 15;
 }
 
 enum Lifecycle {
   LIFECYCLE_UNSPECIFIED = 0;
   LIFECYCLE_LIVE = 1;
   LIFECYCLE_EXITED = 2;
-}
-
-message WorkingOn {
-  string text = 1;
-  int64 updated_at_ms = 2;
 }
 
 // Why the row left this daemon's view, which is not always deletion at
@@ -761,7 +752,6 @@ enum Observed {
   OBSERVED_AUTHENTICATION_REQUIRED = 5;
   // The cloud refused this build as too old for its protocol.
   OBSERVED_VERSION_MISMATCH = 6;
-  OBSERVED_STARTUP_FAILED = 7;
 }
 enum Tier {
   TIER_UNSPECIFIED = 0;

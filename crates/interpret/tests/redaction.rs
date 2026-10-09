@@ -515,10 +515,7 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
         agent_id: vec![7; 16],
         name: format!("deploy with {GITHUB_TOKEN}"),
         cwd: "/Users/planted/work".to_owned(),
-        working_on: Some(wire::WorkingOn {
-            text: format!("mailing {EMAIL}"),
-            updated_at_ms: 1,
-        }),
+        working_on: Some(format!("mailing {EMAIL}")),
         exit_cause: wire::ExitCause::CouldNotStart as i32,
         exit_detail: Some(format!("export AWS_SECRET_ACCESS_KEY={ASSIGNED}")),
         kind: wire::Kind::ClaudeSdk as i32,
@@ -547,10 +544,6 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             .into_iter()
             .map(|(name, value)| (name.to_owned(), value.to_owned()))
             .collect(),
-        config: Some(wire::EffectiveConfig {
-            env: [("AWS_SECRET_ACCESS_KEY".to_owned(), ENV_VALUE.to_owned())].into(),
-            ..Default::default()
-        }),
         bootstrap: Some(wire::Bootstrap {
             of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
                 input_id: b"initial".to_vec(),
@@ -585,9 +578,8 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
                 .into_iter()
                 .collect::<std::collections::BTreeMap<_, _>>();
             format!(
-                "args={:?} env={env:?} config.env={:?} prompt={:?}",
+                "args={:?} env={env:?} prompt={:?}",
                 spec.provider_args,
-                spec.config.unwrap_or_default().env,
                 spec.bootstrap
                     .map(|bootstrap| readable(&bootstrap.encode_to_vec())),
             )

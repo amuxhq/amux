@@ -249,7 +249,6 @@ mod tests {
     fn neighbor_down() -> pb::Message {
         message(pb::message::Body::NeighborDown(pb::NeighborDown {
             host_id: vec![0_u8; 16],
-            reason: None,
         }))
     }
 
@@ -364,7 +363,6 @@ mod tests {
         let bodies = [
             pb::message::Body::NeighborDown(pb::NeighborDown {
                 host_id: vec![0_u8; 16],
-                reason: None,
             }),
             pb::message::Body::Reauth(pb::Reauth {
                 auth_token: "new-token".to_string(),

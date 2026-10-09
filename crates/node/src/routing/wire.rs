@@ -30,7 +30,6 @@ pub(crate) fn neighbor_down_message(host_id: HostId) -> pb::Message {
     pb::Message {
         body: Some(pb::message::Body::NeighborDown(pb::NeighborDown {
             host_id: host_id.as_bytes().to_vec(),
-            reason: None,
         })),
     }
 }
@@ -130,7 +129,6 @@ mod tests {
         assert!(matches!(
             neighbor_down_from_wire(pb::NeighborDown {
                 host_id: vec![1, 2, 3],
-                reason: None,
             }),
             Err(WireNeighborEventError::InvalidField {
                 field: "NeighborDown.host_id",

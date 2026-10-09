@@ -1,3 +1,30 @@
+2026-10-09 — **A host only a free account's relay reaches is away, headless Claude's compacting status reaches the activity line, and fields nothing read are gone.**
+The phone has drawn an away banner and an away host group since the free
+tier began, and the docs promised that a host the relay sees while the
+account has no subscription reads as away, but no daemon ever said so: such a
+host was listed online, though the relay refuses to carry anything to it. The
+daemon now lists a trusted host as away while the relay is its only route and
+this profile's account is on the free tier; a profile is one account, so its
+own tier is the peer's. A direct or SSH link makes the host online again, and
+so does the account going Pro. Headless Claude reports "compacting" while it
+compacts, but the interpreter ignored the status, so the activity line's
+"Compacting" never showed outside tests. A status Claude names is now a
+hidden item, typed as compacting or requesting with Claude's own word kept,
+and the activity line reads it until the compaction row lands; a thinking
+row's "thought for" now counts from Claude's request, which the status marks.
+Removed because nothing produced or read them: terminal Claude's task
+notification item (terminal Claude folds a task's notice into its call), the
+`UPDATING` and `RESTARTING` link-close reasons, the relay's startup-failed
+state and the phone's "The relay cannot be reached" line, the journal offset
+in an agent's hello, the reason on a neighbour-down message, the provider
+version on an agent's spec, the hook and environment lists of its effective
+configuration (the agent always installs its default hooks, and the spec's
+provider environment is the one environment), and the agent binary's version
+on the inventory row and its store column; an item's own producer version is
+the record of what wrote it. An agent row's `working_on` is the text alone:
+its timestamp was the newest snapshot's time, not when the text changed, and
+zero on every replica.
+
 2026-10-09 — **The front door's calls are plain: no operation ids, flat pairing requests, byte ids, and `amux pair --demo` back.**
 Eleven front-door requests carried an `operation_id` that the CLI minted
 fresh for every call and the daemon never read: the replay ledger it once

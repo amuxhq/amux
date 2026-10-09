@@ -566,7 +566,7 @@ stream of it carries only the answering host's own entry and agents.
 with `exit_cause` and `exit_detail`, `phase`, `working_on`, `phase_since_ms`
 (on the origin host's clock; the row's creation time until its first
 snapshot) and `git` copied from the agent's newest snapshot envelope,
-`producer_version` and `incarnation`. It never carries a snapshot: a client
+and `incarnation`. It never carries a snapshot: a client
 reads an agent's conversation from the agent's own session, which the client
 library keeps open for every live agent (see [the client
 library](CLIENT.md#the-fleet)), so the row stays small.
@@ -593,7 +593,11 @@ journal carries the same cause and detail.
 unclean reboot of that host (see [the journal and store](JOURNAL_AND_STORE.md)).
 Its `providers` list, per provider the host has been asked about, the hash of
 what that provider offers there and whether it is signed in; a paired host's
-come from that host's own entry.
+come from that host's own entry. A trusted host is online over a direct or SSH
+route, or over the relay while this profile's account is on a subscription;
+away while the relay alone reaches it on a free account, since the relay lists
+it but carries nothing to it; and offline with no route, or once it has said it
+no longer trusts this machine.
 
 `AgentRemoved` carries a `RemovalReason`: why the row left this daemon's
 view, which is not always deletion at the origin. `REMOVAL_REASON_DELETED`

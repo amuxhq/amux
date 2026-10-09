@@ -16,6 +16,8 @@ use std::collections::{BTreeMap, HashSet};
 use store::Store as _;
 use wire::{HostEntry, HostRemoved, Presence, ProviderOnHost, Trust, inventory_event};
 
+use crate::Tier;
+use crate::edge::Observed;
 use crate::routing::HostVia;
 use crate::runtime::ProfileRuntime;
 use crate::serve::inventory;
@@ -72,6 +74,14 @@ impl ProfileRuntime {
         let own_host = own.host_id.clone();
         let mut trusted = HashSet::new();
         if let Some(edge) = self.edge() {
+            // A profile is one account, so a peer on it shares its tier.
+            let free = matches!(
+                edge.observed(),
+                Observed::Connected {
+                    tier: Tier::Free,
+                    ..
+                }
+            );
             for (host, name, _) in edge.trusted() {
                 trusted.insert(host);
                 // A host that said it no longer trusts this one takes no
@@ -84,10 +94,13 @@ impl ProfileRuntime {
                 } else {
                     edge.via(host).await
                 };
-                let presence = if via == HostVia::Offline {
-                    Presence::Offline
-                } else {
-                    Presence::Online
+                // On a free account the relay lists the account's hosts and
+                // opens no tunnel between them: a host only it reaches is
+                // seen and cannot be called, which is away.
+                let presence = match via {
+                    HostVia::Offline => Presence::Offline,
+                    HostVia::Relay if free => Presence::Away,
+                    HostVia::Relay | HostVia::Direct | HostVia::Ssh => Presence::Online,
                 };
                 let (version, capabilities) = edge.described(host).await.unzip();
                 fresh.insert(

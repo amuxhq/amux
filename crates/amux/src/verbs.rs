@@ -104,7 +104,7 @@ fn state(agent: &Agent) -> String {
         Phase::Working => "working",
         Phase::NeedsYou => "needs you",
     };
-    match agent.working_on.as_ref().map(|on| on.text.as_str()) {
+    match agent.working_on.as_deref() {
         Some(text) if !text.is_empty() => format!("{phase}: {text}"),
         _ => phase.to_owned(),
     }

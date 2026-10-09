@@ -336,7 +336,7 @@ impl State {
             shared: Shared::new(spec, ClaudeSdk::KIND, producer_version),
             incarnation: spec.incarnation,
             session: None,
-            version: (!spec.provider_version.is_empty()).then(|| spec.provider_version.clone()),
+            version: None,
             model: None,
             chosen_model: launch_arg(&spec.provider_args, "--model"),
             // The launch argument until Claude says what it applied.
@@ -1251,9 +1251,6 @@ impl Interpreter for ClaudeSdk {
         state.inits = 0;
         state.exited = false;
         state.early_boundary = None;
-        if !spec.provider_version.is_empty() {
-            state.version = Some(spec.provider_version.clone());
-        }
         state.effort = launch_arg(&spec.provider_args, "--effort");
         state.resume()
     }
@@ -1359,7 +1356,15 @@ fn describe_item(body: &[u8]) -> ItemView {
                     .map_or("-".to_owned(), |cost| format!("{cost:.6}"))
             ),
         ),
-        Some(Kind::Status(status)) => ("status", true, status.status),
+        Some(Kind::Status(status)) => (
+            "status",
+            true,
+            format!(
+                "{} {}",
+                wire::SdkStatus::try_from(status.status).map_or("?", |status| status.as_str_name()),
+                status.word
+            ),
+        ),
         Some(Kind::Boundary(boundary)) => (
             "boundary",
             true,

@@ -637,6 +637,7 @@ tests = [
   "testnet/spec_network::malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_carries_on",
   "testnet/spec_network::a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its_stream",
   "testnet/spec_network::a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pro",
+  "testnet/spec_network::free_tier_relay_only_host_is_away",
   "testnet/spec_replication::blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader",
 ]
 
@@ -949,6 +950,25 @@ tests = [
   "interpret/lib::shared::tests::since_when_moves_only_when_the_phase_changes",
   "ui-view/views::the_fleet_places_families_by_their_loudest_member_newest_first",
   "tui/lib::tests::home_keeps_its_order_while_agents_stream_and_moves_one_whose_turn_ended",
+]
+
+[[contract]]
+id = "free-tier-relay-host-is-away"
+source = "invariant"
+section = "Fleet"
+claim = "A trusted host the relay alone reaches while the account is on the free tier is away, not online, since the relay lists it and carries nothing to it; a direct route to it, or the account going Pro, makes it online again; a client draws away from the daemon's word."
+tests = [
+  "testnet/spec_network::free_tier_relay_only_host_is_away",
+]
+
+[[contract]]
+id = "compacting-reads-until-the-compaction-lands"
+source = "invariant"
+section = "Session state"
+claim = "Headless Claude's compacting status is a hidden item with Claude's word kept, emitted ahead of the compaction row, and the activity line reads Compacting from it until the compaction lands."
+tests = [
+  "interpret/claude_sdk::compacting_status_is_an_item",
+  "ui-state/spec::activity::compacting_shows_until_the_compaction_lands",
 ]
 
 [[contract]]

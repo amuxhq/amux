@@ -16,6 +16,8 @@ snapshot WORKING queue=[] working_on=- at=1791344092529 asks=[] session=? model=
 ## 12 recorded 11: fact Stream type=system subtype=init uuid=df0ae923-181c-4bab-a99b-a7df6b256364
 item boundary:1 boundary final at=1791344092550 text="" BOUNDARY_KIND_STARTED session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 version=2.1.292
 snapshot WORKING queue=[] working_on=- at=1791344092550 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 14 recorded 13: fact Stream type=system subtype=status uuid=3a8a2c0f-28ff-42fb-b5b3-78b242f7a262
+item 3a8a2c0f-28ff-42fb-b5b3-78b242f7a262 status final at=1791344092553 text="" SDK_STATUS_REQUESTING requesting
 ## 18 recorded 17: fact Stream type=stream_event uuid=acb8191b-ab17-40c1-87f4-8790b6967d02
 snapshot WORKING queue=[] working_on=- at=1791344093537 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=22498/? tasks=? active=[] usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 19 recorded 18: fact Stream type=stream_event uuid=ffa49acd-45cd-407d-8ef4-69858ce28130
@@ -37,6 +39,8 @@ effect write "{\"response\":{\"request_id\":\"ae56c573-d7c5-4ef5-825a-7dc4f79910
 effect reply stdin-4 accepted
 item toolu_01W6kGbyyVYBBy7NZibWCqgJ ask final at=1791344094325 text="" question×2 ASK_OUTCOME_ANSWERED answered 1 of 2 [(skipped); Small]
 snapshot WORKING queue=[] working_on=- at=1791344095304 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=22498/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 118 recorded 117: fact Stream type=system subtype=status uuid=357ca1f0-abb5-4bc2-85b5-8a7aedddfb51
+item 357ca1f0-abb5-4bc2-85b5-8a7aedddfb51 status final at=1791344095315 text="" SDK_STATUS_REQUESTING requesting
 ## 120 recorded 119: fact Stream type=stream_event uuid=518fa628-c413-452a-bcb9-66e7e38ca094
 snapshot WORKING queue=[] working_on=- at=1791344096138 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=22838/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 122 recorded 121: fact Stream type=stream_event uuid=1fd9e5e1-cfc5-4060-a52f-56c5ed54406f
@@ -56,6 +60,8 @@ effect write "{\"response\":{\"request_id\":\"0565081e-db13-4db2-980e-60da1365bc
 effect reply stdin-5 accepted
 item toolu_01MrEoASRJVXZ8HofCXcyLnY ask final at=1791344096904 text="" question×1 ASK_OUTCOME_REPLIED answered 0 of 1 [(skipped)] reply="Never mind the shape. Reply with the single word done and nothing else."
 snapshot WORKING queue=[] working_on=- at=1791344097367 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=22838/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+## 176 recorded 175: fact Stream type=system subtype=status uuid=1934a552-c50e-4688-b6c7-cd9285ea2826
+item 1934a552-c50e-4688-b6c7-cd9285ea2826 status final at=1791344097374 text="" SDK_STATUS_REQUESTING requesting
 ## 178 recorded 177: fact Stream type=stream_event uuid=57476aea-70b4-4dab-a348-fe12a80bff66
 snapshot WORKING queue=[] working_on=- at=1791344098262 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23080/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 179 recorded 178: fact Stream type=stream_event uuid=5569538d-0715-4aeb-a173-248f6dcb3a53

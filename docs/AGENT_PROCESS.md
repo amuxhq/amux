@@ -201,7 +201,7 @@ version integer, and a frame a reader does not know is ignored.
 
 | Frame | Direction | Meaning |
 |---|---|---|
-| `hello` | agent → daemon | Sent at once on every connection: the agent id, the agent's version, and the journal's current end offset |
+| `hello` | agent → daemon | Sent at once on every connection: the agent id and the agent's version |
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
 | `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
@@ -284,8 +284,7 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   them. The agent's part registers `<install path> hooks claude` as the hook
   command for `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
   `PermissionRequest`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-  `Stop` and `Notification` (unless the spec's hook policy names others),
-  accepts messages from other sessions at once, and allows amux's own tools
+  `Stop` and `Notification`, accepts messages from other sessions at once, and allows amux's own tools
   without asking.
 - `--mcp-config` naming amux's tool server (see [the tool server](#the-tool-server)).
 - `--messaging-socket-path private/messaging.sock`.

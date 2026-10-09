@@ -267,8 +267,9 @@ Never a row; kept in debug reports: hook started and finished (a notice only whe
 details, thinking-token estimates, tool progress ticks (which feed the activity line), tool summaries,
 "requesting" and "compacting" statuses (the activity line), command-list changes, persisted files, plugin
 installs, memory recall, prompt suggestions, context reminders injected into a turn, checkpoints, session-state
-changes and model verification metadata. In the view, headless Claude's status items, terminal Claude's
-compaction summary, interruption and task items, and Codex's tool-server startup and whole-turn diff items map to
+changes and model verification metadata. In the view, headless Claude's status items (Claude's "compacting" and
+"requesting", typed, with its own word kept; "compacting" is what the activity line reads until the compaction row
+lands), terminal Claude's compaction summary and interruption items, and Codex's tool-server startup and whole-turn diff items map to
 `RowKind::Hidden`. A body this build cannot decode is an `Unrecognized` row, never hidden.
 
 ## Claude versus Codex

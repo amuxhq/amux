@@ -626,7 +626,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Pty::Tool(tool) => claude_tool(state, held, tool),
             Pty::Turn(turn) => plain(turn_row(held, turn)),
             Pty::Compaction(c) => plain(compaction(c)),
-            Pty::CompactSummary(_) | Pty::Task(_) | Pty::Interruption(_) => plain(RowKind::Hidden),
+            Pty::CompactSummary(_) | Pty::Interruption(_) => plain(RowKind::Hidden),
             Pty::AgentMessage(m) => plain(agent_message(held, m)),
             Pty::ApiError(e) => error(e),
             Pty::Boundary(b) => plain(boundary(b)),

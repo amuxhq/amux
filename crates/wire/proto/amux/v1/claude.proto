@@ -31,33 +31,25 @@ message ClaudePtyItem {
     Turn turn = 5;
     Compaction compaction = 6;
     CompactSummary compact_summary = 7;
-    TaskNotification task = 8;
-    Interruption interruption = 9;
-    AgentMessage agent_message = 10;
-    ApiError api_error = 11;
-    Boundary boundary = 12;
-    SlashOutput slash = 13;
-    Unrecognized unrecognized = 14;
+    Interruption interruption = 8;
+    AgentMessage agent_message = 9;
+    ApiError api_error = 10;
+    Boundary boundary = 11;
+    SlashOutput slash = 12;
+    Unrecognized unrecognized = 13;
     // A prompt delivered into the running turn; the text is the envelope's.
-    Steer steer = 15;
+    Steer steer = 14;
     // A dialog Claude shows in its own terminal that no hook can answer: an
     // unanswerable ask that is its own row.
-    AskItem ask = 16;
+    AskItem ask = 15;
     // The plan Claude declared, keyed by the call that declared it.
-    Plan plan = 17;
+    Plan plan = 16;
   }
 }
 
 // The summary a compaction wrote into the transcript; the summary is the
 // envelope text.
 message CompactSummary {}
-
-// A background task's completion notice injected into the conversation.
-message TaskNotification {
-  string task_id = 1;
-  string status = 2;
-  string summary = 3;
-}
 
 // "You stopped it."
 message Interruption {}
@@ -156,10 +148,18 @@ enum TaskState {
   TASK_STATE_STOPPED = 4;
 }
 
-// A status the SDK reports as an event worth a row; the text is the envelope
-// text.
+// A status headless Claude reports as an event worth a row; drawn hidden,
+// read by the activity line until the compaction row lands.
 message Status {
-  string status = 1;
+  SdkStatus status = 1;
+  // Claude's own word, always carried.
+  string word = 2;
+}
+
+enum SdkStatus {
+  SDK_STATUS_UNSPECIFIED = 0;
+  SDK_STATUS_COMPACTING = 1;
+  SDK_STATUS_REQUESTING = 2;
 }
 
 message ClaudeSdkSnapshot {

@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 /// The minimum number of migrations a binary must know to read a store it
 /// writes. Stored as `user_version`; a binary opens any store whose stamp is
 /// at most the migrations it has, so an older binary opens a newer store.
-pub const SCHEMA_STAMP: u32 = 6;
+pub const SCHEMA_STAMP: u32 = 7;
 
 /// Every migration ever shipped, in order. Append only.
 pub const MIGRATIONS: &[&str] = &[
@@ -123,6 +123,12 @@ UPDATE agents SET exit_detail = exit_cause
   WHERE exit_code = 0 AND exit_cause IS NOT NULL AND exit_cause <> 'exited';
 ALTER TABLE agents DROP COLUMN exit_cause;
 ALTER TABLE agents RENAME COLUMN exit_code TO exit_cause;
+"#,
+    // Nothing read the agent binary's version on the row; an item's own
+    // producer_version is the record of what wrote it. Raises the stamp: a
+    // build that reads the column cannot read this store.
+    r#"
+ALTER TABLE agents DROP COLUMN producer_version;
 "#,
 ];
 

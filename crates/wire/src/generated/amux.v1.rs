@@ -3051,7 +3051,7 @@ impl ::prost::Name for ClaudeCreateConfig {
 pub struct ClaudePtyItem {
     #[prost(
         oneof = "claude_pty_item::Kind",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16"
     )]
     pub kind: ::core::option::Option<claude_pty_item::Kind>,
 }
@@ -3074,28 +3074,26 @@ pub mod claude_pty_item {
         #[prost(message, tag = "7")]
         CompactSummary(super::CompactSummary),
         #[prost(message, tag = "8")]
-        Task(super::TaskNotification),
-        #[prost(message, tag = "9")]
         Interruption(super::Interruption),
-        #[prost(message, tag = "10")]
+        #[prost(message, tag = "9")]
         AgentMessage(super::AgentMessage),
-        #[prost(message, tag = "11")]
+        #[prost(message, tag = "10")]
         ApiError(super::ApiError),
-        #[prost(message, tag = "12")]
+        #[prost(message, tag = "11")]
         Boundary(super::Boundary),
-        #[prost(message, tag = "13")]
+        #[prost(message, tag = "12")]
         Slash(super::SlashOutput),
-        #[prost(message, tag = "14")]
+        #[prost(message, tag = "13")]
         Unrecognized(super::Unrecognized),
         /// A prompt delivered into the running turn; the text is the envelope's.
-        #[prost(message, tag = "15")]
+        #[prost(message, tag = "14")]
         Steer(super::Steer),
         /// A dialog Claude shows in its own terminal that no hook can answer: an
         /// unanswerable ask that is its own row.
-        #[prost(message, tag = "16")]
+        #[prost(message, tag = "15")]
         Ask(super::AskItem),
         /// The plan Claude declared, keyed by the call that declared it.
-        #[prost(message, tag = "17")]
+        #[prost(message, tag = "16")]
         Plan(super::Plan),
     }
 }
@@ -3121,26 +3119,6 @@ impl ::prost::Name for CompactSummary {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.CompactSummary".into()
-    }
-}
-/// A background task's completion notice injected into the conversation.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct TaskNotification {
-    #[prost(string, tag = "1")]
-    pub task_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub status: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub summary: ::prost::alloc::string::String,
-}
-impl ::prost::Name for TaskNotification {
-    const NAME: &'static str = "TaskNotification";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.TaskNotification".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.TaskNotification".into()
     }
 }
 /// "You stopped it."
@@ -3358,12 +3336,15 @@ impl ::prost::Name for Task {
         "/amux.v1.Task".into()
     }
 }
-/// A status the SDK reports as an event worth a row; the text is the envelope
-/// text.
+/// A status headless Claude reports as an event worth a row; drawn hidden,
+/// read by the activity line until the compaction row lands.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Status {
-    #[prost(string, tag = "1")]
-    pub status: ::prost::alloc::string::String,
+    #[prost(enumeration = "SdkStatus", tag = "1")]
+    pub status: i32,
+    /// Claude's own word, always carried.
+    #[prost(string, tag = "2")]
+    pub word: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Status {
     const NAME: &'static str = "Status";
@@ -3584,6 +3565,35 @@ impl TaskState {
             "TASK_STATE_COMPLETED" => Some(Self::Completed),
             "TASK_STATE_FAILED" => Some(Self::Failed),
             "TASK_STATE_STOPPED" => Some(Self::Stopped),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SdkStatus {
+    Unspecified = 0,
+    Compacting = 1,
+    Requesting = 2,
+}
+impl SdkStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SDK_STATUS_UNSPECIFIED",
+            Self::Compacting => "SDK_STATUS_COMPACTING",
+            Self::Requesting => "SDK_STATUS_REQUESTING",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SDK_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "SDK_STATUS_COMPACTING" => Some(Self::Compacting),
+            "SDK_STATUS_REQUESTING" => Some(Self::Requesting),
             _ => None,
         }
     }
@@ -4400,23 +4410,20 @@ pub struct AgentSpec {
     /// The path that ran for this incarnation: a record, not an instruction.
     #[prost(string, tag = "14")]
     pub provider_binary: ::prost::alloc::string::String,
-    /// What that binary reported, for the same reason.
-    #[prost(string, tag = "15")]
-    pub provider_version: ::prost::alloc::string::String,
     /// What seeds the child's queue: the spawn's prompt, or a parent's
     /// message on a parent-driven resume. Daemon-owned; a client never
     /// supplies an envelope.
-    #[prost(message, optional, tag = "16")]
+    #[prost(message, optional, tag = "15")]
     pub bootstrap: ::core::option::Option<Bootstrap>,
     /// What the host's provider offers, from the daemon's copy for the host,
     /// for a kind that cannot be asked itself: terminal Claude. Absent when
     /// the host has no copy.
-    #[prost(message, optional, tag = "17")]
+    #[prost(message, optional, tag = "16")]
     pub offered: ::core::option::Option<Catalogue>,
     /// The branch the agent's worktree was made from, when its host made one:
     /// what its git facts measure the branch against. Absent otherwise, and
     /// the repository's default branch is the base.
-    #[prost(string, optional, tag = "18")]
+    #[prost(string, optional, tag = "17")]
     pub base_branch: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for AgentSpec {
@@ -4481,39 +4488,30 @@ impl ::prost::Name for ProviderOffer {
         "/amux.v1.ProviderOffer".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct EffectiveConfig {
-    /// Hook policy: which provider hooks the agent process installs.
-    #[prost(string, repeated, tag = "1")]
-    pub hooks: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// How long the agent waits for a daemon after ctl.sock closes (or before
     /// one first dials in) before it drains.
-    #[prost(uint32, tag = "2")]
+    #[prost(uint32, tag = "1")]
     pub grace_ms: u32,
     /// How long a draining agent with no daemon keeps an ask open before it
     /// exits orphaned.
-    #[prost(uint32, tag = "3")]
+    #[prost(uint32, tag = "2")]
     pub drain_ms: u32,
-    #[prost(uint64, tag = "4")]
+    #[prost(uint64, tag = "3")]
     pub facts_ring_bytes: u64,
-    #[prost(uint64, tag = "5")]
+    #[prost(uint64, tag = "4")]
     pub journal_segment_bytes: u64,
-    #[prost(string, optional, tag = "6")]
+    #[prost(string, optional, tag = "5")]
     pub model: ::core::option::Option<::prost::alloc::string::String>,
     /// The permission and mode the agent was created with, as its catalogue
     /// names them.
-    #[prost(string, optional, tag = "7")]
+    #[prost(string, optional, tag = "6")]
     pub permission: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "8")]
+    #[prost(string, optional, tag = "7")]
     pub mode: ::core::option::Option<::prost::alloc::string::String>,
-    /// Environment additions for the provider child.
-    #[prost(map = "string, string", tag = "9")]
-    pub env: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
     /// The canonical install path the hook binary and tool server run from.
-    #[prost(string, tag = "10")]
+    #[prost(string, tag = "8")]
     pub install_path: ::prost::alloc::string::String,
 }
 impl ::prost::Name for EffectiveConfig {
@@ -4641,8 +4639,6 @@ pub struct AgentHello {
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub agent_version: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub journal_offset: u64,
 }
 impl ::prost::Name for AgentHello {
     const NAME: &'static str = "AgentHello";
@@ -5102,8 +5098,6 @@ impl ::prost::Name for NeighborUp {
 pub struct NeighborDown {
     #[prost(bytes = "vec", tag = "1")]
     pub host_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, optional, tag = "2")]
-    pub reason: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for NeighborDown {
     const NAME: &'static str = "NeighborDown";
@@ -5530,18 +5524,16 @@ pub struct Agent {
     pub exit_detail: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(enumeration = "Phase", tag = "11")]
     pub phase: i32,
-    #[prost(message, optional, tag = "12")]
-    pub working_on: ::core::option::Option<WorkingOn>,
+    #[prost(string, optional, tag = "12")]
+    pub working_on: ::core::option::Option<::prost::alloc::string::String>,
     /// The snapshot's phase_since_ms: when the agent entered its phase, on the
     /// clock of the host where it runs.
     #[prost(int64, tag = "13")]
     pub phase_since_ms: i64,
-    #[prost(string, tag = "14")]
-    pub producer_version: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "15")]
+    #[prost(uint32, tag = "14")]
     pub incarnation: u32,
     /// The snapshot's git facts; absent outside a repository.
-    #[prost(message, optional, tag = "16")]
+    #[prost(message, optional, tag = "15")]
     pub git: ::core::option::Option<Git>,
 }
 impl ::prost::Name for Agent {
@@ -5552,23 +5544,6 @@ impl ::prost::Name for Agent {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.Agent".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct WorkingOn {
-    #[prost(string, tag = "1")]
-    pub text: ::prost::alloc::string::String,
-    #[prost(int64, tag = "2")]
-    pub updated_at_ms: i64,
-}
-impl ::prost::Name for WorkingOn {
-    const NAME: &'static str = "WorkingOn";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.WorkingOn".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.WorkingOn".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -6907,13 +6882,11 @@ impl StreamRefusal {
 pub enum LinkCloseReason {
     Unspecified = 0,
     UserShutdown = 1,
-    Updating = 2,
-    Restarting = 3,
-    AuthExpired = 4,
-    ProtocolError = 5,
+    AuthExpired = 2,
+    ProtocolError = 3,
     /// The peers share no protocol version; the older one needs updating.
-    VersionMismatch = 6,
-    UserRevoked = 7,
+    VersionMismatch = 4,
+    UserRevoked = 5,
 }
 impl LinkCloseReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6924,8 +6897,6 @@ impl LinkCloseReason {
         match self {
             Self::Unspecified => "LINK_CLOSE_REASON_UNSPECIFIED",
             Self::UserShutdown => "LINK_CLOSE_REASON_USER_SHUTDOWN",
-            Self::Updating => "LINK_CLOSE_REASON_UPDATING",
-            Self::Restarting => "LINK_CLOSE_REASON_RESTARTING",
             Self::AuthExpired => "LINK_CLOSE_REASON_AUTH_EXPIRED",
             Self::ProtocolError => "LINK_CLOSE_REASON_PROTOCOL_ERROR",
             Self::VersionMismatch => "LINK_CLOSE_REASON_VERSION_MISMATCH",
@@ -6937,8 +6908,6 @@ impl LinkCloseReason {
         match value {
             "LINK_CLOSE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
             "LINK_CLOSE_REASON_USER_SHUTDOWN" => Some(Self::UserShutdown),
-            "LINK_CLOSE_REASON_UPDATING" => Some(Self::Updating),
-            "LINK_CLOSE_REASON_RESTARTING" => Some(Self::Restarting),
             "LINK_CLOSE_REASON_AUTH_EXPIRED" => Some(Self::AuthExpired),
             "LINK_CLOSE_REASON_PROTOCOL_ERROR" => Some(Self::ProtocolError),
             "LINK_CLOSE_REASON_VERSION_MISMATCH" => Some(Self::VersionMismatch),
@@ -7223,7 +7192,6 @@ pub enum Observed {
     AuthenticationRequired = 5,
     /// The cloud refused this build as too old for its protocol.
     VersionMismatch = 6,
-    StartupFailed = 7,
 }
 impl Observed {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -7239,7 +7207,6 @@ impl Observed {
             Self::Retrying => "OBSERVED_RETRYING",
             Self::AuthenticationRequired => "OBSERVED_AUTHENTICATION_REQUIRED",
             Self::VersionMismatch => "OBSERVED_VERSION_MISMATCH",
-            Self::StartupFailed => "OBSERVED_STARTUP_FAILED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -7252,7 +7219,6 @@ impl Observed {
             "OBSERVED_RETRYING" => Some(Self::Retrying),
             "OBSERVED_AUTHENTICATION_REQUIRED" => Some(Self::AuthenticationRequired),
             "OBSERVED_VERSION_MISMATCH" => Some(Self::VersionMismatch),
-            "OBSERVED_STARTUP_FAILED" => Some(Self::StartupFailed),
             _ => None,
         }
     }

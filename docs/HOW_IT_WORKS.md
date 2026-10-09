@@ -212,7 +212,8 @@ What an account buys:
 
 - **Signed in, no subscription:** your hosts see each other's presence
   through the relay, and you can tell a host that is up from one that is
-  off, but the relay refuses to carry agent traffic or pairing between them.
+  off, but the relay refuses to carry agent traffic or pairing between them,
+  so a host only the relay reaches shows as away.
   Their agents are reachable on your network or over SSH.
 - **With a subscription:** the relay carries agent traffic and pairing too,
   so your phone reaches your desktop from anywhere.

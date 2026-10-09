@@ -1596,11 +1596,6 @@ fn describe_item(body: &[u8]) -> ItemView {
             ),
         ),
         Some(Kind::CompactSummary(_)) => ("compact_summary", true, String::new()),
-        Some(Kind::Task(task)) => (
-            "task",
-            true,
-            format!("{} {} {}", task.task_id, task.status, task.summary),
-        ),
         Some(Kind::Interruption(_)) => ("interruption", true, String::new()),
         Some(Kind::AgentMessage(message)) => (
             "agent_message",

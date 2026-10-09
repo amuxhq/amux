@@ -260,7 +260,7 @@ impl Server {
                     "phase": word(agent.phase().as_str_name(), "PHASE_"),
                 });
                 if let Some(working_on) = &agent.working_on {
-                    row["working_on"] = json!(working_on.text);
+                    row["working_on"] = json!(working_on);
                 }
                 let cause = wire::exit_words(agent.exit_cause, agent.exit_detail.as_deref());
                 if !cause.is_empty() {

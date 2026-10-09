@@ -190,8 +190,6 @@ final class FleetStoreTests: XCTestCase {
         XCTAssertEqual(fleet.exceptions, "desk offline")
         fleet.relay(.retrying)
         XCTAssertEqual(fleet.exceptions, "Reconnecting to the relay")
-        fleet.relay(.failed)
-        XCTAssertEqual(fleet.exceptions, "The relay cannot be reached")
     }
 
     func testAKindThisBuildCannotOpenIsListedButNotReadable() {

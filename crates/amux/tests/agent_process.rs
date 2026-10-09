@@ -477,7 +477,6 @@ async fn life_of_an_agent(kind: Kind) {
 
     // A daemon dialling back in finds it caught up, and stops it.
     let mut daemon = agent.dial().await;
-    assert_eq!(daemon.hello.journal_offset, agent.journal().1);
     daemon.stop(StopMode::Graceful).await;
     assert!(exits(&mut process).await.success());
     for attached in &mut terminals {

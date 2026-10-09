@@ -22,8 +22,7 @@ use wire::client_service_server::ClientService;
 use wire::{
     Agent as Row, AgentParent, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
     InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest, SendInputResponse,
-    SendMessageRequest, SendMessageResponse, StopMode, Trust, WorkingOn, inventory_event,
-    send_input_response,
+    SendMessageRequest, SendMessageResponse, StopMode, Trust, inventory_event, send_input_response,
 };
 
 const ME: [u8; 16] = [0xa1; 16];
@@ -403,10 +402,7 @@ fn fleet() -> Fleet {
     let mut me = row(&ME, &HERE, "lead");
     me.kind = Kind::ClaudePty as i32;
     me.phase = Phase::Working as i32;
-    me.working_on = Some(WorkingOn {
-        text: "Splitting the parser".into(),
-        updated_at_ms: 1,
-    });
+    me.working_on = Some("Splitting the parser".into());
     let mut reviewer = row(&REVIEWER, &STUDIO, "reviewer");
     reviewer.kind = Kind::Codex as i32;
     let mut child = row(&CHILD, &HERE, "helper");

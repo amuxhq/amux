@@ -334,7 +334,7 @@ The schema is the migrations in
 | `source_generation` | Replica rows: the origin generation the block was taken under, from the `Opening` of the stream whose `Reset` began it |
 | `complete_from_order` | The order from which the held rows are known to be contiguous up to the newest (see below) |
 | `exhausted` | No older history exists: the origin said so, or retention trimmed it |
-| `created_at`, `producer_version`, `incarnation` | Creation time, the agent binary's version from its Hello, and the `spec.<n>` it is running |
+| `created_at`, `incarnation` | Creation time and the `spec.<n>` it is running |
 | `turn_open` | Own rows: the incarnation has a turn it has not ended. An incarnation that exits with one open tells its parent it failed. |
 
 Kind, lifecycle, exit cause and phase are stored as their wire integers, so a value from

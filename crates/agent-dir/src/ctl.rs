@@ -75,7 +75,6 @@ mod tests {
             of: Some(ctl_frame::Of::Hello(AgentHello {
                 agent_id: vec![7; 16],
                 agent_version: "v".into(),
-                journal_offset: 300,
             })),
         };
         let mut bytes = Vec::new();

@@ -445,7 +445,6 @@ impl<I: Interpreter> Host<I> {
         self.send(ctl_frame::Of::Hello(AgentHello {
             agent_id: self.spec.agent_id.clone(),
             agent_version: VERSION.to_owned(),
-            journal_offset: self.journal.offset(),
         }));
     }
 

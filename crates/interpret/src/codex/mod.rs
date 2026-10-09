@@ -471,7 +471,7 @@ impl State {
             name: spec.name.clone(),
             names_set: 0,
             thread_id: None,
-            version: (!spec.provider_version.is_empty()).then(|| spec.provider_version.clone()),
+            version: None,
             model: None,
             launch_model: None,
             effort: None,
@@ -1534,9 +1534,6 @@ impl<A: Arm> Interpreter for CodexWith<A> {
         state.shared.reincarnate(spec, producer_version);
         state.incarnation = spec.incarnation;
         state.name = spec.name.clone();
-        if !spec.provider_version.is_empty() {
-            state.version = Some(spec.provider_version.clone());
-        }
         state.resume()
     }
 

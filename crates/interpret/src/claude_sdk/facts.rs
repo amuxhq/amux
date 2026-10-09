@@ -141,6 +141,27 @@ impl State {
                 {
                     self.permission_mode = Some(mode);
                 }
+                // The activity line reads "Compacting" from this item until
+                // the compaction row lands; a status of null only ends one.
+                if let Some(word) = status.status {
+                    let typed = match word.as_str() {
+                        "compacting" => wire::SdkStatus::Compacting,
+                        "requesting" => wire::SdkStatus::Requesting,
+                        _ => wire::SdkStatus::Unspecified,
+                    };
+                    self.shared.item(
+                        emit,
+                        ItemDraft {
+                            key: status.uuid,
+                            body: item_body(Kind::Status(wire::Status {
+                                status: typed as i32,
+                                word,
+                            })),
+                            complete: true,
+                            ..Default::default()
+                        },
+                    );
+                }
             }
             Message::CompactBoundary(compact) => {
                 let metadata = &compact.compact_metadata;

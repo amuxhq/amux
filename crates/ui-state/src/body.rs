@@ -61,7 +61,7 @@ impl ItemBody {
                 Pty::ApiError(error) => api_error(error),
                 Pty::Boundary(_) => ItemClass::Boundary,
                 Pty::AgentMessage(_) => ItemClass::AgentMessage,
-                Pty::CompactSummary(_) | Pty::Task(_) | Pty::Interruption(_) => ItemClass::Silent,
+                Pty::CompactSummary(_) | Pty::Interruption(_) => ItemClass::Silent,
                 Pty::Compaction(_) | Pty::Slash(_) | Pty::Unrecognized(_) => ItemClass::Other,
                 Pty::Ask(_) | Pty::Plan(_) => ItemClass::Ask,
             },
@@ -79,7 +79,9 @@ impl ItemBody {
                 Sdk::ApiError(error) => api_error(error),
                 Sdk::Boundary(_) => ItemClass::Boundary,
                 Sdk::AgentMessage(_) => ItemClass::AgentMessage,
-                Sdk::Status(status) if status.status == "compacting" => ItemClass::Compacting,
+                Sdk::Status(status) if status.status() == wire::SdkStatus::Compacting => {
+                    ItemClass::Compacting
+                }
                 Sdk::Status(_) => ItemClass::Silent,
                 Sdk::Task(_)
                 | Sdk::Slash(_)

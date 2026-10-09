@@ -128,7 +128,8 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                 Body::Turn => sdk::Kind::Turn(wire::Turn::default()),
                 Body::Retry { attempt, max } => sdk::Kind::ApiError(retry(attempt, max)),
                 Body::Compacting => sdk::Kind::Status(wire::Status {
-                    status: "compacting".into(),
+                    status: wire::SdkStatus::Compacting as i32,
+                    word: "compacting".into(),
                 }),
                 Body::Boundary => sdk::Kind::Boundary(wire::Boundary::default()),
             };

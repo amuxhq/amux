@@ -539,7 +539,6 @@ pub enum RelayLink {
     SignInAgain,
     /// The account service refuses this build as too old.
     VersionMismatch,
-    Failed,
 }
 
 /// A bearer for the account service, borrowed from the profile, which alone

@@ -1,8 +1,8 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 2 input {"agent_message":{"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"},"id":"m-idle"}
+## 2 agent_message {"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"}
   row    1 agent-message:656e762d69646c65 AgentMessage { from: "probe", kind: Message, text: "A2A_SOCKET_IDLE_21240", to: "", sent: Unspecified, rejection: "" }
-## 3 input {"agent_message":{"envelope":"env-busy","from":"probe","text":"A2A_SOCKET_BUSY_21240"},"id":"m-busy"}
+## 3 agent_message {"envelope":"env-busy","from":"probe","text":"A2A_SOCKET_BUSY_21240"}
   row    2 agent-message:656e762d62757379 AgentMessage { from: "probe", kind: Message, text: "A2A_SOCKET_BUSY_21240", to: "", sent: Unspecified, rejection: "" }
 ## 11 recorded 7: fact Transcript type=user uuid=f30e3af6-7585-43a0-bff2-42f3eb53493b
   row    3 f30e3af6-7585-43a0-bff2-42f3eb53493b Prompt { text: [Text("Reply exactly READY and nothing else.")], steered: false }

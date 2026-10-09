@@ -22,7 +22,7 @@ use wire::client_service_server::ClientService;
 use wire::{
     Agent as Row, AgentParent, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, Envelope,
     HostEntry, InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest,
-    SendInputResponse, SendMessageResponse, StopMode, Trust, WorkingOn, input, inventory_event,
+    SendInputResponse, SendMessageResponse, StopMode, Trust, WorkingOn, inventory_event,
     send_input_response,
 };
 
@@ -694,8 +694,8 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     assert_eq!(here.kind(), Kind::Codex);
     let prompt = here.initial_prompt.clone().unwrap();
     assert!(matches!(
-        prompt.of,
-        Some(input::Of::Codex(wire::CodexInput {
+        prompt.decode_body(),
+        Some(wire::KindInput::Codex(wire::CodexInput {
             of: Some(wire::codex_input::Of::Prompt(ref p)),
         })) if p.text == "Write the tests."
     ));
@@ -754,8 +754,8 @@ async fn stop_interrupts_the_named_child_its_own_kinds_way() {
     };
     assert_eq!(request.agent_id, CHILD.to_vec());
     assert!(matches!(
-        request.input.as_ref().and_then(|input| input.of.as_ref()),
-        Some(input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+        request.input.as_ref().and_then(wire::Input::decode_body),
+        Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Interrupt(_)),
         }))
     ));

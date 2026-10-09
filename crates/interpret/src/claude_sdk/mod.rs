@@ -32,10 +32,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, ClaudeAnswer, ClaudeGrant, ClaudeSdkItem,
-    ClaudeSdkSnapshot, ClaudeUsage, ContextMeter, ContextShare, DecisionOutcome, FormAction, Input,
-    OfferedCommand, OfferedModel, SignIn, Step, ToolCall, ToolDecision, ToolServerHealth,
-    ToolState, claude_answer, claude_sdk_input, claude_sdk_item, input, permission_answer,
-    tool_decision,
+    ClaudeSdkSnapshot, ClaudeUsage, ContextMeter, ContextShare, DecisionOutcome, Envelope,
+    FormAction, Input, KindInput, OfferedCommand, OfferedModel, SignIn, Step, ToolCall,
+    ToolDecision, ToolServerHealth, ToolState, claude_answer, claude_sdk_input, claude_sdk_item,
+    permission_answer, tool_decision,
 };
 
 use crate::claude_common::{
@@ -442,41 +442,43 @@ impl State {
 
     // --- inputs ----------------------------------------------------------
 
+    /// An immediate hand-off to Claude's own queue: a message sent while a
+    /// turn runs folds into it.
+    fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        self.shared.message_accepted(&envelope.id);
+        self.clients.insert(
+            client_uuid(&envelope.id),
+            Client {
+                id: envelope.id.clone(),
+                message: true,
+            },
+        );
+        emit.effect(Effect::Inject {
+            envelope: envelope.clone(),
+            via: Carrier::Stdin,
+        });
+        self.shared.item(
+            emit,
+            ItemDraft {
+                key: agent_message_key(&envelope.id),
+                text: envelope.text.clone(),
+                input_id: envelope.id.clone(),
+                body: item_body(claude_sdk_item::Kind::AgentMessage(agent_message_body(
+                    &envelope,
+                ))),
+                complete: true,
+                ..Default::default()
+            },
+        );
+        self.shared.accept(emit, &envelope.id, true);
+    }
+
     fn input(&mut self, emit: &mut Emit, input: Input) {
         let id = input.input_id.clone();
-        let arm = match input.of {
-            Some(input::Of::AgentMessage(envelope)) => {
-                // An immediate hand-off to Claude's own queue: a message
-                // sent while a turn runs folds into it.
-                self.shared.message_accepted(&envelope.id);
-                self.clients.insert(
-                    client_uuid(&envelope.id),
-                    Client {
-                        id: envelope.id.clone(),
-                        message: true,
-                    },
-                );
-                emit.effect(Effect::Inject {
-                    envelope: envelope.clone(),
-                    via: Carrier::Stdin,
-                });
-                self.shared.item(
-                    emit,
-                    ItemDraft {
-                        key: agent_message_key(&envelope.id),
-                        text: envelope.text.clone(),
-                        input_id: envelope.id.clone(),
-                        body: item_body(claude_sdk_item::Kind::AgentMessage(agent_message_body(
-                            &envelope,
-                        ))),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
-                self.shared.accept(emit, &id, true);
-                return;
-            }
-            Some(input::Of::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
+        // Another kind's input, or an arm a newer client sends that this
+        // version cannot read.
+        let arm = match input.decode_body() {
+            Some(KindInput::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
             _ => return self.shared.reject(emit, &id, reason::UNSUPPORTED),
         };
         match arm {
@@ -694,15 +696,13 @@ impl State {
 
     /// An answer through amux: checked against the ask, then sent as the
     /// control response. The ask closes with the outcome it carries.
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: wire::AnswerInput) {
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer) {
         let key = answer.ask_key;
         if self.shared.asks().get(&key).is_none() {
             self.shared.answer(emit, id, &key);
             return;
         }
-        let parsed = ClaudeAnswer::decode(answer.body.as_slice())
-            .ok()
-            .and_then(|answer| answer.of);
+        let parsed = answer.of;
         let closed = match &parsed {
             Some(claude_answer::Of::Form(form)) => {
                 let schema = match self
@@ -1258,6 +1258,9 @@ impl Interpreter for ClaudeSdk {
             Event::Tick { at_ms } => state.shared.tick(at_ms),
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
+            Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
+            // Claude has no name of its own to take.
+            Event::Rename { .. } => {}
             Event::ProviderExit { code } => state.exited(&mut emit, crate::exit_cause(code)),
             Event::Exiting { cause } => state.exited(&mut emit, cause),
             Event::DaemonLost => {
@@ -1278,7 +1281,7 @@ impl Interpreter for ClaudeSdk {
         crate::redact::redact_kind::<
             wire::ClaudeSdkItem,
             wire::ClaudeSdkSnapshot,
-            wire::ClaudeAnswer,
+            wire::ClaudeSdkInput,
             State,
         >(target)
     }

@@ -29,7 +29,7 @@ item msg_090de00d5dfe4ef2016ab72681aa5c87d29765324c9d5f3f9c working_note open at
 item msg_090de00d5dfe4ef2016ab72681aa5c87d29765324c9d5f3f9c working_note final at=1790387841680 text=""
 ## 36 recorded 35: fact Rpc method=item/started
 item exec-32e2c946-1085-4a47-b87a-6983eff4a55a work open at=1790387843567 text="" command "/bin/zsh -lc 'sleep 5'" cwd=<MACHINE_PATH> action=unknown TOOL_STATE_RUNNING
-## 38 recorded 37: input stdin-5
+## 38 recorded 37: agent_message stdin-5
 effect write "{\"id\":\"amux-2\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"Ignore the earlier instruction about the final reply. Reply with exactly CODEX_SPEC_INJECT_DRAIN and nothing else.\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"01a0db6e-5eb0-71e0-ae6c-0293baf2bb48\"}}"
 effect reply stdin-5 accepted
 item agent-message:737464696e2d35 agent_message final input=stdin-5 at=1790387843570 text="Ignore the earlier instruction about the final reply. Reply with exactly CODEX_SPEC_INJECT_DRAIN and nothing else." envelope=737464696e2d35

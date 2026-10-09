@@ -62,16 +62,18 @@ journal and the store in [Journal and store](JOURNAL_AND_STORE.md).
 ![Rotate on size, not time. At the interpreter the checkpoint is not an addition: what it needs to resume is what a replay needs to start from. At the client there is no checkpoint, only the order of events.](figures/rotate-on-size.svg)
 
 **The agent process** records every event it feeds its interpreter in the facts ring, `private/facts/`, before
-stepping: provider output, inputs, ticks, the provider's exit, the daemon going away, stop requests. Each line is
-one JSON object:
+stepping: provider output, inputs, agent messages, ticks, the provider's exit, the daemon going away, stop requests.
+Each line is one JSON object:
 
 ```json
 {"event":"tick","at_ms":1790524769870}
 {"event":"fact","channel":"stream","text":"{\"type\":\"assistant\", …}"}
 {"event":"input","hex":"0a10…"}
+{"event":"agent_message","hex":"0a10…"}
 ```
 
-Provider payloads are text (hex only if a payload is not UTF-8); inputs are their encoded protobuf in hex. The ring
+Provider payloads are text (hex only if a payload is not UTF-8); inputs and agent messages are their encoded protobuf
+in hex. The ring
 is two segments named by byte offset, like the journal. A segment rotates when it reaches half the ring's size
 (`agent.facts_ring_mib` in the installation config, 4 MiB by default), and the oldest is deleted. Rotation writes a
 checkpoint beside the new segment: the interpreter's whole state, as JSON, before the segment's first entry. That

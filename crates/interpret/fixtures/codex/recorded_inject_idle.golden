@@ -6,7 +6,7 @@ effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1788037203788 text="" BOUNDARY_KIND_STARTED session=01a04f52-8736-7b70-94f8-b501fa13264f version=0.150.1
 snapshot IDLE queue=[] working_on=- at=1788037203788 asks=[] thread=01a04f52-8736-7b70-94f8-b501fa13264f turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
-## 8 recorded 7: input stdin-4
+## 8 recorded 7: agent_message stdin-4
 effect write "{\"id\":\"amux-1\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"Reply with exactly CODEX_SPEC_INJECT_IDLE and nothing else.\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"01a04f52-8736-7b70-94f8-b501fa13264f\"}}"
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"input\":[],\"threadId\":\"01a04f52-8736-7b70-94f8-b501fa13264f\"}}"
 effect reply stdin-4 accepted

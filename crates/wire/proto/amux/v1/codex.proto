@@ -6,7 +6,7 @@ import "amux/v1/records.proto";
 
 // Codex's per-kind bodies: the item and snapshot messages encoded into
 // Item.body and Snapshot.body for kind codex, the inputs it accepts, and the
-// answer body AnswerInput carries for it.
+// answers inside them.
 
 message CodexCreateConfig {
   optional string model = 1;
@@ -226,29 +226,15 @@ message McpToolApproval {
 message CodexInput {
   oneof of {
     PromptInput prompt = 1;
-    Approve approve = 2;
+    CodexAnswer answer = 2;
     Interrupt interrupt = 3;
     SetPermission permission = 4;
     SetMode mode = 5;
     SetModel model = 6;
     WithdrawQueued withdraw = 7;
-    AnswerInput answer = 8;
-    SetEffort effort = 9;
-    SendQueuedNow send_now = 10;
-    RenameThread rename = 11;
+    SetEffort effort = 8;
+    SendQueuedNow send_now = 9;
   }
-}
-
-// The daemon's word that the agent was renamed: Codex's thread takes the
-// agent's name, so Codex's own app shows the name amux does.
-message RenameThread {
-  string name = 1;
-}
-
-// Rejected if the request is not open.
-message Approve {
-  string request_id = 1;
-  Decision decision = 2;
 }
 
 enum Decision {
@@ -263,15 +249,18 @@ enum Decision {
   DECISION_APPROVE_NETWORK = 6;
 }
 
-// AnswerInput.body for Codex: questions, tool-server forms and links, and
-// access grants.
+// Rejected closed_ask if ask_key is not open. An approval is rejected
+// unsupported when its decision is not one the ask offered.
 message CodexAnswer {
+  // CodexAsk.key: the app-server request id, or amux's own key for a plan.
+  string ask_key = 1;
   oneof of {
-    QuestionAnswer question = 1;
-    FormAnswer form = 2;
-    LinkAnswer link = 3;
-    GrantAnswer grant = 4;
-    PlanAnswer plan = 5;
-    ReplyInstead reply = 6;
+    Decision approve = 2;
+    QuestionAnswer question = 3;
+    FormAnswer form = 4;
+    LinkAnswer link = 5;
+    GrantAnswer grant = 6;
+    PlanAnswer plan = 7;
+    ReplyInstead reply = 8;
   }
 }

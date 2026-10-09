@@ -13,7 +13,7 @@
 ## 9 fact {"channel":"stream","json":{"isReplay":true,"message":{"content":"Use the staging config.","role":"user"},"session_id":"s1","type":"user","uuid":"70310000-0000-4000-8000-000000000000"}}
   row    3 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("Use the staging config.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 10 input {"agent_message":{"envelope":"e1","from":"lead","text":"Status?"},"id":"m1"}
+## 10 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
   row    4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
 ## 12 fact {"channel":"stream","json":{"message":{"content":[{"text":"Planned, with the staging config.","type":"text"}],"id":"msg-1","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"a1"}}
   row    5 msg-1:0 Prose { text: [Text("Planned, with the staging config.")], streaming: false, working_note: false }

@@ -403,7 +403,7 @@ pub fn apply_page(state: &mut SessionState, items: Vec<Item>, exhausted: bool) -
 }
 
 pub fn prompt_input(kind: Kind, id: &[u8], text: &str) -> Input {
-    use wire::input::Of;
+    use wire::KindInput as Of;
     let prompt = wire::PromptInput {
         text: text.into(),
         attachments: vec![],
@@ -419,18 +419,14 @@ pub fn prompt_input(kind: Kind, id: &[u8], text: &str) -> Input {
             of: Some(wire::codex_input::Of::Prompt(prompt)),
         }),
     };
-    Input {
-        input_id: id.to_vec(),
-        of: Some(of),
-    }
+    Input::new(id.to_vec(), of)
 }
 
 pub fn answer_input(kind: Kind, id: &[u8], ask_key: &str) -> Input {
-    use wire::input::Of;
-    let answer = wire::AnswerInput {
+    use wire::KindInput as Of;
+    let answer = wire::ClaudeAnswer {
         ask_key: ask_key.into(),
-        kind: "permission".into(),
-        body: vec![],
+        of: None,
     };
     let of = match kind {
         Kind::ClaudePty => Of::ClaudePty(wire::ClaudePtyInput {
@@ -440,20 +436,19 @@ pub fn answer_input(kind: Kind, id: &[u8], ask_key: &str) -> Input {
             of: Some(wire::claude_sdk_input::Of::Answer(answer)),
         }),
         _ => Of::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Approve(wire::Approve {
-                request_id: ask_key.into(),
-                decision: wire::Decision::Approve as i32,
+            of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+                ask_key: ask_key.into(),
+                of: Some(wire::codex_answer::Of::Approve(
+                    wire::Decision::Approve as i32,
+                )),
             })),
         }),
     };
-    Input {
-        input_id: id.to_vec(),
-        of: Some(of),
-    }
+    Input::new(id.to_vec(), of)
 }
 
 pub fn send_now_input(kind: Kind, id: &[u8], target: &[u8]) -> Input {
-    use wire::input::Of;
+    use wire::KindInput as Of;
     let now = wire::SendQueuedNow {
         queued_input_id: target.to_vec(),
     };
@@ -468,10 +463,7 @@ pub fn send_now_input(kind: Kind, id: &[u8], target: &[u8]) -> Input {
             of: Some(wire::codex_input::Of::SendNow(now)),
         }),
     };
-    Input {
-        input_id: id.to_vec(),
-        of: Some(of),
-    }
+    Input::new(id.to_vec(), of)
 }
 
 pub fn accepted(queued: bool) -> InputOutcome {

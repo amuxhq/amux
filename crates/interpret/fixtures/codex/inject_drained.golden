@@ -15,9 +15,9 @@ snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=-
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 4 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
 ## 5 tick 1800000001000
-## 6 input {"agent_message":{"envelope":"e1","from":"reviewer","text":"Also say DONE at the end."},"id":"m1"}
+## 6 agent_message {"envelope":"e1","from":"reviewer","text":"Also say DONE at the end."}
 effect write "{\"id\":\"amux-2\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"[message from agent reviewer]\\nAlso say DONE at the end.\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"t1\"}}"
-effect reply m1 accepted
+effect reply e1 accepted
 item agent-message:6531 agent_message final input=e1 at=1800000001000 text="Also say DONE at the end." envelope=6531
 pending [e1]
 ## 7 fact {"channel":"rpc","json":{"id":"amux-2","result":{}}}

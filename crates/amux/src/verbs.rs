@@ -13,7 +13,7 @@ use wire::{
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Empty, HostEntry, Input, Kind, Lifecycle,
     Phase, PromptInput, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest,
     SendInputRequest, StopAgentRequest, StopMode, claude_pty_input, claude_sdk_input, codex_input,
-    create_agent_request, input, inventory_event, send_input_response,
+    create_agent_request, inventory_event, send_input_response,
 };
 
 type Client = ClientServiceClient<Channel>;
@@ -210,20 +210,17 @@ pub fn prompt(kind: i32, text: &str) -> Input {
         attachments: Vec::new(),
     };
     let of = match Kind::try_from(kind).unwrap_or(Kind::Unspecified) {
-        Kind::Codex => input::Of::Codex(CodexInput {
+        Kind::Codex => wire::KindInput::Codex(CodexInput {
             of: Some(codex_input::Of::Prompt(prompt)),
         }),
-        Kind::ClaudeSdk => input::Of::ClaudeSdk(ClaudeSdkInput {
+        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
             of: Some(claude_sdk_input::Of::Prompt(prompt)),
         }),
-        Kind::ClaudePty | Kind::Unspecified => input::Of::ClaudePty(ClaudePtyInput {
+        Kind::ClaudePty | Kind::Unspecified => wire::KindInput::ClaudePty(ClaudePtyInput {
             of: Some(claude_pty_input::Of::Prompt(prompt)),
         }),
     };
-    Input {
-        input_id: Uuid::new_v4().as_bytes().to_vec(),
-        of: Some(of),
-    }
+    Input::new(Uuid::new_v4().as_bytes().to_vec(), of)
 }
 
 pub struct Create {

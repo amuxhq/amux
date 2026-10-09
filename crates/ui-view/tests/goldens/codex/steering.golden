@@ -13,7 +13,7 @@
 ## 13 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"content":[{"text":"Use the staging config.","type":"text"}],"id":"u-2","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
   row    3 steer:7031 Prompt { text: [Text("Use the staging config.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 14 input {"agent_message":{"envelope":"e1","from":"lead","text":"Status?"},"id":"m1"}
+## 14 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
   row    4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
 ## 17 input {"id":"p2","prompt":{"text":"Then summarise."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 50], text: [Text("Then summarise.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]

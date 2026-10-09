@@ -355,14 +355,6 @@ message Agent {
   optional Git git = 15;
 }
 
-// The kind is the interpreter.
-enum Kind {
-  KIND_UNSPECIFIED = 0;
-  CLAUDE_PTY = 1;
-  CLAUDE_SDK = 2;
-  CODEX = 3;
-}
-
 enum Lifecycle {
   LIFECYCLE_UNSPECIFIED = 0;
   LIVE = 1;
@@ -530,7 +522,8 @@ message CreateAgentRequest {
   // (wire::agent_name_problem); the host picks a free one when absent.
   optional string name = 3;
   optional AgentParent parent = 4;
-  // The same Input as SendInput, so a first prompt carries attachments.
+  // A prompt as SendInput carries one, so it brings its attachments; any
+  // other input is refused.
   optional Input initial_prompt = 5;
   string cwd = 6;
   // Which interpreter: the config arm names only the provider.

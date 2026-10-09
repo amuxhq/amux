@@ -15,9 +15,9 @@ use tokio::io::WriteHalf;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
-    Accepted, AgentHello, CtlFrame, Input, InputReply, InventoryEvent, Item, Nudge, Phase,
-    QueuedInput, Rejected, SendInputResponse, SessionEvent, Snapshot, Step, TurnEnd, ctl_frame,
-    input, send_input_response, session_event,
+    Accepted, AgentHello, CtlFrame, Envelope, Input, InventoryEvent, Item, Nudge, Phase,
+    QueuedInput, Rejected, SendInputResponse, SessionEvent, Snapshot, Step, TurnEnd, Verdict,
+    ctl_frame, send_input_response, session_event,
 };
 
 use super::{Install, PATIENCE, until};
@@ -47,6 +47,24 @@ pub enum Answer {
     Reject(String),
 }
 
+/// What the daemon handed an agent on its control connection: a person's
+/// input or an agent message.
+#[derive(Clone, Debug)]
+pub enum Handed {
+    Input(Input),
+    Message(Envelope),
+}
+
+impl Handed {
+    /// The id the verdict is keyed by.
+    pub fn id(&self) -> &[u8] {
+        match self {
+            Self::Input(input) => &input.input_id,
+            Self::Message(envelope) => &envelope.id,
+        }
+    }
+}
+
 pub struct SyntheticAgent {
     pub id: Uuid,
     pub name: String,
@@ -56,7 +74,7 @@ pub struct SyntheticAgent {
     journal: Arc<Mutex<SyntheticWriter>>,
     segment_bytes: u64,
     answer: Arc<Mutex<Answer>>,
-    inputs: Arc<Mutex<Vec<Input>>>,
+    inputs: Arc<Mutex<Vec<Handed>>>,
     /// Set when the agent stops reading its control connection.
     wedged: Arc<tokio::sync::watch::Sender<bool>>,
     /// Set while the agent holds every answer back.
@@ -148,8 +166,8 @@ impl SyntheticAgent {
         self.frozen.send_replace(false);
     }
 
-    /// Every input the daemon relayed to this agent.
-    pub fn inputs(&self) -> Vec<Input> {
+    /// Every input and agent message the daemon relayed to this agent.
+    pub fn inputs(&self) -> Vec<Handed> {
         self.inputs.lock().unwrap().clone()
     }
 
@@ -271,8 +289,12 @@ impl SyntheticAgent {
                                 frame = agent_dir::read_frame(&mut reader) => frame,
                             };
                             let Ok(Some(frame)) = frame else { break };
-                            let Some(ctl_frame::Of::Input(input)) = frame.of else {
-                                continue;
+                            let input = match frame.of {
+                                Some(ctl_frame::Of::Input(input)) => Handed::Input(input),
+                                Some(ctl_frame::Of::AgentMessage(envelope)) => {
+                                    Handed::Message(envelope)
+                                }
+                                _ => continue,
                             };
                             inputs.lock().unwrap().push(input.clone());
                             let _ = frozen.wait_for(|frozen| !*frozen).await;
@@ -340,14 +362,14 @@ impl SyntheticAgent {
 /// The interpreter's part: an accepted agent message leaves its item in
 /// the journal, carrying the envelope id, before the reply goes back.
 async fn answer_input(
-    input: &Input,
+    input: &Handed,
     answer: &Answer,
     journal: &Mutex<SyntheticWriter>,
     conn: &tokio::sync::Mutex<Option<WriteHalf<LocalStream>>>,
 ) {
-    let message = match &input.of {
-        Some(input::Of::AgentMessage(envelope)) => Some(envelope),
-        _ => None,
+    let message = match input {
+        Handed::Message(envelope) => Some(envelope),
+        Handed::Input(_) => None,
     };
     let verdict = match answer {
         Answer::Reject(reason) => send_input_response::Of::Rejected(Rejected {
@@ -380,8 +402,8 @@ async fn answer_input(
     let Some(writer) = conn.as_mut() else { return };
     if !matches!(answer, Answer::AcceptSilently) {
         let reply = CtlFrame {
-            of: Some(ctl_frame::Of::Reply(InputReply {
-                input_id: input.input_id.clone(),
+            of: Some(ctl_frame::Of::Reply(Verdict {
+                id: input.id().to_vec(),
                 verdict: Some(SendInputResponse { of: Some(verdict) }),
             })),
         };

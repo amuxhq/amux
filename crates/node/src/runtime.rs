@@ -32,10 +32,9 @@ use tokio::sync::{Notify, oneshot, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
-    Agent, AgentHello, AgentParent, AgentRemoved, CaughtUp, CodexInput, CreateAgentRequest,
-    CtlFrame, DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, Input, Kind, Lifecycle,
-    RenameThread, SendInputResponse, Stop, StopMode, WorkingOn, codex_input, ctl_frame, input,
-    inventory_event, session_event,
+    Agent, AgentHello, AgentParent, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest,
+    CtlFrame, DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, Kind, Lifecycle, Rename,
+    SendInputResponse, Stop, StopMode, WorkingOn, ctl_frame, inventory_event, session_event,
 };
 
 use crate::fanout::Fanout;
@@ -215,6 +214,8 @@ pub enum RegistryError {
     BadId(usize),
     #[error("agents of kind {0} are unknown")]
     UnknownKind(i32),
+    #[error("an agent's first input is a prompt")]
+    NotAPrompt,
     #[error("the working directory {0} is not a directory on this host")]
     BadCwd(String),
     #[error("{}", name_words(*.0))]
@@ -261,9 +262,11 @@ impl RegistryError {
             Self::NotFound(_) | Self::NoSpec(_) => ErrorCode::NotFound,
             Self::AlreadyExists(_) => ErrorCode::AlreadyExists,
             Self::Live(_) | Self::StillLocked(_) => ErrorCode::FailedPrecondition,
-            Self::BadId(_) | Self::UnknownKind(_) | Self::BadCwd(_) | Self::BadName(_) => {
-                ErrorCode::InvalidArgument
-            }
+            Self::BadId(_)
+            | Self::UnknownKind(_)
+            | Self::NotAPrompt
+            | Self::BadCwd(_)
+            | Self::BadName(_) => ErrorCode::InvalidArgument,
             Self::OtherHost => ErrorCode::Unimplemented,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
@@ -771,6 +774,10 @@ impl ProfileRuntime {
         let Some(kind_name) = spec::kind_name(kind) else {
             return Err(RegistryError::UnknownKind(request.kind));
         };
+        let bootstrap = match &request.initial_prompt {
+            Some(input) => Some(spec::prompt_bootstrap(input).ok_or(RegistryError::NotAPrompt)?),
+            None => None,
+        };
         let mut request = request;
         if request.cwd.is_empty()
             && let Some(caller) = caller
@@ -885,7 +892,7 @@ impl ProfileRuntime {
                 resolved: &resolved,
                 created_at_ms: now,
                 incarnation: 1,
-                initial_prompt: request.initial_prompt.clone(),
+                bootstrap,
                 offered,
                 base_branch,
             },
@@ -957,7 +964,13 @@ impl ProfileRuntime {
     /// Starts the agent's next incarnation: waits for a dying process to
     /// release the directory, writes `spec.<n+1>` from the current
     /// configuration with `prompt` as its first input, and spawns it.
-    pub async fn resume(&self, id: AgentId, prompt: Option<Input>) -> Result<Agent, RegistryError> {
+    /// Starts an exited agent's next incarnation, its queue seeded by
+    /// `bootstrap` when one is given.
+    pub async fn resume(
+        &self,
+        id: AgentId,
+        bootstrap: Option<Bootstrap>,
+    ) -> Result<Agent, RegistryError> {
         let operation = self.operation(id);
         let _operation = operation.lock().await;
         let key = self.key(id);
@@ -1009,7 +1022,7 @@ impl ProfileRuntime {
                 resolved: &resolved,
                 created_at_ms: self.clock.now_ms(),
                 incarnation: next,
-                initial_prompt: prompt,
+                bootstrap,
                 offered,
                 base_branch: previous.base_branch.clone(),
             },
@@ -1228,13 +1241,8 @@ impl ProfileRuntime {
             && spec::kind_from_name(&row.kind) == Kind::Codex
         {
             let frame = CtlFrame {
-                of: Some(ctl_frame::Of::Input(Input {
-                    input_id: Uuid::new_v4().as_bytes().to_vec(),
-                    of: Some(input::Of::Codex(CodexInput {
-                        of: Some(codex_input::Of::Rename(RenameThread {
-                            name: row.name.clone().unwrap_or_default(),
-                        })),
-                    })),
+                of: Some(ctl_frame::Of::Rename(Rename {
+                    name: row.name.clone().unwrap_or_default(),
                 })),
             };
             let _ = handle
@@ -1692,7 +1700,7 @@ impl ProfileRuntime {
                         Ok(Some(CtlFrame {
                             of: Some(ctl_frame::Of::Reply(reply)),
                         })) => {
-                            let waiting = watched.replies.lock().unwrap().remove(&reply.input_id);
+                            let waiting = watched.replies.lock().unwrap().remove(&reply.id);
                             if let (Some(waiting), Some(verdict)) = (waiting, reply.verdict) {
                                 let _ = waiting.send(verdict);
                             }

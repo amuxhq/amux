@@ -118,15 +118,12 @@ fn agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model() {
         ("env-idle", "A2A_SOCKET_IDLE_21240"),
         ("env-busy", "A2A_SOCKET_BUSY_21240"),
     ] {
-        let input = wire::Input {
-            input_id: id.as_bytes().to_vec(),
-            of: Some(wire::input::Of::AgentMessage(wire::Envelope {
-                id: id.as_bytes().to_vec(),
-                text: text.to_owned(),
-                ..Default::default()
-            })),
+        let envelope = wire::Envelope {
+            id: id.as_bytes().to_vec(),
+            text: text.to_owned(),
+            ..Default::default()
         };
-        ClaudePty::step(&mut state, Event::Input(input));
+        ClaudePty::step(&mut state, Event::AgentMessage(envelope));
     }
     assert_eq!(state.shared().pending_messages().len(), 2);
     assert!(!state.shared().quiescent());
@@ -156,10 +153,8 @@ fn agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model() {
 /// Every fixture input the shared vocabulary names has a terminal arm.
 #[test]
 fn the_fixture_vocabulary_maps_to_terminal_inputs() {
-    let key = interpret::FixtureInput::Key {
-        name: "toggle_thinking".into(),
-    };
-    assert!(claude_pty_input(b"k".to_vec(), &key).is_some());
+    let cycle = interpret::FixtureInput::CyclePermissionMode {};
+    assert!(claude_pty_input(b"k".to_vec(), &cycle).is_some());
 }
 
 /// The attach tool's element in a reply's transcript row becomes an

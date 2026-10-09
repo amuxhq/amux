@@ -49,9 +49,9 @@ use serde_json::Value;
 use wire::{
     AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
     CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, EnvelopeKind,
-    FormAction, Input, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, QueuedInput,
-    Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work, codex_answer, codex_ask,
-    codex_grant, codex_input, codex_item, input, sender, tool_decision, work,
+    FormAction, Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission,
+    QueuedInput, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work, codex_answer,
+    codex_ask, codex_grant, codex_input, codex_item, sender, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
@@ -788,11 +788,10 @@ impl State {
 
     fn input(&mut self, emit: &mut Emit, input: Input) {
         let id = input.input_id.clone();
-        let arm = match input.of {
-            Some(input::Of::AgentMessage(envelope)) => {
-                return self.agent_message(emit, &id, envelope);
-            }
-            Some(input::Of::Codex(wire::CodexInput { of: Some(arm) })) => arm,
+        // Another kind's input, or an arm a newer client sends that this
+        // version cannot read.
+        let arm = match input.decode_body() {
+            Some(KindInput::Codex(wire::CodexInput { of: Some(arm) })) => arm,
             _ => return self.shared.reject(emit, &id, reason::UNSUPPORTED),
         };
         match arm {
@@ -852,15 +851,16 @@ impl State {
                 self.overrides.effort = Some(effort.effort);
                 self.shared.accept(emit, &id, false);
             }
-            codex_input::Of::Approve(approve) => self.approve(emit, &id, approve),
             codex_input::Of::Answer(answer) => self.answer(emit, &id, answer),
-            codex_input::Of::Rename(rename) => {
-                self.name = rename.name;
-                if self.thread_id.is_some() {
-                    self.name_thread(emit);
-                }
-                self.shared.accept(emit, &id, false);
-            }
+        }
+    }
+
+    /// The daemon's word that the agent was renamed: the thread takes the
+    /// name now, or when the handshake names the thread.
+    fn rename(&mut self, emit: &mut Emit, name: String) {
+        self.name = name;
+        if self.thread_id.is_some() {
+            self.name_thread(emit);
         }
     }
 
@@ -977,8 +977,9 @@ impl State {
 
     /// An agent message: its item now, since Codex reports nothing about an
     /// injected item, then the inject.
-    fn agent_message(&mut self, emit: &mut Emit, id: &[u8], envelope: Envelope) {
-        self.shared.message_accepted(&envelope.id);
+    fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        let id = envelope.id.clone();
+        self.shared.message_accepted(&id);
         self.emit_item(
             emit,
             ItemDraft {
@@ -994,10 +995,10 @@ impl State {
         );
         if !self.shared.is_started() {
             self.held.push(envelope);
-            return self.shared.accept(emit, id, true);
+            return self.shared.accept(emit, &id, true);
         }
         self.inject(emit, &envelope);
-        self.shared.accept(emit, id, false);
+        self.shared.accept(emit, &id, false);
     }
 
     fn inject(&mut self, emit: &mut Emit, envelope: &Envelope) {
@@ -1090,18 +1091,50 @@ impl State {
         self.kick(emit, parked);
     }
 
-    fn approve(&mut self, emit: &mut Emit, id: &[u8], approve: wire::Approve) {
-        let key = approve.request_id;
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: CodexAnswer) {
+        let key = answer.ask_key;
         let Some(ask) = self.shared.asks().get(&key).cloned() else {
             return self.shared.reject(emit, id, reason::CLOSED_ASK);
         };
+        let parsed = answer.of;
+        if let Some(codex_ask::Body::Plan(_)) = ask.body {
+            return match parsed {
+                Some(codex_answer::Of::Plan(plan)) => self.answer_plan(emit, id, &key, plan),
+                _ => self.shared.reject(emit, id, reason::UNSUPPORTED),
+            };
+        }
+        if let Some(codex_answer::Of::Approve(decision)) = parsed {
+            return self.approve(emit, id, &ask, decision);
+        }
+        if let (Some(codex_ask::Body::Question(asked)), Some(codex_answer::Of::Reply(reply))) =
+            (&ask.body, &parsed)
+        {
+            return self.reply_instead(emit, id, &ask, asked, reply);
+        }
+        let Some((meta, parsed)) = self.asks.get(&key).cloned().zip(parsed) else {
+            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+        };
+        let Some((response, closed)) = codex_answer_response(&ask, &meta, parsed) else {
+            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+        };
+        self.shared.answer(emit, id, &key);
+        self.asks.remove(&key);
+        self.respond(emit, &meta.id, Ok(response));
+        self.emit_ask(emit, &ask, meta.at_ms, Some(closed));
+        self.shared.accept(emit, id, false);
+    }
+
+    /// An approval: only a decision the request offered is sent, as the
+    /// response the request paired with it.
+    fn approve(&mut self, emit: &mut Emit, id: &[u8], ask: &CodexAsk, decision: i32) {
+        let key = ask.key.clone();
         let Some(meta) = self.asks.get(&key).cloned() else {
             return self.shared.reject(emit, id, reason::UNSUPPORTED);
         };
         let Some(response) = ask
             .decisions
             .iter()
-            .position(|offered| *offered == approve.decision)
+            .position(|offered| *offered == decision)
             .and_then(|at| meta.responses.get(at))
             .and_then(|response| serde_json::from_str::<ClientResponse>(response).ok())
         else {
@@ -1109,7 +1142,7 @@ impl State {
         };
         self.shared.answer(emit, id, &key);
         self.asks.remove(&key);
-        let decision = Decision::try_from(approve.decision).unwrap_or_default();
+        let decision = Decision::try_from(decision).unwrap_or_default();
         let granted = granted(decision, &response);
         self.respond(emit, &meta.id, Ok(response));
         let outcome = match decision {
@@ -1130,38 +1163,6 @@ impl State {
                 granted: granted.map(tool_decision::Granted::Codex),
             },
         );
-        self.shared.accept(emit, id, false);
-    }
-
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: wire::AnswerInput) {
-        let key = answer.ask_key;
-        let Some(ask) = self.shared.asks().get(&key).cloned() else {
-            return self.shared.reject(emit, id, reason::CLOSED_ASK);
-        };
-        let parsed = CodexAnswer::decode(answer.body.as_slice())
-            .ok()
-            .and_then(|answer| answer.of);
-        if let Some(codex_ask::Body::Plan(_)) = ask.body {
-            return match parsed {
-                Some(codex_answer::Of::Plan(plan)) => self.answer_plan(emit, id, &key, plan),
-                _ => self.shared.reject(emit, id, reason::UNSUPPORTED),
-            };
-        }
-        if let (Some(codex_ask::Body::Question(asked)), Some(codex_answer::Of::Reply(reply))) =
-            (&ask.body, &parsed)
-        {
-            return self.reply_instead(emit, id, &ask, asked, reply);
-        }
-        let Some((meta, parsed)) = self.asks.get(&key).cloned().zip(parsed) else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
-        };
-        let Some((response, closed)) = codex_answer_response(&ask, &meta, parsed) else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
-        };
-        self.shared.answer(emit, id, &key);
-        self.asks.remove(&key);
-        self.respond(emit, &meta.id, Ok(response));
-        self.emit_ask(emit, &ask, meta.at_ms, Some(closed));
         self.shared.accept(emit, id, false);
     }
 }
@@ -1545,6 +1546,8 @@ impl<A: Arm> Interpreter for CodexWith<A> {
             Event::Tick { at_ms } => state.shared.tick(at_ms),
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
+            Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
+            Event::Rename { name } => state.rename(&mut emit, name),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::exit_cause(code)),
             Event::Exiting { cause } => state.exited(&mut emit, cause),
             Event::DaemonLost => {
@@ -1562,7 +1565,7 @@ impl<A: Arm> Interpreter for CodexWith<A> {
     }
 
     fn redact(target: RedactTarget) -> RedactTarget {
-        crate::redact::redact_kind::<wire::CodexItem, wire::CodexSnapshot, wire::CodexAnswer, State>(
+        crate::redact::redact_kind::<wire::CodexItem, wire::CodexSnapshot, wire::CodexInput, State>(
             target,
         )
     }

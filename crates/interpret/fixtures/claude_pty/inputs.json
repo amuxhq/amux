@@ -1,5 +1,5 @@
 {
-  "about": "Every semantic input becomes an effect for the agent process to type through its keymap: prompts (queued while the provider starts or works, withdrawable), keys, interrupt and clear. A prompt that turns out to be a local command ends without a turn. Agent messages go to the messaging socket.",
+  "about": "Every semantic input becomes an effect for the agent process to type through its keymap: prompts (queued while the provider starts or works, withdrawable), the permission-mode cycle, interrupt and clear. A prompt that turns out to be a local command ends without a turn. Agent messages go to the messaging socket.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -104,30 +104,13 @@
     {
       "input": {
         "id": "k1",
-        "key": {
-          "name": "cycle_permission_mode"
-        }
+        "cycle_permission_mode": {}
       },
       "expect": {
         "reply": "accepted",
         "effects": [
-          "terminal key KEY_NAME_CYCLE_PERMISSION_MODE",
+          "terminal cycle permission mode",
           "reply k1 accepted"
-        ]
-      }
-    },
-    {
-      "input": {
-        "id": "k2",
-        "key": {
-          "name": "escape"
-        }
-      },
-      "expect": {
-        "reply": "accepted",
-        "effects": [
-          "terminal key KEY_NAME_ESCAPE",
-          "reply k2 accepted"
         ]
       }
     },
@@ -269,13 +252,10 @@
       }
     },
     {
-      "input": {
-        "id": "m1",
-        "agent_message": {
-          "envelope": "e1",
-          "from": "reviewer",
-          "text": "please look at the diff"
-        }
+      "agent_message": {
+        "envelope": "e1",
+        "from": "reviewer",
+        "text": "please look at the diff"
       },
       "expect": {
         "reply": "queued",
@@ -284,7 +264,7 @@
         ],
         "effects": [
           "inject e1 via MessagingSocket",
-          "reply m1 queued"
+          "reply e1 queued"
         ]
       }
     },
@@ -338,13 +318,10 @@
       }
     },
     {
-      "input": {
-        "id": "m2",
-        "agent_message": {
-          "envelope": "e2",
-          "from": "reviewer",
-          "text": "and the tests"
-        }
+      "agent_message": {
+        "envelope": "e2",
+        "from": "reviewer",
+        "text": "and the tests"
       },
       "expect": {
         "reply": "queued"

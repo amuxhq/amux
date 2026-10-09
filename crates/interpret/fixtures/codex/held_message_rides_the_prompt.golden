@@ -3,8 +3,8 @@ snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=-
 ## 1 input {"id":"p1","prompt":{"text":"Review the parser change."}}
 effect reply p1 queued
 snapshot STARTING queue=[p1] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? sandbox=? reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
-## 2 input {"agent_message":{"envelope":"e1","from":"lead","text":"It is on branch parser."},"id":"m1"}
-effect reply m1 queued
+## 2 agent_message {"envelope":"e1","from":"lead","text":"It is on branch parser."}
+effect reply e1 queued
 item agent-message:6531 agent_message final input=e1 at=1800000000000 text="It is on branch parser." envelope=6531
 pending [e1]
 ## 3 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}

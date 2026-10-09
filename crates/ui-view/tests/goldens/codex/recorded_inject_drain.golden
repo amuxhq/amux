@@ -18,7 +18,7 @@
 ## 36 recorded 35: fact Rpc method=item/started
   row    5 exec-32e2c946-1085-4a47-b87a-6983eff4a55a Command { command: "/bin/zsh -lc 'sleep 5'", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-32e2c946-1085-4a47-b87a-6983eff4a55a..exec-32e2c946-1085-4a47-b87a-6983eff4a55a x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other…
   composer Send activity=Some(Running { key: "exec-32e2c946-1085-4a47-b87a-6983eff4a55a" }) queue=[] underway=[] refused=[]
-## 38 recorded 37: input stdin-5
+## 38 recorded 37: agent_message stdin-5
   row    5 exec-32e2c946-1085-4a47-b87a-6983eff4a55a Command { command: "/bin/zsh -lc 'sleep 5'", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[exec-32e2c946-1085-4a47-b87a-6983eff4a55a..exec-32e2c946-1085-4a47-b87a-6983eff4a55a x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }…
   row    6 agent-message:737464696e2d35 AgentMessage { from: "", kind: Message, text: "Ignore the earlier instruction about the final reply. Reply with exactly CODEX_SPEC_INJECT_DRAIN and nothing else.", to: "", sent: Unspecified, rejection: "" }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]

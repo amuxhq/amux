@@ -309,9 +309,9 @@ fn codex_settings(mut state: SessionState, settings: wire::CodexSnapshot) -> Ses
 }
 
 /// The settings input a key sent, if it sent one.
-fn sent(effects: &[ChatEffect]) -> Option<&wire::input::Of> {
+fn sent(effects: &[ChatEffect]) -> Option<wire::KindInput> {
     match effects {
-        [ChatEffect::Answer(input)] => input.of.as_ref(),
+        [ChatEffect::Answer(input)] => input.decode_body(),
         _ => None,
     }
 }
@@ -329,7 +329,7 @@ fn shift_tab_moves_claude_to_the_next_permission_that_still_asks() {
     assert!(screen.contains("shift+tab permission"), "{screen}");
     assert!(screen.contains(" accept edits ─╯"), "{screen}");
     let effects = view.key(&state, key(KeyCode::BackTab), theme());
-    let Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
         of: Some(wire::claude_sdk_input::Of::Permission(permission)),
     })) = sent(&effects)
     else {
@@ -347,7 +347,7 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
     let (screen, _) = feed(&mut view, &state);
     assert!(screen.contains("shift+tab mode"), "{screen}");
     let effects = view.key(&state, key(KeyCode::BackTab), theme());
-    let Some(wire::input::Of::Codex(wire::CodexInput {
+    let Some(wire::KindInput::Codex(wire::CodexInput {
         of: Some(wire::codex_input::Of::Mode(mode)),
     })) = sent(&effects)
     else {
@@ -374,7 +374,7 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
     }
     view.key(&state, key(KeyCode::Up), theme());
     let effects = view.key(&state, key(KeyCode::Enter), theme());
-    let Some(wire::input::Of::Codex(wire::CodexInput {
+    let Some(wire::KindInput::Codex(wire::CodexInput {
         of: Some(wire::codex_input::Of::Permission(permission)),
     })) = sent(&effects)
     else {
@@ -425,13 +425,12 @@ fn terminal_claude_keeps_its_cycle_key() {
     let (screen, _) = feed(&mut view, &state);
     assert!(screen.contains("shift+tab permission"), "{screen}");
     let effects = view.key(&state, key(KeyCode::BackTab), theme());
-    let Some(wire::input::Of::ClaudePty(wire::ClaudePtyInput {
-        of: Some(wire::claude_pty_input::Of::Key(pressed)),
+    let Some(wire::KindInput::ClaudePty(wire::ClaudePtyInput {
+        of: Some(wire::claude_pty_input::Of::CyclePermissionMode(_)),
     })) = sent(&effects)
     else {
         panic!("{effects:?}");
     };
-    assert_eq!(pressed.key(), wire::KeyName::CyclePermissionMode);
     view.key(&state, ctrl('s'), theme());
     let effects = view.key(&state, key(KeyCode::Char('p')), theme());
     assert!(
@@ -561,7 +560,7 @@ fn the_likely_choice_answers_in_the_kinds_own_arm() {
     match effects.as_slice() {
         [ChatEffect::Answer(input)] => {
             assert!(
-                matches!(input.of, Some(wire::input::Of::Codex(_))),
+                matches!(input.decode_body(), Some(wire::KindInput::Codex(_))),
                 "{input:?}"
             );
         }
@@ -611,13 +610,13 @@ fn a_denial_takes_a_note_that_goes_back_to_the_agent() {
     let [ChatEffect::Answer(input)] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    let Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
         of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-    })) = &input.of
+    })) = input.decode_body()
     else {
         panic!("{input:?}");
     };
-    let decoded = wire::ClaudeAnswer::decode(answer.body.as_slice()).unwrap();
+    let decoded = answer;
     let Some(wire::claude_answer::Of::Permission(wire::PermissionAnswer {
         of: Some(wire::permission_answer::Of::Deny(deny)),
     })) = decoded.of
@@ -654,13 +653,13 @@ fn questions_answer_through_steps_and_a_review() {
         }
     }
     let input = sent.expect("the review sends the answers");
-    let Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
         of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-    })) = &input.of
+    })) = input.decode_body()
     else {
         panic!("{input:?}");
     };
-    let decoded = wire::ClaudeAnswer::decode(answer.body.as_slice()).unwrap();
+    let decoded = answer;
     let Some(wire::claude_answer::Of::Question(answers)) = decoded.of else {
         panic!("{decoded:?}");
     };
@@ -685,13 +684,13 @@ fn a_form_submits_what_was_typed() {
     let [ChatEffect::Answer(input)] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    let Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
         of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-    })) = &input.of
+    })) = input.decode_body()
     else {
         panic!("{input:?}");
     };
-    let decoded = wire::ClaudeAnswer::decode(answer.body.as_slice()).unwrap();
+    let decoded = answer;
     let Some(wire::claude_answer::Of::Form(form)) = decoded.of else {
         panic!("{decoded:?}");
     };
@@ -3684,16 +3683,15 @@ fn pressed(card: &ui_view::AskCard, keys: &[KeyEvent]) -> Option<wire::ClaudeAns
         }
     }
     let input = sent?;
-    let body = match input.of {
-        Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+    match input.decode_body() {
+        Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Answer(answer)),
         }))
-        | Some(wire::input::Of::ClaudePty(wire::ClaudePtyInput {
+        | Some(wire::KindInput::ClaudePty(wire::ClaudePtyInput {
             of: Some(wire::claude_pty_input::Of::Answer(answer)),
-        })) => answer.body,
+        })) => Some(answer),
         other => panic!("{other:?}"),
-    };
-    Some(wire::ClaudeAnswer::decode(body.as_slice()).unwrap())
+    }
 }
 
 fn chars(words: &str) -> Vec<KeyEvent> {

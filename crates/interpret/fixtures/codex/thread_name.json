@@ -48,11 +48,8 @@
       }
     },
     {
-      "input": {
-        "id": "rename-1",
-        "rename": {
-          "name": "loud-heron"
-        }
+      "rename": {
+        "name": "loud-heron"
       }
     },
     {

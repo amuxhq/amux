@@ -5,7 +5,7 @@
 //! Protobuf values are walked by their descriptor: every string field is
 //! redacted as text (or as JSON when it holds a JSON object or array), every
 //! `*_json` bytes field as JSON, the per-kind `body` bytes as the kind's
-//! body message, and ids and hashes are kept. A field the descriptor does
+//! body or input message, and ids and hashes are kept. A field the descriptor does
 //! not name is dropped. Facts are JSON and are walked as JSON; a checkpoint
 //! is decoded as the kind's state and written again with every protobuf
 //! value inside it walked the same way.
@@ -85,6 +85,9 @@ pub fn redact(kind: Kind, target: RedactTarget) -> RedactTarget {
             RedactTarget::ItemBody(_) => RedactTarget::ItemBody(Vec::new()),
             RedactTarget::SnapshotBody(_) => RedactTarget::SnapshotBody(Vec::new()),
             RedactTarget::Input(_) => RedactTarget::Input(Vec::new()),
+            RedactTarget::AgentMessage(envelope) => {
+                ClaudeSdk::redact(RedactTarget::AgentMessage(envelope))
+            }
             RedactTarget::Fact(fact) => RedactTarget::Fact(crate::Fact {
                 channel: fact.channel,
                 payload: Vec::new(),
@@ -105,14 +108,15 @@ pub fn redact_text(text: &str) -> String {
 }
 
 /// The per-kind redactor: `Item` and `Snapshot` bodies of this kind, the
-/// answer body its inputs carry, and the state its checkpoint holds.
-pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, AnswerBody: Name, S: Checkpoint>(
+/// input body a person's input carries for it, and the state its checkpoint
+/// holds.
+pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, InputBody: Name, S: Checkpoint>(
     target: RedactTarget,
 ) -> RedactTarget {
     let mut scrubber = Scrubber {
         item_body: type_name::<ItemBody>(),
         snapshot_body: type_name::<SnapshotBody>(),
-        answer_body: type_name::<AnswerBody>(),
+        input_body: type_name::<InputBody>(),
         ..Scrubber::default()
     };
     match target {
@@ -127,6 +131,10 @@ pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, AnswerBody: Name, 
         RedactTarget::Input(input) => {
             let name = type_name::<wire::Input>();
             RedactTarget::Input(scrubber.twice(|s| s.message(&name, &input)))
+        }
+        RedactTarget::AgentMessage(envelope) => {
+            let name = type_name::<wire::Envelope>();
+            RedactTarget::AgentMessage(scrubber.twice(|s| s.message(&name, &envelope)))
         }
         RedactTarget::Fact(fact) => RedactTarget::Fact(crate::Fact {
             channel: fact.channel,
@@ -190,7 +198,7 @@ fn empty_hex(value: &mut Value) {
 pub(crate) struct Scrubber {
     item_body: String,
     snapshot_body: String,
-    answer_body: String,
+    input_body: String,
     sessions: BTreeSet<String>,
     learning: bool,
 }
@@ -288,8 +296,8 @@ impl Scrubber {
                     let name = self.snapshot_body.clone();
                     self.message(&name, payload)
                 }
-                (".amux.v1.AnswerInput", "body") => {
-                    let name = self.answer_body.clone();
+                (".amux.v1.Input", "body") => {
+                    let name = self.input_body.clone();
                     self.message(&name, payload)
                 }
                 (_, name) if name.ends_with("_json") => self.json_bytes(payload),

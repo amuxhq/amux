@@ -539,15 +539,15 @@ mod tests {
     }
 
     fn prompt(id: &[u8]) -> Msg {
-        Msg::Send(wire::Input {
-            input_id: id.to_vec(),
-            of: Some(wire::input::Of::Codex(wire::CodexInput {
+        Msg::Send(wire::Input::new(
+            id.to_vec(),
+            wire::CodexInput {
                 of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
                     text: "go".into(),
                     attachments: vec![],
                 })),
-            })),
-        })
+            },
+        ))
     }
 
     /// A prompt sent to an idle agent is drawn at the feed's end and stays

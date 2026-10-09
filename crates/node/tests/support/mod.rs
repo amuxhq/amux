@@ -13,7 +13,7 @@ pub use patience::{PATIENCE, Stuck, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
 use wire::{
     AgentParent, ClaudeCreateConfig, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput,
-    StopMode, claude_sdk_input, create_agent_request, input,
+    StopMode, claude_sdk_input, create_agent_request,
 };
 
 /// The amux binary and the fake providers, built once per test run.
@@ -174,15 +174,15 @@ pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> CreateAgentReques
 }
 
 pub fn sdk_prompt(id: &[u8], text: &str) -> Input {
-    Input {
-        input_id: id.to_vec(),
-        of: Some(input::Of::ClaudeSdk(ClaudeSdkInput {
+    Input::new(
+        id.to_vec(),
+        ClaudeSdkInput {
             of: Some(claude_sdk_input::Of::Prompt(PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),
-        })),
-    }
+        },
+    )
 }
 
 pub fn id_of(agent: &wire::Agent) -> uuid::Uuid {

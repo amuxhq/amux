@@ -253,6 +253,7 @@ fn target_bytes(target: &RedactTarget) -> &[u8] {
         RedactTarget::ItemBody(bytes)
         | RedactTarget::SnapshotBody(bytes)
         | RedactTarget::Input(bytes)
+        | RedactTarget::AgentMessage(bytes)
         | RedactTarget::Checkpoint(bytes)
         | RedactTarget::Spec(bytes)
         | RedactTarget::Step(bytes)
@@ -342,11 +343,18 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
     let (mut state, first) = I::initial(&spec, "redaction-test");
     let mut steps = vec![first];
     let mut inputs = vec![answer_input::<I>()];
+    // An agent message is a ring entry of its own, with a person's words.
+    let mut messages = vec![wire::Envelope {
+        id: b"message-1".to_vec(),
+        text: prompt(),
+        ..Default::default()
+    }];
     let mut facts = Vec::new();
     for (index, event) in events.into_iter().enumerate() {
         match &event {
             Event::Fact(fact) => facts.push(fact.clone()),
             Event::Input(input) => inputs.push(input.clone()),
+            Event::AgentMessage(envelope) => messages.push(envelope.clone()),
             _ => {}
         }
         let tick = I::step(
@@ -385,17 +393,38 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             |before, after| {
                 let (before, after) = (Input::decode(before).unwrap(), Input::decode(after));
                 let after = after.map_err(|error| error.to_string())?;
+                // The kind and the arm inside its body, as Debug names them.
                 let arm = |input: &Input| {
-                    format!("{:?}", input.of)
-                        .split(['(', ' '])
-                        .nth(1)
-                        .map(str::to_owned)
+                    let body = format!("{:?}", input.decode_body()?);
+                    let mut words = body.split(['(', ' ']);
+                    let kind = words.next()?.to_owned();
+                    let arm = words.skip_while(|word| *word != "Some").nth(1)?.to_owned();
+                    Some((kind, arm))
                 };
-                if arm(&before) == arm(&after) && before.input_id == after.input_id {
+                if arm(&before).is_some()
+                    && arm(&before) == arm(&after)
+                    && before.input_id == after.input_id
+                {
                     Ok(format!(
                         "decodes as an Input on the same arm ({})",
-                        arm(&after).unwrap_or_default()
+                        arm(&after).map(|(kind, _)| kind).unwrap_or_default()
                     ))
+                } else {
+                    Err(format!("{before:?} became {after:?}"))
+                }
+            },
+            readable,
+        );
+    }
+    for message in messages {
+        transcript.check::<I>(
+            &format!("agent message {}", String::from_utf8_lossy(&message.id)),
+            RedactTarget::AgentMessage(message.encode_to_vec()),
+            |before, after| {
+                let before = wire::Envelope::decode(before).unwrap();
+                let after = wire::Envelope::decode(after).map_err(|error| error.to_string())?;
+                if before.id == after.id {
+                    Ok("decodes as an envelope with the same id".to_owned())
                 } else {
                     Err(format!("{before:?} became {after:?}"))
                 }
@@ -521,10 +550,15 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             env: [("AWS_SECRET_ACCESS_KEY".to_owned(), ENV_VALUE.to_owned())].into(),
             ..Default::default()
         }),
-        initial_prompt: I::fixture_input(
-            b"initial".to_vec(),
-            &FixtureInput::Prompt { text: prompt() },
-        ),
+        bootstrap: Some(wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                input_id: b"initial".to_vec(),
+                prompt: Some(wire::PromptInput {
+                    text: prompt(),
+                    ..Default::default()
+                }),
+            })),
+        }),
         ..spec
     };
     transcript.check::<I>(
@@ -536,7 +570,7 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             let names =
                 |spec: &AgentSpec| spec.provider_env.keys().cloned().collect::<BTreeSet<_>>();
             if names(&before) == names(&after)
-                && before.initial_prompt.is_some() == after.initial_prompt.is_some()
+                && before.bootstrap.is_some() == after.bootstrap.is_some()
             {
                 Ok("decodes as a spec with the same environment names".to_owned())
             } else {
@@ -553,8 +587,8 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
                 "args={:?} env={env:?} config.env={:?} prompt={:?}",
                 spec.provider_args,
                 spec.config.unwrap_or_default().env,
-                spec.initial_prompt
-                    .map(|input| readable(&input.encode_to_vec())),
+                spec.bootstrap
+                    .map(|bootstrap| readable(&bootstrap.encode_to_vec())),
             )
         },
     );

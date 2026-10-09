@@ -143,27 +143,24 @@ fn writes(effects: &[Effect]) -> Vec<Value> {
 }
 
 fn agent_message(id: &[u8]) -> Event {
-    Event::Input(wire::Input {
-        input_id: id.to_vec(),
-        of: Some(wire::input::Of::AgentMessage(wire::Envelope {
-            id: id.to_vec(),
-            kind: wire::EnvelopeKind::Message as i32,
-            text: "from a peer".into(),
-            ..Default::default()
-        })),
+    Event::AgentMessage(wire::Envelope {
+        id: id.to_vec(),
+        kind: wire::EnvelopeKind::Message as i32,
+        text: "from a peer".into(),
+        ..Default::default()
     })
 }
 
 fn prompt(id: &[u8], text: &str) -> Event {
-    Event::Input(wire::Input {
-        input_id: id.to_vec(),
-        of: Some(wire::input::Of::Codex(wire::CodexInput {
+    Event::Input(wire::Input::new(
+        id.to_vec(),
+        wire::CodexInput {
             of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
                 text: text.into(),
                 ..Default::default()
             })),
-        })),
-    })
+        },
+    ))
 }
 
 /// A thread with a turn running and an agent message injected into it,
@@ -278,15 +275,15 @@ fn a_prompt_with_attachments_leaves_them_to_the_agent_process() {
     );
     let effects = Codex::step(
         &mut state,
-        Event::Input(wire::Input {
-            input_id: b"p1".to_vec(),
-            of: Some(wire::input::Of::Codex(wire::CodexInput {
+        Event::Input(wire::Input::new(
+            b"p1".to_vec(),
+            wire::CodexInput {
                 of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
                     text: "What is this? \u{FFFC}".into(),
                     attachments: vec![wire::Attachment::default()],
                 })),
-            })),
-        }),
+            },
+        )),
     )
     .effects;
     let Some(Effect::CodexTurnInput {
@@ -523,6 +520,91 @@ fn an_approval_offering_one_lifetime_as_a_string_is_read() {
         [Approve, Deny, Abort],
         "no remember-for-session choice when Codex offers only always"
     );
+}
+
+/// An approval is answered only with a decision the request offered:
+/// another is refused as unsupported, writes nothing to Codex and leaves
+/// the ask open; an offered one is sent and closes it.
+#[test]
+fn approval_outside_offered_decisions_is_rejected() {
+    use prost::Message as _;
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.160.0", "turns": []}, "model": "m"}}),
+        ),
+    );
+    // Codex offers no remember-for-session choice when it persists only
+    // always.
+    Codex::step(
+        &mut state,
+        rpc(json!({
+            "id": 0,
+            "method": "mcpServer/elicitation/request",
+            "params": {
+                "_meta": {
+                    "codex_approval_kind": "mcp_tool_call",
+                    "persist": "always",
+                    "tool_params": {"word": "BLUE"},
+                },
+                "message": "Allow the server to run tool \"ask\"?",
+                "mode": "form",
+                "requestedSchema": {"properties": {}, "type": "object"},
+                "serverName": "spec",
+                "threadId": "t1",
+                "turnId": "turn-1",
+            },
+        })),
+    );
+    let key = state.shared().asks().open_asks()[0].key.clone();
+    let approve = |id: &[u8], decision: wire::Decision| {
+        Event::Input(wire::Input::new(
+            id.to_vec(),
+            wire::CodexInput {
+                of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
+                    ask_key: key.clone(),
+                    of: Some(wire::codex_answer::Of::Approve(decision as i32)),
+                })),
+            },
+        ))
+    };
+    let verdicts = |effects: &[Effect]| {
+        effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::Reply { verdict, .. } => verdict.of.clone(),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let refused = Codex::step(&mut state, approve(b"a1", wire::Decision::ApproveSession));
+    assert_eq!(
+        verdicts(&refused.effects),
+        [wire::send_input_response::Of::Rejected(wire::Rejected {
+            reason: interpret::reason::UNSUPPORTED.into(),
+        })]
+    );
+    assert!(writes(&refused.effects).is_empty(), "nothing went to Codex");
+    assert!(refused.step.encoded_len() == 0, "the ask stays open");
+    assert_eq!(state.shared().asks().open_asks().len(), 1);
+
+    let sent = Codex::step(&mut state, approve(b"a2", wire::Decision::Approve));
+    assert!(matches!(
+        verdicts(&sent.effects)[..],
+        [wire::send_input_response::Of::Accepted(_)]
+    ));
+    assert_eq!(
+        writes(&sent.effects).len(),
+        1,
+        "the offered decision is sent"
+    );
+    assert!(state.shared().asks().is_empty());
 }
 
 /// A job Codex reported and then it exits: the list empties on the exit, and
@@ -845,13 +927,13 @@ fn a_mode_chosen_at_creation_is_set_by_the_first_turn() {
             mode: Some("plan".into()),
             ..Default::default()
         }),
-        initial_prompt: Some(wire::Input {
-            input_id: b"p1".to_vec(),
-            of: Some(wire::input::Of::Codex(wire::CodexInput {
-                of: Some(wire::codex_input::Of::Prompt(wire::PromptInput {
+        bootstrap: Some(wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                input_id: b"p1".to_vec(),
+                prompt: Some(wire::PromptInput {
                     text: "Plan it.".into(),
                     ..Default::default()
-                })),
+                }),
             })),
         }),
         ..Default::default()

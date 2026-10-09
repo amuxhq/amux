@@ -27,7 +27,7 @@ use wire::{
     AgentHello, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
     CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Phase, PromptInput, PtyMode, Stop,
     StopMode, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item, codex_input,
-    codex_item, ctl_frame, input, send_input_response,
+    codex_item, ctl_frame, send_input_response,
 };
 /// Long enough that no deadline fires during a test: the daemon's absence
 /// is survived, never drained.
@@ -276,24 +276,21 @@ impl Daemon {
             ..Default::default()
         };
         let of = match self.kind {
-            "codex" => input::Of::Codex(CodexInput {
+            "codex" => wire::KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Prompt(prompt)),
             }),
-            "claude_pty" => input::Of::ClaudePty(ClaudePtyInput {
+            "claude_pty" => wire::KindInput::ClaudePty(ClaudePtyInput {
                 of: Some(claude_pty_input::Of::Prompt(prompt)),
             }),
-            _ => input::Of::ClaudeSdk(ClaudeSdkInput {
+            _ => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
                 of: Some(claude_sdk_input::Of::Prompt(prompt)),
             }),
         };
-        self.send(ctl_frame::Of::Input(Input {
-            input_id: id.to_vec(),
-            of: Some(of),
-        }))
-        .await;
+        self.send(ctl_frame::Of::Input(Input::new(id.to_vec(), of)))
+            .await;
         loop {
             if let Some(ctl_frame::Of::Reply(reply)) = next_frame(&mut self.reader).await.of
-                && reply.input_id == id
+                && reply.id == id
             {
                 match reply.verdict.and_then(|verdict| verdict.of) {
                     Some(send_input_response::Of::Accepted(_)) => return,

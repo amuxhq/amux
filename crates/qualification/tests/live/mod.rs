@@ -39,7 +39,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use interpret::Replayed;
-use prost::Message as _;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
@@ -49,8 +48,7 @@ use wire::{
     ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, Input, Item, Kind, ListProfilesRequest, Phase, SendInputRequest, Snapshot,
     SubscribeRequest, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
-    create_agent_request, input, permission_answer, send_input_response, session_event,
-    subscribe_request,
+    create_agent_request, permission_answer, send_input_response, session_event, subscribe_request,
 };
 
 /// Claude runs on its cheapest model; the lane judges structure, not wit.
@@ -822,16 +820,13 @@ impl Install {
     }
 
     /// Sends an input the CLI has no verb for, as the apps send it.
-    async fn input(&self, agent: &[u8], of: input::Of) -> Result<(), String> {
+    async fn input(&self, agent: &[u8], of: wire::KindInput) -> Result<(), String> {
         let response = self
             .client
             .clone()
             .send_input(SendInputRequest {
                 agent_id: agent.to_vec(),
-                input: Some(Input {
-                    input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                    of: Some(of),
-                }),
+                input: Some(Input::new(uuid::Uuid::new_v4().as_bytes().to_vec(), of)),
             })
             .await
             .map_err(|status| status.to_string())?
@@ -845,22 +840,22 @@ impl Install {
         }
     }
 
-    fn interrupt(&self) -> input::Of {
+    fn interrupt(&self) -> wire::KindInput {
         match self.kind {
-            Kind::Codex => input::Of::Codex(CodexInput {
+            Kind::Codex => wire::KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Interrupt(wire::Interrupt {})),
             }),
-            Kind::ClaudeSdk => input::Of::ClaudeSdk(ClaudeSdkInput {
+            Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
                 of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
             }),
-            _ => input::Of::ClaudePty(ClaudePtyInput {
+            _ => wire::KindInput::ClaudePty(ClaudePtyInput {
                 of: Some(claude_pty_input::Of::Interrupt(wire::Interrupt {})),
             }),
         }
     }
 
     /// Allows an open ask once, the way the apps' primary choice does.
-    fn allow(&self, ask: &OpenAsk) -> Result<input::Of, String> {
+    fn allow(&self, ask: &OpenAsk) -> Result<wire::KindInput, String> {
         match ask {
             OpenAsk::Claude(ask) => {
                 if !matches!(ask.body, Some(wire::ask::Body::Permission(_))) {
@@ -869,23 +864,19 @@ impl Install {
                         ask_token(&OpenAsk::Claude(ask.clone()))
                     ));
                 }
-                let answer = wire::AnswerInput {
+                let answer = ClaudeAnswer {
                     ask_key: ask.key.clone(),
-                    kind: self.tag.to_owned(),
-                    body: ClaudeAnswer {
-                        of: Some(claude_answer::Of::Permission(wire::PermissionAnswer {
-                            of: Some(permission_answer::Of::Allow(wire::PermissionAllow {
-                                scope: None,
-                            })),
+                    of: Some(claude_answer::Of::Permission(wire::PermissionAnswer {
+                        of: Some(permission_answer::Of::Allow(wire::PermissionAllow {
+                            scope: None,
                         })),
-                    }
-                    .encode_to_vec(),
+                    })),
                 };
                 Ok(match self.kind {
-                    Kind::ClaudeSdk => input::Of::ClaudeSdk(ClaudeSdkInput {
+                    Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
                         of: Some(claude_sdk_input::Of::Answer(answer)),
                     }),
-                    _ => input::Of::ClaudePty(ClaudePtyInput {
+                    _ => wire::KindInput::ClaudePty(ClaudePtyInput {
                         of: Some(claude_pty_input::Of::Answer(answer)),
                     }),
                 })
@@ -900,10 +891,12 @@ impl Install {
                         ask_token(&OpenAsk::Codex(ask.clone()))
                     ));
                 }
-                Ok(input::Of::Codex(CodexInput {
-                    of: Some(codex_input::Of::Approve(wire::Approve {
-                        request_id: ask.key.clone(),
-                        decision: wire::Decision::Approve as i32,
+                Ok(wire::KindInput::Codex(CodexInput {
+                    of: Some(codex_input::Of::Answer(wire::CodexAnswer {
+                        ask_key: ask.key.clone(),
+                        of: Some(wire::codex_answer::Of::Approve(
+                            wire::Decision::Approve as i32,
+                        )),
                     })),
                 }))
             }

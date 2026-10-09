@@ -12,7 +12,10 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use prost::Message as _;
-use wire::{AgentParent, AgentSpec, Catalogue, CreateAgentRequest, EffectiveConfig, Input, Kind};
+use wire::{
+    AgentParent, AgentSpec, Bootstrap, Catalogue, CreateAgentRequest, EffectiveConfig, Input, Kind,
+    KindInput, PromptSubmission, bootstrap,
+};
 
 use crate::runtime::Launch;
 
@@ -33,6 +36,30 @@ pub fn kind_from_name(name: &str) -> Kind {
         "codex" => Kind::Codex,
         _ => Kind::Unspecified,
     }
+}
+
+/// A client's first input as what seeds the new incarnation's queue. Only a
+/// prompt seeds it; None for any other input, which the call refuses.
+pub fn prompt_bootstrap(input: &Input) -> Option<Bootstrap> {
+    use wire::{claude_pty_input, claude_sdk_input, codex_input};
+    let prompt = match input.decode_body()? {
+        KindInput::ClaudePty(wire::ClaudePtyInput {
+            of: Some(claude_pty_input::Of::Prompt(prompt)),
+        })
+        | KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+            of: Some(claude_sdk_input::Of::Prompt(prompt)),
+        })
+        | KindInput::Codex(wire::CodexInput {
+            of: Some(codex_input::Of::Prompt(prompt)),
+        }) => prompt,
+        _ => return None,
+    };
+    Some(Bootstrap {
+        of: Some(bootstrap::Of::Prompt(PromptSubmission {
+            input_id: input.input_id.clone(),
+            prompt: Some(prompt),
+        })),
+    })
 }
 
 /// What a creation asked for, resolved into provider arguments and the
@@ -141,7 +168,7 @@ pub struct Incarnation<'a> {
     pub resolved: &'a Resolved,
     pub created_at_ms: i64,
     pub incarnation: u32,
-    pub initial_prompt: Option<Input>,
+    pub bootstrap: Option<Bootstrap>,
     /// What the host's provider offers, for a kind that cannot be asked.
     pub offered: Option<Catalogue>,
     /// The branch the agent's worktree was made from, when its host made one.
@@ -184,7 +211,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
         daemon_version: crate::version().to_owned(),
         created_at_ms: at.created_at_ms,
         incarnation: at.incarnation,
-        initial_prompt: at.initial_prompt,
+        bootstrap: at.bootstrap,
         offered: at.offered,
         base_branch: at.base_branch,
     }

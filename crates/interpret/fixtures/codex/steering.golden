@@ -34,9 +34,9 @@ effect reply n3 rejected:not_queued
 ## 13 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"content":[{"text":"Use the staging config.","type":"text"}],"id":"u-2","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
 item steer:7031 steer final input=p1 at=1800000000000 text="Use the staging config."
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
-## 14 input {"agent_message":{"envelope":"e1","from":"lead","text":"Status?"},"id":"m1"}
+## 14 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
 effect write "{\"id\":\"amux-3\",\"method\":\"thread/inject_items\",\"params\":{\"items\":[{\"content\":[{\"text\":\"[message from agent lead]\\nStatus?\",\"type\":\"input_text\"}],\"role\":\"user\",\"type\":\"message\"}],\"threadId\":\"t1\"}}"
-effect reply m1 accepted
+effect reply e1 accepted
 item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?" envelope=6531
 pending [e1]
 ## 15 input {"id":"n4","send_now":{"target":"e1"}}

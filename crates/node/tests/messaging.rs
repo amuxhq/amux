@@ -21,7 +21,7 @@ use wire::client_service_server::ClientService as _;
 use wire::{
     AgentParent, ClaudeSdkInput, DeleteAgentRequest, Envelope, EnvelopeKind, Input, Lifecycle,
     PromptInput, RenameAgentRequest, SendInputRequest, SendInputResponse, StopAgentRequest,
-    StopMode, claude_sdk_input, input, send_input_response, sender,
+    StopMode, claude_sdk_input, send_input_response, sender,
 };
 
 const SEGMENTS: u64 = 1 << 20;
@@ -49,15 +49,24 @@ async fn crash(daemon: Daemon, runtime: Arc<ProfileRuntime>) {
 }
 
 fn prompt(id: &[u8], text: &str) -> Input {
-    Input {
-        input_id: id.to_vec(),
-        of: Some(input::Of::ClaudeSdk(ClaudeSdkInput {
+    Input::new(
+        id.to_vec(),
+        ClaudeSdkInput {
             of: Some(claude_sdk_input::Of::Prompt(PromptInput {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),
-        })),
-    }
+        },
+    )
+}
+
+fn interrupt(id: &[u8]) -> Input {
+    Input::new(
+        id.to_vec(),
+        ClaudeSdkInput {
+            of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
+        },
+    )
 }
 
 fn verdict(response: &SendInputResponse) -> String {
@@ -83,12 +92,12 @@ fn messages(agent: &SyntheticAgent) -> Vec<(EnvelopeKind, String)> {
     agent
         .inputs()
         .into_iter()
-        .filter_map(|input| match input.of {
-            Some(input::Of::AgentMessage(envelope)) => Some((
+        .filter_map(|handed| match handed {
+            Handed::Message(envelope) => Some((
                 EnvelopeKind::try_from(envelope.kind).unwrap(),
                 envelope.text,
             )),
-            _ => None,
+            Handed::Input(_) => None,
         })
         .collect()
 }
@@ -207,7 +216,7 @@ async fn an_agent_interrupts_only_its_own_children_and_manages_no_other_agent() 
     let send = |agent: &SyntheticAgent, id: &[u8]| {
         Request::new(SendInputRequest {
             agent_id: agent.id.as_bytes().to_vec(),
-            input: Some(prompt(id, "stop")),
+            input: Some(interrupt(id)),
         })
     };
 
@@ -261,6 +270,53 @@ async fn an_agent_interrupts_only_its_own_children_and_manages_no_other_agent() 
     crash(daemon, runtime).await;
 }
 
+/// An interrupt is the one input an agent sends: anything else on its
+/// tools socket is refused, even to its own child, and reaches no one.
+#[tokio::test(flavor = "multi_thread")]
+async fn tools_socket_input_other_than_interrupt_is_refused() {
+    let install = Install::new();
+    let caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
+    caller.register_offline(&install);
+    let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
+    child.parent = Some(caller.key(&install));
+    child.register_offline(&install);
+    child.go_live();
+    let (daemon, runtime) = start(&install, "boot-1").await;
+    let tools = ClientApi::new(&runtime, Some(caller.id));
+    let send = |input: Input| {
+        Request::new(SendInputRequest {
+            agent_id: child.id.as_bytes().to_vec(),
+            input: Some(input),
+        })
+    };
+    let answer = Input::new(
+        b"a1".to_vec(),
+        ClaudeSdkInput {
+            of: Some(claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+                ask_key: "ask-1".into(),
+                of: Some(wire::claude_answer::Of::Permission(
+                    wire::PermissionAnswer::default(),
+                )),
+            })),
+        },
+    );
+    let unreadable = Input {
+        input_id: b"u1".to_vec(),
+        kind: wire::Kind::ClaudeSdk as i32,
+        body: vec![0x0a],
+    };
+    for input in [prompt(b"p1", "do this instead"), answer, unreadable] {
+        let refused = tools.send_input(send(input)).await.unwrap_err();
+        assert_eq!(refused.code(), Code::PermissionDenied);
+    }
+    assert!(child.inputs().is_empty(), "nothing reached the child");
+
+    let answer = tools.send_input(send(interrupt(b"i1"))).await.unwrap();
+    assert_eq!(verdict(answer.get_ref()), "queued");
+    assert_eq!(child.inputs().len(), 1, "the interrupt was relayed");
+    crash(daemon, runtime).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let install = Install::new();
@@ -297,7 +353,7 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     );
 
     let handed = recipient.inputs();
-    let Some(input::Of::AgentMessage(handed)) = &handed[0].of else {
+    let Handed::Message(handed) = &handed[0] else {
         panic!("an agent message");
     };
     match handed.from.as_ref().and_then(|from| from.value.as_ref()) {
@@ -449,12 +505,10 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     assert_eq!(runtime.agent(child.id).await.unwrap().incarnation, 2);
     let spec = std::fs::read(child.dir.join("spec.2")).unwrap();
     let spec = <wire::AgentSpec as prost::Message>::decode(spec.as_slice()).unwrap();
-    let first = spec
-        .initial_prompt
-        .expect("the message starts the incarnation");
-    assert_eq!(first.input_id, b"wrap-up");
+    let first = spec.bootstrap.expect("the message starts the incarnation");
     match first.of {
-        Some(input::Of::AgentMessage(message)) => {
+        Some(wire::bootstrap::Of::AgentMessage(message)) => {
+            assert_eq!(message.id, b"wrap-up");
             assert_eq!(message.text, "wrap up and report");
         }
         other => panic!("the parent's message, not {other:?}"),

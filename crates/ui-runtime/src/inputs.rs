@@ -3,7 +3,7 @@
 
 use wire::{
     Attachment, ClaudePtyInput, ClaudeSdkInput, CodexInput, Input, Interrupt, Kind, PromptInput,
-    SendQueuedNow, WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input, input,
+    SendQueuedNow, WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input,
 };
 
 /// A fresh client-generated input id.
@@ -21,7 +21,7 @@ enum Act {
 
 fn wrap(kind: Kind, act: Act) -> Option<Input> {
     let of = match kind {
-        Kind::ClaudePty => input::Of::ClaudePty(ClaudePtyInput {
+        Kind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
             of: Some(match act {
                 Act::Prompt(prompt) => claude_pty_input::Of::Prompt(prompt),
                 Act::Withdraw(withdraw) => claude_pty_input::Of::Withdraw(withdraw),
@@ -29,7 +29,7 @@ fn wrap(kind: Kind, act: Act) -> Option<Input> {
                 Act::Interrupt => claude_pty_input::Of::Interrupt(Interrupt {}),
             }),
         }),
-        Kind::ClaudeSdk => input::Of::ClaudeSdk(ClaudeSdkInput {
+        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
             of: Some(match act {
                 Act::Prompt(prompt) => claude_sdk_input::Of::Prompt(prompt),
                 Act::Withdraw(withdraw) => claude_sdk_input::Of::Withdraw(withdraw),
@@ -37,7 +37,7 @@ fn wrap(kind: Kind, act: Act) -> Option<Input> {
                 Act::Interrupt => claude_sdk_input::Of::Interrupt(Interrupt {}),
             }),
         }),
-        Kind::Codex => input::Of::Codex(CodexInput {
+        Kind::Codex => wire::KindInput::Codex(CodexInput {
             of: Some(match act {
                 Act::Prompt(prompt) => codex_input::Of::Prompt(prompt),
                 Act::Withdraw(withdraw) => codex_input::Of::Withdraw(withdraw),
@@ -47,10 +47,7 @@ fn wrap(kind: Kind, act: Act) -> Option<Input> {
         }),
         Kind::Unspecified => return None,
     };
-    Some(Input {
-        input_id: input_id(),
-        of: Some(of),
-    })
+    Some(Input::new(input_id(), of))
 }
 
 /// A prompt in the kind's arm, under a fresh id; `None` for an unknown kind.

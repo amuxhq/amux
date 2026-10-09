@@ -128,6 +128,14 @@ fn redact_entry<I: Interpreter>(entry: Entry) -> Option<Entry> {
                 _ => return None,
             }
         }
+        Entry::AgentMessage { hex } => {
+            match I::redact(RedactTarget::AgentMessage(interpret::from_hex(&hex).ok()?)) {
+                RedactTarget::AgentMessage(bytes) => Entry::AgentMessage {
+                    hex: interpret::to_hex(&bytes),
+                },
+                _ => return None,
+            }
+        }
         other => other,
     })
 }

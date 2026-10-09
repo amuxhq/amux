@@ -9,8 +9,7 @@ item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED se
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 2 fact {"channel":"rpc","json":{"id":"amux-name-1","result":{}}}
 ## 3 fact {"channel":"rpc","json":{"method":"thread/name/updated","params":{"threadId":"t1","threadName":"quiet-otter"}}}
-## 4 input {"id":"rename-1","rename":{"name":"loud-heron"}}
+## 4 rename {"name":"loud-heron"}
 effect write "{\"id\":\"amux-name-2\",\"method\":\"thread/name/set\",\"params\":{\"name\":\"loud-heron\",\"threadId\":\"t1\"}}"
-effect reply rename-1 accepted
 ## 5 fact {"channel":"rpc","json":{"id":"amux-name-2","result":{}}}
 ## 6 fact {"channel":"rpc","json":{"method":"thread/name/updated","params":{"threadId":"t1","threadName":"loud-heron"}}}

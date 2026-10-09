@@ -18,13 +18,12 @@ use claude_protocol::stream::{
     self, ControlRequestBody, ControlResponse, ElicitationResult, Input as Written, Message,
     Output, PermissionResult, PermissionUpdate,
 };
-use prost::Message as _;
 use serde::Deserialize;
 use wire::{
-    AnswerInput, ClaudeAnswer, ClaudeSdkInput, FormAction, FormAnswer, Input, Interrupt,
-    PermissionAllow, PermissionAnswer, PermissionDeny, PlanAnswer, PlanChoice, PromptInput,
-    QuestionAnswer, QuestionResponse, ReplyInstead, SendQueuedNow, SetModel, SetPermission,
-    claude_answer, claude_sdk_input, input, permission_answer,
+    ClaudeAnswer, ClaudeSdkInput, FormAction, FormAnswer, Input, Interrupt, PermissionAllow,
+    PermissionAnswer, PermissionDeny, PlanAnswer, PlanChoice, PromptInput, QuestionAnswer,
+    QuestionResponse, ReplyInstead, SendQueuedNow, SetModel, SetPermission, claude_answer,
+    claude_sdk_input, permission_answer,
 };
 
 use crate::claude_common::{AnsweredResult, PLAN_TOOL, QUESTION_TOOL, QuestionInput, message_text};
@@ -121,14 +120,14 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                 id = crate::serde_pb::from_hex(&uuid.replace('-', ""))?;
             }
             if turn_running && user.priority.is_none() {
-                send_now = Some(Input {
-                    input_id: format!("stdin-{inputs}-now").into_bytes(),
-                    of: Some(input::Of::ClaudeSdk(ClaudeSdkInput {
+                send_now = Some(Input::new(
+                    format!("stdin-{inputs}-now").into_bytes(),
+                    ClaudeSdkInput {
                         of: Some(claude_sdk_input::Of::SendNow(SendQueuedNow {
                             queued_input_id: id.clone(),
                         })),
-                    })),
-                });
+                    },
+                ));
             }
             turn_running = true;
         }
@@ -157,20 +156,19 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     .get(&request_id)
                     .and_then(|request| answer(request, &response))
                     .map(|body| {
-                        claude_sdk_input::Of::Answer(AnswerInput {
+                        claude_sdk_input::Of::Answer(ClaudeAnswer {
                             ask_key: request_id,
-                            kind: "claude_sdk".into(),
-                            body: ClaudeAnswer { of: Some(body) }.encode_to_vec(),
+                            of: Some(body),
                         })
                     })
             }
             Written::Unknown(_) => None,
         };
         if let Some(arm) = arm {
-            push(Event::Input(Input {
-                input_id: id,
-                of: Some(input::Of::ClaudeSdk(ClaudeSdkInput { of: Some(arm) })),
-            }));
+            push(Event::Input(Input::new(
+                id,
+                ClaudeSdkInput { of: Some(arm) },
+            )));
         }
         if let Some(send_now) = send_now {
             push(Event::Input(send_now));
@@ -329,13 +327,12 @@ mod tests {
             .unwrap()
             .into_iter()
             .filter_map(|event| match event {
-                Event::Input(Input {
-                    of:
-                        Some(input::Of::ClaudeSdk(ClaudeSdkInput {
-                            of: Some(claude_sdk_input::Of::Answer(answer)),
-                        })),
-                    ..
-                }) => ClaudeAnswer::decode(answer.body.as_slice()).ok()?.of,
+                Event::Input(input) => match input.decode_body()? {
+                    wire::KindInput::ClaudeSdk(ClaudeSdkInput {
+                        of: Some(claude_sdk_input::Of::Answer(answer)),
+                    }) => answer.of,
+                    _ => None,
+                },
                 _ => None,
             })
             .collect()

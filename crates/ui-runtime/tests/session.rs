@@ -10,8 +10,8 @@ use support::*;
 use ui_runtime::{DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TraceEvent};
 use ui_state::{Composer, Connection, InputOutcome, InputState, RefusalReason, Waiting};
 use wire::{
-    AnswerInput, ErrorCode, FetchResponse, GetBlobResponse, Input, Kind, SendInputRequest,
-    claude_pty_input, claude_sdk_input, codex_input, input, subscribe_request,
+    ErrorCode, FetchResponse, GetBlobResponse, Input, Kind, SendInputRequest, claude_pty_input,
+    claude_sdk_input, codex_input, subscribe_request,
 };
 
 const KIND: Kind = Kind::ClaudeSdk;
@@ -328,59 +328,56 @@ async fn an_append_whose_base_is_not_held_is_answered_with_get() {
     );
 }
 
-/// An ask's answer as a card makes it: a Codex approval is a decision on
-/// the request, any other answer an encoded body under the ask's key.
+/// An ask's answer as a card makes it, under the ask's key: for Codex an
+/// approval.
 fn answering(kind: Kind) -> Input {
-    let answer = AnswerInput {
+    let answer = wire::ClaudeAnswer {
         ask_key: "ask-1".into(),
-        kind: String::new(),
-        body: Vec::new(),
+        of: None,
     };
     let of = match kind {
-        Kind::ClaudePty => input::Of::ClaudePty(wire::ClaudePtyInput {
+        Kind::ClaudePty => wire::KindInput::ClaudePty(wire::ClaudePtyInput {
             of: Some(claude_pty_input::Of::Answer(answer)),
         }),
-        Kind::ClaudeSdk => input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
             of: Some(claude_sdk_input::Of::Answer(answer)),
         }),
-        _ => input::Of::Codex(wire::CodexInput {
-            of: Some(codex_input::Of::Approve(wire::Approve {
-                request_id: "ask-1".into(),
-                decision: wire::Decision::Approve as i32,
+        _ => wire::KindInput::Codex(wire::CodexInput {
+            of: Some(codex_input::Of::Answer(wire::CodexAnswer {
+                ask_key: "ask-1".into(),
+                of: Some(wire::codex_answer::Of::Approve(
+                    wire::Decision::Approve as i32,
+                )),
             })),
         }),
     };
-    Input {
-        input_id: Vec::new(),
-        of: Some(of),
-    }
+    Input::new(Vec::new(), of)
 }
 
 fn act_arm(request: &SendInputRequest) -> String {
-    let of = request.input.as_ref().unwrap().of.as_ref().unwrap();
-    match of {
-        input::Of::ClaudePty(pty) => match pty.of.as_ref().unwrap() {
+    let of = request.input.as_ref().unwrap().decode_body();
+    match of.as_ref().unwrap() {
+        wire::KindInput::ClaudePty(pty) => match pty.of.as_ref().unwrap() {
             claude_pty_input::Of::Withdraw(_) => "withdraw",
             claude_pty_input::Of::SendNow(_) => "send_now",
             claude_pty_input::Of::Interrupt(_) => "interrupt",
             claude_pty_input::Of::Answer(_) => "answer",
             _ => "other",
         },
-        input::Of::ClaudeSdk(sdk) => match sdk.of.as_ref().unwrap() {
+        wire::KindInput::ClaudeSdk(sdk) => match sdk.of.as_ref().unwrap() {
             claude_sdk_input::Of::Withdraw(_) => "withdraw",
             claude_sdk_input::Of::SendNow(_) => "send_now",
             claude_sdk_input::Of::Interrupt(_) => "interrupt",
             claude_sdk_input::Of::Answer(_) => "answer",
             _ => "other",
         },
-        input::Of::Codex(codex) => match codex.of.as_ref().unwrap() {
+        wire::KindInput::Codex(codex) => match codex.of.as_ref().unwrap() {
             codex_input::Of::Withdraw(_) => "withdraw",
             codex_input::Of::SendNow(_) => "send_now",
             codex_input::Of::Interrupt(_) => "interrupt",
-            codex_input::Of::Answer(_) | codex_input::Of::Approve(_) => "answer",
+            codex_input::Of::Answer(_) => "answer",
             _ => "other",
         },
-        _ => "not a kind's arm",
     }
     .into()
 }
@@ -673,18 +670,20 @@ async fn the_dump_part_writes_structure_and_no_content() {
     let answering = tokio::spawn({
         let session = session.clone();
         async move {
-            let answer = AnswerInput {
+            let answer = wire::ClaudeAnswer {
                 ask_key: "ask-1".into(),
-                kind: "claude_sdk".into(),
-                body: HIDDEN_ANSWER.as_bytes().to_vec(),
+                of: Some(wire::claude_answer::Of::Reply(wire::ReplyInstead {
+                    text: HIDDEN_ANSWER.into(),
+                    answers_so_far: Vec::new(),
+                })),
             };
             session
-                .answer(Input {
-                    input_id: Vec::new(),
-                    of: Some(input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+                .answer(Input::new(
+                    Vec::new(),
+                    wire::ClaudeSdkInput {
                         of: Some(claude_sdk_input::Of::Answer(answer)),
-                    })),
-                })
+                    },
+                ))
                 .await
         }
     });

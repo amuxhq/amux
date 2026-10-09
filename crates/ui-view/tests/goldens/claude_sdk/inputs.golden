@@ -21,7 +21,7 @@
 ## 18 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r2"}}
   row    6 turn:2 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 19 input {"agent_message":{"envelope":"env-1","from":"reviewer","text":"please look at the diff"},"id":"a1"}
+## 19 agent_message {"envelope":"env-1","from":"reviewer","text":"please look at the diff"}
   row    7 agent-message:656e762d31 AgentMessage { from: "reviewer", kind: Message, text: "please look at the diff", to: "", sent: Unspecified, rejection: "" }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }

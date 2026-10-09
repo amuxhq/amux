@@ -5,7 +5,7 @@
 ## 8 recorded 7: input stdin-4
   row    2 prompt:737464696e2d34 Prompt { text: [Text("Think briefly, then reply exactly CODEX_SPEC_INITIAL.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
-## 16 recorded 15: input stdin-5
+## 16 recorded 15: agent_message stdin-5
   row    3 agent-message:737464696e2d35 AgentMessage { from: "", kind: Message, text: "Reply with exactly CODEX_SPEC_INJECT_BUSY and nothing else.", to: "", sent: Unspecified, rejection: "" }
 ## 25 recorded 24: fact Rpc method=item/started
   row    4 rs_08d5f33a5d089915016a93485ac70487d288f584a4149d2b4e Thinking { text: "", open: true, duration_ms: None }

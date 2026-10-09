@@ -2,7 +2,7 @@
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 5 recorded 4: fact Rpc "{\"id\":2,\"result\":{\"activePermissionProfile\":null,\"approvalPolicy\":\"on-…
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
-## 8 recorded 7: input stdin-4
+## 8 recorded 7: agent_message stdin-4
   row    2 agent-message:737464696e2d34 AgentMessage { from: "", kind: Message, text: "Reply with exactly CODEX_SPEC_INJECT_IDLE and nothing else.", to: "", sent: Unspecified, rejection: "" }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 20 recorded 19: fact Rpc method=item/started

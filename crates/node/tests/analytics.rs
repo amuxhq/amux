@@ -8,14 +8,13 @@ use std::sync::Arc;
 
 use analytics::{Ask, Client, Event, Kind, On, Recording};
 use node::{ClientApi, Daemon, Generation, ProfileRuntime, StartOptions, Telemetry};
-use prost::Message as _;
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
 use wire::client_service_server::ClientService as _;
 use wire::{
-    AnswerInput, ClaudeAnswer, ClaudeSdkInput, Empty, Input, Interrupt, PromptInput,
-    QuestionAnswer, SendInputRequest, claude_answer, claude_sdk_input, input,
+    ClaudeAnswer, ClaudeSdkInput, Empty, Input, Interrupt, Kind as WireKind, PromptInput,
+    QuestionAnswer, SendInputRequest, claude_answer, claude_sdk_input,
 };
 
 const SEGMENTS: u64 = 1 << 20;
@@ -35,10 +34,10 @@ async fn start(install: &Install, boot: &str, recording: &Arc<Recording>) -> Dae
 }
 
 fn sdk(of: claude_sdk_input::Of) -> Input {
-    Input {
-        input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-        of: Some(input::Of::ClaudeSdk(ClaudeSdkInput { of: Some(of) })),
-    }
+    Input::new(
+        uuid::Uuid::new_v4().as_bytes().to_vec(),
+        ClaudeSdkInput { of: Some(of) },
+    )
 }
 
 fn send(agent: &SyntheticAgent, input: Input) -> Request<SendInputRequest> {
@@ -160,13 +159,9 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
         .send_input(send(&worker, prompt.clone()))
         .await
         .unwrap();
-    let question = ClaudeAnswer {
-        of: Some(claude_answer::Of::Question(QuestionAnswer::default())),
-    };
-    let answer = sdk(claude_sdk_input::Of::Answer(AnswerInput {
+    let answer = sdk(claude_sdk_input::Of::Answer(ClaudeAnswer {
         ask_key: "ask-1".into(),
-        kind: "ClaudeAnswer".into(),
-        body: question.encode_to_vec(),
+        of: Some(claude_answer::Of::Question(QuestionAnswer::default())),
     }));
     person.send_input(send(&worker, answer)).await.unwrap();
     let interrupt = sdk(claude_sdk_input::Of::Interrupt(Interrupt {}));
@@ -216,6 +211,59 @@ async fn a_persons_prompts_and_answers_count_and_keys_do_not() {
         ]
     );
     assert_eq!(worker.inputs().len(), 3, "every input reached the agent");
+    daemon.shutdown().await.unwrap();
+}
+
+/// The analytics read a copy of an input's body. A body this daemon cannot
+/// read, from a newer client or for a kind it does not know, counts as
+/// nothing and still reaches the agent as sent: only the agent decides it.
+#[tokio::test(flavor = "multi_thread")]
+async fn undecodable_input_is_still_delivered() {
+    let install = Install::new();
+    let mut worker = SyntheticAgent::new(&install, "worker", SEGMENTS);
+    worker.register_offline(&install);
+    worker.go_live();
+    let recording = Recording::new();
+    let daemon = start(&install, "boot-1", &recording).await;
+    let runtime: Arc<ProfileRuntime> = runtime(&daemon, &install);
+    let person = ClientApi::new(&runtime, None);
+
+    let unreadable = [
+        // Not a protobuf message: a field key with no value after it.
+        Input {
+            input_id: b"torn".to_vec(),
+            kind: WireKind::ClaudeSdk as i32,
+            body: vec![0x0a],
+        },
+        // A kind this daemon has no name for.
+        Input {
+            input_id: b"newer-kind".to_vec(),
+            kind: 99,
+            body: vec![0x0a, 0x00],
+        },
+    ];
+    for input in &unreadable {
+        person
+            .send_input(send(&worker, input.clone()))
+            .await
+            .expect("an input the daemon cannot read is still relayed");
+    }
+
+    let handed = worker
+        .inputs()
+        .into_iter()
+        .filter_map(|handed| match handed {
+            Handed::Input(input) => Some(input),
+            Handed::Message(_) => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(handed, unreadable, "each reached the agent byte for byte");
+    let events: Vec<_> = recording
+        .events()
+        .into_iter()
+        .filter(|(_, event)| event.name() != "installed")
+        .collect();
+    assert!(events.is_empty(), "nothing was counted: {events:?}");
     daemon.shutdown().await.unwrap();
 }
 

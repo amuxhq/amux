@@ -23,7 +23,7 @@
 {"event":"tick","at_ms":1791271650084}
 {"event":"git"}
 {"event":"tick","at_ms":1791271653094}
-{"event":"input","hex":"0a10bb43d33a66374e739441ee0a822f596a2a0d0a0b0a09616e6420616761696e"}
+{"event":"input","hex":"0a10bb43d33a66374e739441ee0a822f596a10021a0d0a0b0a09616e6420616761696e"}
 {"event":"tick","at_ms":1791271653097}
 {"event":"fact","channel":"stream","text":"{\"command_uuid\":\"bb43d33a-6637-4e73-9441-ee0a822f596a\",\"session_id\":\"<SESSION-b55776ed>\",\"state\":\"queued\",\"type\":\"command_lifecycle\",\"uuid\":\"c80a57d6-83ee-4947-acca-5a957e287e1a\"}"}
 {"event":"tick","at_ms":1791271653098}

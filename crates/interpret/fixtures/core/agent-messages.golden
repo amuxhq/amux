@@ -11,9 +11,9 @@ item u1 prompt final input=p1 at=1000 text="go"
 ## 4 fact {"channel":"stream","json":{"id":"s1","input":{"working_on":"auditing the queue"},"name":"status","server":"amux","type":"tool"}}
 item s1 tool final at=1000 text="" status TOOL_STATE_RUNNING
 snapshot WORKING queue=[] working_on="auditing the queue" at=1000 asks=[] model=?
-## 5 input {"agent_message":{"envelope":"env-1","from":"reviewer","text":"also check withdraws"},"id":"d1"}
+## 5 agent_message {"envelope":"env-1","from":"reviewer","text":"also check withdraws"}
 effect inject env-1 via Stdin
-effect reply d1 queued
+effect reply env-1 queued
 item agent-message:656e762d31 agent_message final input=env-1 at=1000 text="also check withdraws"
 pending [env-1]
 ## 6 fact {"channel":"stream","json":{"delta":"Done.","id":"m1","type":"text"}}

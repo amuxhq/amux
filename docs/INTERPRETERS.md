@@ -53,8 +53,9 @@ no ids (they arrive on inputs and facts) and does no I/O. It implements
 | `pending_messages(state)` | Agent messages the provider accepted and has not consumed yet; a one-shot agent waits for this to be empty |
 | `describe_item`, `describe_snapshot`, `fixture_input`, `recording` | What the golden harness needs to render bodies, build authored inputs and read recorded corpora |
 
-An `Event` is a provider `Fact`, an `Input` from the daemon, a `Tick`, the
-provider's exit, the daemon being lost, a stop request, the process
+An `Event` is a provider `Fact`, a person's `Input`, an agent message with
+the envelope its daemon set, the daemon's word that a Codex agent was renamed,
+a `Tick`, the provider's exit, the daemon being lost, a stop request, the process
 exiting, or the agent folder's git facts (`Git`, none outside a repository),
 which the shared core publishes on the snapshot. A fact carries its `Channel`: `Transcript`, `Hook` and `Agent` for
 terminal Claude, `Stream` for headless Claude, `Rpc` for Codex.
@@ -409,7 +410,8 @@ permissions, each marked not settable, and it takes no model or effort
 input: a person types `/model <name>` or `/effort <level>` as a prompt and
 the command's own rows reflect it. The permission changes only by cycling,
 since the cycle's order depends on how Claude was launched. Its inputs are
-prompt, withdraw, send now, interrupt, clear, a named key, and answer.
+prompt, withdraw, send now, interrupt, clear, the permission-mode cycle, and
+answer.
 
 ### Keys as programs
 
@@ -577,7 +579,7 @@ answer.
 - **The thread's name.** When the handshake's thread answer arrives, in
   every incarnation, the interpreter names the thread with the agent's name
   from the spec (`thread/name/set`, ids `amux-name-<n>`), and again on the
-  rename input the daemon sends when the agent is renamed, so Codex's own
+  `rename` frame the daemon sends when the agent is renamed, so Codex's own
   app shows the name amux does.
 - **A fresh thread on disk.** Codex writes a thread to disk at its first
   turn, and its own app resumes from what is on disk (it asks for the

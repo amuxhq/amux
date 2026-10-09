@@ -113,7 +113,10 @@ child's parent; the request cannot name any other parent.
 Interrupts the turn one of the caller's own direct children is running. The
 daemon checks the lineage and refuses any other agent with
 `PERMISSION_DENIED`. The interrupt is the kind's own `Interrupt` input, so the
-turn is cancelled the provider's way. The child's history stays and its
+turn is cancelled the provider's way. It is the one input an agent sends: on
+the tools socket the daemon refuses any other input, to a child or anyone
+else, with `PERMISSION_DENIED`; an agent reaches another agent's queue only by
+messaging it. The child's history stays and its
 process is not stopped by the call; a child then exits by its own one-shot
 rule once nothing is left for it. A child that has already finished has
 nothing to interrupt and answers that it did not stop.
@@ -165,9 +168,9 @@ start, and takes one `SendMessage` at a time, in order. For each message it:
    answer is accepted again without handing anything over.
 2. Drops a message meant for one incarnation of the recipient when another
    has begun (only the outbox's reports carry an incarnation).
-3. Hands the message to the recipient's process as `Input{AgentMessage}` over
-   its control socket, or resumes it first if it has exited and the sender is
-   its parent.
+3. Hands the message to the recipient's process as an `agent_message` frame
+   on its control socket, or resumes it first if it has exited and the sender
+   is its parent.
 4. Answers accepted only after the recipient's acceptance item, the one whose
    input id is the envelope id, has committed to the store. It waits up to 60
    seconds for that.
@@ -195,7 +198,7 @@ A send goes from the model to the recipient's provider like this:
 3. A recipient that has exited is resumed with the message as its first
    input when the sender is its parent. Any other sender is answered
    `rejected: exited`.
-4. The recipient's interpreter receives `Input{AgentMessage}`, writes the
+4. The recipient's interpreter receives the `agent_message` frame, writes the
    agent-message item with the envelope id as its input id, marks the message
    pending, answers accepted, and emits an inject effect naming its carrier.
    The agent process carries the effect out after the step is in the journal.

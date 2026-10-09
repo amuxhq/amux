@@ -233,15 +233,15 @@ async fn headless_claude_gets_a_persons_image_as_an_image_block() {
             size: bytes.len() as u64,
         })),
     };
-    let input = wire::Input {
-        input_id: b"p1".to_vec(),
-        of: Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+    let input = wire::Input::new(
+        b"p1".to_vec(),
+        wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
                 text: format!("What colour is {} here?", attachments::PLACEHOLDER),
                 attachments: vec![image.clone()],
             })),
-        })),
-    };
+        },
+    );
     let mut daemon = agent.dial().await;
     agent.ready().await;
     assert_eq!(daemon.input(input).await, Verdict::Accepted);

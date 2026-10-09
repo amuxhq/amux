@@ -455,9 +455,11 @@ fn with_form_content(answer: &Answer, content_json: Vec<u8>) -> Answer {
     match &mut answer {
         Answer::Claude(ClaudeAnswer {
             of: Some(claude_answer::Of::Form(form)),
+            ..
         })
         | Answer::Codex(CodexAnswer {
             of: Some(wire::codex_answer::Of::Form(form)),
+            ..
         }) => form.content_json = content_json,
         _ => {}
     }

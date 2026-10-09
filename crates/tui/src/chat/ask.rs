@@ -2600,7 +2600,6 @@ impl AskUi {
 
 #[cfg(test)]
 mod tests {
-    use prost::Message as _;
 
     use super::*;
 
@@ -2626,6 +2625,7 @@ mod tests {
                         action: wire::FormAction::Accept as i32,
                         content_json: vec![],
                     })),
+                    ..Default::default()
                 }),
             }],
             question_note: false,
@@ -2664,17 +2664,13 @@ mod tests {
         let AskAction::Answer(input) = action else {
             panic!("{action:?}");
         };
-        let Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+        let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Answer(answer)),
-        })) = input.of
+        })) = input.decode_body()
         else {
             panic!("{input:?}");
         };
-        let Some(wire::claude_answer::Of::Form(form)) =
-            wire::ClaudeAnswer::decode(answer.body.as_slice())
-                .unwrap()
-                .of
-        else {
+        let Some(wire::claude_answer::Of::Form(form)) = answer.of else {
             panic!("not a form");
         };
         serde_json::from_slice(&form.content_json).unwrap()

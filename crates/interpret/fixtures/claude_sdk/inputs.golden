@@ -54,8 +54,8 @@ snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s2 model
 item turn:2 turn final at=1800000000000 text="" #2 TURN_OUTCOME_COMPLETED started=1799999999000 cost=0.010000
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s2 model=claude-sonnet-5 model_name="Sonnet 5" effort=high mode=plan context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 2 last=-
-## 19 input {"agent_message":{"envelope":"env-1","from":"reviewer","text":"please look at the diff"},"id":"a1"}
+## 19 agent_message {"envelope":"env-1","from":"reviewer","text":"please look at the diff"}
 effect inject env-1 via Stdin
-effect reply a1 queued
+effect reply env-1 queued
 item agent-message:656e762d31 agent_message final input=env-1 at=1800000000000 text="please look at the diff" envelope=656e762d31
 pending [env-1]

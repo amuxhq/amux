@@ -446,13 +446,10 @@
       }
     },
     {
-      "input": {
-        "id": "m1",
-        "agent_message": {
-          "envelope": "e9",
-          "from": "lead",
-          "text": "Status?"
-        }
+      "agent_message": {
+        "envelope": "e9",
+        "from": "lead",
+        "text": "Status?"
       },
       "expect": {
         "reply": "queued"

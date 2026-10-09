@@ -14,6 +14,8 @@
 //!     { "fact": { "channel": "stream", "json": { "type": "ready" } } },
 //!     { "input": { "id": "p1", "prompt": { "text": "hello" } },
 //!       "expect": { "reply": "accepted", "phase": "WORKING" } },
+//!     { "agent_message": { "envelope": "e1", "from": "reviewer", "text": "look" } },
+//!     { "rename": { "name": "loud-heron" } },
 //!     { "git": { "branch": "fix", "base_branch": "main",
 //!                "uncommitted": { "files": 1, "added": 2, "removed": 0 } } },
 //!     { "checkpoint": {} }
@@ -45,10 +47,9 @@ use prost::Message as _;
 use serde::Deserialize;
 use serde_json::Value;
 use wire::{
-    AgentSpec, AnswerInput, ClaudeAnswer, CodexAnswer, Envelope, EnvelopeKind, Input, Item, Key,
-    KeyName, Phase, PromptInput, SendInputResponse, SendQueuedNow, Sender, Snapshot, Step,
-    StopMode, WithdrawQueued, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
-    input, send_input_response, sender,
+    AgentSpec, ClaudeAnswer, CodexAnswer, Envelope, EnvelopeKind, Input, Item, Phase, PromptInput,
+    SendInputResponse, SendQueuedNow, Sender, Snapshot, Step, StopMode, WithdrawQueued,
+    claude_answer, claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
 };
 
 use crate::serde_pb::{from_hex, to_hex};
@@ -100,25 +101,18 @@ pub enum FixtureInput {
     /// {"text": "…", "selected": [...]}}` to reply instead,
     /// `{"form": {"action": "accept", "content": {…}}}`,
     /// `{"link": {"action": "decline"}}`; for Codex
-    /// `{"decision": "approve"}` answers an approval, and a question, form,
-    /// link, `{"plan": {"choice": "start"}}` or `{"plan": {"choice":
-    /// "keep_planning", "note": "…"}}`, or `{"grant": {"read": […],
-    /// "write": […], "network": true, "for_session": true}}` is a
-    /// CodexAnswer.
+    /// `{"decision": "approve"}` answers an approval, and so does a
+    /// question, form, link, `{"plan": {"choice": "start"}}` or
+    /// `{"plan": {"choice": "keep_planning", "note": "…"}}`, or
+    /// `{"grant": {"read": […], "write": […], "network": true,
+    /// "for_session": true}}`.
     Answer {
         ask: String,
         #[serde(default)]
         answer: Value,
     },
-    AgentMessage {
-        envelope: String,
-        #[serde(default)]
-        from: String,
-        text: String,
-    },
-    Key {
-        name: String,
-    },
+    /// Terminal Claude's permission-mode cycle.
+    CyclePermissionMode {},
     /// Change the model; null restores the launch model.
     Model {
         #[serde(default)]
@@ -135,10 +129,6 @@ pub enum FixtureInput {
     Effort {
         #[serde(default)]
         effort: Option<String>,
-    },
-    /// The daemon's word that the agent was renamed.
-    Rename {
-        name: String,
     },
     /// An encoded Input, hex, for arms the vocabulary above does not name.
     Raw {
@@ -522,11 +512,11 @@ fn spec<I: Interpreter>(spec: &FixtureSpec) -> AgentSpec {
             host_id: b"parent-host".to_vec(),
             agent_id: b"parent".to_vec(),
         }),
-        initial_prompt: spec.initial_prompt.as_ref().and_then(|text| {
-            I::fixture_input(
-                b"initial".to_vec(),
-                &FixtureInput::Prompt { text: text.clone() },
-            )
+        bootstrap: spec.initial_prompt.as_ref().map(|text| wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                input_id: b"initial".to_vec(),
+                prompt: Some(prompt(text)),
+            })),
         }),
         ..Default::default()
     }
@@ -584,6 +574,14 @@ fn scripted<I: Interpreter>(value: &Value) -> Result<Scripted, String> {
         }),
         "fact" => Action::Event(Event::Fact(fact(body)?)),
         "input" => Action::Event(Event::Input(input_of::<I>(body)?)),
+        "agent_message" => Action::Event(Event::AgentMessage(agent_message(body)?)),
+        "rename" => Action::Event(Event::Rename {
+            name: body
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or("rename takes a name")?
+                .to_owned(),
+        }),
         "provider_exit" => Action::Event(Event::ProviderExit {
             code: body
                 .get("code")
@@ -695,29 +693,6 @@ fn input_of<I: Interpreter>(body: &Value) -> Result<Input, String> {
         serde_json::from_value(Value::Object(object)).map_err(|error| format!("input: {error}"))?;
     let input_id = id.into_bytes();
     match &input {
-        FixtureInput::AgentMessage {
-            envelope,
-            from,
-            text,
-        } => Ok(Input {
-            input_id,
-            of: Some(input::Of::AgentMessage(Envelope {
-                id: envelope.clone().into_bytes(),
-                context: None,
-                from: Some(Sender {
-                    value: Some(sender::Value::Agent(wire::AgentSender {
-                        agent_id: from.clone().into_bytes(),
-                        host_id: b"host".to_vec(),
-                        name: from.clone(),
-                        kind: String::new(),
-                    })),
-                }),
-                to: None,
-                kind: EnvelopeKind::Message as i32,
-                text: text.clone(),
-                incarnation: None,
-            })),
-        }),
         FixtureInput::Raw { hex } => {
             let bytes = from_hex(hex)?;
             let mut decoded = Input::decode(bytes.as_slice()).map_err(|error| error.to_string())?;
@@ -727,6 +702,37 @@ fn input_of<I: Interpreter>(body: &Value) -> Result<Input, String> {
         other => I::fixture_input(input_id, other)
             .ok_or_else(|| format!("{} has no input for {other:?}", I::KIND)),
     }
+}
+
+/// An agent message as its daemon hands it over: the envelope with the
+/// sender the daemon set.
+fn agent_message(body: &Value) -> Result<Envelope, String> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Message {
+        envelope: String,
+        #[serde(default)]
+        from: String,
+        text: String,
+    }
+    let message: Message =
+        serde_json::from_value(body.clone()).map_err(|error| format!("agent_message: {error}"))?;
+    Ok(Envelope {
+        id: message.envelope.into_bytes(),
+        context: None,
+        from: Some(Sender {
+            value: Some(sender::Value::Agent(wire::AgentSender {
+                agent_id: message.from.clone().into_bytes(),
+                host_id: b"host".to_vec(),
+                name: message.from,
+                kind: String::new(),
+            })),
+        }),
+        to: None,
+        kind: EnvelopeKind::Message as i32,
+        text: message.text,
+        incarnation: None,
+    })
 }
 
 fn prompt(text: &str) -> PromptInput {
@@ -758,7 +764,7 @@ fn withdraw(target: &str) -> WithdrawQueued {
     }
 }
 
-fn claude_answer(kind: &str, ask: &str, answer: &Value) -> Option<AnswerInput> {
+fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
     let text = |value: &Value, key: &str| {
         value
             .get(key)
@@ -824,10 +830,9 @@ fn claude_answer(kind: &str, ask: &str, answer: &Value) -> Option<AnswerInput> {
             note: Some(text(send_back, "note")).filter(|note| !note.is_empty()),
         })
     };
-    Some(AnswerInput {
+    Some(ClaudeAnswer {
         ask_key: ask.to_owned(),
-        kind: kind.to_owned(),
-        body: ClaudeAnswer { of: Some(of) }.encode_to_vec(),
+        of: Some(of),
     })
 }
 
@@ -840,24 +845,17 @@ pub fn claude_pty_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         FixtureInput::SendNow { target } => Of::SendNow(send_now(target)),
         FixtureInput::Interrupt {} => Of::Interrupt(wire::Interrupt {}),
         FixtureInput::Clear {} => Of::Clear(wire::Clear {}),
-        FixtureInput::Answer { ask, answer } => {
-            Of::Answer(claude_answer("claude_pty", ask, answer)?)
+        FixtureInput::Answer { ask, answer } => Of::Answer(claude_answer(ask, answer)?),
+        FixtureInput::CyclePermissionMode {} => {
+            Of::CyclePermissionMode(wire::CyclePermissionMode {})
         }
-        FixtureInput::Key { name } => Of::Key(Key {
-            key: KeyName::from_str_name(&format!("KEY_NAME_{}", name.to_uppercase()))? as i32,
-        }),
-        FixtureInput::AgentMessage { .. }
-        | FixtureInput::Raw { .. }
+        FixtureInput::Raw { .. }
         | FixtureInput::Model { .. }
         | FixtureInput::Permission { .. }
         | FixtureInput::Mode { .. }
-        | FixtureInput::Effort { .. }
-        | FixtureInput::Rename { .. } => return None,
+        | FixtureInput::Effort { .. } => return None,
     };
-    Some(Input {
-        input_id,
-        of: Some(input::Of::ClaudePty(wire::ClaudePtyInput { of: Some(of) })),
-    })
+    Some(Input::new(input_id, wire::ClaudePtyInput { of: Some(of) }))
 }
 
 /// The shared fixture vocabulary as a Claude SDK input.
@@ -869,9 +867,7 @@ pub fn claude_sdk_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         FixtureInput::SendNow { target } => Of::SendNow(send_now(target)),
         FixtureInput::Interrupt {} => Of::Interrupt(wire::Interrupt {}),
         FixtureInput::Clear {} => Of::Clear(wire::Clear {}),
-        FixtureInput::Answer { ask, answer } => {
-            Of::Answer(claude_answer("claude_sdk", ask, answer)?)
-        }
+        FixtureInput::Answer { ask, answer } => Of::Answer(claude_answer(ask, answer)?),
         FixtureInput::Model { model } => Of::Model(wire::SetModel {
             model: model.clone(),
         }),
@@ -881,16 +877,11 @@ pub fn claude_sdk_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input
         FixtureInput::Effort { effort } => Of::Effort(wire::SetEffort {
             effort: effort.clone(),
         }),
-        FixtureInput::Key { .. }
+        FixtureInput::CyclePermissionMode {}
         | FixtureInput::Mode { .. }
-        | FixtureInput::AgentMessage { .. }
-        | FixtureInput::Raw { .. }
-        | FixtureInput::Rename { .. } => return None,
+        | FixtureInput::Raw { .. } => return None,
     };
-    Some(Input {
-        input_id,
-        of: Some(input::Of::ClaudeSdk(wire::ClaudeSdkInput { of: Some(of) })),
-    })
+    Some(Input::new(input_id, wire::ClaudeSdkInput { of: Some(of) }))
 }
 
 /// The shared fixture vocabulary as a Codex input.
@@ -901,22 +892,7 @@ pub fn codex_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
         FixtureInput::Withdraw { target } => Of::Withdraw(withdraw(target)),
         FixtureInput::SendNow { target } => Of::SendNow(send_now(target)),
         FixtureInput::Interrupt {} => Of::Interrupt(wire::Interrupt {}),
-        FixtureInput::Answer { ask, answer } => {
-            match answer.get("decision").and_then(Value::as_str) {
-                Some(decision) => Of::Approve(wire::Approve {
-                    request_id: ask.clone(),
-                    decision: wire::Decision::from_str_name(&format!(
-                        "DECISION_{}",
-                        decision.to_uppercase()
-                    ))? as i32,
-                }),
-                None => Of::Answer(AnswerInput {
-                    ask_key: ask.clone(),
-                    kind: "codex".into(),
-                    body: codex_answer(answer)?.encode_to_vec(),
-                }),
-            }
-        }
+        FixtureInput::Answer { ask, answer } => Of::Answer(codex_answer(ask, answer)?),
         FixtureInput::Model { model } => Of::Model(wire::SetModel {
             model: model.clone(),
         }),
@@ -929,16 +905,11 @@ pub fn codex_input(input_id: Vec<u8>, input: &FixtureInput) -> Option<Input> {
         FixtureInput::Mode { value } => Of::Mode(wire::SetMode {
             value: value.clone(),
         }),
-        FixtureInput::Rename { name } => Of::Rename(wire::RenameThread { name: name.clone() }),
         FixtureInput::Clear {}
-        | FixtureInput::Key { .. }
-        | FixtureInput::AgentMessage { .. }
+        | FixtureInput::CyclePermissionMode {}
         | FixtureInput::Raw { .. } => return None,
     };
-    Some(Input {
-        input_id,
-        of: Some(input::Of::Codex(wire::CodexInput { of: Some(of) })),
-    })
+    Some(Input::new(input_id, wire::CodexInput { of: Some(of) }))
 }
 
 /// One response per question: an option index, a list of indices for a
@@ -1006,7 +977,7 @@ fn reply_instead(reply: &Value) -> wire::ReplyInstead {
     }
 }
 
-fn codex_answer(answer: &Value) -> Option<CodexAnswer> {
+fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
     use wire::codex_answer::Of;
     let action = |value: &Value| {
         wire::FormAction::from_str_name(&format!(
@@ -1019,7 +990,11 @@ fn codex_answer(answer: &Value) -> Option<CodexAnswer> {
         ))
         .map(|action| action as i32)
     };
-    let of = if answer.get("selected").is_some() {
+    let of = if let Some(decision) = answer.get("decision").and_then(Value::as_str) {
+        Of::Approve(
+            wire::Decision::from_str_name(&format!("DECISION_{}", decision.to_uppercase()))? as i32,
+        )
+    } else if answer.get("selected").is_some() {
         Of::Question(question_answer(answer))
     } else if let Some(reply) = answer.get("reply") {
         Of::Reply(reply_instead(reply))
@@ -1074,7 +1049,10 @@ fn codex_answer(answer: &Value) -> Option<CodexAnswer> {
                 .unwrap_or(false),
         })
     };
-    Some(CodexAnswer { of: Some(of) })
+    Some(CodexAnswer {
+        ask_key: ask.to_owned(),
+        of: Some(of),
+    })
 }
 
 /// Runs the script. With `checkpoint_at`, the state is written, read back
@@ -1663,6 +1641,8 @@ fn event_label(event: &Event) -> String {
     match event {
         Event::Fact(fact) => format!("fact {:?} {}", fact.channel, summary(&fact.payload)),
         Event::Input(input) => format!("input {}", display_id(&input.input_id)),
+        Event::AgentMessage(envelope) => format!("agent_message {}", display_id(&envelope.id)),
+        Event::Rename { name } => format!("rename {name:?}"),
         Event::Tick { at_ms } => format!("tick {at_ms}"),
         Event::ProviderExit { code } => format!("provider_exit {code:?}"),
         Event::DaemonLost => "daemon_lost".into(),

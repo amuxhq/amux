@@ -91,7 +91,7 @@ impl Pair {
         self.agent
             .inputs()
             .into_iter()
-            .map(|input| input.input_id)
+            .map(|handed| handed.id().to_vec())
             .collect()
     }
 
@@ -204,6 +204,67 @@ async fn a_send_with_no_link_never_leaves_and_is_rejected() {
     assert!(
         pair.sent_ids().is_empty(),
         "a rejected send never reached the agent"
+    );
+    pair.stop().await;
+}
+
+/// An input crosses daemons as bytes: an arm or field the daemons do not
+/// know reaches a newer agent exactly as its client encoded it, whether
+/// the person is on the agent's own host or on a paired one.
+#[tokio::test(flavor = "multi_thread")]
+async fn unknown_input_arm_survives_forwarding() {
+    use prost::Message as _;
+    let (pair, _link) = Pair::new().await;
+    // A prompt with a field 99 no version of the message has, then an arm
+    // 99 alone: varint key 99 << 3, value 1.
+    let unknown = [0x98, 0x06, 0x01];
+    let prompt = wire::ClaudeSdkInput {
+        of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+            text: "with something new".into(),
+            attachments: Vec::new(),
+        })),
+    }
+    .encode_to_vec();
+    let inputs = [
+        wire::Input {
+            input_id: b"on-the-desk".to_vec(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            body: [prompt.as_slice(), &unknown].concat(),
+        },
+        wire::Input {
+            input_id: b"from-the-laptop".to_vec(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            body: unknown.to_vec(),
+        },
+    ];
+    let desk = node::ClientApi::new(&pair.desk_runtime, None);
+    let laptop = node::ClientApi::new(&pair.laptop_runtime, None);
+    for (api, input) in [(&desk, &inputs[0]), (&laptop, &inputs[1])] {
+        let answer = api
+            .send_input(tonic::Request::new(SendInputRequest {
+                agent_id: pair.agent.id.as_bytes().to_vec(),
+                input: Some(input.clone()),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(verdict(answer.get_ref()), "queued");
+    }
+    let handed = pair
+        .agent
+        .inputs()
+        .into_iter()
+        .filter_map(|handed| match handed {
+            Handed::Input(input) => Some(input.encode_to_vec()),
+            Handed::Message(_) => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        handed,
+        inputs
+            .iter()
+            .map(|input| input.encode_to_vec())
+            .collect::<Vec<_>>(),
+        "the agent got the bytes its clients sent"
     );
     pair.stop().await;
 }

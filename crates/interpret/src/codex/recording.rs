@@ -32,12 +32,11 @@ use codex_protocol::{
     ClientMessage, ClientRequest, ClientResponse, RequestId, ServerMessage, ServerNotification,
     ServerRequest,
 };
-use prost::Message as _;
 use serde::Deserialize;
 use wire::{
-    AnswerInput, Approve, CodexAnswer, CodexInput, Envelope, EnvelopeKind, FormAction, FormAnswer,
-    GrantAnswer, Input, Interrupt, LinkAnswer, PromptInput, QuestionAnswer, QuestionResponse,
-    codex_answer, codex_input, input,
+    CodexAnswer, CodexInput, Envelope, EnvelopeKind, FormAction, FormAnswer, GrantAnswer, Input,
+    Interrupt, LinkAnswer, PromptInput, QuestionAnswer, QuestionResponse, codex_answer,
+    codex_input,
 };
 
 use crate::{Channel, Event, Fact};
@@ -212,24 +211,24 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     });
                     // Overrides the host put on the turn are inputs before it.
                     if let Some(model) = params.model {
-                        push(Event::Input(Input {
-                            input_id: format!("stdin-{inputs}-model").into_bytes(),
-                            of: Some(input::Of::Codex(CodexInput {
+                        push(Event::Input(Input::new(
+                            format!("stdin-{inputs}-model").into_bytes(),
+                            CodexInput {
                                 of: Some(codex_input::Of::Model(wire::SetModel {
                                     model: Some(model),
                                 })),
-                            })),
-                        }));
+                            },
+                        )));
                     }
                     if let Some(Some(effort)) = params.effort {
-                        push(Event::Input(Input {
-                            input_id: format!("stdin-{inputs}-effort").into_bytes(),
-                            of: Some(input::Of::Codex(CodexInput {
+                        push(Event::Input(Input::new(
+                            format!("stdin-{inputs}-effort").into_bytes(),
+                            CodexInput {
                                 of: Some(codex_input::Of::Effort(wire::SetEffort {
                                     effort: Some(effort.as_str().to_owned()),
                                 })),
-                            })),
-                        }));
+                            },
+                        )));
                     }
                     if let (Some(approval), Some(sandbox)) =
                         (&params.approval_policy, &params.sandbox_policy)
@@ -242,37 +241,33 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                                 .map(|reviewer| reviewer.as_str()),
                         )
                     {
-                        push(Event::Input(Input {
-                            input_id: format!("stdin-{inputs}-permission").into_bytes(),
-                            of: Some(input::Of::Codex(CodexInput {
+                        push(Event::Input(Input::new(
+                            format!("stdin-{inputs}-permission").into_bytes(),
+                            CodexInput {
                                 of: Some(codex_input::Of::Permission(wire::SetPermission {
                                     value: value.to_owned(),
                                 })),
-                            })),
-                        }));
+                            },
+                        )));
                     }
                     if let Some(plan) = started {
-                        codex_input::Of::Answer(AnswerInput {
+                        codex_input::Of::Answer(CodexAnswer {
                             ask_key: super::plan_ask_key(&plan),
-                            kind: "codex".into(),
-                            body: CodexAnswer {
-                                of: Some(codex_answer::Of::Plan(wire::PlanAnswer {
-                                    choice: wire::PlanChoice::Start as i32,
-                                    note: None,
-                                })),
-                            }
-                            .encode_to_vec(),
+                            of: Some(codex_answer::Of::Plan(wire::PlanAnswer {
+                                choice: wire::PlanChoice::Start as i32,
+                                note: None,
+                            })),
                         })
                     } else {
                         if let Some(collaboration) = &params.collaboration_mode {
-                            push(Event::Input(Input {
-                                input_id: format!("stdin-{inputs}-mode").into_bytes(),
-                                of: Some(input::Of::Codex(CodexInput {
+                            push(Event::Input(Input::new(
+                                format!("stdin-{inputs}-mode").into_bytes(),
+                                CodexInput {
                                     of: Some(codex_input::Of::Mode(wire::SetMode {
                                         value: collaboration.mode.as_str().to_owned(),
                                     })),
-                                })),
-                            }));
+                                },
+                            )));
                         }
                         codex_input::Of::Prompt(PromptInput {
                             text,
@@ -289,15 +284,15 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                         .as_deref()
                         .and_then(|id| crate::from_hex(id).ok())
                         .unwrap_or_else(|| format!("stdin-{inputs}-queued").into_bytes());
-                    push(Event::Input(Input {
-                        input_id: queued.clone(),
-                        of: Some(input::Of::Codex(CodexInput {
+                    push(Event::Input(Input::new(
+                        queued.clone(),
+                        CodexInput {
                             of: Some(codex_input::Of::Prompt(PromptInput {
                                 text: input_text(&params.input),
                                 ..Default::default()
                             })),
-                        })),
-                    }));
+                        },
+                    )));
                     codex_input::Of::SendNow(wire::SendQueuedNow {
                         queued_input_id: queued,
                     })
@@ -332,22 +327,18 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                                 .client_user_message_id
                                 .as_deref()
                                 .and_then(|id| crate::from_hex(id).ok());
-                            push(Event::Input(Input {
-                                input_id: sent.unwrap_or(input_id),
-                                of: Some(input::Of::Codex(CodexInput {
-                                    of: Some(codex_input::Of::Answer(AnswerInput {
+                            push(Event::Input(Input::new(
+                                sent.unwrap_or(input_id),
+                                CodexInput {
+                                    of: Some(codex_input::Of::Answer(CodexAnswer {
                                         ask_key: key,
-                                        kind: "codex".into(),
-                                        body: CodexAnswer {
-                                            of: Some(codex_answer::Of::Reply(wire::ReplyInstead {
-                                                text: input_text(&params.input),
-                                                answers_so_far: Vec::new(),
-                                            })),
-                                        }
-                                        .encode_to_vec(),
+                                        of: Some(codex_answer::Of::Reply(wire::ReplyInstead {
+                                            text: input_text(&params.input),
+                                            answers_so_far: Vec::new(),
+                                        })),
                                     })),
-                                })),
-                            }));
+                                },
+                            )));
                             continue;
                         }
                         _ => codex_input::Of::Interrupt(Interrupt {}),
@@ -378,14 +369,11 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                         })
                         .collect::<Vec<_>>()
                         .join("\n");
-                    push(Event::Input(Input {
-                        input_id: input_id.clone(),
-                        of: Some(input::Of::AgentMessage(Envelope {
-                            id: input_id,
-                            kind: EnvelopeKind::Message as i32,
-                            text,
-                            ..Default::default()
-                        })),
+                    push(Event::AgentMessage(Envelope {
+                        id: input_id,
+                        kind: EnvelopeKind::Message as i32,
+                        text,
+                        ..Default::default()
                     }));
                     continue;
                 }
@@ -406,10 +394,10 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                 }
                 _ => continue,
             };
-        push(Event::Input(Input {
+        push(Event::Input(Input::new(
             input_id,
-            of: Some(input::Of::Codex(CodexInput { of: Some(arm) })),
-        }));
+            CodexInput { of: Some(arm) },
+        )));
     }
     Ok(events)
 }
@@ -449,18 +437,12 @@ fn answer(
     response: &ClientResponse,
 ) -> Option<codex_input::Of> {
     let body = |of: codex_answer::Of| {
-        Some(codex_input::Of::Answer(AnswerInput {
+        Some(codex_input::Of::Answer(CodexAnswer {
             ask_key: key.clone(),
-            kind: "codex".into(),
-            body: CodexAnswer { of: Some(of) }.encode_to_vec(),
+            of: Some(of),
         }))
     };
-    let approve = |decision: wire::Decision| {
-        Some(codex_input::Of::Approve(Approve {
-            request_id: key.clone(),
-            decision: decision as i32,
-        }))
-    };
+    let approve = |decision: wire::Decision| body(codex_answer::Of::Approve(decision as i32));
     match (request, response) {
         (
             ServerRequest::CommandApproval(_) | ServerRequest::FileChangeApproval(_),
@@ -578,10 +560,10 @@ mod tests {
         events
             .into_iter()
             .filter_map(|event| match event {
-                Event::Input(Input {
-                    of: Some(input::Of::Codex(CodexInput { of: Some(of) })),
-                    ..
-                }) => Some(of),
+                Event::Input(input) => match input.decode_body()? {
+                    wire::KindInput::Codex(CodexInput { of: Some(of) }) => Some(of),
+                    _ => None,
+                },
                 _ => None,
             })
             .collect()
@@ -627,9 +609,8 @@ mod tests {
             panic!("one answer, not {got:?}");
         };
         assert_eq!(answer.ask_key, "0");
-        let body = CodexAnswer::decode(answer.body.as_slice()).unwrap();
         assert_eq!(
-            body.of,
+            answer.of,
             Some(codex_answer::Of::Reply(wire::ReplyInstead {
                 text: "Never mind.".into(),
                 answers_so_far: Vec::new(),
@@ -734,7 +715,7 @@ mod tests {
         };
         assert_eq!(answer.ask_key, "plan:p1");
         assert_eq!(
-            CodexAnswer::decode(answer.body.as_slice()).unwrap().of,
+            answer.of,
             Some(codex_answer::Of::Plan(wire::PlanAnswer {
                 choice: wire::PlanChoice::Start as i32,
                 note: None,

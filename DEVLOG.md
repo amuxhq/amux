@@ -1,3 +1,28 @@
+2026-10-09 — **A person's input is opaque bytes of its kind; what only the daemon may send moves to the control socket.**
+A paired host could call `SendInput` with an `Input.agent_message` naming any
+sender, and the agent's interpreter took the envelope as given, bypassing the
+rule that a host speaks only for its own agents; a tools socket or a create's
+first prompt could carry one too. `Input` is now `{ input_id, kind, body }`,
+the body the kind's own input message encoded. Daemons forward it untouched,
+so an arm or field a daemon does not know reaches a newer agent intact; the
+daemon decodes a copy only for analytics and passes on one it cannot read.
+Agent messages, dump requests and a Codex agent's new name are their own
+`CtlFrame` arms (`agent_message`, `dump_request`, `rename`), sent only by the
+agent's daemon, and the agent's verdict is `Verdict { id }`, keyed by the
+input id or the envelope id. The spec seeds the child's queue from a
+`Bootstrap` (a prompt, or a parent's message on a parent-driven resume), so a
+client's first prompt must be a prompt. Answers are typed inside each kind:
+`ClaudeAnswer` and `CodexAnswer` carry the ask key, and Codex's separate
+`Approve` became `CodexAnswer.approve`, still refused unless the ask offered
+that decision. The remote key vocabulary went: terminal Claude's
+permission-mode cycle is the one keystroke a client sends
+(`CyclePermissionMode`); the generic key path in the agent and its hard-coded
+Up arrow went with it. On an agent's tools socket the one input accepted is an
+interrupt to its own child. A stop or a terminal mode this side cannot read
+is refused rather than taken as graceful or files. The interpreter fixtures
+write agent messages and renames as their own events, and the facts ring
+records them as `agent_message` and `rename` entries, redacted in dumps.
+
 2026-10-09 — **The check-in test waits for the check-in to be written down.**
 The daemon records its daily check-in and then writes the time to the
 profile's `checked_in` file. The test read the file as soon as it saw the

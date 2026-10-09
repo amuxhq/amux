@@ -24,7 +24,7 @@ use wire::client_service_server::ClientService as _;
 use wire::{
     AgentParent, AgentSender, AmbiguousHostName, ClaudeCreateConfig, ClaudeSdkInput,
     CreateAgentRequest, Envelope, EnvelopeKind, InventoryEvent, Kind, Lifecycle, Phase, Sender,
-    claude_sdk_input, create_agent_request, input, inventory_event, sender,
+    claude_sdk_input, create_agent_request, inventory_event, sender,
 };
 
 fn text(text: &str) -> Step {
@@ -79,12 +79,12 @@ fn envelope(id: &[u8], to: &AgentParent, text: &str) -> Envelope {
 }
 
 fn interrupt() -> wire::Input {
-    wire::Input {
-        input_id: Uuid::new_v4().as_bytes().to_vec(),
-        of: Some(input::Of::ClaudeSdk(ClaudeSdkInput {
+    wire::Input::new(
+        Uuid::new_v4().as_bytes().to_vec(),
+        ClaudeSdkInput {
             of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
-        })),
-    }
+        },
+    )
 }
 
 /// `agent`'s row as `host` holds it: its own row there, or a replica.

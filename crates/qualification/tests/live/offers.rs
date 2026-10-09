@@ -7,7 +7,7 @@
 
 use wire::{
     CodexCreateConfig, CodexInput, Empty, GetCatalogueRequest, HostProvider, Kind, codex_input,
-    get_catalogue_request, input, inventory_event,
+    get_catalogue_request, inventory_event,
 };
 
 use super::asks::settled;
@@ -264,7 +264,7 @@ impl Install {
             Err(verdict) => return Ok(verdict),
         };
         let kind = self.kind;
-        self.input(&agent, input::Of::Codex(CodexInput { of: Some(of) }))
+        self.input(&agent, wire::KindInput::Codex(CodexInput { of: Some(of) }))
             .await?;
         self.send(
             scenario,

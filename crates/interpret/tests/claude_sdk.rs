@@ -223,13 +223,10 @@ fn split_and_coalesced_stream_events_yield_the_same_final_items() {
 }
 
 fn agent_message(envelope: &[u8], text: &str) -> Event {
-    Event::Input(wire::Input {
-        input_id: [b"in-", envelope].concat(),
-        of: Some(wire::input::Of::AgentMessage(wire::Envelope {
-            id: envelope.to_vec(),
-            text: text.to_owned(),
-            ..Default::default()
-        })),
+    Event::AgentMessage(wire::Envelope {
+        id: envelope.to_vec(),
+        text: text.to_owned(),
+        ..Default::default()
     })
 }
 
@@ -277,15 +274,15 @@ fn probe_decided_sdk_correlation() {
 
     // A person's prompt carries its input id as the message uuid, and its
     // item is keyed by it, the key Claude's own record uses.
-    let prompt = Event::Input(wire::Input {
-        input_id: b"prompt-1".to_vec(),
-        of: Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+    let prompt = Event::Input(wire::Input::new(
+        b"prompt-1".to_vec(),
+        wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
                 text: "go".into(),
                 ..Default::default()
             })),
-        })),
-    });
+        },
+    ));
     let stepped = ClaudeSdk::step(&mut state, prompt);
     let uuid = client_uuid(b"prompt-1");
     assert!(
@@ -399,12 +396,10 @@ fn attached_chart() -> (String, wire::Attachment) {
 }
 
 fn sdk_input(id: &[u8], of: wire::claude_sdk_input::Of) -> Event {
-    Event::Input(wire::Input {
-        input_id: id.to_vec(),
-        of: Some(wire::input::Of::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(of),
-        })),
-    })
+    Event::Input(wire::Input::new(
+        id.to_vec(),
+        wire::ClaudeSdkInput { of: Some(of) },
+    ))
 }
 
 /// Stop cancels the running turn, and before Claude takes input there is

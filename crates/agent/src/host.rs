@@ -25,7 +25,7 @@ use std::sync::Arc;
 use interpret::{Effect, Event, Interpreter, Stepped, reason, reply};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{Notify, mpsc, watch};
-use wire::{AgentHello, AgentSpec, CtlFrame, InputReply, Nudge, Phase, StopMode, ctl_frame, input};
+use wire::{AgentHello, AgentSpec, CtlFrame, Nudge, Phase, StopMode, Verdict, ctl_frame};
 
 use crate::clock::Clock;
 use crate::dir::{self, PtyLog};
@@ -463,25 +463,44 @@ impl<I: Interpreter> Host<I> {
         match frame.of {
             // A dump is answered in any mode: a draining agent is often the
             // one someone wants to look at.
-            Some(ctl_frame::Of::Input(wire::Input {
-                of: Some(input::Of::Dump(dump)),
-                ..
-            })) => {
-                let part = crate::dump::part::<I>(&self.dir, dump.dump_id);
+            Some(ctl_frame::Of::DumpRequest(request)) => {
+                let part = crate::dump::part::<I>(&self.dir, request.dump_id);
                 self.send(ctl_frame::Of::Dump(part));
             }
-            Some(ctl_frame::Of::Input(input)) => match self.mode {
-                Mode::Running => self.feed(Event::Input(input)).await?,
-                Mode::Draining { .. } => {
-                    self.reply(input.input_id, reply::rejected(reason::DRAINING))
+            Some(ctl_frame::Of::Input(input)) => {
+                let id = input.input_id.clone();
+                self.take(id, Event::Input(input)).await?
+            }
+            Some(ctl_frame::Of::AgentMessage(envelope)) => {
+                let id = envelope.id.clone();
+                self.take(id, Event::AgentMessage(envelope)).await?
+            }
+            // A rename that arrives once the agent is leaving has no thread
+            // left to name.
+            Some(ctl_frame::Of::Rename(rename)) => {
+                if matches!(self.mode, Mode::Running) {
+                    self.feed(Event::Rename { name: rename.name }).await?
                 }
-                Mode::Exiting { .. } => {
-                    self.reply(input.input_id, reply::rejected(reason::EXITING))
-                }
+            }
+            Some(ctl_frame::Of::Stop(stop)) => match StopMode::try_from(stop.mode) {
+                Ok(mode) => self.stop(mode).await?,
+                // A stop this version cannot read is refused rather than
+                // taken as some other stop.
+                Err(_) => eprintln!("amux agent: ignoring a stop of unknown mode {}", stop.mode),
             },
-            Some(ctl_frame::Of::Stop(stop)) => self.stop(stop.mode()).await?,
             // Hello, nudges, dump parts and replies travel the other way.
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// An input or agent message reaches the interpreter while the agent
+    /// runs; once it is leaving, the verdict says so.
+    async fn take(&mut self, id: Vec<u8>, event: Event) -> Result<(), AgentError> {
+        match self.mode {
+            Mode::Running => self.feed(event).await?,
+            Mode::Draining { .. } => self.reply(id, reply::rejected(reason::DRAINING)),
+            Mode::Exiting { .. } => self.reply(id, reply::rejected(reason::EXITING)),
         }
         Ok(())
     }
@@ -734,9 +753,10 @@ impl<I: Interpreter> Host<I> {
 
     // --- the daemon ------------------------------------------------------
 
-    fn reply(&self, input_id: Vec<u8>, verdict: wire::SendInputResponse) {
-        self.send(ctl_frame::Of::Reply(InputReply {
-            input_id,
+    /// A verdict, keyed by the input id or the envelope id it answers.
+    fn reply(&self, id: Vec<u8>, verdict: wire::SendInputResponse) {
+        self.send(ctl_frame::Of::Reply(Verdict {
+            id,
             verdict: Some(verdict),
         }));
     }

@@ -17,13 +17,10 @@
       }
     },
     {
-      "input": {
-        "id": "m1",
-        "agent_message": {
-          "envelope": "e1",
-          "from": "lead",
-          "text": "It is on branch parser."
-        }
+      "agent_message": {
+        "envelope": "e1",
+        "from": "lead",
+        "text": "It is on branch parser."
       },
       "expect": {
         "reply": "queued",

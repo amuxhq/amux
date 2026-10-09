@@ -296,10 +296,7 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
     assert_eq!(spec.incarnation, 1);
     assert_eq!(spec.provider_command, launch.claude_command);
     assert_eq!(spec.daemon_version, node::version());
-    assert!(
-        spec.initial_prompt.is_some(),
-        "spec.1 carries the first prompt"
-    );
+    assert!(spec.bootstrap.is_some(), "spec.1 carries the first prompt");
     let config = spec.config.as_ref().unwrap();
     assert_eq!(config.install_path, launch.install_path.to_string_lossy());
     assert_eq!(config.grace_ms, 20_000);
@@ -434,7 +431,18 @@ async fn resume_writes_the_next_spec_and_waits_for_a_dying_process() {
         let runtime = runtime.clone();
         tokio::spawn(async move {
             runtime
-                .resume(id, Some(sdk_prompt(b"p1", "carry on")))
+                .resume(
+                    id,
+                    Some(wire::Bootstrap {
+                        of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                            input_id: b"p1".to_vec(),
+                            prompt: Some(wire::PromptInput {
+                                text: "carry on".into(),
+                                ..Default::default()
+                            }),
+                        })),
+                    }),
+                )
                 .await
         })
     };
@@ -459,10 +467,10 @@ async fn resume_writes_the_next_spec_and_waits_for_a_dying_process() {
     assert_eq!(spec2.agent_id, id.as_bytes().to_vec());
     assert_eq!(spec2.name, "resumable", "a spec keeps the spawn's name");
     assert_eq!(
-        spec2
-            .initial_prompt
-            .as_ref()
-            .map(|input| input.input_id.clone()),
+        spec2.bootstrap.and_then(|bootstrap| match bootstrap.of {
+            Some(wire::bootstrap::Of::Prompt(prompt)) => Some(prompt.input_id),
+            _ => None,
+        }),
         Some(b"p1".to_vec()),
         "the resume's prompt seeds the new incarnation"
     );

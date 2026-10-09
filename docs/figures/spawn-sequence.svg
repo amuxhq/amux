@@ -33,11 +33,11 @@
 <rect class="note" x="400" y="92" width="220" height="46" rx="3"/><text class="s sans" x="510" y="110" text-anchor="middle">mkdir · spec.1{kind, cwd, parent, prompt}</text><text class="s sans" x="510" y="126" text-anchor="middle">start process · no readiness wait</text>
 <path class="arrow" d="M510,150 L300,150" marker-end="url(#ah)"/><text class="s" x="405" y="144" text-anchor="middle">{name, id} at once</text>
 <path class="arrow" d="M765,180 L510,180" marker-end="url(#ah)"/><text class="s" x="637" y="174" text-anchor="middle">Hello</text>
-<path class="arrow" d="M510,206 L765,206" marker-end="url(#ah)"/><text class="s" x="637" y="200" text-anchor="middle">Input{Prompt} → the child’s queue; delivered when ready</text>
+<path class="arrow" d="M510,206 L765,206" marker-end="url(#ah)"/><text class="s" x="637" y="200" text-anchor="middle">the spec’s prompt → the child’s queue; delivered when ready</text>
 <rect class="note" x="640" y="218" width="250" height="30" rx="3"/><text class="s sans" x="765" y="236" text-anchor="middle">works · turn ends · writes Turn{end} to its journal</text>
 <path class="arrow-file" d="M765,270 L510,270" marker-end="url(#ahf)"/><text class="s a" x="637" y="264" text-anchor="middle">journal: Turn{end} + last message</text>
 <rect class="note" x="360" y="282" width="300" height="46" rx="3"/><text class="s sans" x="510" y="300" text-anchor="middle">ingest: this agent has a parent →</text><text class="s sans" x="510" y="316" text-anchor="middle">outbox row: finished + last message</text>
-<path class="arrow" d="M510,334 L95,334" marker-end="url(#ah)"/><text class="s" x="302" y="328" text-anchor="middle">outbox row → Input{AgentMessage{finished}} → the parent’s carrier</text>
+<path class="arrow" d="M510,334 L95,334" marker-end="url(#ah)"/><text class="s" x="302" y="328" text-anchor="middle">outbox row → agent_message{finished} → the parent’s carrier</text>
 <path class="arrow-dashed" d="M765,360 L510,360" marker-end="url(#ah)"/><text class="s" x="637" y="354" text-anchor="middle">queue empty, nothing pending → exits · lock released · nothing more is sent</text>
 <text class="s" x="302" y="374" text-anchor="middle">the row is deleted when the parent accepts</text>
 <text class="s" x="20" y="394">the child has no completion code path and never acts on its parent edge: it talks to its user, and the daemon knows who that is</text>

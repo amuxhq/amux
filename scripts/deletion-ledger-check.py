@@ -309,6 +309,27 @@ ROWS = [
         ],
     ),
     Row(
+        "the answer envelope",
+        "the untyped answer body and its kind string, Codex's separate approval input, and the daemon-only arms (rename, dump) in a person's input",
+        [
+            r"AnswerInput",
+            r"message Approve([^A-Za-z_]|$)",
+            r"RenameThread",
+            r"DumpInput",
+        ],
+    ),
+    Row(
+        "the remote key vocabulary",
+        "named terminal keys a client could send; the permission-mode cycle is the one keystroke left",
+        [
+            # The agent's own keymap names keys too (claude::pty::keymap);
+            # only the wire's vocabulary went.
+            r"wire::KeyName|enum KeyName",
+            r"KEY_NAME_",
+            r"message Key([^A-Za-z_]|$)",
+        ],
+    ),
+    Row(
         "docs",
         "the chapter on agent messaging and remote sessions",
         [

@@ -97,8 +97,8 @@ turn_end 4 last=-
 ## 32 provider_exit {"code":1}
 item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=t1 version=0.157.0 cause="exit code 1"
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=high permission=auto mode=plan approval=on-request sandbox=workspace-write reviewer=auto_review collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=[]
-## 33 input {"agent_message":{"envelope":"e9","from":"lead","text":"Status?"},"id":"m1"}
-effect reply m1 queued
+## 33 agent_message {"envelope":"e9","from":"lead","text":"Status?"}
+effect reply e9 queued
 item agent-message:6539 agent_message final input=e9 at=1800000000000 text="Status?" envelope=6539
 pending [e9]
 ## 34 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}

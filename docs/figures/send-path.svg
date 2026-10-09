@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" role="img">
-  <title>A send tool call goes from the harness to the MCP server to the daemon over the amux protocol; the daemon delivers an Input over the recipient's ctl.sock and the recipient's agent process chooses the carrier</title>
+  <title>A send tool call goes from the harness to the MCP server to the daemon over the amux protocol; the daemon delivers an agent message over the recipient's ctl.sock and the recipient's agent process chooses the carrier</title>
   <style>
     svg { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
     .box { fill: #6e7681; fill-opacity: 0.06; stroke: #6e7681; stroke-width: 1.2; }
@@ -39,7 +39,7 @@
   <text x="230" y="125" text-anchor="middle" class="s">agent's version</text>
   <text x="315" y="125" text-anchor="middle" class="s">amux protocol</text>
   <text x="400" y="125" text-anchor="middle" class="s">fills from,</text><text x="400" y="139" text-anchor="middle" class="s">routes, no carrier code</text>
-  <text x="490" y="125" text-anchor="middle" class="s">Input{AgentMessage}</text>
+  <text x="490" y="125" text-anchor="middle" class="s">agent_message frame</text>
   <text x="585" y="125" text-anchor="middle" class="s">queues; picks socket,</text><text x="585" y="139" text-anchor="middle" class="s">paste or inject_items</text>
   <text x="775" y="125" text-anchor="middle" class="s">recipient</text>
   <line x1="20" y1="170" x2="880" y2="170" class="lane"/>

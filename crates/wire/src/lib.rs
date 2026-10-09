@@ -79,6 +79,78 @@ pub fn kind_from_tag(tag: &str) -> Option<Kind> {
     }
 }
 
+/// A person's input as its kind's own message: what a client builds and
+/// what the agent of that kind decodes from [`Input::body`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum KindInput {
+    ClaudePty(ClaudePtyInput),
+    ClaudeSdk(ClaudeSdkInput),
+    Codex(CodexInput),
+}
+
+impl KindInput {
+    pub fn kind(&self) -> Kind {
+        match self {
+            Self::ClaudePty(_) => Kind::ClaudePty,
+            Self::ClaudeSdk(_) => Kind::ClaudeSdk,
+            Self::Codex(_) => Kind::Codex,
+        }
+    }
+
+    fn encode(&self) -> Vec<u8> {
+        use prost::Message as _;
+        match self {
+            Self::ClaudePty(input) => input.encode_to_vec(),
+            Self::ClaudeSdk(input) => input.encode_to_vec(),
+            Self::Codex(input) => input.encode_to_vec(),
+        }
+    }
+}
+
+impl From<ClaudePtyInput> for KindInput {
+    fn from(input: ClaudePtyInput) -> Self {
+        Self::ClaudePty(input)
+    }
+}
+
+impl From<ClaudeSdkInput> for KindInput {
+    fn from(input: ClaudeSdkInput) -> Self {
+        Self::ClaudeSdk(input)
+    }
+}
+
+impl From<CodexInput> for KindInput {
+    fn from(input: CodexInput) -> Self {
+        Self::Codex(input)
+    }
+}
+
+impl Input {
+    /// `input` encoded under its kind, with the client's input id.
+    pub fn new(input_id: Vec<u8>, input: impl Into<KindInput>) -> Self {
+        let input = input.into();
+        Self {
+            input_id,
+            kind: input.kind() as i32,
+            body: input.encode(),
+        }
+    }
+
+    /// The body read as the kind it names. None for a kind this build does
+    /// not know or a body that does not decode; an arm this build does not
+    /// know decodes as a message with no arm set.
+    pub fn decode_body(&self) -> Option<KindInput> {
+        use prost::Message as _;
+        let body = self.body.as_slice();
+        match Kind::try_from(self.kind).ok()? {
+            Kind::ClaudePty => ClaudePtyInput::decode(body).ok().map(KindInput::ClaudePty),
+            Kind::ClaudeSdk => ClaudeSdkInput::decode(body).ok().map(KindInput::ClaudeSdk),
+            Kind::Codex => CodexInput::decode(body).ok().map(KindInput::Codex),
+            Kind::Unspecified => None,
+        }
+    }
+}
+
 /// Why an input was refused: the reasons a `Rejected` reply carries. Every
 /// side that refuses an input takes its reason from here, and the clients'
 /// shared state maps each to a typed value, so the two cannot drift.

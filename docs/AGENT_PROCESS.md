@@ -184,10 +184,13 @@ version integer, and a frame a reader does not know is ignored.
 |---|---|---|
 | `hello` | agent → daemon | Sent at once on every connection: the agent id, the agent's version, and the journal's current end offset |
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
-| `input` | daemon → agent | One `Input`: a prompt, an answer, an interrupt, an agent message, a dump request, … |
-| `reply` | agent → daemon | `InputReply`: the interpreter's verdict on an input, which the daemon relays as the `SendInput` reply |
-| `stop` | daemon → agent | `Stop { mode }`: `GRACEFUL`, `ABORT` or `KILL` |
-| `dump` | agent → daemon | `DumpPart`, answering a dump input |
+| `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
+| `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
+| `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's part of a dump bundle, answered in any mode |
+| `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
+| `stop` | daemon → agent | `Stop { mode }`: `GRACEFUL`, `ABORT` or `KILL`; a mode this agent cannot read is ignored, never taken as another |
+| `dump` | agent → daemon | `DumpPart`, answering a dump request |
+| `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 
 Within one step the order is fixed: blobs the step refers to are written
 first, then the step is appended to the journal, then the daemon is nudged,
@@ -319,7 +322,7 @@ thread id from `private/provider-session` for a later incarnation, with the
 spec's working directory and model. The thread id the server answers with is written to
 `private/provider-session`. Straight after, the interpreter names the thread
 with the agent's name (`thread/name/set`), and names it again when the agent
-is renamed: the daemon tells a running Codex agent with a rename input, and a
+is renamed: the daemon tells a running Codex agent with a `rename` frame, and a
 resumed agent's spec carries its current name, so Codex's own app shows the
 name amux does. A thread that has not run a turn has nothing on disk, and
 Codex's own app, which resumes from what is on disk, cannot attach to it;
@@ -363,8 +366,9 @@ It is segmented like the journal, and each segment has a checkpoint beside it,
 first entry.
 
 - An entry is one JSON line: a fact with its channel and its payload (as text
-  when it is UTF-8, as hex otherwise), an input as its encoded protobuf in
-  hex, a tick, the provider's exit, the daemon being lost, a stop, the
+  when it is UTF-8, as hex otherwise), a person's input or an agent message
+  as its encoded protobuf in hex, a Codex agent's new name, a tick, the
+  provider's exit, the daemon being lost, a stop, the
   process exiting, or the folder's git facts as an encoded `Git` in hex
   (`interpret::ring::Entry`).
 - The ring's size, from the spec (4 MiB by default), is split across two

@@ -711,7 +711,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
 }
 
 fn prompt_input(kind: Kind, id: &[u8], text: &str) -> wire::Input {
-    use wire::input::Of;
+    use wire::KindInput as Of;
     let prompt = wire::PromptInput {
         text: text.into(),
         attachments: vec![],
@@ -727,10 +727,7 @@ fn prompt_input(kind: Kind, id: &[u8], text: &str) -> wire::Input {
             of: Some(wire::codex_input::Of::Prompt(prompt)),
         }),
     };
-    wire::Input {
-        input_id: id.to_vec(),
-        of: Some(of),
-    }
+    wire::Input::new(id.to_vec(), of)
 }
 
 fn queued(id: &[u8], steer: bool, from_agent: Option<&str>) -> wire::QueuedInput {
@@ -964,14 +961,14 @@ fn a_refused_send_now_leaves_the_prompt_queued() {
         vec![queued(b"q1", false, None)],
     ));
     state.update(caught_up());
-    state.update(Msg::Send(wire::Input {
-        input_id: b"now".to_vec(),
-        of: Some(wire::input::Of::ClaudePty(wire::ClaudePtyInput {
+    state.update(Msg::Send(wire::Input::new(
+        b"now".to_vec(),
+        wire::ClaudePtyInput {
             of: Some(wire::claude_pty_input::Of::SendNow(wire::SendQueuedNow {
                 queued_input_id: b"q1".to_vec(),
             })),
-        })),
-    }));
+        },
+    )));
     assert!(
         queue_rows(&state)[0].steered,
         "steered while the press is in flight"
@@ -2645,9 +2642,11 @@ fn a_forms_answer_carries_the_checked_values() {
                 answer: match kind {
                     wire::Kind::Codex => ui_view::Answer::Codex(wire::CodexAnswer {
                         of: Some(wire::codex_answer::Of::Form(accept)),
+                        ..Default::default()
                     }),
                     _ => ui_view::Answer::Claude(wire::ClaudeAnswer {
                         of: Some(wire::claude_answer::Of::Form(accept)),
+                        ..Default::default()
                     }),
                 },
             }],
@@ -2670,9 +2669,11 @@ fn a_forms_answer_carries_the_checked_values() {
         let form = match answer {
             ui_view::Answer::Claude(wire::ClaudeAnswer {
                 of: Some(wire::claude_answer::Of::Form(form)),
+                ..
             })
             | ui_view::Answer::Codex(wire::CodexAnswer {
                 of: Some(wire::codex_answer::Of::Form(form)),
+                ..
             }) => form,
             other => panic!("not a form answer: {other:?}"),
         };

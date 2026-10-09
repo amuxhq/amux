@@ -30,7 +30,7 @@ use wire::{
 use crate::blobs::BlobError;
 use crate::catalogue::CatalogueError;
 use crate::forward::{ForwardError, Owner};
-use crate::runtime::{AgentId, ProfileRuntime};
+use crate::runtime::{AgentId, ProfileRuntime, RegistryError};
 use crate::telemetry::{self, InputShape};
 
 /// A wire error as a gRPC status: the coarse code for generic clients, and
@@ -198,13 +198,24 @@ impl ClientApi {
         }
     }
 
-    /// On an agent's tools socket, an input goes only to the caller's own
-    /// direct child: the stop tool interrupts a child, and nothing else an
-    /// agent does sends a person's input.
-    async fn lineage(&self, runtime: &ProfileRuntime, target: &[u8]) -> Result<(), Status> {
+    /// On an agent's tools socket, the one input is an interrupt to the
+    /// caller's own direct child: the stop tool sends it, and nothing else
+    /// an agent does sends a person's input.
+    async fn lineage(
+        &self,
+        runtime: &ProfileRuntime,
+        request: &SendInputRequest,
+    ) -> Result<(), Status> {
         let Some(caller) = self.caller else {
             return Ok(());
         };
+        if !request.input.as_ref().is_some_and(is_interrupt) {
+            return Err(status(wire_error(
+                ErrorCode::PermissionDenied,
+                "the one input an agent sends is an interrupt",
+            )));
+        }
+        let target = &request.agent_id;
         agent_id(target)?;
         // The child may live on another host: its replica row carries the
         // same parent edge.
@@ -225,6 +236,23 @@ impl ClientApi {
             "an agent sends input only to its own children",
         )))
     }
+}
+
+/// Whether the input is an interrupt, of whichever kind.
+fn is_interrupt(input: &wire::Input) -> bool {
+    use wire::{KindInput, claude_pty_input, claude_sdk_input, codex_input};
+    matches!(
+        input.decode_body(),
+        Some(
+            KindInput::ClaudePty(wire::ClaudePtyInput {
+                of: Some(claude_pty_input::Of::Interrupt(_)),
+            }) | KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+                of: Some(claude_sdk_input::Of::Interrupt(_)),
+            }) | KindInput::Codex(wire::CodexInput {
+                of: Some(codex_input::Of::Interrupt(_)),
+            })
+        )
+    )
 }
 
 // The verdict for an input to an agent whose host cannot be reached.
@@ -357,7 +385,7 @@ impl ClientService for ClientApi {
     ) -> Result<Response<SendInputResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
-        self.lineage(&runtime, &request.agent_id).await?;
+        self.lineage(&runtime, &request).await?;
         let shape = request.input.as_ref().and_then(InputShape::of);
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let forwarded = runtime
@@ -451,7 +479,14 @@ impl ClientService for ClientApi {
     ) -> Result<Response<Empty>, Status> {
         self.people_only("stop an agent")?;
         let request = request.into_inner();
-        let mode = StopMode::try_from(request.mode).unwrap_or(StopMode::Graceful);
+        // A stop this daemon cannot read is refused, never taken as some
+        // other stop.
+        let mode = StopMode::try_from(request.mode).map_err(|_| {
+            status(wire_error(
+                ErrorCode::InvalidArgument,
+                format!("no stop mode {}", request.mode),
+            ))
+        })?;
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             return forwarded(&runtime, host, |mut client| async move {
@@ -483,8 +518,15 @@ impl ClientService for ClientApi {
             self.record_input(&runtime, first, on, Some(false));
             return Ok(resumed);
         }
+        let bootstrap = match &request.initial_prompt {
+            Some(input) => Some(
+                crate::spec::prompt_bootstrap(input)
+                    .ok_or_else(|| status(RegistryError::NotAPrompt.to_wire()))?,
+            ),
+            None => None,
+        };
         let resumed = runtime
-            .resume(agent_id(&request.agent_id)?, request.initial_prompt)
+            .resume(agent_id(&request.agent_id)?, bootstrap)
             .await
             .map_err(|error| status(error.to_wire()))?;
         self.record_input(&runtime, first, analytics::On::ThisHost, Some(false));

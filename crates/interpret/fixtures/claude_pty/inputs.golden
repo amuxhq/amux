@@ -18,54 +18,51 @@ effect reply w1 accepted
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 6 input {"id":"w2","withdraw":{"target":"p2"}}
 effect reply w2 rejected:not_queued
-## 7 input {"id":"k1","key":{"name":"cycle_permission_mode"}}
-effect terminal key KEY_NAME_CYCLE_PERMISSION_MODE
+## 7 input {"cycle_permission_mode":{},"id":"k1"}
+effect terminal cycle permission mode
 effect reply k1 accepted
-## 8 input {"id":"k2","key":{"name":"escape"}}
-effect terminal key KEY_NAME_ESCAPE
-effect reply k2 accepted
-## 9 input {"id":"i1","interrupt":{}}
+## 8 input {"id":"i1","interrupt":{}}
 effect terminal interrupt
 effect reply i1 accepted
-## 10 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","type":"user","uuid":"u2"}}
+## 9 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","type":"user","uuid":"u2"}}
 item u2 interruption final at=1800000000020 text=""
 item turn:1 turn final at=1800000000020 text="" #1 TURN_OUTCOME_INTERRUPTED started=1800000000000
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 turn_end 1 last=-
-## 11 input {"id":"i2","interrupt":{}}
+## 10 input {"id":"i2","interrupt":{}}
 effect reply i2 accepted
-## 12 input {"id":"p3","prompt":{"text":"/compact"}}
+## 11 input {"id":"p3","prompt":{"text":"/compact"}}
 effect reply p3 accepted
 effect terminal prompt "/compact"
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
-## 13 fact {"channel":"transcript","json":{"message":{"content":"/compact","role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.030Z","type":"user","uuid":"u3"}}
+## 12 fact {"channel":"transcript","json":{"message":{"content":"/compact","role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.030Z","type":"user","uuid":"u3"}}
 item u3 slash final input=p3 at=1800000000030 text="" /compact args=""
-## 14 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"compact","transcript_path":"/t/s1.jsonl"}}
+## 13 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"compact","transcript_path":"/t/s1.jsonl"}}
 item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_COMPACTED session=s1 version=- keymap=-
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
-## 15 fact {"channel":"transcript","json":{"message":{"content":"<local-command-stdout>Compacted</local-command-stdout>","role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u4"}}
+## 14 fact {"channel":"transcript","json":{"message":{"content":"<local-command-stdout>Compacted</local-command-stdout>","role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u4"}}
 item u3 slash final input=p3 at=1800000000030 text="Compacted" /compact args=""
-## 16 input {"clear":{},"id":"c1"}
+## 15 input {"clear":{},"id":"c1"}
 effect terminal clear
 effect reply c1 accepted
-## 17 input {"agent_message":{"envelope":"e1","from":"reviewer","text":"please look at the diff"},"id":"m1"}
+## 16 agent_message {"envelope":"e1","from":"reviewer","text":"please look at the diff"}
 effect inject e1 via MessagingSocket
-effect reply m1 queued
+effect reply e1 queued
 item agent-message:6531 agent_message final input=e1 at=1800000000000 text="please look at the diff" envelope=6531
 pending [e1]
-## 18 fact {"channel":"transcript","json":{"isMeta":true,"message":{"content":"Another Claude session sent a message:\n<cross-session-message from=\"amux\" from-name=\"reviewer\">\nplease look at the diff\n</cross-session-message>","role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.050Z","type":"user","uuid":"u5"}}
+## 17 fact {"channel":"transcript","json":{"isMeta":true,"message":{"content":"Another Claude session sent a message:\n<cross-session-message from=\"amux\" from-name=\"reviewer\">\nplease look at the diff\n</cross-session-message>","role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.050Z","type":"user","uuid":"u5"}}
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 pending []
-## 19 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Looking.","type":"text"}],"id":"m5","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.060Z","type":"assistant","uuid":"a5"}}
+## 18 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Looking.","type":"text"}],"id":"m5","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.060Z","type":"assistant","uuid":"a5"}}
 item a5 message final at=1800000000060 text="Looking."
-## 20 input {"agent_message":{"envelope":"e2","from":"reviewer","text":"and the tests"},"id":"m2"}
+## 19 agent_message {"envelope":"e2","from":"reviewer","text":"and the tests"}
 effect inject e2 via MessagingSocket
-effect reply m2 queued
+effect reply e2 queued
 item agent-message:6532 agent_message final input=e2 at=1800000000000 text="and the tests" envelope=6532
 pending [e2]
-## 21 fact {"channel":"transcript","json":{"isMeta":true,"message":{"content":"Another Claude session sent a message:\nand the tests\n\nThis came from another Claude session — not typed by your user.","role":"user"},"origin":{"kind":"peer"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.061Z","type":"user","uuid":"u6"}}
+## 20 fact {"channel":"transcript","json":{"isMeta":true,"message":{"content":"Another Claude session sent a message:\nand the tests\n\nThis came from another Claude session — not typed by your user.","role":"user"},"origin":{"kind":"peer"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.061Z","type":"user","uuid":"u6"}}
 pending []
-## 22 fact {"channel":"transcript","json":{"durationMs":20,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.070Z","type":"system","uuid":"d5"}}
+## 21 fact {"channel":"transcript","json":{"durationMs":20,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.070Z","type":"system","uuid":"d5"}}
 item turn:3 turn final at=1800000000070 text="" #3 TURN_OUTCOME_COMPLETED started=1800000000050
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 turn_end 3 last=a5

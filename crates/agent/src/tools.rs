@@ -27,7 +27,7 @@ use wire::{
     Agent, AgentParent, AmbiguousAgentName, Attachment, BlobRef, ClaudeCreateConfig,
     CodexCreateConfig, CreateAgentRequest, Empty, Envelope, EnvelopeKind, HostEntry, Input,
     Interrupt, Kind, Lifecycle, PromptInput, ResolveAgentRequest, SendInputRequest, Trust,
-    attachment, create_agent_request, input, inventory_event, send_input_response,
+    attachment, create_agent_request, inventory_event, send_input_response,
 };
 
 use crate::dir;
@@ -368,10 +368,10 @@ impl Server {
             host_id: None,
             name,
             parent: None,
-            initial_prompt: Some(Input {
-                input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                of: Some(prompt_input(kind, prompt)),
-            }),
+            initial_prompt: Some(Input::new(
+                uuid::Uuid::new_v4().as_bytes().to_vec(),
+                prompt_input(kind, prompt),
+            )),
             cwd,
             kind: kind as i32,
             config: Some(match kind {
@@ -402,10 +402,10 @@ impl Server {
         let child = self.resolve(&name).await?;
         let request = SendInputRequest {
             agent_id: child.agent_id.clone(),
-            input: Some(Input {
-                input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                of: Some(interrupt_input(child.kind())),
-            }),
+            input: Some(Input::new(
+                uuid::Uuid::new_v4().as_bytes().to_vec(),
+                interrupt_input(child.kind()),
+            )),
         };
         let response = self
             .daemon_once(format!("the stop for {name}"), |mut client| {
@@ -672,29 +672,29 @@ fn kind_name(kind: Kind) -> &'static str {
     }
 }
 
-fn prompt_input(kind: Kind, prompt: PromptInput) -> input::Of {
+fn prompt_input(kind: Kind, prompt: PromptInput) -> wire::KindInput {
     match kind {
-        Kind::Codex => input::Of::Codex(wire::CodexInput {
+        Kind::Codex => wire::KindInput::Codex(wire::CodexInput {
             of: Some(wire::codex_input::Of::Prompt(prompt)),
         }),
-        Kind::ClaudeSdk => input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Prompt(prompt)),
         }),
-        _ => input::Of::ClaudePty(wire::ClaudePtyInput {
+        _ => wire::KindInput::ClaudePty(wire::ClaudePtyInput {
             of: Some(wire::claude_pty_input::Of::Prompt(prompt)),
         }),
     }
 }
 
-fn interrupt_input(kind: Kind) -> input::Of {
+fn interrupt_input(kind: Kind) -> wire::KindInput {
     match kind {
-        Kind::Codex => input::Of::Codex(wire::CodexInput {
+        Kind::Codex => wire::KindInput::Codex(wire::CodexInput {
             of: Some(wire::codex_input::Of::Interrupt(Interrupt {})),
         }),
-        Kind::ClaudeSdk => input::Of::ClaudeSdk(wire::ClaudeSdkInput {
+        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
             of: Some(wire::claude_sdk_input::Of::Interrupt(Interrupt {})),
         }),
-        _ => input::Of::ClaudePty(wire::ClaudePtyInput {
+        _ => wire::KindInput::ClaudePty(wire::ClaudePtyInput {
             of: Some(wire::claude_pty_input::Of::Interrupt(Interrupt {})),
         }),
     }

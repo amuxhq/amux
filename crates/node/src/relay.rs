@@ -20,9 +20,9 @@ use uuid::Uuid;
 /// exited.
 pub use wire::refusal::{EXITED, EXITING};
 use wire::{
-    AgentSender, Envelope, EnvelopeKind, ErrorCode, Human, Input, Lifecycle, Rejected,
-    SendInputRequest, SendInputResponse, SendMessageResponse, Sender, input, send_input_response,
-    sender,
+    AgentSender, Bootstrap, Envelope, EnvelopeKind, ErrorCode, Human, Lifecycle, Rejected,
+    SendInputRequest, SendInputResponse, SendMessageResponse, Sender, bootstrap, ctl_frame,
+    send_input_response, sender,
 };
 
 use crate::runtime::{AgentId, ProfileRuntime, RegistryError, Sent, ms};
@@ -159,29 +159,31 @@ impl ProfileRuntime {
         if row.lifecycle == Lifecycle::Exited as i32 {
             return Ok(rejected(EXITED));
         }
-        let verdict = self.relay(id, input).await?;
+        let input_id = input.input_id.clone();
+        let verdict = self
+            .relay(id, input_id, ctl_frame::Of::Input(input))
+            .await?;
         if rejection(&verdict) == Some(EXITING) {
             self.mark_exiting(id);
         }
         Ok(verdict)
     }
 
-    /// Hands an input to the agent over its control connection and waits
-    /// for the verdict.
+    /// Hands an input or an agent message to the agent over its control
+    /// connection and waits for the verdict, which comes back keyed by
+    /// `input_id`: the input's id, or the message's envelope id.
     pub(crate) async fn relay(
         &self,
         id: AgentId,
-        input: Input,
+        input_id: Vec<u8>,
+        of: ctl_frame::Of,
     ) -> Result<SendInputResponse, RelayError> {
         let Some(handle) = self.handle(id) else {
             return Ok(rejected(EXITED));
         };
         let (tx, rx) = oneshot::channel();
-        let input_id = input.input_id.clone();
         handle.expect_reply(input_id.clone(), tx);
-        let frame = wire::CtlFrame {
-            of: Some(wire::ctl_frame::Of::Input(input)),
-        };
+        let frame = wire::CtlFrame { of: Some(of) };
         let launch = self.launch();
         let connect_by = tokio::time::Instant::now() + CONNECT_PATIENCE;
         loop {
@@ -368,24 +370,26 @@ impl ProfileRuntime {
         if incarnation.is_some_and(|incarnation| incarnation != row.incarnation) {
             return Err(RelayError::Stale);
         }
-        let input = Input {
-            input_id: envelope.id.clone(),
-            of: Some(input::Of::AgentMessage(envelope.clone())),
-        };
         if row.lifecycle == Lifecycle::Exited as i32 {
             return if resume {
-                self.resume_with(id, input).await
+                self.resume_with(id, envelope).await
             } else {
                 Err(RelayError::Rejected(EXITED.to_owned()))
             };
         }
-        let verdict = self.relay(id, input.clone()).await?;
+        let verdict = self
+            .relay(
+                id,
+                envelope.id.clone(),
+                ctl_frame::Of::AgentMessage(envelope.clone()),
+            )
+            .await?;
         match rejection(&verdict) {
             None => self.accepted(id, &key, &envelope.id).await,
             Some(EXITING) => {
                 self.mark_exiting(id);
                 if resume {
-                    self.resume_with(id, input).await
+                    self.resume_with(id, envelope).await
                 } else {
                     Err(RelayError::Rejected(EXITED.to_owned()))
                 }
@@ -394,9 +398,14 @@ impl ProfileRuntime {
         }
     }
 
-    async fn resume_with(&self, id: AgentId, input: Input) -> Result<(), RelayError> {
-        let envelope_id = input.input_id.clone();
-        self.resume(id, Some(input))
+    /// Resumes an exited child with its parent's message as the new
+    /// incarnation's first input.
+    async fn resume_with(&self, id: AgentId, envelope: Envelope) -> Result<(), RelayError> {
+        let envelope_id = envelope.id.clone();
+        let bootstrap = Bootstrap {
+            of: Some(bootstrap::Of::AgentMessage(envelope)),
+        };
+        self.resume(id, Some(bootstrap))
             .await
             .map_err(|error| RelayError::Resume(Box::new(error)))?;
         self.accepted(id, &self.key(id), &envelope_id).await

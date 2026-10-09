@@ -17,7 +17,6 @@ use claude::pty::{
 };
 use interpret::claude_pty::{PermissionChoice, PermissionMenus, PlanChoice, TerminalInput};
 use tokio::sync::mpsc;
-use wire::KeyName;
 
 /// The keymap for the Claude this incarnation runs, and the version it was
 /// resolved for.
@@ -99,29 +98,7 @@ impl Keys {
             .map_err(io::Error::other),
             TerminalInput::Clear => self.prompt("/clear"),
             TerminalInput::Interrupt => self.encode(ProgramName::Interrupt, None, None),
-            TerminalInput::Key(KeyName::CyclePermissionMode) => {
-                self.encode(ProgramName::ModeCycle, None, None)
-            }
-            TerminalInput::Key(name) => {
-                let key = match name {
-                    KeyName::Escape => keymap::KeyName::Escape,
-                    KeyName::Accept => keymap::KeyName::Enter,
-                    KeyName::Down => keymap::KeyName::Down,
-                    // Claude toggles thinking with Tab in its composer.
-                    KeyName::Tab | KeyName::ToggleThinking => keymap::KeyName::Tab,
-                    // No keymap names Up; every terminal sends this for it.
-                    KeyName::Up => return Ok(vec![KeyStep::Write(b"\x1b[A".to_vec())]),
-                    KeyName::Unspecified | KeyName::CyclePermissionMode => {
-                        return Err(unsupported("an unnamed key"));
-                    }
-                };
-                let bytes = self
-                    .keymap
-                    .keys
-                    .get(&key)
-                    .ok_or_else(|| unsupported(&format!("the keymap has no {key:?} key")))?;
-                Ok(vec![KeyStep::Write(bytes.clone())])
-            }
+            TerminalInput::CyclePermissionMode => self.encode(ProgramName::ModeCycle, None, None),
             TerminalInput::Permission {
                 suggestions,
                 choice,

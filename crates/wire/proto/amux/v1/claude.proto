@@ -6,7 +6,7 @@ import "amux/v1/records.proto";
 
 // Claude's per-kind bodies: the item and snapshot messages encoded into
 // Item.body and Snapshot.body for kinds claude_pty and claude_sdk, the
-// inputs each accepts, and the answer body AnswerInput carries for them.
+// inputs each accepts, and the answers inside them.
 
 message ClaudeCreateConfig {
   // Extra provider arguments exactly as the person gave them.
@@ -93,8 +93,12 @@ message RunningCall {
 message ClaudePtyInput {
   oneof of {
     PromptInput prompt = 1;
-    AnswerInput answer = 2;
-    Key key = 3;
+    ClaudeAnswer answer = 2;
+    // Terminal Claude's permission-mode cycle, the one keystroke a remote
+    // client sends; the agent process emits the bytes for the Claude it
+    // runs. Raw terminal bytes never cross the wire; anything else is
+    // typed at the machine.
+    CyclePermissionMode cycle_permission_mode = 3;
     Clear clear = 4;
     Interrupt interrupt = 5;
     WithdrawQueued withdraw = 6;
@@ -102,23 +106,7 @@ message ClaudePtyInput {
   }
 }
 
-// The semantic keymap vocabulary. The agent process maps a key to PTY bytes
-// with the keymap resolved for the observed Claude version; raw bytes never
-// cross the wire.
-message Key {
-  KeyName key = 1;
-}
-
-enum KeyName {
-  KEY_NAME_UNSPECIFIED = 0;
-  KEY_NAME_ESCAPE = 1;
-  KEY_NAME_ACCEPT = 2;
-  KEY_NAME_CYCLE_PERMISSION_MODE = 3;
-  KEY_NAME_TOGGLE_THINKING = 4;
-  KEY_NAME_UP = 5;
-  KEY_NAME_DOWN = 6;
-  KEY_NAME_TAB = 7;
-}
+message CyclePermissionMode {}
 
 // ---------------------------------------------------------------------------
 // Claude through the SDK
@@ -198,7 +186,7 @@ message ClaudeSdkSnapshot {
 message ClaudeSdkInput {
   oneof of {
     PromptInput prompt = 1;
-    AnswerInput answer = 2;
+    ClaudeAnswer answer = 2;
     Interrupt interrupt = 3;
     SetPermission permission = 4;
     SetModel model = 5;
@@ -210,17 +198,19 @@ message ClaudeSdkInput {
 }
 
 // ---------------------------------------------------------------------------
-// Answers (AnswerInput.body for both Claude kinds)
+// Answers (for both Claude kinds)
 // ---------------------------------------------------------------------------
 
+// Rejected closed_ask if ask_key is not open.
 message ClaudeAnswer {
+  string ask_key = 1;
   oneof of {
-    PermissionAnswer permission = 1;
-    QuestionAnswer question = 2;
-    PlanAnswer plan = 3;
-    FormAnswer form = 4;
-    LinkAnswer link = 5;
-    ReplyInstead reply = 6;
+    PermissionAnswer permission = 2;
+    QuestionAnswer question = 3;
+    PlanAnswer plan = 4;
+    FormAnswer form = 5;
+    LinkAnswer link = 6;
+    ReplyInstead reply = 7;
   }
 }
 

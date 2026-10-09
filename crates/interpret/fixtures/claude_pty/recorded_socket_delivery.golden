@@ -4,14 +4,14 @@ snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_nam
 effect catalogue e1e7cada models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue e1e7cada
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
-## 2 input {"agent_message":{"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"},"id":"m-idle"}
+## 2 agent_message {"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"}
 effect inject env-idle via MessagingSocket
-effect reply m-idle queued
+effect reply env-idle queued
 item agent-message:656e762d69646c65 agent_message final input=env-idle at=0 text="A2A_SOCKET_IDLE_21240" envelope=656e762d69646c65
 pending [env-idle]
-## 3 input {"agent_message":{"envelope":"env-busy","from":"probe","text":"A2A_SOCKET_BUSY_21240"},"id":"m-busy"}
+## 3 agent_message {"envelope":"env-busy","from":"probe","text":"A2A_SOCKET_BUSY_21240"}
 effect inject env-busy via MessagingSocket
-effect reply m-busy queued
+effect reply env-busy queued
 item agent-message:656e762d62757379 agent_message final input=env-busy at=0 text="A2A_SOCKET_BUSY_21240" envelope=656e762d62757379
 pending [env-busy,env-idle]
 ## 4 recorded 0: fact Transcript type=custom-title

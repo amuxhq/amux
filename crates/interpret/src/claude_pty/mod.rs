@@ -68,9 +68,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, Boundary, BoundaryKind, ClaudeAnswer, ClaudeGrant,
-    ClaudePtyItem, ClaudePtySnapshot, ContextMeter, DecisionOutcome, Input, KeyName, RunningCall,
-    Step, SubagentProgress, ToolCall, ToolDecision, ToolState, claude_answer, claude_pty_input,
-    claude_pty_item, input, permission_answer, tool_decision,
+    ClaudePtyItem, ClaudePtySnapshot, ContextMeter, DecisionOutcome, Envelope, Input, KindInput,
+    RunningCall, Step, SubagentProgress, ToolCall, ToolDecision, ToolState, claude_answer,
+    claude_pty_input, claude_pty_item, permission_answer, tool_decision,
 };
 
 use crate::claude_common::{
@@ -108,7 +108,8 @@ pub enum TerminalInput {
     Interrupt,
     /// Start a new conversation: /clear.
     Clear,
-    Key(KeyName),
+    /// Cycle Claude's permission mode, as its own key for that does.
+    CyclePermissionMode,
     /// Answer the permission menu. `suggestions` is how many scope choices
     /// the menu offers.
     Permission {
@@ -123,9 +124,7 @@ pub enum TerminalInput {
         answers: Vec<QuestionChoice>,
     },
     /// Answer the folder-trust dialog: trust the folder, or exit.
-    Trust {
-        trust: bool,
-    },
+    Trust { trust: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -182,7 +181,7 @@ impl fmt::Display for TerminalInput {
             }
             Self::Interrupt => f.write_str("interrupt"),
             Self::Clear => f.write_str("clear"),
-            Self::Key(key) => write!(f, "key {}", key.as_str_name()),
+            Self::CyclePermissionMode => f.write_str("cycle permission mode"),
             Self::Permission {
                 suggestions,
                 choice,
@@ -1121,36 +1120,40 @@ impl State {
         }));
     }
 
+    /// An agent message goes to Claude's messaging socket and is accepted
+    /// at once; its item is the record that it arrived.
+    fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        self.shared.message_accepted(&envelope.id);
+        self.messages.push(PendingMessage {
+            id: envelope.id.clone(),
+            text: envelope.text.clone(),
+        });
+        emit.effect(Effect::Inject {
+            envelope: envelope.clone(),
+            via: Carrier::MessagingSocket,
+        });
+        self.shared.item(
+            emit,
+            ItemDraft {
+                key: agent_message_key(&envelope.id),
+                text: envelope.text.clone(),
+                input_id: envelope.id.clone(),
+                body: item_body(claude_pty_item::Kind::AgentMessage(agent_message_body(
+                    &envelope,
+                ))),
+                complete: true,
+                ..Default::default()
+            },
+        );
+        self.shared.accept(emit, &envelope.id, true);
+    }
+
     fn input(&mut self, emit: &mut Emit, input: Input) {
         let id = input.input_id.clone();
-        let arm = match input.of {
-            Some(input::Of::AgentMessage(envelope)) => {
-                self.shared.message_accepted(&envelope.id);
-                self.messages.push(PendingMessage {
-                    id: envelope.id.clone(),
-                    text: envelope.text.clone(),
-                });
-                emit.effect(Effect::Inject {
-                    envelope: envelope.clone(),
-                    via: Carrier::MessagingSocket,
-                });
-                self.shared.item(
-                    emit,
-                    ItemDraft {
-                        key: agent_message_key(&envelope.id),
-                        text: envelope.text.clone(),
-                        input_id: envelope.id.clone(),
-                        body: item_body(claude_pty_item::Kind::AgentMessage(agent_message_body(
-                            &envelope,
-                        ))),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
-                self.shared.accept(emit, &id, true);
-                return;
-            }
-            Some(input::Of::ClaudePty(wire::ClaudePtyInput { of: Some(arm) })) => arm,
+        // Another kind's input, or an arm a newer client sends that this
+        // version cannot read.
+        let arm = match input.decode_body() {
+            Some(KindInput::ClaudePty(wire::ClaudePtyInput { of: Some(arm) })) => arm,
             _ => return self.shared.reject(emit, &id, reason::UNSUPPORTED),
         };
         match arm {
@@ -1192,13 +1195,10 @@ impl State {
                 emit.effect(Effect::Terminal(TerminalInput::Clear));
                 self.shared.accept(emit, &id, false);
             }
-            claude_pty_input::Of::Key(key) => match KeyName::try_from(key.key) {
-                Ok(name) if name != KeyName::Unspecified => {
-                    emit.effect(Effect::Terminal(TerminalInput::Key(name)));
-                    self.shared.accept(emit, &id, false);
-                }
-                _ => self.shared.reject(emit, &id, reason::UNSUPPORTED),
-            },
+            claude_pty_input::Of::CyclePermissionMode(_) => {
+                emit.effect(Effect::Terminal(TerminalInput::CyclePermissionMode));
+                self.shared.accept(emit, &id, false);
+            }
             claude_pty_input::Of::Answer(answer) => self.answer(emit, &id, answer),
         }
     }
@@ -1206,15 +1206,13 @@ impl State {
     /// An answer through amux: checked against the open ask's shape, then
     /// typed into the terminal's menu. The ask closes with the outcome the
     /// answer carries.
-    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: wire::AnswerInput) {
+    fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: ClaudeAnswer) {
         let key = answer.ask_key;
         if self.shared.asks().get(&key).is_none() {
             self.shared.answer(emit, id, &key);
             return;
         }
-        let parsed = ClaudeAnswer::decode(answer.body.as_slice())
-            .ok()
-            .and_then(|answer| answer.of);
+        let parsed = answer.of;
         if let Some(AskShape::Trust) = self.asks.get(&key).map(|meta| &meta.shape) {
             return self.answer_trust(emit, id, &key, parsed);
         }
@@ -1483,6 +1481,9 @@ impl Interpreter for ClaudePty {
             Event::Tick { at_ms } => state.shared.tick(at_ms),
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
+            Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
+            // Claude has no name of its own to take.
+            Event::Rename { .. } => {}
             Event::ProviderExit { code } => state.exited(&mut emit, crate::exit_cause(code)),
             Event::Exiting { cause } => state.exited(&mut emit, cause),
             Event::DaemonLost => {
@@ -1507,7 +1508,7 @@ impl Interpreter for ClaudePty {
         crate::redact::redact_kind::<
             wire::ClaudePtyItem,
             wire::ClaudePtySnapshot,
-            wire::ClaudeAnswer,
+            wire::ClaudePtyInput,
             State,
         >(target)
     }

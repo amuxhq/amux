@@ -18,7 +18,7 @@ use wire::{
     AgentHello, AgentParent, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput,
     ClaudeSdkItem, ClaudeSdkSnapshot, CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input,
     Phase, PromptInput, Stop, StopMode, claude_pty_input, claude_pty_item, claude_sdk_input,
-    claude_sdk_item, codex_input, codex_item, ctl_frame, input, send_input_response,
+    claude_sdk_item, codex_input, codex_item, ctl_frame, send_input_response,
 };
 
 /// When every agent in these tests starts.
@@ -338,9 +338,7 @@ impl Agent {
             daemon_version: "test".into(),
             created_at_ms: T0,
             incarnation: 1,
-            initial_prompt: setup
-                .initial_prompt
-                .map(|text| prompt(setup.kind, b"p0", text)),
+            bootstrap: setup.initial_prompt.map(|text| bootstrap(b"p0", text)),
             ..Default::default()
         };
         std::fs::write(dir.join("spec.1"), spec.encode_to_vec()).unwrap();
@@ -372,7 +370,7 @@ impl Agent {
             .last()
             .expect("a spec");
         spec.incarnation = n + 1;
-        spec.initial_prompt = None;
+        spec.bootstrap = None;
         std::fs::write(
             self.dir.join(format!("spec.{}", n + 1)),
             spec.encode_to_vec(),
@@ -610,19 +608,32 @@ pub fn prompt(kind: &str, id: &[u8], text: &str) -> Input {
         text: text.to_owned(),
         ..Default::default()
     };
-    Input {
-        input_id: id.to_vec(),
-        of: Some(match kind {
-            "codex" => input::Of::Codex(CodexInput {
+    Input::new(
+        id.to_vec(),
+        match kind {
+            "codex" => wire::KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Prompt(prompt)),
             }),
-            "claude_pty" => input::Of::ClaudePty(ClaudePtyInput {
+            "claude_pty" => wire::KindInput::ClaudePty(ClaudePtyInput {
                 of: Some(claude_pty_input::Of::Prompt(prompt)),
             }),
-            _ => input::Of::ClaudeSdk(ClaudeSdkInput {
+            _ => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
                 of: Some(claude_sdk_input::Of::Prompt(prompt)),
             }),
-        }),
+        },
+    )
+}
+
+/// The first prompt a spec seeds the queue with.
+pub fn bootstrap(id: &[u8], text: &str) -> wire::Bootstrap {
+    wire::Bootstrap {
+        of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+            input_id: id.to_vec(),
+            prompt: Some(PromptInput {
+                text: text.to_owned(),
+                ..Default::default()
+            }),
+        })),
     }
 }
 
@@ -665,36 +676,47 @@ impl Daemon {
 
     /// Sends an agent message with envelope id `id`, as a parent would.
     pub async fn message(&mut self, id: &[u8], text: &str) -> Verdict {
-        self.input(Input {
-            input_id: id.to_vec(),
-            of: Some(input::Of::AgentMessage(wire::Envelope {
-                id: id.to_vec(),
-                from: Some(wire::Sender {
-                    value: Some(wire::sender::Value::Agent(wire::AgentSender {
-                        agent_id: vec![2; 16],
-                        host_id: vec![1; 16],
-                        name: "parent".into(),
-                        kind: "claude_sdk".into(),
-                    })),
-                }),
-                text: text.to_owned(),
-                ..Default::default()
-            })),
-        })
-        .await
+        let envelope = wire::Envelope {
+            id: id.to_vec(),
+            from: Some(wire::Sender {
+                value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                    agent_id: vec![2; 16],
+                    host_id: vec![1; 16],
+                    name: "parent".into(),
+                    kind: "claude_sdk".into(),
+                })),
+            }),
+            text: text.to_owned(),
+            ..Default::default()
+        };
+        self.verdict(id.to_vec(), ctl_frame::Of::AgentMessage(envelope))
+            .await
     }
 
     /// Sends an input and waits for its verdict.
     pub async fn input(&mut self, input: Input) -> Verdict {
         let id = input.input_id.clone();
-        self.send(ctl_frame::Of::Input(input)).await;
+        self.verdict(id, ctl_frame::Of::Input(input)).await
+    }
+
+    /// Tells the agent it was renamed, as the daemon does.
+    pub async fn rename(&mut self, name: &str) {
+        self.send(ctl_frame::Of::Rename(wire::Rename {
+            name: name.to_owned(),
+        }))
+        .await;
+    }
+
+    /// Sends a frame and waits for the verdict keyed by `id`.
+    async fn verdict(&mut self, id: Vec<u8>, of: ctl_frame::Of) -> Verdict {
+        self.send(of).await;
         loop {
             let frame = next_frame(&mut self.reader).await.of;
             if let Some(ctl_frame::Of::Nudge(_)) = frame {
                 self.nudges += 1;
             }
             if let Some(ctl_frame::Of::Reply(reply)) = frame
-                && reply.input_id == id
+                && reply.id == id
             {
                 return match reply.verdict.and_then(|verdict| verdict.of) {
                     Some(send_input_response::Of::Accepted(accepted)) if accepted.queued => {
@@ -712,11 +734,8 @@ impl Daemon {
 
     /// Asks for the agent's part of a dump and waits for it.
     pub async fn dump(&mut self, id: &[u8]) -> wire::DumpPart {
-        self.send(ctl_frame::Of::Input(Input {
-            input_id: id.to_vec(),
-            of: Some(input::Of::Dump(wire::DumpInput {
-                dump_id: id.to_vec(),
-            })),
+        self.send(ctl_frame::Of::DumpRequest(wire::AgentDumpRequest {
+            dump_id: id.to_vec(),
         }))
         .await;
         loop {

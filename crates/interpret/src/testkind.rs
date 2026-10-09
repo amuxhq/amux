@@ -14,8 +14,8 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, ClaudeSdkItem, ClaudeSdkSnapshot, Input, PermissionAsk, Phase, Step, ToolCall,
-    ToolState, Turn, TurnOutcome, claude_sdk_input, claude_sdk_item, input,
+    AgentSpec, Ask, ClaudeSdkItem, ClaudeSdkSnapshot, Envelope, Input, PermissionAsk, Phase, Step,
+    ToolCall, ToolState, Turn, TurnOutcome, claude_sdk_input, claude_sdk_item,
 };
 
 use crate::{
@@ -219,33 +219,34 @@ impl<const FORGET: bool> TestKind<FORGET> {
         }
     }
 
+    fn agent_message(state: &mut State<FORGET>, emit: &mut Emit, envelope: Envelope) {
+        let shared = &mut state.shared;
+        shared.message_accepted(&envelope.id);
+        emit.effect(Effect::Inject {
+            envelope: envelope.clone(),
+            via: Carrier::Stdin,
+        });
+        shared.item(
+            emit,
+            ItemDraft {
+                key: agent_message_key(&envelope.id),
+                text: envelope.text.clone(),
+                input_id: envelope.id.clone(),
+                body: body(claude_sdk_item::Kind::AgentMessage(agent_message_body(
+                    &envelope,
+                ))),
+                complete: true,
+                ..Default::default()
+            },
+        );
+        shared.accept(emit, &envelope.id, true);
+    }
+
     fn input(state: &mut State<FORGET>, emit: &mut Emit, input: Input) {
         let shared = &mut state.shared;
         let id = input.input_id.clone();
-        let arm = match input.of {
-            Some(input::Of::AgentMessage(envelope)) => {
-                shared.message_accepted(&envelope.id);
-                emit.effect(Effect::Inject {
-                    envelope: envelope.clone(),
-                    via: Carrier::Stdin,
-                });
-                shared.item(
-                    emit,
-                    ItemDraft {
-                        key: agent_message_key(&envelope.id),
-                        text: envelope.text.clone(),
-                        input_id: envelope.id.clone(),
-                        body: body(claude_sdk_item::Kind::AgentMessage(agent_message_body(
-                            &envelope,
-                        ))),
-                        complete: true,
-                        ..Default::default()
-                    },
-                );
-                shared.accept(emit, &id, true);
-                return;
-            }
-            Some(input::Of::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
+        let arm = match input.decode_body() {
+            Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
             _ => return shared.reject(emit, &id, reason::UNSUPPORTED),
         };
         match arm {
@@ -314,6 +315,8 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             }
             Event::Fact(_) => {}
             Event::Input(input) => Self::input(state, &mut emit, input),
+            Event::AgentMessage(envelope) => Self::agent_message(state, &mut emit, envelope),
+            Event::Rename { .. } => {}
             Event::ProviderExit { .. } | Event::Exiting { .. } => {
                 // A session end closes every open ask, outcome unknown.
                 state.shared.close_all_asks();

@@ -923,19 +923,19 @@ message BackgroundJob {
 // Input pieces shared by more than one kind
 // ---------------------------------------------------------------------------
 
+// The kind is the interpreter.
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+  CLAUDE_PTY = 1;
+  CLAUDE_SDK = 2;
+  CODEX = 3;
+}
+
 // U+FFFC per attachment.
 message PromptInput {
   string text = 1;
   repeated Attachment attachments = 2;
   // Prompts always queue; steering is SendQueuedNow on a queued entry.
-}
-
-// Rejected if ask_key is not open. `body` is the per-kind answer message
-// named by `kind` (ClaudeAnswer, CodexAnswer).
-message AnswerInput {
-  string ask_key = 1;
-  string kind = 2;
-  bytes body = 3;
 }
 
 // Rejected if the target is not queued.
@@ -977,7 +977,7 @@ message SetEffort {
   optional string effort = 1;
 }
 
-// Answer pieces shared by the per-kind answer bodies.
+// Answer pieces shared by the per-kind answers.
 
 message QuestionAnswer {
   // One per question, in the ask's order.

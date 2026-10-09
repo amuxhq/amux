@@ -1,7 +1,7 @@
 //! One line of an agent's facts ring: every event the interpreter was fed,
 //! as the agent process writes it and a dump carries it. Provider payloads
 //! are text when they are UTF-8, which every provider's are, and hex
-//! otherwise; inputs are their encoded protobuf in hex. A segment of the
+//! otherwise; inputs and agent messages are their encoded protobuf in hex. A segment of the
 //! ring is these lines, one per event; the checkpoint beside it is the
 //! interpreter's state before its first line.
 
@@ -24,6 +24,13 @@ pub enum Entry {
     },
     Input {
         hex: String,
+    },
+    /// The encoded `wire::Envelope`.
+    AgentMessage {
+        hex: String,
+    },
+    Rename {
+        name: String,
     },
     Tick {
         at_ms: i64,
@@ -63,6 +70,10 @@ impl Entry {
             Event::Input(input) => Entry::Input {
                 hex: crate::to_hex(&input.encode_to_vec()),
             },
+            Event::AgentMessage(envelope) => Entry::AgentMessage {
+                hex: crate::to_hex(&envelope.encode_to_vec()),
+            },
+            Event::Rename { name } => Entry::Rename { name: name.clone() },
             Event::Tick { at_ms } => Entry::Tick { at_ms: *at_ms },
             Event::ProviderExit { code } => Entry::ProviderExit { code: *code },
             Event::DaemonLost => Entry::DaemonLost,
@@ -90,6 +101,10 @@ impl Entry {
             Entry::Input { hex } => {
                 Event::Input(wire::Input::decode(crate::from_hex(&hex).ok()?.as_slice()).ok()?)
             }
+            Entry::AgentMessage { hex } => Event::AgentMessage(
+                wire::Envelope::decode(crate::from_hex(&hex).ok()?.as_slice()).ok()?,
+            ),
+            Entry::Rename { name } => Event::Rename { name },
             Entry::Tick { at_ms } => Event::Tick { at_ms },
             Entry::ProviderExit { code } => Event::ProviderExit { code },
             Entry::DaemonLost => Event::DaemonLost,

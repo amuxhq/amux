@@ -1846,27 +1846,6 @@ impl ::prost::Name for PromptInput {
         "/amux.v1.PromptInput".into()
     }
 }
-/// Rejected if ask_key is not open. `body` is the per-kind answer message
-/// named by `kind` (ClaudeAnswer, CodexAnswer).
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AnswerInput {
-    #[prost(string, tag = "1")]
-    pub ask_key: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub kind: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "3")]
-    pub body: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for AnswerInput {
-    const NAME: &'static str = "AnswerInput";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AnswerInput".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.AnswerInput".into()
-    }
-}
 /// Rejected if the target is not queued.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WithdrawQueued {
@@ -2835,6 +2814,40 @@ impl SignInState {
         }
     }
 }
+/// The kind is the interpreter.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Kind {
+    Unspecified = 0,
+    ClaudePty = 1,
+    ClaudeSdk = 2,
+    Codex = 3,
+}
+impl Kind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "KIND_UNSPECIFIED",
+            Self::ClaudePty => "CLAUDE_PTY",
+            Self::ClaudeSdk => "CLAUDE_SDK",
+            Self::Codex => "CODEX",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "CLAUDE_PTY" => Some(Self::ClaudePty),
+            "CLAUDE_SDK" => Some(Self::ClaudeSdk),
+            "CODEX" => Some(Self::Codex),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum FormAction {
@@ -3075,9 +3088,13 @@ pub mod claude_pty_input {
         #[prost(message, tag = "1")]
         Prompt(super::PromptInput),
         #[prost(message, tag = "2")]
-        Answer(super::AnswerInput),
+        Answer(super::ClaudeAnswer),
+        /// Terminal Claude's permission-mode cycle, the one keystroke a remote
+        /// client sends; the agent process emits the bytes for the Claude it
+        /// runs. Raw terminal bytes never cross the wire; anything else is
+        /// typed at the machine.
         #[prost(message, tag = "3")]
-        Key(super::Key),
+        CyclePermissionMode(super::CyclePermissionMode),
         #[prost(message, tag = "4")]
         Clear(super::Clear),
         #[prost(message, tag = "5")]
@@ -3098,22 +3115,16 @@ impl ::prost::Name for ClaudePtyInput {
         "/amux.v1.ClaudePtyInput".into()
     }
 }
-/// The semantic keymap vocabulary. The agent process maps a key to PTY bytes
-/// with the keymap resolved for the observed Claude version; raw bytes never
-/// cross the wire.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Key {
-    #[prost(enumeration = "KeyName", tag = "1")]
-    pub key: i32,
-}
-impl ::prost::Name for Key {
-    const NAME: &'static str = "Key";
+pub struct CyclePermissionMode {}
+impl ::prost::Name for CyclePermissionMode {
+    const NAME: &'static str = "CyclePermissionMode";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Key".into()
+        "amux.v1.CyclePermissionMode".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Key".into()
+        "/amux.v1.CyclePermissionMode".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3278,7 +3289,7 @@ pub mod claude_sdk_input {
         #[prost(message, tag = "1")]
         Prompt(super::PromptInput),
         #[prost(message, tag = "2")]
-        Answer(super::AnswerInput),
+        Answer(super::ClaudeAnswer),
         #[prost(message, tag = "3")]
         Interrupt(super::Interrupt),
         #[prost(message, tag = "4")]
@@ -3305,26 +3316,29 @@ impl ::prost::Name for ClaudeSdkInput {
         "/amux.v1.ClaudeSdkInput".into()
     }
 }
+/// Rejected closed_ask if ask_key is not open.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClaudeAnswer {
-    #[prost(oneof = "claude_answer::Of", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(string, tag = "1")]
+    pub ask_key: ::prost::alloc::string::String,
+    #[prost(oneof = "claude_answer::Of", tags = "2, 3, 4, 5, 6, 7")]
     pub of: ::core::option::Option<claude_answer::Of>,
 }
 /// Nested message and enum types in `ClaudeAnswer`.
 pub mod claude_answer {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Of {
-        #[prost(message, tag = "1")]
-        Permission(super::PermissionAnswer),
         #[prost(message, tag = "2")]
-        Question(super::QuestionAnswer),
+        Permission(super::PermissionAnswer),
         #[prost(message, tag = "3")]
-        Plan(super::PlanAnswer),
+        Question(super::QuestionAnswer),
         #[prost(message, tag = "4")]
-        Form(super::FormAnswer),
+        Plan(super::PlanAnswer),
         #[prost(message, tag = "5")]
-        Link(super::LinkAnswer),
+        Form(super::FormAnswer),
         #[prost(message, tag = "6")]
+        Link(super::LinkAnswer),
+        #[prost(message, tag = "7")]
         Reply(super::ReplyInstead),
     }
 }
@@ -3394,50 +3408,6 @@ impl ::prost::Name for PermissionDeny {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.PermissionDeny".into()
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum KeyName {
-    Unspecified = 0,
-    Escape = 1,
-    Accept = 2,
-    CyclePermissionMode = 3,
-    ToggleThinking = 4,
-    Up = 5,
-    Down = 6,
-    Tab = 7,
-}
-impl KeyName {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "KEY_NAME_UNSPECIFIED",
-            Self::Escape => "KEY_NAME_ESCAPE",
-            Self::Accept => "KEY_NAME_ACCEPT",
-            Self::CyclePermissionMode => "KEY_NAME_CYCLE_PERMISSION_MODE",
-            Self::ToggleThinking => "KEY_NAME_TOGGLE_THINKING",
-            Self::Up => "KEY_NAME_UP",
-            Self::Down => "KEY_NAME_DOWN",
-            Self::Tab => "KEY_NAME_TAB",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "KEY_NAME_UNSPECIFIED" => Some(Self::Unspecified),
-            "KEY_NAME_ESCAPE" => Some(Self::Escape),
-            "KEY_NAME_ACCEPT" => Some(Self::Accept),
-            "KEY_NAME_CYCLE_PERMISSION_MODE" => Some(Self::CyclePermissionMode),
-            "KEY_NAME_TOGGLE_THINKING" => Some(Self::ToggleThinking),
-            "KEY_NAME_UP" => Some(Self::Up),
-            "KEY_NAME_DOWN" => Some(Self::Down),
-            "KEY_NAME_TAB" => Some(Self::Tab),
-            _ => None,
-        }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -4001,7 +3971,7 @@ impl ::prost::Name for McpToolApproval {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CodexInput {
-    #[prost(oneof = "codex_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(oneof = "codex_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     pub of: ::core::option::Option<codex_input::Of>,
 }
 /// Nested message and enum types in `CodexInput`.
@@ -4011,7 +3981,7 @@ pub mod codex_input {
         #[prost(message, tag = "1")]
         Prompt(super::PromptInput),
         #[prost(message, tag = "2")]
-        Approve(super::Approve),
+        Answer(super::CodexAnswer),
         #[prost(message, tag = "3")]
         Interrupt(super::Interrupt),
         #[prost(message, tag = "4")]
@@ -4023,13 +3993,9 @@ pub mod codex_input {
         #[prost(message, tag = "7")]
         Withdraw(super::WithdrawQueued),
         #[prost(message, tag = "8")]
-        Answer(super::AnswerInput),
-        #[prost(message, tag = "9")]
         Effort(super::SetEffort),
-        #[prost(message, tag = "10")]
+        #[prost(message, tag = "9")]
         SendNow(super::SendQueuedNow),
-        #[prost(message, tag = "11")]
-        Rename(super::RenameThread),
     }
 }
 impl ::prost::Name for CodexInput {
@@ -4042,63 +4008,33 @@ impl ::prost::Name for CodexInput {
         "/amux.v1.CodexInput".into()
     }
 }
-/// The daemon's word that the agent was renamed: Codex's thread takes the
-/// agent's name, so Codex's own app shows the name amux does.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct RenameThread {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-}
-impl ::prost::Name for RenameThread {
-    const NAME: &'static str = "RenameThread";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.RenameThread".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.RenameThread".into()
-    }
-}
-/// Rejected if the request is not open.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Approve {
-    #[prost(string, tag = "1")]
-    pub request_id: ::prost::alloc::string::String,
-    #[prost(enumeration = "Decision", tag = "2")]
-    pub decision: i32,
-}
-impl ::prost::Name for Approve {
-    const NAME: &'static str = "Approve";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Approve".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Approve".into()
-    }
-}
-/// AnswerInput.body for Codex: questions, tool-server forms and links, and
-/// access grants.
+/// Rejected closed_ask if ask_key is not open. An approval is rejected
+/// unsupported when its decision is not one the ask offered.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CodexAnswer {
-    #[prost(oneof = "codex_answer::Of", tags = "1, 2, 3, 4, 5, 6")]
+    /// CodexAsk.key: the app-server request id, or amux's own key for a plan.
+    #[prost(string, tag = "1")]
+    pub ask_key: ::prost::alloc::string::String,
+    #[prost(oneof = "codex_answer::Of", tags = "2, 3, 4, 5, 6, 7, 8")]
     pub of: ::core::option::Option<codex_answer::Of>,
 }
 /// Nested message and enum types in `CodexAnswer`.
 pub mod codex_answer {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Of {
-        #[prost(message, tag = "1")]
-        Question(super::QuestionAnswer),
-        #[prost(message, tag = "2")]
-        Form(super::FormAnswer),
+        #[prost(enumeration = "super::Decision", tag = "2")]
+        Approve(i32),
         #[prost(message, tag = "3")]
-        Link(super::LinkAnswer),
+        Question(super::QuestionAnswer),
         #[prost(message, tag = "4")]
-        Grant(super::GrantAnswer),
+        Form(super::FormAnswer),
         #[prost(message, tag = "5")]
-        Plan(super::PlanAnswer),
+        Link(super::LinkAnswer),
         #[prost(message, tag = "6")]
+        Grant(super::GrantAnswer),
+        #[prost(message, tag = "7")]
+        Plan(super::PlanAnswer),
+        #[prost(message, tag = "8")]
         Reply(super::ReplyInstead),
     }
 }
@@ -4187,35 +4123,21 @@ impl Decision {
         }
     }
 }
-/// A client-generated input id and one arm. The reply is the interpreter's
-/// verdict, never a handover receipt. An arm this agent version cannot
-/// interpret is rejected as unsupported.
-#[derive(Clone, PartialEq, ::prost::Message)]
+/// A client-generated input id, the agent's kind, and that kind's input
+/// message encoded. Daemons forward the bytes untouched; only the agent of
+/// that kind decodes them, so an arm or field this daemon does not know
+/// reaches a newer agent intact. The reply is the interpreter's verdict,
+/// never a handover receipt. The daemon decodes a copy for its analytics and
+/// tolerates a copy it cannot decode.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Input {
     #[prost(bytes = "vec", tag = "1")]
     pub input_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(oneof = "input::Of", tags = "2, 3, 4, 5, 6")]
-    pub of: ::core::option::Option<input::Of>,
-}
-/// Nested message and enum types in `Input`.
-pub mod input {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Of {
-        /// Kind-neutral: an agent message with its daemon-set envelope; the
-        /// recipient's interpreter picks the carrier.
-        #[prost(message, tag = "2")]
-        AgentMessage(super::Envelope),
-        /// Kind-neutral: asks the agent process for its part of a dump bundle,
-        /// answered with CtlFrame.dump.
-        #[prost(message, tag = "3")]
-        Dump(super::DumpInput),
-        #[prost(message, tag = "4")]
-        ClaudePty(super::ClaudePtyInput),
-        #[prost(message, tag = "5")]
-        ClaudeSdk(super::ClaudeSdkInput),
-        #[prost(message, tag = "6")]
-        Codex(super::CodexInput),
-    }
+    #[prost(enumeration = "Kind", tag = "2")]
+    pub kind: i32,
+    /// ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
+    #[prost(bytes = "vec", tag = "3")]
+    pub body: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for Input {
     const NAME: &'static str = "Input";
@@ -4227,19 +4149,23 @@ impl ::prost::Name for Input {
         "/amux.v1.Input".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DumpInput {
+/// A prompt with its client-generated input id, where a whole Input would
+/// admit arms that are not a prompt.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PromptSubmission {
     #[prost(bytes = "vec", tag = "1")]
-    pub dump_id: ::prost::alloc::vec::Vec<u8>,
+    pub input_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub prompt: ::core::option::Option<PromptInput>,
 }
-impl ::prost::Name for DumpInput {
-    const NAME: &'static str = "DumpInput";
+impl ::prost::Name for PromptSubmission {
+    const NAME: &'static str = "PromptSubmission";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DumpInput".into()
+        "amux.v1.PromptSubmission".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.DumpInput".into()
+        "/amux.v1.PromptSubmission".into()
     }
 }
 /// One immutable file per incarnation, spec.<n> in the agent directory. The
@@ -4260,7 +4186,7 @@ pub struct AgentSpec {
     #[prost(string, tag = "4")]
     pub cwd: ::prost::alloc::string::String,
     /// The agent's name when this incarnation was spawned; a rename while it
-    /// runs reaches the row, and a Codex agent hears it as an input.
+    /// runs reaches the row, and a Codex agent hears it on ctl.sock.
     #[prost(string, tag = "5")]
     pub name: ::prost::alloc::string::String,
     /// The inventory row's parent, host and id, so a child resumed from its
@@ -4296,10 +4222,11 @@ pub struct AgentSpec {
     /// What that binary reported, for the same reason.
     #[prost(string, tag = "15")]
     pub provider_version: ::prost::alloc::string::String,
-    /// The spawn's prompt, or a parent's message on a parent-driven resume,
-    /// with its input id; the child seeds its queue from it.
+    /// What seeds the child's queue: the spawn's prompt, or a parent's
+    /// message on a parent-driven resume. Daemon-owned; a client never
+    /// supplies an envelope.
     #[prost(message, optional, tag = "16")]
-    pub initial_prompt: ::core::option::Option<Input>,
+    pub bootstrap: ::core::option::Option<Bootstrap>,
     /// What the host's provider offers, from the daemon's copy for the host,
     /// for a kind that cannot be asked itself: terminal Claude. Absent when
     /// the host has no copy.
@@ -4319,6 +4246,31 @@ impl ::prost::Name for AgentSpec {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.AgentSpec".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Bootstrap {
+    #[prost(oneof = "bootstrap::Of", tags = "1, 2")]
+    pub of: ::core::option::Option<bootstrap::Of>,
+}
+/// Nested message and enum types in `Bootstrap`.
+pub mod bootstrap {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Prompt(super::PromptSubmission),
+        #[prost(message, tag = "2")]
+        AgentMessage(super::Envelope),
+    }
+}
+impl ::prost::Name for Bootstrap {
+    const NAME: &'static str = "Bootstrap";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Bootstrap".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Bootstrap".into()
     }
 }
 /// What `amux catalogue <provider>` learned by running the provider just
@@ -4396,7 +4348,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -4409,18 +4361,34 @@ pub mod ctl_frame {
         /// Agent to daemon: the journal grew.
         #[prost(message, tag = "2")]
         Nudge(super::Nudge),
-        /// Daemon to agent.
+        /// Daemon to agent: a person's input, bytes as the client sent them.
         #[prost(message, tag = "3")]
         Input(super::Input),
-        /// Daemon to agent.
+        /// Daemon to agent: an agent message with its daemon-set envelope; the
+        /// recipient's interpreter picks the carrier. Answered by `reply` keyed
+        /// by the envelope id.
         #[prost(message, tag = "4")]
-        Stop(super::Stop),
-        /// Agent to daemon, answering a dump input.
+        AgentMessage(super::Envelope),
+        /// Daemon to agent: asks for its part of a dump bundle, answered by
+        /// `dump`.
         #[prost(message, tag = "5")]
-        Dump(super::DumpPart),
-        /// Agent to daemon; the daemon relays it as the SendInput reply.
+        DumpRequest(super::AgentDumpRequest),
+        /// Daemon to agent (Codex): the agent was renamed; Codex's thread takes
+        /// the name so Codex's own app shows what amux does.
         #[prost(message, tag = "6")]
-        Reply(super::InputReply),
+        Rename(super::Rename),
+        /// Daemon to agent.
+        #[prost(message, tag = "7")]
+        Stop(super::Stop),
+        /// Agent to daemon, answering a dump request.
+        #[prost(message, tag = "8")]
+        Dump(super::DumpPart),
+        /// Agent to daemon: the verdict on an input (keyed by its input id) or
+        /// on an agent message (keyed by its envelope id). The daemon relays an
+        /// input's verdict as the SendInput reply and uses a message's verdict
+        /// to settle its delivery.
+        #[prost(message, tag = "9")]
+        Reply(super::Verdict),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -4431,6 +4399,36 @@ impl ::prost::Name for CtlFrame {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.CtlFrame".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentDumpRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub dump_id: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for AgentDumpRequest {
+    const NAME: &'static str = "AgentDumpRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentDumpRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.AgentDumpRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Rename {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Rename {
+    const NAME: &'static str = "Rename";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Rename".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Rename".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -4516,20 +4514,21 @@ impl ::prost::Name for DumpFile {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct InputReply {
+pub struct Verdict {
+    /// The input id or the envelope id.
     #[prost(bytes = "vec", tag = "1")]
-    pub input_id: ::prost::alloc::vec::Vec<u8>,
+    pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub verdict: ::core::option::Option<SendInputResponse>,
 }
-impl ::prost::Name for InputReply {
-    const NAME: &'static str = "InputReply";
+impl ::prost::Name for Verdict {
+    const NAME: &'static str = "Verdict";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.InputReply".into()
+        "amux.v1.Verdict".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.InputReply".into()
+        "/amux.v1.Verdict".into()
     }
 }
 /// pty.sock frames, framed as on ctl.sock. Raw attach is local only: a
@@ -5615,7 +5614,7 @@ impl ::prost::Name for GetRequest {
         "/amux.v1.GetRequest".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SendInputRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
@@ -5632,7 +5631,7 @@ impl ::prost::Name for SendInputRequest {
         "/amux.v1.SendInputRequest".into()
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
@@ -5644,7 +5643,8 @@ pub struct CreateAgentRequest {
     pub name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "4")]
     pub parent: ::core::option::Option<AgentParent>,
-    /// The same Input as SendInput, so a first prompt carries attachments.
+    /// A prompt as SendInput carries one, so it brings its attachments; any
+    /// other input is refused.
     #[prost(message, optional, tag = "5")]
     pub initial_prompt: ::core::option::Option<Input>,
     #[prost(string, tag = "6")]
@@ -5725,7 +5725,7 @@ impl ::prost::Name for StopAgentRequest {
     }
 }
 /// The composer of an exited chat sends its draft through initial_prompt.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ResumeAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
@@ -7092,40 +7092,6 @@ impl HostVia {
             "HOST_VIA_DIRECT" => Some(Self::Direct),
             "HOST_VIA_RELAY" => Some(Self::Relay),
             "HOST_VIA_SSH" => Some(Self::Ssh),
-            _ => None,
-        }
-    }
-}
-/// The kind is the interpreter.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Kind {
-    Unspecified = 0,
-    ClaudePty = 1,
-    ClaudeSdk = 2,
-    Codex = 3,
-}
-impl Kind {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "KIND_UNSPECIFIED",
-            Self::ClaudePty => "CLAUDE_PTY",
-            Self::ClaudeSdk => "CLAUDE_SDK",
-            Self::Codex => "CODEX",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "KIND_UNSPECIFIED" => Some(Self::Unspecified),
-            "CLAUDE_PTY" => Some(Self::ClaudePty),
-            "CLAUDE_SDK" => Some(Self::ClaudeSdk),
-            "CODEX" => Some(Self::Codex),
             _ => None,
         }
     }

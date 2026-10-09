@@ -109,7 +109,18 @@ pub trait Interpreter {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     Fact(Fact),
+    /// A person's input, its body as the client encoded it. The reply is
+    /// keyed by its input id.
     Input(Input),
+    /// An agent message with the envelope its daemon set: who it is from
+    /// is the daemon's word, never a client's. The reply is keyed by the
+    /// envelope id.
+    AgentMessage(Envelope),
+    /// The daemon's word that the agent was renamed. Only Codex hears it:
+    /// its thread takes the name, so Codex's own app shows what amux does.
+    Rename {
+        name: String,
+    },
     /// The clock, as a fact: the agent process sends one before each event
     /// whose time matters and on a timer while a quiet period is watched.
     Tick {
@@ -184,8 +195,9 @@ pub enum Effect {
     /// Bytes to the provider's one input channel: the PTY, stdin or the
     /// app-server connection.
     ProviderWrite(Vec<u8>),
-    /// The verdict on an input, relayed to the sender as the SendInput
-    /// reply.
+    /// The verdict on an input or an agent message, keyed by the input id
+    /// or the envelope id: the daemon relays an input's as the SendInput
+    /// reply and settles a message's delivery by it.
     Reply {
         input_id: Vec<u8>,
         verdict: SendInputResponse,
@@ -249,6 +261,9 @@ pub enum RedactTarget {
     Fact(Fact),
     /// A facts-ring entry that is an input: an encoded `wire::Input`.
     Input(Vec<u8>),
+    /// A facts-ring entry that is an agent message: an encoded
+    /// `wire::Envelope`.
+    AgentMessage(Vec<u8>),
     /// An encoded checkpoint of the kind's state.
     Checkpoint(Vec<u8>),
     /// An encoded `wire::AgentSpec`: its environment values and prompt.

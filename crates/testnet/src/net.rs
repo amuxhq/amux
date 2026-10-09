@@ -32,7 +32,7 @@ use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     AgentParent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Input, PromptInput, StopMode,
-    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input, create_agent_request, input,
+    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input, create_agent_request,
 };
 
 use crate::binaries::Binaries;
@@ -631,8 +631,16 @@ impl Net {
             .join(format!("{name}.json"));
         let runtime = self.runtime(&agent.host)?;
         runtime.set_launch(self.launch(&host, Some((agent.kind, &script))));
-        let prompt = text.map(|text| prompt(agent.kind, Uuid::new_v4().as_bytes(), text));
-        let resumed = runtime.resume(agent.id, prompt).await;
+        let bootstrap = text.map(|text| wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                input_id: Uuid::new_v4().as_bytes().to_vec(),
+                prompt: Some(PromptInput {
+                    text: text.to_owned(),
+                    attachments: Vec::new(),
+                }),
+            })),
+        });
+        let resumed = runtime.resume(agent.id, bootstrap).await;
         runtime.set_launch(self.launch(&host, None));
         Ok(resumed?)
     }
@@ -1876,20 +1884,20 @@ pub fn prompt(kind: FakeKind, id: &[u8], text: &str) -> Input {
         text: text.to_owned(),
         attachments: Vec::new(),
     };
-    Input {
-        input_id: id.to_vec(),
-        of: Some(match kind {
-            FakeKind::ClaudePty => input::Of::ClaudePty(ClaudePtyInput {
+    Input::new(
+        id.to_vec(),
+        match kind {
+            FakeKind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
                 of: Some(claude_pty_input::Of::Prompt(prompt)),
             }),
-            FakeKind::ClaudeSdk => input::Of::ClaudeSdk(ClaudeSdkInput {
+            FakeKind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
                 of: Some(claude_sdk_input::Of::Prompt(prompt)),
             }),
-            FakeKind::Codex => input::Of::Codex(CodexInput {
+            FakeKind::Codex => wire::KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Prompt(prompt)),
             }),
-        }),
-    }
+        },
+    )
 }
 
 /// Withdraws a queued prompt, in the kind's own input arm.
@@ -1897,20 +1905,20 @@ pub fn withdraw(kind: FakeKind, id: &[u8], queued: &[u8]) -> Input {
     let withdraw = WithdrawQueued {
         queued_input_id: queued.to_vec(),
     };
-    Input {
-        input_id: id.to_vec(),
-        of: Some(match kind {
-            FakeKind::ClaudePty => input::Of::ClaudePty(ClaudePtyInput {
+    Input::new(
+        id.to_vec(),
+        match kind {
+            FakeKind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
                 of: Some(claude_pty_input::Of::Withdraw(withdraw)),
             }),
-            FakeKind::ClaudeSdk => input::Of::ClaudeSdk(ClaudeSdkInput {
+            FakeKind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
                 of: Some(claude_sdk_input::Of::Withdraw(withdraw)),
             }),
-            FakeKind::Codex => input::Of::Codex(CodexInput {
+            FakeKind::Codex => wire::KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Withdraw(withdraw)),
             }),
-        }),
-    }
+        },
+    )
 }
 
 /// SIGKILLs every agent process whose directory lies under `dir`, and

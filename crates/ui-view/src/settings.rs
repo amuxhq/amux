@@ -455,51 +455,51 @@ fn picks(
 /// no such pick. The id is the sender's to fill.
 pub fn setting_input(kind: Kind, change: &SettingChange) -> Option<wire::Input> {
     use wire::{
-        ClaudePtyInput, ClaudeSdkInput, CodexInput, KeyName, SetEffort, SetMode, SetModel,
-        SetPermission, claude_pty_input, claude_sdk_input, codex_input, input,
+        ClaudePtyInput, ClaudeSdkInput, CodexInput, CyclePermissionMode, KindInput, SetEffort,
+        SetMode, SetModel, SetPermission, claude_pty_input, claude_sdk_input, codex_input,
     };
     let model = |model: &String| SetModel {
         model: Some(model.clone()),
     };
     let of = match (kind, change) {
-        (Kind::ClaudePty, SettingChange::CyclePermission) => input::Of::ClaudePty(ClaudePtyInput {
-            of: Some(claude_pty_input::Of::Key(wire::Key {
-                key: KeyName::CyclePermissionMode.into(),
-            })),
+        (Kind::ClaudePty, SettingChange::CyclePermission) => KindInput::ClaudePty(ClaudePtyInput {
+            of: Some(claude_pty_input::Of::CyclePermissionMode(
+                CyclePermissionMode {},
+            )),
         }),
-        (Kind::ClaudeSdk, SettingChange::Model(name)) => input::Of::ClaudeSdk(ClaudeSdkInput {
+        (Kind::ClaudeSdk, SettingChange::Model(name)) => KindInput::ClaudeSdk(ClaudeSdkInput {
             of: Some(claude_sdk_input::Of::Model(model(name))),
         }),
-        (Kind::ClaudeSdk, SettingChange::Effort(effort)) => input::Of::ClaudeSdk(ClaudeSdkInput {
+        (Kind::ClaudeSdk, SettingChange::Effort(effort)) => KindInput::ClaudeSdk(ClaudeSdkInput {
             of: Some(claude_sdk_input::Of::Effort(SetEffort {
                 effort: Some(effort.clone()),
             })),
         }),
         (Kind::ClaudeSdk, SettingChange::Permission(value)) if !value.is_empty() => {
-            input::Of::ClaudeSdk(ClaudeSdkInput {
+            KindInput::ClaudeSdk(ClaudeSdkInput {
                 of: Some(claude_sdk_input::Of::Permission(SetPermission {
                     value: value.clone(),
                 })),
             })
         }
-        (Kind::Codex, SettingChange::Model(name)) => input::Of::Codex(CodexInput {
+        (Kind::Codex, SettingChange::Model(name)) => KindInput::Codex(CodexInput {
             of: Some(codex_input::Of::Model(model(name))),
         }),
-        (Kind::Codex, SettingChange::Effort(effort)) => input::Of::Codex(CodexInput {
+        (Kind::Codex, SettingChange::Effort(effort)) => KindInput::Codex(CodexInput {
             of: Some(codex_input::Of::Effort(SetEffort {
                 effort: Some(effort.clone()),
             })),
         }),
         // Settings that match no named permission have no value to send.
         (Kind::Codex, SettingChange::Permission(value)) if !value.is_empty() => {
-            input::Of::Codex(CodexInput {
+            KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Permission(SetPermission {
                     value: value.clone(),
                 })),
             })
         }
         (Kind::Codex, SettingChange::Mode(value)) if !value.is_empty() => {
-            input::Of::Codex(CodexInput {
+            KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Mode(SetMode {
                     value: value.clone(),
                 })),
@@ -507,10 +507,7 @@ pub fn setting_input(kind: Kind, change: &SettingChange) -> Option<wire::Input> 
         }
         _ => return None,
     };
-    Some(wire::Input {
-        input_id: Vec::new(),
-        of: Some(of),
-    })
+    Some(wire::Input::new(Vec::new(), of))
 }
 
 /// Whether a permission that names `models` (none: every model) is taken

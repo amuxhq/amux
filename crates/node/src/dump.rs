@@ -63,9 +63,7 @@ use prost::Message as _;
 use store::{AgentRow, Store as _};
 use tokio::sync::oneshot;
 use uuid::Uuid;
-use wire::{
-    CtlFrame, DumpFile, DumpInput, DumpPart, DumpRequest, Input, Kind, Step, ctl_frame, input,
-};
+use wire::{AgentDumpRequest, CtlFrame, DumpFile, DumpPart, DumpRequest, Kind, Step, ctl_frame};
 
 use crate::blobs::hex;
 use crate::runtime::{ProfileRuntime, to_wire};
@@ -372,11 +370,8 @@ impl ProfileRuntime {
         let (tx, rx) = oneshot::channel();
         handle.expect_dump(dump_id.to_vec(), tx);
         let frame = CtlFrame {
-            of: Some(ctl_frame::Of::Input(Input {
-                input_id: dump_id.to_vec(),
-                of: Some(input::Of::Dump(DumpInput {
-                    dump_id: dump_id.to_vec(),
-                })),
+            of: Some(ctl_frame::Of::DumpRequest(AgentDumpRequest {
+                dump_id: dump_id.to_vec(),
             })),
         };
         let patience = crate::runtime::ms(self.launch().ctl_write_ms);
@@ -491,6 +486,7 @@ fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
         RedactTarget::ItemBody(bytes)
         | RedactTarget::SnapshotBody(bytes)
         | RedactTarget::Input(bytes)
+        | RedactTarget::AgentMessage(bytes)
         | RedactTarget::Checkpoint(bytes)
         | RedactTarget::Spec(bytes)
         | RedactTarget::Step(bytes)

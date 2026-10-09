@@ -255,13 +255,10 @@
       }
     },
     {
-      "input": {
-        "id": "a1",
-        "agent_message": {
-          "envelope": "env-1",
-          "from": "reviewer",
-          "text": "please look at the diff"
-        }
+      "agent_message": {
+        "envelope": "env-1",
+        "from": "reviewer",
+        "text": "please look at the diff"
       }
     }
   ]

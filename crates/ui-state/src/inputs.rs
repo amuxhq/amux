@@ -43,20 +43,21 @@ pub enum InputWhat {
         target: InputId,
     },
     Interrupt,
-    /// Keys, settings, clear.
+    /// The permission-mode cycle, settings, clear.
     Other,
 }
 
 impl InputWhat {
     pub fn of(input: &Input) -> InputWhat {
-        use wire::input::Of;
-        use wire::{claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex};
+        use wire::{
+            KindInput, claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex,
+        };
         let prompt = |prompt: &wire::PromptInput| InputWhat::Prompt {
             text: prompt.text.clone(),
             attachments: prompt.attachments.clone(),
         };
-        let answer = |answer: &wire::AnswerInput| InputWhat::Answer {
-            ask_key: answer.ask_key.clone(),
+        let answer = |ask_key: &str| InputWhat::Answer {
+            ask_key: ask_key.to_owned(),
         };
         let withdraw = |withdraw: &wire::WithdrawQueued| InputWhat::Withdraw {
             target: withdraw.queued_input_id.clone(),
@@ -64,18 +65,20 @@ impl InputWhat {
         let send_now = |now: &wire::SendQueuedNow| InputWhat::SendNow {
             target: now.queued_input_id.clone(),
         };
-        match &input.of {
-            Some(Of::ClaudePty(input)) => match &input.of {
+        match &input.decode_body() {
+            Some(KindInput::ClaudePty(input)) => match &input.of {
                 Some(pty::Of::Prompt(p)) => prompt(p),
-                Some(pty::Of::Answer(a)) => answer(a),
+                Some(pty::Of::Answer(a)) => answer(&a.ask_key),
                 Some(pty::Of::Withdraw(w)) => withdraw(w),
                 Some(pty::Of::SendNow(n)) => send_now(n),
                 Some(pty::Of::Interrupt(_)) => InputWhat::Interrupt,
-                Some(pty::Of::Key(_) | pty::Of::Clear(_)) | None => InputWhat::Other,
+                Some(pty::Of::CyclePermissionMode(_) | pty::Of::Clear(_)) | None => {
+                    InputWhat::Other
+                }
             },
-            Some(Of::ClaudeSdk(input)) => match &input.of {
+            Some(KindInput::ClaudeSdk(input)) => match &input.of {
                 Some(sdk::Of::Prompt(p)) => prompt(p),
-                Some(sdk::Of::Answer(a)) => answer(a),
+                Some(sdk::Of::Answer(a)) => answer(&a.ask_key),
                 Some(sdk::Of::Withdraw(w)) => withdraw(w),
                 Some(sdk::Of::SendNow(n)) => send_now(n),
                 Some(sdk::Of::Interrupt(_)) => InputWhat::Interrupt,
@@ -87,12 +90,9 @@ impl InputWhat {
                 )
                 | None => InputWhat::Other,
             },
-            Some(Of::Codex(input)) => match &input.of {
+            Some(KindInput::Codex(input)) => match &input.of {
                 Some(codex::Of::Prompt(p)) => prompt(p),
-                Some(codex::Of::Answer(a)) => answer(a),
-                Some(codex::Of::Approve(approve)) => InputWhat::Answer {
-                    ask_key: approve.request_id.clone(),
-                },
+                Some(codex::Of::Answer(a)) => answer(&a.ask_key),
                 Some(codex::Of::Withdraw(w)) => withdraw(w),
                 Some(codex::Of::SendNow(n)) => send_now(n),
                 Some(codex::Of::Interrupt(_)) => InputWhat::Interrupt,
@@ -100,12 +100,11 @@ impl InputWhat {
                     codex::Of::Permission(_)
                     | codex::Of::Mode(_)
                     | codex::Of::Model(_)
-                    | codex::Of::Effort(_)
-                    | codex::Of::Rename(_),
+                    | codex::Of::Effort(_),
                 )
                 | None => InputWhat::Other,
             },
-            Some(Of::AgentMessage(_) | Of::Dump(_)) | None => InputWhat::Other,
+            None => InputWhat::Other,
         }
     }
 }

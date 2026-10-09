@@ -107,13 +107,10 @@
       "tick": 1800000001000
     },
     {
-      "input": {
-        "id": "m1",
-        "agent_message": {
-          "envelope": "e1",
-          "from": "reviewer",
-          "text": "Also say DONE."
-        }
+      "agent_message": {
+        "envelope": "e1",
+        "from": "reviewer",
+        "text": "Also say DONE."
       },
       "expect": {
         "reply": "accepted",

@@ -70,15 +70,15 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_where_it_was_sent() {
     let worker = net.agent("worker").unwrap().id;
     let prompt = || SendInputRequest {
         agent_id: worker.as_bytes().to_vec(),
-        input: Some(wire::Input {
-            input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            of: Some(wire::input::Of::ClaudeSdk(ClaudeSdkInput {
+        input: Some(wire::Input::new(
+            uuid::Uuid::new_v4().as_bytes().to_vec(),
+            ClaudeSdkInput {
                 of: Some(claude_sdk_input::Of::Prompt(PromptInput {
                     text: "and the tests?".into(),
                     attachments: Vec::new(),
                 })),
-            })),
-        }),
+            },
+        )),
     };
     let laptop_client = net.client("laptop").unwrap();
     until("the laptop's prompt to reach the desk's agent", || async {

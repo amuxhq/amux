@@ -11,26 +11,24 @@ import "amux/v1/records.proto";
 // agent directory's ctl.sock. The journal between them frames Step
 // (records.proto).
 
-// A client-generated input id and one arm. The reply is the interpreter's
-// verdict, never a handover receipt. An arm this agent version cannot
-// interpret is rejected as unsupported.
+// A client-generated input id, the agent's kind, and that kind's input
+// message encoded. Daemons forward the bytes untouched; only the agent of
+// that kind decodes them, so an arm or field this daemon does not know
+// reaches a newer agent intact. The reply is the interpreter's verdict,
+// never a handover receipt. The daemon decodes a copy for its analytics and
+// tolerates a copy it cannot decode.
 message Input {
   bytes input_id = 1;
-  oneof of {
-    // Kind-neutral: an agent message with its daemon-set envelope; the
-    // recipient's interpreter picks the carrier.
-    Envelope agent_message = 2;
-    // Kind-neutral: asks the agent process for its part of a dump bundle,
-    // answered with CtlFrame.dump.
-    DumpInput dump = 3;
-    ClaudePtyInput claude_pty = 4;
-    ClaudeSdkInput claude_sdk = 5;
-    CodexInput codex = 6;
-  }
+  Kind kind = 2;
+  // ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
+  bytes body = 3;
 }
 
-message DumpInput {
-  bytes dump_id = 1;
+// A prompt with its client-generated input id, where a whole Input would
+// admit arms that are not a prompt.
+message PromptSubmission {
+  bytes input_id = 1;
+  PromptInput prompt = 2;
 }
 
 // One immutable file per incarnation, spec.<n> in the agent directory. The
@@ -46,7 +44,7 @@ message AgentSpec {
   // spawn.
   string cwd = 4;
   // The agent's name when this incarnation was spawned; a rename while it
-  // runs reaches the row, and a Codex agent hears it as an input.
+  // runs reaches the row, and a Codex agent hears it on ctl.sock.
   string name = 5;
   // The inventory row's parent, host and id, so a child resumed from its
   // spec on one host still addresses a parent on another.
@@ -68,9 +66,10 @@ message AgentSpec {
   string provider_binary = 14;
   // What that binary reported, for the same reason.
   string provider_version = 15;
-  // The spawn's prompt, or a parent's message on a parent-driven resume,
-  // with its input id; the child seeds its queue from it.
-  optional Input initial_prompt = 16;
+  // What seeds the child's queue: the spawn's prompt, or a parent's
+  // message on a parent-driven resume. Daemon-owned; a client never
+  // supplies an envelope.
+  optional Bootstrap bootstrap = 16;
   // What the host's provider offers, from the daemon's copy for the host,
   // for a kind that cannot be asked itself: terminal Claude. Absent when
   // the host has no copy.
@@ -79,6 +78,13 @@ message AgentSpec {
   // what its git facts measure the branch against. Absent otherwise, and
   // the repository's default branch is the base.
   optional string base_branch = 18;
+}
+
+message Bootstrap {
+  oneof of {
+    PromptSubmission prompt = 1;
+    Envelope agent_message = 2;
+  }
 }
 
 // What `amux catalogue <provider>` learned by running the provider just
@@ -123,15 +129,36 @@ message CtlFrame {
     AgentHello hello = 1;
     // Agent to daemon: the journal grew.
     Nudge nudge = 2;
-    // Daemon to agent.
+    // Daemon to agent: a person's input, bytes as the client sent them.
     Input input = 3;
+    // Daemon to agent: an agent message with its daemon-set envelope; the
+    // recipient's interpreter picks the carrier. Answered by `reply` keyed
+    // by the envelope id.
+    Envelope agent_message = 4;
+    // Daemon to agent: asks for its part of a dump bundle, answered by
+    // `dump`.
+    AgentDumpRequest dump_request = 5;
+    // Daemon to agent (Codex): the agent was renamed; Codex's thread takes
+    // the name so Codex's own app shows what amux does.
+    Rename rename = 6;
     // Daemon to agent.
-    Stop stop = 4;
-    // Agent to daemon, answering a dump input.
-    DumpPart dump = 5;
-    // Agent to daemon; the daemon relays it as the SendInput reply.
-    InputReply reply = 6;
+    Stop stop = 7;
+    // Agent to daemon, answering a dump request.
+    DumpPart dump = 8;
+    // Agent to daemon: the verdict on an input (keyed by its input id) or
+    // on an agent message (keyed by its envelope id). The daemon relays an
+    // input's verdict as the SendInput reply and uses a message's verdict
+    // to settle its delivery.
+    Verdict reply = 9;
   }
+}
+
+message AgentDumpRequest {
+  bytes dump_id = 1;
+}
+
+message Rename {
+  string name = 1;
 }
 
 message AgentHello {
@@ -165,8 +192,9 @@ message DumpFile {
   bytes contents = 2;
 }
 
-message InputReply {
-  bytes input_id = 1;
+message Verdict {
+  // The input id or the envelope id.
+  bytes id = 1;
   SendInputResponse verdict = 2;
 }
 

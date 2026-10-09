@@ -9,11 +9,10 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use prost::Message as _;
 use ui_state::{ItemBody, OpenAsk};
 use wire::{
     ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexAnswer, CodexCreateConfig, CodexInput, Kind,
-    Phase, claude_answer, claude_pty_input, claude_sdk_input, codex_answer, codex_input, input,
+    Phase, claude_answer, claude_pty_input, claude_sdk_input, codex_answer, codex_input,
 };
 
 use super::{Install, Log, Scenario, TURN, Verdict, expect_outcome, judge};
@@ -64,30 +63,26 @@ impl Install {
         }
     }
 
-    fn answer_input(&self, ask: &OpenAsk, answer: Answer) -> Result<input::Of, String> {
-        let body = |kind: &str, body: Vec<u8>| wire::AnswerInput {
-            ask_key: ask.key().to_owned(),
-            kind: kind.to_owned(),
-            body,
-        };
+    fn answer_input(&self, ask: &OpenAsk, answer: Answer) -> Result<wire::KindInput, String> {
+        let ask_key = ask.key().to_owned();
         Ok(match (self.kind, answer) {
-            (Kind::ClaudeSdk, Answer::Claude(of)) => input::Of::ClaudeSdk(ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Answer(body(
-                    "claude_sdk",
-                    ClaudeAnswer { of: Some(of) }.encode_to_vec(),
-                ))),
+            (Kind::ClaudeSdk, Answer::Claude(of)) => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
+                of: Some(claude_sdk_input::Of::Answer(ClaudeAnswer {
+                    ask_key,
+                    of: Some(of),
+                })),
             }),
-            (Kind::ClaudePty, Answer::Claude(of)) => input::Of::ClaudePty(ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Answer(body(
-                    "claude_pty",
-                    ClaudeAnswer { of: Some(of) }.encode_to_vec(),
-                ))),
+            (Kind::ClaudePty, Answer::Claude(of)) => wire::KindInput::ClaudePty(ClaudePtyInput {
+                of: Some(claude_pty_input::Of::Answer(ClaudeAnswer {
+                    ask_key,
+                    of: Some(of),
+                })),
             }),
-            (Kind::Codex, Answer::Codex(of)) => input::Of::Codex(CodexInput {
-                of: Some(codex_input::Of::Answer(body(
-                    "codex",
-                    CodexAnswer { of: Some(of) }.encode_to_vec(),
-                ))),
+            (Kind::Codex, Answer::Codex(of)) => wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Answer(CodexAnswer {
+                    ask_key,
+                    of: Some(of),
+                })),
             }),
             (Kind::Codex, Answer::Approve) => self.allow(ask)?,
             _ => return Err(format!("no answer fits {}", super::ask_token(ask))),

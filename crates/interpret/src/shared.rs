@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 /// Why an input was refused: the wire's reason vocabulary.
 pub use wire::refusal as reason;
 use wire::{
-    AgentMessage, AgentSpec, Append, Attachment, Envelope, Input, Item, Phase, PromptInput,
-    QueuedInput, Sender, Snapshot, Step, TurnEnd, input, sender,
+    AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item, Phase, PromptInput,
+    QueuedInput, Sender, Snapshot, Step, TurnEnd, bootstrap, sender,
 };
 
 use crate::{Effect, Stepped, reply, serde_pb};
@@ -398,9 +398,7 @@ impl<A: OpenAsk> Shared<A> {
             jobs: None,
             catalogue: None,
         };
-        if let Some(initial) = &spec.initial_prompt
-            && let Some(entry) = queued_from_input(initial)
-        {
+        if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.working_on = first_line(&entry.text);
             shared.queue.push(entry);
         }
@@ -415,8 +413,7 @@ impl<A: OpenAsk> Shared<A> {
         // A new provider process runs nothing in the background yet.
         self.set_jobs(Vec::new());
         self.now_ms = self.now_ms.max(spec.created_at_ms);
-        if let Some(initial) = &spec.initial_prompt
-            && let Some(entry) = queued_from_input(initial)
+        if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap)
             && !self.queue.contains(&entry.input_id)
         {
             self.working_on = first_line(&entry.text);
@@ -1100,34 +1097,25 @@ pub fn agent_message_body(envelope: &Envelope) -> AgentMessage {
 }
 
 /// A prompt or agent message as a queue entry: the spawn's first input.
-fn queued_from_input(input: &Input) -> Option<QueuedInput> {
-    let prompt = match input.of.as_ref()? {
-        input::Of::AgentMessage(envelope) => {
-            return Some(QueuedInput {
-                input_id: envelope.id.clone(),
-                text: envelope.text.clone(),
-                attachments: Vec::new(),
+fn queued_from_bootstrap(bootstrap: &Bootstrap) -> Option<QueuedInput> {
+    Some(match bootstrap.of.as_ref()? {
+        bootstrap::Of::AgentMessage(envelope) => QueuedInput {
+            input_id: envelope.id.clone(),
+            text: envelope.text.clone(),
+            attachments: Vec::new(),
+            steer: false,
+            sender: envelope.from.clone(),
+        },
+        bootstrap::Of::Prompt(submission) => {
+            let prompt = submission.prompt.as_ref()?;
+            QueuedInput {
+                input_id: submission.input_id.clone(),
+                text: prompt.text.clone(),
+                attachments: prompt.attachments.clone(),
                 steer: false,
-                sender: envelope.from.clone(),
-            });
+                sender: Some(human()),
+            }
         }
-        input::Of::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Prompt(prompt)),
-        })
-        | input::Of::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(prompt)),
-        })
-        | input::Of::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(prompt)),
-        }) => prompt,
-        _ => return None,
-    };
-    Some(QueuedInput {
-        input_id: input.input_id.clone(),
-        text: prompt.text.clone(),
-        attachments: prompt.attachments.clone(),
-        steer: false,
-        sender: Some(human()),
     })
 }
 

@@ -168,7 +168,6 @@ pub fn choice_label(choice: &Choice) -> String {
             mode,
             mode_name,
             scope,
-            label,
         } => {
             if !subjects.is_empty() {
                 format!(
@@ -184,8 +183,6 @@ pub fn choice_label(choice: &Choice) -> String {
                 )
             } else if !mode.is_empty() {
                 format!("Switch to {}", crate::words::named(mode_name, mode))
-            } else if !label.is_empty() {
-                label.clone()
             } else {
                 format!("Always allow {}", scope_words(scope))
             }

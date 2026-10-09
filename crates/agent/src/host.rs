@@ -13,16 +13,16 @@
 //!   drain deadline and then exits "orphaned while waiting for you".
 //! - Stop graceful drains the same way; stop abort cancels the turn the
 //!   provider's way first; stop kill ends the process group at once and
-//!   writes nothing. A draining agent answers new input rejected{draining}.
+//!   writes nothing. A draining agent answers new input as `REFUSAL_DRAINING`.
 //! - An agent with a parent is one-shot: at a turn end with nothing queued,
 //!   running or accepted-but-unconsumed it exits, and input arriving while
-//!   it does is answered rejected{exiting}.
+//!   it does is refused as `REFUSAL_EXITING`.
 //! - The provider exiting ends the agent, whatever state it was in.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use interpret::{Effect, Event, Interpreter, Stepped, reason, reply};
+use interpret::{Effect, Event, Interpreter, Stepped, reply};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{Notify, mpsc, watch};
 use wire::{AgentHello, AgentSpec, CtlFrame, Nudge, Phase, StopMode, Verdict, ctl_frame};
@@ -135,11 +135,11 @@ pub(crate) async fn run<I: Interpreter>(
     clock: Arc<dyn Clock>,
 ) -> Result<ExitCause, AgentError> {
     let config = spec.config.clone().unwrap_or_default();
-    let terminal = spec.kind == "claude_pty";
+    let terminal = spec.kind() == wire::Kind::ClaudePty;
 
     // Listen first, so a daemon can dial in as soon as the process exists.
     let ctl = LocalListener::bind(&dir.join(dir::CTL_SOCK)).map_err(AgentError::Socket)?;
-    let pty = if terminal || spec.kind == "codex" {
+    let pty = if terminal || spec.kind() == wire::Kind::Codex {
         Some(LocalListener::bind(&dir.join(dir::PTY_SOCK)).map_err(AgentError::Socket)?)
     } else {
         None
@@ -499,8 +499,8 @@ impl<I: Interpreter> Host<I> {
     async fn take(&mut self, id: Vec<u8>, event: Event) -> Result<(), AgentError> {
         match self.mode {
             Mode::Running => self.feed(event).await?,
-            Mode::Draining { .. } => self.reply(id, reply::rejected(reason::DRAINING)),
-            Mode::Exiting { .. } => self.reply(id, reply::rejected(reason::EXITING)),
+            Mode::Draining { .. } => self.reply(id, reply::rejected(wire::Refusal::Draining)),
+            Mode::Exiting { .. } => self.reply(id, reply::rejected(wire::Refusal::Exiting)),
         }
         Ok(())
     }

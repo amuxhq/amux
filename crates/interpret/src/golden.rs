@@ -183,7 +183,7 @@ struct Recording {
 struct Expect {
     /// Phase in the newest snapshot after this event.
     phase: Option<String>,
-    /// accepted | queued | rejected:<reason>, for this event's input.
+    /// accepted | queued | rejected:<REFUSAL> [detail], for this event's input.
     reply: Option<String>,
     /// Input ids queued in the newest snapshot, in order; a steered entry
     /// reads `<id>(steered)`.
@@ -504,7 +504,7 @@ fn spec<I: Interpreter>(spec: &FixtureSpec) -> AgentSpec {
             .unwrap_or("agent")
             .as_bytes()
             .to_vec(),
-        kind: I::KIND.to_owned(),
+        kind: I::KIND as i32,
         name: spec.name.clone(),
         created_at_ms: spec.created_at_ms,
         incarnation: 1,
@@ -701,7 +701,7 @@ fn input_of<I: Interpreter>(body: &Value) -> Result<Input, String> {
             Ok(decoded)
         }
         other => I::fixture_input(input_id, other)
-            .ok_or_else(|| format!("{} has no input for {other:?}", I::KIND)),
+            .ok_or_else(|| format!("{:?} has no input for {other:?}", I::KIND)),
     }
 }
 
@@ -726,7 +726,6 @@ fn agent_message(body: &Value) -> Result<Envelope, String> {
                 agent_id: message.from.clone().into_bytes(),
                 host_id: b"host".to_vec(),
                 name: message.from,
-                kind: String::new(),
             })),
         }),
         to: None,
@@ -1644,14 +1643,22 @@ fn verdict_name(verdict: &SendInputResponse) -> String {
         Some(send_input_response::Of::Accepted(accepted)) if accepted.queued => "queued".into(),
         Some(send_input_response::Of::Accepted(_)) => "accepted".into(),
         Some(send_input_response::Of::Rejected(rejected)) => {
-            format!("rejected:{}", rejected.reason)
+            let refusal = wire::Refusal::try_from(rejected.refusal).map_or("?", |refusal| {
+                refusal.as_str_name().trim_start_matches("REFUSAL_")
+            });
+            match &rejected.detail {
+                Some(detail) => format!("rejected:{refusal} {detail}"),
+                None => format!("rejected:{refusal}"),
+            }
         }
         None => "empty".into(),
     }
 }
 
 fn phase_name(phase: i32) -> &'static str {
-    Phase::try_from(phase).map_or("INVALID", |phase| phase.as_str_name())
+    Phase::try_from(phase).map_or("INVALID", |phase| {
+        phase.as_str_name().trim_start_matches("PHASE_")
+    })
 }
 
 fn event_label(event: &Event) -> String {
@@ -1664,7 +1671,10 @@ fn event_label(event: &Event) -> String {
         Event::ProviderExit { code } => format!("provider_exit {code:?}"),
         Event::DaemonLost => "daemon_lost".into(),
         Event::Exiting { cause } => format!("exiting {cause:?}"),
-        Event::StopRequested(mode) => format!("stop {}", mode.as_str_name()),
+        Event::StopRequested(mode) => format!(
+            "stop {}",
+            mode.as_str_name().trim_start_matches("STOP_MODE_")
+        ),
         Event::Git(None) => "git none".into(),
         Event::Git(Some(git)) => git_label(git),
     }

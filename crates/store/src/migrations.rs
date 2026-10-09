@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 /// The minimum number of migrations a binary must know to read a store it
 /// writes. Stored as `user_version`; a binary opens any store whose stamp is
 /// at most the migrations it has, so an older binary opens a newer store.
-pub const SCHEMA_STAMP: u32 = 1;
+pub const SCHEMA_STAMP: u32 = 5;
 
 /// Every migration ever shipped, in order. Append only.
 pub const MIGRATIONS: &[&str] = &[
@@ -90,6 +90,21 @@ ALTER TABLE agents ADD COLUMN source_generation INTEGER NOT NULL DEFAULT 0;
     r#"
 ALTER TABLE agents ADD COLUMN phase_since INTEGER;
 ALTER TABLE agents ADD COLUMN git BLOB;
+"#,
+    // A kind is its wire integer, so a kind this build does not know is
+    // stored and served with the value its origin gave it. Raises the stamp:
+    // a build that read the kind as text cannot read this store.
+    r#"
+ALTER TABLE agents ADD COLUMN kind_code INTEGER NOT NULL DEFAULT 0;
+UPDATE agents SET kind_code = CASE kind
+  WHEN 'claude_pty' THEN 1 WHEN 'claude_sdk' THEN 2 WHEN 'codex' THEN 3 ELSE 0 END;
+ALTER TABLE agents DROP COLUMN kind;
+ALTER TABLE agents RENAME COLUMN kind_code TO kind;
+ALTER TABLE items ADD COLUMN kind_code INTEGER NOT NULL DEFAULT 0;
+UPDATE items SET kind_code = CASE kind
+  WHEN 'claude_pty' THEN 1 WHEN 'claude_sdk' THEN 2 WHEN 'codex' THEN 3 ELSE 0 END;
+ALTER TABLE items DROP COLUMN kind;
+ALTER TABLE items RENAME COLUMN kind_code TO kind;
 "#,
 ];
 

@@ -21,7 +21,7 @@ effect write "{\"type\":\"answer\",\"ask\":\"a1\"}"
 effect reply ans1 accepted
 snapshot WORKING queue=[p2] working_on=- at=600000 asks=[] model=?
 ## 9 input {"answer":{"answer":{"deny":{"note":"no"}},"ask":"a1"},"id":"ans2"}
-effect reply ans2 rejected:closed_ask
+effect reply ans2 rejected:CLOSED_ASK
 ## 10 fact {"channel":"stream","json":{"id":"t1","output":"removed","type":"tool_result"}}
 item t1 tool final at=600000 text="" Bash TOOL_STATE_SUCCEEDED
 ## 11 fact {"channel":"stream","json":{"id":"t2","name":"Write","type":"tool"}}
@@ -45,4 +45,4 @@ snapshot NEEDS_YOU queue=[] working_on=- at=600000 asks=[a3] model=?
 ## 18 provider_exit {"code":1}
 snapshot STARTING queue=[] working_on=- at=600000 asks=[] model=?
 ## 19 input {"answer":{"answer":{"allow":{}},"ask":"a3"},"id":"ans3"}
-effect reply ans3 rejected:closed_ask
+effect reply ans3 rejected:CLOSED_ASK

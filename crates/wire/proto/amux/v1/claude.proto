@@ -201,7 +201,7 @@ message ClaudeSdkInput {
 // Answers (for both Claude kinds)
 // ---------------------------------------------------------------------------
 
-// Rejected closed_ask if ask_key is not open.
+// Rejected REFUSAL_CLOSED_ASK if ask_key is not open.
 message ClaudeAnswer {
   string ask_key = 1;
   oneof of {

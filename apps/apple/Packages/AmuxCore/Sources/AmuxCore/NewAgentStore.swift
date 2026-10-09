@@ -16,6 +16,14 @@ public final class NewAgentStore {
 
         public var id: String { rawValue }
 
+        /// The provider as the runtime names it.
+        public var wire: AmuxValues.Provider {
+            switch self {
+            case .claude: .claude
+            case .codex: .codex
+            }
+        }
+
         public var title: String {
             switch self {
             case .claude: "Claude"

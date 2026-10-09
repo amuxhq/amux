@@ -241,18 +241,6 @@
         }
       }
     },
-    "Auto-approved curl localhost:8080": {
-      "comment": "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auto-approved curl localhost:8080"
-          }
-        }
-      }
-    },
     "Behind a flag": {
       "comment": "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState": "manual",

@@ -254,7 +254,7 @@ impl Edge {
             identity.host_id,
             &options.host_name,
             Capabilities {
-                features: Vec::new(),
+                cloud_relay: false,
                 kinds: options.kinds.iter().map(|kind| *kind as i32).collect(),
             },
             signed_in,
@@ -444,6 +444,11 @@ impl Edge {
         &self.host_name
     }
 
+    /// What this host's handshake says it can do.
+    pub fn capabilities(&self) -> wire::Capabilities {
+        self.local_host.snapshot().capabilities
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }
@@ -520,6 +525,15 @@ impl Edge {
     /// What kind of machine `host` last announced itself as.
     pub fn platform(&self, host: HostId) -> Option<String> {
         self.routing.platform_for(host)
+    }
+
+    /// `host`'s version and capabilities as its handshake gave them, while
+    /// a link or a relay's claim makes it present.
+    pub async fn described(&self, host: HostId) -> Option<(String, wire::Capabilities)> {
+        self.routing
+            .host_entry(host)
+            .await
+            .map(|host| (host.version, host.capabilities))
     }
 
     /// Whether `host` last said it no longer trusts this host, by closing

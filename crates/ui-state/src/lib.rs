@@ -24,7 +24,8 @@ pub use fleet::{
     exit_cause, parent_key,
 };
 pub use inputs::{
-    InputId, InputOutcome, InputState, InputWhat, Inputs, RefusalReason, SentInput, refusal_reason,
+    InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, RefusalReason, SentInput,
+    refusal, refusal_reason,
 };
 pub use model::Key;
 pub use session::{

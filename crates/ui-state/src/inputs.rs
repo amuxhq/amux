@@ -1,20 +1,29 @@
 //! What this client sent and what became of each input: the one thing only
 //! the sender can know.
 
-pub use model::{InputId, InputState, RefusalReason};
-use wire::{Attachment, Input, SendInputResponse, refusal};
+pub use model::{InputId, InputState, Refusal, RefusalReason};
+use wire::{Attachment, Input, Rejected, SendInputResponse};
 
-/// Why an input was refused, from the reason its `Rejected` reply carries.
-pub fn refusal_reason(reason: &str) -> RefusalReason {
-    match reason {
-        refusal::EXITED => RefusalReason::Exited,
-        refusal::EXITING => RefusalReason::Exiting,
-        refusal::DRAINING => RefusalReason::Draining,
-        refusal::HOST_UNREACHABLE => RefusalReason::HostUnreachable,
-        refusal::UNSUPPORTED => RefusalReason::Unsupported,
-        refusal::CLOSED_ASK => RefusalReason::ClosedAsk,
-        refusal::NOT_QUEUED => RefusalReason::NotQueued,
-        other => RefusalReason::Other(other.to_owned()),
+/// Why an input was refused, from its `Rejected` reply.
+pub fn refusal(rejected: &Rejected) -> Refusal {
+    Refusal {
+        reason: refusal_reason(rejected.refusal()),
+        detail: rejected.detail.clone(),
+    }
+}
+
+/// The client's value for a wire refusal; a value this build does not know
+/// reads as unspecified.
+pub fn refusal_reason(refusal: wire::Refusal) -> RefusalReason {
+    match refusal {
+        wire::Refusal::Unspecified => RefusalReason::Unspecified,
+        wire::Refusal::ClosedAsk => RefusalReason::ClosedAsk,
+        wire::Refusal::NotQueued => RefusalReason::NotQueued,
+        wire::Refusal::Unsupported => RefusalReason::Unsupported,
+        wire::Refusal::Draining => RefusalReason::Draining,
+        wire::Refusal::Exiting => RefusalReason::Exiting,
+        wire::Refusal::Exited => RefusalReason::Exited,
+        wire::Refusal::HostUnreachable => RefusalReason::HostUnreachable,
     }
 }
 
@@ -171,19 +180,25 @@ impl Inputs {
 mod tests {
     use super::*;
 
-    /// A reason one side of the wire refuses with that the clients read as
-    /// unknown would reach the person as the raw code.
+    /// A value the wire does not have reads as unspecified, and the refusal's
+    /// own words come along with any reason.
     #[test]
-    fn every_reason_the_wire_refuses_with_has_its_own_value() {
-        for reason in refusal::ALL {
-            assert!(
-                !matches!(refusal_reason(reason), RefusalReason::Other(_)),
-                "{reason} maps to Other"
-            );
-        }
+    fn an_unknown_refusal_reads_as_unspecified_with_its_words() {
+        let rejected = Rejected {
+            refusal: 99,
+            detail: Some("rate limited".into()),
+        };
         assert_eq!(
-            refusal_reason("rate_limited"),
-            RefusalReason::Other("rate_limited".into())
+            refusal(&rejected),
+            Refusal {
+                reason: RefusalReason::Unspecified,
+                detail: Some("rate limited".into()),
+            }
         );
+        let closed = Rejected {
+            refusal: wire::Refusal::ClosedAsk as i32,
+            detail: None,
+        };
+        assert_eq!(refusal(&closed), Refusal::of(RefusalReason::ClosedAsk));
     }
 }

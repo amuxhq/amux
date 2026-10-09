@@ -42,6 +42,7 @@ impl ProfileRuntime {
             trust: Trust::Trusted as i32,
             presence: Presence::Online as i32,
             version: Some(crate::version().to_owned()),
+            capabilities: edge.as_ref().map(|edge| edge.capabilities()),
             platform: Some(crate::routing::local_platform().to_owned()),
             current: Some(true),
             providers: self.offers().on_host(),
@@ -88,11 +89,14 @@ impl ProfileRuntime {
                 } else {
                     Presence::Online
                 };
+                let (version, capabilities) = edge.described(host).await.unzip();
                 fresh.insert(
                     host.as_bytes().to_vec(),
                     HostEntry {
                         host_id: host.as_bytes().to_vec(),
                         name,
+                        version,
+                        capabilities,
                         last_dial_error: edge.last_dial_error(host).await,
                         via: via.to_wire() as i32,
                         signed_in: edge.signed_in(host),

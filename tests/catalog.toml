@@ -487,7 +487,7 @@ capabilities = ["desktop", "Unix for the agent-process cases"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "node", targets = ["agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "host_catalogue", "messaging", "peer_service", "push", "registry", "single_daemon", "worktree"], features = [] }]
+cargo = [{ package = "node", targets = ["agent_names", "analytics", "blobs", "catalogue", "diff", "dump", "forwarded_send", "host_catalogue", "hosts", "messaging", "peer_service", "push", "registry", "single_daemon", "worktree"], features = [] }]
 
 [[suite]]
 name = "supervisor-update"

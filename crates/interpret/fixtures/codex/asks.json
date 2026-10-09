@@ -140,7 +140,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:closed_ask"
+        "reply": "rejected:CLOSED_ASK"
       }
     },
     {
@@ -203,7 +203,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "asks": [
           "8"
         ]
@@ -362,7 +362,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "asks": [
           "20"
         ]

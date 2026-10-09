@@ -180,8 +180,11 @@ pub enum RowKind {
         sent: SendState,
         rejection: String,
     },
+    /// Codex's automatic reviewer on an action. A client words the status,
+    /// and says `status_word` for one this build does not know.
     AutoReview {
-        decision: String,
+        status: wire::ReviewStatus,
+        status_word: String,
         risk: String,
         rationale: String,
         subject: Key,
@@ -568,7 +571,7 @@ fn decision_view(
                     .map(|permission| permission.display_name.clone())
                     .unwrap_or_default(),
                 mode,
-                saved_to: scope_of(&grant.saved_to),
+                saved_to: scope_of(grant),
             })
         }
         Some(wire::tool_decision::Granted::Codex(grant)) => match &grant.of {
@@ -696,7 +699,8 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Codex::Reroute(m) => plain(model_switch(m)),
             Codex::Unrecognized(u) => plain(unrecognized(u)),
             Codex::Verdict(v) => plain(RowKind::AutoReview {
-                decision: v.decision.clone(),
+                status: v.status(),
+                status_word: v.status_word.clone(),
                 risk: v.risk.clone(),
                 rationale: v.rationale.clone(),
                 subject: v.item_key.clone(),
@@ -704,7 +708,13 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Codex::Ask(ask) => plain(ask_row(ask)),
         },
         ItemBody::Undecodable => plain(RowKind::Unrecognized {
-            what: item.kind.clone(),
+            what: match wire::Kind::try_from(item.kind) {
+                Ok(kind) => kind
+                    .as_str_name()
+                    .trim_start_matches("KIND_")
+                    .to_ascii_lowercase(),
+                Err(_) => format!("kind {}", item.kind),
+            },
             summary: String::new(),
         }),
     }

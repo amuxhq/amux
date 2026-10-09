@@ -69,7 +69,7 @@ fn item(order: u64, read: Option<&str>) -> Item {
         } else {
             String::new()
         },
-        kind: wire::kind_tag(Kind::ClaudeSdk).into(),
+        kind: Kind::ClaudeSdk as i32,
         body: body.encode_to_vec(),
         at_ms: order as i64 * 1_000,
         ..Item::default()
@@ -78,7 +78,7 @@ fn item(order: u64, read: Option<&str>) -> Item {
 
 fn snapshot(phase: Phase, body: Vec<u8>, queue: Vec<wire::QueuedInput>) -> Msg {
     event(session_event::Of::Snapshot(wire::Snapshot {
-        kind: wire::kind_tag(Kind::ClaudeSdk).into(),
+        kind: Kind::ClaudeSdk as i32,
         body,
         phase: phase as i32,
         queue,
@@ -293,7 +293,7 @@ fn offering(kind: Kind, name: &str, pred: impl Fn(&SessionState) -> bool) -> Ses
 fn codex_settings(mut state: SessionState, settings: wire::CodexSnapshot) -> SessionState {
     let agent = state.agent_state();
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-        kind: wire::kind_tag(Kind::Codex).into(),
+        kind: Kind::Codex as i32,
         body: wire::CodexSnapshot {
             model: agent.model.clone(),
             model_name: agent.model_name.clone(),
@@ -1903,7 +1903,7 @@ fn thinking_is_never_drawn() {
         order,
         revision: order,
         text: "weighing it".into(),
-        kind: wire::kind_tag(Kind::ClaudeSdk).into(),
+        kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeSdkItem {
             kind: Some(K::Thinking(wire::Thinking { complete: true })),
         }
@@ -2540,9 +2540,12 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
         screen.contains("Claude · opus (high) · default │ ~/work/amux"),
         "{screen}"
     );
-    home.open_setup(&HOME_PLACE)
-        .unwrap()
-        .offer(b"a", "claude", &[1; 32], &claude_offer());
+    home.open_setup(&HOME_PLACE).unwrap().offer(
+        b"a",
+        wire::Provider::Claude,
+        &[1; 32],
+        &claude_offer(),
+    );
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Claude · Opus (high) · ask │ ~/work/amux"),
@@ -2689,13 +2692,19 @@ fn a_new_agent_offers_what_its_host_offers() {
     );
     assert_eq!(choice_words(&mut home, &fleet, Item::Effort), ["medium ✓"]);
     // What another host offers is not this one's.
-    home.open_setup(&HOME_PLACE)
-        .unwrap()
-        .offer(b"b", "codex", &[2; 32], &codex_offer());
+    home.open_setup(&HOME_PLACE).unwrap().offer(
+        b"b",
+        wire::Provider::Codex,
+        &[2; 32],
+        &codex_offer(),
+    );
     assert!(home.open_setup(&HOME_PLACE).unwrap().offered.is_none());
-    home.open_setup(&HOME_PLACE)
-        .unwrap()
-        .offer(b"a", "codex", &[2; 32], &codex_offer());
+    home.open_setup(&HOME_PLACE).unwrap().offer(
+        b"a",
+        wire::Provider::Codex,
+        &[2; 32],
+        &codex_offer(),
+    );
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex · GPT-6.1 Sol (medium) · default │ ~/work/amux"),
@@ -2773,9 +2782,12 @@ fn a_new_claude_steps_the_permissions_that_still_ask() {
     let mut home = crate::home::Home::default();
     home.key(&fleet, key(KeyCode::Char('n')), false);
     home_screen(&mut home, &fleet, theme());
-    home.open_setup(&HOME_PLACE)
-        .unwrap()
-        .offer(b"a", "claude", &[1; 32], &claude_offer());
+    home.open_setup(&HOME_PLACE).unwrap().offer(
+        b"a",
+        wire::Provider::Claude,
+        &[1; 32],
+        &claude_offer(),
+    );
     let mut seen = Vec::new();
     for _ in 0..4 {
         home.key(&fleet, key(KeyCode::BackTab), false);
@@ -2805,12 +2817,12 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
         entry.providers = vec![
             wire::ProviderOnHost {
-                provider: "claude".into(),
+                provider: wire::Provider::Claude as i32,
                 catalogue: Some(vec![1; 32]),
                 signed_in: true,
             },
             wire::ProviderOnHost {
-                provider: "codex".into(),
+                provider: wire::Provider::Codex as i32,
                 catalogue: Some(vec![2; 32]),
                 signed_in: false,
             },
@@ -3505,7 +3517,7 @@ fn prompt_item(order: u64, words: &str) -> Item {
         order,
         revision: order,
         text: words.into(),
-        kind: wire::kind_tag(Kind::ClaudeSdk).into(),
+        kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeSdkItem {
             kind: Some(K::Prompt(wire::Prompt {})),
         }

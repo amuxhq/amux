@@ -8,11 +8,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
-/// Why an input was refused: the wire's reason vocabulary.
-pub use wire::refusal as reason;
 use wire::{
     AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item, Phase, PromptInput,
-    QueuedInput, Sender, Snapshot, Step, TurnEnd, bootstrap, sender,
+    QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap, sender,
 };
 
 use crate::{Effect, Stepped, reply, serde_pb};
@@ -337,7 +335,8 @@ pub fn output_cut(text: &str) -> usize {
 pub struct Shared<A: OpenAsk> {
     #[serde(with = "serde_pb::bytes")]
     agent: Vec<u8>,
-    kind: String,
+    /// The wire Kind's integer.
+    kind: i32,
     producer_version: String,
     now_ms: i64,
     /// The provider accepts input.
@@ -378,10 +377,10 @@ impl<A: OpenAsk> Shared<A> {
     /// The state an agent starts from: its queue seeded from the spawn's
     /// prompt, working_on from that prompt's first line, the clock at the
     /// spec's creation time.
-    pub fn new(spec: &AgentSpec, kind: &str, producer_version: &str) -> Self {
+    pub fn new(spec: &AgentSpec, kind: wire::Kind, producer_version: &str) -> Self {
         let mut shared = Self {
             agent: spec.agent_id.clone(),
-            kind: kind.to_owned(),
+            kind: kind as i32,
             producer_version: producer_version.to_owned(),
             now_ms: spec.created_at_ms,
             started: false,
@@ -460,7 +459,7 @@ impl<A: OpenAsk> Shared<A> {
             agent: self.agent.clone(),
             revision: 0,
             queue: self.queue.entries.clone(),
-            kind: self.kind.clone(),
+            kind: self.kind,
             body,
             phase,
             working_on: self.working_on.clone(),
@@ -563,7 +562,7 @@ impl<A: OpenAsk> Shared<A> {
             input_id: draft.input_id,
             text: draft.text,
             attachments: draft.attachments,
-            kind: self.kind.clone(),
+            kind: self.kind,
             body: draft.body,
             at_ms,
         };
@@ -637,10 +636,18 @@ impl<A: OpenAsk> Shared<A> {
     }
 
     /// A refusal is a reply and nothing else: no item, no snapshot change.
-    pub fn reject(&mut self, emit: &mut Emit, input_id: &[u8], reason: &str) {
+    pub fn reject(&mut self, emit: &mut Emit, input_id: &[u8], refusal: Refusal) {
         emit.effect(Effect::Reply {
             input_id: input_id.to_vec(),
-            verdict: reply::rejected(reason),
+            verdict: reply::rejected(refusal),
+        });
+    }
+
+    /// [`Self::reject`] with the refusal's own words.
+    pub fn refuse(&mut self, emit: &mut Emit, input_id: &[u8], rejected: Rejected) {
+        emit.effect(Effect::Reply {
+            input_id: input_id.to_vec(),
+            verdict: reply::refused(rejected),
         });
     }
 
@@ -713,20 +720,20 @@ impl<A: OpenAsk> Shared<A> {
         &self.submitted
     }
 
-    /// Withdraws a queued prompt; rejected{not_queued} if it already left
+    /// Withdraws a queued prompt; refused as `REFUSAL_NOT_QUEUED` if it already left
     /// the queue.
     pub fn withdraw(&mut self, emit: &mut Emit, input_id: &[u8], target: &[u8]) {
         if self.queue.withdraw(target) {
             self.accept(emit, input_id, false);
         } else {
-            self.reject(emit, input_id, reason::NOT_QUEUED);
+            self.reject(emit, input_id, Refusal::NotQueued);
         }
     }
 
     /// Sends a queued prompt into the running turn: marked steered and
     /// returned, so the kind hands it to the provider's steering path.
-    /// Rejected{not_queued} if it is not waiting in the queue, and
-    /// rejected{unsupported} if no turn is `running` or the entry is an
+    /// Rejected not queued if it is not waiting in the queue, and
+    /// unsupported if no turn is `running` or the entry is an
     /// agent's message, which only ever arrives through its own channel.
     pub fn send_now(
         &mut self,
@@ -741,7 +748,7 @@ impl<A: OpenAsk> Shared<A> {
             .iter()
             .find(|entry| !entry.steer && entry.input_id == target)
         else {
-            self.reject(emit, input_id, reason::NOT_QUEUED);
+            self.reject(emit, input_id, Refusal::NotQueued);
             return None;
         };
         let from_person = matches!(
@@ -752,7 +759,7 @@ impl<A: OpenAsk> Shared<A> {
             Some(sender::Value::Human(_))
         );
         if !running || !from_person {
-            self.reject(emit, input_id, reason::UNSUPPORTED);
+            self.reject(emit, input_id, Refusal::Unsupported);
             return None;
         }
         let entry = self.queue.steer(target);
@@ -809,11 +816,11 @@ impl<A: OpenAsk> Shared<A> {
 
     /// The stale-answer rule. An answer to an open ask closes it and hands
     /// it back, so the kind writes the answer and accepts. An answer to an
-    /// ask that is not open is rejected{closed_ask} and writes nothing.
+    /// ask that is not open is refused as `REFUSAL_CLOSED_ASK` and writes nothing.
     pub fn answer(&mut self, emit: &mut Emit, input_id: &[u8], ask_key: &str) -> Option<A> {
         let ask = self.asks.close(ask_key);
         if ask.is_none() {
-            self.reject(emit, input_id, reason::CLOSED_ASK);
+            self.reject(emit, input_id, Refusal::ClosedAsk);
         }
         ask
     }
@@ -1275,7 +1282,7 @@ mod tests {
             created_at_ms: 10,
             ..Default::default()
         };
-        Shared::new(&spec, "test", "v")
+        Shared::new(&spec, wire::Kind::Unspecified, "v")
     }
 
     #[test]

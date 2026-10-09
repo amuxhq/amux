@@ -12,7 +12,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:1->ask:ask:1
 effect reply p1 queued
 snapshot NEEDS_YOU queue=[p1] working_on=- at=1800000000000 asks=[ask:1->ask:ask:1 question:2] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 5 input {"answer":{"answer":{"selected":["x"]},"ask":"ask:1"},"id":"a1"}
-effect reply a1 rejected:unsupported
+effect reply a1 rejected:UNSUPPORTED
 ## 6 input {"answer":{"answer":{"selected":[0]},"ask":"ask:1"},"id":"a2"}
 effect terminal trust true
 effect reply a2 accepted

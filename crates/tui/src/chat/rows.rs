@@ -446,7 +446,8 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             lines
         }
         RowKind::AutoReview {
-            decision,
+            status,
+            status_word,
             risk,
             rationale,
             ..
@@ -456,14 +457,16 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             } else {
                 format!("{risk} risk")
             };
-            let mut lines = vec![head(
-                ("⚖", theme.muted()),
-                "Auto-reviewed",
-                decision,
-                &meta,
-                width,
-                theme,
-            )];
+            // Codex's own word for a status this build does not know.
+            let (verb, word) = match status {
+                wire::ReviewStatus::Approved => ("Auto-approved", ""),
+                wire::ReviewStatus::Denied => ("Auto-denied", ""),
+                wire::ReviewStatus::InProgress => ("Auto-reviewing", ""),
+                wire::ReviewStatus::Timeout => ("Auto-review timed out", ""),
+                wire::ReviewStatus::Abort => ("Auto-review stopped", ""),
+                wire::ReviewStatus::Unspecified => ("Auto-reviewed", status_word.as_str()),
+            };
+            let mut lines = vec![head(("⚖", theme.muted()), verb, word, &meta, width, theme)];
             if open {
                 lines.extend(detail(rationale, width, theme.muted(), OPEN_LINES, theme));
             }

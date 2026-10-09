@@ -141,7 +141,7 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
         for id in [away, missing] {
             let key = AgentKey::new(host.as_bytes().to_vec(), id.as_bytes().to_vec());
             store
-                .put_agent(&AgentRow::new(key, "claude_sdk", "/tmp"))
+                .put_agent(&AgentRow::new(key, wire::Kind::ClaudeSdk, "/tmp"))
                 .unwrap();
         }
     }
@@ -290,7 +290,7 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
     let spec = spec(&dir, 1);
     assert_eq!(spec.agent_id, id.as_bytes().to_vec());
     assert_eq!(spec.profile_id, install.profile.as_bytes().to_vec());
-    assert_eq!(spec.kind, "claude_sdk");
+    assert_eq!(spec.kind(), wire::Kind::ClaudeSdk);
     assert_eq!(spec.cwd, install.work.to_string_lossy());
     assert_eq!(spec.name, "first");
     assert_eq!(spec.incarnation, 1);
@@ -424,7 +424,7 @@ async fn resume_writes_the_next_spec_and_waits_for_a_dying_process() {
         "a live agent is not resumed"
     );
 
-    // The agent has said it is leaving (it answered an input "exiting"),
+    // The agent has said it is leaving (it refused an input as exiting),
     // but its process still holds the directory: the resume waits.
     runtime.mark_exiting(id);
     let resuming = {
@@ -515,7 +515,7 @@ async fn delete_aborts_first_and_cascades_to_children() {
     // A child on another host: listed, but out of this daemon's reach.
     let remote = AgentKey::new(vec![7; 16], uuid::Uuid::new_v4().as_bytes().to_vec());
     {
-        let mut row = AgentRow::new(remote.clone(), "codex", "/");
+        let mut row = AgentRow::new(remote.clone(), wire::Kind::Codex, "/");
         row.parent = Some(key(&runtime, parent));
         runtime.store().await.put_agent(&row).unwrap();
     }

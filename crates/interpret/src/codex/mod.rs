@@ -50,15 +50,15 @@ use wire::{
     AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
     CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, EnvelopeKind,
     FormAction, Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission,
-    QueuedInput, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work, codex_answer,
-    codex_ask, codex_grant, codex_input, codex_item, sender, tool_decision, work,
+    QueuedInput, Refusal, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work,
+    codex_answer, codex_ask, codex_grant, codex_input, codex_item, sender, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
 use crate::{
     Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView, RedactTarget,
     Shared, SnapshotView, Stepped, agent_message_body, agent_message_key, ask_item, codex_input,
-    human, reason, serde_pb, unknown,
+    human, serde_pb, unknown,
 };
 
 /// When an agent message injected into Codex counts as consumed.
@@ -791,7 +791,7 @@ impl State {
         // version cannot read.
         let arm = match input.decode_body() {
             Some(KindInput::Codex(wire::CodexInput { of: Some(arm) })) => arm,
-            _ => return self.shared.reject(emit, &id, reason::UNSUPPORTED),
+            _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
             codex_input::Of::Prompt(prompt) => {
@@ -822,7 +822,7 @@ impl State {
             }
             codex_input::Of::Permission(set) => {
                 let Some(named) = permission(&set.value) else {
-                    return self.shared.reject(emit, &id, reason::UNSUPPORTED);
+                    return self.shared.reject(emit, &id, Refusal::Unsupported);
                 };
                 self.approval = Some(named.approval_policy.to_owned());
                 self.sandbox = Some(named.sandbox.to_owned());
@@ -832,7 +832,7 @@ impl State {
             }
             codex_input::Of::Mode(set) => {
                 if !MODES.iter().any(|(value, _)| *value == set.value) {
-                    return self.shared.reject(emit, &id, reason::UNSUPPORTED);
+                    return self.shared.reject(emit, &id, Refusal::Unsupported);
                 }
                 self.collaboration = Some(set.value.clone());
                 self.overrides.mode = Some(set.value);
@@ -1093,13 +1093,13 @@ impl State {
     fn answer(&mut self, emit: &mut Emit, id: &[u8], answer: CodexAnswer) {
         let key = answer.ask_key;
         let Some(ask) = self.shared.asks().get(&key).cloned() else {
-            return self.shared.reject(emit, id, reason::CLOSED_ASK);
+            return self.shared.reject(emit, id, Refusal::ClosedAsk);
         };
         let parsed = answer.of;
         if let Some(codex_ask::Body::Plan(_)) = ask.body {
             return match parsed {
                 Some(codex_answer::Of::Plan(plan)) => self.answer_plan(emit, id, &key, plan),
-                _ => self.shared.reject(emit, id, reason::UNSUPPORTED),
+                _ => self.shared.reject(emit, id, Refusal::Unsupported),
             };
         }
         if let Some(codex_answer::Of::Approve(decision)) = parsed {
@@ -1111,10 +1111,10 @@ impl State {
             return self.reply_instead(emit, id, &ask, asked, reply);
         }
         let Some((meta, parsed)) = self.asks.get(&key).cloned().zip(parsed) else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+            return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         let Some((response, closed)) = codex_answer_response(&ask, &meta, parsed) else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+            return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         self.shared.answer(emit, id, &key);
         self.asks.remove(&key);
@@ -1128,7 +1128,7 @@ impl State {
     fn approve(&mut self, emit: &mut Emit, id: &[u8], ask: &CodexAsk, decision: i32) {
         let key = ask.key.clone();
         let Some(meta) = self.asks.get(&key).cloned() else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+            return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         let Some(response) = ask
             .decisions
@@ -1137,7 +1137,7 @@ impl State {
             .and_then(|at| meta.responses.get(at))
             .and_then(|response| serde_json::from_str::<ClientResponse>(response).ok())
         else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+            return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         self.shared.answer(emit, id, &key);
         self.asks.remove(&key);
@@ -1272,7 +1272,7 @@ impl State {
         let Some(closed) =
             ask_item::replied(asked, reply).filter(|_| fits && !reply.text.trim().is_empty())
         else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+            return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         if self.shared.answer(emit, id, &ask.key).is_none() {
             return;
@@ -1299,7 +1299,7 @@ impl State {
                 wire::PlanVerdict::SentBack,
                 plan.note.clone().filter(|note| !note.trim().is_empty()),
             ),
-            _ => return self.shared.reject(emit, id, reason::UNSUPPORTED),
+            _ => return self.shared.reject(emit, id, Refusal::Unsupported),
         };
         if self.shared.answer(emit, id, key).is_none() {
             return;
@@ -1517,11 +1517,11 @@ impl Checkpoint for State {
     }
 }
 
-const KIND: &str = "codex";
+const KIND: wire::Kind = wire::Kind::Codex;
 
 impl<A: Arm> Interpreter for CodexWith<A> {
     type State = State;
-    const KIND: &'static str = KIND;
+    const KIND: wire::Kind = KIND;
 
     fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
         let mut state = State::new(spec, producer_version, A::CONSUMPTION);
@@ -1597,10 +1597,9 @@ impl<A: Arm> Interpreter for CodexWith<A> {
 fn describe_work(work: &Work) -> String {
     let mut text = match &work.of {
         Some(work::Of::Command(command)) => format!(
-            "command {} cwd={} action={}{}{}{}",
+            "command {} cwd={}{}{}{}",
             clip(&command.command, 60),
             or_dash(&command.cwd),
-            or_dash(&command.action),
             command
                 .exit_code
                 .map_or(String::new(), |code| format!(" exit={code}")),
@@ -1796,8 +1795,11 @@ fn describe_item(body: &[u8]) -> ItemView {
             "verdict",
             true,
             format!(
-                "{} risk={} on={} {}",
-                verdict.decision,
+                "{}:{} risk={} on={} {}",
+                wire::ReviewStatus::try_from(verdict.status).map_or("?", |status| status
+                    .as_str_name()
+                    .trim_start_matches("REVIEW_STATUS_")),
+                verdict.status_word,
                 or_dash(&verdict.risk),
                 or_dash(&verdict.item_key),
                 clip(&verdict.rationale, 60)

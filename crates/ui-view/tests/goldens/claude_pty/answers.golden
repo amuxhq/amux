@@ -11,7 +11,7 @@
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"cargo test:*","toolName":"Bash"}],"type":"addRules"}],"tool_input":{"command":"cargo test"},"tool_name":"Bash"}}
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["cargo test"], directories: [], mode: "", mode_name: "", scope: Project, label: "" }, Deny { stops: true }+note
+    choices AllowOnce*, AllowAlways { subjects: ["cargo test"], directories: [], mode: "", mode_name: "", scope: Project }, Deny { stops: true }+note
     body Command { command: "cargo test", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 7 input {"answer":{"answer":{"allow":{"scope":0}},"ask":"ask:1"},"id":"a1"}
@@ -30,11 +30,11 @@
     body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 input {"answer":{"answer":{"allow":{"scope":3}},"ask":"ask:2"},"id":"a2"}
-  ask ask:2 -> "" 1/1 Rejected(Other("Claude's terminal menu has no entry amux can type for this answer"))
+  ask ask:2 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: Some("Claude's terminal menu has no entry amux can type for this answer") })
     choices AllowOnce*, Deny { stops: true }+note
     body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
 ## 14 input {"answer":{"answer":{"form":{"action":"accept"}},"ask":"ask:2"},"id":"a3"}
-  ask ask:2 -> "" 1/1 Rejected(Unsupported)
+  ask ask:2 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices AllowOnce*, Deny { stops: true }+note
     body Command { command: "rm -rf build", cwd: "", reason: "", description: "" }
 ## 15 input {"answer":{"answer":{"deny":{"note":"use cargo clean","stop":false}},"ask":"ask:2"},"id":"a4"}
@@ -80,7 +80,7 @@
     body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: false, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [Option…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 28 input {"answer":{"answer":{"selected":[[0,1]]},"ask":"ask:5"},"id":"a7"}
-  ask ask:5 -> "" 1/1 Rejected(Unsupported)
+  ask ask:5 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
     body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: false, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [Option…
 ## 32 input {"answer":{"answer":{"selected":[1,[0,2]]},"ask":"ask:5"},"id":"a10"}

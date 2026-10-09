@@ -254,10 +254,10 @@ impl Server {
                 let mut row = json!({
                     "name": agent.name,
                     "id": interpret::to_hex(&agent.agent_id),
-                    "kind": kind_name(agent.kind()),
+                    "kind": kind_word(agent.kind()),
                     "host": host_name(&agent.host_id),
                     "live": agent.lifecycle() == Lifecycle::Live,
-                    "phase": agent.phase().as_str_name().to_lowercase(),
+                    "phase": word(agent.phase().as_str_name(), "PHASE_"),
                 });
                 if let Some(working_on) = &agent.working_on {
                     row["working_on"] = json!(working_on.text);
@@ -289,7 +289,7 @@ impl Server {
             .map(|host| {
                 let mut row = json!({
                     "name": host.name,
-                    "presence": host.presence().as_str_name().to_lowercase(),
+                    "presence": word(host.presence().as_str_name(), "PRESENCE_"),
                 });
                 if here.as_deref() == Some(host.host_id.as_slice()) {
                     row["this_host"] = json!(true);
@@ -335,16 +335,9 @@ impl Server {
     /// socket the call came in on, as it sets a message's sender.
     async fn spawn(&self, arguments: &Value) -> Answer {
         let kind = required(arguments, "kind")?;
-        let kind = match kind.as_str() {
-            "claude_pty" => Kind::ClaudePty,
-            "claude_sdk" => Kind::ClaudeSdk,
-            "codex" => Kind::Codex,
-            other => {
-                return Err(format!(
-                    "no agent kind {other:?}; use claude_pty, claude_sdk or codex"
-                )
-                .into());
-            }
+        let Some(kind) = kind_named(&kind) else {
+            let [first, second, last] = SPAWNABLE.map(kind_word);
+            return Err(format!("no agent kind {kind:?}; use {first}, {second} or {last}").into());
         };
         let prompt = required(arguments, "prompt")?;
         let name = optional(arguments, "name");
@@ -412,7 +405,11 @@ impl Server {
             .map_err(|refusal| refusal.or_else(|status| refused(&status, &name)))?;
         match response.of {
             Some(send_input_response::Of::Rejected(rejected)) => {
-                Err(format!("{name} did not stop: {}", rejected.reason).into())
+                let why = rejected
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| word(rejected.refusal().as_str_name(), "REFUSAL_"));
+                Err(format!("{name} did not stop: {why}").into())
             }
             _ => Ok("{}".to_owned()),
         }
@@ -659,13 +656,26 @@ fn plain(status: &Status) -> String {
     }
 }
 
-fn kind_name(kind: Kind) -> &'static str {
+/// The kinds an agent may spawn.
+const SPAWNABLE: [Kind; 3] = [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex];
+
+/// An enum value as the tools say it: its protobuf name without the enum's
+/// prefix, in lowercase, so the tools' words are the wire's own.
+fn word(name: &str, prefix: &str) -> String {
+    name.trim_start_matches(prefix).to_ascii_lowercase()
+}
+
+/// A kind as the tools say it: `claude_pty`, `claude_sdk`, `codex`.
+fn kind_word(kind: Kind) -> String {
     match kind {
-        Kind::ClaudePty => "claude_pty",
-        Kind::ClaudeSdk => "claude_sdk",
-        Kind::Codex => "codex",
-        Kind::Unspecified => "unknown",
+        Kind::Unspecified => "unknown".to_owned(),
+        known => word(known.as_str_name(), "KIND_"),
     }
+}
+
+/// The kind an agent named in a spawn call.
+fn kind_named(word: &str) -> Option<Kind> {
+    SPAWNABLE.into_iter().find(|kind| kind_word(*kind) == word)
 }
 
 fn interrupt_input(kind: Kind) -> wire::KindInput {
@@ -758,7 +768,7 @@ fn definitions() -> Value {
             "context": { "type": "string", "description": "An optional thread label the recipient sees with the message." },
           }), &["to", "text"]) },
         { "name": "spawn", "description": SPAWN, "inputSchema": object(json!({
-            "kind": { "type": "string", "enum": ["claude_pty", "claude_sdk", "codex"] },
+            "kind": { "type": "string", "enum": SPAWNABLE.map(kind_word) },
             "prompt": { "type": "string" },
             "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": wire::AGENT_NAME_MOST, "description": "Lowercase letters, digits and hyphens; one is chosen when omitted." },
             "cwd": { "type": "string", "description": "A path on the host the child runs on." },

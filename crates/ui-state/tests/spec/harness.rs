@@ -151,14 +151,8 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                     let of = if subagent {
                         wire::work::Of::Collab(wire::CollabWork::default())
                     } else {
-                        let action = match name {
-                            "Read" => "read",
-                            "Grep" | "Glob" => "search",
-                            _ => "",
-                        };
                         wire::work::Of::Command(wire::CommandWork {
                             command: name.into(),
-                            action: action.into(),
                             ..wire::CommandWork::default()
                         })
                     };
@@ -189,7 +183,7 @@ pub fn item(kind: Kind, order: u64, revision: u64, text: &str, body: Body) -> It
         revision,
         producer_version: "test".into(),
         text: text.into(),
-        kind: wire::kind_tag(kind).into(),
+        kind: kind as i32,
         body: encode(kind, &body),
         at_ms: 1_000 * order as i64,
         ..Item::default()
@@ -338,7 +332,7 @@ pub fn snapshot(
                 ..QueuedInput::default()
             })
             .collect(),
-        kind: wire::kind_tag(kind).into(),
+        kind: kind as i32,
         body: snapshot_body(kind, asks),
         phase: phase as i32,
         working_on: None,
@@ -474,10 +468,11 @@ pub fn accepted(queued: bool) -> InputOutcome {
     })
 }
 
-pub fn rejected(reason: &str) -> InputOutcome {
+pub fn rejected(refusal: wire::Refusal) -> InputOutcome {
     InputOutcome::Reply(SendInputResponse {
         of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
-            reason: reason.into(),
+            refusal: refusal as i32,
+            detail: None,
         })),
     })
 }

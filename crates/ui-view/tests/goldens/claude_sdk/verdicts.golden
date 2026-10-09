@@ -13,7 +13,7 @@
     body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false }, OptionView { label: "Blue", description: "", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView { label:…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 5 input {"answer":{"answer":{"selected":[[0,1],[0]]},"ask":"req-1"},"id":"bad"}
-  ask req-1 -> "t1" 1/1 Rejected(Unsupported)
+  ask req-1 -> "t1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
     body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false }, OptionView { label: "Blue", description: "", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView { label:…
 ## 6 input {"answer":{"answer":{"note":"keep the old strings for one release","selected":["Teal",[0,2]]},"ask":"req-1"},"id":"a1"}

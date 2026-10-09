@@ -767,7 +767,6 @@ async fn an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped() {
             agent_id: helper.id.as_bytes().to_vec(),
             host_id: server.as_bytes().to_vec(),
             name: "helper".into(),
-            kind: "claude_sdk".into(),
         })),
     };
     let current = row(&net, "desk", "lead").await.unwrap().incarnation;

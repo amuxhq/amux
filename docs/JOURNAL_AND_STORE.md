@@ -179,7 +179,7 @@ processes the frames in journal order, inside one transaction:
 | Item | Assigns the agent's next revision. A key the agent already holds keeps its order; a key not held yet takes the next order above the highest committed. Upserts by key. |
 | Append | Appends the text to the held item and assigns it the next revision. The broadcast `Append` carries the item's previous revision as `base_revision`. An append naming a key the store does not hold is skipped and counted. |
 | Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms` (as `phase_since`), `git` and `at_ms` (as `last_activity`) from its envelope onto the row. |
-| Snapshot turning the phase to `NEEDS_YOU` | Inserts a `notifications` row due after the push delay. Leaving `NEEDS_YOU` deletes the agent's pending rows. |
+| Snapshot turning the phase to `PHASE_NEEDS_YOU` | Inserts a `notifications` row due after the push delay. Leaving `PHASE_NEEDS_YOU` deletes the agent's pending rows. |
 | `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message. |
 
 Then the row's `ingest_cursor` is set to the offset just past the last frame
@@ -322,7 +322,7 @@ The schema is the migrations in
 | Column | Meaning |
 | --- | --- |
 | `origin_host`, `agent_id` | This host for own rows; the owning host for replicas |
-| `kind` | `claude_pty`, `claude_sdk` or `codex` |
+| `kind` | The agent's `Kind`, as its wire integer |
 | `name`, `cwd` | As the registry holds them |
 | `parent`, `parent_host` | A child records its parent as host and id, because families cross hosts |
 | `lifecycle`, `exit_cause` | Live or exited, and why. Owned by the daemon. |
@@ -337,8 +337,8 @@ The schema is the migrations in
 | `created_at`, `producer_version`, `incarnation` | Creation time, the agent binary's version from its Hello, and the `spec.<n>` it is running |
 | `turn_open` | Own rows: the incarnation has a turn it has not ended. An incarnation that exits with one open tells its parent it failed. |
 
-Lifecycle and phase are stored as their wire integers, so a value from a
-newer peer is stored and served rather than refused.
+Kind, lifecycle and phase are stored as their wire integers, so a value from
+a newer peer is stored and served rather than refused.
 
 `items`: one row per item, keyed by `(origin_host, agent_id, key)`.
 

@@ -50,16 +50,16 @@ append msg_02124244eb5c39e0016ab72ebbee9087d29690042342276e5e "."
 ## 54 recorded 53: fact Rpc method=item/completed
 item msg_02124244eb5c39e0016ab72ebbee9087d29690042342276e5e working_note final at=1790389948199 text="I’ll perform the three requested file operations in order."
 ## 57 recorded 56: fact Rpc method=item/started
-item exec-8a1d3127-60a9-47f2-b755-b836fdff6745 work open at=1790389950264 text="" command "/bin/zsh -lc 'touch first.txt'" cwd=<MACHINE_PATH> action=unknown TOOL_STATE_RUNNING
+item exec-8a1d3127-60a9-47f2-b755-b836fdff6745 work open at=1790389950264 text="" command "/bin/zsh -lc 'touch first.txt'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING
 ## 59 recorded 58: fact Rpc method=item/commandExecution/requestApproval
 snapshot NEEDS_YOU queue=[] working_on=- at=1790389950263 asks=[0→exec-8a1d3127-60a9-47f2-b755-b836fdff6745 command "/bin/zsh -lc 'touch first.txt'" reason="May I create the requested first.txt file in the workspace?" prefix=["touch", "first.txt"] decisions=[APPROVE,APPROVE_SIMILAR,DENY,ABORT]] thread=01a0db8e-7219-7143-90c8-598c539e6cc0 turn=01a0db8e-7231-72d3-806c-b4b1972f6a9f model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=read-only mode=? approval=on-request sandbox=read-only reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 60 recorded 59: input stdin-5
 effect write "{\"id\":0,\"result\":{\"decision\":{\"acceptWithExecpolicyAmendment\":{\"execpolicy_amendment\":[\"touch\",\"first.txt\"]}}}}"
 effect reply stdin-5 accepted
-item exec-8a1d3127-60a9-47f2-b755-b836fdff6745 work open at=1790389950264 text="" command "/bin/zsh -lc 'touch first.txt'" cwd=<MACHINE_PATH> action=unknown TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=prefix["touch", "first.txt"]
+item exec-8a1d3127-60a9-47f2-b755-b836fdff6745 work open at=1790389950264 text="" command "/bin/zsh -lc 'touch first.txt'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=prefix["touch", "first.txt"]
 snapshot WORKING queue=[] working_on=- at=1790389950263 asks=[] thread=01a0db8e-7219-7143-90c8-598c539e6cc0 turn=01a0db8e-7231-72d3-806c-b4b1972f6a9f model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=read-only mode=? approval=on-request sandbox=read-only reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 65 recorded 64: fact Rpc method=item/completed
-item exec-8a1d3127-60a9-47f2-b755-b836fdff6745 work final at=1790389950264 text="" command "/bin/zsh -lc 'touch first.txt'" cwd=<MACHINE_PATH> action=unknown exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=prefix["touch", "first.txt"] ended=1790389950310
+item exec-8a1d3127-60a9-47f2-b755-b836fdff6745 work final at=1790389950264 text="" command "/bin/zsh -lc 'touch first.txt'" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=prefix["touch", "first.txt"] ended=1790389950310
 ## 67 recorded 66: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790389950312 asks=[] thread=01a0db8e-7219-7143-90c8-598c539e6cc0 turn=01a0db8e-7231-72d3-806c-b4b1972f6a9f model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=read-only mode=? approval=on-request sandbox=read-only reviewer=user collaboration=? context=13061/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 68 recorded 67: fact Rpc method=account/rateLimits/updated

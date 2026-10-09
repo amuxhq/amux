@@ -38,7 +38,7 @@ pub use serde_pb::{from_hex, to_hex};
 pub use shared::{
     AMUX_TOOL_SERVER, Asks, Emit, ItemDraft, OUTPUT_CAP, OpenAsk, OpenTurn, Output, Queue,
     SEND_TOOL, STATUS_TOOL, SendOutcome, Shared, TurnCounter, agent_message_body,
-    agent_message_key, human, is_send_tool, is_status_tool, output_cut, reason, sent_message,
+    agent_message_key, human, is_send_tool, is_status_tool, output_cut, sent_message,
     status_working_on,
 };
 use wire::{AgentSpec, Envelope, Input, SendInputResponse, Step, StopMode};
@@ -49,8 +49,8 @@ pub trait Interpreter {
     /// ring rotation and resumed from on restart.
     type State: Checkpoint;
 
-    /// The kind tag its items and snapshots carry.
-    const KIND: &'static str;
+    /// The kind its items and snapshots carry.
+    const KIND: wire::Kind;
 
     /// The state an agent starts in and the first journal frame: a Snapshot
     /// with phase starting and every field at its explicit unknown.
@@ -97,7 +97,7 @@ pub trait Interpreter {
     fn recording(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
         let _ = bytes;
         Err(format!(
-            "{} has no reader for recordings in format {format:?}",
+            "{:?} has no reader for recordings in format {format:?}",
             Self::KIND
         ))
     }
@@ -309,7 +309,7 @@ pub fn decode_checkpoint<S: Checkpoint>(bytes: &[u8]) -> Result<S, serde_json::E
 
 /// SendInput verdicts.
 pub mod reply {
-    use wire::{Accepted, Rejected, SendInputResponse, send_input_response};
+    use wire::{Accepted, Refusal, Rejected, SendInputResponse, send_input_response};
 
     pub fn accepted(queued: bool) -> SendInputResponse {
         SendInputResponse {
@@ -317,11 +317,25 @@ pub mod reply {
         }
     }
 
-    pub fn rejected(reason: &str) -> SendInputResponse {
+    pub fn rejected(refusal: Refusal) -> SendInputResponse {
+        refused(Rejected {
+            refusal: refusal as i32,
+            detail: None,
+        })
+    }
+
+    /// A refusal that may carry the interpreter's or provider's own words.
+    pub fn refused(rejected: Rejected) -> SendInputResponse {
         SendInputResponse {
-            of: Some(send_input_response::Of::Rejected(Rejected {
-                reason: reason.to_owned(),
-            })),
+            of: Some(send_input_response::Of::Rejected(rejected)),
+        }
+    }
+
+    /// An input this agent cannot take, said in its own words.
+    pub fn unsupported_saying(detail: impl Into<String>) -> Rejected {
+        Rejected {
+            refusal: Refusal::Unsupported as i32,
+            detail: Some(detail.into()),
         }
     }
 }

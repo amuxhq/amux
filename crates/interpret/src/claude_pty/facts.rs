@@ -1460,22 +1460,27 @@ fn permission_ask(
 /// directory but leaves the mode as it was: a mode suggestion counts only
 /// when nothing else is folded with it.
 fn folded(choices: Vec<ScopeChoice>) -> ScopeChoice {
-    let mut all = ScopeChoice::default();
-    let mut mode = String::new();
+    let mut all = wire::ClaudeGrant::default();
+    let mut mode = None;
     for (at, choice) in choices.into_iter().enumerate() {
+        let grant = claude_grant(&choice);
         if at == 0 {
-            all.destination = choice.destination;
+            all.destination = grant.destination;
+            all.destination_word = grant.destination_word;
         }
-        all.rules.extend(choice.rules);
-        all.directories.extend(choice.directories);
-        if mode.is_empty() {
-            mode = choice.mode;
+        all.rules.extend(grant.rules);
+        all.directories.extend(grant.directories);
+        if mode.is_none() {
+            mode = grant.mode;
         }
     }
     if all.rules.is_empty() && all.directories.is_empty() {
         all.mode = mode;
     }
-    all
+    ScopeChoice {
+        index: 0,
+        grant: Some(all),
+    }
 }
 
 #[cfg(test)]

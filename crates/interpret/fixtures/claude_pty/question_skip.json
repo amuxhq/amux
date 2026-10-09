@@ -434,7 +434,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "silent": true,
         "asks": [
           "ask:2"

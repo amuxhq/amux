@@ -213,14 +213,14 @@ pub enum AppEvent {
     /// What a host offers for a provider, for a new agent there.
     HostOffer {
         host: Vec<u8>,
-        provider: &'static str,
+        provider: wire::Provider,
         hash: Vec<u8>,
         catalogue: wire::Catalogue,
     },
 }
 
 /// A host, a provider, and the catalogue hash the host named when asked.
-type OfferAsked = (Vec<u8>, &'static str, Option<Vec<u8>>);
+type OfferAsked = (Vec<u8>, wire::Provider, Option<Vec<u8>>);
 
 /// What the loop does after a key.
 #[derive(Debug, PartialEq)]
@@ -1190,7 +1190,7 @@ impl App {
                     entry
                         .providers
                         .iter()
-                        .find(|offer| offer.provider == provider)
+                        .find(|offer| offer.provider == provider as i32)
                 })
                 .and_then(|offer| offer.catalogue.clone());
             if let Some((hash, held)) = named
@@ -1222,7 +1222,7 @@ impl App {
             self.spawn(async move {
                 let request = wire::GetCatalogueRequest {
                     host_id: host.clone(),
-                    provider: provider.to_owned(),
+                    provider: provider as i32,
                 };
                 let answer = client
                     .get_catalogue(request)
@@ -1242,7 +1242,10 @@ impl App {
                     }),
                     // Only the agent being set up is worth a word.
                     Err(error) if chosen => Some(AppEvent::Notice(
-                        format!("could not ask {host_name} what {provider} offers: {error}"),
+                        format!(
+                            "could not ask {host_name} what {} offers: {error}",
+                            crate::setup::provider_name(provider)
+                        ),
                         Tone::Warn,
                     )),
                     Err(_) => None,

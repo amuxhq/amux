@@ -23,8 +23,8 @@ use crate::resource_limits::{
     EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW, QUIC_RETRY_REPEAT_INTERVAL, RetryAdmission,
 };
 use crate::routing::{
-    AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, FEATURE_CLOUD_RELAY,
-    LinkCtx, LinkRegistry, LinkTokenAuthenticator, LiveLocalHost, RoutingCore, local_host,
+    AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry,
+    LinkTokenAuthenticator, LiveLocalHost, RoutingCore, local_host,
 };
 use crate::transport::tcp_incoming;
 use crate::{Clock, HostId};
@@ -149,7 +149,7 @@ impl CloudLinkServer {
             identity.host_id,
             &identity.name,
             Capabilities {
-                features: vec![FEATURE_CLOUD_RELAY.to_string()],
+                cloud_relay: true,
                 kinds: Vec::new(),
             },
             false,

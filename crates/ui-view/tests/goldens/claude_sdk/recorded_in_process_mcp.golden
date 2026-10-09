@@ -13,7 +13,7 @@
   composer Send activity=Some(Running { key: "toolu_01QeYyDcvHpPyK5jT2NRMNgY" }) queue=[] underway=[] refused=[]
 ## 30 recorded 29: fact Stream type=control_request
   ask fded203c-fecb-4862-862d-f62bfc21577f -> "toolu_01QeYyDcvHpPyK5jT2NRMNgY" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["mcp__spec__echo"], directories: [], mode: "", mode_name: "", scope: Project, label: "" }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: ["mcp__spec__echo"], directories: [], mode: "", mode_name: "", scope: Project }, Deny { stops: false }+note, DenyAndStop+note
     body Tool { server: "spec", tool: "echo", arguments: "{\n  \"text\": \"HELLO\"\n}" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 32 recorded 31: input stdin-6

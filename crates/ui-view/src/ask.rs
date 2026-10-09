@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ui_state::{InputState, OpenAsk, RefusalReason, SessionState};
+use ui_state::{InputState, OpenAsk, Refusal, SessionState};
 use wire::{ClaudeAnswer, CodexAnswer, Decision as CodexDecision, ask, claude_answer, codex_ask};
 
 use crate::form::{FormField, form_fields};
@@ -49,7 +49,7 @@ pub enum CardState {
     /// Shrunk to one line until the agent confirms.
     Sending,
     /// The card is back, with why the answer was refused.
-    Rejected(RefusalReason),
+    Rejected(Refusal),
     /// The connection dropped before a reply: resend or discard.
     NotConfirmed,
     /// The agent exited with the ask open.
@@ -161,7 +161,6 @@ pub enum ChoiceOutcome {
         /// catalogue does not name it.
         mode_name: String,
         scope: Scope,
-        label: String,
     },
     AllowForSession,
     /// Codex: the exact command prefix it would allow.
@@ -328,18 +327,19 @@ fn claude(
                 permission(P::Allow(wire::PermissionAllow { scope: None })),
             )];
             for scope in &p.scopes {
+                let grant = scope.grant.clone().unwrap_or_default();
+                let mode = grant.mode.clone().unwrap_or_default();
                 choices.push(choice(
                     ChoiceOutcome::AllowAlways {
-                        subjects: scope.rules.iter().map(|rule| lift_rule(rule)).collect(),
-                        directories: scope.directories.clone(),
-                        mode: scope.mode.clone(),
+                        subjects: grant.rules.iter().map(|rule| lift_rule(rule)).collect(),
+                        directories: grant.directories.clone(),
                         mode_name: offered
                             .iter()
-                            .find(|permission| permission.value == scope.mode)
+                            .find(|permission| permission.value == mode)
                             .map(|permission| permission.display_name.clone())
                             .unwrap_or_default(),
-                        scope: scope_of(&scope.destination),
-                        label: scope.label.clone(),
+                        mode,
+                        scope: scope_of(&grant),
                     },
                     permission(P::Allow(wire::PermissionAllow {
                         scope: Some(scope.index),
@@ -516,13 +516,15 @@ pub(crate) fn lift_rule(rule: &str) -> String {
     inner.to_owned()
 }
 
-pub(crate) fn scope_of(destination: &str) -> Scope {
-    match destination {
-        "session" => Scope::Session,
-        "localSettings" => Scope::Project,
-        "projectSettings" => Scope::ProjectShared,
-        "userSettings" => Scope::User,
-        other => Scope::Other(other.to_owned()),
+/// Where a grant is saved, as the person reads it; a destination this
+/// build does not know is shown in Claude's own word.
+pub(crate) fn scope_of(grant: &wire::ClaudeGrant) -> Scope {
+    match grant.destination() {
+        wire::ScopeDestination::Session => Scope::Session,
+        wire::ScopeDestination::LocalSettings => Scope::Project,
+        wire::ScopeDestination::ProjectSettings => Scope::ProjectShared,
+        wire::ScopeDestination::UserSettings => Scope::User,
+        wire::ScopeDestination::Unspecified => Scope::Other(grant.destination_word.clone()),
     }
 }
 

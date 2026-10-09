@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 use wire::{Append, Item, Kind};
 
 use crate::Key;
-use crate::body::{Fold, ItemBody, ItemClass};
+use crate::body::{Fold, ItemBody, ItemClass, named_kind};
 
 /// One held item, decoded once per revision.
 #[derive(Clone, Debug, PartialEq)]
@@ -18,7 +18,7 @@ pub struct Held {
 
 impl Held {
     pub(crate) fn new(kind: Kind, item: Item) -> Held {
-        let kind = wire::kind_from_tag(&item.kind).unwrap_or(kind);
+        let kind = named_kind(item.kind).unwrap_or(kind);
         let body = ItemBody::decode(kind, &item.body);
         let class = body.class();
         Held { item, body, class }

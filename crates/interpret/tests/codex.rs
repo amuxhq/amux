@@ -587,7 +587,8 @@ fn approval_outside_offered_decisions_is_rejected() {
     assert_eq!(
         verdicts(&refused.effects),
         [wire::send_input_response::Of::Rejected(wire::Rejected {
-            reason: interpret::reason::UNSUPPORTED.into(),
+            refusal: wire::Refusal::Unsupported as i32,
+            detail: None,
         })]
     );
     assert!(writes(&refused.effects).is_empty(), "nothing went to Codex");

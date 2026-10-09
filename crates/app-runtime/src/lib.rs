@@ -185,7 +185,7 @@ impl AppRuntime {
                     .providers
                     .iter()
                     .map(|offer| ProviderSignIn {
-                        provider: offer.provider.clone(),
+                        provider: offer.provider(),
                         signed_in: offer.signed_in,
                     })
                     .collect(),
@@ -238,20 +238,19 @@ impl AppRuntime {
         Ok(ui_state::agent_key(&created))
     }
 
-    /// What a provider, "claude" or "codex", offers on a host with no agent
-    /// running: the models, efforts, permissions and modes a new agent there
-    /// picks from. Whether the provider is signed in there is on the host's
-    /// [`HostView`].
+    /// What a provider offers on a host with no agent running: the models,
+    /// efforts, permissions and modes a new agent there picks from. Whether
+    /// the provider is signed in there is on the host's [`HostView`].
     pub async fn host_catalogue(
         &self,
         host_id: &[u8],
-        provider: &str,
+        provider: wire::Provider,
     ) -> Result<wire::Catalogue, RpcError> {
         let blob = self
             .client
             .get_catalogue(wire::GetCatalogueRequest {
                 host_id: host_id.to_vec(),
-                provider: provider.to_owned(),
+                provider: provider as i32,
             })
             .await?;
         wire::Catalogue::decode(blob.bytes.as_slice()).map_err(|error| {

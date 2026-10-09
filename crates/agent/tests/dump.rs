@@ -9,12 +9,12 @@ use agent::ExitCause;
 use prost::Message as _;
 use provider_fakes::Step;
 use support::*;
-use wire::{AgentSpec, StopMode};
+use wire::{AgentSpec, Kind, StopMode};
 
 /// Every planted secret contains this, so one search finds any survivor.
 const PLANTED: &str = "PLANTED";
 
-fn dumps_without_its_secrets(kind: &'static str) {
+fn dumps_without_its_secrets(kind: Kind) {
     terminal_test(async move {
         let agent = Agent::start(Setup {
             kind,
@@ -83,7 +83,7 @@ fn dumps_without_its_secrets(kind: &'static str) {
             .find(|file| file.name == "spec.1")
             .unwrap();
         let spec = AgentSpec::decode(spec.contents.as_slice()).expect("the spec stays a spec");
-        assert_eq!(spec.kind, kind);
+        assert_eq!(spec.kind(), kind);
         assert!(
             spec.provider_env.contains_key("OPENAI_API_KEY"),
             "the name stays, the value goes"
@@ -96,7 +96,7 @@ fn dumps_without_its_secrets(kind: &'static str) {
 
 #[test]
 fn a_headless_claude_agent_dumps_without_its_secrets() {
-    dumps_without_its_secrets("claude_sdk");
+    dumps_without_its_secrets(Kind::ClaudeSdk);
 }
 
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
@@ -104,10 +104,10 @@ fn a_headless_claude_agent_dumps_without_its_secrets() {
 #[cfg(unix)]
 #[test]
 fn a_terminal_claude_agent_dumps_without_its_secrets() {
-    dumps_without_its_secrets("claude_pty");
+    dumps_without_its_secrets(Kind::ClaudePty);
 }
 
 #[test]
 fn a_codex_agent_dumps_without_its_secrets() {
-    dumps_without_its_secrets("codex");
+    dumps_without_its_secrets(Kind::Codex);
 }

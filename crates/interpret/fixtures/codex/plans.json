@@ -820,7 +820,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:closed_ask",
+        "reply": "rejected:CLOSED_ASK",
         "silent": true
       }
     }

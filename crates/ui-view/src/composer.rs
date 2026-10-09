@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{
-    Activity, Composer, InputState, InputWhat, PhaseView, RefusalReason, SessionState, Waiting,
+    Activity, Composer, InputState, InputWhat, PhaseView, Refusal, SessionState, Waiting,
 };
 use wire::{Attachment, SignInState};
 
@@ -171,7 +171,7 @@ pub struct SentPrompt {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct RefusedPrompt {
     pub input_id: Vec<u8>,
-    pub reason: RefusalReason,
+    pub reason: Refusal,
 }
 
 /// This client's prompts on their way, in the order they will land: those

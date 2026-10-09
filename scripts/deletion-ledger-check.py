@@ -370,6 +370,40 @@ ROWS = [
         ],
     ),
     Row(
+        "refusal words",
+        "a refusal carried as a word every producer spelled and every client parsed, with an open-ended arm for words it did not know",
+        [
+            r"refusal::ALL",
+            r"closed_ask\"",
+            r"not_queued\"",
+            r"host_unreachable\"",
+            r"RefusalReason::Other",
+        ],
+    ),
+    Row(
+        "kind and provider words",
+        "kinds and providers named by strings each side mapped to and from its enum, and host features as strings",
+        [
+            r"kind_tag\(",
+            r"kind_from_tag\(",
+            r"kind_from_name\(",
+            r"Provider::from_name",
+            r"FEATURE_CLOUD_RELAY",
+            r"amux\.cloud_relay",
+            r"repeated string features",
+        ],
+    ),
+    Row(
+        "provider words for scopes and verdicts",
+        "Claude's scope destinations and Codex's reviewer status carried only as the provider's word, and the scope choice's own copy of the grant",
+        [
+            r"string saved_to",
+            r"saved_to: ::prost",
+            r"ScopeChoice[^\n]*label",
+            r"string decision = 1",
+        ],
+    ),
+    Row(
         "docs",
         "the chapter on agent messaging and remote sessions",
         [

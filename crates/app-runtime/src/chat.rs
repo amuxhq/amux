@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use model::AgentKey;
 use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
-use ui_state::{InputOutcome, InputState, Key, RefusalReason, SessionState};
+use ui_state::{InputOutcome, InputState, Key, Refusal, RefusalReason, SessionState};
 use ui_view::{
     AskCard, ChatOptions, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange,
     SettingsView,
@@ -311,7 +311,7 @@ impl Chat {
     async fn answer(&self, input: Option<wire::Input>) -> ActOutcome {
         match input {
             Some(input) => acted(self.session.answer(input).await),
-            None => ActOutcome::Rejected(RefusalReason::Unsupported),
+            None => ActOutcome::Rejected(Refusal::of(RefusalReason::Unsupported)),
         }
     }
 
@@ -321,7 +321,7 @@ impl Chat {
         let kind = self.session.state().kind();
         match ui_view::setting_input(kind, change) {
             Some(input) => acted(self.session.answer(input).await),
-            None => ActOutcome::Rejected(RefusalReason::Unsupported),
+            None => ActOutcome::Rejected(Refusal::of(RefusalReason::Unsupported)),
         }
     }
 
@@ -498,7 +498,7 @@ fn outcome_state(outcome: &InputOutcome) -> InputState {
             }
             Some(send_input_response::Of::Accepted(_)) => InputState::Settled,
             Some(send_input_response::Of::Rejected(rejected)) => {
-                InputState::Rejected(ui_state::refusal_reason(&rejected.reason))
+                InputState::Rejected(ui_state::refusal(rejected))
             }
             None => InputState::Uncertain,
         },
@@ -515,7 +515,7 @@ fn acted(result: Result<(), InputError>) -> ActOutcome {
 
 /// The ask the person answered is no longer the one waiting: it closed.
 fn moved_on() -> ActOutcome {
-    ActOutcome::Rejected(RefusalReason::ClosedAsk)
+    ActOutcome::Rejected(Refusal::of(RefusalReason::ClosedAsk))
 }
 
 #[cfg(test)]
@@ -528,7 +528,7 @@ mod tests {
     fn snapshot(phase: Phase) -> Msg {
         Msg::Event(SessionEvent {
             of: Some(session_event::Of::Snapshot(wire::Snapshot {
-                kind: wire::kind_tag(Kind::Codex).into(),
+                kind: Kind::Codex as i32,
                 phase: phase as i32,
                 ..wire::Snapshot::default()
             })),

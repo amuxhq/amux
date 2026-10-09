@@ -245,8 +245,8 @@ impl ProfileRuntime {
                 self.store.lock().await.remove_delivery(&row)?;
                 Ok(Outcome::Stale)
             }
-            Err(RelayError::Rejected(reason)) => {
-                tracing::debug!(%reason, "a parent turned a delivery away; it stays");
+            Err(error @ RelayError::Rejected(_)) => {
+                tracing::debug!(%error, "a parent turned a delivery away; it stays");
                 Ok(Outcome::Kept)
             }
             Err(error) => Err(error),
@@ -272,7 +272,12 @@ impl ProfileRuntime {
             Err(ForwardError::Uncertain { .. }) => Err(RelayError::Lost),
             Err(error) => match error.code() {
                 ErrorCode::NotFound => Err(RelayError::Stale),
-                ErrorCode::FailedPrecondition => Err(RelayError::Rejected(error.to_string())),
+                // The peer's refusal arrives as an error; its words are
+                // what the log keeps.
+                ErrorCode::FailedPrecondition => Err(RelayError::Rejected(wire::Rejected {
+                    refusal: wire::Refusal::Unspecified as i32,
+                    detail: Some(error.to_string()),
+                })),
                 ErrorCode::Aborted | ErrorCode::Unavailable => Err(RelayError::Lost),
                 _ => Err(error.into()),
             },

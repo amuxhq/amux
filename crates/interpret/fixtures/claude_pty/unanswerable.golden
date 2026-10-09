@@ -23,9 +23,9 @@ item t1 tool final at=1800000000100 text="" github·create_issue TOOL_STATE_RUNN
 item ask:ask:1 ask final at=1800000000200 text="" unanswerable "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000200 asks=[ask:1->ask:ask:1 unanswerable:Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
 ## 11 input {"answer":{"answer":{"form":{"action":"accept","content":{"repo":"jlw/amux"}}},"ask":"ask:1"},"id":"x1"}
-effect reply x1 rejected:unsupported
+effect reply x1 rejected:UNSUPPORTED
 ## 12 input {"answer":{"answer":{"allow":{}},"ask":"ask:1"},"id":"x2"}
-effect reply x2 rejected:unsupported
+effect reply x2 rejected:UNSUPPORTED
 ## 13 resume
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000200 asks=[ask:1->ask:ask:1 unanswerable:Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=? running=t1 create_issue since=1800000000100
 ## 14 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Filing it now.","type":"text"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.101Z","type":"assistant","uuid":"a1b"}}

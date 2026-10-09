@@ -4,7 +4,7 @@ snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model
 effect reply p0 queued
 snapshot STARTING queue=[p0] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 2 input {"id":"n0","send_now":{"target":"p0"}}
-effect reply n0 rejected:unsupported
+effect reply n0 rejected:UNSUPPORTED
 ## 3 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
 effect terminal prompt "Plan it."
@@ -22,9 +22,9 @@ effect reply n1 accepted
 effect terminal send now "Use the staging config."
 snapshot WORKING queue=[p1(steered)] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 8 input {"id":"w1","withdraw":{"target":"p1"}}
-effect reply w1 rejected:not_queued
+effect reply w1 rejected:NOT_QUEUED
 ## 9 input {"id":"n2","send_now":{"target":"p1"}}
-effect reply n2 rejected:not_queued
+effect reply n2 rejected:NOT_QUEUED
 ## 10 fact {"channel":"transcript","json":{"content":"Use the staging config.","operation":"enqueue","sessionId":"s1","timestamp":"2027-01-15T08:00:00.030Z","type":"queue-operation"}}
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"content":"built","tool_use_id":"toolu_1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u2"}}
 item toolu_1 tool final at=1800000000020 text="" Bash TOOL_STATE_SUCCEEDED ended=1800000000040 input="{\"command\":\"make build\"}" out="built"
@@ -38,7 +38,7 @@ effect reply e1 queued
 item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?" envelope=6531
 pending [e1]
 ## 15 input {"id":"n3","send_now":{"target":"e1"}}
-effect reply n3 rejected:not_queued
+effect reply n3 rejected:NOT_QUEUED
 ## 16 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Built with the staging config.","type":"text"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.070Z","type":"assistant","uuid":"a2"}}
 item a2 message final at=1800000000070 text="Built with the staging config."
 ## 17 input {"id":"p2","prompt":{"text":"Then summarise."}}
@@ -50,7 +50,7 @@ item turn:1 turn final at=1800000000080 text="" #1 TURN_OUTCOME_COMPLETED starte
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 turn_end 1 last=a2
 ## 19 input {"id":"n4","send_now":{"target":"p2"}}
-effect reply n4 rejected:not_queued
+effect reply n4 rejected:NOT_QUEUED
 ## 20 fact {"channel":"transcript","json":{"message":{"content":"Then summarise.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.090Z","type":"user","uuid":"u3"}}
 item u3 prompt final input=p2 at=1800000000090 text="Then summarise."
 ## 21 input {"id":"p3","prompt":{"text":"Also check the logs."}}
@@ -91,7 +91,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:1->toolu_2 p
 effect reply p5 queued
 snapshot NEEDS_YOU queue=[p5] working_on=- at=1800000000000 asks=[ask:1->toolu_2 permission:Bash deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 35 input {"id":"n6","send_now":{"target":"p5"}}
-effect reply n6 rejected:unsupported
+effect reply n6 rejected:UNSUPPORTED
 ## 36 fact {"channel":"transcript","json":{"message":{"content":[{"content":"tests ran","tool_use_id":"toolu_2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.185Z","type":"user","uuid":"u7"}}
 item toolu_2 tool final at=1800000000180 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000000185 input="{\"command\":\"make test\"}" out="tests ran"
 snapshot WORKING queue=[p5] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?

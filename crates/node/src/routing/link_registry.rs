@@ -635,7 +635,7 @@ mod tests {
             name: format!("host-{id}"),
             version: "test".to_string(),
             capabilities: Capabilities {
-                features: Vec::new(),
+                cloud_relay: false,
                 kinds: Vec::new(),
             },
             signed_in: Some(true),

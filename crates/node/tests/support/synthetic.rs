@@ -30,7 +30,7 @@ pub fn quiet_launch() -> Launch {
     }
 }
 
-pub const KIND: &str = "claude_sdk";
+pub const KIND: wire::Kind = wire::Kind::ClaudeSdk;
 
 /// How a live synthetic agent answers an input.
 #[derive(Clone, Debug)]
@@ -44,7 +44,7 @@ pub enum Answer {
     /// Write the agent message's item and reply accepted, but hold the
     /// Nudge back: the item is in the journal and not yet committed.
     AcceptWithoutNudge,
-    Reject(String),
+    Reject(wire::Refusal),
 }
 
 /// What the daemon handed an agent on its control connection: a person's
@@ -213,7 +213,7 @@ impl SyntheticAgent {
         let spec = wire::AgentSpec {
             agent_id: self.id.as_bytes().to_vec(),
             profile_id: install.profile.as_bytes().to_vec(),
-            kind: KIND.to_owned(),
+            kind: KIND as i32,
             cwd: self.cwd.to_string_lossy().into_owned(),
             name: self.name.clone(),
             parent: self.parent.as_ref().map(|parent| wire::AgentParent {
@@ -372,8 +372,9 @@ async fn answer_input(
         Handed::Input(_) => None,
     };
     let verdict = match answer {
-        Answer::Reject(reason) => send_input_response::Of::Rejected(Rejected {
-            reason: reason.clone(),
+        Answer::Reject(refusal) => send_input_response::Of::Rejected(Rejected {
+            refusal: *refusal as i32,
+            detail: None,
         }),
         Answer::Accept | Answer::AcceptSilently | Answer::AcceptWithoutNudge => {
             if let Some(envelope) = message {
@@ -385,7 +386,7 @@ async fn answer_input(
                         ),
                         text: envelope.text.clone(),
                         input_id: envelope.id.clone(),
-                        kind: KIND.to_owned(),
+                        kind: KIND as i32,
                         at_ms: 1_000,
                         ..Item::default()
                     }],
@@ -439,7 +440,7 @@ pub fn item(key: &str, text: &str) -> Step {
         items: vec![Item {
             key: key.to_owned(),
             text: text.to_owned(),
-            kind: KIND.to_owned(),
+            kind: KIND as i32,
             at_ms: 1_000,
             producer_version: "synthetic".to_owned(),
             ..Item::default()
@@ -463,7 +464,7 @@ pub fn append(key: &str, text: &str) -> Step {
 pub fn snapshot(phase: Phase, queue: &[&str], at_ms: i64) -> Step {
     Step {
         snapshot: Some(Snapshot {
-            kind: KIND.to_owned(),
+            kind: KIND as i32,
             phase: phase as i32,
             queue: queue
                 .iter()

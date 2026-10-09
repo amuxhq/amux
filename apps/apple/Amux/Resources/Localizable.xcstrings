@@ -1801,6 +1801,66 @@
         }
       }
     },
+    "Auto-denied": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-denied"
+          }
+        }
+      }
+    },
+    "Auto-review stopped": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-review stopped"
+          }
+        }
+      }
+    },
+    "Auto-review timed out": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-review timed out"
+          }
+        }
+      }
+    },
+    "Auto-reviewed %@": {
+      "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-reviewed %@"
+          }
+        }
+      }
+    },
+    "Auto-reviewing": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-reviewing"
+          }
+        }
+      }
+    },
     "Away": {
       "comment": "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState": "manual",
@@ -7977,6 +8037,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "it was no longer queued"
+          }
+        }
+      }
+    },
+    "it was refused": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "it was refused"
           }
         }
       }

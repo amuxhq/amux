@@ -200,7 +200,7 @@ Each input this client sends becomes a `SentInput` with an `InputState`:
 | `Sent` | In flight, or accepted and waiting for its reflection. The optimistic row exists. |
 | `Queued` | Accepted into the agent's queue; every snapshot lists it until it is submitted or withdrawn. |
 | `Settled` | Accepted and, for a prompt, reflected by an item carrying its input id. |
-| `Rejected(reason)` | The interpreter's verdict was a rejection. A rejection never touches the transcript. |
+| `Rejected(refusal)` | The verdict was a rejection: a `Refusal` holding the typed reason and the provider's own words when it gave any. A rejection never touches the transcript. |
 | `Uncertain` | The connection dropped before a reply. |
 
 An uncertain input is resolved only at the next CaughtUp: found in the snapshot's queue it is queued; found among
@@ -262,7 +262,7 @@ host, and from its replica for another host's agent even while that host is away
 | `trace()`, `dump_part()` | The bounded trace, and this chat's part of a dump bundle. |
 | `close()` | Drops the stream. Nothing is flushed; results of calls still in flight change nothing. |
 
-The acts that wait on the agent return `InputError::Rejected(reason)` or `InputError::Uncertain` when they do
+The acts that wait on the agent return `InputError::Rejected(refusal)` or `InputError::Uncertain` when they do
 not take effect. `page_older` returns `PageError::OriginUnreachable` when older history is held only by the
 agent's host and that host cannot be reached; the chat says so rather than showing an empty page.
 
@@ -422,7 +422,7 @@ incarnation's first prompt, one tap.
 sends; the client passes the chosen answer (with a note, for choices that take one) to `answer_input`, then to
 `Session::answer`. A form's values go to `form_answer` instead, which refuses them with each field's problem or
 builds the Submit; both clients say what keeps a form back from the same `form_problems`. An answer names its ask by key, so any queued ask can be answered from any client. While the
-answer is in flight the card's `CardState` is `Sending`; a rejection brings it back as `Rejected(reason)`; a lost
+answer is in flight the card's `CardState` is `Sending`; a rejection brings it back as `Rejected(refusal)`; a lost
 connection leaves it `NotConfirmed` with resend and discard; an exited agent's asks are `Dismissed`. On the phone,
 answers never carry a provider's answer body across the bridge: the phone names a choice by position, gives one
 `Pick` per question, or gives a form one `FormValue` per field, and the answer is built in Rust.

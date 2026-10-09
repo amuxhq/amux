@@ -20,14 +20,15 @@ use std::time::Duration;
 use prost::Message as _;
 use sha2::{Digest as _, Sha256};
 use store::StoreError;
+pub use wire::Provider;
 use wire::{Catalogue, CatalogueBlob, ErrorCode, ProviderOffer, ProviderOnHost};
 
 use crate::runtime::{Launch, ProfileRuntime};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CatalogueError {
-    #[error("no provider named {0:?}")]
-    NoProvider(String),
+    #[error("no provider numbered {0}")]
+    NoProvider(i32),
     #[error("asking the provider what it offers: {0}")]
     Helper(String),
     #[error("reading the catalogue: {0}")]
@@ -60,35 +61,24 @@ pub const PROVIDERS: &str = "providers";
 /// How long `<provider> --version` may take.
 const VERSION_PATIENCE: Duration = Duration::from_secs(10);
 
-/// A provider a host can be asked about.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Provider {
-    Claude,
-    Codex,
+/// The providers a host can be asked about.
+pub const ASKED: [Provider; 2] = [Provider::Claude, Provider::Codex];
+
+/// A provider as `amux catalogue` takes it and its copy's file is named:
+/// the enum value's own name, lowercase, without the enum's prefix.
+pub(crate) fn provider_word(provider: Provider) -> String {
+    provider
+        .as_str_name()
+        .trim_start_matches("PROVIDER_")
+        .to_ascii_lowercase()
 }
 
-impl Provider {
-    pub const ALL: [Self; 2] = [Self::Claude, Self::Codex];
-
-    /// As an agent's kind names its provider.
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Claude => "claude",
-            Self::Codex => "codex",
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|provider| provider.name() == name)
-    }
-
-    fn command(self, launch: &Launch) -> &str {
-        match self {
-            Self::Claude => &launch.claude_command,
-            Self::Codex => &launch.codex_command,
-        }
+fn provider_command(provider: Provider, launch: &Launch) -> &str {
+    match provider {
+        Provider::Claude => &launch.claude_command,
+        Provider::Codex => &launch.codex_command,
+        // Not one ASKED holds.
+        Provider::Unspecified => "",
     }
 }
 
@@ -123,7 +113,7 @@ impl Offers {
     /// The copies the profile kept; an unreadable one is asked again.
     pub(crate) fn load(profile_dir: &Path) -> Self {
         let mut held = HashMap::new();
-        for provider in Provider::ALL {
+        for provider in ASKED {
             let Ok(bytes) = std::fs::read(copy_path(profile_dir, provider)) else {
                 continue;
             };
@@ -142,7 +132,7 @@ impl Offers {
         }
         Self {
             held: Mutex::new(held),
-            runs: Provider::ALL
+            runs: ASKED
                 .into_iter()
                 .map(|provider| (provider, tokio::sync::Mutex::new(())))
                 .collect(),
@@ -153,12 +143,12 @@ impl Offers {
     /// host's entry in the fleet list says.
     pub(crate) fn on_host(&self) -> Vec<ProviderOnHost> {
         let held = self.held.lock().unwrap();
-        Provider::ALL
+        ASKED
             .into_iter()
             .filter_map(|provider| {
                 let held = held.get(&provider)?;
                 Some(ProviderOnHost {
-                    provider: provider.name().to_owned(),
+                    provider: provider as i32,
                     catalogue: Some(held.offer.blob.hash.clone()),
                     signed_in: held.offer.signed_in,
                 })
@@ -168,7 +158,7 @@ impl Offers {
 }
 
 fn copy_path(profile_dir: &Path, provider: Provider) -> PathBuf {
-    profile_dir.join(PROVIDERS).join(provider.name())
+    profile_dir.join(PROVIDERS).join(provider_word(provider))
 }
 
 /// Encodes the helper's catalogue once and names it by the hash of exactly
@@ -198,7 +188,7 @@ impl ProfileRuntime {
         let offers = self.offers();
         let _run = offers.runs[&provider].lock().await;
         let launch = self.launch();
-        let command = provider.command(&launch).to_owned();
+        let command = provider_command(provider, &launch).to_owned();
         let now = self.clock_now();
         let held = {
             let held = offers.held.lock().unwrap();
@@ -227,7 +217,7 @@ impl ProfileRuntime {
         let asked = match self.ask_provider(provider, &command, &launch).await {
             Ok(asked) => asked,
             Err(error) => {
-                tracing::warn!(provider = provider.name(), %error, "asking what the provider offers failed");
+                tracing::warn!(provider = provider_word(provider), %error, "asking what the provider offers failed");
                 return match held {
                     Some((offer, _, _)) => Ok(offer),
                     None => Err(error),
@@ -274,12 +264,12 @@ impl ProfileRuntime {
     ) -> Result<ProviderOffer, CatalogueError> {
         let dir = self.dir().join(PROVIDERS);
         std::fs::create_dir_all(&dir).map_err(CatalogueError::Write)?;
-        let out = dir.join(format!("{}.asked", provider.name()));
+        let out = dir.join(format!("{}.asked", provider_word(provider)));
         let _ = std::fs::remove_file(&out);
         let mut helper = tokio::process::Command::new(&launch.install_path);
         helper
             .arg("catalogue")
-            .arg(provider.name())
+            .arg(provider_word(provider))
             .arg("--command")
             .arg(command)
             .arg("--out")
@@ -306,7 +296,7 @@ impl ProfileRuntime {
                 }
                 return Err(CatalogueError::Helper(format!(
                     "asking {} took longer than {}ms",
-                    provider.name(),
+                    provider_word(provider),
                     launch.start_deadline_ms
                 )));
             }

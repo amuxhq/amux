@@ -194,7 +194,7 @@ version integer, and a frame a reader does not know is ignored.
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's part of a dump bundle, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
-| `stop` | daemon → agent | `Stop { mode }`: `GRACEFUL`, `ABORT` or `KILL`; a mode this agent cannot read is ignored, never taken as another |
+| `stop` | daemon → agent | `Stop { mode }`: `STOP_MODE_GRACEFUL`, `STOP_MODE_ABORT` or `STOP_MODE_KILL`; a mode this agent cannot read is ignored, never taken as another |
 | `dump` | agent → daemon | `DumpPart`, answering a dump request |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 

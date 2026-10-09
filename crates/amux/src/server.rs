@@ -159,11 +159,7 @@ fn telemetry(config: &InstallationConfig) -> node::Telemetry {
 fn edge_options(config: &InstallationConfig) -> node::EdgeOptions {
     node::EdgeOptions {
         host_name: config.host_name.clone(),
-        kinds: vec![
-            wire::Kind::ClaudePty,
-            wire::Kind::ClaudeSdk,
-            wire::Kind::Codex,
-        ],
+        kinds: node::local_kinds(),
         lan: Some(node::LanOptions::default()),
         discovery: Some(node::mdns_discovery()),
         discovery_scope: config.discovery.scope.clone(),

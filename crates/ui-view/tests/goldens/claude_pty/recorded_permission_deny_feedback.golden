@@ -9,7 +9,7 @@
   composer Send activity=Some(Running { key: "toolu_01CDE89AMC7xR2jvcSMh2RsT" }) queue=[] underway=[] refused=[]
 ## 41 recorded 39: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session, label: "" }, Deny { stops: true }+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: true }+note
     body Command { command: "printf denied > denied.txt", cwd: "", reason: "", description: "Write \"denied\" to denied.txt" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 43 recorded 41: fact Transcript type=assistant uuid=4dea177e-44ea-4480-a62d-76946d9fab36
@@ -17,7 +17,7 @@
 ## 45 recorded 43: fact Transcript type=assistant uuid=81d188b1-3248-4a45-8867-7c93a0911348
   row    4 toolu_01CDE89AMC7xR2jvcSMh2RsT Command { command: "printf denied > denied.txt", state: Asking, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[toolu_01CDE89AMC7xR2jvcSMh2RsT..toolu_01CDE89AMC7xR2jvcSMh2RsT x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] attention
   ask ask:1 -> "toolu_01CDE89AMC7xR2jvcSMh2RsT" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session, label: "" }, Deny { stops: true }+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["<MACHINE_PATH>"], mode: "", mode_name: "", scope: Session }, Deny { stops: true }+note
     body Command { command: "printf denied > denied.txt", cwd: "", reason: "", description: "Write \"denied\" to denied.txt" }
 ## 47 recorded 45: fact Transcript type=user uuid=517eb65b-46bc-474f-8915-f00d50ac6d10
   row    4 toolu_01CDE89AMC7xR2jvcSMh2RsT Command { command: "printf denied > denied.txt", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false, o…

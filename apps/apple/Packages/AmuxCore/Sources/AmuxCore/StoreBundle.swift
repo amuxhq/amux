@@ -397,7 +397,7 @@ public final class StoreBundle {
                 continue
             }
             Task {
-                let offered = await profile.hostCatalogue(on: host, provider: provider.rawValue)
+                let offered = await profile.hostCatalogue(on: host, provider: provider.wire)
                 newAgent.offered(offered, for: provider, asked: asked)
             }
         }

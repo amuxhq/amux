@@ -15,7 +15,7 @@
     body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView …
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 7 input {"answer":{"answer":{"notes":["warm is better",null],"selected":[0,[1]]},"ask":"ask:1"},"id":"a2"}
-  ask ask:1 -> "" 1/1 Rejected(Unsupported)
+  ask ask:1 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
     body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView …
 ## 8 input {"answer":{"answer":{"reply":{"selected":[],"text":"Use the old palette."}},"ask":"ask:1"},"id":"a3"}

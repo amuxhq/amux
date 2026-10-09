@@ -5,7 +5,6 @@ use uuid::Uuid;
 
 use crate::routing::{Capabilities, Host};
 
-pub(crate) const FEATURE_CLOUD_RELAY: &str = "amux.cloud_relay";
 pub(crate) const MAX_KINDS: usize = 64;
 pub(crate) const MAX_HOST_NAME_BYTES: usize = 256;
 
@@ -105,6 +104,17 @@ pub(crate) fn local_platform() -> &'static str {
     }
 }
 
+/// The agent kinds this build hosts on this platform: terminal Claude is
+/// hosted on Unix only.
+pub fn local_kinds() -> Vec<wire::Kind> {
+    let mut kinds = Vec::new();
+    if cfg!(unix) {
+        kinds.push(wire::Kind::ClaudePty);
+    }
+    kinds.extend([wire::Kind::ClaudeSdk, wire::Kind::Codex]);
+    kinds
+}
+
 pub(crate) fn validate_remote_host(host: &Host) -> std::result::Result<(), String> {
     if host.id == Uuid::nil() {
         return Err("host_id must be non-zero".to_string());
@@ -160,19 +170,14 @@ mod tests {
             Uuid::from_u128(1),
             "cloud",
             Capabilities {
-                features: vec![FEATURE_CLOUD_RELAY.to_string()],
+                cloud_relay: true,
                 ..Default::default()
             },
             false,
         );
 
         assert!(host.capabilities.kinds.is_empty());
-        assert!(
-            host.capabilities
-                .features
-                .iter()
-                .any(|feature| feature == FEATURE_CLOUD_RELAY)
-        );
+        assert!(host.capabilities.cloud_relay);
     }
 
     #[test]

@@ -7,12 +7,12 @@ mod support;
 use agent::ExitCause;
 use provider_fakes::Step;
 use support::*;
-use wire::StopMode;
+use wire::{Kind, StopMode};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
     let agent = Agent::start(Setup {
-        kind: "codex",
+        kind: Kind::Codex,
         steps: vec![
             Step::Text {
                 chunks: vec!["hello".into()],
@@ -59,7 +59,7 @@ async fn a_codex_agent_is_one_client_of_a_server_on_its_private_socket() {
     use tokio_tungstenite::tungstenite::Message;
 
     let agent = Agent::start(Setup {
-        kind: "codex",
+        kind: Kind::Codex,
         steps: vec![
             Step::Text {
                 chunks: vec!["hello".into()],
@@ -128,7 +128,7 @@ async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
     use std::os::unix::fs::PermissionsExt as _;
 
     let agent = Agent::start(Setup {
-        kind: "codex",
+        kind: Kind::Codex,
         steps: vec![
             Step::Text {
                 chunks: vec!["hello".into()],
@@ -174,7 +174,7 @@ async fn the_catalogue_a_snapshot_names_is_in_the_agent_directory() {
     use prost::Message as _;
     use sha2::Digest as _;
 
-    for kind in ["claude_sdk", "codex"] {
+    for kind in [Kind::ClaudeSdk, Kind::Codex] {
         let agent = Agent::start(Setup {
             kind,
             ..Setup::sdk()
@@ -193,13 +193,13 @@ async fn the_catalogue_a_snapshot_names_is_in_the_agent_directory() {
             .await;
         let hash = named(&agent.log()).unwrap();
         let path = agent.dir.join(agent::BLOBS).join(interpret::to_hex(&hash));
-        let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("{kind}: {error}"));
-        assert_eq!(sha2::Sha256::digest(&bytes).to_vec(), hash, "{kind}");
+        let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("{kind:?}: {error}"));
+        assert_eq!(sha2::Sha256::digest(&bytes).to_vec(), hash, "{kind:?}");
         let catalogue = wire::Catalogue::decode(bytes.as_slice()).unwrap();
-        assert!(!catalogue.models.is_empty(), "{kind}: the fake's models");
+        assert!(!catalogue.models.is_empty(), "{kind:?}: the fake's models");
         assert!(
             !agent.dir.join("catalogues").exists(),
-            "{kind}: no directory of its own"
+            "{kind:?}: no directory of its own"
         );
     }
 }
@@ -374,7 +374,7 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
 fn a_terminal_claude_agent_types_through_its_keymap_and_hears_its_hooks() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             steps: vec![
                 Step::Text {
                     chunks: vec!["hello from the terminal".into()],
@@ -442,7 +442,7 @@ fn held_turn() -> Vec<Step> {
 /// record shows it taken, so the turn's end does not let the child exit
 /// under it; once consumed and answered, the child finishes.
 async fn a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(
-    kind: &'static str,
+    kind: Kind,
     socketless: bool,
 ) {
     let agent = Agent::start(Setup {
@@ -465,7 +465,7 @@ async fn a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(
         matches!(verdict, Verdict::Accepted | Verdict::Queued),
         "{verdict:?}"
     );
-    if kind == "codex" {
+    if kind == Kind::Codex {
         // The agent accepts the message when it writes the inject; the turn
         // drains it only if Codex takes it while the turn still runs.
         agent
@@ -505,12 +505,12 @@ async fn a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(
         })
     };
     match kind {
-        "claude_sdk" => assert!(
+        Kind::ClaudeSdk => assert!(
             taken("stream", &|line| line["type"] == "user"
                 && line["isReplay"] == true),
             "Claude reflected the message before the exit"
         ),
-        "claude_pty" => assert!(
+        Kind::ClaudePty => assert!(
             taken("transcript", &|row| row["type"] == "user"),
             "Claude's transcript shows the message taken before the exit"
         ),
@@ -520,7 +520,7 @@ async fn a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(
             "the message was drained into the running turn"
         ),
     }
-    if kind == "claude_pty" {
+    if kind == Kind::ClaudePty {
         assert_eq!(
             agent
                 .terminal_bytes()
@@ -538,7 +538,7 @@ async fn a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(
 #[test]
 fn terminal_claude_takes_an_agent_message_on_its_messaging_socket() {
     terminal_test(
-        a_message_mid_turn_is_consumed_before_a_one_shot_child_exits("claude_pty", false),
+        a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(Kind::ClaudePty, false),
     );
 }
 
@@ -547,17 +547,19 @@ fn terminal_claude_takes_an_agent_message_on_its_messaging_socket() {
 #[cfg(unix)]
 #[test]
 fn terminal_claude_without_a_socket_has_the_message_pasted() {
-    terminal_test(a_message_mid_turn_is_consumed_before_a_one_shot_child_exits("claude_pty", true));
+    terminal_test(
+        a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(Kind::ClaudePty, true),
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn headless_claude_takes_an_agent_message_on_stdin() {
-    a_message_mid_turn_is_consumed_before_a_one_shot_child_exits("claude_sdk", false).await;
+    a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(Kind::ClaudeSdk, false).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn codex_takes_an_agent_message_as_injected_items() {
-    a_message_mid_turn_is_consumed_before_a_one_shot_child_exits("codex", false).await;
+    a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(Kind::Codex, false).await;
 }
 
 // Strict replay: each fake plays a real recording from the claude-specs or
@@ -580,8 +582,8 @@ async fn answer(agent: &Agent, daemon: &mut Daemon, id: &[u8], answer: serde_jso
     let ask = agent.log().ask_keys().remove(0);
     let input = interpret::FixtureInput::Answer { ask, answer };
     let input = match agent.kind() {
-        "claude_pty" => interpret::claude_pty_input(id.to_vec(), &input),
-        "codex" => interpret::codex_input(id.to_vec(), &input),
+        Kind::ClaudePty => interpret::claude_pty_input(id.to_vec(), &input),
+        Kind::Codex => interpret::codex_input(id.to_vec(), &input),
         _ => interpret::claude_sdk_input(id.to_vec(), &input),
     }
     .expect("an answer input");
@@ -661,7 +663,7 @@ const CODEX_PROMPT: &str =
 #[tokio::test(flavor = "multi_thread")]
 async fn codex_replays_the_handshake_an_approval_and_the_end_of_input() {
     let agent = Agent::start(Setup {
-        kind: "codex",
+        kind: Kind::Codex,
         replay: Some("codex_approval"),
         ..Setup::sdk()
     })
@@ -689,7 +691,7 @@ async fn codex_replays_the_handshake_an_approval_and_the_end_of_input() {
 #[tokio::test(flavor = "multi_thread")]
 async fn codex_replays_transport_loss_mid_turn() {
     let agent = Agent::start(Setup {
-        kind: "codex",
+        kind: Kind::Codex,
         replay: Some("codex_lost"),
         ..Setup::sdk()
     })
@@ -721,7 +723,7 @@ const PTY_PROMPT: &str = "Use the Bash tool to run exactly: printf denied > deni
 fn terminal_claude_replays_a_prompt_a_denial_with_feedback_and_its_end() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             replay: Some("pty_deny"),
             ..Setup::sdk()
         })
@@ -757,7 +759,7 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
     use provider_fakes::{Ask, Outcome, Tool, ToolClass};
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             offers_auto_mode: true,
             steps: vec![
                 Step::Ask(Ask::Permission(Tool {
@@ -851,7 +853,7 @@ fn terminal_claude_takes_a_skipped_question_through_its_review_screen() {
     };
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             steps: vec![
                 Step::Ask(Ask::Question {
                     questions: vec![
@@ -912,7 +914,7 @@ fn terminal_claude_takes_a_skipped_question_through_its_review_screen() {
 fn terminal_claude_asks_to_trust_its_folder_before_taking_a_prompt() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             untrusted_folder: true,
             steps: vec![
                 Step::Text {
@@ -956,7 +958,7 @@ fn terminal_claude_asks_to_trust_its_folder_before_taking_a_prompt() {
 fn terminal_claude_exits_when_its_folder_is_not_trusted() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             untrusted_folder: true,
             ..Setup::sdk()
         })
@@ -984,7 +986,7 @@ fn terminal_claude_exits_when_its_folder_is_not_trusted() {
 fn a_terminal_session_that_never_began_is_started_not_resumed() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             steps: vec![
                 Step::Text {
                     chunks: vec!["hello after all".into()],
@@ -1092,7 +1094,7 @@ async fn a_headless_session_that_began_is_resumed() {
 fn terminal_claude_replays_transport_loss_mid_turn() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             replay: Some("pty_lost"),
             ..Setup::sdk()
         })
@@ -1117,7 +1119,7 @@ fn terminal_claude_replays_transport_loss_mid_turn() {
 #[tokio::test(flavor = "multi_thread")]
 async fn windows_refuses_terminal_claude_and_names_the_platform() {
     let agent = Agent::start(Setup {
-        kind: "claude_pty",
+        kind: Kind::ClaudePty,
         ..Setup::sdk()
     })
     .await;

@@ -686,7 +686,7 @@ final class ChatModelTests: XCTestCase {
     /// photo, with why it was not sent, and is forgotten.
     func testARefusedPromptReturnsToTheComposerWithTheReason() async {
         var refusing = frame()
-        refusing.refused = [RefusedPrompt(inputId: [8], reason: .hostUnreachable)]
+        refusing.refused = [RefusedPrompt(inputId: [8], reason: Refusal(reason: .hostUnreachable, detail: nil))]
         let source = FakeChat(rows: [], frame: refusing)
         let photo = BlobRef(hash: [5], name: "screen.png", mime: "image/png", size: 2048)
         source.drafts[[8]] = Draft(text: "What is this?", attachments: [.image(photo)])

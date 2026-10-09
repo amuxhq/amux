@@ -833,9 +833,11 @@ impl Install {
             .into_inner();
         match response.of {
             Some(send_input_response::Of::Accepted(_)) => Ok(()),
-            Some(send_input_response::Of::Rejected(rejected)) => {
-                Err(format!("the input was refused: {}", rejected.reason))
-            }
+            Some(send_input_response::Of::Rejected(rejected)) => Err(format!(
+                "the input was refused: {:?} {}",
+                rejected.refusal(),
+                rejected.detail.unwrap_or_default()
+            )),
             None => Err("the daemon gave no verdict".into()),
         }
     }

@@ -81,7 +81,7 @@ mod tests {
             name: format!("host-{id}"),
             version: "test".to_string(),
             capabilities: Capabilities {
-                features: Vec::new(),
+                cloud_relay: false,
                 kinds: vec![wire::Kind::ClaudeSdk as i32],
             },
             signed_in: Some(true),

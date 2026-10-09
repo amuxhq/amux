@@ -307,7 +307,7 @@ pub fn snapshot(kind: Kind, revision: u64, queue: &[&[u8]]) -> SessionEvent {
     event(session_event::Of::Snapshot(Snapshot {
         agent: b"agent-1".to_vec(),
         revision,
-        kind: wire::kind_tag(kind).into(),
+        kind: kind as i32,
         queue: queue
             .iter()
             .map(|id| QueuedInput {
@@ -328,7 +328,7 @@ pub fn text_item(kind: Kind, order: u64, revision: u64, text: &str) -> Item {
         order,
         revision,
         text: text.into(),
-        kind: wire::kind_tag(kind).into(),
+        kind: kind as i32,
         at_ms: 1_000 + order as i64,
         ..Item::default()
     }
@@ -388,10 +388,11 @@ pub fn accepted(queued: bool) -> SendInputResponse {
     }
 }
 
-pub fn rejected(reason: &str) -> SendInputResponse {
+pub fn rejected(refusal: wire::Refusal) -> SendInputResponse {
     SendInputResponse {
         of: Some(send_input_response::Of::Rejected(wire::Rejected {
-            reason: reason.into(),
+            refusal: refusal as i32,
+            detail: None,
         })),
     }
 }

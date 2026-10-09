@@ -279,7 +279,7 @@ impl ProfileRuntime {
         bundle: &Path,
     ) -> Result<(serde_json::Value, Vec<String>), DumpError> {
         let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
-        let kind = wire::kind_from_tag(&row.kind).unwrap_or(Kind::Unspecified);
+        let kind = Kind::try_from(row.kind).unwrap_or(Kind::Unspecified);
         let own = row.agent.host == self.host().as_bytes();
         let out = bundle.join("agents").join(id.to_string());
         std::fs::create_dir_all(&out)?;

@@ -16,11 +16,8 @@ use std::time::Duration;
 use store::{AgentKey, Store as _, StoreError};
 use tokio::sync::oneshot;
 use uuid::Uuid;
-/// The agent has exited, or has decided to exit, which the daemon treats as
-/// exited.
-pub use wire::refusal::{EXITED, EXITING};
 use wire::{
-    AgentSender, Bootstrap, Envelope, EnvelopeKind, ErrorCode, Human, Lifecycle, Rejected,
+    AgentSender, Bootstrap, Envelope, EnvelopeKind, ErrorCode, Human, Lifecycle, Refusal, Rejected,
     SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, Sender,
     bootstrap, ctl_frame, send_input_response, sender,
 };
@@ -45,8 +42,8 @@ pub enum RelayError {
     Unavailable,
     #[error("the agent's answer was lost; the input may or may not have arrived")]
     Lost,
-    #[error("rejected: {0}")]
-    Rejected(String),
+    #[error("rejected: {}", said(.0))]
+    Rejected(Rejected),
     #[error("the recipient's incarnation the message was for has ended")]
     Stale,
     #[error("resuming the agent: {0}")]
@@ -96,19 +93,36 @@ enum From {
     PeerPerson,
 }
 
-pub(crate) fn rejected(reason: &str) -> SendInputResponse {
+pub(crate) fn rejected(refusal: Refusal) -> SendInputResponse {
     SendInputResponse {
-        of: Some(send_input_response::Of::Rejected(Rejected {
-            reason: reason.to_owned(),
-        })),
+        of: Some(send_input_response::Of::Rejected(refused(refusal))),
     }
 }
 
-fn rejection(verdict: &SendInputResponse) -> Option<&str> {
+fn refused(refusal: Refusal) -> Rejected {
+    Rejected {
+        refusal: refusal as i32,
+        detail: None,
+    }
+}
+
+fn rejection(verdict: &SendInputResponse) -> Option<&Rejected> {
     match &verdict.of {
-        Some(send_input_response::Of::Rejected(rejected)) => Some(&rejected.reason),
+        Some(send_input_response::Of::Rejected(rejected)) => Some(rejected),
         _ => None,
     }
+}
+
+/// A refusal as an error or a log line says it: its own words, else its
+/// value's name in lower case ("exited").
+fn said(rejected: &Rejected) -> String {
+    rejected.detail.clone().unwrap_or_else(|| {
+        rejected
+            .refusal()
+            .as_str_name()
+            .trim_start_matches("REFUSAL_")
+            .to_ascii_lowercase()
+    })
 }
 
 /// The envelope id of an outbox row: the same for every re-send of one
@@ -142,7 +156,7 @@ impl ProfileRuntime {
     }
 
     /// Relays a person's input and returns the interpreter's verdict. An
-    /// exited agent is answered here; one that answers "exiting" is from
+    /// exited agent is answered here; one that refuses as exiting is from
     /// then on treated as leaving, so a resume waits for it.
     pub async fn send_input(
         &self,
@@ -157,13 +171,13 @@ impl ProfileRuntime {
             .agent(&self.key(id))?
             .ok_or(RelayError::NoAgent)?;
         if row.lifecycle == Lifecycle::Exited as i32 {
-            return Ok(rejected(EXITED));
+            return Ok(rejected(Refusal::Exited));
         }
         let input_id = input.input_id.clone();
         let verdict = self
             .relay(id, input_id, ctl_frame::Of::Input(input))
             .await?;
-        if rejection(&verdict) == Some(EXITING) {
+        if rejection(&verdict).is_some_and(|rejected| rejected.refusal() == Refusal::Exiting) {
             self.mark_exiting(id);
         }
         Ok(verdict)
@@ -179,7 +193,7 @@ impl ProfileRuntime {
         of: ctl_frame::Of,
     ) -> Result<SendInputResponse, RelayError> {
         let Some(handle) = self.handle(id) else {
-            return Ok(rejected(EXITED));
+            return Ok(rejected(Refusal::Exited));
         };
         let (tx, rx) = oneshot::channel();
         handle.expect_reply(input_id.clone(), tx);
@@ -197,7 +211,7 @@ impl ProfileRuntime {
             }
             if *handle.exited.borrow() {
                 handle.forget_reply(&input_id);
-                return Ok(rejected(EXITED));
+                return Ok(rejected(Refusal::Exited));
             }
             if tokio::time::Instant::now() >= connect_by {
                 handle.forget_reply(&input_id);
@@ -343,7 +357,6 @@ impl ProfileRuntime {
                 agent_id: id.as_bytes().to_vec(),
                 host_id: self.host().as_bytes().to_vec(),
                 name: row.and_then(|row| row.name.clone()).unwrap_or_default(),
-                kind: row.map(|row| row.kind.clone()).unwrap_or_default(),
             })),
         }
     }
@@ -383,7 +396,7 @@ impl ProfileRuntime {
             return if resume {
                 self.resume_with(id, envelope).await
             } else {
-                Err(RelayError::Rejected(EXITED.to_owned()))
+                Err(RelayError::Rejected(refused(Refusal::Exited)))
             };
         }
         let verdict = self
@@ -395,15 +408,15 @@ impl ProfileRuntime {
             .await?;
         match rejection(&verdict) {
             None => self.accepted(id, &key, &envelope.id).await,
-            Some(EXITING) => {
+            Some(rejected) if rejected.refusal() == Refusal::Exiting => {
                 self.mark_exiting(id);
                 if resume {
                     self.resume_with(id, envelope).await
                 } else {
-                    Err(RelayError::Rejected(EXITED.to_owned()))
+                    Err(RelayError::Rejected(refused(Refusal::Exited)))
                 }
             }
-            Some(reason) => Err(RelayError::Rejected(reason.to_owned())),
+            Some(rejected) => Err(RelayError::Rejected(rejected.clone())),
         }
     }
 

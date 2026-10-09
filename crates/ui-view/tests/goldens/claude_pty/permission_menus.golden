@@ -11,12 +11,12 @@
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[{"destination":"session","directories":["/private/tmp/work"],"type":"addDirectories"},{"destination":"session","mode":"acceptEdits","type":"setMode"}],"tool_input":{"command":"rm stamp.txt"},"tool_name":"Bash"}}
   ask ask:1 -> "" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["/private/tmp/work"], mode: "", mode_name: "", scope: Session, label: "" }, Deny { stops: true }+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["/private/tmp/work"], mode: "", mode_name: "", scope: Session }, Deny { stops: true }+note
     body Command { command: "rm stamp.txt", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 7 input {"answer":{"answer":{"allow":{"scope":1}},"ask":"ask:1"},"id":"a1"}
-  ask ask:1 -> "" 1/1 Rejected(Other("Claude's terminal menu has no entry amux can type for this answer"))
-    choices AllowOnce*, AllowAlways { subjects: [], directories: ["/private/tmp/work"], mode: "", mode_name: "", scope: Session, label: "" }, Deny { stops: true }+note
+  ask ask:1 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: Some("Claude's terminal menu has no entry amux can type for this answer") })
+    choices AllowOnce*, AllowAlways { subjects: [], directories: ["/private/tmp/work"], mode: "", mode_name: "", scope: Session }, Deny { stops: true }+note
     body Command { command: "rm stamp.txt", cwd: "", reason: "", description: "" }
 ## 8 input {"answer":{"answer":{"allow":{"scope":0}},"ask":"ask:1"},"id":"a2"}
   ask none
@@ -34,7 +34,7 @@
     body Command { command: "touch /private/tmp/work/b.txt", cwd: "", reason: "", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 input {"answer":{"answer":{"allow":{"scope":0}},"ask":"ask:2"},"id":"a3"}
-  ask ask:2 -> "" 1/1 Rejected(Other("Claude's terminal menu has no entry amux can type for this answer"))
+  ask ask:2 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: Some("Claude's terminal menu has no entry amux can type for this answer") })
     choices AllowOnce*, Deny { stops: true }+note
     body Command { command: "touch /private/tmp/work/b.txt", cwd: "", reason: "", description: "" }
 ## 14 input {"answer":{"answer":{"allow":{}},"ask":"ask:2"},"id":"a4"}

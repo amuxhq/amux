@@ -70,25 +70,34 @@ impl Agent {
         }
     }
 
-    /// The provider a host's catalogue is asked for, as a host names it.
-    pub fn provider(self) -> &'static str {
+    /// The provider a host's catalogue is asked for.
+    pub fn provider(self) -> wire::Provider {
         match self {
-            Agent::Claude => "claude",
-            Agent::Codex => "codex",
+            Agent::Claude => wire::Provider::Claude,
+            Agent::Codex => wire::Provider::Codex,
         }
     }
 }
 
-/// Every provider a host can be asked about, as the host names them.
-pub const PROVIDERS: [&str; 2] = ["claude", "codex"];
+/// A provider as a person names it.
+pub fn provider_name(provider: wire::Provider) -> &'static str {
+    match provider {
+        wire::Provider::Claude => "Claude",
+        wire::Provider::Codex => "Codex",
+        wire::Provider::Unspecified => "the provider",
+    }
+}
+
+/// Every provider a host can be asked about.
+pub const PROVIDERS: [wire::Provider; 2] = [wire::Provider::Claude, wire::Provider::Codex];
 
 /// Whether `provider` is signed in on `host`, once the host has said.
-pub fn signed_in(fleet: &FleetState, host: &[u8], provider: &str) -> Option<bool> {
+pub fn signed_in(fleet: &FleetState, host: &[u8], provider: wire::Provider) -> Option<bool> {
     fleet
         .host(host)?
         .providers
         .iter()
-        .find(|offer| offer.provider == provider)
+        .find(|offer| offer.provider == provider as i32)
         .map(|offer| offer.signed_in)
 }
 
@@ -212,7 +221,13 @@ impl Setup {
 
     /// Takes what `host` offers for `provider`, when that is what this
     /// setup is for; the choices already made stay, offered or not.
-    pub fn offer(&mut self, host: &[u8], provider: &str, hash: &[u8], catalogue: &wire::Catalogue) {
+    pub fn offer(
+        &mut self,
+        host: &[u8],
+        provider: wire::Provider,
+        hash: &[u8],
+        catalogue: &wire::Catalogue,
+    ) {
         if host == self.host && provider == self.agent.provider() {
             self.offered = Some((hash.to_vec(), catalogue.clone()));
         }

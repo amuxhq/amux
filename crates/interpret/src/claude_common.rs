@@ -6,16 +6,16 @@ use std::collections::BTreeMap;
 
 use claude_protocol::stream::init::{ModelInfo, SlashCommand};
 use claude_protocol::stream::{
-    ContentBlock, ImageSourceType, MessageContent, PermissionUpdate, ToolResultBody,
-    ToolResultContent,
+    ContentBlock, ImageSourceType, MessageContent, PermissionUpdate, PermissionUpdateDestination,
+    ToolResultBody, ToolResultContent,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeLimit, ClaudeUsage,
     DecisionOutcome, OfferedCommand, OfferedModel, OfferedPermission, Question, QuestionAsk,
-    QuestionOption, ScopeChoice, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass,
-    ToolState, UsageState, attachment, codex_grant, tool_decision,
+    QuestionOption, ScopeChoice, ScopeDestination, TaskList, TaskListEntry, TaskListStatus,
+    ToolCall, ToolClass, ToolState, UsageState, attachment, codex_grant, tool_decision,
 };
 
 use crate::Effect;
@@ -625,7 +625,10 @@ pub(crate) fn describe_grant(granted: Option<&tool_decision::Granted>) -> String
     match granted {
         None => String::new(),
         Some(tool_decision::Granted::Claude(grant)) => {
-            let mut text = format!(" grant=claude(saved_to={}", or_dash(&grant.saved_to));
+            let mut text = format!(
+                " grant=claude(destination={}",
+                or_dash(&grant.destination_word)
+            );
             if !grant.rules.is_empty() {
                 text.push_str(&format!(" rules={}", words(&grant.rules)));
             }
@@ -651,15 +654,33 @@ pub(crate) fn describe_grant(granted: Option<&tool_decision::Granted>) -> String
     }
 }
 
-/// What allowing with a scope choice grants: the choice as Claude offered
-/// it, in the record's words.
+/// What allowing with a scope choice grants: the grant Claude offered,
+/// verbatim.
 pub(crate) fn claude_grant(scope: &ScopeChoice) -> ClaudeGrant {
-    ClaudeGrant {
-        rules: scope.rules.clone(),
-        directories: scope.directories.clone(),
-        mode: (!scope.mode.is_empty()).then(|| scope.mode.clone()),
-        saved_to: scope.destination.clone(),
-    }
+    scope.grant.clone().unwrap_or_default()
+}
+
+/// Where a suggestion would be saved: amux's value for it, and Claude's
+/// word, which a client shows for a destination it does not know.
+fn destination(suggestion: &PermissionUpdate) -> (ScopeDestination, String) {
+    let typed = match suggestion {
+        PermissionUpdate::AddRules { destination, .. }
+        | PermissionUpdate::ReplaceRules { destination, .. }
+        | PermissionUpdate::RemoveRules { destination, .. }
+        | PermissionUpdate::SetMode { destination, .. }
+        | PermissionUpdate::AddDirectories { destination, .. }
+        | PermissionUpdate::RemoveDirectories { destination, .. } => Some(destination),
+        PermissionUpdate::Unknown(_) => None,
+    };
+    let destination = match typed {
+        Some(PermissionUpdateDestination::Session) => ScopeDestination::Session,
+        Some(PermissionUpdateDestination::LocalSettings) => ScopeDestination::LocalSettings,
+        Some(PermissionUpdateDestination::ProjectSettings) => ScopeDestination::ProjectSettings,
+        Some(PermissionUpdateDestination::UserSettings) => ScopeDestination::UserSettings,
+        Some(PermissionUpdateDestination::CliArg) | None => ScopeDestination::Unspecified,
+    };
+    let word = suggestion.destination().unwrap_or_default().to_owned();
+    (destination, word)
 }
 
 /// A finished Write's result: Claude says whether it made the file.
@@ -738,24 +759,27 @@ pub(crate) fn permission_scopes(suggestions: &[PermissionUpdate]) -> Vec<ScopeCh
                         })
                         .collect(),
                     Vec::new(),
-                    String::new(),
+                    None,
                 ),
                 PermissionUpdate::AddDirectories { directories, .. }
                 | PermissionUpdate::RemoveDirectories { directories, .. } => {
-                    (Vec::new(), directories.clone(), String::new())
+                    (Vec::new(), directories.clone(), None)
                 }
                 PermissionUpdate::SetMode { mode, .. } => {
-                    (Vec::new(), Vec::new(), mode.as_str().to_owned())
+                    (Vec::new(), Vec::new(), Some(mode.as_str().to_owned()))
                 }
-                PermissionUpdate::Unknown(_) => (Vec::new(), Vec::new(), String::new()),
+                PermissionUpdate::Unknown(_) => (Vec::new(), Vec::new(), None),
             };
+            let (destination, destination_word) = destination(suggestion);
             ScopeChoice {
                 index: index as u32,
-                destination: suggestion.destination().unwrap_or_default().to_owned(),
-                rules,
-                directories,
-                mode,
-                label: String::new(),
+                grant: Some(ClaudeGrant {
+                    rules,
+                    directories,
+                    mode,
+                    destination: destination as i32,
+                    destination_word,
+                }),
             }
         })
         .collect()
@@ -924,21 +948,23 @@ pub(crate) fn describe_asks(asks: &[Ask]) -> String {
                     permission
                         .scopes
                         .iter()
-                        .map(|scope| format!(
-                            "/{}{}{}",
-                            scope.destination,
-                            if scope.mode.is_empty() {
-                                String::new()
-                            } else {
-                                format!(" mode={}", scope.mode)
-                            },
-                            scope
-                                .rules
-                                .iter()
-                                .chain(&scope.directories)
-                                .map(|rule| format!(" {rule}"))
-                                .collect::<String>()
-                        ))
+                        .map(|scope| {
+                            let grant = claude_grant(scope);
+                            format!(
+                                "/{}{}{}",
+                                grant.destination_word,
+                                grant
+                                    .mode
+                                    .map(|mode| format!(" mode={mode}"))
+                                    .unwrap_or_default(),
+                                grant
+                                    .rules
+                                    .iter()
+                                    .chain(&grant.directories)
+                                    .map(|rule| format!(" {rule}"))
+                                    .collect::<String>()
+                            )
+                        })
                         .collect::<String>(),
                     [
                         (!permission.reason.is_empty()).then(|| format!(

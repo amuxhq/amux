@@ -14,15 +14,15 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, ClaudeSdkItem, ClaudeSdkSnapshot, Envelope, Input, PermissionAsk, Phase, Step,
-    ToolCall, ToolState, Turn, TurnOutcome, claude_sdk_input, claude_sdk_item,
+    AgentSpec, Ask, ClaudeSdkItem, ClaudeSdkSnapshot, Envelope, Input, PermissionAsk, Phase,
+    Refusal, Step, ToolCall, ToolState, Turn, TurnOutcome, claude_sdk_input, claude_sdk_item,
 };
 
 use crate::{
     Carrier, Channel, Checkpoint, Effect, Emit, EndRules, Event, Fact, FixtureInput, Interpreter,
     ItemDraft, ItemView, RedactTarget, Shared, SnapshotView, Stepped, agent_message_body,
-    agent_message_key, check_invariants, claude_sdk_input, human, is_status_tool, reason,
-    run_golden, status_working_on, unknown,
+    agent_message_key, check_invariants, claude_sdk_input, human, is_status_tool, run_golden,
+    status_working_on, unknown,
 };
 
 /// With `FORGET` set, a resume loses the model: the checkpoint property
@@ -247,7 +247,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
         let id = input.input_id.clone();
         let arm = match input.decode_body() {
             Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
-            _ => return shared.reject(emit, &id, reason::UNSUPPORTED),
+            _ => return shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
             claude_sdk_input::Of::Prompt(prompt) => {
@@ -272,7 +272,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     shared.accept(emit, &id, false);
                 }
             }
-            _ => shared.reject(emit, &id, reason::UNSUPPORTED),
+            _ => shared.reject(emit, &id, Refusal::Unsupported),
         }
     }
 }
@@ -285,7 +285,7 @@ fn write(text: &str) -> Effect {
 
 impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
     type State = State<FORGET>;
-    const KIND: &'static str = "test";
+    const KIND: wire::Kind = wire::Kind::Unspecified;
 
     fn initial(spec: &AgentSpec, producer_version: &str) -> (Self::State, Step) {
         let mut state = State {
@@ -505,7 +505,7 @@ mod invariants {
     fn first() -> Step {
         Step {
             snapshot: Some(Snapshot {
-                kind: "test".into(),
+                kind: wire::Kind::Unspecified as i32,
                 body: TestKind::<false>::unknown_snapshot(),
                 phase: Phase::Starting as i32,
                 ..Default::default()
@@ -517,7 +517,7 @@ mod invariants {
     fn item(key: &str, kind: claude_sdk_item::Kind) -> Item {
         Item {
             key: key.into(),
-            kind: "test".into(),
+            kind: wire::Kind::Unspecified as i32,
             body: body(kind),
             ..Default::default()
         }

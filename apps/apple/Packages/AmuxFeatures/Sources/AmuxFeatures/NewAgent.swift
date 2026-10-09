@@ -316,7 +316,7 @@ public struct NewAgent: View {
     /// nil until it says.
     private func signedIn(_ provider: NewAgentStore.Provider) -> Bool? {
         guard let machine = model.machine else { return nil }
-        return hosts.host(machine)?.providers.first { $0.provider == provider.rawValue }?.signedIn
+        return hosts.host(machine)?.providers.first { $0.provider == provider.wire }?.signedIn
     }
 
     private var layers: some View {

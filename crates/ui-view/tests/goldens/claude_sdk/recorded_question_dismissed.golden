@@ -16,7 +16,7 @@
     body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 22 recorded 21: input stdin-3
-  ask dc0a5d4b-dfd8-4efc-aca4-a175858670c3 -> "toolu_01MG15TcFRDQwrP1CLCJmvAt" 1/1 Rejected(Unsupported)
+  ask dc0a5d4b-dfd8-4efc-aca4-a175858670c3 -> "toolu_01MG15TcFRDQwrP1CLCJmvAt" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
     body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "The color red", preview: "", recommended: false }, OptionView { label: "Blue", description: "The color blue", preview: "", recommended: false }], allow_other: true, secret: false }])
 ## 24 recorded 23: fact Stream type=user uuid=ab88dea4-334a-42d2-b313-eafcff6db34f

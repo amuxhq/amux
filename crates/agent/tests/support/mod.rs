@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use wire::{
     AgentHello, AgentParent, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput,
     ClaudeSdkItem, ClaudeSdkSnapshot, CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input,
-    Phase, PromptInput, Stop, StopMode, claude_pty_input, claude_pty_item, claude_sdk_input,
+    Kind, Phase, PromptInput, Stop, StopMode, claude_pty_input, claude_pty_item, claude_sdk_input,
     claude_sdk_item, codex_input, codex_item, ctl_frame, send_input_response,
 };
 
@@ -85,7 +85,7 @@ pub fn install_path() -> String {
 }
 
 pub struct Setup {
-    pub kind: &'static str,
+    pub kind: Kind,
     /// The provider command; the kind's fake when None.
     pub command: Option<String>,
     pub provider_args: Vec<String>,
@@ -120,7 +120,7 @@ pub struct Setup {
 impl Setup {
     pub fn sdk() -> Self {
         Self {
-            kind: "claude_sdk",
+            kind: Kind::ClaudeSdk,
             command: None,
             provider_args: Vec::new(),
             env: Vec::new(),
@@ -141,7 +141,7 @@ impl Setup {
 }
 
 pub struct Agent {
-    kind: &'static str,
+    kind: Kind,
     _root: tempfile::TempDir,
     pub dir: PathBuf,
     pub clock: ManualClock,
@@ -241,8 +241,8 @@ impl Agent {
         std::fs::write(&script_path, script).unwrap();
 
         let fake = fakes().join(match setup.kind {
-            "claude_pty" => "fake-claude-pty",
-            "codex" => "fake-codex",
+            Kind::ClaudePty => "fake-claude-pty",
+            Kind::Codex => "fake-codex",
             _ => "fake-claude-sdk",
         });
         let (command, mut provider_args) = match (setup.command, setup.hold) {
@@ -316,7 +316,7 @@ impl Agent {
         let spec = AgentSpec {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             profile_id: vec![9; 16],
-            kind: setup.kind.to_owned(),
+            kind: setup.kind as i32,
             cwd: work.to_str().unwrap().to_owned(),
             name: "test".into(),
             parent: setup.parent.then(|| AgentParent {
@@ -516,7 +516,7 @@ impl Agent {
     }
 
     /// Everything the provider wrote to its terminal.
-    pub fn kind(&self) -> &'static str {
+    pub fn kind(&self) -> Kind {
         self.kind
     }
 
@@ -603,7 +603,7 @@ pub fn running(marker: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-pub fn prompt(kind: &str, id: &[u8], text: &str) -> Input {
+pub fn prompt(kind: Kind, id: &[u8], text: &str) -> Input {
     let prompt = PromptInput {
         text: text.to_owned(),
         ..Default::default()
@@ -611,10 +611,10 @@ pub fn prompt(kind: &str, id: &[u8], text: &str) -> Input {
     Input::new(
         id.to_vec(),
         match kind {
-            "codex" => wire::KindInput::Codex(CodexInput {
+            Kind::Codex => wire::KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Prompt(prompt)),
             }),
-            "claude_pty" => wire::KindInput::ClaudePty(ClaudePtyInput {
+            Kind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
                 of: Some(claude_pty_input::Of::Prompt(prompt)),
             }),
             _ => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
@@ -649,12 +649,12 @@ async fn next_frame(reader: &mut ReadHalf<LocalStream>) -> CtlFrame {
 pub enum Verdict {
     Accepted,
     Queued,
-    Rejected(String),
+    Rejected(wire::Refusal),
 }
 
 /// A stand-in daemon on ctl.sock.
 pub struct Daemon {
-    kind: &'static str,
+    kind: Kind,
     reader: ReadHalf<LocalStream>,
     writer: WriteHalf<LocalStream>,
     pub hello: AgentHello,
@@ -683,7 +683,6 @@ impl Daemon {
                     agent_id: vec![2; 16],
                     host_id: vec![1; 16],
                     name: "parent".into(),
-                    kind: "claude_sdk".into(),
                 })),
             }),
             text: text.to_owned(),
@@ -724,7 +723,7 @@ impl Daemon {
                     }
                     Some(send_input_response::Of::Accepted(_)) => Verdict::Accepted,
                     Some(send_input_response::Of::Rejected(rejected)) => {
-                        Verdict::Rejected(rejected.reason)
+                        Verdict::Rejected(rejected.refusal())
                     }
                     None => panic!("a reply without a verdict"),
                 };
@@ -894,51 +893,51 @@ impl Log {
             return Vec::new();
         };
         let keys = |asks: Vec<wire::Ask>| asks.into_iter().map(|ask| ask.key).collect();
-        match snapshot.kind.as_str() {
-            "claude_sdk" => keys(
+        match snapshot.kind() {
+            Kind::ClaudeSdk => keys(
                 ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .asks,
             ),
-            "claude_pty" => keys(
+            Kind::ClaudePty => keys(
                 wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
                     .unwrap()
                     .asks,
             ),
-            "codex" => wire::CodexSnapshot::decode(snapshot.body.as_slice())
+            Kind::Codex => wire::CodexSnapshot::decode(snapshot.body.as_slice())
                 .unwrap()
                 .asks
                 .into_iter()
                 .map(|ask| ask.key)
                 .collect(),
-            other => panic!("no snapshot reader for {other}"),
+            other => panic!("no snapshot reader for {other:?}"),
         }
     }
 
     pub fn open_asks(&self) -> usize {
         let snapshot = self.snapshot().expect("a snapshot");
-        match snapshot.kind.as_str() {
-            "claude_sdk" => ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+        match snapshot.kind() {
+            Kind::ClaudeSdk => ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
                 .unwrap()
                 .asks
                 .len(),
-            other => panic!("no snapshot reader for {other}"),
+            other => panic!("no snapshot reader for {other:?}"),
         }
     }
 }
 
 /// A boundary item's kind and cause as the log prints it.
 pub fn boundary(item: &wire::Item) -> Option<String> {
-    let boundary = match item.kind.as_str() {
-        "claude_sdk" => match ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind? {
+    let boundary = match item.kind() {
+        Kind::ClaudeSdk => match ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind? {
             claude_sdk_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
-        "claude_pty" => match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
+        Kind::ClaudePty => match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
             claude_pty_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
-        "codex" => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {
+        Kind::Codex => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {
             codex_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },

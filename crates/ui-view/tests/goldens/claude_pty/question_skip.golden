@@ -29,7 +29,7 @@
     body Question([QuestionView { header: "Ship", question: "Ship it now?", multi_select: false, options: [OptionView { label: "Yes", description: "", preview: "", recommended: false }, OptionView { label: "No", description: "", preview: "", recommended: false }], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 12 input {"answer":{"answer":{"selected":[null]},"ask":"ask:2"},"id":"a2"}
-  ask ask:2 -> "" 1/1 Rejected(Unsupported)
+  ask ask:2 -> "" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
     body Question([QuestionView { header: "Ship", question: "Ship it now?", multi_select: false, options: [OptionView { label: "Yes", description: "", preview: "", recommended: false }, OptionView { label: "No", description: "", preview: "", recommended: false }], allow_other: true, secret: false }])
 ## 13 input {"answer":{"answer":{"selected":[0]},"ask":"ask:2"},"id":"a3"}

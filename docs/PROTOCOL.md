@@ -57,7 +57,7 @@ their own, so they never see a person's laptop or phone and never see each
 other.
 
 Discovery is **never trust or presence**. An unpaired result is only a pairing
-candidate, listed in the inventory as a host entry with `trust = CANDIDATE`
+candidate, listed in the inventory as a host entry with `trust = TRUST_CANDIDATE`
 and the addresses pairing will dial. A result claiming a paired host's id is
 only a dial hint; the pinned handshake must still present that host's key. A
 paired host is online only after a link succeeds. Discovery is queried again
@@ -145,8 +145,9 @@ its presence; losing the last route shows it offline, and only untrusting it
 removes it.
 
 Each `Host` in a handshake or neighbor message carries the host's name, its
-build version, its capabilities (feature strings and the agent kinds it can
-run), whether it is signed in to an account, and `platform`, the operating
+build version, its capabilities (whether it serves as a cloud relay, and the
+agent kinds its platform runs: terminal Claude only where there is a Unix
+terminal), whether it is signed in to an account, and `platform`, the operating
 system it was built for in its own words. `platform` is optional: a host that
 does not announce it is shown as unknown rather than as a guess. Nothing
 routes or authorizes on these fields; they exist so a client can tell one
@@ -244,13 +245,13 @@ the link itself for a plain stream, proves the caller. Graceful stream finish
 is close. A reset before acceptance is a refused open and carries one
 `StreamRefusal` code:
 
-- `NO_ROUTE`: the destination has no adjacent live link, or the route vanished
+- `STREAM_REFUSAL_NO_ROUTE`: the destination has no adjacent live link, or the route vanished
   while opening it.
-- `PAYMENT_REQUIRED`: a cloud-relay link at either end was admitted as free.
-- `RATE_LIMITED`: the relay refused the origin's stream-open rate.
-- `NOT_ADJACENT`: the destination is invalid, is the relay itself, or the
+- `STREAM_REFUSAL_PAYMENT_REQUIRED`: a cloud-relay link at either end was admitted as free.
+- `STREAM_REFUSAL_RATE_LIMITED`: the relay refused the origin's stream-open rate.
+- `STREAM_REFUSAL_NOT_ADJACENT`: the destination is invalid, is the relay itself, or the
   stream did not provide a valid preface.
-- `SHUTTING_DOWN`: the accepting link is closing.
+- `STREAM_REFUSAL_SHUTTING_DOWN`: the accepting link is closing.
 - `STREAM_REFUSAL_UNSPECIFIED`: an unknown or unmapped reset code.
 
 ### Channel authority and classes
@@ -449,7 +450,7 @@ reached the owner:
   trusted, or no channel opened within 10 seconds. That is
   `ERROR_CODE_UNREACHABLE` naming the host by the name it was paired under,
   except for `SendInput`, which answers with a rejected verdict,
-  `host_unreachable`, so a composer treats it like any other refusal.
+  `REFUSAL_HOST_UNREACHABLE`, so a composer treats it like any other refusal.
 - **Uncertain.** The call went out and its answer did not come back: the
   link failed under it, or 30 seconds passed (enough for a spawn, which waits
   for the child's process to start on the far side). That is

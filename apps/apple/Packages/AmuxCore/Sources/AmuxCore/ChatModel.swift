@@ -852,14 +852,15 @@ public final class ChatModel {
     }
 
     /// Why an input was not sent, as a notice.
-    static func notSent(_ reason: RefusalReason) -> String {
-        String(localized: "Not sent: \(refusal(reason))")
+    static func notSent(_ refused: Refusal) -> String {
+        String(localized: "Not sent: \(refusal(refused))")
     }
 
-    /// Why the agent or its host refused an input. A reason this build does
-    /// not know is shown as the host gave it.
-    public static func refusal(_ reason: RefusalReason) -> String {
-        switch reason {
+    /// Why the agent or its host refused an input: the refusal's own words
+    /// when it has them.
+    public static func refusal(_ refused: Refusal) -> String {
+        if let detail = refused.detail { return detail }
+        return switch refused.reason {
         case .exited: String(localized: "it had exited")
         case .exiting: String(localized: "it was exiting")
         case .draining: String(localized: "its host is shutting down")
@@ -867,7 +868,7 @@ public final class ChatModel {
         case .unsupported: String(localized: "this agent can’t take it")
         case .closedAsk: String(localized: "the ask had already closed")
         case .notQueued: String(localized: "it was no longer queued")
-        case .other(let reason): reason
+        case .unspecified: String(localized: "it was refused")
         }
     }
 

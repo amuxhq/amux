@@ -2101,7 +2101,7 @@ mod tests {
                     name: "peer".to_string(),
                     version: "test".to_string(),
                     capabilities: Capabilities {
-                        features: Vec::new(),
+                        cloud_relay: false,
                         kinds: vec![wire::Kind::ClaudeSdk as i32],
                     },
                     signed_in: Some(true),
@@ -2372,7 +2372,7 @@ mod tests {
                     name: "peer".to_string(),
                     version: "test".to_string(),
                     capabilities: Capabilities {
-                        features: Vec::new(),
+                        cloud_relay: false,
                         kinds: vec![wire::Kind::ClaudeSdk as i32],
                     },
                     signed_in: Some(true),

@@ -49,7 +49,6 @@ message AgentSender {
   bytes agent_id = 1;
   bytes host_id = 2;
   string name = 3;
-  string kind = 4;
 }
 
 message Human {}
@@ -95,8 +94,8 @@ message Item {
   // The one appendable field; U+FFFC marks each attachment's position.
   string text = 7;
   repeated Attachment attachments = 8;
-  // claude_pty | claude_sdk | codex: which per-kind item message `body` holds.
-  string kind = 9;
+  // Which per-kind item message `body` holds.
+  Kind kind = 9;
   bytes body = 10;
   // When the item happened: the provider's own timestamp where it has one,
   // else the interpreter's clock. Durations are differences of two of these.
@@ -120,10 +119,9 @@ message Snapshot {
   bytes agent = 1;
   uint64 revision = 2;
   repeated QueuedInput queue = 3;
-  // claude_pty | claude_sdk | codex: which per-kind snapshot `body` holds.
-  // Before the interpreter's first snapshot is ingested, Subscribe answers
-  // with the kind and an empty body.
-  string kind = 4;
+  // Which per-kind snapshot `body` holds. Before the interpreter's first
+  // snapshot is ingested, Subscribe answers with the kind and an empty body.
+  Kind kind = 4;
   bytes body = 5;
   // STARTING until the provider accepts input; NEEDS_YOU whenever an ask is
   // open. The daemon copies phase and working_on onto the inventory row.
@@ -168,10 +166,10 @@ message ChangeTotals {
 }
 
 enum Phase {
-  STARTING = 0;
-  IDLE = 1;
-  WORKING = 2;
-  NEEDS_YOU = 3;
+  PHASE_STARTING = 0;
+  PHASE_IDLE = 1;
+  PHASE_WORKING = 2;
+  PHASE_NEEDS_YOU = 3;
 }
 
 // What the daemon needs to notify a parent without decoding a body. An ask
@@ -382,17 +380,27 @@ message ToolDecision {
   }
 }
 
-// A standing permission Claude added when the call was allowed.
+// Where Claude saves a standing permission.
+enum ScopeDestination {
+  SCOPE_DESTINATION_UNSPECIFIED = 0;
+  SCOPE_DESTINATION_SESSION = 1;
+  SCOPE_DESTINATION_LOCAL_SETTINGS = 2;
+  SCOPE_DESTINATION_PROJECT_SETTINGS = 3;
+  SCOPE_DESTINATION_USER_SETTINGS = 4;
+}
+
+// A standing permission Claude offers or added when a call was allowed.
 message ClaudeGrant {
-  // The rules added, as Claude writes them: "Bash(npm test:*)".
+  // The rules, as Claude writes them: "Bash(npm test:*)".
   repeated string rules = 1;
   // Folders added to those Claude may work in.
   repeated string directories = 2;
   // A permission mode Claude switched to.
   optional string mode = 3;
-  // Where Claude saved it: session, localSettings, projectSettings,
-  // userSettings, or Claude's own word.
-  string saved_to = 4;
+  ScopeDestination destination = 4;
+  // Claude's own word for the destination, always carried: what a client
+  // shows for a destination it does not know.
+  string destination_word = 5;
 }
 
 // What Codex allows from now on.
@@ -626,17 +634,10 @@ message PermissionAsk {
   string server = 8;
 }
 
+// One scope the provider offered; answers name its index.
 message ScopeChoice {
-  // Position in the provider's offer; answers name it.
   uint32 index = 1;
-  // session | localSettings | projectSettings | userSettings, or the
-  // provider's own word.
-  string destination = 2;
-  repeated string rules = 3;
-  repeated string directories = 4;
-  string mode = 5;
-  // The provider's label when it words the choice itself.
-  string label = 6;
+  ClaudeGrant grant = 2;
 }
 
 message QuestionAsk {
@@ -926,9 +927,9 @@ message BackgroundJob {
 // The kind is the interpreter.
 enum Kind {
   KIND_UNSPECIFIED = 0;
-  CLAUDE_PTY = 1;
-  CLAUDE_SDK = 2;
-  CODEX = 3;
+  KIND_CLAUDE_PTY = 1;
+  KIND_CLAUDE_SDK = 2;
+  KIND_CODEX = 3;
 }
 
 // U+FFFC per attachment.
@@ -938,15 +939,15 @@ message PromptInput {
   // Prompts always queue; steering is SendQueuedNow on a queued entry.
 }
 
-// Rejected if the target is not queued.
+// Rejected REFUSAL_NOT_QUEUED if the target is not queued.
 message WithdrawQueued {
   bytes queued_input_id = 1;
 }
 
 // Delivers one queued prompt into the running turn through the provider's
 // own steering path; the entry reads steered until its reflection lands.
-// Rejected not_queued if the target is not waiting in the queue, and
-// unsupported if no turn is running.
+// Rejected REFUSAL_NOT_QUEUED if the target is not waiting in the queue,
+// and REFUSAL_UNSUPPORTED if no turn is running.
 message SendQueuedNow {
   bytes queued_input_id = 1;
 }
@@ -1035,8 +1036,23 @@ message Accepted {
   bool queued = 1;
 }
 
-// closed_ask | not_queued | unsupported | draining | exiting | exited |
-// host_unreachable
 message Rejected {
-  string reason = 1;
+  Refusal refusal = 1;
+  // The provider's or interpreter's own words, when it has any: terminal
+  // Claude's sentence about a send-now it cannot do.
+  optional string detail = 2;
+}
+
+enum Refusal {
+  REFUSAL_UNSPECIFIED = 0;
+  // The answer's ask is not open.
+  REFUSAL_CLOSED_ASK = 1;
+  // The withdraw or send-now target is not waiting in the queue.
+  REFUSAL_NOT_QUEUED = 2;
+  // This agent version, kind or state cannot take the input.
+  REFUSAL_UNSUPPORTED = 3;
+  REFUSAL_DRAINING = 4;
+  REFUSAL_EXITING = 5;
+  REFUSAL_EXITED = 6;
+  REFUSAL_HOST_UNREACHABLE = 7;
 }

@@ -92,7 +92,7 @@ transcript, not an agent. Only an amux spawn makes an agent with a chat of its o
 | Error | `Error { error_kind, message, attempts, gave_up }` | What failed and what to do. While the provider retries, the retry shows on the activity line instead. | full | full | full: typed error kind and will-retry |
 | Model switched | `ModelSwitch { from, to, reason }` | A notice: "Switched to Sonnet · reason". | none | full: refusal fallback | full: reroute with reason |
 | Session boundaries | `Boundary { kind, cause }` | A rule: started, cleared, compacted, resumed, forked, restarted, ended with its cause, or lost its daemon. | full | full | full |
-| Automatic review | `AutoReview { decision, risk, rationale, subject }` | "Auto-approved · low risk", opening to the reviewer's rationale. | n/a | n/a | partial |
+| Automatic review | `AutoReview { status, status_word, risk, rationale, subject }` | "Auto-approved · low risk", opening to the reviewer's rationale; a status amux has no words for shows the reviewer's own word. | n/a | n/a | partial |
 
 ![Session boundaries drawn as rules across the chat: started, cleared, compacted, resumed, forked, restarted, ended with exit 1, and lost its daemon.](figures/vocabulary/row_boundary.light.png)
 
@@ -131,8 +131,8 @@ of ask has one anatomy, the [`AskCard`](../crates/ui-view/src/ask.rs):
   dismisses the open ask, and the agent stays live and idle. It never ends the process; stopping or deleting the
   agent does that.
 - **Sending, then a row.** After an answer, `CardState` goes `Sending` and the card shrinks to one line until the
-  agent confirms; the decision then lands in the chat. A rejection brings the card back as `Rejected(reason)`,
-  the reason a typed `RefusalReason` each client words. If the connection dropped before any reply,
+  agent confirms; the decision then lands in the chat. A rejection brings the card back as `Rejected(refusal)`:
+  a typed `RefusalReason` each client words, and the provider's own sentence when it gave one, shown instead. If the connection dropped before any reply,
   `NotConfirmed` offers resend and discard; nothing is resent on its own. An exited agent's open asks are drawn `Dismissed`, and the composer offers Resume.
 
 An answer names its ask by key, so any open ask can be answered from any client, not only the head one. Before
@@ -154,7 +154,7 @@ carry no numbers and no line.
 | Outcome | Offered by |
 |---|---|
 | `AllowOnce` | every kind |
-| `AllowAlways { subjects, directories, mode, scope, label }` | Claude: one per scope the provider suggested, its rule lifted to plain words; `Scope` is `Session`, `Project` (this project, for this person), `ProjectShared`, `User` (every project) or another destination |
+| `AllowAlways { subjects, directories, mode, scope }` | Claude: one per scope the provider suggested, its rule lifted to plain words; `Scope` is `Session`, `Project` (this project, for this person), `ProjectShared`, `User` (every project) or another destination |
 | `AllowForSession` | Codex |
 | `AllowSimilar { prefix }` | Codex: the exact command prefix it would allow |
 | `AllowNetwork { hosts }` | Codex: a network rule naming the hosts |

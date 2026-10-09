@@ -13,7 +13,7 @@
   composer Send activity=Some(Running { key: "toolu_01JoMRZzFkMCxi3KJbtCe4MC" }) queue=[] underway=[] refused=[]
 ## 32 recorded 31: fact Stream type=control_request
   ask 614b94b3-080e-4cb8-9802-938c0100fdfc -> "toolu_01JoMRZzFkMCxi3KJbtCe4MC" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session, label: "" }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: None, kind: Added, text: "TOOL_OK" })], line: None, reason: "", created: None }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 34 recorded 33: input stdin-3

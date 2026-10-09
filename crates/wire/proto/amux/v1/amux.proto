@@ -149,11 +149,11 @@ message StreamPreface {
 // A stream reset before acceptance carries one of these refusal reasons.
 enum StreamRefusal {
   STREAM_REFUSAL_UNSPECIFIED = 0;
-  NO_ROUTE = 1;
-  PAYMENT_REQUIRED = 2;
-  RATE_LIMITED = 3;
-  NOT_ADJACENT = 4;
-  SHUTTING_DOWN = 5;
+  STREAM_REFUSAL_NO_ROUTE = 1;
+  STREAM_REFUSAL_PAYMENT_REQUIRED = 2;
+  STREAM_REFUSAL_RATE_LIMITED = 3;
+  STREAM_REFUSAL_NOT_ADJACENT = 4;
+  STREAM_REFUSAL_SHUTTING_DOWN = 5;
 }
 
 // Fire-and-forget credential refresh on the cloud link, sent before the
@@ -166,8 +166,10 @@ message Reauth {
 }
 
 message Capabilities {
-  repeated string features = 1;
-  // The agent kinds this host can run.
+  // The host serves as a cloud relay.
+  bool cloud_relay = 1;
+  // The agent kinds this host can run, from its platform: terminal Claude
+  // is not hosted on Windows.
   repeated Kind kinds = 2;
 }
 
@@ -299,8 +301,7 @@ message HostEntry {
 }
 
 message ProviderOnHost {
-  // As an agent's kind names its provider: "claude" or "codex".
-  string provider = 1;
+  Provider provider = 1;
   // The hash GetCatalogue answers with for this provider.
   optional bytes catalogue = 2;
   bool signed_in = 3;
@@ -308,16 +309,16 @@ message ProviderOnHost {
 
 enum Trust {
   TRUST_UNSPECIFIED = 0;
-  TRUSTED = 1;
+  TRUST_TRUSTED = 1;
   // Found by discovery, never paired.
-  CANDIDATE = 2;
+  TRUST_CANDIDATE = 2;
 }
 
 enum Presence {
   PRESENCE_UNSPECIFIED = 0;
-  ONLINE = 1;
-  OFFLINE = 2;
-  AWAY = 3;
+  PRESENCE_ONLINE = 1;
+  PRESENCE_OFFLINE = 2;
+  PRESENCE_AWAY = 3;
 }
 
 enum HostVia {
@@ -357,8 +358,8 @@ message Agent {
 
 enum Lifecycle {
   LIFECYCLE_UNSPECIFIED = 0;
-  LIVE = 1;
-  EXITED = 2;
+  LIFECYCLE_LIVE = 1;
+  LIFECYCLE_EXITED = 2;
 }
 
 message WorkingOn {
@@ -631,8 +632,16 @@ message DiffRequest {
 
 message GetCatalogueRequest {
   bytes host_id = 1;
-  // As an agent's kind names its provider: "claude" or "codex".
-  string provider = 2;
+  Provider provider = 2;
+}
+
+// Which provider's program a host runs: the vocabulary amux uses to ask a
+// host what it offers with no agent running. Distinct from Kind, which is
+// the interpreter.
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_CLAUDE = 1;
+  PROVIDER_CODEX = 2;
 }
 
 // The encoded Catalogue and the SHA-256 of exactly these bytes, which is

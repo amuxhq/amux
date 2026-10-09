@@ -121,14 +121,14 @@ impl Install {
     async fn host_catalogue_of(
         &self,
         host_id: Vec<u8>,
-        provider: &str,
+        provider: wire::Provider,
     ) -> Result<(Vec<u8>, wire::Catalogue), String> {
         let blob = self
             .client
             .clone()
             .get_catalogue(GetCatalogueRequest {
                 host_id,
-                provider: provider.to_owned(),
+                provider: provider as i32,
             })
             .await
             .map_err(|status| format!("the host's catalogue: {status}"))?
@@ -192,7 +192,9 @@ impl Install {
         let (expected, from) = match kind {
             Kind::ClaudePty => {
                 let host = self.host_entry().await?;
-                let (_, copy) = self.host_catalogue_of(host.host_id, "claude").await?;
+                let (_, copy) = self
+                    .host_catalogue_of(host.host_id, wire::Provider::Claude)
+                    .await?;
                 (
                     Some(wire::Catalogue {
                         permissions: catalogue.permissions.clone(),
@@ -221,8 +223,8 @@ impl Install {
     /// names that copy, signed in, on its own fleet entry.
     pub(super) async fn host_catalogue(&self) -> Result<Verdict, String> {
         let provider = match self.kind {
-            Kind::Codex => "codex",
-            _ => "claude",
+            Kind::Codex => wire::Provider::Codex,
+            _ => wire::Provider::Claude,
         };
         let host = self.host_entry().await?;
         let (hash, catalogue) = self
@@ -235,14 +237,14 @@ impl Install {
         let named = host
             .providers
             .iter()
-            .find(|on_host| on_host.provider == provider)
-            .ok_or_else(|| format!("the host's entry names no {provider}"))?;
+            .find(|on_host| on_host.provider == provider as i32)
+            .ok_or_else(|| format!("the host's entry names no {provider:?}"))?;
         if named.catalogue.as_ref() != Some(&hash) {
             return Err("the host's entry names another catalogue".into());
         }
         if !named.signed_in {
             return Ok(Verdict::Unavailable(format!(
-                "the host says {provider} is not signed in"
+                "the host says {provider:?} is not signed in"
             )));
         }
         Ok(Verdict::Pass)

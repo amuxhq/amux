@@ -168,9 +168,10 @@ impl ClientApi {
             })
             .await;
         }
-        let provider = crate::Provider::from_name(&request.provider).ok_or_else(|| {
-            status(CatalogueError::NoProvider(request.provider.clone()).to_wire())
-        })?;
+        let provider = crate::Provider::try_from(request.provider)
+            .ok()
+            .filter(|provider| crate::offers::ASKED.contains(provider))
+            .ok_or_else(|| status(CatalogueError::NoProvider(request.provider).to_wire()))?;
         runtime
             .host_catalogue(provider)
             .await
@@ -256,7 +257,6 @@ fn is_interrupt(input: &wire::Input) -> bool {
 }
 
 // The verdict for an input to an agent whose host cannot be reached.
-use wire::refusal::HOST_UNREACHABLE;
 
 /// One call made on another host's daemon, answered with its answer.
 async fn forwarded<T, F, Fut>(
@@ -392,9 +392,9 @@ impl ClientService for ClientApi {
                 // Never left: definitely not sent. A send that went out and
                 // lost its answer comes back aborted, which the sender
                 // settles at its next catch-up.
-                Err(ForwardError::NotSent { .. }) => {
-                    Ok(Response::new(crate::relay::rejected(HOST_UNREACHABLE)))
-                }
+                Err(ForwardError::NotSent { .. }) => Ok(Response::new(crate::relay::rejected(
+                    wire::Refusal::HostUnreachable,
+                ))),
                 Err(error) => Err(status(error.to_wire())),
             };
         }
@@ -506,7 +506,7 @@ impl ClientService for ClientApi {
                 .await
                 .ok()
                 .flatten()
-                .and_then(|row| telemetry::kind_named(&row.kind))
+                .and_then(|row| telemetry::kind_coded(row.kind))
                 .map(InputShape::Prompt),
             None => None,
         };

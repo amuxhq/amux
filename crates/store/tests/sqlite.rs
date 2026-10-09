@@ -21,6 +21,7 @@ const SHIPPED: &[&str] = &[
     "e7e1f74cead2bc6888769d611d8b6b898af1854422011a20ab6e021460b60a11",
     "8cd1a05a538c061607a3b2d959d6aebe18e8ffbe6df773b733c8d4b733ff8b37",
     "34ceffe9be496cf6e18ab79165f57986857a8d0606556580dde9f871fab48ea7",
+    "7276e37dc4a8bf957b51e74d46e1d693931842acf807d32d480659cdb96347f9",
 ];
 
 fn step(keys: &[&str]) -> Step {
@@ -29,7 +30,7 @@ fn step(keys: &[&str]) -> Step {
             .iter()
             .map(|key| Item {
                 key: (*key).into(),
-                kind: "codex".into(),
+                kind: wire::Kind::Codex as i32,
                 text: format!("text of {key}"),
                 ..Default::default()
             })
@@ -121,7 +122,7 @@ fn a_newer_store_opens_when_its_stamp_allows_and_not_otherwise() {
     let mut store = Sqlite::open(&path, OWN).unwrap();
     let agent = AgentKey::new(OWN, b"a".to_vec());
     store
-        .put_agent(&AgentRow::new(agent.clone(), "codex", "/"))
+        .put_agent(&AgentRow::new(agent.clone(), wire::Kind::Codex, "/"))
         .unwrap();
     store.commit(&agent, &[(1, step(&["k"]))], CLOCK).unwrap();
     drop(store);
@@ -156,14 +157,14 @@ fn the_unique_order_index_trips_on_a_second_key_at_one_order() {
     let mut store = open(&dir);
     let agent = AgentKey::new(OWN, b"a".to_vec());
     store
-        .put_agent(&AgentRow::new(agent.clone(), "codex", "/"))
+        .put_agent(&AgentRow::new(agent.clone(), wire::Kind::Codex, "/"))
         .unwrap();
     store.commit(&agent, &[(1, step(&["k1"]))], CLOCK).unwrap();
     let error = store
         .connection()
         .execute(
             "INSERT INTO items (origin_host, agent_id, key, \"order\", revision, at_ms, \
-             producer_version, kind, body) VALUES (?1, ?2, 'k2', 1, 9, 0, '', 'codex', x'')",
+             producer_version, kind, body) VALUES (?1, ?2, 'k2', 1, 9, 0, '', 3, x'')",
             params![OWN, b"a".to_vec()],
         )
         .unwrap_err();
@@ -179,7 +180,7 @@ fn a_commit_that_fails_leaves_nothing_behind() {
     let mut store = open(&dir);
     let agent = AgentKey::new(OWN, b"a".to_vec());
     store
-        .put_agent(&AgentRow::new(agent.clone(), "codex", "/"))
+        .put_agent(&AgentRow::new(agent.clone(), wire::Kind::Codex, "/"))
         .unwrap();
     store.commit(&agent, &[(1, step(&["k1"]))], CLOCK).unwrap();
     let before = store.agent(&agent).unwrap().unwrap();
@@ -223,7 +224,7 @@ fn rows_survive_a_reopen() {
     let agent = AgentKey::new(OWN, b"a".to_vec());
     {
         let mut store = open(&dir);
-        let mut row = AgentRow::new(agent.clone(), "codex", "/src");
+        let mut row = AgentRow::new(agent.clone(), wire::Kind::Codex, "/src");
         row.parent = Some(AgentKey::new(b"p-host".to_vec(), b"p".to_vec()));
         store.put_agent(&row).unwrap();
         let mut frames = step(&["k1", "k2"]);

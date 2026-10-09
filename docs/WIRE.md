@@ -85,7 +85,7 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | `SendInput(SendInputRequest)` | `SendInputResponse` | The interpreter's verdict on one input |
 | `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
 | `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`. The agent's branch keeps the name it was made with |
-| `StopAgent(StopAgentRequest)` | `Empty` | `GRACEFUL`, `ABORT` or `KILL`; a registry act, never a chat control |
+| `StopAgent(StopAgentRequest)` | `Empty` | `STOP_MODE_GRACEFUL`, `STOP_MODE_ABORT` or `STOP_MODE_KILL`; a mode this host cannot read is `INVALID_ARGUMENT`; a registry act, never a chat control |
 | `ResumeAgent(ResumeAgentRequest)` | `Agent` | Start the agent's directory again, optionally with a first prompt |
 | `DeleteAgent` | `DeleteAgentResponse` | Cascades to children; lists removed and unreachable children |
 | `SendMessage(SendMessageRequest)` | `SendMessageResponse` | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
@@ -260,8 +260,8 @@ message Item {
 
 `Snapshot` carries the same split: kind-neutral envelope fields (`revision`,
 the `queue` of `QueuedInput`s, `phase`, `working_on`, `at_ms`,
-`phase_since_ms`, `git`) and a per-kind `body`. `Phase` is `STARTING`,
-`IDLE`, `WORKING` or `NEEDS_YOU`.
+`phase_since_ms`, `git`) and a per-kind `body`. `Phase` is `PHASE_STARTING`,
+`PHASE_IDLE`, `PHASE_WORKING` or `PHASE_NEEDS_YOU`.
 
 `phase_since_ms` is the interpreter's clock when `phase` last changed. The
 part every interpreter shares stamps it, so streamed output and other changes
@@ -288,8 +288,9 @@ stored and forwarded without decoding, so a body written by a later agent
 binary passes through an earlier daemon intact. Bodies are decoded only at the
 two ends: the interpreter that wrote them and the client's per-kind layer. The
 `kind` tag says which message a body holds (`ClaudePtyItem`, `ClaudeSdkItem`,
-`CodexItem`, and the matching snapshots); `wire::kind_tag` and
-`wire::kind_from_tag` map it to the `Kind` enum. The item vocabulary itself is
+`CodexItem`, and the matching snapshots), as a `Kind`. A kind the reader has
+no name for is still a number it keeps: a replica of an agent of a newer kind
+is listed with that kind, and its items carry it. The item vocabulary itself is
 described in [the chat vocabulary](CHAT_VOCABULARY.md) and
 [interpreters](INTERPRETERS.md).
 
@@ -427,7 +428,7 @@ interpreter answers at once:
 ```proto
 message SendInputResponse { oneof of { Accepted accepted = 1; Rejected rejected = 2; } }
 message Accepted { bool queued = 1; }
-message Rejected { string reason = 1; }
+message Rejected { Refusal refusal = 1; optional string detail = 2; }
 ```
 
 The reply is the interpreter's verdict, not a receipt for a handover. A prompt
@@ -443,23 +444,24 @@ each nudge before it reads the next frame from the agent, so by the time a
 `SendInput` reply reaches the client, the snapshot that lists a queued prompt
 has already been committed and broadcast.
 
-Rejection reasons (constants in `interpret::reason`, `node::EXITED` and
-`node::EXITING`):
+The `Refusal` says why:
 
-| Reason | Given by | When |
+| Refusal | Given by | When |
 | --- | --- | --- |
-| `closed_ask` | interpreter | The answer names an ask that is not open, for example one already answered on another device |
-| `not_queued` | interpreter | The withdrawal or send-now names an input that is not waiting in the queue |
-| `unsupported` | interpreter | This agent version cannot interpret the input's arm, or send-now with no turn running |
-| `draining` | interpreter | The agent is finishing up because its daemon went away or it was stopped |
-| `exiting` | interpreter | A one-shot child decided to exit |
-| `exited` | the owning daemon | The agent has exited; the composer offers Resume |
-| `host_unreachable` | the local runtime | The agent's host cannot be reached, so the input never left; one that left and lost its answer is `ABORTED` instead |
+| `REFUSAL_CLOSED_ASK` | interpreter | The answer names an ask that is not open, for example one already answered on another device |
+| `REFUSAL_NOT_QUEUED` | interpreter | The withdrawal or send-now names an input that is not waiting in the queue |
+| `REFUSAL_UNSUPPORTED` | interpreter | This agent version, kind or state cannot take the input, or send-now with no turn running |
+| `REFUSAL_DRAINING` | the agent | The agent is finishing up because its daemon went away or it was stopped |
+| `REFUSAL_EXITING` | the agent | A one-shot child decided to exit |
+| `REFUSAL_EXITED` | the owning daemon | The agent has exited; the composer offers Resume |
+| `REFUSAL_HOST_UNREACHABLE` | the local runtime | The agent's host cannot be reached, so the input never left; one that left and lost its answer is `ABORTED` instead |
 
-A rejection may instead carry a sentence for a person, when the refusal
-depends on the provider rather than the protocol: terminal Claude refuses
-send-now on a Claude older than the one its keymap's send-now row is verified
-from, naming both versions.
+`detail` carries a sentence for a person when the refusal depends on the
+provider rather than the protocol: terminal Claude refuses send-now as
+`REFUSAL_UNSUPPORTED` on a Claude older than the one its keymap's send-now row
+is verified from, and the detail names both versions. A client shows the
+detail when there is one and its own words for the refusal otherwise; a
+refusal it has no words for reads as a plain refusal.
 
 ### States a client observes
 
@@ -533,8 +535,8 @@ the replica's current snapshot names it (see [attachments](ATTACHMENTS.md)),
 so the picker still reads with the origin away. A hash that names no blob is
 `NOT_FOUND`.
 
-`GetCatalogue(host_id, provider)` names a host and a provider (`claude` or
-`codex`) and answers what that provider offers there with no agent running,
+`GetCatalogue(host_id, provider)` names a host and a `Provider`
+(`PROVIDER_CLAUDE` or `PROVIDER_CODEX`) and answers what that provider offers there with no agent running,
 as a `CatalogueBlob`: the encoded `Catalogue` and the SHA-256 of exactly
 those bytes, which is the hash the host's entry names for that provider. The
 daemon holds no provider code: it runs the hidden helper `amux catalogue <provider>`, which
@@ -570,8 +572,8 @@ for every live agent (see [the client library](CLIENT.md#the-fleet)), so the
 row stays small.
 
 `HostEntry` carries the host's name, version, platform and capabilities, its
-`trust` (`TRUSTED` or `CANDIDATE`), its `presence` (`ONLINE`, `OFFLINE` or
-`AWAY`), how it is reached, and its `generation`, which changes only after an
+`trust` (`TRUST_TRUSTED` or `TRUST_CANDIDATE`), its `presence`
+(`PRESENCE_ONLINE`, `PRESENCE_OFFLINE` or `PRESENCE_AWAY`), how it is reached, and its `generation`, which changes only after an
 unclean reboot of that host (see [the journal and store](JOURNAL_AND_STORE.md)).
 Its `providers` list, per provider the host has been asked about, the hash of
 what that provider offers there and whether it is signed in; a paired host's

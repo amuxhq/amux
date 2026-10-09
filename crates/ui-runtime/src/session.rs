@@ -17,7 +17,8 @@ use prost::Message as _;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use ui_state::{
-    BlobStatus, Connection, InputId, InputOutcome, Key, Msg, Outcome, RefusalReason, SessionState,
+    BlobStatus, Connection, InputId, InputOutcome, Key, Msg, Outcome, Refusal, RefusalReason,
+    SessionState,
 };
 use ui_view::SessionLine;
 use wire::{
@@ -40,7 +41,7 @@ pub struct Sent {
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum InputError {
     #[error("rejected: {0:?}")]
-    Rejected(RefusalReason),
+    Rejected(Refusal),
     /// The connection dropped before the verdict: the chat shows it not
     /// confirmed until it has caught up again.
     #[error("not confirmed: the connection dropped before the agent answered")]
@@ -332,7 +333,7 @@ impl Inner {
             Err(error) if error.code() == Some(ErrorCode::Aborted) => InputOutcome::Lost,
             // Any other refusal never reached the agent, which is a
             // rejection, never uncertain.
-            Err(RpcError::Refused(error)) => InputOutcome::Reply(rejected(error.message)),
+            Err(RpcError::Refused(error)) => InputOutcome::Reply(refused(error)),
         };
         self.apply(Msg::Sent(id.clone(), outcome.clone()));
         Sent { id, outcome }
@@ -359,10 +360,25 @@ impl Inner {
     }
 }
 
-fn rejected(reason: String) -> SendInputResponse {
+fn rejected(refusal: wire::Rejected) -> SendInputResponse {
     SendInputResponse {
-        of: Some(send_input_response::Of::Rejected(wire::Rejected { reason })),
+        of: Some(send_input_response::Of::Rejected(refusal)),
     }
+}
+
+/// A call the daemon refused before the agent had it: a host it cannot
+/// reach, or the daemon's own words for anything else.
+fn refused(error: wire::Error) -> SendInputResponse {
+    rejected(match error.code() {
+        ErrorCode::Unavailable => wire::Rejected {
+            refusal: wire::Refusal::HostUnreachable as i32,
+            detail: None,
+        },
+        _ => wire::Rejected {
+            refusal: wire::Refusal::Unspecified as i32,
+            detail: Some(error.message),
+        },
+    })
 }
 
 /// The session's state while the guard lives. Never hold it across an
@@ -701,7 +717,10 @@ impl Session {
             Some(input) => self.send(input).await,
             None => Sent {
                 id: Vec::new(),
-                outcome: InputOutcome::Reply(rejected(wire::refusal::UNSUPPORTED.into())),
+                outcome: InputOutcome::Reply(rejected(wire::Rejected {
+                    refusal: wire::Refusal::Unsupported as i32,
+                    detail: None,
+                })),
             },
         }
     }
@@ -780,7 +799,9 @@ impl Session {
 
     async fn act(&self, input: Option<Input>) -> Result<(), InputError> {
         let Some(input) = input else {
-            return Err(InputError::Rejected(RefusalReason::Unsupported));
+            return Err(InputError::Rejected(Refusal::of(
+                RefusalReason::Unsupported,
+            )));
         };
         match self.send(input).await.outcome {
             InputOutcome::Reply(SendInputResponse {
@@ -788,9 +809,7 @@ impl Session {
             }) => Ok(()),
             InputOutcome::Reply(SendInputResponse {
                 of: Some(send_input_response::Of::Rejected(rejected)),
-            }) => Err(InputError::Rejected(ui_state::refusal_reason(
-                &rejected.reason,
-            ))),
+            }) => Err(InputError::Rejected(ui_state::refusal(&rejected))),
             InputOutcome::Reply(SendInputResponse { of: None }) | InputOutcome::Lost => {
                 Err(InputError::Uncertain)
             }

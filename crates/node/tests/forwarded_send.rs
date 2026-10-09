@@ -120,7 +120,7 @@ fn verdict(answer: &SendInputResponse) -> String {
         Some(send_input_response::Of::Accepted(accepted)) if accepted.queued => "queued".into(),
         Some(send_input_response::Of::Accepted(_)) => "accepted".into(),
         Some(send_input_response::Of::Rejected(rejected)) => {
-            format!("rejected {}", rejected.reason)
+            format!("rejected {:?}", rejected.refusal())
         }
         None => "empty".into(),
     }
@@ -195,7 +195,7 @@ async fn a_send_with_no_link_never_leaves_and_is_rejected() {
             .await
             .map_err(|status| format!("{status:?}"))?;
         match verdict(answer.get_ref()).as_str() {
-            "rejected host_unreachable" => Ok(()),
+            "rejected HostUnreachable" => Ok(()),
             other => Err(other.to_owned()),
         }
     })

@@ -258,7 +258,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:Claude's terminal menu has no entry amux can type for this answer",
+        "reply": "rejected:UNSUPPORTED Claude's terminal menu has no entry amux can type for this answer",
         "asks": [
           "ask:2"
         ],
@@ -279,7 +279,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "asks": [
           "ask:2"
         ],
@@ -643,7 +643,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "silent": true
       },
       "note": "one answer for two questions, and two picks on a single-select"
@@ -664,7 +664,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "silent": true
       }
     },
@@ -685,7 +685,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "silent": true
       },
       "note": "a typed answer to a question with previews: Claude draws those side by side with no row to type it in"
@@ -708,7 +708,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "silent": true
       },
       "note": "a note for the answers: Claude's form has nowhere to type one"

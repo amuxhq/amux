@@ -9,10 +9,7 @@ use tonic::transport::Channel;
 
 use crate::HostId;
 use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
-use crate::routing::{
-    FEATURE_CLOUD_RELAY, Host, HostVia, LinkCarrier, LinkCloseRequest, Route, RoutingCore,
-    RoutingEvent,
-};
+use crate::routing::{HostVia, LinkCarrier, LinkCloseRequest, Route, RoutingCore, RoutingEvent};
 use crate::transport::{TrustedPeerConnections, pairing_channel_from_io};
 
 pub struct ConnectionManager {
@@ -310,7 +307,7 @@ impl ConnectionManager {
         match event {
             RoutingEvent::NeighborUp { host, link } => {
                 self.clear_reachability_error(host.id).await;
-                if host_is_cloud_relay(&host) {
+                if host.capabilities.cloud_relay {
                     return;
                 }
                 let already_direct = matches!(
@@ -334,7 +331,7 @@ impl ConnectionManager {
             }
             RoutingEvent::ClaimUp { relay, host } => {
                 self.clear_reachability_error(host.id).await;
-                if host_is_cloud_relay(&host)
+                if host.capabilities.cloud_relay
                     || self
                         .channels
                         .link_registry()
@@ -414,13 +411,6 @@ impl ConnectionManager {
     }
 }
 
-fn host_is_cloud_relay(host: &Host) -> bool {
-    host.capabilities
-        .features
-        .iter()
-        .any(|feature| feature == FEATURE_CLOUD_RELAY)
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -432,7 +422,7 @@ mod tests {
     use super::*;
     use crate::link::{ByteStream, CarrierKind, ControlSink, ControlSource, OpenError};
     use crate::routing::{
-        Capabilities, LinkAdmission, LinkCarrier as RoutingCarrier, LinkId, LinkProperties,
+        Capabilities, Host, LinkAdmission, LinkCarrier as RoutingCarrier, LinkId, LinkProperties,
         LinkRegistry, LinkRole,
     };
 
@@ -443,7 +433,7 @@ mod tests {
             name: "peer".to_string(),
             version: "test".to_string(),
             capabilities: Capabilities {
-                features: Vec::new(),
+                cloud_relay: false,
                 kinds: Vec::new(),
             },
             signed_in: Some(true),

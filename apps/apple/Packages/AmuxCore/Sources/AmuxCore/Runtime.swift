@@ -456,15 +456,14 @@ public final class Profile: @unchecked Sendable {
         }
     }
 
-    /// What a provider, "claude" or "codex", offers on a host with no agent
-    /// running there: what a new agent picks its model, effort, permission
-    /// and mode from.
+    /// What a provider offers on a host with no agent running there: what a
+    /// new agent picks its model, effort, permission and mode from.
     public func hostCatalogue(
-        on host: HostId, provider: String
+        on host: HostId, provider: Provider
     ) async -> Result<Catalogue, RuntimeFailure> {
         await act(Catalogue.self) { live, callback, context in
             Bridge.json(host.bytes).withCString { host in
-                provider.withCString { provider in
+                Bridge.json(provider).withCString { provider in
                     amux_profile_host_catalogue(live, host, provider, callback, context)
                 }
             }

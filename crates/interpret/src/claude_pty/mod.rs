@@ -69,7 +69,7 @@ use serde_json::Value;
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, Boundary, BoundaryKind, ClaudeAnswer, ClaudeGrant,
     ClaudePtyItem, ClaudePtySnapshot, ContextMeter, DecisionOutcome, Envelope, Input, KindInput,
-    RunningCall, Step, SubagentProgress, ToolCall, ToolDecision, ToolState, claude_answer,
+    Refusal, RunningCall, Step, SubagentProgress, ToolCall, ToolDecision, ToolState, claude_answer,
     claude_pty_input, claude_pty_item, permission_answer, tool_decision,
 };
 
@@ -80,8 +80,8 @@ use crate::claude_common::{
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
     RedactTarget, SendOutcome, Shared, SnapshotView, Stepped, agent_message_body,
-    agent_message_key, ask_item, claude_pty_input, human, is_send_tool, reason, sent_message,
-    serde_pb, unknown,
+    agent_message_key, ask_item, claude_pty_input, human, is_send_tool, sent_message, serde_pb,
+    unknown,
 };
 
 /// The interpreter for kind `claude_pty`.
@@ -481,9 +481,21 @@ enum AskShape {
     Trust,
 }
 
-/// Why a scope the terminal's menu has no entry for is refused; the card
-/// shows it.
-const NO_KEY_FOR_ANSWER: &str = "Claude's terminal menu has no entry amux can type for this answer";
+/// A scope the terminal's menu has no entry for, refused in words the card
+/// shows.
+fn no_key_for_answer() -> wire::Rejected {
+    crate::reply::unsupported_saying(
+        "Claude's terminal menu has no entry amux can type for this answer",
+    )
+}
+
+/// An answer that does not fit the ask.
+fn unsupported() -> wire::Rejected {
+    wire::Rejected {
+        refusal: Refusal::Unsupported as i32,
+        detail: None,
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct PendingMessage {
@@ -1154,7 +1166,7 @@ impl State {
         // version cannot read.
         let arm = match input.decode_body() {
             Some(KindInput::ClaudePty(wire::ClaudePtyInput { of: Some(arm) })) => arm,
-            _ => return self.shared.reject(emit, &id, reason::UNSUPPORTED),
+            _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
             claude_pty_input::Of::Prompt(prompt) => {
@@ -1174,7 +1186,9 @@ impl State {
             // written. Nothing is typed over an open menu.
             claude_pty_input::Of::SendNow(send) => {
                 if let Some(reason) = self.provider.send_now_refused.clone() {
-                    return self.shared.reject(emit, &id, &reason);
+                    return self
+                        .shared
+                        .refuse(emit, &id, crate::reply::unsupported_saying(reason));
                 }
                 let running = self.shared.is_busy() && self.shared.asks().is_empty();
                 if let Some(entry) = self
@@ -1230,11 +1244,11 @@ impl State {
         }
         let answered = match (self.asks.get(&key), parsed) {
             (Some(meta), Some(parsed)) => terminal_answer(&meta.shape, asked.as_ref(), parsed),
-            _ => Err(reason::UNSUPPORTED),
+            _ => Err(unsupported()),
         };
         let (terminal, decision) = match answered {
             Ok(answered) => answered,
-            Err(why) => return self.shared.reject(emit, id, why),
+            Err(why) => return self.shared.refuse(emit, id, why),
         };
         self.shared.answer(emit, id, &key);
         self.close(emit, &key, decision);
@@ -1260,7 +1274,7 @@ impl State {
         let Some(record) =
             ask_item::replied(asked, reply).filter(|_| fits && !reply.text.trim().is_empty())
         else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+            return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         self.shared.answer(emit, id, key);
         self.close(emit, key, Decision::question(record));
@@ -1301,7 +1315,7 @@ impl State {
             _ => None,
         };
         let (Some(trust), Some(claude_answer::Of::Question(answer))) = (trust, parsed) else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+            return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         let Some(ask) = self.shared.answer(emit, id, key) else {
             return;
@@ -1331,7 +1345,7 @@ fn terminal_answer(
     shape: &AskShape,
     asked: Option<&wire::QuestionAsk>,
     answer: claude_answer::Of,
-) -> Result<(TerminalInput, Decision), &'static str> {
+) -> Result<(TerminalInput, Decision), wire::Rejected> {
     let decision = |outcome: DecisionOutcome, grant: Option<ClaudeGrant>, note: String| Decision {
         outcome: outcome as i32,
         grant,
@@ -1349,7 +1363,7 @@ fn terminal_answer(
             claude_answer::Of::Permission(permission),
         ) => {
             let suggestions = *suggestions;
-            match permission.of.ok_or(reason::UNSUPPORTED)? {
+            match permission.of.ok_or_else(unsupported)? {
                 permission_answer::Of::Allow(allow) => match allow.scope {
                     None => Ok((
                         TerminalInput::Permission {
@@ -1365,7 +1379,12 @@ fn terminal_answer(
                         },
                         decision(
                             DecisionOutcome::Allowed,
-                            Some(grants.get(index as usize).ok_or(NO_KEY_FOR_ANSWER)?.clone()),
+                            Some(
+                                grants
+                                    .get(index as usize)
+                                    .ok_or_else(no_key_for_answer)?
+                                    .clone(),
+                            ),
                             String::new(),
                         ),
                     )),
@@ -1396,7 +1415,7 @@ fn terminal_answer(
                     let verdict = Verdict::sent_back(&note);
                     (PlanChoice::SendBack { note }, verdict)
                 }
-                _ => return Err(reason::UNSUPPORTED),
+                _ => return Err(unsupported()),
             };
             Ok((TerminalInput::Plan(choice), Decision::plan(verdict)))
         }
@@ -1411,11 +1430,11 @@ fn terminal_answer(
                     .iter()
                     .any(|response| response.note.is_some())
             {
-                return Err(reason::UNSUPPORTED);
+                return Err(unsupported());
             }
             let record = asked
                 .and_then(|asked| ask_item::answered(asked, &answer))
-                .ok_or(reason::UNSUPPORTED)?;
+                .ok_or_else(unsupported)?;
             let mut answers = Vec::new();
             for (shape, response) in questions.iter().zip(answer.answers) {
                 let picks = response.selected.len() + usize::from(response.other.is_some());
@@ -1424,7 +1443,7 @@ fn terminal_answer(
                     && (shape.multi_select || picks <= 1)
                     && !(shape.previews && response.other.is_some());
                 if !fits {
-                    return Err(reason::UNSUPPORTED);
+                    return Err(unsupported());
                 }
                 answers.push(QuestionChoice {
                     selected: response.selected,
@@ -1439,7 +1458,7 @@ fn terminal_answer(
                 Decision::question(record),
             ))
         }
-        _ => Err(reason::UNSUPPORTED),
+        _ => Err(unsupported()),
     }
 }
 
@@ -1453,7 +1472,7 @@ impl Checkpoint for State {
 
 impl Interpreter for ClaudePty {
     type State = State;
-    const KIND: &'static str = "claude_pty";
+    const KIND: wire::Kind = wire::Kind::ClaudePty;
 
     fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
         let mut state = State::new(spec, producer_version);

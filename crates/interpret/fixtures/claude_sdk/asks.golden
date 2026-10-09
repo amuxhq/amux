@@ -15,12 +15,12 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-1->t1 permis
 ## 5 input {"answer":{"answer":{"allow":{"scope":1}},"ask":"req-1"},"id":"a1"}
 effect write "{\"response\":{\"request_id\":\"req-1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"rm -rf target\"},\"updatedPermissions\":[{\"destination\":\"session\",\"directories\":[\"/work/other\"],\"type\":\"addDirectories\"}]},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a1 accepted
-item t1 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=claude(saved_to=session directories=["/work/other"]) input="{\"command\":\"rm -rf target\"}"
+item t1 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/work/other"]) input="{\"command\":\"rm -rf target\"}"
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 6 input {"answer":{"answer":{"allow":{}},"ask":"req-1"},"id":"a1b"}
-effect reply a1b rejected:closed_ask
+effect reply a1b rejected:CLOSED_ASK
 ## 7 fact {"channel":"stream","json":{"message":{"content":[{"content":"","tool_use_id":"t1","type":"tool_result"}],"role":"user"},"type":"user","uuid":"u1"}}
-item t1 tool final at=1800000000000 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=claude(saved_to=session directories=["/work/other"]) ended=1800000000000 input="{\"command\":\"rm -rf target\"}"
+item t1 tool final at=1800000000000 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/work/other"]) ended=1800000000000 input="{\"command\":\"rm -rf target\"}"
 ## 8 fact {"channel":"stream","json":{"message":{"content":[{"id":"t2","input":{"command":"git push --force"},"name":"Bash","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m2"}}
 item t2 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"git push --force\"}"
 ## 9 fact {"channel":"stream","json":{"request":{"input":{"command":"git push --force"},"permission_suggestions":[],"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"t2"},"request_id":"req-2","type":"control_request"}}

@@ -119,4 +119,4 @@ item turn-5-plan plan final at=1800000000000 text="## Write the colour\n\n- Writ
 item prompt:7034 prompt final input=p4 at=1800000000000 text="Forget the plan; just write Blue."
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request sandbox=workspace-write reviewer=? collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 46 input {"answer":{"answer":{"plan":{"choice":"start"}},"ask":"plan:turn-5-plan"},"id":"bad"}
-effect reply bad rejected:closed_ask
+effect reply bad rejected:CLOSED_ASK

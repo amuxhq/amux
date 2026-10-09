@@ -97,7 +97,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:not_queued",
+        "reply": "rejected:NOT_QUEUED",
         "silent": true
       }
     },

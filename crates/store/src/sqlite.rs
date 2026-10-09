@@ -192,7 +192,7 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent, par
 /// `crate::item_bytes`, in SQL: byte lengths, not character counts.
 const ITEM_BYTES: &str = "(length(CAST(key AS BLOB)) + length(CAST(text AS BLOB)) + length(body) \
     + IFNULL(length(attachments), 0) + IFNULL(length(input_id), 0) \
-    + length(CAST(producer_version AS BLOB)) + length(CAST(kind AS BLOB)) + 48)";
+    + length(CAST(producer_version AS BLOB)) + 48)";
 
 const ITEM_COLUMNS: &str =
     "key, \"order\", revision, at_ms, producer_version, input_id, text, kind, attachments, body";

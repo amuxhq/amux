@@ -74,7 +74,7 @@ fn verdict(response: &SendInputResponse) -> String {
         Some(send_input_response::Of::Accepted(accepted)) if accepted.queued => "queued".into(),
         Some(send_input_response::Of::Accepted(_)) => "accepted".into(),
         Some(send_input_response::Of::Rejected(rejected)) => {
-            format!("rejected {}", rejected.reason)
+            format!("rejected {:?}", rejected.refusal())
         }
         None => "none".into(),
     }
@@ -166,11 +166,11 @@ async fn send_input_returns_the_interpreters_verdict_or_answers_for_an_exited_ag
 
     let answer = runtime.send_input(&send(&live, b"i1")).await.unwrap();
     assert_eq!(verdict(&answer), "queued");
-    live.answer_with(Answer::Reject("closed_ask".into()));
+    live.answer_with(Answer::Reject(wire::Refusal::ClosedAsk));
     let answer = runtime.send_input(&send(&live, b"i2")).await.unwrap();
     assert_eq!(
         verdict(&answer),
-        "rejected closed_ask",
+        "rejected ClosedAsk",
         "the interpreter's reason, verbatim"
     );
     assert_eq!(live.inputs().len(), 2, "both reached the agent");
@@ -178,7 +178,7 @@ async fn send_input_returns_the_interpreters_verdict_or_answers_for_an_exited_ag
     let answer = runtime.send_input(&send(&gone, b"i3")).await.unwrap();
     assert_eq!(
         verdict(&answer),
-        "rejected exited",
+        "rejected Exited",
         "the daemon answers for an exited agent"
     );
     assert!(gone.inputs().is_empty());
@@ -392,7 +392,9 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(refused, RelayError::Rejected(ref reason) if reason == "exited"));
+    assert!(
+        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::Exited)
+    );
     crash(daemon, runtime).await;
 }
 
@@ -584,7 +586,7 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     child.register_offline(&install);
     child.write_spec(&install);
     child.go_live();
-    child.answer_with(Answer::Reject(node::EXITING.into()));
+    child.answer_with(Answer::Reject(wire::Refusal::Exiting));
     let (daemon, runtime) = start_resuming(&install).await;
 
     let envelope = SendMessageRequest {
@@ -638,7 +640,7 @@ async fn an_input_answered_exiting_lets_a_resume_wait_for_the_lock() {
     agent.register_offline(&install);
     agent.write_spec(&install);
     agent.go_live();
-    agent.answer_with(Answer::Reject(node::EXITING.into()));
+    agent.answer_with(Answer::Reject(wire::Refusal::Exiting));
     let (daemon, runtime) = start_resuming(&install).await;
 
     let answer = runtime
@@ -648,7 +650,7 @@ async fn an_input_answered_exiting_lets_a_resume_wait_for_the_lock() {
         })
         .await
         .unwrap();
-    assert_eq!(verdict(&answer), "rejected exiting");
+    assert_eq!(verdict(&answer), "rejected Exiting");
     let resumed = tokio::spawn({
         let runtime = runtime.clone();
         let id = agent.id;
@@ -1134,7 +1136,9 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         )
         .await
         .unwrap_err();
-    assert!(matches!(refused, RelayError::Rejected(ref reason) if reason == "exited"));
+    assert!(
+        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::Exited)
+    );
 
     kill_all(&runtime).await;
     drop(runtime);

@@ -13,7 +13,7 @@ use std::time::Duration;
 use agent::ExitCause;
 use agent::attach::Attached;
 use support::*;
-use wire::{PtyMode, StopMode};
+use wire::{Kind, PtyMode, StopMode};
 
 const PATIENCE: Duration = Duration::from_secs(30);
 
@@ -72,7 +72,7 @@ impl Screen {
 fn two_clients_read_terminal_claude_from_its_files_and_type_into_it() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             steps: vec![
                 provider_fakes::Step::Text {
                     chunks: vec!["answered at the terminal".into()],
@@ -119,7 +119,7 @@ fn two_clients_read_terminal_claude_from_its_files_and_type_into_it() {
 fn each_codex_client_gets_its_own_view_on_the_agents_thread() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "codex",
+            kind: Kind::Codex,
             ..Setup::sdk()
         })
         .await;

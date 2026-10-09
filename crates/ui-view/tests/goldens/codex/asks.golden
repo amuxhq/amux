@@ -25,7 +25,7 @@
     body Edit { path: "/work/a.txt", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "a" }), Line(PatchLine { number: Some(1), kind: Added, text: "b" })], line: Some(1), reason: "Edit outside the workspace", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 10 input {"answer":{"answer":{"decision":"approve_similar"},"ask":"8"},"id":"a3"}
-  ask 8 -> "fc-1" 1/1 Rejected(Unsupported)
+  ask 8 -> "fc-1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices AllowOnce*, AllowForSession, Deny { stops: false }, DenyAndStop
     body Edit { path: "/work/a.txt", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "a" }), Line(PatchLine { number: Some(1), kind: Added, text: "b" })], line: Some(1), reason: "Edit outside the workspace", created: Some(false) }
 ## 11 input {"answer":{"answer":{"decision":"deny"},"ask":"8"},"id":"a4"}
@@ -54,7 +54,7 @@
     body Access { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [] }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 16 input {"answer":{"answer":{"grant":{"read":["/etc/shared"],"write":["/elsewhere"]}},"ask":"20"},"id":"a6"}
-  ask 20 -> "ask:20" 1/1 Rejected(Unsupported)
+  ask 20 -> "ask:20" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices GrantForTurn*, GrantForSession, Deny { stops: false }
     body Access { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [] }
 ## 17 input {"answer":{"answer":{"grant":{"for_session":true,"network":true,"read":["/etc/shared"]}},"ask":"20"},"id":"a7"}

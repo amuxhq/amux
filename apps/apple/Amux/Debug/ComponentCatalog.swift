@@ -183,7 +183,7 @@ enum ComponentCatalog {
                 from: "", kind: .message, text: "Please rebase onto main first.", to: "worker-3",
                 sent: .rejected, rejection: "no agent by that name"))),
             row("auto-review", r("v1", 33, .autoReview(
-                decision: "Auto-approved curl localhost:8080", risk: "low", rationale: "Local only.",
+                status: .approved, statusWord: "approved", risk: "low", rationale: "Local only.",
                 subject: "x9"))),
             row("unrecognized", r("u1", 34, .unrecognized(what: "rate_limit_event", summary: "an event this build cannot read"))),
             row("subagent-steps", height: 200, expanded: true,
@@ -253,7 +253,7 @@ enum ComponentCatalog {
                 path: "crates/amux-ui/src/pairing.rs", files: 1, added: 1, removed: 2, lines: F.diff,
                 reason: "", created: false, line: 13), [
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
-                    Choice(outcome: .allowAlways(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", scope: .session, label: ""), primary: false, takesNote: false),
+                    Choice(outcome: .allowAlways(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", scope: .session), primary: false, takesNote: false),
                     Choice(outcome: .deny(stops: false), primary: false, takesNote: true),
                 ])),
             ask("permission-tool", height: 360, F.card(.claudeSdk, .tool(
@@ -265,7 +265,7 @@ enum ComponentCatalog {
             ask("permission-terminal", height: 380, F.card(.claudePty, .command(
                 command: "cargo test -p amux-ui", cwd: "", reason: "", description: ""), [
                     Choice(outcome: .allowOnce, primary: true, takesNote: false),
-                    Choice(outcome: .allowAlways(subjects: ["cargo test"], directories: [], mode: "", modeName: "", scope: .project, label: ""), primary: false, takesNote: false),
+                    Choice(outcome: .allowAlways(subjects: ["cargo test"], directories: [], mode: "", modeName: "", scope: .project), primary: false, takesNote: false),
                     Choice(outcome: .deny(stops: true), primary: false, takesNote: false),
                 ])),
             ask("codex-command", height: 560, F.card(.codex, .command(
@@ -321,7 +321,7 @@ enum ComponentCatalog {
                 command: "cargo test", cwd: "", reason: "", description: ""), [], state: .sending)),
             ask("rejected", height: 460, F.card(.claudeSdk, .command(
                 command: "cargo test -p amux-ui", cwd: "~/src/amux", reason: "", description: ""),
-                F.sdkPermissionChoices, state: .rejected(.closedAsk))),
+                F.sdkPermissionChoices, state: .rejected(Refusal(reason: .closedAsk, detail: nil)))),
             ask("not-confirmed", height: 260, F.card(.claudeSdk, .command(
                 command: "cargo test -p amux-ui", cwd: "", reason: "", description: ""),
                 F.sdkPermissionChoices, state: .notConfirmed)),
@@ -389,7 +389,7 @@ enum ComponentCatalog {
                 SentPrompt(inputId: [4], text: [.text("Run the focused tests.")], lands: .queue, underway: .mayNotHaveArrived),
             ])),
             composer("rejected", height: 240, frame: ScriptedChat.frame(refused: [
-                RefusedPrompt(inputId: [5], reason: .hostUnreachable),
+                RefusedPrompt(inputId: [5], reason: Refusal(reason: .hostUnreachable, detail: nil)),
             ]), refusedWords: [[5]: "Run the focused tests."]),
             composer("sending", height: 280, frame: ScriptedChat.frame(
                 phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 4_000),
@@ -994,7 +994,7 @@ enum CatalogFixtures {
 
     static let sdkPermissionChoices = [
         Choice(outcome: .allowOnce, primary: true, takesNote: false),
-        Choice(outcome: .allowAlways(subjects: ["cargo test"], directories: [], mode: "", modeName: "", scope: .project, label: ""), primary: false, takesNote: false),
+        Choice(outcome: .allowAlways(subjects: ["cargo test"], directories: [], mode: "", modeName: "", scope: .project), primary: false, takesNote: false),
         Choice(outcome: .allowForSession, primary: false, takesNote: false),
         Choice(outcome: .deny(stops: false), primary: false, takesNote: true),
         Choice(outcome: .denyAndStop, primary: false, takesNote: true),
@@ -1209,8 +1209,8 @@ extension CatalogFixtures {
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
             reach: .online(.direct), addrs: [], current: true,
             providers: [
-                ProviderSignIn(provider: "claude", signedIn: signedIn),
-                ProviderSignIn(provider: "codex", signedIn: true),
+                ProviderSignIn(provider: .claude, signedIn: signedIn),
+                ProviderSignIn(provider: .codex, signedIn: true),
             ],
             lastDialError: nil, platform: "macOS", signedIn: nil, version: nil)])
         let store = NewAgentStore()

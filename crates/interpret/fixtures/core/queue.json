@@ -24,7 +24,7 @@
       "expect": { "reply": "accepted", "queue": ["p2"] } },
     { "input": { "id": "w2", "withdraw": { "target": "p3" } },
       "note": "already gone: rejected, and nothing is written",
-      "expect": { "reply": "rejected:not_queued", "silent": true } },
+      "expect": { "reply": "rejected:NOT_QUEUED", "silent": true } },
     { "fact": { "channel": "stream", "json": { "type": "user", "id": "u2", "text": "first" } },
       "expect": { "items": ["u2"] } },
     { "fact": { "channel": "stream", "json": { "type": "text", "id": "m1", "delta": "done" } } },
@@ -35,12 +35,12 @@
       "expect": { "turn_end": { "turn_id": 2, "last_message_key": "m1" }, "phase": "WORKING", "queue": [] } },
     { "input": { "id": "w3", "withdraw": { "target": "p2" } },
       "note": "the one-round-trip race: the turn ended before the withdraw landed",
-      "expect": { "reply": "rejected:not_queued", "silent": true } },
+      "expect": { "reply": "rejected:NOT_QUEUED", "silent": true } },
     { "fact": { "channel": "stream", "json": { "type": "user", "id": "u3", "text": "from the phone" } } },
     { "fact": { "channel": "stream", "json": { "type": "turn_end" } },
       "expect": { "phase": "IDLE", "turn_end": { "turn_id": 3, "last_message_key": "" } } },
     { "input": { "id": "x1", "raw": { "hex": "" } },
       "note": "an input with no arm this version can read",
-      "expect": { "reply": "rejected:unsupported", "silent": true } }
+      "expect": { "reply": "rejected:UNSUPPORTED", "silent": true } }
   ]
 }

@@ -1084,11 +1084,7 @@ impl Net {
         let decl = &host.decl;
         let mut edge = EdgeOptions {
             host_name: decl.name.clone(),
-            kinds: vec![
-                wire::Kind::ClaudePty,
-                wire::Kind::ClaudeSdk,
-                wire::Kind::Codex,
-            ],
+            kinds: node::local_kinds(),
             lan: decl.lan.then(|| LanOptions {
                 bind: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
                 socket: None,

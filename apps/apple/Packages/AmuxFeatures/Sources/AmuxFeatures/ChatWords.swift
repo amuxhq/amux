@@ -299,6 +299,19 @@ public enum ChatWords {
         }
     }
 
+    /// What Codex's automatic reviewer did, as the row's verb; a status this
+    /// build does not know in Codex's own word.
+    public static func autoReview(_ status: ReviewStatus, _ word: String) -> String {
+        switch status {
+        case .approved: String(localized: "Auto-approved")
+        case .denied: String(localized: "Auto-denied")
+        case .inProgress: String(localized: "Auto-reviewing")
+        case .timeout: String(localized: "Auto-review timed out")
+        case .abort: String(localized: "Auto-review stopped")
+        case .unspecified: String(localized: "Auto-reviewed \(word)")
+        }
+    }
+
     public static func firstLine(_ text: String) -> String {
         String(text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
             .first ?? "")

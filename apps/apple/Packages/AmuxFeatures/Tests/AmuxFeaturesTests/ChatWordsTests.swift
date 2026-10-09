@@ -123,7 +123,7 @@ final class ChatWordsTests: XCTestCase {
             ChatWords.mode(ModeChoice(value: "plan", displayName: "Plan", current: true, unlisted: false, normal: false, settable: true)),
             "Plan")
         let switching = Choice(
-            outcome: .allowAlways(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", scope: .session, label: ""),
+            outcome: .allowAlways(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", scope: .session),
             primary: false, takesNote: false)
         XCTAssertEqual(ChatWords.choice(switching), "Switch to Accept edits")
         XCTAssertEqual(ChatWords.scopeRow(switching).title, "Switch to Accept edits")
@@ -131,7 +131,7 @@ final class ChatWordsTests: XCTestCase {
 
     func testChoicesAreStatedAsOutcomes() {
         let always = Choice(
-            outcome: .allowAlways(subjects: ["cargo test"], directories: [], mode: "", modeName: "", scope: .project, label: ""),
+            outcome: .allowAlways(subjects: ["cargo test"], directories: [], mode: "", modeName: "", scope: .project),
             primary: false, takesNote: false)
         XCTAssertEqual(ChatWords.choice(always), "Always allow cargo test in this project")
         XCTAssertEqual(

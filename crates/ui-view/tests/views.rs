@@ -42,11 +42,6 @@ fn body(kind: Kind, tool: Option<(&str, bool)>, text: bool) -> Vec<u8> {
             kind: Some(codex::Kind::Work(wire::Work {
                 of: Some(wire::work::Of::Command(wire::CommandWork {
                     command: name.into(),
-                    action: if name == "Read" {
-                        "read".into()
-                    } else {
-                        String::new()
-                    },
                     ..Default::default()
                 })),
                 state: ToolState::Succeeded as i32,
@@ -112,7 +107,7 @@ fn item(kind: Kind, order: u64, revision: u64, tool: Option<(&str, bool)>) -> It
         } else {
             String::new()
         },
-        kind: wire::kind_tag(kind).into(),
+        kind: kind as i32,
         body: body(kind, tool, true),
         at_ms: order as i64 * 1000,
         ..Item::default()
@@ -125,7 +120,7 @@ fn read(kind: Kind, order: u64, revision: u64) -> Item {
 
 fn snapshot(kind: Kind, phase: Phase, body: Vec<u8>, queue: Vec<wire::QueuedInput>) -> Msg {
     event(session_event::Of::Snapshot(wire::Snapshot {
-        kind: wire::kind_tag(kind).into(),
+        kind: kind as i32,
         body,
         phase: phase as i32,
         queue,
@@ -864,7 +859,8 @@ fn authored(kind: Kind) -> String {
         b"nope".to_vec(),
         ui_state::InputOutcome::Reply(wire::SendInputResponse {
             of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
-                reason: "draining".into(),
+                refusal: wire::Refusal::Draining as i32,
+                detail: None,
             })),
         }),
     ));
@@ -896,6 +892,13 @@ fn authored(kind: Kind) -> String {
     out
 }
 
+/// A kind's golden file, named as its fixture directory is.
+fn golden_name(kind: Kind) -> String {
+    kind.as_str_name()
+        .trim_start_matches("KIND_")
+        .to_ascii_lowercase()
+}
+
 #[test]
 fn authored_view_goldens() {
     let mut failures = Vec::new();
@@ -903,7 +906,7 @@ fn authored_view_goldens() {
         let rendered = authored(kind);
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/goldens/authored")
-            .join(format!("{}.golden", wire::kind_tag(kind)));
+            .join(format!("{}.golden", golden_name(kind)));
         if std::env::var("UI_VIEW_UPDATE_GOLDENS").as_deref() == Ok("1") {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, &rendered).unwrap();
@@ -977,7 +980,8 @@ fn a_refused_send_now_leaves_the_prompt_queued() {
         b"now".to_vec(),
         InputOutcome::Reply(wire::SendInputResponse {
             of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
-                reason: "Send now needs Claude 2.1.283 or later".into(),
+                refusal: wire::Refusal::Unsupported as i32,
+                detail: Some("Send now needs Claude 2.1.283 or later".into()),
             })),
         }),
     ));
@@ -1113,7 +1117,7 @@ fn settings_with(kind: Kind, body: Vec<u8>, catalogue: wire::Catalogue) -> Setti
     let mut state = SessionState::new(agent(kind), CAP);
     state.set_catalogue(b"offered".to_vec(), catalogue);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-        kind: wire::kind_tag(kind).into(),
+        kind: kind as i32,
         body,
         phase: Phase::Idle as i32,
         catalogue: Some(b"offered".to_vec()),
@@ -1512,7 +1516,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
         let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
         state.set_catalogue(b"offered".to_vec(), catalogue);
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: wire::kind_tag(Kind::ClaudeSdk).into(),
+            kind: Kind::ClaudeSdk as i32,
             body: wire::ClaudeSdkSnapshot {
                 model: Some("id-sonnet".into()),
                 model_name: Some("Sonnet 5".into()),
@@ -1556,7 +1560,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
             },
         );
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: wire::kind_tag(Kind::Codex).into(),
+            kind: Kind::Codex as i32,
             body: snapshot.encode_to_vec(),
             phase: Phase::Idle as i32,
             catalogue: Some(b"offered".to_vec()),
@@ -1583,7 +1587,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
     // the reported one, in the list as beside the composer.
     let mut state = SessionState::new(agent(Kind::ClaudePty), CAP);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-        kind: wire::kind_tag(Kind::ClaudePty).into(),
+        kind: Kind::ClaudePty as i32,
         body: wire::ClaudePtySnapshot {
             model: Some("claude-sonnet-5".into()),
             model_name: Some("Sonnet 5".into()),
@@ -1780,7 +1784,7 @@ fn tool_item(
         key: format!("k{order}"),
         order,
         revision: order,
-        kind: wire::kind_tag(Kind::ClaudeSdk).into(),
+        kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeSdkItem {
             kind: Some(wire::claude_sdk_item::Kind::Tool(wire::ToolCall {
                 name: name.into(),
@@ -1867,7 +1871,7 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
         key: "change".into(),
         order: 1,
         revision: 1,
-        kind: wire::kind_tag(Kind::Codex).into(),
+        kind: Kind::Codex as i32,
         body: wire::CodexItem {
             kind: Some(wire::codex_item::Kind::Work(wire::Work {
                 of: Some(wire::work::Of::FileChange(wire::FileChangeWork {
@@ -1914,7 +1918,7 @@ fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
         key: "change".into(),
         order: 1,
         revision: 1,
-        kind: wire::kind_tag(Kind::Codex).into(),
+        kind: Kind::Codex as i32,
         body: wire::CodexItem {
             kind: Some(wire::codex_item::Kind::Work(wire::Work {
                 of: Some(wire::work::Of::FileChange(wire::FileChangeWork {
@@ -1956,7 +1960,7 @@ fn sdk_item(order: u64, revision: u64, kind: wire::claude_sdk_item::Kind, text: 
         order,
         revision,
         text: text.into(),
-        kind: wire::kind_tag(Kind::ClaudeSdk).into(),
+        kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeSdkItem { kind: Some(kind) }.encode_to_vec(),
         at_ms: order as i64 * 1000,
         ..Item::default()
@@ -2380,7 +2384,8 @@ fn prompts_on_their_way_follow_the_sending_rules() {
         b"p3".to_vec(),
         InputOutcome::Reply(wire::SendInputResponse {
             of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
-                reason: "host_unreachable".into(),
+                refusal: wire::Refusal::HostUnreachable as i32,
+                detail: None,
             })),
         }),
     ));
@@ -2406,7 +2411,7 @@ fn prompts_on_their_way_follow_the_sending_rules() {
         refused_prompts(&state),
         vec![RefusedPrompt {
             input_id: b"p3".to_vec(),
-            reason: ui_view::RefusalReason::HostUnreachable,
+            reason: ui_view::Refusal::of(ui_view::RefusalReason::HostUnreachable),
         }]
     );
 }
@@ -2713,7 +2718,7 @@ fn a_codex_command_that_dropped_output_is_marked_trimmed() {
         order,
         revision: 1,
         text: "test b ... ok\n".into(),
-        kind: wire::kind_tag(Kind::Codex).into(),
+        kind: Kind::Codex as i32,
         body: wire::CodexItem {
             kind: Some(wire::codex_item::Kind::Work(wire::Work {
                 of: Some(wire::work::Of::Command(wire::CommandWork {

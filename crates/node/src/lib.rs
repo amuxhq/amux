@@ -88,8 +88,9 @@ pub use pairing::ssh::{pair_via_ssh_responder_stdio, relay_stdio_to_unix_socket}
 pub use profiles::{
     PROFILE_SOCKET, ProfileEntry, ProfileId, Registry, create_profile, host_id, profile_dir,
 };
-pub use relay::{EXITED, EXITING, RelayError};
+pub use relay::RelayError;
 pub use retention::{REMOVED_BY_RETENTION, Retention};
+pub use routing::local_kinds;
 pub use runtime::{
     AGENT_LOG, AgentId, CAUSE_ABORTED, CAUSE_EXITED, CAUSE_EXITED_AWAY, CAUSE_FINISHED,
     CAUSE_KILLED, CAUSE_NO_DIRECTORY, CAUSE_STOPPED, CAUSE_UNSTARTED, FANOUT_CAPACITY,

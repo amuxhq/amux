@@ -80,8 +80,9 @@ pub(crate) fn kind(kind: wire::Kind) -> Option<Kind> {
     }
 }
 
-pub(crate) fn kind_named(name: &str) -> Option<Kind> {
-    wire::kind_from_tag(name).and_then(kind)
+/// The analytics kind for a kind's wire integer, as a row keeps it.
+pub(crate) fn kind_coded(code: i32) -> Option<Kind> {
+    wire::Kind::try_from(code).ok().and_then(kind)
 }
 
 /// What a person's input is, as analytics counts it: a prompt or an answer
@@ -205,7 +206,7 @@ impl ProfileRuntime {
             let rows = store::Store::agents(&*store).unwrap_or_default();
             let own = self.host().as_bytes().to_vec();
             for row in rows.iter().filter(|row| row.agent.host == own) {
-                let Some(kind) = kind_named(&row.kind) else {
+                let Some(kind) = kind_coded(row.kind) else {
                     continue;
                 };
                 let running =

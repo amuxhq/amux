@@ -863,7 +863,7 @@ fn malformed_calls_are_refused_rather_than_crashing() {
         amux_profile_host_catalogue(
             phone.profile,
             not_json.as_ptr(),
-            c"claude".as_ptr(),
+            c"\"Claude\"".as_ptr(),
             on_result,
             phone.context(),
         )

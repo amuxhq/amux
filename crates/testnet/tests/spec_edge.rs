@@ -331,7 +331,6 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
                 agent_id: Uuid::new_v4().as_bytes().to_vec(),
                 host_id: stranger_id.as_bytes().to_vec(),
                 name: "someone".to_owned(),
-                kind: String::new(),
             })),
         }),
         to: Some(wire::AgentParent {

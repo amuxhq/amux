@@ -126,12 +126,12 @@
         }
       },
       "expect": {
-        "reply": "rejected:Send now needs Claude 2.1.283 or later; this agent runs Claude 2.1.251",
+        "reply": "rejected:UNSUPPORTED Send now needs Claude 2.1.283 or later; this agent runs Claude 2.1.251",
         "queue": [
           "p1"
         ],
         "effects": [
-          "reply n1 rejected:Send now needs Claude 2.1.283 or later; this agent runs Claude 2.1.251"
+          "reply n1 rejected:UNSUPPORTED Send now needs Claude 2.1.283 or later; this agent runs Claude 2.1.251"
         ]
       }
     }

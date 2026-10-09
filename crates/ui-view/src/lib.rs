@@ -56,7 +56,7 @@ pub use settings::{
     new_agent_pick, new_agent_settings, setting_input, settings,
 };
 /// Why an input was refused, which every client words.
-pub use ui_state::RefusalReason;
+pub use ui_state::{Refusal, RefusalReason};
 /// What a host offers an agent to pick from, which a new agent's settings
 /// are built from.
 pub use wire::Catalogue;

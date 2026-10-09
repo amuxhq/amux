@@ -1,7 +1,7 @@
 //! The five input states, resolution at CaughtUp, the exited composer and
 //! steering a queued prompt.
 
-use ui_state::{Composer, InputOutcome, InputState, Msg, RefusalReason, SessionState};
+use ui_state::{Composer, InputOutcome, InputState, Msg, Refusal, RefusalReason, SessionState};
 use wire::{Kind, Phase};
 
 use crate::harness::*;
@@ -122,11 +122,14 @@ fn a_rejection_is_final_and_touches_no_row() {
         let mut state = live(kind, Phase::Idle, &[]);
         let before = projection(state.transcript());
         apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
-        let outcome = apply_checked(&mut state, Msg::Sent(b"p1".to_vec(), rejected("draining")));
+        let outcome = apply_checked(
+            &mut state,
+            Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::Draining)),
+        );
         assert!(outcome.changed.is_empty());
         assert_eq!(
             state.input_state(b"p1"),
-            Some(InputState::Rejected(RefusalReason::Draining))
+            Some(InputState::Rejected(Refusal::of(RefusalReason::Draining)))
         );
         assert_eq!(projection(state.transcript()), before);
     }
@@ -281,7 +284,10 @@ fn a_send_that_raced_the_exit_flips_the_composer_to_resume() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
         apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "draft")));
-        apply_checked(&mut state, Msg::Sent(b"p1".to_vec(), rejected("exited")));
+        apply_checked(
+            &mut state,
+            Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::Exited)),
+        );
         assert_eq!(
             state.composer(),
             Composer::Resume,
@@ -289,7 +295,7 @@ fn a_send_that_raced_the_exit_flips_the_composer_to_resume() {
         );
         assert_eq!(
             state.input_state(b"p1"),
-            Some(InputState::Rejected(RefusalReason::Exited))
+            Some(InputState::Rejected(Refusal::of(RefusalReason::Exited)))
         );
         let draft = &state.inputs().get(b"p1").unwrap().input;
         assert_eq!(
@@ -369,11 +375,13 @@ fn a_host_unreachable_rejection_is_never_uncertain() {
         apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
         apply_checked(
             &mut state,
-            Msg::Sent(b"p1".to_vec(), rejected("host_unreachable")),
+            Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::HostUnreachable)),
         );
         assert_eq!(
             state.input_state(b"p1"),
-            Some(InputState::Rejected(RefusalReason::HostUnreachable))
+            Some(InputState::Rejected(Refusal::of(
+                RefusalReason::HostUnreachable
+            )))
         );
         assert_eq!(state.not_confirmed().count(), 0);
     }

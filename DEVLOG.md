@@ -1,3 +1,27 @@
+2026-10-09 — **Kinds, providers, refusals, scope destinations and reviewer verdicts are enums; a host's capabilities say what it can do.**
+A kind travelled as a string (`"claude_sdk"`) on items, snapshots, specs and
+agent senders, and a replica of an agent of a kind this daemon had no name
+for was listed as unspecified; every kind is now the `Kind` enum, the store
+keeps it as its wire integer, and an unknown kind is listed and replicated
+with its number. `AgentSender` lost its kind. `GetCatalogueRequest` and
+`ProviderOnHost` name a `Provider` enum; the `amux catalogue` helper and its
+files keep the provider's lower-case word, derived from the enum's name. A
+rejected input is `Rejected { Refusal refusal; optional string detail }`
+instead of a free word, so terminal Claude's send-now refusal is
+`REFUSAL_UNSUPPORTED` with its sentence as the detail, and clients show the
+detail when there is one and their own words otherwise. A Claude permission
+scope is `ScopeChoice { index, ClaudeGrant grant }`, and the grant names its
+destination as a `ScopeDestination` with Claude's own word beside it, in
+place of `saved_to` and the scope's label. Codex's reviewer verdict is a
+`ReviewStatus` with Codex's word beside it, and the auto-review row says
+"Auto-approved", "Auto-denied" and so on from it; `CommandWork.action` is
+gone. `Capabilities` is `{ cloud_relay, kinds }`: the kinds come from the
+platform (terminal Claude only with a Unix terminal) rather than a fixed list
+of three, and a paired host's fleet entry carries the version and
+capabilities its handshake gave while it is reachable. Every top-level enum's
+values carry the enum's prefix (`PHASE_STARTING`, `STOP_MODE_GRACEFUL`,
+`TRUST_TRUSTED`...), and a test pins the documented zero defaults.
+
 2026-10-09 — **An agent's catalogue is a blob, read with GetBlob; GetCatalogue answers only for a host's providers.**
 An agent already hashed the exact bytes of its catalogue, but wrote them to a
 `catalogues/` directory of their own, and the daemon decoded them to serve

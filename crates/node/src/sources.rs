@@ -1277,7 +1277,7 @@ fn fold_tail(
     }
     let snapshot = snapshot.unwrap_or_else(|| wire::Snapshot {
         agent: row.agent.agent.clone(),
-        kind: row.kind.clone(),
+        kind: row.kind,
         ..wire::Snapshot::default()
     });
     let mut tail: Vec<Item> = items.into_values().collect();
@@ -1295,10 +1295,9 @@ fn record_event(record: Record) -> SessionEvent {
 
 /// The replica row an inventory row describes.
 pub(crate) fn from_wire(agent: &Agent) -> AgentRow {
-    let kind = wire::Kind::try_from(agent.kind).unwrap_or(wire::Kind::Unspecified);
     let mut row = AgentRow::new(
         AgentKey::new(agent.host_id.clone(), agent.agent_id.clone()),
-        crate::spec::kind_name(kind).unwrap_or_default(),
+        agent.kind,
         agent.cwd.clone(),
     );
     row.name = Some(agent.name.clone()).filter(|name| !name.is_empty());
@@ -1337,6 +1336,58 @@ mod tests {
         let task = tokio::spawn(std::future::pending::<()>());
         sources.open.insert(key.clone(), (session, task));
         key
+    }
+
+    /// A kind this daemon has no name for is a number it carries: the
+    /// replica row keeps it from the origin's inventory row to the one this
+    /// daemon lists, and the items and snapshot a reset lands keep theirs.
+    #[test]
+    fn unknown_kind_survives_replication() {
+        const UNKNOWN: i32 = 99;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store =
+            store::Sqlite::open(&dir.path().join("store.db"), b"here".to_vec()).unwrap();
+        let origin = Agent {
+            host_id: b"there".to_vec(),
+            agent_id: b"agent".to_vec(),
+            kind: UNKNOWN,
+            cwd: "/elsewhere".to_owned(),
+            ..Agent::default()
+        };
+        let row = from_wire(&origin);
+        assert_eq!(row.kind, UNKNOWN);
+        store.put_agent(&row).unwrap();
+        let key = row.agent.clone();
+        let item = Item {
+            key: "said".to_owned(),
+            kind: UNKNOWN,
+            text: "from a newer daemon".to_owned(),
+            order: 1,
+            revision: 1,
+            ..Item::default()
+        };
+        let (tail, snapshot, _) = fold_tail(vec![SourceEvent::Item(item)], &row);
+        assert_eq!(
+            snapshot.kind, UNKNOWN,
+            "the default snapshot takes the row's kind"
+        );
+        store
+            .absorb(
+                &key,
+                Absorb::Reset {
+                    tail,
+                    snapshot,
+                    generation: 1,
+                },
+            )
+            .unwrap();
+
+        let listed = crate::runtime::to_wire(&store.agent(&key).unwrap().unwrap());
+        assert_eq!(
+            listed.kind, UNKNOWN,
+            "listed with its kind, not unspecified"
+        );
+        assert_eq!(store.get(&key, "said").unwrap().unwrap().kind, UNKNOWN);
     }
 
     #[tokio::test]

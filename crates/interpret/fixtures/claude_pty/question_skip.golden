@@ -31,7 +31,7 @@ snapshot WORKING queue=[] working_on=- at=0 asks=[] session=s1 model=claude-opus
 ## 11 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Ship","multiSelect":false,"options":[{"description":"","label":"Yes"},{"description":"","label":"No"}],"question":"Ship it now?"}]},"tool_name":"AskUserQuestion"}}
 snapshot NEEDS_YOU queue=[] working_on=- at=0 asks=[ask:2->- question:2+other] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t2 AskUserQuestion since=0
 ## 12 input {"answer":{"answer":{"selected":[null]},"ask":"ask:2"},"id":"a2"}
-effect reply a2 rejected:unsupported
+effect reply a2 rejected:UNSUPPORTED
 ## 13 input {"answer":{"answer":{"selected":[0]},"ask":"ask:2"},"id":"a3"}
 effect terminal question [0 of 2]
 effect reply a3 accepted

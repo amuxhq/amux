@@ -8,7 +8,7 @@
 ## 4 input {"id":"p1","prompt":{"text":"look around"}}
   composer Send activity=None queue=[QueuedRow { input_id: [112, 49], text: [Text("look around")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 5 input {"answer":{"answer":{"selected":["x"]},"ask":"ask:1"},"id":"a1"}
-  ask ask:1 -> "ask:ask:1" 1/1 Rejected(Unsupported)
+  ask ask:1 -> "ask:ask:1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
     choices 
     body Question([QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits without starting", preview: "", recommended: false }], allow_other: false, secret: fal…
 ## 6 input {"answer":{"answer":{"selected":[0]},"ask":"ask:1"},"id":"a2"}

@@ -44,7 +44,7 @@ public struct AccountView: Codable, Hashable, Sendable {
 public enum ActOutcome: Codable, Hashable, Sendable {
     case done
     /// The agent or its host refused it.
-    case rejected(RefusalReason)
+    case rejected(Refusal)
     /// The connection dropped before the agent answered.
     case notConfirmed
     /// The call did not reach the agent.
@@ -77,7 +77,7 @@ public enum ActOutcome: Codable, Hashable, Sendable {
         }
         switch _tag {
         case .rejected:
-            self = .rejected(try _container.decode(RefusalReason.self, forKey: .rejected))
+            self = .rejected(try _container.decode(Refusal.self, forKey: .rejected))
         case .failed:
             self = .failed(try _container.decode(String.self, forKey: .failed))
         }
@@ -1305,7 +1305,7 @@ public enum CardState: Codable, Hashable, Sendable {
     /// Shrunk to one line until the agent confirms.
     case sending
     /// The card is back, with why the answer was refused.
-    case rejected(RefusalReason)
+    case rejected(Refusal)
     /// The connection dropped before a reply: resend or discard.
     case notConfirmed
     /// The agent exited with the ask open.
@@ -1339,7 +1339,7 @@ public enum CardState: Codable, Hashable, Sendable {
         }
         switch _tag {
         case .rejected:
-            self = .rejected(try _container.decode(RefusalReason.self, forKey: .rejected))
+            self = .rejected(try _container.decode(Refusal.self, forKey: .rejected))
         }
     }
 
@@ -1677,7 +1677,7 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
     case grantForTurn
     case grantForSession
     /// "Always allow cargo test in this project": what, and for how long.
-    case allowAlways(subjects: [String], directories: [String], mode: String, modeName: String, scope: Scope, label: String)
+    case allowAlways(subjects: [String], directories: [String], mode: String, modeName: String, scope: Scope)
     /// Codex: the exact command prefix it would allow.
     case allowSimilar(prefix: [String])
     case allowNetwork(hosts: [String])
@@ -1699,7 +1699,6 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
         case mode
         case modeName = "mode_name"
         case scope
-        case label
     }
 
     private enum AllowSimilarKeys: String, CodingKey {
@@ -1754,8 +1753,7 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
                 directories: try _fields.decode([String].self, forKey: .directories),
                 mode: try _fields.decode(String.self, forKey: .mode),
                 modeName: try _fields.decode(String.self, forKey: .modeName),
-                scope: try _fields.decode(Scope.self, forKey: .scope),
-                label: try _fields.decode(String.self, forKey: .label))
+                scope: try _fields.decode(Scope.self, forKey: .scope))
         case .allowSimilar:
             let _fields = try _container.nestedContainer(
                 keyedBy: AllowSimilarKeys.self, forKey: .allowSimilar)
@@ -1808,7 +1806,7 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
         case .grantForSession:
             var _container = encoder.singleValueContainer()
             try _container.encode("GrantForSession")
-        case .allowAlways(let subjects, let directories, let mode, let modeName, let scope, let label):
+        case .allowAlways(let subjects, let directories, let mode, let modeName, let scope):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: AllowAlwaysKeys.self, forKey: .allowAlways)
             try _fields.encode(subjects, forKey: .subjects)
@@ -1816,7 +1814,6 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
             try _fields.encode(mode, forKey: .mode)
             try _fields.encode(modeName, forKey: .modeName)
             try _fields.encode(scope, forKey: .scope)
-            try _fields.encode(label, forKey: .label)
         case .allowSimilar(let prefix):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: AllowSimilarKeys.self, forKey: .allowSimilar)
@@ -3284,7 +3281,7 @@ public enum InputState: Codable, Hashable, Sendable {
     case queued
     /// Accepted and, for a prompt, reflected by an item.
     case settled
-    case rejected(RefusalReason)
+    case rejected(Refusal)
     /// The connection dropped before a reply. Resolved only at CaughtUp from
     /// the snapshot's queue and the items; one found in neither stays here
     /// and the person decides. Nothing is resent on its own.
@@ -3318,7 +3315,7 @@ public enum InputState: Codable, Hashable, Sendable {
         }
         switch _tag {
         case .rejected:
-            self = .rejected(try _container.decode(RefusalReason.self, forKey: .rejected))
+            self = .rejected(try _container.decode(Refusal.self, forKey: .rejected))
         }
     }
 
@@ -4226,12 +4223,20 @@ public struct ProfileView: Codable, Hashable, Sendable {
     }
 }
 
+/// Which provider's program a host runs: the vocabulary amux uses to ask a
+/// host what it offers with no agent running. Distinct from Kind, which is
+/// the interpreter.
+public enum Provider: String, Codable, Hashable, Sendable, CaseIterable {
+    case unspecified = "Unspecified"
+    case claude = "Claude"
+    case codex = "Codex"
+}
+
 public struct ProviderSignIn: Codable, Hashable, Sendable {
-    /// "claude" or "codex".
-    public var provider: String
+    public var provider: Provider
     public var signedIn: Bool
 
-    public init(provider: String, signedIn: Bool) {
+    public init(provider: Provider, signedIn: Bool) {
         self.provider = provider
         self.signedIn = signedIn
     }
@@ -4376,94 +4381,47 @@ public enum Reach: Codable, Hashable, Sendable {
     }
 }
 
-/// Why the agent or its host refused an input, as every client tells it:
-/// the agent had exited or was exiting, its host is shutting down or cannot
-/// be reached, this agent cannot take an input of the kind, the ask the
-/// answer names had closed, or the queued prompt it names was no longer
-/// queued. A reason this build does not know is kept as the host gave it,
-/// to show as it is.
-public enum RefusalReason: Codable, Hashable, Sendable {
-    case exited
-    case exiting
-    case draining
-    case hostUnreachable
-    case unsupported
-    case closedAsk
-    case notQueued
-    case other(String)
+/// Why the agent or its host refused an input, as every client tells it.
+public struct Refusal: Codable, Hashable, Sendable {
+    public var reason: RefusalReason
+    /// The agent's or its provider's own words, when it has any; a client
+    /// says them in place of the reason's.
+    public var detail: String?
 
-    private enum Tag: String, CodingKey {
-        case other = "Other"
+    public init(reason: RefusalReason, detail: String?) {
+        self.reason = reason
+        self.detail = detail
     }
 
-    public init(from decoder: any Decoder) throws {
-        if let _single = try? decoder.singleValueContainer(),
-           let _name = try? _single.decode(String.self)
-        {
-            switch _name {
-            case "Exited": self = .exited
-            case "Exiting": self = .exiting
-            case "Draining": self = .draining
-            case "HostUnreachable": self = .hostUnreachable
-            case "Unsupported": self = .unsupported
-            case "ClosedAsk": self = .closedAsk
-            case "NotQueued": self = .notQueued
-            default:
-                throw DecodingError.dataCorruptedError(
-                    in: _single, debugDescription: "no RefusalReason is named \(_name)")
-            }
-            return
-        }
-        let _container = try decoder.container(keyedBy: Tag.self)
-        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "a RefusalReason names exactly one variant"))
-        }
-        switch _tag {
-        case .other:
-            self = .other(try _container.decode(String.self, forKey: .other))
-        }
+    private enum CodingKeys: String, CodingKey {
+        case reason
+        case detail
     }
+}
 
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .exited:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Exited")
-        case .exiting:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Exiting")
-        case .draining:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Draining")
-        case .hostUnreachable:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("HostUnreachable")
-        case .unsupported:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Unsupported")
-        case .closedAsk:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("ClosedAsk")
-        case .notQueued:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("NotQueued")
-        case .other(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .other)
-        }
-    }
+/// The reasons the wire's refusals carry, one for one: the agent had exited
+/// or was exiting, its host is shutting down or cannot be reached, this
+/// agent cannot take an input of the kind, the ask the answer names had
+/// closed, or the queued prompt it names was no longer queued. A reason
+/// this build does not know is unspecified.
+public enum RefusalReason: String, Codable, Hashable, Sendable, CaseIterable {
+    case unspecified = "Unspecified"
+    case exited = "Exited"
+    case exiting = "Exiting"
+    case draining = "Draining"
+    case hostUnreachable = "HostUnreachable"
+    case unsupported = "Unsupported"
+    case closedAsk = "ClosedAsk"
+    case notQueued = "NotQueued"
 }
 
 /// A prompt the agent refused. Its words go back to the composer, with
 /// why, and it is forgotten.
 public struct RefusedPrompt: Codable, Hashable, Sendable {
     public var inputId: [UInt8]
-    public var reason: RefusalReason
+    public var reason: Refusal
 
-    public init(inputId: [UInt8], reason: RefusalReason) {
+    public init(inputId: [UInt8], reason: Refusal) {
         self.inputId = inputId
         self.reason = reason
     }
@@ -4583,6 +4541,15 @@ public struct ReviewFile: Codable, Hashable, Sendable {
     }
 }
 
+public enum ReviewStatus: String, Codable, Hashable, Sendable, CaseIterable {
+    case unspecified = "Unspecified"
+    case inProgress = "InProgress"
+    case approved = "Approved"
+    case denied = "Denied"
+    case timeout = "Timeout"
+    case abort = "Abort"
+}
+
 /// This device and the machines it trusts, by name.
 public struct Roster: Codable, Hashable, Sendable {
     public var identity: Identity
@@ -4663,7 +4630,9 @@ public enum RowKind: Codable, Hashable, Sendable {
     case modelSwitch(from: String, to: String, reason: String)
     case boundary(kind: BoundaryKind, cause: String)
     case agentMessage(from: String, kind: EnvelopeKind, text: String, to: String, sent: SendState, rejection: String)
-    case autoReview(decision: String, risk: String, rationale: String, subject: String)
+    /// Codex's automatic reviewer on an action. A client words the status,
+    /// and says `status_word` for one this build does not know.
+    case autoReview(status: ReviewStatus, statusWord: String, risk: String, rationale: String, subject: String)
     case unrecognized(what: String, summary: String)
     /// An item that belongs to the overview or the activity line, never a row.
     case hidden
@@ -4805,7 +4774,8 @@ public enum RowKind: Codable, Hashable, Sendable {
     }
 
     private enum AutoReviewKeys: String, CodingKey {
-        case decision
+        case status
+        case statusWord = "status_word"
         case risk
         case rationale
         case subject
@@ -4973,7 +4943,8 @@ public enum RowKind: Codable, Hashable, Sendable {
             let _fields = try _container.nestedContainer(
                 keyedBy: AutoReviewKeys.self, forKey: .autoReview)
             self = .autoReview(
-                decision: try _fields.decode(String.self, forKey: .decision),
+                status: try _fields.decode(ReviewStatus.self, forKey: .status),
+                statusWord: try _fields.decode(String.self, forKey: .statusWord),
                 risk: try _fields.decode(String.self, forKey: .risk),
                 rationale: try _fields.decode(String.self, forKey: .rationale),
                 subject: try _fields.decode(String.self, forKey: .subject))
@@ -5107,10 +5078,11 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(to, forKey: .to)
             try _fields.encode(sent, forKey: .sent)
             try _fields.encode(rejection, forKey: .rejection)
-        case .autoReview(let decision, let risk, let rationale, let subject):
+        case .autoReview(let status, let statusWord, let risk, let rationale, let subject):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: AutoReviewKeys.self, forKey: .autoReview)
-            try _fields.encode(decision, forKey: .decision)
+            try _fields.encode(status, forKey: .status)
+            try _fields.encode(statusWord, forKey: .statusWord)
             try _fields.encode(risk, forKey: .risk)
             try _fields.encode(rationale, forKey: .rationale)
             try _fields.encode(subject, forKey: .subject)

@@ -27,12 +27,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 ui-view = { workspace = true }
+wire = { workspace = true }
 
 [dev-dependencies]
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }
-wire = { workspace = true }
 
 [build-dependencies]
 cbindgen = { version = "0.29", default-features = false }

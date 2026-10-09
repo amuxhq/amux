@@ -91,10 +91,10 @@ impl Host {
 const CLAUDE_ASKED: &str = "amux-catalogue";
 const CODEX_ASKED: &str = "\"model/list\"";
 
-fn by_host(host: uuid::Uuid, provider: &str) -> tonic::Request<GetCatalogueRequest> {
+fn by_host(host: uuid::Uuid, provider: wire::Provider) -> tonic::Request<GetCatalogueRequest> {
     tonic::Request::new(GetCatalogueRequest {
         host_id: host.as_bytes().to_vec(),
-        provider: provider.to_owned(),
+        provider: provider as i32,
     })
 }
 
@@ -113,11 +113,11 @@ impl std::ops::Deref for Asked {
     }
 }
 
-async fn ask(api: &node::ClientApi, host: uuid::Uuid, provider: &str) -> Asked {
+async fn ask(api: &node::ClientApi, host: uuid::Uuid, provider: wire::Provider) -> Asked {
     let blob = api
         .get_catalogue(by_host(host, provider))
         .await
-        .unwrap_or_else(|error| panic!("{provider} on the host: {error:?}"))
+        .unwrap_or_else(|error| panic!("{provider:?} on the host: {error:?}"))
         .into_inner();
     let catalogue = Catalogue::decode(blob.bytes.as_slice()).unwrap();
     Asked { blob, catalogue }
@@ -127,9 +127,9 @@ fn values<T>(listed: &[T], value: impl Fn(&T) -> &str) -> Vec<&str> {
     listed.iter().map(value).collect()
 }
 
-fn on_host(provider: &str, asked: &Asked, signed_in: bool) -> ProviderOnHost {
+fn on_host(provider: wire::Provider, asked: &Asked, signed_in: bool) -> ProviderOnHost {
     ProviderOnHost {
-        provider: provider.to_owned(),
+        provider: provider as i32,
         catalogue: Some(asked.blob.hash.clone()),
         signed_in,
     }
@@ -151,7 +151,7 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
         "nothing asked yet"
     );
 
-    let claude = ask(&api, here, "claude").await;
+    let claude = ask(&api, here, wire::Provider::Claude).await;
     assert_eq!(values(&claude.models, |m| &m.value), ["opus", "haiku"]);
     assert_eq!(claude.models[0].efforts, ["low", "high"]);
     assert_eq!(values(&claude.commands, |c| &c.name), ["review"]);
@@ -168,7 +168,7 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
         "the hash names exactly the bytes served"
     );
 
-    let codex = ask(&api, here, "codex").await;
+    let codex = ask(&api, here, wire::Provider::Codex).await;
     assert_eq!(values(&codex.models, |m| &m.value), ["opus", "haiku"]);
     assert_eq!(values(&codex.commands, |c| &c.name), ["review"]);
     assert_eq!(
@@ -178,15 +178,15 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
     assert_eq!(values(&codex.modes, |m| &m.value), ["default", "plan"]);
 
     // A second ask answers from the copy: neither provider runs again.
-    assert_eq!(ask(&api, here, "claude").await, claude);
-    assert_eq!(ask(&api, here, "codex").await, codex);
+    assert_eq!(ask(&api, here, wire::Provider::Claude).await, claude);
+    assert_eq!(ask(&api, here, wire::Provider::Codex).await, codex);
     assert_eq!(host.asked(CLAUDE_ASKED), 1);
     assert_eq!(host.asked(CODEX_ASKED), 1);
 
     // The host's entry in the fleet list names each copy, signed in.
     let expected = vec![
-        on_host("claude", &claude, true),
-        on_host("codex", &codex, true),
+        on_host(wire::Provider::Claude, &claude, true),
+        on_host(wire::Provider::Codex, &codex, true),
     ];
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
     let mut seen = Vec::new();
@@ -199,11 +199,17 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
         other => panic!("the inventory opens with this host, not {other:?}"),
     }
 
-    let unknown = api
-        .get_catalogue(by_host(here, "gemini"))
-        .await
-        .unwrap_err();
-    assert_eq!(unknown.code(), tonic::Code::InvalidArgument, "{unknown:?}");
+    // A provider this build does not know, and none at all.
+    for provider in [99, wire::Provider::Unspecified as i32] {
+        let unknown = api
+            .get_catalogue(tonic::Request::new(GetCatalogueRequest {
+                host_id: here.as_bytes().to_vec(),
+                provider,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(unknown.code(), tonic::Code::InvalidArgument, "{unknown:?}");
+    }
 
     // The copies outlive the daemon.
     drop((inventory, api, runtime));
@@ -212,7 +218,7 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
     let runtime = support::runtime(&daemon, &host.install);
     assert_eq!(runtime.host_entry().providers, expected);
     let api = node::ClientApi::new(&runtime, None);
-    assert_eq!(ask(&api, here, "codex").await, codex);
+    assert_eq!(ask(&api, here, wire::Provider::Codex).await, codex);
     assert_eq!(host.asked(CODEX_ASKED), 1, "the kept copy answers");
     drop((api, runtime));
     daemon.shutdown().await.unwrap();
@@ -231,13 +237,13 @@ async fn a_signed_out_provider_says_so_and_is_asked_again_once_due() {
     let api = node::ClientApi::new(&runtime, None);
     let here = runtime.host();
 
-    let claude = ask(&api, here, "claude").await;
-    let codex = ask(&api, here, "codex").await;
+    let claude = ask(&api, here, wire::Provider::Claude).await;
+    let codex = ask(&api, here, wire::Provider::Codex).await;
     assert_eq!(
         runtime.host_entry().providers,
         [
-            on_host("claude", &claude, false),
-            on_host("codex", &codex, false)
+            on_host(wire::Provider::Claude, &claude, false),
+            on_host(wire::Provider::Codex, &codex, false)
         ],
         "both read signed out"
     );
@@ -245,11 +251,13 @@ async fn a_signed_out_provider_says_so_and_is_asked_again_once_due() {
 
     // Signing in shows at the next ask.
     host.play(&Script::default());
-    let codex = ask(&api, here, "codex").await;
+    let codex = ask(&api, here, wire::Provider::Codex).await;
     assert_eq!(host.asked(CODEX_ASKED), 2);
     let entry = runtime.host_entry();
     assert!(
-        entry.providers.contains(&on_host("codex", &codex, true)),
+        entry
+            .providers
+            .contains(&on_host(wire::Provider::Codex, &codex, true)),
         "{:?}",
         entry.providers
     );
@@ -273,8 +281,8 @@ async fn a_new_provider_version_is_asked_again() {
     let api = node::ClientApi::new(&runtime, None);
     let here = runtime.host();
 
-    let first = ask(&api, here, "claude").await;
-    assert_eq!(ask(&api, here, "claude").await, first);
+    let first = ask(&api, here, wire::Provider::Claude).await;
+    assert_eq!(ask(&api, here, wire::Provider::Claude).await, first);
     assert_eq!(
         host.asked(CLAUDE_ASKED),
         1,
@@ -293,16 +301,15 @@ async fn a_new_provider_version_is_asked_again() {
         models: vec![model("opus"), model("fable")],
         ..Script::default()
     });
-    let second = ask(&api, here, "claude").await;
+    let second = ask(&api, here, wire::Provider::Claude).await;
     assert_eq!(host.asked(CLAUDE_ASKED), 2);
     assert_eq!(values(&second.models, |m| &m.value), ["opus", "fable"]);
     assert_ne!(second.blob.hash, first.blob.hash);
-    assert!(
-        runtime
-            .host_entry()
-            .providers
-            .contains(&on_host("claude", &second, true))
-    );
+    assert!(runtime.host_entry().providers.contains(&on_host(
+        wire::Provider::Claude,
+        &second,
+        true
+    )));
 
     drop((api, runtime));
     daemon.shutdown().await.unwrap();
@@ -337,14 +344,14 @@ async fn a_paired_host_answers_for_its_peers_providers() {
 
     let on_laptop = node::ClientApi::new(&laptop_runtime, None);
     let desk_host = desk_runtime.host();
-    let codex = ask(&on_laptop, desk_host, "codex").await;
+    let codex = ask(&on_laptop, desk_host, wire::Provider::Codex).await;
     assert_eq!(values(&codex.models, |m| &m.value), ["gpt-desk"]);
     let on_desk = node::ClientApi::new(&desk_runtime, None);
-    assert_eq!(ask(&on_desk, desk_host, "codex").await, codex);
+    assert_eq!(ask(&on_desk, desk_host, wire::Provider::Codex).await, codex);
     assert_eq!(desk.asked(CODEX_ASKED), 1, "the desk asked once, for both");
 
     // The laptop's fleet list carries the desk's word for its providers.
-    let expected = vec![on_host("codex", &codex, false)];
+    let expected = vec![on_host(wire::Provider::Codex, &codex, false)];
     until("the laptop to list the desk's providers", || {
         let listed = laptop_runtime
             .host_entry_of(desk_host)

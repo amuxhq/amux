@@ -25,9 +25,9 @@ use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::{ReadHalf, WriteHalf};
 use wire::{
     AgentHello, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
-    CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Phase, PromptInput, PtyMode, Stop,
-    StopMode, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item, codex_input,
-    codex_item, ctl_frame, send_input_response,
+    CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase, PromptInput, PtyMode,
+    Stop, StopMode, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item,
+    codex_input, codex_item, ctl_frame, send_input_response,
 };
 /// Long enough that no deadline fires during a test: the daemon's absence
 /// is survived, never drained.
@@ -51,7 +51,7 @@ fn fakes() -> &'static Path {
 }
 
 struct Fixture {
-    kind: &'static str,
+    kind: Kind,
     root: tempfile::TempDir,
     dir: PathBuf,
     work: PathBuf,
@@ -60,7 +60,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(kind: &'static str) -> Self {
+    fn new(kind: Kind) -> Self {
         let root = tempfile::tempdir().expect("a temp dir");
         let dir = root.path().join("agents").join("a1");
         let work = root.path().join("work");
@@ -87,14 +87,14 @@ impl Fixture {
         let script_path = self.root.path().join(format!("script.{n}.json"));
         std::fs::write(&script_path, script).unwrap();
         let fake = fakes().join(match self.kind {
-            "claude_pty" => "fake-claude-pty",
-            "codex" => "fake-codex",
+            Kind::ClaudePty => "fake-claude-pty",
+            Kind::Codex => "fake-codex",
             _ => "fake-claude-sdk",
         });
         let spec = AgentSpec {
             agent_id: self.agent_id.clone(),
             profile_id: vec![9; 16],
-            kind: self.kind.to_owned(),
+            kind: self.kind as i32,
             cwd: self.work.to_str().unwrap().to_owned(),
             name: name.to_owned(),
             provider_command: fake.to_str().unwrap().to_owned(),
@@ -256,7 +256,7 @@ async fn next_frame(reader: &mut ReadHalf<LocalStream>) -> CtlFrame {
 
 /// The test standing in for the daemon on ctl.sock.
 struct Daemon {
-    kind: &'static str,
+    kind: Kind,
     reader: ReadHalf<LocalStream>,
     writer: WriteHalf<LocalStream>,
     hello: AgentHello,
@@ -276,10 +276,10 @@ impl Daemon {
             ..Default::default()
         };
         let of = match self.kind {
-            "codex" => wire::KindInput::Codex(CodexInput {
+            Kind::Codex => wire::KindInput::Codex(CodexInput {
                 of: Some(codex_input::Of::Prompt(prompt)),
             }),
-            "claude_pty" => wire::KindInput::ClaudePty(ClaudePtyInput {
+            Kind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
                 of: Some(claude_pty_input::Of::Prompt(prompt)),
             }),
             _ => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
@@ -344,16 +344,16 @@ impl Log {
 }
 
 fn boundary(item: &wire::Item) -> Option<String> {
-    let boundary = match item.kind.as_str() {
-        "claude_sdk" => match ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind? {
+    let boundary = match item.kind() {
+        Kind::ClaudeSdk => match ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind? {
             claude_sdk_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
-        "claude_pty" => match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
+        Kind::ClaudePty => match ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind? {
             claude_pty_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
-        "codex" => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {
+        Kind::Codex => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {
             codex_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
@@ -404,7 +404,7 @@ async fn ended(attached: &mut Attached) {
     .expect("the connection ends");
 }
 
-async fn life_of_an_agent(kind: &'static str) {
+async fn life_of_an_agent(kind: Kind) {
     let agent = Fixture::new(kind);
     agent.spec(
         1,
@@ -447,7 +447,7 @@ async fn life_of_an_agent(kind: &'static str) {
     // Two terminals attach at once.
     let mut terminals = Vec::new();
     match kind {
-        "claude_pty" => {
+        Kind::ClaudePty => {
             for _ in 0..2 {
                 let mut attached = Attached::connect(&agent.dir).await.unwrap();
                 assert_eq!(attached.mode(), PtyMode::Files);
@@ -459,7 +459,7 @@ async fn life_of_an_agent(kind: &'static str) {
                 drawn(attached, "size 33x111").await;
             }
         }
-        "codex" => {
+        Kind::Codex => {
             let thread = agent.provider_session();
             for _ in 0..2 {
                 let mut attached = Attached::connect(&agent.dir).await.unwrap();
@@ -536,7 +536,7 @@ async fn life_of_an_agent(kind: &'static str) {
 
     // The killed Codex server's socket is left where the next one listens.
     let codex_socket = agent.dir.join(agent::PRIVATE).join("codex.sock");
-    if kind == "codex" {
+    if kind == Kind::Codex {
         assert!(
             std::fs::symlink_metadata(&codex_socket).is_ok(),
             "the killed server left its socket"
@@ -563,7 +563,7 @@ async fn life_of_an_agent(kind: &'static str) {
             "EXITED ended unexpectedly",
         ]
     );
-    if kind == "codex" {
+    if kind == Kind::Codex {
         // Codex resumes the thread at once: its server listens despite the
         // socket the killed one left.
         agent
@@ -579,15 +579,15 @@ async fn life_of_an_agent(kind: &'static str) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_claude_agent_outlives_its_daemon_and_resumes() {
-    life_of_an_agent("claude_pty").await;
+    life_of_an_agent(Kind::ClaudePty).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_headless_claude_agent_outlives_its_daemon_and_resumes() {
-    life_of_an_agent("claude_sdk").await;
+    life_of_an_agent(Kind::ClaudeSdk).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_agent_outlives_its_daemon_and_resumes() {
-    life_of_an_agent("codex").await;
+    life_of_an_agent(Kind::Codex).await;
 }

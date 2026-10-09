@@ -9,7 +9,7 @@ use std::time::Duration;
 use agent::ExitCause;
 use provider_fakes::{Ask, Outcome, Step, Tool, ToolClass};
 use support::*;
-use wire::{Phase, StopMode};
+use wire::{Kind, Phase, StopMode};
 
 fn text(chunk: &str) -> Step {
     Step::Text {
@@ -330,7 +330,7 @@ async fn a_one_shot_child_runs_its_queued_follow_up_then_exits_and_refuses_late_
 
     assert_eq!(
         daemon.prompt(b"p3", "too late").await,
-        Verdict::Rejected("exiting".into())
+        Verdict::Rejected(wire::Refusal::Exiting)
     );
     agent.unhold();
     assert_eq!(agent.exit().await, ExitCause::Finished);
@@ -407,7 +407,7 @@ fn a_transcript_position_that_cannot_be_kept_ends_the_incarnation() {
 
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             steps: vec![
                 text("recorded"),
                 Step::WaitFor {
@@ -459,7 +459,7 @@ fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
         .unwrap();
     let outcome = runtime.block_on(async {
         let agent = Agent::start(Setup {
-            kind: "claude_pty",
+            kind: Kind::ClaudePty,
             command: Some("/bin/sh".into()),
             provider_args: vec!["-c".into(), format!("{straggler} & printf started; exit 3")],
             ..Setup::sdk()

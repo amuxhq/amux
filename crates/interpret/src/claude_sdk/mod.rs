@@ -33,7 +33,7 @@ use serde_json::Value;
 use wire::{
     AgentSpec, Ask, AskClosed, Attachment, ClaudeAnswer, ClaudeGrant, ClaudeSdkItem,
     ClaudeSdkSnapshot, ClaudeUsage, ContextMeter, ContextShare, DecisionOutcome, Envelope,
-    FormAction, Input, KindInput, OfferedCommand, OfferedModel, SignIn, Step, ToolCall,
+    FormAction, Input, KindInput, OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolCall,
     ToolDecision, ToolServerHealth, ToolState, claude_answer, claude_sdk_input, claude_sdk_item,
     permission_answer, tool_decision,
 };
@@ -46,8 +46,8 @@ use crate::claude_common::{
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
     RedactTarget, SendOutcome, Shared, SnapshotView, Stepped, agent_message_body,
-    agent_message_key, ask_item, claude_sdk_input, human, is_send_tool, reason, sent_message,
-    serde_pb, unknown,
+    agent_message_key, ask_item, claude_sdk_input, human, is_send_tool, sent_message, serde_pb,
+    unknown,
 };
 
 /// The interpreter for kind `claude_sdk`.
@@ -479,7 +479,7 @@ impl State {
         // version cannot read.
         let arm = match input.decode_body() {
             Some(KindInput::ClaudeSdk(wire::ClaudeSdkInput { of: Some(arm) })) => arm,
-            _ => return self.shared.reject(emit, &id, reason::UNSUPPORTED),
+            _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
             claude_sdk_input::Of::Prompt(prompt) => {
@@ -539,7 +539,7 @@ impl State {
                     .iter()
                     .any(|offered| offered.value == permission.value);
                 if !offered {
-                    return self.shared.reject(emit, &id, reason::UNSUPPORTED);
+                    return self.shared.reject(emit, &id, Refusal::Unsupported);
                 }
                 if permission.value != "plan" && self.leave_plan(emit, &permission.value) {
                     return self.shared.accept(emit, &id, false);
@@ -733,7 +733,7 @@ impl State {
             .get(&key)
             .and_then(|meta| sdk_answer(meta, asked.as_ref(), parsed?))
         else {
-            return self.shared.reject(emit, id, reason::UNSUPPORTED);
+            return self.shared.reject(emit, id, Refusal::Unsupported);
         };
         let ask = self.shared.answer(emit, id, &key);
         let meta = self.asks.remove(&key);
@@ -1229,7 +1229,7 @@ impl Checkpoint for State {
 
 impl Interpreter for ClaudeSdk {
     type State = State;
-    const KIND: &'static str = "claude_sdk";
+    const KIND: wire::Kind = wire::Kind::ClaudeSdk;
 
     fn initial(spec: &AgentSpec, producer_version: &str) -> (State, Step) {
         let mut state = State::new(spec, producer_version);

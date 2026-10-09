@@ -30,9 +30,9 @@ fn measures_hand_counted_records() {
     assert_eq!(bash_ls().len(), 28);
     let steps = vec![
         Step {
-            // The kind, 2 + 1.
+            // The kind, 1 + 1.
             snapshot: Some(Snapshot {
-                kind: "k".into(),
+                kind: wire::Kind::ClaudePty as i32,
                 ..Snapshot::default()
             }),
             // The key, 2 + 1, and the body, 2 + 28: 33.
@@ -44,9 +44,10 @@ fn measures_hand_counted_records() {
             ..Step::default()
         },
         Step {
-            // The kind, 2 + 10.
+            // The kind, 1 + 1, and what it works on, 2 + 8.
             snapshot: Some(Snapshot {
-                kind: "claude_sdk".into(),
+                kind: wire::Kind::ClaudeSdk as i32,
+                working_on: Some("the docs".into()),
                 ..Snapshot::default()
             }),
             // Not a tool call: counted nowhere, nor its append.
@@ -82,18 +83,18 @@ fn measures_hand_counted_records() {
             ..Step::default()
         },
         Step {
-            // The kind, 2 + 1, and the clock, 1 + 1.
+            // The kind, 1 + 1, and the clock, 1 + 1.
             snapshot: Some(Snapshot {
-                kind: "k".into(),
+                kind: wire::Kind::ClaudePty as i32,
                 at_ms: 1,
                 ..Snapshot::default()
             }),
             ..Step::default()
         },
         Step {
-            // 2 + 1 again.
+            // 1 + 1 again.
             snapshot: Some(Snapshot {
-                kind: "k".into(),
+                kind: wire::Kind::ClaudePty as i32,
                 ..Snapshot::default()
             }),
             ..Step::default()
@@ -102,13 +103,13 @@ fn measures_hand_counted_records() {
 
     let measured = measure(&steps);
 
-    // Sizes 3, 12, 5, 3: sorted 3, 3, 5, 12; the lower middle is 3.
+    // Sizes 2, 12, 4, 2: sorted 2, 2, 4, 12; the lower middle is 2.
     assert_eq!(
         measured.snapshots,
         Snapshots {
             count: 4,
             largest_bytes: 12,
-            median_bytes: 3,
+            median_bytes: 2,
         }
     );
     assert_eq!(

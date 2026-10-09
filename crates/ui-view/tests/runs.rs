@@ -106,7 +106,7 @@ fn item(order: u64, it: &It) -> Item {
         order,
         revision: order,
         text: text.into(),
-        kind: wire::kind_tag(Kind::ClaudeSdk).into(),
+        kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeSdkItem { kind: Some(kind) }.encode_to_vec(),
         at_ms: order as i64 * 1_000,
         ..Item::default()

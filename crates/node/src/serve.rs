@@ -287,7 +287,7 @@ impl ProfileRuntime {
         let snapshot = cut.snapshot.unwrap_or_else(|| Snapshot {
             // Nothing emitted yet: the kind tag and an empty body.
             agent: row.agent.agent.clone(),
-            kind: row.kind.clone(),
+            kind: row.kind,
             ..Snapshot::default()
         });
         opening.push_back(Arc::new(event(session_event::Of::Snapshot(snapshot))));

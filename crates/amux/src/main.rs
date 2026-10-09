@@ -187,7 +187,7 @@ enum Command {
     /// in, and write the answer to a file.
     #[command(hide = true)]
     Catalogue {
-        /// "claude" or "codex".
+        /// The provider: claude or codex.
         provider: String,
         /// How the provider is started.
         #[arg(long)]

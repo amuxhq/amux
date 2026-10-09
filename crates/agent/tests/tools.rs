@@ -53,7 +53,7 @@ struct Fleet {
     /// The reason SendMessage refuses with, if it does.
     refuse_send: Option<Status>,
     /// The reason SendInput rejects with, if it does.
-    reject_input: Option<String>,
+    reject_input: Option<wire::Rejected>,
     /// Set, a send, spawn or stop is taken and then its connection is
     /// dropped before the daemon answers.
     sever: Option<Arc<tokio::sync::Notify>>,
@@ -195,9 +195,7 @@ impl ClientService for Fleet {
         self.severed().await?;
         Ok(Response::new(SendInputResponse {
             of: Some(match &self.reject_input {
-                Some(reason) => send_input_response::Of::Rejected(wire::Rejected {
-                    reason: reason.clone(),
-                }),
+                Some(rejected) => send_input_response::Of::Rejected(rejected.clone()),
                 None => send_input_response::Of::Accepted(wire::Accepted { queued: false }),
             }),
         }))
@@ -450,7 +448,7 @@ impl Mcp {
         std::fs::create_dir_all(&cwd).unwrap();
         let spec = AgentSpec {
             agent_id: ME.to_vec(),
-            kind: "claude_pty".into(),
+            kind: Kind::ClaudePty as i32,
             cwd: cwd.display().to_string(),
             incarnation: 1,
             ..Default::default()
@@ -751,14 +749,17 @@ async fn stop_interrupts_the_named_child_its_own_kinds_way() {
     ));
 
     let mut fleet = fleet.clone();
-    fleet.reject_input = Some("not your child".into());
+    fleet.reject_input = Some(wire::Rejected {
+        refusal: wire::Refusal::Exiting as i32,
+        detail: None,
+    });
     fleet.calls = Default::default();
     let mcp_dir = mcp.dir.clone();
     _daemon.stop().await;
     let _daemon = Daemon::listen(&mcp_dir, fleet);
     assert_eq!(
         mcp.refused("stop", json!({ "name": "reviewer" })).await,
-        "reviewer did not stop: not your child"
+        "reviewer did not stop: exiting"
     );
 }
 
@@ -903,7 +904,7 @@ async fn a_call_the_daemon_may_have_taken_is_never_made_again() {
 /// at the install path; the server dials this agent's tools.sock; the
 /// interpreter draws the send as the message it sent, with the envelope id
 /// the daemon took, and the status as working_on, and neither as a tool row.
-async fn the_harness_runs_the_tool_server_from_the_install_path(kind: &'static str) {
+async fn the_harness_runs_the_tool_server_from_the_install_path(kind: Kind) {
     let tool = |name: &str, input: Value| {
         Step::Tool(Tool {
             name: Some(format!("mcp__amux__{name}")),
@@ -976,7 +977,7 @@ async fn the_harness_runs_the_tool_server_from_the_install_path(kind: &'static s
             "message to reviewer Sent Ready for review. with the envelope id ",
             "message to ghost Rejected Anyone? without it no agent named ghost",
         ],
-        "{kind}"
+        "{kind:?}"
     );
     daemon.stop(StopMode::Graceful).await;
     agent.exit().await;
@@ -988,16 +989,16 @@ enum Drawn {
 }
 
 /// An item that is a sent agent message or any tool row.
-fn drawn(kind: &str, item: &wire::Item) -> Option<Drawn> {
+fn drawn(kind: Kind, item: &wire::Item) -> Option<Drawn> {
     use wire::{claude_pty_item, claude_sdk_item, codex_item, work};
     let body = item.body.as_slice();
     match kind {
-        "claude_pty" => match wire::ClaudePtyItem::decode(body).ok()?.kind? {
+        Kind::ClaudePty => match wire::ClaudePtyItem::decode(body).ok()?.kind? {
             claude_pty_item::Kind::AgentMessage(message) => Some(Drawn::Message(message)),
             claude_pty_item::Kind::Tool(tool) => Some(Drawn::Tool(tool.name)),
             _ => None,
         },
-        "claude_sdk" => match wire::ClaudeSdkItem::decode(body).ok()?.kind? {
+        Kind::ClaudeSdk => match wire::ClaudeSdkItem::decode(body).ok()?.kind? {
             claude_sdk_item::Kind::AgentMessage(message) => Some(Drawn::Message(message)),
             claude_sdk_item::Kind::Tool(tool) => Some(Drawn::Tool(tool.name)),
             _ => None,
@@ -1015,12 +1016,12 @@ fn drawn(kind: &str, item: &wire::Item) -> Option<Drawn> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn headless_claude_runs_amuxs_tools_through_the_install_path() {
-    the_harness_runs_the_tool_server_from_the_install_path("claude_sdk").await;
+    the_harness_runs_the_tool_server_from_the_install_path(Kind::ClaudeSdk).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn codex_runs_amuxs_tools_through_the_install_path() {
-    the_harness_runs_the_tool_server_from_the_install_path("codex").await;
+    the_harness_runs_the_tool_server_from_the_install_path(Kind::Codex).await;
 }
 
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
@@ -1029,6 +1030,6 @@ async fn codex_runs_amuxs_tools_through_the_install_path() {
 #[test]
 fn terminal_claude_runs_amuxs_tools_through_the_install_path() {
     terminal_test(the_harness_runs_the_tool_server_from_the_install_path(
-        "claude_pty",
+        Kind::ClaudePty,
     ));
 }

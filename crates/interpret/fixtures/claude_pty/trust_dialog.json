@@ -80,7 +80,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "silent": true
       }
     },

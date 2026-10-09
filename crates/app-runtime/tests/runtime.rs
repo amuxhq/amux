@@ -12,7 +12,7 @@ use app_runtime::values::{
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::{Client, InProcess, SystemClock};
-use model::{AgentKey, InputState, PhaseView, RefusalReason};
+use model::{AgentKey, InputState, PhaseView, Refusal, RefusalReason};
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use tokio::sync::mpsc;
@@ -265,7 +265,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
         .expect("allow once is offered");
     assert_eq!(
         chat.answer_choice("some other ask", allow, "").await,
-        ActOutcome::Rejected(RefusalReason::ClosedAsk)
+        ActOutcome::Rejected(Refusal::of(RefusalReason::ClosedAsk))
     );
     assert_eq!(
         chat.answer_choice(&card.key, allow, "").await,
@@ -614,7 +614,10 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
     let net = Net::start(topology).await.unwrap();
     let (runtime, mut host) = open(&net).await;
     let desk = net.host("desk").unwrap().host_id.as_bytes().to_vec();
-    let catalogue = runtime.host_catalogue(&desk, "claude").await.unwrap();
+    let catalogue = runtime
+        .host_catalogue(&desk, wire::Provider::Claude)
+        .await
+        .unwrap();
     assert!(!catalogue.models.is_empty(), "{catalogue:?}");
     let plan = catalogue
         .permissions
@@ -628,7 +631,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
                     && host
                         .providers
                         .iter()
-                        .any(|offer| offer.provider == "claude" && offer.signed_in)
+                        .any(|offer| offer.provider == wire::Provider::Claude && offer.signed_in)
             });
             if signed_in {
                 return;

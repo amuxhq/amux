@@ -17,7 +17,7 @@ snapshot WORKING queue=[p2] working_on=- at=1800000000000 asks=[] session=s1 mod
 effect reply w1 accepted
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 6 input {"id":"w2","withdraw":{"target":"p2"}}
-effect reply w2 rejected:not_queued
+effect reply w2 rejected:NOT_QUEUED
 ## 7 input {"cycle_permission_mode":{},"id":"k1"}
 effect terminal cycle permission mode
 effect reply k1 accepted

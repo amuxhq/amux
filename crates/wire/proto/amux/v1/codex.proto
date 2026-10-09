@@ -71,12 +71,10 @@ message CommandWork {
   string command = 1;
   string cwd = 2;
   optional int32 exit_code = 3;
-  // Codex's own label for a read, search or listing.
-  string action = 4;
-  bool background = 5;
+  bool background = 4;
   // Output dropped from the front of the item's text: a running command
   // keeps only its newest output, cut at a line boundary.
-  uint64 output_dropped_bytes = 6;
+  uint64 output_dropped_bytes = 5;
 }
 
 message FileChangeWork {
@@ -139,10 +137,21 @@ message TurnDiff {
 
 // An automatic reviewer's verdict on an action.
 message ReviewerVerdict {
-  string decision = 1;
-  string risk = 2;
-  string rationale = 3;
-  string item_key = 4;
+  ReviewStatus status = 1;
+  // Codex's own word, always carried.
+  string status_word = 2;
+  string risk = 3;
+  string rationale = 4;
+  string item_key = 5;
+}
+
+enum ReviewStatus {
+  REVIEW_STATUS_UNSPECIFIED = 0;
+  REVIEW_STATUS_IN_PROGRESS = 1;
+  REVIEW_STATUS_APPROVED = 2;
+  REVIEW_STATUS_DENIED = 3;
+  REVIEW_STATUS_TIMEOUT = 4;
+  REVIEW_STATUS_ABORT = 5;
 }
 
 // Phase lives in the Snapshot envelope, once.
@@ -249,8 +258,8 @@ enum Decision {
   DECISION_APPROVE_NETWORK = 6;
 }
 
-// Rejected closed_ask if ask_key is not open. An approval is rejected
-// unsupported when its decision is not one the ask offered.
+// Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected
+// REFUSAL_UNSUPPORTED when its decision is not one the ask offered.
 message CodexAnswer {
   // CodexAsk.key: the app-server request id, or amux's own key for a plan.
   string ask_key = 1;

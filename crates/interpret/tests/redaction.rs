@@ -289,7 +289,7 @@ impl Transcript {
         same: impl Fn(&[u8], &[u8]) -> Result<String, String>,
         show: impl Fn(&[u8]) -> String,
     ) {
-        let kind = wire::kind_from_tag(I::KIND).unwrap();
+        let kind = I::KIND;
         let after = redact(kind, before.clone());
         let again = redact(kind, after.clone());
         let (before_bytes, after_bytes) = (target_bytes(&before), target_bytes(&after));
@@ -297,16 +297,16 @@ impl Transcript {
         let left = planted_in(after_bytes);
         assert!(
             left.is_empty(),
-            "{} {label}: {left:?} survived redaction:\n{}",
+            "{:?} {label}: {left:?} survived redaction:\n{}",
             I::KIND,
             show(after_bytes)
         );
         let kept = same(before_bytes, after_bytes)
-            .unwrap_or_else(|why| panic!("{} {label}: structure lost: {why}", I::KIND));
+            .unwrap_or_else(|why| panic!("{:?} {label}: structure lost: {why}", I::KIND));
         assert_eq!(
             again,
             after,
-            "{} {label}: redaction is not idempotent",
+            "{:?} {label}: redaction is not idempotent",
             I::KIND
         );
         if planted.is_empty() {
@@ -336,7 +336,7 @@ fn same_json(before: &[u8], after: &[u8]) -> Result<String, String> {
 fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
     let spec = AgentSpec {
         agent_id: vec![7; 16],
-        kind: I::KIND.into(),
+        kind: I::KIND as i32,
         created_at_ms: 1_800_000_000_000,
         ..AgentSpec::default()
     };
@@ -628,7 +628,7 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
 
 fn report<I: Interpreter>(events: Vec<Event>) {
     let (text, planted) = run::<I>(events);
-    println!("== {}\n{text}", I::KIND);
+    println!("== {:?}\n{text}", I::KIND);
     let missing = PLANTED
         .iter()
         .map(|(name, _)| *name)
@@ -636,7 +636,7 @@ fn report<I: Interpreter>(events: Vec<Event>) {
         .collect::<Vec<_>>();
     assert!(
         missing.is_empty(),
-        "{}: the session never carried {missing:?}, so their redaction went untested",
+        "{:?}: the session never carried {missing:?}, so their redaction went untested",
         I::KIND
     );
 }
@@ -653,7 +653,7 @@ fn claude_pty_redaction() {
 fn claude_pty_unanswerable_reason_survives_redaction() {
     let spec = AgentSpec {
         agent_id: vec![7; 16],
-        kind: ClaudePty::KIND.into(),
+        kind: ClaudePty::KIND as i32,
         created_at_ms: 1_800_000_000_000,
         ..AgentSpec::default()
     };

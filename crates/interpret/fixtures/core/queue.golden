@@ -28,7 +28,7 @@ snapshot WORKING queue=[p2,p3] working_on=- at=2000 asks=[] model=?
 effect reply w1 accepted
 snapshot WORKING queue=[p2] working_on=- at=2000 asks=[] model=?
 ## 11 input {"id":"w2","withdraw":{"target":"p3"}}
-effect reply w2 rejected:not_queued
+effect reply w2 rejected:NOT_QUEUED
 ## 12 fact {"channel":"stream","json":{"id":"u2","text":"first","type":"user"}}
 item u2 prompt final input=p1 at=2000 text="first"
 ## 13 fact {"channel":"stream","json":{"delta":"done","id":"m1","type":"text"}}
@@ -42,7 +42,7 @@ item turn:2 turn final at=3000 text="" #2 started=2000
 snapshot WORKING queue=[] working_on=- at=3000 asks=[] model=?
 turn_end 2 last=m1
 ## 17 input {"id":"w3","withdraw":{"target":"p2"}}
-effect reply w3 rejected:not_queued
+effect reply w3 rejected:NOT_QUEUED
 ## 18 fact {"channel":"stream","json":{"id":"u3","text":"from the phone","type":"user"}}
 item u3 prompt final input=p2 at=3000 text="from the phone"
 ## 19 fact {"channel":"stream","json":{"type":"turn_end"}}
@@ -50,4 +50,4 @@ item turn:3 turn final at=3000 text="" #3 started=3000
 snapshot IDLE queue=[] working_on=- at=3000 asks=[] model=?
 turn_end 3 last=-
 ## 20 input {"id":"x1","raw":{"hex":""}}
-effect reply x1 rejected:unsupported
+effect reply x1 rejected:UNSUPPORTED

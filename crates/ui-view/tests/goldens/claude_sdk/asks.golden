@@ -10,7 +10,7 @@
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 ## 4 fact {"channel":"stream","json":{"request":{"blocked_path":"/work/other","decision_reason":"Bash commands that delete files need approval","description":"Remove the build output","input":{"command":"rm -rf target"},"permission_suggestions":[{"behavior":"allow","destination":"localSettings","rules":[{"ruleContent":"rm -rf target","toolName":"Bash"}],"type":"addRules"},{"destination":"session","dire…
   ask req-1 -> "t1" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["rm -rf target"], directories: [], mode: "", mode_name: "", scope: Project, label: "" }, AllowAlways { subjects: [], directories: ["/work/other"], mode: "", mode_name: "", scope: Session, label: "" }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "", scope: Session, label: "" }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: ["rm -rf target"], directories: [], mode: "", mode_name: "", scope: Project }, AllowAlways { subjects: [], directories: ["/work/other"], mode: "", mode_name: "", scope: Session }, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "rm -rf target", cwd: "", reason: "Bash commands that delete files need approval", description: "Remove the build output" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 5 input {"answer":{"answer":{"allow":{"scope":1}},"ask":"req-1"},"id":"a1"}

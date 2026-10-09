@@ -249,7 +249,7 @@ fn input_outcome(outcome: &InputOutcome) -> String {
         }) => format!("accepted queued={}", accepted.queued),
         InputOutcome::Reply(SendInputResponse {
             of: Some(send_input_response::Of::Rejected(rejected)),
-        }) => format!("rejected {}", rejected.reason),
+        }) => format!("rejected {:?}", rejected.refusal()),
         InputOutcome::Reply(SendInputResponse { of: None }) => "no verdict".into(),
         InputOutcome::Lost => "lost".into(),
     }

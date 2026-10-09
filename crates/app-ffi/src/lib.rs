@@ -1467,9 +1467,9 @@ pub unsafe extern "C" fn amux_profile_agent_act(
     });
 }
 
-/// What a provider, "claude" or "codex", offers on a host, by its id as a
-/// JSON byte array, with no agent running there; the callback gets
-/// `{"Ok": Catalogue}` or `{"Err": ..}`.
+/// What a provider, as a JSON `Provider` ("Claude" or "Codex"), offers on a
+/// host, by its id as a JSON byte array, with no agent running there; the
+/// callback gets `{"Ok": Catalogue}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; the strings are NUL-terminated.
@@ -1489,13 +1489,16 @@ pub unsafe extern "C" fn amux_profile_host_catalogue(
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
         // SAFETY: the caller's contract.
-        let provider = unsafe { text(provider) }.unwrap_or_default().to_owned();
+        let provider: Option<wire::Provider> = unsafe { parse(provider) };
         let app = profile.app.clone();
         profile.spawn(callback, context, async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
-            Answered::from(app.host_catalogue(&host_id, &provider).await)
+            let Some(provider) = provider else {
+                return Answered::Err("the provider is not a Provider".into());
+            };
+            Answered::from(app.host_catalogue(&host_id, provider).await)
         });
     });
 }

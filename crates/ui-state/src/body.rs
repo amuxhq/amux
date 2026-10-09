@@ -336,6 +336,13 @@ impl Usage {
     }
 }
 
+/// The kind an envelope names, when it is one this build knows.
+pub(crate) fn named_kind(kind: i32) -> Option<Kind> {
+    Kind::try_from(kind)
+        .ok()
+        .filter(|kind| *kind != Kind::Unspecified)
+}
+
 /// Decodes a snapshot body. A body that does not decode is drawn as nothing
 /// known, the same as an empty one.
 pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
@@ -409,10 +416,10 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
 }
 
 impl AgentState {
-    /// The whole snapshot: envelope plus decoded body. The envelope's kind tag
-    /// wins over the caller's when it names a kind.
+    /// The whole snapshot: envelope plus decoded body. The envelope's kind
+    /// wins over the caller's when it names one this build knows.
     pub fn from_snapshot(kind: Kind, snapshot: &wire::Snapshot) -> AgentState {
-        let kind = wire::kind_from_tag(&snapshot.kind).unwrap_or(kind);
+        let kind = named_kind(snapshot.kind).unwrap_or(kind);
         AgentState {
             revision: snapshot.revision,
             phase: snapshot.phase(),

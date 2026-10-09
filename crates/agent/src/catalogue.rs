@@ -14,9 +14,16 @@ use codex_protocol::client::{AccountReadParams, ModelListParams, SkillsListParam
 use codex_protocol::server::{AccountReadResponse, ModelListResponse, SkillsListResponse};
 use prost::Message as _;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
-use wire::{Catalogue, ProviderOffer};
+use wire::{Catalogue, Provider, ProviderOffer};
 
 const INITIALIZE: &str = "amux-catalogue";
+
+/// The provider a word on the command line names: the `Provider` value's
+/// own name, lowercase, without the enum's prefix, as the daemon writes it.
+pub fn provider_named(word: &str) -> Option<Provider> {
+    Provider::from_str_name(&format!("PROVIDER_{}", word.to_ascii_uppercase()))
+        .filter(|provider| *provider != Provider::Unspecified)
+}
 
 /// Asks `provider`, run as `command`, and writes a `ProviderOffer` to
 /// `out`; the exit code says whether it could.
@@ -32,10 +39,10 @@ pub fn main(provider: &str, command: &str, out: &Path) -> i32 {
         }
     };
     let asked = runtime.block_on(async {
-        match provider {
-            "claude" => ask_claude(command).await,
-            "codex" => ask_codex(command).await,
-            other => Err(format!("no provider named {other:?}")),
+        match provider_named(provider) {
+            Some(Provider::Claude) => ask_claude(command).await,
+            Some(Provider::Codex) => ask_codex(command).await,
+            Some(Provider::Unspecified) | None => Err(format!("no provider named {provider:?}")),
         }
     });
     let written = asked.and_then(|(catalogue, signed_in)| {

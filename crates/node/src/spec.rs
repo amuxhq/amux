@@ -19,25 +19,6 @@ use wire::{
 
 use crate::runtime::Launch;
 
-/// The kind's name in a spec and on the agents row.
-pub fn kind_name(kind: Kind) -> Option<&'static str> {
-    match kind {
-        Kind::ClaudePty => Some("claude_pty"),
-        Kind::ClaudeSdk => Some("claude_sdk"),
-        Kind::Codex => Some("codex"),
-        Kind::Unspecified => None,
-    }
-}
-
-pub fn kind_from_name(name: &str) -> Kind {
-    match name {
-        "claude_pty" => Kind::ClaudePty,
-        "claude_sdk" => Kind::ClaudeSdk,
-        "codex" => Kind::Codex,
-        _ => Kind::Unspecified,
-    }
-}
-
 /// A client's first prompt as what seeds the new incarnation's queue.
 pub fn prompt_bootstrap(prompt: PromptSubmission) -> Bootstrap {
     Bootstrap {
@@ -176,7 +157,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
     AgentSpec {
         agent_id: at.agent_id.to_vec(),
         profile_id: at.profile_id.to_vec(),
-        kind: kind_name(at.kind).unwrap_or_default().to_owned(),
+        kind: at.kind as i32,
         cwd: at.cwd.to_owned(),
         name: at.name.to_owned(),
         parent: at.parent,

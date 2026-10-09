@@ -95,8 +95,6 @@ pub struct AgentSender {
     pub host_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "3")]
     pub name: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
-    pub kind: ::prost::alloc::string::String,
 }
 impl ::prost::Name for AgentSender {
     const NAME: &'static str = "AgentSender";
@@ -171,9 +169,9 @@ pub struct Item {
     pub text: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "8")]
     pub attachments: ::prost::alloc::vec::Vec<Attachment>,
-    /// claude_pty | claude_sdk | codex: which per-kind item message `body` holds.
-    #[prost(string, tag = "9")]
-    pub kind: ::prost::alloc::string::String,
+    /// Which per-kind item message `body` holds.
+    #[prost(enumeration = "Kind", tag = "9")]
+    pub kind: i32,
     #[prost(bytes = "vec", tag = "10")]
     pub body: ::prost::alloc::vec::Vec<u8>,
     /// When the item happened: the provider's own timestamp where it has one,
@@ -227,11 +225,10 @@ pub struct Snapshot {
     pub revision: u64,
     #[prost(message, repeated, tag = "3")]
     pub queue: ::prost::alloc::vec::Vec<QueuedInput>,
-    /// claude_pty | claude_sdk | codex: which per-kind snapshot `body` holds.
-    /// Before the interpreter's first snapshot is ingested, Subscribe answers
-    /// with the kind and an empty body.
-    #[prost(string, tag = "4")]
-    pub kind: ::prost::alloc::string::String,
+    /// Which per-kind snapshot `body` holds. Before the interpreter's first
+    /// snapshot is ingested, Subscribe answers with the kind and an empty body.
+    #[prost(enumeration = "Kind", tag = "4")]
+    pub kind: i32,
     #[prost(bytes = "vec", tag = "5")]
     pub body: ::prost::alloc::vec::Vec<u8>,
     /// STARTING until the provider accepts input; NEEDS_YOU whenever an ask is
@@ -735,10 +732,10 @@ impl ::prost::Name for ToolDecision {
         "/amux.v1.ToolDecision".into()
     }
 }
-/// A standing permission Claude added when the call was allowed.
+/// A standing permission Claude offers or added when a call was allowed.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClaudeGrant {
-    /// The rules added, as Claude writes them: "Bash(npm test:\*)".
+    /// The rules, as Claude writes them: "Bash(npm test:\*)".
     #[prost(string, repeated, tag = "1")]
     pub rules: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Folders added to those Claude may work in.
@@ -747,10 +744,12 @@ pub struct ClaudeGrant {
     /// A permission mode Claude switched to.
     #[prost(string, optional, tag = "3")]
     pub mode: ::core::option::Option<::prost::alloc::string::String>,
-    /// Where Claude saved it: session, localSettings, projectSettings,
-    /// userSettings, or Claude's own word.
-    #[prost(string, tag = "4")]
-    pub saved_to: ::prost::alloc::string::String,
+    #[prost(enumeration = "ScopeDestination", tag = "4")]
+    pub destination: i32,
+    /// Claude's own word for the destination, always carried: what a client
+    /// shows for a destination it does not know.
+    #[prost(string, tag = "5")]
+    pub destination_word: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ClaudeGrant {
     const NAME: &'static str = "ClaudeGrant";
@@ -1240,24 +1239,13 @@ impl ::prost::Name for PermissionAsk {
         "/amux.v1.PermissionAsk".into()
     }
 }
+/// One scope the provider offered; answers name its index.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ScopeChoice {
-    /// Position in the provider's offer; answers name it.
     #[prost(uint32, tag = "1")]
     pub index: u32,
-    /// session | localSettings | projectSettings | userSettings, or the
-    /// provider's own word.
-    #[prost(string, tag = "2")]
-    pub destination: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag = "3")]
-    pub rules: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, repeated, tag = "4")]
-    pub directories: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, tag = "5")]
-    pub mode: ::prost::alloc::string::String,
-    /// The provider's label when it words the choice itself.
-    #[prost(string, tag = "6")]
-    pub label: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub grant: ::core::option::Option<ClaudeGrant>,
 }
 impl ::prost::Name for ScopeChoice {
     const NAME: &'static str = "ScopeChoice";
@@ -1845,7 +1833,7 @@ impl ::prost::Name for PromptInput {
         "/amux.v1.PromptInput".into()
     }
 }
-/// Rejected if the target is not queued.
+/// Rejected REFUSAL_NOT_QUEUED if the target is not queued.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WithdrawQueued {
     #[prost(bytes = "vec", tag = "1")]
@@ -1863,8 +1851,8 @@ impl ::prost::Name for WithdrawQueued {
 }
 /// Delivers one queued prompt into the running turn through the provider's
 /// own steering path; the entry reads steered until its reflection lands.
-/// Rejected not_queued if the target is not waiting in the queue, and
-/// unsupported if no turn is running.
+/// Rejected REFUSAL_NOT_QUEUED if the target is not waiting in the queue,
+/// and REFUSAL_UNSUPPORTED if no turn is running.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SendQueuedNow {
     #[prost(bytes = "vec", tag = "1")]
@@ -2121,12 +2109,14 @@ impl ::prost::Name for Accepted {
         "/amux.v1.Accepted".into()
     }
 }
-/// closed_ask | not_queued | unsupported | draining | exiting | exited |
-/// host_unreachable
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Rejected {
-    #[prost(string, tag = "1")]
-    pub reason: ::prost::alloc::string::String,
+    #[prost(enumeration = "Refusal", tag = "1")]
+    pub refusal: i32,
+    /// The provider's or interpreter's own words, when it has any: terminal
+    /// Claude's sentence about a send-now it cannot do.
+    #[prost(string, optional, tag = "2")]
+    pub detail: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Rejected {
     const NAME: &'static str = "Rejected";
@@ -2188,19 +2178,19 @@ impl Phase {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::Starting => "STARTING",
-            Self::Idle => "IDLE",
-            Self::Working => "WORKING",
-            Self::NeedsYou => "NEEDS_YOU",
+            Self::Starting => "PHASE_STARTING",
+            Self::Idle => "PHASE_IDLE",
+            Self::Working => "PHASE_WORKING",
+            Self::NeedsYou => "PHASE_NEEDS_YOU",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "STARTING" => Some(Self::Starting),
-            "IDLE" => Some(Self::Idle),
-            "WORKING" => Some(Self::Working),
-            "NEEDS_YOU" => Some(Self::NeedsYou),
+            "PHASE_STARTING" => Some(Self::Starting),
+            "PHASE_IDLE" => Some(Self::Idle),
+            "PHASE_WORKING" => Some(Self::Working),
+            "PHASE_NEEDS_YOU" => Some(Self::NeedsYou),
             _ => None,
         }
     }
@@ -2358,6 +2348,42 @@ impl ToolClass {
             "TOOL_CLASS_FETCH" => Some(Self::Fetch),
             "TOOL_CLASS_WEB_SEARCH" => Some(Self::WebSearch),
             "TOOL_CLASS_LOOK" => Some(Self::Look),
+            _ => None,
+        }
+    }
+}
+/// Where Claude saves a standing permission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ScopeDestination {
+    Unspecified = 0,
+    Session = 1,
+    LocalSettings = 2,
+    ProjectSettings = 3,
+    UserSettings = 4,
+}
+impl ScopeDestination {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SCOPE_DESTINATION_UNSPECIFIED",
+            Self::Session => "SCOPE_DESTINATION_SESSION",
+            Self::LocalSettings => "SCOPE_DESTINATION_LOCAL_SETTINGS",
+            Self::ProjectSettings => "SCOPE_DESTINATION_PROJECT_SETTINGS",
+            Self::UserSettings => "SCOPE_DESTINATION_USER_SETTINGS",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SCOPE_DESTINATION_UNSPECIFIED" => Some(Self::Unspecified),
+            "SCOPE_DESTINATION_SESSION" => Some(Self::Session),
+            "SCOPE_DESTINATION_LOCAL_SETTINGS" => Some(Self::LocalSettings),
+            "SCOPE_DESTINATION_PROJECT_SETTINGS" => Some(Self::ProjectSettings),
+            "SCOPE_DESTINATION_USER_SETTINGS" => Some(Self::UserSettings),
             _ => None,
         }
     }
@@ -2831,18 +2857,18 @@ impl Kind {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "KIND_UNSPECIFIED",
-            Self::ClaudePty => "CLAUDE_PTY",
-            Self::ClaudeSdk => "CLAUDE_SDK",
-            Self::Codex => "CODEX",
+            Self::ClaudePty => "KIND_CLAUDE_PTY",
+            Self::ClaudeSdk => "KIND_CLAUDE_SDK",
+            Self::Codex => "KIND_CODEX",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "KIND_UNSPECIFIED" => Some(Self::Unspecified),
-            "CLAUDE_PTY" => Some(Self::ClaudePty),
-            "CLAUDE_SDK" => Some(Self::ClaudeSdk),
-            "CODEX" => Some(Self::Codex),
+            "KIND_CLAUDE_PTY" => Some(Self::ClaudePty),
+            "KIND_CLAUDE_SDK" => Some(Self::ClaudeSdk),
+            "KIND_CODEX" => Some(Self::Codex),
             _ => None,
         }
     }
@@ -2875,6 +2901,53 @@ impl FormAction {
             "FORM_ACTION_ACCEPT" => Some(Self::Accept),
             "FORM_ACTION_DECLINE" => Some(Self::Decline),
             "FORM_ACTION_CANCEL" => Some(Self::Cancel),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Refusal {
+    Unspecified = 0,
+    /// The answer's ask is not open.
+    ClosedAsk = 1,
+    /// The withdraw or send-now target is not waiting in the queue.
+    NotQueued = 2,
+    /// This agent version, kind or state cannot take the input.
+    Unsupported = 3,
+    Draining = 4,
+    Exiting = 5,
+    Exited = 6,
+    HostUnreachable = 7,
+}
+impl Refusal {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "REFUSAL_UNSPECIFIED",
+            Self::ClosedAsk => "REFUSAL_CLOSED_ASK",
+            Self::NotQueued => "REFUSAL_NOT_QUEUED",
+            Self::Unsupported => "REFUSAL_UNSUPPORTED",
+            Self::Draining => "REFUSAL_DRAINING",
+            Self::Exiting => "REFUSAL_EXITING",
+            Self::Exited => "REFUSAL_EXITED",
+            Self::HostUnreachable => "REFUSAL_HOST_UNREACHABLE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
+            "REFUSAL_CLOSED_ASK" => Some(Self::ClosedAsk),
+            "REFUSAL_NOT_QUEUED" => Some(Self::NotQueued),
+            "REFUSAL_UNSUPPORTED" => Some(Self::Unsupported),
+            "REFUSAL_DRAINING" => Some(Self::Draining),
+            "REFUSAL_EXITING" => Some(Self::Exiting),
+            "REFUSAL_EXITED" => Some(Self::Exited),
+            "REFUSAL_HOST_UNREACHABLE" => Some(Self::HostUnreachable),
             _ => None,
         }
     }
@@ -3315,7 +3388,7 @@ impl ::prost::Name for ClaudeSdkInput {
         "/amux.v1.ClaudeSdkInput".into()
     }
 }
-/// Rejected closed_ask if ask_key is not open.
+/// Rejected REFUSAL_CLOSED_ASK if ask_key is not open.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClaudeAnswer {
     #[prost(string, tag = "1")]
@@ -3599,14 +3672,11 @@ pub struct CommandWork {
     pub cwd: ::prost::alloc::string::String,
     #[prost(int32, optional, tag = "3")]
     pub exit_code: ::core::option::Option<i32>,
-    /// Codex's own label for a read, search or listing.
-    #[prost(string, tag = "4")]
-    pub action: ::prost::alloc::string::String,
-    #[prost(bool, tag = "5")]
+    #[prost(bool, tag = "4")]
     pub background: bool,
     /// Output dropped from the front of the item's text: a running command
     /// keeps only its newest output, cut at a line boundary.
-    #[prost(uint64, tag = "6")]
+    #[prost(uint64, tag = "5")]
     pub output_dropped_bytes: u64,
 }
 impl ::prost::Name for CommandWork {
@@ -3774,13 +3844,16 @@ impl ::prost::Name for TurnDiff {
 /// An automatic reviewer's verdict on an action.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReviewerVerdict {
-    #[prost(string, tag = "1")]
-    pub decision: ::prost::alloc::string::String,
+    #[prost(enumeration = "ReviewStatus", tag = "1")]
+    pub status: i32,
+    /// Codex's own word, always carried.
     #[prost(string, tag = "2")]
-    pub risk: ::prost::alloc::string::String,
+    pub status_word: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub rationale: ::prost::alloc::string::String,
+    pub risk: ::prost::alloc::string::String,
     #[prost(string, tag = "4")]
+    pub rationale: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
     pub item_key: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ReviewerVerdict {
@@ -4007,8 +4080,8 @@ impl ::prost::Name for CodexInput {
         "/amux.v1.CodexInput".into()
     }
 }
-/// Rejected closed_ask if ask_key is not open. An approval is rejected
-/// unsupported when its decision is not one the ask offered.
+/// Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected
+/// REFUSAL_UNSUPPORTED when its decision is not one the ask offered.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CodexAnswer {
     /// CodexAsk.key: the app-server request id, or amux's own key for a plan.
@@ -4075,6 +4148,45 @@ impl FileChangeKind {
             "FILE_CHANGE_KIND_ADD" => Some(Self::Add),
             "FILE_CHANGE_KIND_DELETE" => Some(Self::Delete),
             "FILE_CHANGE_KIND_UPDATE" => Some(Self::Update),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReviewStatus {
+    Unspecified = 0,
+    InProgress = 1,
+    Approved = 2,
+    Denied = 3,
+    Timeout = 4,
+    Abort = 5,
+}
+impl ReviewStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "REVIEW_STATUS_UNSPECIFIED",
+            Self::InProgress => "REVIEW_STATUS_IN_PROGRESS",
+            Self::Approved => "REVIEW_STATUS_APPROVED",
+            Self::Denied => "REVIEW_STATUS_DENIED",
+            Self::Timeout => "REVIEW_STATUS_TIMEOUT",
+            Self::Abort => "REVIEW_STATUS_ABORT",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "REVIEW_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "REVIEW_STATUS_IN_PROGRESS" => Some(Self::InProgress),
+            "REVIEW_STATUS_APPROVED" => Some(Self::Approved),
+            "REVIEW_STATUS_DENIED" => Some(Self::Denied),
+            "REVIEW_STATUS_TIMEOUT" => Some(Self::Timeout),
+            "REVIEW_STATUS_ABORT" => Some(Self::Abort),
             _ => None,
         }
     }
@@ -4177,9 +4289,8 @@ pub struct AgentSpec {
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub profile_id: ::prost::alloc::vec::Vec<u8>,
-    /// claude_pty | claude_sdk | codex
-    #[prost(string, tag = "3")]
-    pub kind: ::prost::alloc::string::String,
+    #[prost(enumeration = "Kind", tag = "3")]
+    pub kind: i32,
     /// The project directory the provider child is launched in, frozen at
     /// spawn.
     #[prost(string, tag = "4")]
@@ -4629,17 +4740,17 @@ impl StopMode {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::Graceful => "GRACEFUL",
-            Self::Abort => "ABORT",
-            Self::Kill => "KILL",
+            Self::Graceful => "STOP_MODE_GRACEFUL",
+            Self::Abort => "STOP_MODE_ABORT",
+            Self::Kill => "STOP_MODE_KILL",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "GRACEFUL" => Some(Self::Graceful),
-            "ABORT" => Some(Self::Abort),
-            "KILL" => Some(Self::Kill),
+            "STOP_MODE_GRACEFUL" => Some(Self::Graceful),
+            "STOP_MODE_ABORT" => Some(Self::Abort),
+            "STOP_MODE_KILL" => Some(Self::Kill),
             _ => None,
         }
     }
@@ -4957,9 +5068,11 @@ impl ::prost::Name for Reauth {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Capabilities {
-    #[prost(string, repeated, tag = "1")]
-    pub features: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// The agent kinds this host can run.
+    /// The host serves as a cloud relay.
+    #[prost(bool, tag = "1")]
+    pub cloud_relay: bool,
+    /// The agent kinds this host can run, from its platform: terminal Claude
+    /// is not hosted on Windows.
     #[prost(enumeration = "Kind", repeated, tag = "2")]
     pub kinds: ::prost::alloc::vec::Vec<i32>,
 }
@@ -5263,9 +5376,8 @@ impl ::prost::Name for HostEntry {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProviderOnHost {
-    /// As an agent's kind names its provider: "claude" or "codex".
-    #[prost(string, tag = "1")]
-    pub provider: ::prost::alloc::string::String,
+    #[prost(enumeration = "Provider", tag = "1")]
+    pub provider: i32,
     /// The hash GetCatalogue answers with for this provider.
     #[prost(bytes = "vec", optional, tag = "2")]
     pub catalogue: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
@@ -5926,9 +6038,8 @@ impl ::prost::Name for DiffRequest {
 pub struct GetCatalogueRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub host_id: ::prost::alloc::vec::Vec<u8>,
-    /// As an agent's kind names its provider: "claude" or "codex".
-    #[prost(string, tag = "2")]
-    pub provider: ::prost::alloc::string::String,
+    #[prost(enumeration = "Provider", tag = "2")]
+    pub provider: i32,
 }
 impl ::prost::Name for GetCatalogueRequest {
     const NAME: &'static str = "GetCatalogueRequest";
@@ -6956,22 +7067,22 @@ impl StreamRefusal {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "STREAM_REFUSAL_UNSPECIFIED",
-            Self::NoRoute => "NO_ROUTE",
-            Self::PaymentRequired => "PAYMENT_REQUIRED",
-            Self::RateLimited => "RATE_LIMITED",
-            Self::NotAdjacent => "NOT_ADJACENT",
-            Self::ShuttingDown => "SHUTTING_DOWN",
+            Self::NoRoute => "STREAM_REFUSAL_NO_ROUTE",
+            Self::PaymentRequired => "STREAM_REFUSAL_PAYMENT_REQUIRED",
+            Self::RateLimited => "STREAM_REFUSAL_RATE_LIMITED",
+            Self::NotAdjacent => "STREAM_REFUSAL_NOT_ADJACENT",
+            Self::ShuttingDown => "STREAM_REFUSAL_SHUTTING_DOWN",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "STREAM_REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
-            "NO_ROUTE" => Some(Self::NoRoute),
-            "PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
-            "RATE_LIMITED" => Some(Self::RateLimited),
-            "NOT_ADJACENT" => Some(Self::NotAdjacent),
-            "SHUTTING_DOWN" => Some(Self::ShuttingDown),
+            "STREAM_REFUSAL_NO_ROUTE" => Some(Self::NoRoute),
+            "STREAM_REFUSAL_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
+            "STREAM_REFUSAL_RATE_LIMITED" => Some(Self::RateLimited),
+            "STREAM_REFUSAL_NOT_ADJACENT" => Some(Self::NotAdjacent),
+            "STREAM_REFUSAL_SHUTTING_DOWN" => Some(Self::ShuttingDown),
             _ => None,
         }
     }
@@ -7037,16 +7148,16 @@ impl Trust {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "TRUST_UNSPECIFIED",
-            Self::Trusted => "TRUSTED",
-            Self::Candidate => "CANDIDATE",
+            Self::Trusted => "TRUST_TRUSTED",
+            Self::Candidate => "TRUST_CANDIDATE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "TRUST_UNSPECIFIED" => Some(Self::Unspecified),
-            "TRUSTED" => Some(Self::Trusted),
-            "CANDIDATE" => Some(Self::Candidate),
+            "TRUST_TRUSTED" => Some(Self::Trusted),
+            "TRUST_CANDIDATE" => Some(Self::Candidate),
             _ => None,
         }
     }
@@ -7068,18 +7179,18 @@ impl Presence {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "PRESENCE_UNSPECIFIED",
-            Self::Online => "ONLINE",
-            Self::Offline => "OFFLINE",
-            Self::Away => "AWAY",
+            Self::Online => "PRESENCE_ONLINE",
+            Self::Offline => "PRESENCE_OFFLINE",
+            Self::Away => "PRESENCE_AWAY",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "PRESENCE_UNSPECIFIED" => Some(Self::Unspecified),
-            "ONLINE" => Some(Self::Online),
-            "OFFLINE" => Some(Self::Offline),
-            "AWAY" => Some(Self::Away),
+            "PRESENCE_ONLINE" => Some(Self::Online),
+            "PRESENCE_OFFLINE" => Some(Self::Offline),
+            "PRESENCE_AWAY" => Some(Self::Away),
             _ => None,
         }
     }
@@ -7132,16 +7243,49 @@ impl Lifecycle {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "LIFECYCLE_UNSPECIFIED",
-            Self::Live => "LIVE",
-            Self::Exited => "EXITED",
+            Self::Live => "LIFECYCLE_LIVE",
+            Self::Exited => "LIFECYCLE_EXITED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "LIFECYCLE_UNSPECIFIED" => Some(Self::Unspecified),
-            "LIVE" => Some(Self::Live),
-            "EXITED" => Some(Self::Exited),
+            "LIFECYCLE_LIVE" => Some(Self::Live),
+            "LIFECYCLE_EXITED" => Some(Self::Exited),
+            _ => None,
+        }
+    }
+}
+/// Which provider's program a host runs: the vocabulary amux uses to ask a
+/// host what it offers with no agent running. Distinct from Kind, which is
+/// the interpreter.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Provider {
+    Unspecified = 0,
+    Claude = 1,
+    Codex = 2,
+}
+impl Provider {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PROVIDER_UNSPECIFIED",
+            Self::Claude => "PROVIDER_CLAUDE",
+            Self::Codex => "PROVIDER_CODEX",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PROVIDER_UNSPECIFIED" => Some(Self::Unspecified),
+            "PROVIDER_CLAUDE" => Some(Self::Claude),
+            "PROVIDER_CODEX" => Some(Self::Codex),
             _ => None,
         }
     }

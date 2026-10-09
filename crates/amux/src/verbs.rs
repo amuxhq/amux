@@ -78,12 +78,15 @@ fn short_id(id: &[u8]) -> String {
         .unwrap_or_default()
 }
 
-fn kind_name(kind: i32) -> &'static str {
+/// A kind as the listing says it: the enum value's own name, lowercase,
+/// without the enum's prefix.
+fn kind_word(kind: i32) -> String {
     match Kind::try_from(kind).unwrap_or(Kind::Unspecified) {
-        Kind::ClaudePty => "claude_pty",
-        Kind::ClaudeSdk => "claude_sdk",
-        Kind::Codex => "codex",
-        Kind::Unspecified => "unknown",
+        Kind::Unspecified => "unknown".to_owned(),
+        known => known
+            .as_str_name()
+            .trim_start_matches("KIND_")
+            .to_ascii_lowercase(),
     }
 }
 
@@ -176,7 +179,7 @@ pub async fn ls(client: &mut Client) -> Result<()> {
         println!(
             "{name:width$}  {:8}  {:10}  {}",
             short_id(&agent.agent_id),
-            kind_name(agent.kind),
+            kind_word(agent.kind),
             state(agent),
         );
     }
@@ -312,7 +315,11 @@ pub async fn send(client: &mut Client, reference: &str, text: &str) -> Result<()
         Some(send_input_response::Of::Rejected(rejected)) => Err(anyhow!(
             "{} did not take it: {}",
             agent.name,
-            rejected.reason
+            rejected.detail.clone().unwrap_or_else(|| rejected
+                .refusal()
+                .as_str_name()
+                .trim_start_matches("REFUSAL_")
+                .to_ascii_lowercase())
         )),
         None => Err(anyhow!("the daemon gave no verdict")),
     }

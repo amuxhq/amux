@@ -59,26 +59,6 @@ where
         .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
 }
 
-/// The kind tag an item or snapshot envelope carries for each interpreter.
-pub const fn kind_tag(kind: Kind) -> &'static str {
-    match kind {
-        Kind::Unspecified => "",
-        Kind::ClaudePty => "claude_pty",
-        Kind::ClaudeSdk => "claude_sdk",
-        Kind::Codex => "codex",
-    }
-}
-
-/// The interpreter an envelope's kind tag names, if any.
-pub fn kind_from_tag(tag: &str) -> Option<Kind> {
-    match tag {
-        "claude_pty" => Some(Kind::ClaudePty),
-        "claude_sdk" => Some(Kind::ClaudeSdk),
-        "codex" => Some(Kind::Codex),
-        _ => None,
-    }
-}
-
 /// A person's input as its kind's own message: what a client builds and
 /// what the agent of that kind decodes from [`Input::body`].
 #[derive(Clone, Debug, PartialEq)]
@@ -165,38 +145,6 @@ impl HostRef {
             of: Some(host_ref::Of::Name(name.into())),
         }
     }
-}
-
-/// Why an input was refused: the reasons a `Rejected` reply carries. Every
-/// side that refuses an input takes its reason from here, and the clients'
-/// shared state maps each to a typed value, so the two cannot drift.
-pub mod refusal {
-    /// The ask the answer names is no longer open.
-    pub const CLOSED_ASK: &str = "closed_ask";
-    /// The queued prompt the input names is no longer queued.
-    pub const NOT_QUEUED: &str = "not_queued";
-    /// This agent cannot take an input of this kind.
-    pub const UNSUPPORTED: &str = "unsupported";
-    /// The agent's host is shutting down.
-    pub const DRAINING: &str = "draining";
-    /// The agent has decided to exit.
-    pub const EXITING: &str = "exiting";
-    /// The agent has exited; the composer offers Resume.
-    pub const EXITED: &str = "exited";
-    /// The agent's host cannot be reached from the daemon that took the
-    /// input.
-    pub const HOST_UNREACHABLE: &str = "host_unreachable";
-
-    /// Every reason above.
-    pub const ALL: [&str; 7] = [
-        CLOSED_ASK,
-        NOT_QUEUED,
-        UNSUPPORTED,
-        DRAINING,
-        EXITING,
-        EXITED,
-        HOST_UNREACHABLE,
-    ];
 }
 
 /// The longest name an agent can have.
@@ -391,7 +339,7 @@ mod tests {
             items: vec![Item {
                 key: "msg:1".into(),
                 text: "hello".into(),
-                kind: kind_tag(Kind::ClaudeSdk).into(),
+                kind: Kind::ClaudeSdk as i32,
                 body: body.clone(),
                 at_ms: 7,
                 ..Default::default()
@@ -404,10 +352,80 @@ mod tests {
         };
         let decoded = Step::decode(step.encode_to_vec().as_slice()).expect("decode");
         assert_eq!(decoded, step);
-        assert_eq!(kind_from_tag(&decoded.items[0].kind), Some(Kind::ClaudeSdk));
+        assert_eq!(decoded.items[0].kind(), Kind::ClaudeSdk);
         assert_eq!(
             ClaudeSdkItem::decode(decoded.items[0].body.as_slice()).expect("body"),
             ClaudeSdkItem::decode(body.as_slice()).expect("body")
         );
+    }
+
+    /// Every top-level enum, with its values named under it.
+    fn enums(set: &FileDescriptorSet) -> BTreeMap<String, Vec<(String, i32)>> {
+        set.file
+            .iter()
+            .filter(|file| file.package.as_deref() == Some("amux.v1"))
+            .flat_map(|file| file.enum_type.iter())
+            .map(|enumeration| {
+                let values = enumeration
+                    .value
+                    .iter()
+                    .map(|value| (value.name().to_owned(), value.number()))
+                    .collect();
+                (enumeration.name().to_owned(), values)
+            })
+            .collect()
+    }
+
+    /// The enums whose zero is a meaning, not "unknown": an absent field
+    /// reads as that meaning, so the zero must stay where it is documented.
+    #[test]
+    fn zero_defaults_are_the_documented_ones() {
+        let enums = enums(&descriptor());
+        for (enumeration, zero) in [
+            ("Phase", "PHASE_STARTING"),
+            ("StopMode", "STOP_MODE_GRACEFUL"),
+            ("PtyMode", "PTY_MODE_FILES"),
+            ("UsageState", "USAGE_STATE_UNKNOWN"),
+            ("HealthState", "HEALTH_STATE_UNKNOWN"),
+            ("SignInState", "SIGN_IN_STATE_UNKNOWN"),
+            ("DecisionOutcome", "DECISION_OUTCOME_NONE"),
+            ("PlanVerdict", "PLAN_VERDICT_UNDECIDED"),
+            ("AskOutcome", "ASK_OUTCOME_UNSPECIFIED"),
+        ] {
+            let values = enums
+                .get(enumeration)
+                .unwrap_or_else(|| panic!("no enum {enumeration}"));
+            let found = values.iter().find(|(_, number)| *number == 0);
+            assert_eq!(
+                found.map(|(name, _)| name.as_str()),
+                Some(zero),
+                "{enumeration}'s zero"
+            );
+        }
+        assert_eq!(Phase::default(), Phase::Starting);
+        assert_eq!(StopMode::default(), StopMode::Graceful);
+        assert_eq!(PtyMode::default(), PtyMode::Files);
+    }
+
+    /// Top-level enum values share one namespace in the package, so each
+    /// carries its enum's name as a prefix; prost strips it in Rust.
+    #[test]
+    fn every_top_level_enum_value_carries_its_enum_prefix() {
+        for (enumeration, values) in enums(&descriptor()) {
+            let mut prefix = String::new();
+            for (at, letter) in enumeration.chars().enumerate() {
+                if letter.is_ascii_uppercase() && at > 0 {
+                    prefix.push('_');
+                }
+                prefix.push(letter.to_ascii_uppercase());
+            }
+            prefix.push('_');
+            for (name, _) in values {
+                assert!(
+                    name.starts_with(&prefix),
+                    "{enumeration}.{name} lacks the {prefix} prefix"
+                );
+            }
+        }
     }
 }

@@ -17,7 +17,7 @@ const CLOCK: CommitClock = CommitClock {
 };
 /// Text bytes per row; each row then costs ROW bytes.
 const TEXT: usize = 1000;
-const ROW: u64 = 2 + TEXT as u64 + 5 + ITEM_OVERHEAD_BYTES;
+const ROW: u64 = 2 + TEXT as u64 + ITEM_OVERHEAD_BYTES;
 
 fn own(name: &str) -> AgentKey {
     AgentKey::new(OWN, name.as_bytes())
@@ -36,14 +36,14 @@ fn add<S: Store>(
     live: bool,
     parent: Option<&AgentKey>,
 ) {
-    let mut row = AgentRow::new(agent.clone(), "codex", "/src");
+    let mut row = AgentRow::new(agent.clone(), wire::Kind::Codex, "/src");
     row.parent = parent.cloned();
     store.put_agent(&row).unwrap();
     let items = (0..rows)
         .map(|n| Item {
             key: format!("{n:02}"),
             text: "x".repeat(TEXT),
-            kind: "codex".into(),
+            kind: wire::Kind::Codex as i32,
             ..Default::default()
         })
         .collect();
@@ -67,7 +67,7 @@ fn add<S: Store>(
 /// A replica with rows at orders 1..=rows, as a source's Reset left it.
 fn replica<S: Store>(store: &mut S, agent: &AgentKey, rows: u64, at_ms: i64) {
     store
-        .put_agent(&AgentRow::new(agent.clone(), "codex", "/src"))
+        .put_agent(&AgentRow::new(agent.clone(), wire::Kind::Codex, "/src"))
         .unwrap();
     let tail = (1..=rows)
         .map(|order| Item {
@@ -75,7 +75,7 @@ fn replica<S: Store>(store: &mut S, agent: &AgentKey, rows: u64, at_ms: i64) {
             order,
             revision: order,
             text: "x".repeat(TEXT),
-            kind: "codex".into(),
+            kind: wire::Kind::Codex as i32,
             ..Default::default()
         })
         .collect();
@@ -164,7 +164,7 @@ fn retention_of_a_replica_block_under_the_floor_takes_only_the_stale_rows_below_
             order,
             revision: 20 + order,
             text: "x".repeat(TEXT),
-            kind: "codex".into(),
+            kind: wire::Kind::Codex as i32,
             ..Default::default()
         })
         .collect();
@@ -237,7 +237,7 @@ fn retention_of_a_replica_drops_rows_a_reset_left_below_the_block_before_trimmin
             order,
             revision: 20 + order,
             text: "x".repeat(TEXT),
-            kind: "codex".into(),
+            kind: wire::Kind::Codex as i32,
             ..Default::default()
         })
         .collect();
@@ -378,7 +378,7 @@ fn retention_sweep_order<S: Store>(mut store: S) {
         items: vec![Item {
             key: "resumed".into(),
             text: "continuing".into(),
-            kind: "codex".into(),
+            kind: wire::Kind::Codex as i32,
             ..Default::default()
         }],
         ..Default::default()
@@ -413,7 +413,11 @@ fn retention_keeps_a_live_parents_exited_children_and_frees_an_exited_parents<S:
     // children here; its stale row errs toward keeping them.
     let remote_parent = peer("remote-parent");
     store
-        .put_agent(&AgentRow::new(remote_parent.clone(), "codex", "/"))
+        .put_agent(&AgentRow::new(
+            remote_parent.clone(),
+            wire::Kind::Codex,
+            "/",
+        ))
         .unwrap();
     add(&mut store, &own("kept"), 2, 1, false, Some(&remote_parent));
     // A parent that has exited no longer protects anything.
@@ -568,7 +572,7 @@ fn retention_of_a_replica_keeps_its_agents_row_for_the_children_here<S: Store>(m
         items: vec![Item {
             key: "final".into(),
             text: "done".into(),
-            kind: "codex".into(),
+            kind: wire::Kind::Codex as i32,
             ..Default::default()
         }],
         turn_end: Some(TurnEnd {

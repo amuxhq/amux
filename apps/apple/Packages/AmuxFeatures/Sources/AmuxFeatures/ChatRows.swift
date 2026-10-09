@@ -170,9 +170,10 @@ public struct ChatRowView: View {
                 subject: to.isEmpty ? from : to, meta: RowMeta(messageMeta(kind, sent, rejection)),
                 detail: text.trimmingCharacters(in: .whitespacesAndNewlines), detailFace: .text,
                 detailLines: expanded ? nil : 1, opens: true, open: expanded, toggle: toggle)
-        case .autoReview(let decision, let risk, let rationale, _):
+        case .autoReview(let status, let statusWord, let risk, let rationale, _):
             GridRow(
-                kind: "auto-review", glyph: "checkmark.shield", rail: rail, verb: decision,
+                kind: "auto-review", glyph: "checkmark.shield", rail: rail,
+                verb: ChatWords.autoReview(status, statusWord),
                 meta: RowMeta(risk.isEmpty ? "" : String(localized: "\(risk) risk")),
                 detail: expanded && !rationale.isEmpty ? rationale : nil, detailFace: .text,
                 opens: !rationale.isEmpty, open: expanded, toggle: toggle)

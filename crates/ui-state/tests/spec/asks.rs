@@ -1,7 +1,7 @@
 //! Asks: opened and closed only by snapshots, drawn before CaughtUp only
 //! when the entry says needs_you, dismissed when the agent has exited.
 
-use ui_state::{InputState, Msg, RefusalReason, SessionState};
+use ui_state::{InputState, Msg, Refusal, RefusalReason, SessionState};
 use wire::{Kind, Phase};
 
 use crate::harness::*;
@@ -140,10 +140,13 @@ fn a_stale_answer_comes_back_rejected_and_the_card_returns_with_the_reason() {
         apply_checked(&mut state, Msg::Send(answer_input(kind, b"a1", "ask-1")));
         apply_checked(
             &mut state,
-            Msg::Sent(b"a1".to_vec(), rejected("closed_ask")),
+            Msg::Sent(b"a1".to_vec(), rejected(wire::Refusal::ClosedAsk)),
         );
         let answer = state.answering("ask-1").unwrap();
-        assert_eq!(answer.state, InputState::Rejected(RefusalReason::ClosedAsk));
+        assert_eq!(
+            answer.state,
+            InputState::Rejected(Refusal::of(RefusalReason::ClosedAsk))
+        );
         assert_eq!(state.open_asks().len(), 1, "only a fact closes it");
     }
 }

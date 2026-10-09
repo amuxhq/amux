@@ -13,7 +13,7 @@
   composer Send activity=Some(Running { key: "toolu_0118rZrfDTg63Kst5bzq3YSn" }) queue=[] underway=[] refused=[]
 ## 20 recorded 19: fact Stream type=control_request
   ask 6e0f252e-5de4-4e04-a784-b667e233eb67 -> "toolu_0118rZrfDTg63Kst5bzq3YSn" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["mcp__external__ask_the_operator"], directories: [], mode: "", mode_name: "", scope: Project, label: "" }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: ["mcp__external__ask_the_operator"], directories: [], mode: "", mode_name: "", scope: Project }, Deny { stops: false }+note, DenyAndStop+note
     body Tool { server: "external", tool: "ask_the_operator", arguments: "{\n  \"word\": \"PELICAN\"\n}" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 22 recorded 21: input stdin-3

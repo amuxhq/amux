@@ -25,7 +25,7 @@ fn item(key: &str, text: &str) -> Item {
     Item {
         key: key.into(),
         text: text.into(),
-        kind: "claude_sdk".into(),
+        kind: wire::Kind::ClaudeSdk as i32,
         body: vec![1, 2, 3],
         at_ms: 5,
         producer_version: "1.0.0".into(),
@@ -45,7 +45,7 @@ fn origin_item(key: &str, order: u64, revision: u64, text: &str) -> Item {
 
 fn snapshot(phase: Phase, working_on: Option<&str>, at_ms: i64) -> Snapshot {
     Snapshot {
-        kind: "claude_sdk".into(),
+        kind: wire::Kind::ClaudeSdk as i32,
         body: vec![9],
         phase: phase as i32,
         working_on: working_on.map(str::to_owned),
@@ -66,7 +66,7 @@ fn keys(items: &[Item]) -> Vec<&str> {
 }
 
 fn with_agent<S: Store>(mut store: S, agent: &AgentKey) -> S {
-    let mut row = AgentRow::new(agent.clone(), "claude_sdk", "/src/amux");
+    let mut row = AgentRow::new(agent.clone(), wire::Kind::ClaudeSdk, "/src/amux");
     row.name = Some("worker".into());
     store.put_agent(&row).unwrap();
     store
@@ -395,7 +395,7 @@ fn a_turn_end_with_a_parent_inserts_a_delivery<S: Store>(store: S) {
     let child = own("child");
     let lone = own("lone");
     let mut store = with_agent(with_agent(store, &child), &lone);
-    let mut parent_row = AgentRow::new(parent.clone(), "codex", "/p");
+    let mut parent_row = AgentRow::new(parent.clone(), wire::Kind::Codex, "/p");
     parent_row.incarnation = 3;
     store.put_agent(&parent_row).unwrap();
     let mut child_row = store.agent(&child).unwrap().unwrap();
@@ -550,7 +550,7 @@ fn put_agent_keeps_committed_state<S: Store>(store: S) {
         ..Default::default()
     };
     store.commit(&agent, &[(42, step)], CLOCK).unwrap();
-    let mut rename = AgentRow::new(agent.clone(), "claude_sdk", "/src/amux");
+    let mut rename = AgentRow::new(agent.clone(), wire::Kind::ClaudeSdk, "/src/amux");
     rename.name = Some("renamed".into());
     rename.lifecycle = wire::Lifecycle::Exited as i32;
     rename.exit_cause = Some("stopped".into());

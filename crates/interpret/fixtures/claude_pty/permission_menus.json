@@ -131,7 +131,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:Claude's terminal menu has no entry amux can type for this answer",
+        "reply": "rejected:UNSUPPORTED Claude's terminal menu has no entry amux can type for this answer",
         "asks": [
           "ask:1"
         ],
@@ -293,7 +293,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:Claude's terminal menu has no entry amux can type for this answer",
+        "reply": "rejected:UNSUPPORTED Claude's terminal menu has no entry amux can type for this answer",
         "asks": [
           "ask:2"
         ],

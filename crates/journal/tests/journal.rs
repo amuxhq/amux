@@ -9,7 +9,7 @@ fn step(key: &str, text: &str) -> Step {
         items: vec![Item {
             key: key.into(),
             text: text.into(),
-            kind: "claude_sdk".into(),
+            kind: wire::Kind::ClaudeSdk as i32,
             ..Default::default()
         }],
         ..Default::default()
@@ -277,7 +277,7 @@ fn an_empty_step_writes_nothing() {
     assert!(segments(dir.path()).unwrap().is_empty());
     let with_snapshot = Step {
         snapshot: Some(Snapshot {
-            kind: "codex".into(),
+            kind: wire::Kind::Codex as i32,
             ..Default::default()
         }),
         ..Default::default()

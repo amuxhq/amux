@@ -865,11 +865,11 @@ impl SessionState {
                     _ => InputState::Settled,
                 },
                 Some(Of::Rejected(rejected)) => {
-                    let reason = crate::refusal_reason(&rejected.reason);
-                    if reason == RefusalReason::Exited {
+                    let refusal = crate::refusal(&rejected);
+                    if refusal.reason == RefusalReason::Exited {
                         self.exited_under = Some(incarnation);
                     }
-                    InputState::Rejected(reason)
+                    InputState::Rejected(refusal)
                 }
                 None => InputState::Uncertain,
             },

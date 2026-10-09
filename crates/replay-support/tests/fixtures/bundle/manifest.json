@@ -4,7 +4,7 @@
       "agent_id": "d6832ca2-2f0a-4307-9cf6-5a0e13e937cc",
       "host_id": "3bdd4de4-3861-49f8-9be7-d1e8d34d3c16",
       "incarnation": 1,
-      "kind": "claude_sdk",
+      "kind": 2,
       "lifecycle": 1,
       "own": true,
       "part": [

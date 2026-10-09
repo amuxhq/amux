@@ -33,7 +33,7 @@ snapshot WORKING queue=[p2] working_on=- at=1800000000000 asks=[] thread=t1 turn
 effect reply w1 accepted
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 12 input {"id":"w2","withdraw":{"target":"p2"}}
-effect reply w2 rejected:not_queued
+effect reply w2 rejected:NOT_QUEUED
 ## 13 input {"id":"c1","model":{"model":"gpt-5.6"}}
 effect reply c1 accepted
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6 model_name="GPT-5.6" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
@@ -47,7 +47,7 @@ snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=t
 effect reply c4 accepted
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6 model_name="GPT-5.6" effort=high permission=auto mode=plan approval=on-request sandbox=workspace-write reviewer=auto_review collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=?
 ## 17 input {"id":"c5","permission":{"value":"on-request/workspace-write"}}
-effect reply c5 rejected:unsupported
+effect reply c5 rejected:UNSUPPORTED
 ## 18 input {"id":"p3","prompt":{"text":"Next."}}
 effect reply p3 queued
 snapshot WORKING queue=[p3] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6 model_name="GPT-5.6" effort=high permission=auto mode=plan approval=on-request sandbox=workspace-write reviewer=auto_review collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=?

@@ -52,10 +52,12 @@ fn says(events: &[SessionEvent], wanted: &str) -> bool {
 /// its turn writes, so its journal is settled once this shows.
 fn turn_ended(events: &[SessionEvent]) -> bool {
     events.iter().any(|event| match &event.of {
-        Some(session_event::Of::Item(item)) if item.kind == "claude_sdk" => matches!(
-            ClaudeSdkItem::decode(item.body.as_slice()).map(|item| item.kind),
-            Ok(Some(claude_sdk_item::Kind::Turn(_)))
-        ),
+        Some(session_event::Of::Item(item)) if item.kind == wire::Kind::ClaudeSdk as i32 => {
+            matches!(
+                ClaudeSdkItem::decode(item.body.as_slice()).map(|item| item.kind),
+                Ok(Some(claude_sdk_item::Kind::Turn(_)))
+            )
+        }
         _ => false,
     })
 }
@@ -601,7 +603,7 @@ async fn the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_ho
         let runtime = net.runtime("attic").unwrap();
         let mut store = runtime.store().await;
         store
-            .put_agent(&AgentRow::new(key.clone(), "claude_sdk", "/"))
+            .put_agent(&AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/"))
             .unwrap();
         store
             .absorb(

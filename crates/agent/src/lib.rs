@@ -98,8 +98,8 @@ pub enum AgentError {
     Locked(PathBuf),
     #[error("{0} holds no spec")]
     NoSpec(PathBuf),
-    #[error("agents of kind {0:?} are unknown")]
-    UnknownKind(String),
+    #[error("agents of kind {0} are unknown")]
+    UnknownKind(i32),
     #[error("reading the agent directory: {0}")]
     Dir(std::io::Error),
     #[error("listening: {0}")]
@@ -125,11 +125,11 @@ pub async fn run(dir: PathBuf, clock: impl Clock) -> Result<ExitCause, AgentErro
         .ok_or_else(|| AgentError::NoSpec(dir.clone()))?;
     dir::private_dir(&dir.join(dir::PRIVATE)).map_err(AgentError::Dir)?;
     let clock: Arc<dyn Clock> = Arc::new(clock);
-    match spec.kind.as_str() {
-        "claude_sdk" => host::run::<ClaudeSdk>(dir, spec, clock).await,
-        "claude_pty" => host::run::<ClaudePty>(dir, spec, clock).await,
-        "codex" => host::run::<Codex>(dir, spec, clock).await,
-        other => Err(AgentError::UnknownKind(other.to_owned())),
+    match wire::Kind::try_from(spec.kind) {
+        Ok(wire::Kind::ClaudeSdk) => host::run::<ClaudeSdk>(dir, spec, clock).await,
+        Ok(wire::Kind::ClaudePty) => host::run::<ClaudePty>(dir, spec, clock).await,
+        Ok(wire::Kind::Codex) => host::run::<Codex>(dir, spec, clock).await,
+        Ok(wire::Kind::Unspecified) | Err(_) => Err(AgentError::UnknownKind(spec.kind)),
     }
 }
 

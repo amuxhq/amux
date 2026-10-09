@@ -61,7 +61,7 @@
   row    8 toolu_01TNhCXvsRc7iT2ozHYy5bNt FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01TNhCXvsRc7iT2ozHYy5bNt x2 recent=0 live RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }]
 ## 194 recorded 193: fact Stream type=control_request
   ask f31eebce-6515-4397-a5e0-52b8da38cdc5 -> "toolu_01TNhCXvsRc7iT2ozHYy5bNt" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session, label: "" }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: [], directories: [], mode: "acceptEdits", mode_name: "Accept edits", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 1, lines: [Line(PatchLine { number: None, kind: Removed, text: "CURRENT" }), Line(PatchLine { number: None, kind: Added, text: "UPDATED" })], line: None, reason: "", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 200 recorded 199: input stdin-5

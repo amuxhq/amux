@@ -5,7 +5,7 @@ mod support;
 
 use agent::ExitCause;
 use support::*;
-use wire::StopMode;
+use wire::{Kind, StopMode};
 
 /// The names the agent gave the thread, in order, from what the fake read.
 fn names(agent: &Agent, thread: &str) -> Vec<String> {
@@ -21,7 +21,7 @@ fn names(agent: &Agent, thread: &str) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_thread_is_named_after_the_agent_at_start_and_on_rename() {
     let agent = Agent::start(Setup {
-        kind: "codex",
+        kind: Kind::Codex,
         ..Setup::sdk()
     })
     .await;

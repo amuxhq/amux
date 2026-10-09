@@ -48,12 +48,13 @@ impl AgentKey {
     }
 }
 
-/// The agents row. Lifecycle and phase are kept as their wire integers so
-/// a value from a newer peer is stored and served, never refused.
+/// The agents row. Kind, lifecycle and phase are kept as their wire
+/// integers so a value from a newer peer is stored and served, never
+/// refused.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentRow {
     pub agent: AgentKey,
-    pub kind: String,
+    pub kind: i32,
     pub name: Option<String>,
     pub cwd: String,
     pub parent: Option<AgentKey>,
@@ -98,7 +99,7 @@ pub struct AgentRow {
 
 impl AgentRow {
     /// A new live row in phase starting, with nothing committed yet.
-    pub fn new(agent: AgentKey, kind: impl Into<String>, cwd: impl Into<String>) -> Self {
+    pub fn new(agent: AgentKey, kind: impl Into<i32>, cwd: impl Into<String>) -> Self {
         Self {
             agent,
             kind: kind.into(),
@@ -365,12 +366,12 @@ pub fn item_bytes(item: &Item) -> u64 {
         + item.body.len()
         + encode_attachments(&item.attachments).len()
         + item.input_id.len()
-        + item.producer_version.len()
-        + item.kind.len()) as u64
+        + item.producer_version.len()) as u64
         + ITEM_OVERHEAD_BYTES
 }
 
-/// The fixed per-row allowance in [`item_bytes`].
+/// The fixed per-row allowance in [`item_bytes`], the kind's integer among
+/// it.
 pub const ITEM_OVERHEAD_BYTES: u64 = 48;
 
 /// How a store keeps its rows: transactions over [`Tables`] and the
@@ -611,7 +612,7 @@ impl<B: Backend> Store for B {
             let merged = match tables.agent(&row.agent)? {
                 None => row.clone(),
                 Some(mut held) => {
-                    held.kind = row.kind.clone();
+                    held.kind = row.kind;
                     held.name = row.name.clone();
                     held.cwd = row.cwd.clone();
                     held.parent = row.parent.clone();

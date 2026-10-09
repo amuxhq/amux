@@ -1404,13 +1404,21 @@ impl State {
 
     fn review(&mut self, emit: &mut Emit, review: AutoApprovalReview, completed: bool) {
         let target = review.target_item_id.unwrap_or_default();
-        let decision = review.review.status.as_str().to_owned();
+        let status = match &review.review.status {
+            codex_protocol::server::ReviewStatus::InProgress => wire::ReviewStatus::InProgress,
+            codex_protocol::server::ReviewStatus::Approved => wire::ReviewStatus::Approved,
+            codex_protocol::server::ReviewStatus::Denied => wire::ReviewStatus::Denied,
+            codex_protocol::server::ReviewStatus::TimedOut => wire::ReviewStatus::Timeout,
+            codex_protocol::server::ReviewStatus::Aborted => wire::ReviewStatus::Abort,
+            codex_protocol::server::ReviewStatus::Other(_) => wire::ReviewStatus::Unspecified,
+        };
         self.emit_item(
             emit,
             ItemDraft {
                 key: format!("review:{}", review.review_id),
                 body: item_body(codex_item::Kind::Verdict(ReviewerVerdict {
-                    decision: decision.clone(),
+                    status: status as i32,
+                    status_word: review.review.status.as_str().to_owned(),
                     risk: review.review.risk_level.unwrap_or_default(),
                     rationale: review.review.rationale.unwrap_or_default(),
                     item_key: target.clone(),
@@ -1423,9 +1431,9 @@ impl State {
         if !completed {
             return;
         }
-        let outcome = match decision.as_str() {
-            "approved" => DecisionOutcome::AutoApproved,
-            "denied" | "rejected" | "declined" => DecisionOutcome::Denied,
+        let outcome = match status {
+            wire::ReviewStatus::Approved => DecisionOutcome::AutoApproved,
+            wire::ReviewStatus::Denied => DecisionOutcome::Denied,
             _ => return,
         };
         let verdict = ToolDecision {
@@ -1705,11 +1713,6 @@ impl State {
         }
         let (of, class) = match item {
             ThreadItem::CommandExecution(command) => {
-                let kinds = command
-                    .command_actions
-                    .iter()
-                    .map(|action| action.kind().to_owned())
-                    .collect::<Vec<_>>();
                 // A command that only looks takes the verb of its widest
                 // action: a read among searches is a read.
                 let actions = &command.command_actions;
@@ -1743,7 +1746,6 @@ impl State {
                         command: command.command.clone(),
                         cwd: command.cwd.clone(),
                         exit_code,
-                        action: kinds.join(","),
                         background: false,
                         output_dropped_bytes: 0,
                     }),

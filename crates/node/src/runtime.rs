@@ -395,7 +395,7 @@ pub(crate) struct AgentHandle {
     hello: watch::Sender<Option<AgentHello>>,
     /// The stop the daemon asked for, which names the exit's cause.
     stopping: Mutex<Option<StopMode>>,
-    /// The agent answered an input "exiting": it is on its way out.
+    /// The agent refused an input as exiting: it is on its way out.
     exiting: AtomicBool,
     /// The process id, when this daemon started the process.
     pid: Option<u32>,
@@ -734,7 +734,7 @@ impl ProfileRuntime {
         handle.hello.borrow().clone()
     }
 
-    /// Marks a live agent as leaving: it answered an input "exiting", so a
+    /// Marks a live agent as leaving: it refused an input as exiting, so a
     /// resume waits for its lock instead of refusing it as live.
     pub fn mark_exiting(&self, id: AgentId) {
         if let Some(handle) = self.agents.lock().unwrap().get(&id) {
@@ -770,9 +770,11 @@ impl ProfileRuntime {
         if self.target_host(&request)? != self.host {
             return Err(RegistryError::OtherHost);
         }
-        let kind = Kind::try_from(request.kind).unwrap_or(Kind::Unspecified);
-        let Some(kind_name) = spec::kind_name(kind) else {
-            return Err(RegistryError::UnknownKind(request.kind));
+        let kind = match Kind::try_from(request.kind) {
+            Ok(Kind::Unspecified) | Err(_) => {
+                return Err(RegistryError::UnknownKind(request.kind));
+            }
+            Ok(kind) => kind,
         };
         let resolved = spec::resolve(kind, &request.config)?;
         let mut request = request;
@@ -821,7 +823,7 @@ impl ProfileRuntime {
         let key = self.key(id);
         let now = self.clock.now_ms();
         let row_for = |name: &str, cwd: &str| {
-            let mut row = AgentRow::new(key.clone(), kind_name, cwd);
+            let mut row = AgentRow::new(key.clone(), kind, cwd);
             row.name = Some(name.to_owned());
             row.parent = parent
                 .as_ref()
@@ -999,13 +1001,13 @@ impl ProfileRuntime {
             permission: previous.config.as_ref().and_then(|c| c.permission.clone()),
             mode: previous.config.as_ref().and_then(|c| c.mode.clone()),
         };
-        let offered = self.offered_to(spec::kind_from_name(&previous.kind)).await;
+        let offered = self.offered_to(previous.kind()).await;
         let spec = spec::build(
             &launch,
             spec::Incarnation {
                 agent_id: id.as_bytes(),
                 profile_id: self.profile.as_bytes(),
-                kind: spec::kind_from_name(&previous.kind),
+                kind: previous.kind(),
                 cwd: &previous.cwd,
                 // The name it has now: a rename while it was not running
                 // reaches its Codex thread this way.
@@ -1230,7 +1232,7 @@ impl ProfileRuntime {
         };
         let handle = self.agents.lock().unwrap().get(&id).cloned();
         if let Some(handle) = handle
-            && spec::kind_from_name(&row.kind) == Kind::Codex
+            && row.kind == Kind::Codex as i32
         {
             let frame = CtlFrame {
                 of: Some(ctl_frame::Of::Rename(Rename {
@@ -1565,7 +1567,7 @@ impl ProfileRuntime {
                 if self.analytics.is_on()
                     && let Some(kind) = store
                         .agent(&key)?
-                        .and_then(|row| crate::telemetry::kind_named(&row.kind))
+                        .and_then(|row| crate::telemetry::kind_coded(row.kind))
                 {
                     self.turns.add(kind, turns as u32);
                 }
@@ -2052,7 +2054,7 @@ pub fn to_wire(row: &AgentRow) -> Agent {
     Agent {
         agent_id: row.agent.agent.clone(),
         host_id: row.agent.host.clone(),
-        kind: spec::kind_from_name(&row.kind) as i32,
+        kind: row.kind,
         name: row.name.clone().unwrap_or_default(),
         cwd: row.cwd.clone(),
         parent: row.parent.as_ref().map(|parent| AgentParent {

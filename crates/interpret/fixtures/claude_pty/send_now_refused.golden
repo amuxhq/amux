@@ -22,4 +22,4 @@ item toolu_1 tool final at=1800000000020 text="" Bash TOOL_STATE_RUNNING input="
 effect reply p1 queued
 snapshot WORKING queue=[p1] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 8 input {"id":"n1","send_now":{"target":"p1"}}
-effect reply n1 rejected:Send now needs Claude 2.1.283 or later; this agent runs Claude 2.1.251
+effect reply n1 rejected:UNSUPPORTED Send now needs Claude 2.1.283 or later; this agent runs Claude 2.1.251

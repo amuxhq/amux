@@ -8,7 +8,7 @@ use std::sync::Arc;
 use client::{ManualClock, RpcError};
 use support::*;
 use ui_runtime::{DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TraceEvent};
-use ui_state::{Composer, Connection, InputOutcome, InputState, RefusalReason, Waiting};
+use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, RefusalReason, Waiting};
 use wire::{
     ErrorCode, FetchResponse, GetBlobResponse, Input, Kind, SendInputRequest, claude_pty_input,
     claude_sdk_input, codex_input,
@@ -396,7 +396,7 @@ async fn acts_on_the_chat_go_in_the_kinds_own_arm_and_return_the_verdict() {
         for (act, verdict) in [
             ("withdraw", Ok(accepted(false))),
             ("send_now", Ok(accepted(false))),
-            ("interrupt", Ok(rejected("unsupported"))),
+            ("interrupt", Ok(rejected(wire::Refusal::Unsupported))),
             ("answer", Err(transport())),
         ] {
             let acting = tokio::spawn({
@@ -423,7 +423,9 @@ async fn acts_on_the_chat_go_in_the_kinds_own_arm_and_return_the_verdict() {
             }
             let expected = match &verdict {
                 Ok(response) if *response == accepted(false) => Ok(()),
-                Ok(_) => Err(InputError::Rejected(RefusalReason::Unsupported)),
+                Ok(_) => Err(InputError::Rejected(Refusal::of(
+                    RefusalReason::Unsupported,
+                ))),
                 Err(_) => Err(InputError::Uncertain),
             };
             reply.send(verdict).ok();
@@ -486,11 +488,11 @@ async fn a_send_that_raced_the_exit_is_rejected_and_the_composer_offers_resume()
         async move { session.send_prompt("too late", Vec::new()).await }
     });
     let (_, reply) = calls.send_input().await;
-    reply.send(Ok(rejected("exited"))).ok();
+    reply.send(Ok(rejected(wire::Refusal::Exited))).ok();
     let sent = sending.await.unwrap();
     assert_eq!(
         session.state().input_state(&sent.id),
-        Some(InputState::Rejected(RefusalReason::Exited))
+        Some(InputState::Rejected(Refusal::of(RefusalReason::Exited)))
     );
     assert_eq!(session.state().composer(), Composer::Resume);
 }
@@ -514,9 +516,10 @@ async fn a_refused_call_is_a_rejection_never_uncertain() {
     let sent = sending.await.unwrap();
     assert_eq!(
         session.state().input_state(&sent.id),
-        Some(InputState::Rejected(RefusalReason::Other(
-            "no such agent".into()
-        )))
+        Some(InputState::Rejected(Refusal {
+            reason: RefusalReason::Unspecified,
+            detail: Some("no such agent".into()),
+        }))
     );
 }
 

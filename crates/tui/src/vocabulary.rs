@@ -18,7 +18,7 @@ use ui_view::{
     AnswerView, AskBody, AskCard, AskRow, AttachmentView, Away, CallPhase, CardState, Choice,
     ChoiceOutcome, Decision, DecisionView, EditLine, ExploreVerb, FileChangeView, FileRow, Granted,
     LineKind, OptionView, PatchHead, PatchLine, PermissionGrant, PlanVerdict, QuestionView,
-    QueuedRow, Reach, RefusalReason, Resolution, Row, RowKind, Scope, Segment,
+    QueuedRow, Reach, Refusal, RefusalReason, Resolution, Row, RowKind, Scope, Segment,
 };
 use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
@@ -1483,7 +1483,8 @@ fn row_sets() -> Vec<RowSet> {
             "An automatic reviewer's verdict with its risk, opened to its rationale.",
             vec![(
                 row(RowKind::AutoReview {
-                    decision: "approved".into(),
+                    status: wire::ReviewStatus::Approved,
+                    status_word: "approved".into(),
                     risk: "low".into(),
                     rationale: "Reads only; no writes outside the workspace.".into(),
                     subject: "k2".into(),
@@ -1591,7 +1592,6 @@ fn cards() -> Vec<CardSet> {
                 mode: String::new(),
                 mode_name: String::new(),
                 scope: Scope::Project,
-                label: String::new(),
             }),
             choice(ChoiceOutcome::AllowForSession),
             Choice {
@@ -1662,7 +1662,7 @@ fn cards() -> Vec<CardSet> {
     let mut sending = card(command(), command_choices());
     sending.state = CardState::Sending;
     let mut rejected = card(command(), command_choices());
-    rejected.state = CardState::Rejected(RefusalReason::ClosedAsk);
+    rejected.state = CardState::Rejected(Refusal::of(RefusalReason::ClosedAsk));
     let mut not_confirmed = card(command(), command_choices());
     not_confirmed.state = CardState::NotConfirmed;
     let mut second = card(command(), command_choices());
@@ -2160,7 +2160,7 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
             order,
             revision: order,
             text: words.into(),
-            kind: wire::kind_tag(kind).into(),
+            kind: kind as i32,
             body,
             at_ms: now - 20 * MINUTE + order as i64 * 1_000,
             ..Default::default()
@@ -2183,7 +2183,7 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
         let event = |of| Msg::Event(wire::SessionEvent { of: Some(of) });
         state.update(Msg::Connection(Connection::Live));
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: wire::kind_tag(kind).into(),
+            kind: kind as i32,
             body,
             phase: wire::Phase::Idle as i32,
             ..Default::default()
@@ -2390,7 +2390,7 @@ fn chat_controls(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> {
             order,
             revision: order,
             text: words.into(),
-            kind: wire::kind_tag(kind).into(),
+            kind: kind as i32,
             body,
             at_ms: now - 60_000 + order as i64 * 1_000,
             ..Default::default()
@@ -2412,7 +2412,7 @@ fn chat_controls(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> {
         let event = |of| Msg::Event(wire::SessionEvent { of: Some(of) });
         state.update(Msg::Connection(Connection::Live));
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: wire::kind_tag(kind).into(),
+            kind: kind as i32,
             body,
             phase: wire::Phase::Idle as i32,
             catalogue: Some(b"offered".to_vec()),

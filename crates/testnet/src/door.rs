@@ -614,7 +614,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         }));
                     }
                     Some(wire::session_event::Of::Snapshot(snapshot)) => {
-                        phase = json!(snapshot.phase().as_str_name());
+                        phase = json!(snapshot.phase().as_str_name().trim_start_matches("PHASE_"));
 
                         model = json!(running_model(snapshot));
                     }
@@ -633,7 +633,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
 fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
     use prost::Message;
     let body = snapshot.body.as_slice();
-    match wire::kind_from_tag(&snapshot.kind)? {
+    match wire::Kind::try_from(snapshot.kind).ok()? {
         wire::Kind::ClaudeSdk => wire::ClaudeSdkSnapshot::decode(body).ok()?.model,
         wire::Kind::ClaudePty => wire::ClaudePtySnapshot::decode(body).ok()?.model,
         wire::Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.model,

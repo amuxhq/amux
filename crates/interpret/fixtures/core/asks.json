@@ -16,7 +16,7 @@
       "expect": { "reply": "accepted", "phase": "WORKING", "asks": [], "effects": ["write \"{\\\"type\\\":\\\"answer\\\",\\\"ask\\\":\\\"a1\\\"}\"", "reply ans1 accepted"] } },
     { "input": { "id": "ans2", "answer": { "ask": "a1", "answer": { "deny": { "note": "no" } } } },
       "note": "the second client's answer to the same ask",
-      "expect": { "reply": "rejected:closed_ask", "silent": true, "effects": ["reply ans2 rejected:closed_ask"] } },
+      "expect": { "reply": "rejected:CLOSED_ASK", "silent": true, "effects": ["reply ans2 rejected:CLOSED_ASK"] } },
     { "fact": { "channel": "stream", "json": { "type": "tool_result", "id": "t1", "output": "removed" } } },
     { "fact": { "channel": "stream", "json": { "type": "tool", "id": "t2", "name": "Write" } } },
     { "fact": { "channel": "stream", "json": { "type": "ask", "id": "a2", "tool": "t2", "tool_name": "Write" } },
@@ -34,6 +34,6 @@
       "note": "a session end closes the ask with its outcome unknown",
       "expect": { "phase": "STARTING", "asks": [], "turn_end": false } },
     { "input": { "id": "ans3", "answer": { "ask": "a3", "answer": { "allow": {} } } },
-      "expect": { "reply": "rejected:closed_ask", "silent": true } }
+      "expect": { "reply": "rejected:CLOSED_ASK", "silent": true } }
   ]
 }

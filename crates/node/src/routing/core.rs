@@ -228,7 +228,8 @@ impl RoutingCore {
             .unwrap_or_default()
     }
 
-    #[cfg(test)]
+    /// What `host_id` said of itself in the handshake of a link or claim
+    /// this host holds now; None once it is no longer present.
     pub async fn host_entry(&self, host_id: HostId) -> Option<Host> {
         let state = self.state.read().await;
         state
@@ -709,7 +710,7 @@ mod tests {
             name: name.to_string(),
             version: "test".to_string(),
             capabilities: Capabilities {
-                features: Vec::new(),
+                cloud_relay: false,
                 kinds: vec![wire::Kind::ClaudeSdk as i32],
             },
             signed_in: Some(true),

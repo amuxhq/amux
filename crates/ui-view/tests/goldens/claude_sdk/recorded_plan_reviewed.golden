@@ -25,7 +25,7 @@
   composer Send activity=Some(Running { key: "toolu_01Vc9B91WwArPGgg7nCq56LW" }) queue=[] underway=[] refused=[]
 ## 32 recorded 31: fact Stream type=control_request
   ask 0264cfd5-1809-4ebe-9eb4-efcf6fb42153 -> "toolu_01Vc9B91WwArPGgg7nCq56LW" 1/1 Open
-    choices AllowOnce*, AllowAlways { subjects: ["find /private<MACHINE_PATH> -name \"README.md\" -type f"], directories: [], mode: "", mode_name: "", scope: Project, label: "" }, AllowAlways { subjects: ["//private<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session, label: "" }, Deny { stops: false }+note, DenyAndStop+note
+    choices AllowOnce*, AllowAlways { subjects: ["find /private<MACHINE_PATH> -name \"README.md\" -type f"], directories: [], mode: "", mode_name: "", scope: Project }, AllowAlways { subjects: ["//private<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }+note, DenyAndStop+note
     body Command { command: "find /private<MACHINE_PATH> -name \"README.md\" -type f", cwd: "", reason: "outside the allowed directories: <MACHINE_PATH>", description: "find <MACHINE_PATH>" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 34 recorded 33: input stdin-3

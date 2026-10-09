@@ -24,8 +24,8 @@ use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ui_state::{
-    ActivityKind, Composer, InputState, InputWhat, Key, PhaseView, RefusalReason, SessionState,
-    Waiting,
+    ActivityKind, Composer, InputState, InputWhat, Key, PhaseView, Refusal, RefusalReason,
+    SessionState, Waiting,
 };
 pub use ui_view::Comparison;
 use ui_view::{
@@ -2856,19 +2856,23 @@ pub(crate) fn composer_lines(
     lines
 }
 
-/// Why the agent or its host refused an input, in words. A reason this
-/// build does not know is shown as the host gave it.
-pub(crate) fn refusal_words(reason: &RefusalReason) -> String {
-    match reason {
-        RefusalReason::Exited => "it had exited".to_owned(),
-        RefusalReason::Exiting => "it was exiting".to_owned(),
-        RefusalReason::Draining => "its host is shutting down".to_owned(),
-        RefusalReason::HostUnreachable => "its host can't be reached".to_owned(),
-        RefusalReason::Unsupported => "this agent can't take it".to_owned(),
-        RefusalReason::ClosedAsk => "the ask had already closed".to_owned(),
-        RefusalReason::NotQueued => "it was no longer queued".to_owned(),
-        RefusalReason::Other(reason) => reason.clone(),
+/// Why the agent or its host refused an input, in words: the refusal's own
+/// when it has them.
+pub(crate) fn refusal_words(refusal: &Refusal) -> String {
+    if let Some(detail) = &refusal.detail {
+        return detail.clone();
     }
+    match refusal.reason {
+        RefusalReason::Exited => "it had exited",
+        RefusalReason::Exiting => "it was exiting",
+        RefusalReason::Draining => "its host is shutting down",
+        RefusalReason::HostUnreachable => "its host can't be reached",
+        RefusalReason::Unsupported => "this agent can't take it",
+        RefusalReason::ClosedAsk => "the ask had already closed",
+        RefusalReason::NotQueued => "it was no longer queued",
+        RefusalReason::Unspecified => "it was refused",
+    }
+    .to_owned()
 }
 
 /// What an agent is doing, as the activity line names it.

@@ -27,7 +27,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "silent": true
       }
     },
@@ -132,7 +132,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:not_queued",
+        "reply": "rejected:NOT_QUEUED",
         "silent": true
       }
     },
@@ -144,7 +144,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:not_queued",
+        "reply": "rejected:NOT_QUEUED",
         "silent": true
       }
     },
@@ -238,7 +238,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:not_queued",
+        "reply": "rejected:NOT_QUEUED",
         "silent": true
       }
     },
@@ -303,7 +303,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:not_queued",
+        "reply": "rejected:NOT_QUEUED",
         "silent": true
       }
     },
@@ -584,7 +584,7 @@
         }
       },
       "expect": {
-        "reply": "rejected:unsupported",
+        "reply": "rejected:UNSUPPORTED",
         "silent": true
       }
     },

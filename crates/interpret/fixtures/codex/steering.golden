@@ -4,7 +4,7 @@ snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? turn=-
 effect reply p0 queued
 snapshot STARTING queue=[p0] working_on=- at=1800000000000 asks=[] thread=? turn=- model=? model_name=? effort=? permission=custom mode=? approval=? sandbox=? reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 2 input {"id":"n0","send_now":{"target":"p0"}}
-effect reply n0 rejected:unsupported
+effect reply n0 rejected:UNSUPPORTED
 ## 3 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-persist\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":true,\"threadId\":\"t1\"}}"
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
@@ -14,7 +14,7 @@ item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED se
 item prompt:7030 prompt final input=p0 at=1800000000000 text="Plan it."
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 4 input {"id":"n1","send_now":{"target":"p1"}}
-effect reply n1 rejected:not_queued
+effect reply n1 rejected:NOT_QUEUED
 ## 5 fact {"channel":"rpc","json":{"id":"amux-1","result":{"turn":{"id":"turn-1"}}}}
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 6 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","status":"inProgress"}}}}
@@ -27,9 +27,9 @@ effect reply n2 accepted
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/steer\",\"params\":{\"clientUserMessageId\":\"7031\",\"expectedTurnId\":\"turn-1\",\"input\":[{\"text\":\"Use the staging config.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
 snapshot WORKING queue=[p1(steered)] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 10 input {"id":"w1","withdraw":{"target":"p1"}}
-effect reply w1 rejected:not_queued
+effect reply w1 rejected:NOT_QUEUED
 ## 11 input {"id":"n3","send_now":{"target":"p1"}}
-effect reply n3 rejected:not_queued
+effect reply n3 rejected:NOT_QUEUED
 ## 12 fact {"channel":"rpc","json":{"id":"amux-2","result":{"turnId":"turn-1"}}}
 ## 13 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"content":[{"text":"Use the staging config.","type":"text"}],"id":"u-2","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
 item steer:7031 steer final input=p1 at=1800000000000 text="Use the staging config."
@@ -40,7 +40,7 @@ effect reply e1 accepted
 item agent-message:6531 agent_message final input=e1 at=1800000000000 text="Status?" envelope=6531
 pending [e1]
 ## 15 input {"id":"n4","send_now":{"target":"e1"}}
-effect reply n4 rejected:not_queued
+effect reply n4 rejected:NOT_QUEUED
 ## 16 fact {"channel":"rpc","json":{"id":"amux-3","result":{}}}
 pending []
 ## 17 input {"id":"p2","prompt":{"text":"Then summarise."}}
@@ -53,7 +53,7 @@ item prompt:7032 prompt final input=p2 at=1800000000000 text="Then summarise."
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=[]
 turn_end 1 last=-
 ## 19 input {"id":"n5","send_now":{"target":"p2"}}
-effect reply n5 rejected:not_queued
+effect reply n5 rejected:NOT_QUEUED
 ## 20 fact {"channel":"rpc","json":{"id":"amux-4","result":{"turn":{"id":"turn-2"}}}}
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-2 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 21 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-2","status":"inProgress"}}}}

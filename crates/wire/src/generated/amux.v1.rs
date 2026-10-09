@@ -255,8 +255,9 @@ pub struct Snapshot {
     /// daemon copies it onto the inventory row.
     #[prost(message, optional, tag = "10")]
     pub git: ::core::option::Option<Git>,
-    /// The SHA-256 of the encoded Catalogue the agent offers now; absent until
-    /// its provider says what it offers. Not copied onto the row.
+    /// The SHA-256 of the Catalogue blob the agent offers now, in its
+    /// directory; absent until its provider says what it offers. Not copied
+    /// onto the row.
     #[prost(bytes = "vec", optional, tag = "11")]
     pub catalogue: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
@@ -1022,23 +1023,21 @@ impl ::prost::Name for Unrecognized {
     }
 }
 /// What an agent offers to pick from, not what is picked: that stays in the
-/// snapshot. Fetched by hash; identical catalogues share one.
+/// snapshot. An agent writes it as a blob of its directory and names the
+/// blob's hash in its snapshot; identical catalogues share one. Fetched by
+/// GetBlob, so a catalogue passes through a daemon of any version intact.
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Catalogue {
-    /// The SHA-256 of this message encoded with `hash` empty, which is how the
-    /// agent stores it.
-    #[prost(bytes = "vec", tag = "1")]
-    pub hash: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, repeated, tag = "2")]
+    #[prost(message, repeated, tag = "1")]
     pub models: ::prost::alloc::vec::Vec<OfferedModel>,
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "2")]
     pub commands: ::prost::alloc::vec::Vec<OfferedCommand>,
     /// How much the agent may do without asking.
-    #[prost(message, repeated, tag = "4")]
+    #[prost(message, repeated, tag = "3")]
     pub permissions: ::prost::alloc::vec::Vec<OfferedPermission>,
     /// How it works; empty for Claude.
-    #[prost(message, repeated, tag = "5")]
+    #[prost(message, repeated, tag = "4")]
     pub modes: ::prost::alloc::vec::Vec<OfferedMode>,
 }
 impl ::prost::Name for Catalogue {
@@ -4278,7 +4277,8 @@ impl ::prost::Name for Bootstrap {
 /// for the host, stamped with when it was asked.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProviderOffer {
-    /// With `hash` empty: the daemon names it.
+    /// Decoded: the daemon encodes it and names the copy by the hash of
+    /// exactly those bytes.
     #[prost(message, optional, tag = "1")]
     pub catalogue: ::core::option::Option<Catalogue>,
     #[prost(bool, tag = "2")]
@@ -5266,7 +5266,7 @@ pub struct ProviderOnHost {
     /// As an agent's kind names its provider: "claude" or "codex".
     #[prost(string, tag = "1")]
     pub provider: ::prost::alloc::string::String,
-    /// The hash GetCatalogue's host form answers with.
+    /// The hash GetCatalogue answers with for this provider.
     #[prost(bytes = "vec", optional, tag = "2")]
     pub catalogue: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
     #[prost(bool, tag = "3")]
@@ -5886,11 +5886,10 @@ impl ::prost::Name for GetBlobRequest {
         "/amux.v1.GetBlobRequest".into()
     }
 }
+/// GetBlob answers bytes alone; the caller named the hash.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetBlobResponse {
-    #[prost(message, optional, tag = "1")]
-    pub blob: ::core::option::Option<BlobRef>,
-    #[prost(bytes = "vec", tag = "2")]
+    #[prost(bytes = "vec", tag = "1")]
     pub bytes: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for GetBlobResponse {
@@ -5923,22 +5922,13 @@ impl ::prost::Name for DiffRequest {
         "/amux.v1.DiffRequest".into()
     }
 }
-/// The catalogue of a running or exited agent, or of a provider on a host
-/// with no agent running.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetCatalogueRequest {
-    #[prost(oneof = "get_catalogue_request::Of", tags = "1, 2")]
-    pub of: ::core::option::Option<get_catalogue_request::Of>,
-}
-/// Nested message and enum types in `GetCatalogueRequest`.
-pub mod get_catalogue_request {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(bytes, tag = "1")]
-        AgentId(::prost::alloc::vec::Vec<u8>),
-        #[prost(message, tag = "2")]
-        Host(super::HostProvider),
-    }
+    #[prost(bytes = "vec", tag = "1")]
+    pub host_id: ::prost::alloc::vec::Vec<u8>,
+    /// As an agent's kind names its provider: "claude" or "codex".
+    #[prost(string, tag = "2")]
+    pub provider: ::prost::alloc::string::String,
 }
 impl ::prost::Name for GetCatalogueRequest {
     const NAME: &'static str = "GetCatalogueRequest";
@@ -5950,22 +5940,23 @@ impl ::prost::Name for GetCatalogueRequest {
         "/amux.v1.GetCatalogueRequest".into()
     }
 }
+/// The encoded Catalogue and the SHA-256 of exactly these bytes, which is
+/// what HostEntry.providers names.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct HostProvider {
+pub struct CatalogueBlob {
     #[prost(bytes = "vec", tag = "1")]
-    pub host_id: ::prost::alloc::vec::Vec<u8>,
-    /// As an agent's kind names its provider: "claude" or "codex".
-    #[prost(string, tag = "2")]
-    pub provider: ::prost::alloc::string::String,
+    pub hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub bytes: ::prost::alloc::vec::Vec<u8>,
 }
-impl ::prost::Name for HostProvider {
-    const NAME: &'static str = "HostProvider";
+impl ::prost::Name for CatalogueBlob {
+    const NAME: &'static str = "CatalogueBlob";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.HostProvider".into()
+        "amux.v1.CatalogueBlob".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.HostProvider".into()
+        "/amux.v1.CatalogueBlob".into()
     }
 }
 /// Host-owned discovery; the client chooses a host, never a search root.
@@ -8039,12 +8030,12 @@ pub mod client_service_client {
                 .insert(GrpcMethod::new("amux.v1.ClientService", "Diff"));
             self.inner.unary(req, path, codec).await
         }
-        /// What an agent offers now, read from its host; clients fetch it once per
-        /// hash the snapshot names.
+        /// What a provider on a host offers with no agent running, read from the
+        /// host's own copy; an agent's catalogue is a blob named by its snapshot.
         pub async fn get_catalogue(
             &mut self,
             request: impl tonic::IntoRequest<super::GetCatalogueRequest>,
-        ) -> std::result::Result<tonic::Response<super::Catalogue>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::CatalogueBlob>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -8216,12 +8207,12 @@ pub mod client_service_server {
             &self,
             request: tonic::Request<super::DiffRequest>,
         ) -> std::result::Result<tonic::Response<super::Diff>, tonic::Status>;
-        /// What an agent offers now, read from its host; clients fetch it once per
-        /// hash the snapshot names.
+        /// What a provider on a host offers with no agent running, read from the
+        /// host's own copy; an agent's catalogue is a blob named by its snapshot.
         async fn get_catalogue(
             &self,
             request: tonic::Request<super::GetCatalogueRequest>,
-        ) -> std::result::Result<tonic::Response<super::Catalogue>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::CatalogueBlob>, tonic::Status>;
         async fn list_repositories(
             &self,
             request: tonic::Request<super::ListRepositoriesRequest>,
@@ -8993,7 +8984,7 @@ pub mod client_service_server {
                         T: ClientService,
                     > tonic::server::UnaryService<super::GetCatalogueRequest>
                     for GetCatalogueSvc<T> {
-                        type Response = super::Catalogue;
+                        type Response = super::CatalogueBlob;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -9557,7 +9548,7 @@ pub mod peer_service_client {
         pub async fn get_catalogue(
             &mut self,
             request: impl tonic::IntoRequest<super::GetCatalogueRequest>,
-        ) -> std::result::Result<tonic::Response<super::Catalogue>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::CatalogueBlob>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -9719,7 +9710,7 @@ pub mod peer_service_server {
         async fn get_catalogue(
             &self,
             request: tonic::Request<super::GetCatalogueRequest>,
-        ) -> std::result::Result<tonic::Response<super::Catalogue>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::CatalogueBlob>, tonic::Status>;
         async fn list_repositories(
             &self,
             request: tonic::Request<super::ListRepositoriesRequest>,
@@ -10448,7 +10439,7 @@ pub mod peer_service_server {
                         T: PeerService,
                     > tonic::server::UnaryService<super::GetCatalogueRequest>
                     for GetCatalogueSvc<T> {
-                        type Response = super::Catalogue;
+                        type Response = super::CatalogueBlob;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

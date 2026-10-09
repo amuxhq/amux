@@ -601,12 +601,12 @@ fn retention_of_replica_blobs_evicts_the_least_recently_read_file() {
     lru.insert(blobs.join("fetched"), 50, 40);
     std::fs::write(blobs.join("fetched"), vec![0; 50]).unwrap();
 
-    let removed = lru.sweep(250).unwrap();
+    let removed = lru.sweep(250, &HashSet::new()).unwrap();
     assert_eq!(removed, [blobs.join("old"), blobs.join("big")]);
     assert!(!blobs.join("old").exists());
     assert!(blobs.join("new").exists() && blobs.join("fetched").exists());
     assert_eq!(lru.bytes(), 150);
-    assert!(lru.sweep(1_000).unwrap().is_empty());
+    assert!(lru.sweep(1_000, &HashSet::new()).unwrap().is_empty());
     lru.forget_under(&dir.path().join("peer/agents/a1"));
     assert_eq!(lru.bytes(), 0);
 }

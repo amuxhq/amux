@@ -55,8 +55,8 @@ agents/<agent id>/
   tools.sock             the daemon listens; the agent's tool server is its only client
   journal/0000000000 …   steps, in segments named by the offset of their first byte
   pty/0000000000 …       terminal Claude's raw terminal bytes, named the same way
-  blobs/<sha256>         bytes items refer to, named by their hash
-  catalogues/<sha256>    what the agent offers, an encoded Catalogue named by its hash
+  blobs/<sha256>         bytes items refer to, and what the agent offers as an
+                         encoded Catalogue its snapshot names, each named by its hash
   agent.log              the agent process's stderr
   private/               the agent's own state; the daemon never reads it
     hooks.sock           terminal Claude's hook command connects here

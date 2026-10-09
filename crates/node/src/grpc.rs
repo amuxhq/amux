@@ -28,8 +28,8 @@ use wire::{
 };
 
 use crate::blobs::BlobError;
-use crate::catalogue::CatalogueError;
 use crate::forward::{ForwardError, Owner};
+use crate::offers::CatalogueError;
 use crate::runtime::{AgentId, ProfileRuntime};
 use crate::telemetry::{self, InputShape};
 
@@ -152,11 +152,10 @@ impl ClientApi {
     /// answers its own, a peer's is forwarded to the peer.
     async fn host_catalogue(
         &self,
-        asked: wire::HostProvider,
         request: wire::GetCatalogueRequest,
-    ) -> Result<Response<wire::Catalogue>, Status> {
+    ) -> Result<Response<wire::CatalogueBlob>, Status> {
         let runtime = self.runtime()?;
-        let host = host_id(&asked.host_id)?;
+        let host = host_id(&request.host_id)?;
         if host != runtime.host() {
             if !self.forwards {
                 return Err(status(wire_error(
@@ -169,12 +168,13 @@ impl ClientApi {
             })
             .await;
         }
-        let provider = crate::Provider::from_name(&asked.provider)
-            .ok_or_else(|| status(CatalogueError::NoProvider(asked.provider.clone()).to_wire()))?;
+        let provider = crate::Provider::from_name(&request.provider).ok_or_else(|| {
+            status(CatalogueError::NoProvider(request.provider.clone()).to_wire())
+        })?;
         runtime
             .host_catalogue(provider)
             .await
-            .map(|offered| Response::new(offered.catalogue))
+            .map(|offered| Response::new(offered.blob))
             .map_err(|error| status(error.to_wire()))
     }
 
@@ -633,41 +633,8 @@ impl ClientService for ClientApi {
     async fn get_catalogue(
         &self,
         request: Request<wire::GetCatalogueRequest>,
-    ) -> Result<Response<wire::Catalogue>, Status> {
-        let request = request.into_inner();
-        let agent_id = match &request.of {
-            Some(wire::get_catalogue_request::Of::AgentId(agent_id)) => agent_id.clone(),
-            Some(wire::get_catalogue_request::Of::Host(asked)) => {
-                return self.host_catalogue(asked.clone(), request).await;
-            }
-            None => return Err(status(CatalogueError::NoTarget.to_wire())),
-        };
-        let runtime = self.runtime()?;
-        let not_held = match runtime.catalogue(&agent_id).await {
-            Err(not_held @ CatalogueError::NotHeld(_)) => not_held,
-            read => {
-                return read
-                    .map(Response::new)
-                    .map_err(|error| status(error.to_wire()));
-            }
-        };
-        // A peer's catalogue not read yet: its origin answers, and this
-        // host keeps a copy for the next reader.
-        let Some(host) = self.forward_to(&runtime, &agent_id).await? else {
-            return Err(status(not_held.to_wire()));
-        };
-        let request = wire::GetCatalogueRequest {
-            of: Some(wire::get_catalogue_request::Of::AgentId(agent_id.clone())),
-        };
-        let fetched = forwarded(&runtime, host, |mut client| async move {
-            client.get_catalogue(request).await
-        })
-        .await?;
-        runtime
-            .keep_replica_catalogue(&agent_id, fetched.get_ref())
-            .await
-            .map_err(|error| status(error.to_wire()))?;
-        Ok(fetched)
+    ) -> Result<Response<wire::CatalogueBlob>, Status> {
+        self.host_catalogue(request.into_inner()).await
     }
 
     async fn list_repositories(

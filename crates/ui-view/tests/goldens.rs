@@ -217,8 +217,11 @@ fn render(kind: Kind, frames: &[Replayed]) -> String {
             }));
         }
         // The catalogue as a client fetches it once the snapshot names it.
-        if let Some(catalogue) = &frame.catalogue {
-            state.update(Msg::Catalogue(catalogue.clone()));
+        if let Some((hash, catalogue)) = &frame.catalogue {
+            state.update(Msg::Catalogue {
+                hash: hash.clone(),
+                catalogue: catalogue.clone(),
+            });
         }
         changed.sort();
         changed.dedup();

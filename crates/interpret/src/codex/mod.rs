@@ -319,7 +319,6 @@ pub fn host_catalogue(
     skills: codex_protocol::server::SkillsListResponse,
 ) -> wire::Catalogue {
     wire::Catalogue {
-        hash: Vec::new(),
         models: facts::offered_models(models),
         commands: facts::offered_skills(skills),
         permissions: offered_permissions(),

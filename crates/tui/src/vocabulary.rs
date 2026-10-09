@@ -2418,10 +2418,10 @@ fn chat_controls(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> {
             catalogue: Some(b"offered".to_vec()),
             ..Default::default()
         })));
-        state.update(Msg::Catalogue(wire::Catalogue {
+        state.update(Msg::Catalogue {
             hash: b"offered".to_vec(),
-            ..catalogue
-        }));
+            catalogue,
+        });
         for item in [
             item(
                 1,

@@ -428,7 +428,7 @@ None of this is reachable from a link. The implementation is
 | `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. Delete cascades to children. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `Diff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
-| `GetCatalogue` | What an agent offers, read from its directory by the hash its snapshot names; see [the wire](WIRE.md). |
+| `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
 | `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots. |
 | `Dump` | A debug report; see [debugging](DEBUGGING.md). |
 
@@ -574,11 +574,13 @@ report.
 
 ## Chapter 9: Blob routing
 
-`GetBlob`, `PutBlob`, `Diff` and `GetCatalogue` on another host's agent are forwarded calls
-like any other, on the `Calls` channel. The bytes are content-addressed, so a
-relay never needs to understand them and the reader verifies them against the
-hash it asked for; a catalogue is checked against the hash it carries. Where blobs live and how long they last is described in
-[attachments](ATTACHMENTS.md).
+`GetBlob`, `PutBlob` and `Diff` on another host's agent, and `GetCatalogue` for
+another host's provider, are forwarded calls like any other, on the `Calls`
+channel. The bytes are content-addressed, so a relay never needs to understand
+them and the reader verifies them against the hash it asked for. An agent's
+catalogue is one of its blobs, so it is never decoded on the way and keeps its
+hash through a daemon of any version. Where blobs live and how long they last
+is described in [attachments](ATTACHMENTS.md).
 
 ## What the wire deliberately does not have
 

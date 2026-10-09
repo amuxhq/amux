@@ -301,7 +301,7 @@ message HostEntry {
 message ProviderOnHost {
   // As an agent's kind names its provider: "claude" or "codex".
   string provider = 1;
-  // The hash GetCatalogue's host form answers with.
+  // The hash GetCatalogue answers with for this provider.
   optional bytes catalogue = 2;
   bool signed_in = 3;
 }
@@ -402,9 +402,9 @@ service ClientService {
   rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
   // The changed files; with_patch also puts the patch blob on the host.
   rpc Diff(DiffRequest) returns (amux.v1.Diff);
-  // What an agent offers now, read from its host; clients fetch it once per
-  // hash the snapshot names.
-  rpc GetCatalogue(GetCatalogueRequest) returns (Catalogue);
+  // What a provider on a host offers with no agent running, read from the
+  // host's own copy; an agent's catalogue is a blob named by its snapshot.
+  rpc GetCatalogue(GetCatalogueRequest) returns (CatalogueBlob);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   // The one bundle format.
   rpc Dump(DumpRequest) returns (DumpReport);
@@ -433,7 +433,7 @@ service PeerService {
   rpc PutBlob(PutBlobRequest) returns (BlobRef);
   rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
   rpc Diff(DiffRequest) returns (amux.v1.Diff);
-  rpc GetCatalogue(GetCatalogueRequest) returns (Catalogue);
+  rpc GetCatalogue(GetCatalogueRequest) returns (CatalogueBlob);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   // The host-side parts of the caller's dump for agents this host runs,
   // packed in the response.
@@ -617,9 +617,9 @@ message GetBlobRequest {
   bytes hash = 2;
 }
 
+// GetBlob answers bytes alone; the caller named the hash.
 message GetBlobResponse {
-  BlobRef blob = 1;
-  bytes bytes = 2;
+  bytes bytes = 1;
 }
 
 message DiffRequest {
@@ -629,19 +629,17 @@ message DiffRequest {
   bool with_patch = 3;
 }
 
-// The catalogue of a running or exited agent, or of a provider on a host
-// with no agent running.
 message GetCatalogueRequest {
-  oneof of {
-    bytes agent_id = 1;
-    HostProvider host = 2;
-  }
-}
-
-message HostProvider {
   bytes host_id = 1;
   // As an agent's kind names its provider: "claude" or "codex".
   string provider = 2;
+}
+
+// The encoded Catalogue and the SHA-256 of exactly these bytes, which is
+// what HostEntry.providers names.
+message CatalogueBlob {
+  bytes hash = 1;
+  bytes bytes = 2;
 }
 
 // Host-owned discovery; the client chooses a host, never a search root.

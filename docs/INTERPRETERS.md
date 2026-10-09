@@ -183,10 +183,12 @@ permissions, modes) is its `Catalogue`, kept out of the snapshot because it
 is large and rarely changes. An interpreter builds it whenever its provider
 states or restates what it offers; the shared part encodes it, hashes the
 bytes with SHA-256, and when the hash differs from the last one emits
-`WriteCatalogue` and publishes the hash as `Snapshot.catalogue`. The agent
-process writes the bytes to `catalogues/<hex of hash>` in the agent's
-directory before it journals the step, so a snapshot never names a
-catalogue that is not on disk. An unchanged list writes nothing.
+`WriteBlob` with those exact bytes and publishes the hash as
+`Snapshot.catalogue`. The agent process writes the bytes to
+`blobs/<hex of hash>` in the agent's directory before it journals the step,
+so a snapshot never names a catalogue that is not on disk, and a client
+reads it with `GetBlob` like any other blob. An unchanged list writes
+nothing.
 
 - **Headless Claude** offers what its `initialize` answer lists; a plugin
   reload's answer and Claude's unasked `commands_changed` event replace the
@@ -197,7 +199,10 @@ catalogue that is not on disk. An unchanged list writes nothing.
   `amux-skills-<n>` after the first) and rebuilds from the answer. Notices
   that arrive while an ask is out cost one more ask after its answer. Codex
   says nothing when its models change, so they are asked once per server.
-- **Terminal Claude** offers no catalogue of its own.
+- **Terminal Claude** cannot be asked, so it offers what its host's Claude
+  offers: the daemon hands it the models and commands of its copy for the
+  host in `AgentSpec.offered`, and it publishes them, with its own
+  permissions, when it launches.
 
 Each snapshot also states the running model's display name: the catalogue
 entry amux chose the model as, while that entry stands for the reported
@@ -405,9 +410,10 @@ only for the permission menus the resolved keymap can type (its verified menu
 shapes); on any other menu the card offers allow once and deny.
 
 Terminal Claude offers no list of models, efforts or commands a program could
-read, so its catalogue, written when its session starts, holds only Claude's
-permissions, each marked not settable, and it takes no model or effort
-input: a person types `/model <name>` or `/effort <level>` as a prompt and
+read, so its catalogue, written when it launches, holds the models and
+commands its host's Claude offers (from `AgentSpec.offered`, empty when the
+host has no copy) and Claude's permissions, each marked not settable. It
+takes no model or effort input: a person types `/model <name>` or `/effort <level>` as a prompt and
 the command's own rows reflect it. The permission changes only by cycling,
 since the cycle's order depends on how Claude was launched. Its inputs are
 prompt, withdraw, send now, interrupt, clear, the permission-mode cycle, and

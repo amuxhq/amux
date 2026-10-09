@@ -1,8 +1,8 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 1 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.282"}}
-effect catalogue e1e7cada models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue e1e7cada
+effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue cd96cd29
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 2 git {"base_branch":"main","branch":"fix-tests","on_branch":{"added":30,"files":2,"removed":4},"uncommitted":{"added":0,"files":0,"removed":0}}
 snapshot git(branch=fix-tests base=main uncommitted=0f+0-0 on_branch=2f+30-4)

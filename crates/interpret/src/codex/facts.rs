@@ -516,7 +516,6 @@ impl State {
                 commands: self.commands.clone(),
                 permissions: super::offered_permissions(),
                 modes: super::offered_modes(),
-                hash: Vec::new(),
             },
         );
     }

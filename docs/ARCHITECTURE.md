@@ -222,8 +222,7 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
   journal/0000000000          length-prefixed protobuf steps; the file name is the global offset of its first byte
   journal/0001048576          the next segment (1 MiB by default)
   pty/0000000000              raw terminal bytes, named the same way (terminal Claude only; the newest four kept)
-  blobs/<sha256>              bytes the agent references, named by their hash
-  catalogues/<sha256>         what the agent offers, an encoded Catalogue named by its hash; the snapshot names the current one
+  blobs/<sha256>              bytes the agent references, and what it offers as an encoded Catalogue the snapshot names, each named by its hash
   private/                    the agent's own state; the daemon never reads it
     facts/                    the ring of recent provider facts and interpreter checkpoints
     provider-session          the provider's session or thread id, so a resume continues it
@@ -241,8 +240,7 @@ agents/<agent_id>/            the agent's UUID; ours, never the provider's
 | `tools.sock` | daemon | — | the agent's tool server | daemon, when the agent exits; bound again at resume |
 | `journal/*` | agent | agent | daemon, from its cursor | daemon: segments wholly below a cursor that has reached the drive, keeping the newest two for debug bundles |
 | `pty/*` | agent | agent | terminal clients, by position | agent, oldest first |
-| `blobs/*` | agent or daemon | the agent for what the model attaches; the daemon for what a person attaches and for diff patches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
-| `catalogues/*` | agent | agent, before the step whose snapshot names it; temp file then rename | the daemon, to serve the catalogue | with the directory |
+| `blobs/*` | agent or daemon | the agent for what the model attaches and for its catalogue, before the step whose snapshot names it; the daemon for what a person attaches and for diff patches; temp file then rename, so two writers are safe | the provider by path; the daemon to serve `GetBlob` | with the directory |
 | `private/*` | agent | agent | agent, and its part of a debug bundle | with the directory |
 
 The rest of the installation:

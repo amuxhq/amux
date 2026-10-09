@@ -35,11 +35,10 @@ pub const JOURNAL: &str = "journal";
 pub const PTY: &str = "pty";
 /// The agent's own state; the daemon never reads it.
 pub const PRIVATE: &str = "private";
-/// Bytes the agent references, named by their hash.
+/// Bytes the agent references, named by their hash: attachments, images
+/// the model read, and what the agent offers as an encoded Catalogue, whose
+/// hash the snapshot names.
 pub const BLOBS: &str = "blobs";
-/// What the agent offers, an encoded Catalogue named by the hex of its
-/// SHA-256; the snapshot names the current one.
-pub const CATALOGUES: &str = "catalogues";
 
 /// The directory's exclusive lock, held for the process's lifetime; the
 /// kernel releases it when the process dies.

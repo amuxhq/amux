@@ -165,7 +165,7 @@ the chat is open. The phone reads them through `amux_session_blob`.
 
 ## Lifetimes
 
-There are no pins, no expiry and no reference counts. A blob lives and dies
+There is no expiry and there are no reference counts. A blob lives and dies
 with the directory it sits in:
 
 - An own agent's blobs go when the agent is deleted (`DeleteAgent`, which
@@ -178,7 +178,10 @@ with the directory it sits in:
   agent or is untrusted. Replica blob files also have a byte budget of their
   own, independent of rows, `retention.replica_blobs_mib` (512 MiB by
   default), evicted least recently read first: a replica blob can always be
-  fetched again from its origin.
+  fetched again from its origin. The one exception is the catalogue a
+  replica's current snapshot names, which is never evicted, so the agent's
+  picker keeps what it offers while its origin is away; once a newer
+  snapshot names another, the old one is evicted like any blob.
 
 ## Delivery to providers
 

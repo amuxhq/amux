@@ -141,8 +141,9 @@ message Snapshot {
   // process at start and at each turn end. Absent outside a repository. The
   // daemon copies it onto the inventory row.
   optional Git git = 10;
-  // The SHA-256 of the encoded Catalogue the agent offers now; absent until
-  // its provider says what it offers. Not copied onto the row.
+  // The SHA-256 of the Catalogue blob the agent offers now, in its
+  // directory; absent until its provider says what it offers. Not copied
+  // onto the row.
   optional bytes catalogue = 11;
 }
 
@@ -530,17 +531,16 @@ message Unrecognized {
 // ---------------------------------------------------------------------------
 
 // What an agent offers to pick from, not what is picked: that stays in the
-// snapshot. Fetched by hash; identical catalogues share one.
+// snapshot. An agent writes it as a blob of its directory and names the
+// blob's hash in its snapshot; identical catalogues share one. Fetched by
+// GetBlob, so a catalogue passes through a daemon of any version intact.
 message Catalogue {
-  // The SHA-256 of this message encoded with `hash` empty, which is how the
-  // agent stores it.
-  bytes hash = 1;
-  repeated OfferedModel models = 2;
-  repeated OfferedCommand commands = 3;
+  repeated OfferedModel models = 1;
+  repeated OfferedCommand commands = 2;
   // How much the agent may do without asking.
-  repeated OfferedPermission permissions = 4;
+  repeated OfferedPermission permissions = 3;
   // How it works; empty for Claude.
-  repeated OfferedMode modes = 5;
+  repeated OfferedMode modes = 4;
 }
 
 message OfferedPermission {

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use client::{Client, SystemClock};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use prost::Message as _;
 use ratatui::Frame as Paint;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -213,6 +214,7 @@ pub enum AppEvent {
     HostOffer {
         host: Vec<u8>,
         provider: &'static str,
+        hash: Vec<u8>,
         catalogue: wire::Catalogue,
     },
 }
@@ -518,12 +520,13 @@ impl App {
             AppEvent::HostOffer {
                 host,
                 provider,
+                hash,
                 catalogue,
             } => {
                 if let Some(setup) = self.fleet_view.open_setup() {
-                    setup.offer(&host, provider, &catalogue);
+                    setup.offer(&host, provider, &hash, &catalogue);
                 }
-                self.host_offers.insert(catalogue.hash.clone(), catalogue);
+                self.host_offers.insert(hash, catalogue);
             }
             AppEvent::Started {
                 agent,
@@ -1190,9 +1193,12 @@ impl App {
                         .find(|offer| offer.provider == provider)
                 })
                 .and_then(|offer| offer.catalogue.clone());
-            if let Some(held) = named.as_ref().and_then(|hash| self.host_offers.get(hash)) {
-                if setup.offered_hash() != Some(held.hash.as_slice()) {
-                    setup.offer(&host, provider, held);
+            if let Some((hash, held)) = named
+                .as_ref()
+                .and_then(|hash| Some((hash, self.host_offers.get(hash)?)))
+            {
+                if setup.offered_hash() != Some(hash.as_slice()) {
+                    setup.offer(&host, provider, hash, held);
                 }
                 continue;
             }
@@ -1215,15 +1221,23 @@ impl App {
             let host_name = host_name.clone();
             self.spawn(async move {
                 let request = wire::GetCatalogueRequest {
-                    of: Some(wire::get_catalogue_request::Of::Host(wire::HostProvider {
-                        host_id: host.clone(),
-                        provider: provider.to_owned(),
-                    })),
+                    host_id: host.clone(),
+                    provider: provider.to_owned(),
                 };
-                match client.get_catalogue(request).await {
-                    Ok(catalogue) => Some(AppEvent::HostOffer {
+                let answer = client
+                    .get_catalogue(request)
+                    .await
+                    .map_err(|error| error.to_string());
+                let decoded = answer.and_then(|blob| {
+                    wire::Catalogue::decode(blob.bytes.as_slice())
+                        .map(|catalogue| (blob.hash, catalogue))
+                        .map_err(|error| format!("the catalogue does not decode: {error}"))
+                });
+                match decoded {
+                    Ok((hash, catalogue)) => Some(AppEvent::HostOffer {
                         host,
                         provider,
+                        hash,
                         catalogue,
                     }),
                     // Only the agent being set up is worth a word.

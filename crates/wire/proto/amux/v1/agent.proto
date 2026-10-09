@@ -91,7 +91,8 @@ message Bootstrap {
 // long enough to ask. The helper writes it; the daemon keeps it as its copy
 // for the host, stamped with when it was asked.
 message ProviderOffer {
-  // With `hash` empty: the daemon names it.
+  // Decoded: the daemon encodes it and names the copy by the hash of
+  // exactly those bytes.
   Catalogue catalogue = 1;
   bool signed_in = 2;
   // What `<provider> --version` printed, as printed.

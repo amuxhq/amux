@@ -544,7 +544,6 @@ async fn attachment_bytes_are_fetched_lazily_once_and_redraw_their_row() {
     calls.none().await;
     reply
         .send(Ok(GetBlobResponse {
-            blob: None,
             bytes: b"png".to_vec(),
         }))
         .ok();
@@ -749,7 +748,6 @@ async fn closing_drops_the_stream_and_a_late_result_changes_nothing() {
     .expect("the stream is dropped");
     reply
         .send(Ok(GetBlobResponse {
-            blob: None,
             bytes: b"late".to_vec(),
         }))
         .ok();

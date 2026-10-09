@@ -18,10 +18,40 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use prost::Message as _;
-use wire::{Catalogue, ProviderOffer, ProviderOnHost};
+use sha2::{Digest as _, Sha256};
+use store::StoreError;
+use wire::{Catalogue, CatalogueBlob, ErrorCode, ProviderOffer, ProviderOnHost};
 
-use crate::catalogue::{CatalogueError, catalogue_hash};
 use crate::runtime::{Launch, ProfileRuntime};
+
+#[derive(Debug, thiserror::Error)]
+pub enum CatalogueError {
+    #[error("no provider named {0:?}")]
+    NoProvider(String),
+    #[error("asking the provider what it offers: {0}")]
+    Helper(String),
+    #[error("reading the catalogue: {0}")]
+    Read(io::Error),
+    #[error("writing the catalogue: {0}")]
+    Write(io::Error),
+    #[error("the store: {0}")]
+    Store(#[from] StoreError),
+}
+
+impl CatalogueError {
+    pub fn to_wire(&self) -> wire::Error {
+        let code = match self {
+            Self::NoProvider(_) => ErrorCode::InvalidArgument,
+            Self::Helper(_) => ErrorCode::Unavailable,
+            Self::Read(_) | Self::Write(_) | Self::Store(_) => ErrorCode::Internal,
+        };
+        wire::Error {
+            code: code as i32,
+            message: self.to_string(),
+            details: Vec::new(),
+        }
+    }
+}
 
 /// The profile's directory of host copies, one file per provider. The
 /// helper also runs in it, so a provider sees no project's own commands.
@@ -65,7 +95,11 @@ impl Provider {
 /// What a provider offers on this host, as last asked.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostCatalogue {
-    /// With its hash.
+    /// The catalogue encoded once, and the SHA-256 of exactly those bytes:
+    /// what GetCatalogue answers and the host's entry names.
+    pub blob: CatalogueBlob,
+    /// The same catalogue decoded, for an agent whose kind cannot ask its
+    /// provider itself.
     pub catalogue: Catalogue,
     pub signed_in: bool,
     /// What `--version` printed when it was asked.
@@ -125,7 +159,7 @@ impl Offers {
                 let held = held.get(&provider)?;
                 Some(ProviderOnHost {
                     provider: provider.name().to_owned(),
-                    catalogue: Some(held.offer.catalogue.hash.clone()),
+                    catalogue: Some(held.offer.blob.hash.clone()),
                     signed_in: held.offer.signed_in,
                 })
             })
@@ -137,10 +171,16 @@ fn copy_path(profile_dir: &Path, provider: Provider) -> PathBuf {
     profile_dir.join(PROVIDERS).join(provider.name())
 }
 
+/// Encodes the helper's catalogue once and names it by the hash of exactly
+/// those bytes, so what is served is what is named.
 fn host_catalogue(offer: ProviderOffer) -> HostCatalogue {
-    let mut catalogue = offer.catalogue.unwrap_or_default();
-    catalogue.hash = catalogue_hash(&catalogue);
+    let catalogue = offer.catalogue.unwrap_or_default();
+    let bytes = catalogue.encode_to_vec();
     HostCatalogue {
+        blob: CatalogueBlob {
+            hash: Sha256::digest(&bytes).to_vec(),
+            bytes,
+        },
         catalogue,
         signed_in: offer.signed_in,
         provider_version: offer.provider_version,
@@ -279,7 +319,7 @@ impl ProfileRuntime {
         let bytes = std::fs::read(&out).map_err(CatalogueError::Read)?;
         let _ = std::fs::remove_file(&out);
         ProviderOffer::decode(bytes.as_slice())
-            .map_err(|_| CatalogueError::Decode(out.display().to_string()))
+            .map_err(|_| CatalogueError::Helper(format!("{} does not decode", out.display())))
     }
 }
 

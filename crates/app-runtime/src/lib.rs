@@ -247,14 +247,20 @@ impl AppRuntime {
         host_id: &[u8],
         provider: &str,
     ) -> Result<wire::Catalogue, RpcError> {
-        self.client
+        let blob = self
+            .client
             .get_catalogue(wire::GetCatalogueRequest {
-                of: Some(wire::get_catalogue_request::Of::Host(wire::HostProvider {
-                    host_id: host_id.to_vec(),
-                    provider: provider.to_owned(),
-                })),
+                host_id: host_id.to_vec(),
+                provider: provider.to_owned(),
             })
-            .await
+            .await?;
+        wire::Catalogue::decode(blob.bytes.as_slice()).map_err(|error| {
+            RpcError::Refused(wire::Error {
+                code: wire::ErrorCode::Internal as i32,
+                message: format!("the host's catalogue does not decode: {error}"),
+                details: Vec::new(),
+            })
+        })
     }
 
     /// Where a host offers to start an agent, filtered by `query` and at

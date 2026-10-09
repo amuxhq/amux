@@ -696,20 +696,43 @@ impl Net {
         Ok(self.ack(format!("{name} stopped")))
     }
 
-    /// What `name` offers, as a person on `host` fetches it: forwarded to
-    /// the agent's own host when it lives elsewhere.
-    pub async fn catalogue(&self, host: &str, name: &str) -> Result<wire::Catalogue, NetError> {
-        let agent = self.agent(name)?;
-        let request = wire::GetCatalogueRequest {
-            of: Some(wire::get_catalogue_request::Of::AgentId(
-                agent.id.as_bytes().to_vec(),
-            )),
-        };
-        self.client(host)?
-            .get_catalogue(tonic::Request::new(request))
+    /// What `name` offers now, as a person on `host` fetches it: the blob
+    /// its newest snapshot there names, read through GetBlob, which goes to
+    /// the agent's own host when this one holds no copy. With the hash it
+    /// was fetched by.
+    pub async fn catalogue(
+        &self,
+        host: &str,
+        name: &str,
+    ) -> Result<(Vec<u8>, wire::Catalogue), NetError> {
+        use prost::Message as _;
+        let id = self.agent(name)?.id;
+        let mut subscription = self.runtime(host)?.subscribe(id.as_bytes(), 1).await?;
+        let mut named = None;
+        while let Some(event) = subscription.next().await {
+            match &event.of {
+                Some(wire::session_event::Of::Snapshot(snapshot)) => {
+                    named.clone_from(&snapshot.catalogue);
+                }
+                Some(wire::session_event::Of::CaughtUp(_)) => break,
+                _ => {}
+            }
+        }
+        let refused =
+            |message: String| NetError::Refused(Box::new(tonic::Status::not_found(message)));
+        let hash = named.ok_or_else(|| refused(format!("{name} offers nothing yet at {host}")))?;
+        let fetched = self
+            .client(host)?
+            .get_blob(tonic::Request::new(wire::GetBlobRequest {
+                agent_id: id.as_bytes().to_vec(),
+                hash: hash.clone(),
+            }))
             .await
-            .map(tonic::Response::into_inner)
-            .map_err(|status| NetError::Refused(Box::new(status)))
+            .map_err(|status| NetError::Refused(Box::new(status)))?
+            .into_inner();
+        let catalogue = wire::Catalogue::decode(fetched.bytes.as_slice())
+            .map_err(|error| refused(format!("{name}'s catalogue does not decode: {error}")))?;
+        Ok((hash, catalogue))
     }
 
     /// Deletes the agent on its own host.

@@ -14,7 +14,6 @@ mod activation;
 mod audit;
 mod auth;
 mod blobs;
-mod catalogue;
 mod connection;
 mod daemon;
 pub mod discovery;
@@ -56,7 +55,6 @@ mod worktree;
 
 pub use activation::{ActivationError, ActivationPipe, GO, InheritedPipe, PIPE_ENV, PREPARED};
 pub use blobs::{BlobError, PATCH_MIME};
-pub use catalogue::{CatalogueError, catalogue_hash};
 pub use daemon::{Daemon, StartError, StartOptions, start};
 pub use dump::{DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS, DUMP_SEGMENTS, DumpError, MANIFEST, pack};
 pub use edge::{
@@ -75,7 +73,7 @@ pub use install::{
 };
 pub use link::{PeerChannel, PeerClient, TRUST_REVOKED};
 pub use names::{assign_name, word_pairs};
-pub use offers::{HostCatalogue, PROVIDERS, Provider};
+pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};
 pub use pairing::PairingAdmin;
 pub use pairing::qr::{

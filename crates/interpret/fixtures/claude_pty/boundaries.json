@@ -23,7 +23,7 @@
       },
       "expect": {
         "effects": [
-          "catalogue e1e7cada models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]"
+          "catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]"
         ]
       }
     },

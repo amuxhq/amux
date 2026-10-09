@@ -475,7 +475,7 @@ cargo = [
 
 [[suite]]
 name = "single-daemon-contract"
-contract = "One daemon commits journaled steps atomically, fans out and serves subscriptions without losing committed rows across crashes, failed commits and power cuts, carries inputs, messages, deliveries and notifications exactly once, stores blobs, diffs and catalogues, asks a host's providers what they offer, assembles redacted dumps, adopts, starts, stops and resumes agent processes, and records each usage event where it happens."
+contract = "One daemon commits journaled steps atomically, fans out and serves subscriptions without losing committed rows across crashes, failed commits and power cuts, carries inputs, messages, deliveries and notifications exactly once, stores blobs (an agent's catalogue among them) and diffs, keeps a replica's current catalogue through blob eviction, asks a host's providers what they offer, assembles redacted dumps, adopts, starts, stops and resumes agent processes, and records each usage event where it happens."
 paths = ["crates/node/tests"]
 recipe = "just test -- --test single_daemon --test messaging --test push --test blobs --test catalogue --test host_catalogue --test diff --test registry --test dump --test agent_names --test analytics"
 boundary = "Single daemon"

@@ -51,8 +51,12 @@ pub enum Msg {
     /// session the fleet holds off screen narrows to a few rows, trimmed at
     /// once while the reader follows.
     Window(usize),
-    /// A catalogue the driver fetched or held for the agent.
-    Catalogue(wire::Catalogue),
+    /// A catalogue the driver fetched or held for the agent, with the hash
+    /// it was fetched by.
+    Catalogue {
+        hash: Vec<u8>,
+        catalogue: wire::Catalogue,
+    },
 }
 
 /// What one update did.
@@ -94,9 +98,10 @@ pub struct SessionState {
     host: Option<HostEntry>,
     state: AgentState,
     has_snapshot: bool,
-    /// The catalogue last fetched for the agent; what it offers shows while
+    /// The catalogue last fetched for the agent, with the hash it was
+    /// fetched by; what it offers shows while
     /// the newest snapshot names its hash.
-    catalogue: Option<wire::Catalogue>,
+    catalogue: Option<(Vec<u8>, wire::Catalogue)>,
     transcript: Transcript,
     /// A Reset's fresh transcript, or a re-tail that does not meet the held
     /// window, swapped in at the next CaughtUp.
@@ -291,21 +296,17 @@ impl SessionState {
         &self.state
     }
 
-    /// A catalogue fetched for the agent. What it offers shows while
-    /// the newest snapshot names it. Fetches can answer out of order, so a
-    /// held catalogue the newest snapshot names is never replaced by one it
-    /// does not name; any other is. Returns whether it was kept.
-    pub fn set_catalogue(&mut self, catalogue: wire::Catalogue) -> bool {
+    /// A catalogue fetched for the agent under `hash`, the hash it was
+    /// fetched by. What it offers shows while the newest snapshot names it.
+    /// Fetches can answer out of order, so a held catalogue the newest
+    /// snapshot names is never replaced by one it does not name; any other
+    /// is. Returns whether it was kept.
+    pub fn set_catalogue(&mut self, hash: Vec<u8>, catalogue: wire::Catalogue) -> bool {
         let named = |hash: &[u8]| self.state.catalogue.as_deref() == Some(hash);
-        if self
-            .catalogue
-            .as_ref()
-            .is_some_and(|held| named(&held.hash))
-            && !named(&catalogue.hash)
-        {
+        if self.catalogue.as_ref().is_some_and(|(held, _)| named(held)) && !named(&hash) {
             return false;
         }
-        self.catalogue = Some(catalogue);
+        self.catalogue = Some((hash, catalogue));
         self.offer();
         true
     }
@@ -313,14 +314,12 @@ impl SessionState {
     /// The hash of the catalogue held, whether or not the newest snapshot
     /// still names it.
     pub fn held_catalogue(&self) -> Option<&[u8]> {
-        self.catalogue
-            .as_ref()
-            .map(|catalogue| catalogue.hash.as_slice())
+        self.catalogue.as_ref().map(|(hash, _)| hash.as_slice())
     }
 
     fn offer(&mut self) {
         let offered = match &self.catalogue {
-            Some(catalogue) if self.state.catalogue.as_ref() == Some(&catalogue.hash) => {
+            Some((hash, catalogue)) if self.state.catalogue.as_ref() == Some(hash) => {
                 catalogue.clone()
             }
             _ => wire::Catalogue::default(),
@@ -627,8 +626,8 @@ impl SessionState {
                 self.cap = cap.max(1);
                 self.trim(&mut changed);
             }
-            Msg::Catalogue(catalogue) => {
-                outcome.session = self.set_catalogue(catalogue);
+            Msg::Catalogue { hash, catalogue } => {
+                outcome.session = self.set_catalogue(hash, catalogue);
             }
             Msg::Reloading => {
                 // Every reopened stream re-tails; a reload builds apart.

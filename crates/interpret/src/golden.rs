@@ -288,7 +288,7 @@ pub struct Replayed {
     pub step: Step,
     pub replies: Vec<(Vec<u8>, SendInputResponse)>,
     /// The catalogue this frame wrote, with its hash, when it wrote one.
-    pub catalogue: Option<wire::Catalogue>,
+    pub catalogue: Option<(Vec<u8>, wire::Catalogue)>,
 }
 
 /// Runs one fixture through interpreter `I` and returns its emission, frame
@@ -328,11 +328,12 @@ pub fn replay<I: Interpreter>(fixture: &Path) -> Result<Vec<Replayed>, String> {
                     _ => None,
                 })
                 .collect();
+            let named = named_catalogue(&frame.step);
             let catalogue = frame.effects.iter().find_map(|effect| match effect {
-                Effect::WriteCatalogue { hash, bytes } => Some(wire::Catalogue {
-                    hash: hash.clone(),
-                    ..wire::Catalogue::decode(bytes.as_slice()).unwrap_or_default()
-                }),
+                Effect::WriteBlob { hash, bytes } if Some(hash.as_slice()) == named => Some((
+                    hash.clone(),
+                    wire::Catalogue::decode(bytes.as_slice()).unwrap_or_default(),
+                )),
                 _ => None,
             });
             Replayed {
@@ -1427,7 +1428,11 @@ fn check_expectations<I: Interpreter>(frames: &[Frame], script: &[Scripted]) -> 
                 format!("{effects:?}"),
                 format!(
                     "{:?}",
-                    frame.effects.iter().map(render_effect).collect::<Vec<_>>()
+                    frame
+                        .effects
+                        .iter()
+                        .map(|effect| render_effect(effect, named_catalogue(&frame.step)))
+                        .collect::<Vec<_>>()
                 ),
             );
         }
@@ -1465,7 +1470,11 @@ fn render<I: Interpreter>(frames: &[Frame]) -> String {
         }
         let _ = writeln!(out, "## {index} {}", frame.label);
         for effect in &frame.effects {
-            let _ = writeln!(out, "effect {}", render_effect(effect));
+            let _ = writeln!(
+                out,
+                "effect {}",
+                render_effect(effect, named_catalogue(step))
+            );
         }
         for item in &frame.step.items {
             let view = I::describe_item(&item.body);
@@ -1560,7 +1569,15 @@ fn render<I: Interpreter>(frames: &[Frame]) -> String {
     out
 }
 
-fn render_effect(effect: &Effect) -> String {
+/// The catalogue hash a step's snapshot names: the blob it wrote under that
+/// hash is its catalogue, rendered as one.
+fn named_catalogue(step: &Step) -> Option<&[u8]> {
+    step.snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.catalogue.as_deref())
+}
+
+fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
     match effect {
         Effect::ProviderWrite(bytes) => format!("write {}", display_bytes(bytes)),
         Effect::Reply { input_id, verdict } => {
@@ -1577,12 +1594,12 @@ fn render_effect(effect: &Effect) -> String {
             display_bytes(request),
             attachments.len()
         ),
-        Effect::WriteBlob { hash, bytes } => format!(
+        Effect::WriteBlob { hash, bytes } if catalogue != Some(hash.as_slice()) => format!(
             "blob {} {} bytes",
             crate::to_hex(&hash[..hash.len().min(4)]),
             bytes.len()
         ),
-        Effect::WriteCatalogue { hash, bytes } => {
+        Effect::WriteBlob { hash, bytes } => {
             let catalogue = wire::Catalogue::decode(bytes.as_slice()).unwrap_or_default();
             format!(
                 "catalogue {} models=[{}] commands={} permissions=[{}] modes=[{}]",

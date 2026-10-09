@@ -5,8 +5,11 @@
 //! blob, and a blob lives and dies with its directory.
 //!
 //! PutBlob writes a person's attachment into the agent's directory before
-//! the input that references it is handed over. GetBlob reads a file for a
-//! client. Diff compares the agent's working directory through git-facts
+//! the input that references it is handed over. The agent process writes
+//! its own: images the model read, and its catalogue, whose hash its
+//! snapshot names. GetBlob reads a file for a client, and for a peer's
+//! agent keeps the origin's exact bytes, so a catalogue with fields this
+//! daemon does not know keeps its hash. Diff compares the agent's working directory through git-facts
 //! and, only when asked for the patch, writes it as a blob of the agent, so
 //! it lives as long as that agent whether or not a review is ever attached.
 
@@ -126,14 +129,7 @@ impl ProfileRuntime {
             }
             Err(error) => return Err(BlobError::Read(error)),
         };
-        Ok(GetBlobResponse {
-            blob: Some(BlobRef {
-                hash: request.hash,
-                size: bytes.len() as u64,
-                ..BlobRef::default()
-            }),
-            bytes,
-        })
+        Ok(GetBlobResponse { bytes })
     }
 
     /// Keeps bytes of a peer's agent, read from its origin, under that
@@ -228,7 +224,7 @@ impl ProfileRuntime {
             .ok_or(BlobError::NoAgent)
     }
 
-    fn blob_path(&self, row: &AgentRow, hash: &[u8]) -> PathBuf {
+    pub(crate) fn blob_path(&self, row: &AgentRow, hash: &[u8]) -> PathBuf {
         self.files_of(row).join(agent_dir::BLOBS).join(hex(hash))
     }
 

@@ -148,7 +148,7 @@ pub struct Setup {
     /// The mode by its value; None starts in the agent's normal one.
     pub mode: Option<String>,
     /// What the chosen host offers for the chosen agent, once it has said.
-    pub offered: Option<wire::Catalogue>,
+    pub offered: Option<(Vec<u8>, wire::Catalogue)>,
     /// Where it works, as the request names it.
     pub folder: String,
     pub host: Vec<u8>,
@@ -212,15 +212,23 @@ impl Setup {
 
     /// Takes what `host` offers for `provider`, when that is what this
     /// setup is for; the choices already made stay, offered or not.
-    pub fn offer(&mut self, host: &[u8], provider: &str, catalogue: &wire::Catalogue) {
+    pub fn offer(&mut self, host: &[u8], provider: &str, hash: &[u8], catalogue: &wire::Catalogue) {
         if host == self.host && provider == self.agent.provider() {
-            self.offered = Some(catalogue.clone());
+            self.offered = Some((hash.to_vec(), catalogue.clone()));
         }
     }
 
     /// The hash of what this setup holds from its host, if anything.
     pub fn offered_hash(&self) -> Option<&[u8]> {
-        self.offered.as_ref().map(|offered| offered.hash.as_slice())
+        self.offered.as_ref().map(|(hash, _)| hash.as_slice())
+    }
+
+    /// What this setup holds from its host, or nothing offered.
+    fn offered(&self) -> wire::Catalogue {
+        self.offered
+            .as_ref()
+            .map(|(_, catalogue)| catalogue.clone())
+            .unwrap_or_default()
     }
 
     /// What is chosen so far, as the settings view takes it.
@@ -236,20 +244,14 @@ impl Setup {
     /// Its settings as the shared view builds them from what the host
     /// offers, before the host has said, from what is chosen alone.
     fn view(&self) -> SettingsView {
-        let none = wire::Catalogue::default();
-        ui_view::new_agent_settings(self.offered.as_ref().unwrap_or(&none), &self.chosen())
+        ui_view::new_agent_settings(&self.offered(), &self.chosen())
     }
 
     /// A pick, with the rules the shared view gives it: another model
     /// starts at its default effort and drops a permission it does not
     /// take.
     fn apply(&mut self, pick: NewAgentPick) {
-        let none = wire::Catalogue::default();
-        let next = ui_view::new_agent_pick(
-            self.offered.as_ref().unwrap_or(&none),
-            &self.chosen(),
-            &pick,
-        );
+        let next = ui_view::new_agent_pick(&self.offered(), &self.chosen(), &pick);
         self.model = next.model;
         self.effort = next.effort;
         self.permission = next.permission;

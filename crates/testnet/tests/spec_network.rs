@@ -2267,7 +2267,6 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_held_transfer_and_a_
         .expect("the released transfer finishes")
         .unwrap()
         .expect("the blob arrives");
-    assert_eq!(fetched.blob.unwrap().hash, stored.hash);
     assert!(fetched.bytes == bytes, "the bytes are the ones stored");
     println!(
         "a {} byte transfer held mid-flight; the session went on beside it; the bytes match",

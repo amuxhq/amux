@@ -125,7 +125,7 @@ pub trait Client: Send + Sync + 'static {
     async fn get_catalogue(
         &self,
         request: wire::GetCatalogueRequest,
-    ) -> Result<wire::Catalogue, RpcError>;
+    ) -> Result<wire::CatalogueBlob, RpcError>;
     async fn list_repositories(
         &self,
         request: ListRepositoriesRequest,
@@ -216,7 +216,7 @@ macro_rules! client_impl {
             async fn get_catalogue(
                 &self,
                 request: wire::GetCatalogueRequest,
-            ) -> Result<wire::Catalogue, RpcError> {
+            ) -> Result<wire::CatalogueBlob, RpcError> {
                 Ok($call!(self, get_catalogue, request).await?.into_inner())
             }
 

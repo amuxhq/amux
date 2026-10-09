@@ -1365,11 +1365,10 @@ public enum CardState: Codable, Hashable, Sendable {
 }
 
 /// What an agent offers to pick from, not what is picked: that stays in the
-/// snapshot. Fetched by hash; identical catalogues share one.
+/// snapshot. An agent writes it as a blob of its directory and names the
+/// blob's hash in its snapshot; identical catalogues share one. Fetched by
+/// GetBlob, so a catalogue passes through a daemon of any version intact.
 public struct Catalogue: Codable, Hashable, Sendable {
-    /// The SHA-256 of this message encoded with `hash` empty, which is how the
-    /// agent stores it.
-    public var hash: [UInt8]
     public var models: [OfferedModel]
     public var commands: [OfferedCommand]
     /// How much the agent may do without asking.
@@ -1377,8 +1376,7 @@ public struct Catalogue: Codable, Hashable, Sendable {
     /// How it works; empty for Claude.
     public var modes: [OfferedMode]
 
-    public init(hash: [UInt8], models: [OfferedModel], commands: [OfferedCommand], permissions: [OfferedPermission], modes: [OfferedMode]) {
-        self.hash = hash
+    public init(models: [OfferedModel], commands: [OfferedCommand], permissions: [OfferedPermission], modes: [OfferedMode]) {
         self.models = models
         self.commands = commands
         self.permissions = permissions
@@ -1386,7 +1384,6 @@ public struct Catalogue: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hash
         case models
         case commands
         case permissions

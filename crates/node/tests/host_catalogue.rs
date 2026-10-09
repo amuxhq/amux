@@ -8,13 +8,14 @@ mod support;
 
 use std::path::PathBuf;
 
+use prost::Message as _;
 use provider_fakes::script::{INPUT_LOG_ENV, OfferedCommand, OfferedModel, SCRIPT_ENV, Script};
+use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
 use wire::client_service_server::ClientService as _;
 use wire::{
-    Catalogue, GetCatalogueRequest, HostProvider, ProviderOnHost, get_catalogue_request,
-    inventory_event,
+    Catalogue, CatalogueBlob, GetBlobRequest, GetCatalogueRequest, ProviderOnHost, inventory_event,
 };
 
 fn model(value: &str) -> OfferedModel {
@@ -92,28 +93,44 @@ const CODEX_ASKED: &str = "\"model/list\"";
 
 fn by_host(host: uuid::Uuid, provider: &str) -> tonic::Request<GetCatalogueRequest> {
     tonic::Request::new(GetCatalogueRequest {
-        of: Some(get_catalogue_request::Of::Host(HostProvider {
-            host_id: host.as_bytes().to_vec(),
-            provider: provider.to_owned(),
-        })),
+        host_id: host.as_bytes().to_vec(),
+        provider: provider.to_owned(),
     })
 }
 
-async fn ask(api: &node::ClientApi, host: uuid::Uuid, provider: &str) -> Catalogue {
-    api.get_catalogue(by_host(host, provider))
+/// What GetCatalogue answered, decoded.
+#[derive(Debug, PartialEq)]
+struct Asked {
+    blob: CatalogueBlob,
+    catalogue: Catalogue,
+}
+
+impl std::ops::Deref for Asked {
+    type Target = Catalogue;
+
+    fn deref(&self) -> &Catalogue {
+        &self.catalogue
+    }
+}
+
+async fn ask(api: &node::ClientApi, host: uuid::Uuid, provider: &str) -> Asked {
+    let blob = api
+        .get_catalogue(by_host(host, provider))
         .await
         .unwrap_or_else(|error| panic!("{provider} on the host: {error:?}"))
-        .into_inner()
+        .into_inner();
+    let catalogue = Catalogue::decode(blob.bytes.as_slice()).unwrap();
+    Asked { blob, catalogue }
 }
 
 fn values<T>(listed: &[T], value: impl Fn(&T) -> &str) -> Vec<&str> {
     listed.iter().map(value).collect()
 }
 
-fn on_host(provider: &str, catalogue: &Catalogue, signed_in: bool) -> ProviderOnHost {
+fn on_host(provider: &str, asked: &Asked, signed_in: bool) -> ProviderOnHost {
     ProviderOnHost {
         provider: provider.to_owned(),
-        catalogue: Some(catalogue.hash.clone()),
+        catalogue: Some(asked.blob.hash.clone()),
         signed_in,
     }
 }
@@ -145,7 +162,11 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
     );
     assert!(claude.permissions.iter().all(|p| p.settable));
     assert!(claude.modes.is_empty());
-    assert_eq!(claude.hash, node::catalogue_hash(&claude));
+    assert_eq!(
+        claude.blob.hash,
+        Sha256::digest(&claude.blob.bytes).to_vec(),
+        "the hash names exactly the bytes served"
+    );
 
     let codex = ask(&api, here, "codex").await;
     assert_eq!(values(&codex.models, |m| &m.value), ["opus", "haiku"]);
@@ -275,7 +296,7 @@ async fn a_new_provider_version_is_asked_again() {
     let second = ask(&api, here, "claude").await;
     assert_eq!(host.asked(CLAUDE_ASKED), 2);
     assert_eq!(values(&second.models, |m| &m.value), ["opus", "fable"]);
-    assert_ne!(second.hash, first.hash);
+    assert_ne!(second.blob.hash, first.blob.hash);
     assert!(
         runtime
             .host_entry()
@@ -377,19 +398,25 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
         .unwrap();
     let mut subscription = runtime.subscribe(&agent.agent_id, 10).await.unwrap();
     let mut seen = Vec::new();
-    read_until(&mut subscription, &mut seen, "a catalogue", |seen| {
-        seen.iter().any(|event| {
-            matches!(&event.of, Some(session_event::Of::Snapshot(snapshot)) if snapshot.catalogue.is_some())
+    let named = |seen: &[wire::SessionEvent]| {
+        seen.iter().find_map(|event| match &event.of {
+            Some(session_event::Of::Snapshot(snapshot)) => snapshot.catalogue.clone(),
+            _ => None,
         })
+    };
+    read_until(&mut subscription, &mut seen, "a catalogue", |seen| {
+        named(seen).is_some()
     })
     .await;
-    let offered = api
-        .get_catalogue(tonic::Request::new(GetCatalogueRequest {
-            of: Some(get_catalogue_request::Of::AgentId(agent.agent_id.clone())),
+    let blob = api
+        .get_blob(tonic::Request::new(GetBlobRequest {
+            agent_id: agent.agent_id.clone(),
+            hash: named(&seen).unwrap(),
         }))
         .await
         .unwrap()
         .into_inner();
+    let offered = Catalogue::decode(blob.bytes.as_slice()).unwrap();
     let hosts = runtime.held_host_catalogue(node::Provider::Claude).unwrap();
     assert_eq!(offered.models, hosts.catalogue.models);
     assert_eq!(offered.commands, hosts.catalogue.commands);

@@ -1,9 +1,11 @@
 //! Replica blob files have a byte budget of their own, evicted least
 //! recently read first, independent of rows: they are disposable and
-//! refetchable, and rows cannot say which files they still share. Own blobs
-//! have no budget; they live and die with their agent's directory.
+//! refetchable, and rows cannot say which files they still share. The one
+//! exception is a file the caller pins: the catalogue a replica's current
+//! snapshot names, which its picker needs while the origin is away. Own
+//! blobs have no budget; they live and die with their agent's directory.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -75,13 +77,15 @@ impl BlobLru {
     }
 
     /// Deletes the least recently read files until the rest fit `budget`,
-    /// and returns them in deletion order. A file already gone is simply
-    /// forgotten.
-    pub fn sweep(&mut self, budget: u64) -> io::Result<Vec<PathBuf>> {
+    /// and returns them in deletion order. A file in `pinned` is never
+    /// deleted, even if the rest cannot fit without it. A file already gone
+    /// is simply forgotten.
+    pub fn sweep(&mut self, budget: u64, pinned: &HashSet<PathBuf>) -> io::Result<Vec<PathBuf>> {
         let mut total = self.bytes();
         let mut order = self
             .files
             .iter()
+            .filter(|(path, _)| !pinned.contains(*path))
             .map(|(path, entry)| (entry.last_read, path.clone()))
             .collect::<Vec<_>>();
         order.sort();

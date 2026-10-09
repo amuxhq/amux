@@ -1,3 +1,21 @@
+2026-10-09 — **An agent's catalogue is a blob, read with GetBlob; GetCatalogue answers only for a host's providers.**
+An agent already hashed the exact bytes of its catalogue, but wrote them to a
+`catalogues/` directory of their own, and the daemon decoded them to serve
+`GetCatalogue(agent_id)`, re-encoded them to check a peer's copy and wrote the
+replica copy re-encoded. A catalogue from a newer agent with a field this
+daemon does not know therefore changed hash on the way and was refused. The
+agent now writes its catalogue as a blob (`Effect::WriteBlob`, under
+`blobs/`) before the step whose snapshot names it, and a client reads it with
+`GetBlob(agent_id, snapshot.catalogue)`, decodes it and caches it under the
+hash it asked for; a replica keeps the origin's bytes as they came. The
+replica blob sweep never evicts the catalogue a replica's current snapshot
+names, so a picker keeps its offers while the origin is away; a catalogue no
+longer named goes like any blob. `Catalogue.hash` is gone: the hash is the
+blob's name. `GetCatalogue` is `{ host_id, provider }` and answers a
+`CatalogueBlob { hash, bytes }`, the daemon's copy encoded once and named by
+the hash of exactly those bytes, which is what the host's entry names.
+`GetBlobResponse` is the bytes alone.
+
 2026-10-09 — **A message's sender is its caller, a paired host is answered only for its host's own agents, and a create carries its kind's settings as bytes.**
 `ClientService.SendMessage` took a whole `Envelope`, so a caller could fill in
 the sender, the kind (finished, failed) and an incarnation; it now takes a

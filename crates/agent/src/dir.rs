@@ -5,7 +5,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
-pub use agent_dir::{BLOBS, CATALOGUES, CTL_SOCK, JOURNAL, LOCK, PRIVATE, PTY, PTY_SOCK, lock};
+pub use agent_dir::{BLOBS, CTL_SOCK, JOURNAL, LOCK, PRIVATE, PTY, PTY_SOCK, lock};
 use prost::Message as _;
 use wire::AgentSpec;
 pub const HOOKS_SOCK: &str = "hooks.sock";
@@ -62,16 +62,8 @@ pub fn private_dir(path: &Path) -> io::Result<()> {
 /// Writes `blobs/<hex>` by temp-and-rename; the name is the content's hash,
 /// so a second writer of the same bytes is harmless.
 pub fn write_blob(dir: &Path, hash: &[u8], bytes: &[u8]) -> io::Result<()> {
-    write_by_hash(&dir.join(BLOBS), hash, bytes)
-}
-
-/// Writes an encoded catalogue as `catalogues/<hex of hash>`, the same way.
-pub fn write_catalogue(dir: &Path, hash: &[u8], bytes: &[u8]) -> io::Result<()> {
-    write_by_hash(&dir.join(CATALOGUES), hash, bytes)
-}
-
-fn write_by_hash(folder: &Path, hash: &[u8], bytes: &[u8]) -> io::Result<()> {
-    fs::create_dir_all(folder)?;
+    let folder = dir.join(BLOBS);
+    fs::create_dir_all(&folder)?;
     let name = interpret::to_hex(hash);
     let path = folder.join(&name);
     if path.exists() {

@@ -92,7 +92,6 @@ final class NewAgentTests: XCTestCase {
     }
 
     private let codex = Catalogue(
-        hash: [1],
         models: [
             OfferedModel(value: "gpt-6-astra", displayName: "GPT-6-Astra", description: "", efforts: ["low", "high"], resolvedModel: "", defaultEffort: "low"),
             OfferedModel(value: "gpt-6-sol", displayName: "GPT-6-Sol", description: "", efforts: ["low"], resolvedModel: "", defaultEffort: "low"),

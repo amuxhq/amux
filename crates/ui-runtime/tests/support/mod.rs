@@ -36,7 +36,6 @@ pub enum Call {
     Resume(ResumeAgentRequest, Reply<Agent>),
     GetBlob(GetBlobRequest, Reply<GetBlobResponse>),
     PutBlob(PutBlobRequest, Reply<BlobRef>),
-    GetCatalogue(wire::GetCatalogueRequest, Reply<wire::Catalogue>),
 }
 
 impl std::fmt::Debug for Call {
@@ -50,7 +49,6 @@ impl std::fmt::Debug for Call {
             Call::Resume(request, _) => write!(f, "Resume({request:?})"),
             Call::GetBlob(request, _) => write!(f, "GetBlob({request:?})"),
             Call::PutBlob(request, _) => write!(f, "PutBlob({:?})", request.name),
-            Call::GetCatalogue(request, _) => write!(f, "GetCatalogue({request:?})"),
         }
     }
 }
@@ -176,9 +174,9 @@ impl Client for FakeRuntime {
 
     async fn get_catalogue(
         &self,
-        request: wire::GetCatalogueRequest,
-    ) -> Result<wire::Catalogue, RpcError> {
-        self.call(|reply| Call::GetCatalogue(request, reply)).await
+        _: wire::GetCatalogueRequest,
+    ) -> Result<wire::CatalogueBlob, RpcError> {
+        unimplemented!("get_catalogue")
     }
 
     async fn list_repositories(
@@ -268,13 +266,6 @@ impl Calls {
         match self.next().await {
             Call::GetBlob(request, reply) => (request, reply),
             other => panic!("expected GetBlob, got {other:?}"),
-        }
-    }
-
-    pub async fn get_catalogue(&mut self) -> (wire::GetCatalogueRequest, Reply<wire::Catalogue>) {
-        match self.next().await {
-            Call::GetCatalogue(request, reply) => (request, reply),
-            other => panic!("expected GetCatalogue, got {other:?}"),
         }
     }
 

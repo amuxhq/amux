@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use client::{Client, Clock, EventStream, RpcError};
 use futures_util::{FutureExt as _, StreamExt as _};
+use prost::Message as _;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use ui_state::{
@@ -113,8 +114,8 @@ impl Catalogues {
         self.held().get(hash).cloned()
     }
 
-    fn keep(&self, catalogue: wire::Catalogue) {
-        self.held().insert(catalogue.hash.clone(), catalogue);
+    fn keep(&self, hash: Vec<u8>, catalogue: wire::Catalogue) {
+        self.held().insert(hash, catalogue);
     }
 
     fn held(&self) -> MutexGuard<'_, HashMap<Vec<u8>, wire::Catalogue>> {
@@ -264,7 +265,10 @@ impl Inner {
             return;
         }
         if let Some(catalogue) = self.catalogues.get(&wanted) {
-            self.apply(Msg::Catalogue(catalogue));
+            self.apply(Msg::Catalogue {
+                hash: wanted,
+                catalogue,
+            });
             return;
         }
         {
@@ -280,26 +284,32 @@ impl Inner {
         tokio::spawn(self.clone().fetch_catalogue(wanted));
     }
 
-    /// Asks the runtime for the agent's catalogue now, which may already be
-    /// newer than the one wanted: it is kept by its own hash and shows once
-    /// a snapshot names it.
+    /// Reads the catalogue blob the snapshot named and keeps it under the
+    /// hash asked for; it shows while a snapshot names it.
     async fn fetch_catalogue(self: Arc<Self>, wanted: Vec<u8>) {
         self.note(DriverEvent::Catalogue {
             hash: wanted.clone(),
         });
-        let request = wire::GetCatalogueRequest {
-            of: Some(wire::get_catalogue_request::Of::AgentId(
-                self.agent_id.clone(),
-            )),
+        let request = GetBlobRequest {
+            agent_id: self.agent_id.clone(),
+            hash: wanted.clone(),
         };
-        match self.client.get_catalogue(request).await {
+        let fetched = match self.client.get_blob(request).await {
+            Ok(fetched) => wire::Catalogue::decode(fetched.bytes.as_slice())
+                .map_err(|error| format!("the catalogue does not decode: {error}")),
+            Err(error) => Err(error.to_string()),
+        };
+        match fetched {
             Ok(catalogue) => {
-                self.catalogues.keep(catalogue.clone());
-                self.apply(Msg::Catalogue(catalogue));
+                self.catalogues.keep(wanted.clone(), catalogue.clone());
+                self.apply(Msg::Catalogue {
+                    hash: wanted,
+                    catalogue,
+                });
             }
             Err(error) => self.note(DriverEvent::CatalogueFailed {
                 hash: wanted,
-                error: error.to_string(),
+                error,
             }),
         }
     }

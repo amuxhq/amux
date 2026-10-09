@@ -315,11 +315,11 @@ fn the_initialize_answer_lists_models_with_efforts_and_commands_with_sources() {
         .rev()
         .find_map(|frame| frame.step.snapshot.clone())
         .expect("a snapshot");
-    let snapshot = replayed
+    let (_, snapshot) = replayed
         .into_iter()
         .rev()
         .find_map(|frame| frame.catalogue)
-        .filter(|catalogue| snapshot.catalogue.as_ref() == Some(&catalogue.hash))
+        .filter(|(hash, _)| snapshot.catalogue.as_ref() == Some(hash))
         .expect("the catalogue the last snapshot names");
     let first = &snapshot.models[0];
     assert_eq!(first.value, "default");
@@ -533,14 +533,15 @@ fn commands_changed(commands: &[&str]) -> Value {
     })
 }
 
-/// The catalogue a step wrote, with its hash.
-fn written_catalogue(stepped: &interpret::Stepped) -> Option<wire::Catalogue> {
+/// The catalogue a step wrote, with its hash: the blob its snapshot names.
+fn written_catalogue(stepped: &interpret::Stepped) -> Option<(Vec<u8>, wire::Catalogue)> {
     use prost::Message as _;
+    let named = stepped.step.snapshot.as_ref()?.catalogue.as_ref()?;
     stepped.effects.iter().find_map(|effect| match effect {
-        interpret::Effect::WriteCatalogue { hash, bytes } => Some(wire::Catalogue {
-            hash: hash.clone(),
-            ..wire::Catalogue::decode(bytes.as_slice()).unwrap()
-        }),
+        interpret::Effect::WriteBlob { hash, bytes } if hash == named => Some((
+            hash.clone(),
+            wire::Catalogue::decode(bytes.as_slice()).unwrap(),
+        )),
         _ => None,
     })
 }
@@ -553,13 +554,13 @@ fn a_commands_changed_event_rebuilds_the_offered_commands() {
     use sha2::Digest as _;
     let mut state = started();
     let first = ClaudeSdk::step(&mut state, stream(initialized(&["compact"])));
-    let first = written_catalogue(&first).expect("the initialize answer writes a catalogue");
+    let (_, first) = written_catalogue(&first).expect("the initialize answer writes a catalogue");
     assert_eq!(first.commands.len(), 1, "the initialize answer was read");
     let stepped = ClaudeSdk::step(
         &mut state,
         stream(commands_changed(&["compact", "new-skill"])),
     );
-    let catalogue = written_catalogue(&stepped).expect("the commands changed");
+    let (hash, catalogue) = written_catalogue(&stepped).expect("the commands changed");
     let names: Vec<_> = catalogue
         .commands
         .iter()
@@ -569,25 +570,18 @@ fn a_commands_changed_event_rebuilds_the_offered_commands() {
     assert_eq!(catalogue.models, first.models, "the models stay");
     let encoded = {
         use prost::Message as _;
-        wire::Catalogue {
-            hash: Vec::new(),
-            ..catalogue.clone()
-        }
-        .encode_to_vec()
+        catalogue.encode_to_vec()
     };
-    assert_eq!(catalogue.hash, sha2::Sha256::digest(&encoded).to_vec());
-    let snapshot = stepped
-        .step
-        .snapshot
-        .expect("the snapshot names the new catalogue");
-    assert_eq!(snapshot.catalogue, Some(catalogue.hash));
+    assert_eq!(hash, sha2::Sha256::digest(&encoded).to_vec());
     let again = ClaudeSdk::step(
         &mut state,
         stream(commands_changed(&["compact", "new-skill"])),
     );
-    assert_eq!(
-        written_catalogue(&again),
-        None,
+    assert!(
+        !again
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, interpret::Effect::WriteBlob { .. })),
         "the same list writes nothing"
     );
     assert!(again.step.snapshot.is_none());
@@ -612,6 +606,7 @@ fn permissions_launched_with(args: &[&str]) -> Vec<(String, Vec<String>, bool)> 
     let stepped = ClaudeSdk::step(&mut state, stream(answer));
     written_catalogue(&stepped)
         .expect("the initialize answer writes a catalogue")
+        .1
         .permissions
         .into_iter()
         .map(|offered| (offered.value, offered.models, offered.settable))

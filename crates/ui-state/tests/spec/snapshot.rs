@@ -237,23 +237,25 @@ fn the_chat_header_reads_the_snapshot_while_the_row_says_otherwise() {
 
 #[test]
 fn an_older_catalogue_answering_late_never_replaces_the_one_the_snapshot_names() {
-    let offering = |hash: &[u8], name: &str| wire::Catalogue {
+    let offering = |hash: &[u8], name: &str| ui_state::Msg::Catalogue {
         hash: hash.to_vec(),
-        models: vec![wire::OfferedModel {
-            value: name.into(),
+        catalogue: wire::Catalogue {
+            models: vec![wire::OfferedModel {
+                value: name.into(),
+                ..Default::default()
+            }],
+            permissions: vec![wire::OfferedPermission {
+                value: name.into(),
+                settable: true,
+                ..Default::default()
+            }],
+            modes: vec![wire::OfferedMode {
+                value: name.into(),
+                settable: true,
+                ..Default::default()
+            }],
             ..Default::default()
-        }],
-        permissions: vec![wire::OfferedPermission {
-            value: name.into(),
-            settable: true,
-            ..Default::default()
-        }],
-        modes: vec![wire::OfferedMode {
-            value: name.into(),
-            settable: true,
-            ..Default::default()
-        }],
-        ..Default::default()
+        },
     };
     let offered = |state: &SessionState| {
         let agent = state.agent_state();
@@ -291,16 +293,16 @@ fn an_older_catalogue_answering_late_never_replaces_the_one_the_snapshot_names()
         let mut state = SessionState::new(agent(kind), CAP);
         apply_checked(&mut state, naming(1, b"a"));
         apply_checked(&mut state, naming(2, b"b"));
-        state.update(ui_state::Msg::Catalogue(offering(b"b", "b")));
+        state.update(offering(b"b", "b"));
         assert_eq!(offered(&state), b());
-        let late = state.update(ui_state::Msg::Catalogue(offering(b"a", "a")));
+        let late = state.update(offering(b"a", "a"));
         assert_eq!(offered(&state), b(), "the late older catalogue is dropped");
         assert!(!late.session, "and changes nothing a reader shows");
         assert_eq!(state.held_catalogue(), Some(&b"b"[..]));
 
         // Held but no longer named, a catalogue gives way to any other.
         apply_checked(&mut state, naming(3, b"a"));
-        state.update(ui_state::Msg::Catalogue(offering(b"a", "a")));
+        state.update(offering(b"a", "a"));
         assert_eq!(offered(&state).0, ["a"]);
     }
 }
@@ -322,7 +324,6 @@ fn what_the_fetched_catalogue_offers_shows_while_the_snapshot_names_it() {
         source: "stripe".into(),
     }];
     let catalogue = wire::Catalogue {
-        hash: b"first".to_vec(),
         models: models.clone(),
         commands: commands.clone(),
         ..Default::default()
@@ -340,7 +341,7 @@ fn what_the_fetched_catalogue_offers_shows_while_the_snapshot_names_it() {
             Some(&b"first"[..])
         );
         assert!(state.agent_state().models.is_empty(), "not fetched yet");
-        state.set_catalogue(catalogue.clone());
+        state.set_catalogue(b"first".to_vec(), catalogue.clone());
         let offered = state.agent_state();
         assert_eq!((&offered.models, &offered.commands), (&models, &commands));
         apply_checked(&mut state, naming(2, b"first"));

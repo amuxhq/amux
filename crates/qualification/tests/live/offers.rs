@@ -5,9 +5,10 @@
 //! Judged as the asks are: against the scenario's own traffic, recorded
 //! through the probe and replayed through the interpreter.
 
+use prost::Message as _;
 use wire::{
-    CodexCreateConfig, CodexInput, Empty, GetCatalogueRequest, HostProvider, Kind, codex_input,
-    get_catalogue_request, inventory_event,
+    CodexCreateConfig, CodexInput, Empty, GetBlobRequest, GetCatalogueRequest, Kind, codex_input,
+    inventory_event,
 };
 
 use super::asks::settled;
@@ -116,13 +117,42 @@ impl Install {
         Ok(Verdict::Pass)
     }
 
-    async fn catalogue_of(&self, of: get_catalogue_request::Of) -> Result<wire::Catalogue, String> {
-        self.client
+    /// What a provider offers on a host, with the hash the host names it by.
+    async fn host_catalogue_of(
+        &self,
+        host_id: Vec<u8>,
+        provider: &str,
+    ) -> Result<(Vec<u8>, wire::Catalogue), String> {
+        let blob = self
+            .client
             .clone()
-            .get_catalogue(GetCatalogueRequest { of: Some(of) })
+            .get_catalogue(GetCatalogueRequest {
+                host_id,
+                provider: provider.to_owned(),
+            })
             .await
-            .map(tonic::Response::into_inner)
-            .map_err(|status| format!("the catalogue: {status}"))
+            .map_err(|status| format!("the host's catalogue: {status}"))?
+            .into_inner();
+        let catalogue = wire::Catalogue::decode(blob.bytes.as_slice())
+            .map_err(|error| format!("the host's catalogue does not decode: {error}"))?;
+        Ok((blob.hash, catalogue))
+    }
+
+    /// The catalogue blob an agent's snapshot names, as a client reads it.
+    async fn agent_catalogue_of(
+        &self,
+        agent_id: Vec<u8>,
+        hash: Vec<u8>,
+    ) -> Result<wire::Catalogue, String> {
+        let blob = self
+            .client
+            .clone()
+            .get_blob(GetBlobRequest { agent_id, hash })
+            .await
+            .map_err(|status| format!("the catalogue: {status}"))?
+            .into_inner();
+        wire::Catalogue::decode(blob.bytes.as_slice())
+            .map_err(|error| format!("the catalogue does not decode: {error}"))
     }
 
     /// The agent says what it offers; the catalogue it names reads back
@@ -139,13 +169,12 @@ impl Install {
                 log.state(kind).catalogue.is_some()
             })
             .await?;
-        let named = follow.snapshot().state(kind).catalogue;
-        let catalogue = self
-            .catalogue_of(get_catalogue_request::Of::AgentId(agent))
-            .await?;
-        if Some(&catalogue.hash) != named.as_ref() {
-            return Err("the catalogue read back is not the one the agent names".into());
-        }
+        let named = follow
+            .snapshot()
+            .state(kind)
+            .catalogue
+            .ok_or("the agent names no catalogue")?;
+        let catalogue = self.agent_catalogue_of(agent, named).await?;
         if catalogue.permissions.is_empty() {
             return Err("the catalogue offers no permission".into());
         }
@@ -163,12 +192,7 @@ impl Install {
         let (expected, from) = match kind {
             Kind::ClaudePty => {
                 let host = self.host_entry().await?;
-                let copy = self
-                    .catalogue_of(get_catalogue_request::Of::Host(HostProvider {
-                        host_id: host.host_id,
-                        provider: "claude".into(),
-                    }))
-                    .await?;
+                let (_, copy) = self.host_catalogue_of(host.host_id, "claude").await?;
                 (
                     Some(wire::Catalogue {
                         permissions: catalogue.permissions.clone(),
@@ -201,11 +225,8 @@ impl Install {
             _ => "claude",
         };
         let host = self.host_entry().await?;
-        let catalogue = self
-            .catalogue_of(get_catalogue_request::Of::Host(HostProvider {
-                host_id: host.host_id.clone(),
-                provider: provider.to_owned(),
-            }))
+        let (hash, catalogue) = self
+            .host_catalogue_of(host.host_id.clone(), provider)
             .await?;
         if catalogue.models.is_empty() || catalogue.permissions.is_empty() {
             return Err(format!("the host offers {:?}", Offered::of(&catalogue)));
@@ -216,7 +237,7 @@ impl Install {
             .iter()
             .find(|on_host| on_host.provider == provider)
             .ok_or_else(|| format!("the host's entry names no {provider}"))?;
-        if named.catalogue.as_ref() != Some(&catalogue.hash) {
+        if named.catalogue.as_ref() != Some(&hash) {
             return Err("the host's entry names another catalogue".into());
         }
         if !named.signed_in {

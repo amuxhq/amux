@@ -1002,12 +1002,15 @@ tests = [
 id = "catalogue-once-per-version"
 source = "invariant"
 section = "Catalogue"
-claim = "What an agent offers is a catalogue written by hash outside the snapshot, fetched once per hash by a chat on screen and never by home, and never displaced by an older one answering late; a host says what its providers offer with no agent running, and a new agent is configured from it."
+claim = "What an agent offers is a catalogue written as a blob of its directory and named by hash outside the snapshot, fetched once per hash by a chat on screen and never by home, passed through a replica byte for byte, kept by a replica while its current snapshot names it, and never displaced by an older one answering late; a host says what its providers offer with no agent running, and a new agent is configured from it."
 tests = [
   "ui-state/spec::snapshot::an_older_catalogue_answering_late_never_replaces_the_one_the_snapshot_names",
   "agent/providers::the_catalogue_a_snapshot_names_is_in_the_agent_directory",
   "ui-runtime/fleet::a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_does",
   "node/catalogue::a_paired_host_reads_its_peers_catalogue_keeps_a_copy_and_follows_a_new_hash",
+  "node/catalogue::catalogue_with_unknown_field_keeps_its_hash_through_a_replica",
+  "node/catalogue::current_catalogue_is_pinned",
+  "node/catalogue::an_unknown_catalogue_is_not_found",
   "node/host_catalogue::a_host_says_what_its_providers_offer_with_no_agent_running",
   "interpret/claude_sdk::a_commands_changed_event_rebuilds_the_offered_commands",
   "tui/lib::tests::a_new_agent_offers_what_its_host_offers",

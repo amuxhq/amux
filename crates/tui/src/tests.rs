@@ -1557,14 +1557,13 @@ impl client::Client for DiffHost {
         assert_eq!(request.hash, vec![9; 32]);
         self.asked.lock().unwrap().push("get_blob".into());
         Ok(wire::GetBlobResponse {
-            blob: working_tree_diff().patch,
             bytes: PATCH.as_bytes().to_vec(),
         })
     }
     async fn get_catalogue(
         &self,
         _: wire::GetCatalogueRequest,
-    ) -> Result<wire::Catalogue, client::RpcError> {
+    ) -> Result<wire::CatalogueBlob, client::RpcError> {
         unimplemented!()
     }
     async fn subscribe_inventory(
@@ -2543,7 +2542,7 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     );
     home.open_setup(&HOME_PLACE)
         .unwrap()
-        .offer(b"a", "claude", &claude_offer());
+        .offer(b"a", "claude", &[1; 32], &claude_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Claude · Opus (high) · ask │ ~/work/amux"),
@@ -2579,7 +2578,6 @@ fn claude_offer() -> wire::Catalogue {
         ..Default::default()
     };
     wire::Catalogue {
-        hash: vec![1; 32],
         models: vec![wire::OfferedModel {
             value: "opus".into(),
             display_name: "Opus".into(),
@@ -2617,7 +2615,6 @@ fn codex_offer() -> wire::Catalogue {
         settable: true,
     };
     wire::Catalogue {
-        hash: vec![2; 32],
         models: vec![
             wire::OfferedModel {
                 value: "gpt-6.1-sol".into(),
@@ -2694,11 +2691,11 @@ fn a_new_agent_offers_what_its_host_offers() {
     // What another host offers is not this one's.
     home.open_setup(&HOME_PLACE)
         .unwrap()
-        .offer(b"b", "codex", &codex_offer());
+        .offer(b"b", "codex", &[2; 32], &codex_offer());
     assert!(home.open_setup(&HOME_PLACE).unwrap().offered.is_none());
     home.open_setup(&HOME_PLACE)
         .unwrap()
-        .offer(b"a", "codex", &codex_offer());
+        .offer(b"a", "codex", &[2; 32], &codex_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex · GPT-6.1 Sol (medium) · default │ ~/work/amux"),
@@ -2778,7 +2775,7 @@ fn a_new_claude_steps_the_permissions_that_still_ask() {
     home_screen(&mut home, &fleet, theme());
     home.open_setup(&HOME_PLACE)
         .unwrap()
-        .offer(b"a", "claude", &claude_offer());
+        .offer(b"a", "claude", &[1; 32], &claude_offer());
     let mut seen = Vec::new();
     for _ in 0..4 {
         home.key(&fleet, key(KeyCode::BackTab), false);

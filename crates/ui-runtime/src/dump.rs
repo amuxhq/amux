@@ -111,7 +111,7 @@ impl Structure for Msg {
             Msg::Following(following) => format!("Following {following}"),
             Msg::Reloading => "Reloading".into(),
             Msg::Window(cap) => format!("Window {cap}"),
-            Msg::Catalogue(catalogue) => format!("Catalogue {}", hex(&catalogue.hash)),
+            Msg::Catalogue { hash, .. } => format!("Catalogue {}", hex(hash)),
         }
     }
 }

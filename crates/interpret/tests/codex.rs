@@ -313,10 +313,10 @@ fn last_catalogue(fixture: &str) -> Option<wire::Catalogue> {
     let written = replayed.into_iter().rev().find_map(|frame| frame.catalogue);
     assert_eq!(
         named,
-        written.as_ref().map(|catalogue| catalogue.hash.clone()),
+        written.as_ref().map(|(hash, _)| hash.clone()),
         "the snapshot names the catalogue last written"
     );
-    written
+    written.map(|(_, catalogue)| catalogue)
 }
 
 #[test]
@@ -763,9 +763,11 @@ fn skills_asks(stepped: &interpret::Stepped) -> Vec<Value> {
         .collect()
 }
 
-fn catalogue_hash(stepped: &interpret::Stepped) -> Option<Vec<u8>> {
+/// The hash of the catalogue a step wrote: the blob its snapshot names.
+fn catalogue_written(stepped: &interpret::Stepped) -> Option<Vec<u8>> {
+    let named = stepped.step.snapshot.as_ref()?.catalogue.as_ref()?;
     stepped.effects.iter().find_map(|effect| match effect {
-        Effect::WriteCatalogue { hash, .. } => Some(hash.clone()),
+        Effect::WriteBlob { hash, .. } if hash == named => Some(hash.clone()),
         _ => None,
     })
 }
@@ -792,7 +794,7 @@ fn a_skills_changed_notice_asks_again_and_rebuilds_the_catalogue() {
         }
         let stepped = Codex::step(&mut state, event);
         first_ask = first_ask.or(skills_asks(&stepped).into_iter().next());
-        hash = catalogue_hash(&stepped).or(hash);
+        hash = catalogue_written(&stepped).or(hash);
     }
     let first_ask = first_ask.expect("the server is asked for its skills");
     let mut answer = answer.expect("the fixture answers it");
@@ -818,7 +820,7 @@ fn a_skills_changed_notice_asks_again_and_rebuilds_the_catalogue() {
     skills.push(added);
     answer["id"] = json!("amux-skills-2");
     let stepped = Codex::step(&mut state, rpc(answer.clone()));
-    let new_hash = catalogue_hash(&stepped).expect("the list changed");
+    let new_hash = catalogue_written(&stepped).expect("the list changed");
     assert_ne!(new_hash, hash);
     assert_eq!(
         stepped
@@ -838,7 +840,7 @@ fn a_skills_changed_notice_asks_again_and_rebuilds_the_catalogue() {
     answer["id"] = json!("amux-skills-3");
     let stepped = Codex::step(&mut state, rpc(answer.clone()));
     assert_eq!(
-        catalogue_hash(&stepped),
+        catalogue_written(&stepped),
         None,
         "the same list writes nothing"
     );
@@ -847,7 +849,7 @@ fn a_skills_changed_notice_asks_again_and_rebuilds_the_catalogue() {
     answer["id"] = json!("amux-skills-4");
     let stepped = Codex::step(&mut state, rpc(answer));
     assert_eq!(
-        catalogue_hash(&stepped),
+        catalogue_written(&stepped),
         None,
         "the same list writes nothing"
     );

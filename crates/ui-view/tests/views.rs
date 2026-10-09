@@ -1105,17 +1105,13 @@ fn settings_offering(
             commands,
             permissions,
             modes,
-            ..Default::default()
         },
     )
 }
 
 fn settings_with(kind: Kind, body: Vec<u8>, catalogue: wire::Catalogue) -> SettingsView {
     let mut state = SessionState::new(agent(kind), CAP);
-    state.set_catalogue(wire::Catalogue {
-        hash: b"offered".to_vec(),
-        ..catalogue
-    });
+    state.set_catalogue(b"offered".to_vec(), catalogue);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: wire::kind_tag(kind).into(),
         body,
@@ -1514,10 +1510,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
             }
         };
         let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
-        state.set_catalogue(wire::Catalogue {
-            hash: b"offered".to_vec(),
-            ..catalogue
-        });
+        state.set_catalogue(b"offered".to_vec(), catalogue);
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
             kind: wire::kind_tag(Kind::ClaudeSdk).into(),
             body: wire::ClaudeSdkSnapshot {
@@ -1554,12 +1547,14 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
     let custom = |snapshot: wire::CodexSnapshot| {
         let mut state = SessionState::new(agent(Kind::Codex), CAP);
         let (permissions, modes) = offered_controls(Kind::Codex);
-        state.set_catalogue(wire::Catalogue {
-            hash: b"offered".to_vec(),
-            permissions,
-            modes,
-            ..Default::default()
-        });
+        state.set_catalogue(
+            b"offered".to_vec(),
+            wire::Catalogue {
+                permissions,
+                modes,
+                ..Default::default()
+            },
+        );
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
             kind: wire::kind_tag(Kind::Codex).into(),
             body: snapshot.encode_to_vec(),

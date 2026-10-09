@@ -798,7 +798,7 @@ impl Install {
             .map_err(|error| format!("replaying {}: {error}", fixture.display()))?;
         let mut log = Log::default();
         for frame in frames {
-            if let Some(catalogue) = frame.catalogue {
+            if let Some((_, catalogue)) = frame.catalogue {
                 log.catalogue = Some(catalogue);
             }
             for item in frame.step.items {

@@ -349,6 +349,27 @@ ROWS = [
         ],
     ),
     Row(
+        "the catalogue directory",
+        "an agent's catalogues/ directory beside its blobs, the daemon's re-encoding to name or verify a catalogue, its separate replica copy, and GetCatalogue's agent form",
+        [
+            r"catalogues/",
+            r"CATALOGUES([^A-Za-z_]|$)",
+            r"write_catalogue",
+            r"keep_replica_catalogue",
+            r"catalogue_hash\(",
+            r"WriteCatalogue",
+            r"get_catalogue_request::",
+            r"HostProvider",
+        ],
+    ),
+    Row(
+        "row fields nothing read",
+        "fields written and carried but read by nothing",
+        [
+            r"GetBlobResponse.*blob",
+        ],
+    ),
+    Row(
         "docs",
         "the chapter on agent messaging and remote sessions",
         [
@@ -362,6 +383,11 @@ HOLDERS = [SELF]
 
 # A hit that names a removed thing on purpose.
 EXEMPTIONS = [
+    Exemption(
+        r"write_catalogue",
+        "apps/apple/Tools/strings_lint_test.py",
+        "these are the app's Xcode string catalogues, not an agent's",
+    ),
     Exemption(
         r"artifact_cache_mib|artifact_cache_dir",
         "crates/settings/src/lib.rs",

@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 client = { workspace = true }
 futures-util = { workspace = true }
+prost = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 ui-state = { workspace = true }
@@ -18,7 +19,6 @@ wire = { workspace = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }
-prost = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }
 testnet = { workspace = true }

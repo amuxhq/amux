@@ -167,7 +167,7 @@ async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
 /// (here small enough to have rotated, so from a checkpoint in the middle)
 /// and starts by re-emitting every open item in full on its own key; the
 /// keys it mints afterwards carry on from the last incarnation's.
-/// What an agent offers is written into its directory by hash, so the
+/// What an agent offers is written into its directory as a blob, so the
 /// catalogue a journaled snapshot names is there to be served.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_catalogue_a_snapshot_names_is_in_the_agent_directory() {
@@ -192,14 +192,15 @@ async fn the_catalogue_a_snapshot_names_is_in_the_agent_directory() {
             .wait("a snapshot names a catalogue", |log| named(log).is_some())
             .await;
         let hash = named(&agent.log()).unwrap();
-        let path = agent
-            .dir
-            .join(agent::CATALOGUES)
-            .join(interpret::to_hex(&hash));
+        let path = agent.dir.join(agent::BLOBS).join(interpret::to_hex(&hash));
         let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("{kind}: {error}"));
         assert_eq!(sha2::Sha256::digest(&bytes).to_vec(), hash, "{kind}");
         let catalogue = wire::Catalogue::decode(bytes.as_slice()).unwrap();
         assert!(!catalogue.models.is_empty(), "{kind}: the fake's models");
+        assert!(
+            !agent.dir.join("catalogues").exists(),
+            "{kind}: no directory of its own"
+        );
     }
 }
 

@@ -435,15 +435,19 @@ fn offering(revision: u64, hash: &[u8]) -> SessionEvent {
     event
 }
 
-fn catalogue(hash: &[u8], model: &str) -> wire::Catalogue {
-    wire::Catalogue {
-        hash: hash.to_vec(),
+/// The catalogue blob offering `model`, as GetBlob answers it.
+fn catalogue(model: &str) -> wire::GetBlobResponse {
+    use prost::Message as _;
+    let catalogue = wire::Catalogue {
         models: vec![wire::OfferedModel {
             value: model.into(),
             display_name: model.into(),
             ..wire::OfferedModel::default()
         }],
         ..wire::Catalogue::default()
+    };
+    wire::GetBlobResponse {
+        bytes: catalogue.encode_to_vec(),
     }
 }
 
@@ -472,17 +476,15 @@ async fn a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_doe
     session_of(&fleet, &key(b"b")).await;
     calls.none().await;
 
-    // Opening a chat fetches what the agent offers, by its id.
+    // Opening a chat fetches the blob its snapshot names.
     let opening = tokio::spawn({
         let fleet = fleet.clone();
         async move { fleet.open(&key(b"a"), CHAT).await }
     });
-    let (request, reply) = calls.get_catalogue().await;
-    assert_eq!(
-        request.of,
-        Some(wire::get_catalogue_request::Of::AgentId(b"a".to_vec()))
-    );
-    reply.send(Ok(catalogue(b"first", "gpt-1"))).ok();
+    let (request, reply) = calls.get_blob().await;
+    assert_eq!(request.agent_id, b"a");
+    assert_eq!(request.hash, b"first");
+    reply.send(Ok(catalogue("gpt-1"))).ok();
     let chat = opening.await.unwrap().expect("the chat opens");
     until(chat.changed(), || {
         (models(&chat) == ["gpt-1"]).then_some(())
@@ -497,8 +499,9 @@ async fn a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_doe
 
     // The catalogue changes mid-session: the new hash is fetched once.
     streams.feed(b"a").send(offering(2, b"second"));
-    let (_, reply) = calls.get_catalogue().await;
-    reply.send(Ok(catalogue(b"second", "gpt-2"))).ok();
+    let (request, reply) = calls.get_blob().await;
+    assert_eq!(request.hash, b"second");
+    reply.send(Ok(catalogue("gpt-2"))).ok();
     until(chat.changed(), || {
         (models(&chat) == ["gpt-2"]).then_some(())
     })

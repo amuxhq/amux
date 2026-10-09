@@ -260,7 +260,7 @@ impl ClientService for Fleet {
     async fn get_catalogue(
         &self,
         _: Request<wire::GetCatalogueRequest>,
-    ) -> Result<Response<wire::Catalogue>, Status> {
+    ) -> Result<Response<wire::CatalogueBlob>, Status> {
         Err(Status::unimplemented("get_catalogue"))
     }
     async fn list_repositories(

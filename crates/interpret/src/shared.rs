@@ -506,21 +506,18 @@ impl<A: OpenAsk> Shared<A> {
     // --- catalogue -------------------------------------------------------
 
     /// Hashes the encoded catalogue. A changed hash asks the agent process
-    /// to write the bytes before the step is journaled and publishes the
-    /// new hash on the snapshot; an unchanged one does nothing.
+    /// to write the bytes as a blob before the step is journaled and
+    /// publishes the new hash on the snapshot; an unchanged one does
+    /// nothing.
     pub fn set_catalogue(&mut self, emit: &mut Emit, catalogue: wire::Catalogue) {
         use sha2::Digest as _;
-        let bytes = wire::Catalogue {
-            hash: Vec::new(),
-            ..catalogue
-        }
-        .encode_to_vec();
+        let bytes = catalogue.encode_to_vec();
         let hash = sha2::Sha256::digest(&bytes).to_vec();
         if self.catalogue.as_ref() == Some(&hash) {
             return;
         }
         self.catalogue = Some(hash.clone());
-        emit.effect(Effect::WriteCatalogue { hash, bytes });
+        emit.effect(Effect::WriteBlob { hash, bytes });
     }
 
     // --- background jobs -------------------------------------------------

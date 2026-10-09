@@ -90,16 +90,31 @@ impl ProfileRuntime {
     /// Runs one replica retention sweep: rows to their budget, evicting
     /// agents with no source least recently used first and trimming the
     /// rest to K with their block kept whole, then replica blob files to
-    /// theirs, least recently read first.
+    /// theirs, least recently read first. The catalogue a remaining
+    /// replica's current snapshot names is never evicted: without it the
+    /// agent's picker would lose its offers while the origin is away.
     pub async fn sweep_replica_retention(&self) -> Result<(Sweep, Vec<PathBuf>), RegistryError> {
         let launch = self.launch();
         let (sourced, last_used): (HashSet<_>, _) = self.sources_in_use();
-        let sweep = self.store.lock().await.sweep_replicas(
-            launch.replica_budget_bytes,
-            launch.tail_rows,
-            &sourced,
-            &last_used,
-        )?;
+        let (sweep, pinned) = {
+            let mut store = self.store.lock().await;
+            let sweep = store.sweep_replicas(
+                launch.replica_budget_bytes,
+                launch.tail_rows,
+                &sourced,
+                &last_used,
+            )?;
+            let pinned = store
+                .agents()?
+                .into_iter()
+                .filter(|row| row.agent.host != self.host().as_bytes())
+                .filter_map(|row| {
+                    let hash = row.snapshot.as_ref()?.catalogue.as_ref()?;
+                    Some(self.blob_path(&row, hash))
+                })
+                .collect::<HashSet<_>>();
+            (sweep, pinned)
+        };
         let root = self.dir().join(REPLICAS);
         let now = self.clock_now();
         let mut blobs = self.replica_blobs.lock().unwrap();
@@ -109,7 +124,7 @@ impl ProfileRuntime {
         let removed = blobs
             .as_mut()
             .expect("scanned above")
-            .sweep(launch.replica_blob_budget_bytes)?;
+            .sweep(launch.replica_blob_budget_bytes, &pinned)?;
         drop(blobs);
         Ok((sweep, removed))
     }

@@ -92,7 +92,7 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | `PutBlob(PutBlobRequest)` | `BlobRef` | Bytes into an agent's directory |
 | `GetBlob(GetBlobRequest)` | `GetBlobResponse` | Bytes out |
 | `Diff(DiffRequest)` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
-| `GetCatalogue(GetCatalogueRequest)` | `Catalogue` | What an agent offers now, by agent id, or a provider on a host with no agent running, with its hash |
+| `GetCatalogue(GetCatalogueRequest)` | `CatalogueBlob` | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
 | `ListRepositories` | `ListRepositoriesResponse` | Repositories a host offers to spawn agents in |
 | `Dump(DumpRequest)` | `DumpReport` | A debug bundle, and where it was written (see [debugging](DEBUGGING.md)) |
 
@@ -491,7 +491,7 @@ turn through the provider's own steering path.
 ```proto
 message PutBlobRequest  { bytes agent_id = 1; string name = 2; string mime = 3; bytes bytes = 4; }
 message GetBlobRequest  { bytes agent_id = 1; bytes hash = 2; }
-message GetBlobResponse { BlobRef blob = 1; bytes bytes = 2; }
+message GetBlobResponse { bytes bytes = 1; }
 message BlobRef         { bytes hash = 1; string name = 2; string mime = 3; uint64 size = 4; }
 ```
 
@@ -501,11 +501,11 @@ then sends the input whose `Attachment` carries that reference. The same bytes
 twice are one file. Only a person can call it; an agent writes its own blobs
 directly into its directory.
 
-`GetBlob` reads the bytes by agent and hash. For a paired host's agent the
-local runtime reads its replica copy, or fetches the bytes from the origin,
-checks their hash, keeps them under `replicas/` and returns them. The
-`BlobRef` in the response carries the hash and size; the name and mime type
-belong to the attachment that referenced the blob.
+`GetBlob` reads the bytes by agent and hash and answers the bytes alone: the
+caller named the hash, and the name and mime type belong to the attachment
+that referenced the blob. For a paired host's agent the local runtime reads its
+replica copy, or fetches the bytes from the origin, checks their hash, keeps
+them under `replicas/` exactly as the origin sent them and returns them.
 
 `Diff(agent_id, base, with_patch)` compares the agent's working directory on
 its own host, through the `git-facts` crate the agent process also reads its
@@ -520,19 +520,24 @@ that agent's blobs (`text/x-diff`), named in `patch`; without it the host writes
 nothing. An exited agent's folder is compared as it is now; another host's
 agent's diff is made on that host and forwarded.
 
-`GetCatalogue(agent_id)` answers the catalogue the agent's newest snapshot
-names: the models, commands, permissions and modes it offers, as its agent
-process wrote them to `catalogues/<hash>` in its directory, with `hash` set.
-The hash is the SHA-256 of the encoding with `hash` empty, so identical
-catalogues are one. For a paired host's agent the local runtime answers from
-its copy under `replicas/` when it holds the hash its replica names, and
-otherwise asks the origin, checks the hash and keeps the copy, so it answers
-again with the origin away. An agent that has not said what it offers is
+What an agent offers to pick from (the models, commands, permissions and modes)
+is a `Catalogue` its agent process writes as a blob of its directory, before
+the step whose snapshot names it. `Snapshot.catalogue` is the blob's hash, the
+SHA-256 of exactly the bytes written, so identical catalogues are one. A
+client reads it with `GetBlob(agent_id, snapshot.catalogue)`, decodes it and
+keeps it under the hash it asked for, once per hash. Because the bytes are
+never re-encoded on the way, a catalogue written by a newer agent passes
+through a daemon that does not know all its fields with its hash intact. For a
+paired host's agent the replica's copy is a blob like any other, kept while
+the replica's current snapshot names it (see [attachments](ATTACHMENTS.md)),
+so the picker still reads with the origin away. A hash that names no blob is
 `NOT_FOUND`.
 
-The host form names a host and a provider (`claude` or `codex`) and answers
-what that provider offers there with no agent running. The daemon holds no
-provider code: it runs the hidden helper `amux catalogue <provider>`, which
+`GetCatalogue(host_id, provider)` names a host and a provider (`claude` or
+`codex`) and answers what that provider offers there with no agent running,
+as a `CatalogueBlob`: the encoded `Catalogue` and the SHA-256 of exactly
+those bytes, which is the hash the host's entry names for that provider. The
+daemon holds no provider code: it runs the hidden helper `amux catalogue <provider>`, which
 starts the provider just long enough to ask what it offers and whether it is
 signed in, and keeps the answer per provider under the profile's `providers/`
 folder. It asks again when the copy is half an hour old, when the provider's

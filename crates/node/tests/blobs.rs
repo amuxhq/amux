@@ -83,7 +83,6 @@ async fn put_blob_writes_the_agents_directory_and_get_blob_reads_it_back() {
         .await
         .unwrap();
     assert_eq!(read.bytes, photo);
-    assert_eq!(read.blob.unwrap().size, photo.len() as u64);
 
     let missing = runtime
         .get_blob(GetBlobRequest {

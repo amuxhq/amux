@@ -1234,7 +1234,6 @@ extension CatalogFixtures {
     }
 
     static let codexCatalogue = Catalogue(
-        hash: [1],
         models: [
             OfferedModel(value: "gpt-6-astra", displayName: "GPT-6-Astra", description: "Frontier agentic coding model.", efforts: ["low", "medium", "high"], resolvedModel: "", defaultEffort: "medium"),
             OfferedModel(value: "gpt-6-sol", displayName: "GPT-6-Sol", description: "Smaller, faster and cheaper.", efforts: ["low", "medium"], resolvedModel: "", defaultEffort: "low"),
@@ -1251,7 +1250,6 @@ extension CatalogFixtures {
         ])
 
     static let claudeCatalogue = Catalogue(
-        hash: [2],
         models: [
             OfferedModel(value: "default", displayName: "Default (recommended)", description: "Opus 5.5 · Most capable for complex work", efforts: ["low", "medium", "high"], resolvedModel: "", defaultEffort: "high"),
             OfferedModel(value: "sonnet", displayName: "Sonnet", description: "Sonnet 5 · Best for everyday tasks", efforts: ["low", "medium", "high"], resolvedModel: "", defaultEffort: "high"),

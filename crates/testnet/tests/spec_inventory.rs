@@ -539,9 +539,8 @@ async fn the_own_entry_carries_this_profiles_sign_in() {
     net.front_door("laptop")
         .await
         .unwrap()
-        .logout_profile(wire::ProfileOperation {
-            profile_id: profile.to_string(),
-            ..wire::ProfileOperation::default()
+        .logout_profile(wire::ProfileRequest {
+            profile_id: profile.as_bytes().to_vec(),
         })
         .await
         .unwrap();
@@ -947,7 +946,7 @@ async fn pairing_again_with_a_peer_that_revoked_trust_clears_the_mark_at_once() 
     let started = support::start_pairing(&net, "desk", support::qr_mode())
         .await
         .unwrap();
-    let Some(wire::start_pairing_response::Secret::QrSecret(secret)) = started.secret else {
+    let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {
         panic!("a QR window hands out a secret");
     };
     let pending = support::begin_pair(
@@ -959,7 +958,7 @@ async fn pairing_again_with_a_peer_that_revoked_trust_clears_the_mark_at_once() 
     )
     .await
     .expect("pairing through the relay");
-    assert_eq!(pending.via, wire::PeerVia::Relay as i32);
+    assert_eq!(pending.via, wire::RouteKind::Relay as i32);
     support::confirm_pair(&net, "tablet", pending.token)
         .await
         .unwrap();

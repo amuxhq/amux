@@ -18,7 +18,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tonic::transport::{Channel as GrpcChannel, Endpoint};
 use wire::client_service_client::ClientServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{ListProfilesRequest, SubscribeRequest, session_event};
+use wire::{Empty, SubscribeRequest, session_event};
 
 /// What every test daemon runs with: a scripted local network instead of
 /// real mDNS, which would have macOS ask for Local Network access once per
@@ -158,7 +158,7 @@ pub async fn grpc_channel(path: &Path) -> std::io::Result<GrpcChannel> {
 pub async fn client(socket: &Path) -> ClientServiceClient<GrpcChannel> {
     let door = grpc_channel(socket).await.expect("a daemon answers");
     let profile = ProfileServiceClient::new(door)
-        .list_profiles(ListProfilesRequest {})
+        .list_profiles(Empty {})
         .await
         .unwrap()
         .into_inner()

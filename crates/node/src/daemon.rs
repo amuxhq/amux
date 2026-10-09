@@ -101,9 +101,11 @@ pub(crate) struct Installation {
     pub(crate) hosted: Mutex<BTreeMap<ProfileId, Hosted>>,
     /// One registry change at a time: create, rename, delete.
     pub(crate) registry_changes: tokio::sync::Mutex<()>,
-    /// Profile changes in order, numbered from one.
-    pub(crate) events: broadcast::Sender<(u64, ProfileEvent)>,
-    pub(crate) sequence: Mutex<u64>,
+    /// Profile changes in order.
+    pub(crate) events: broadcast::Sender<ProfileEvent>,
+    /// Held while a change is published, so a watcher's snapshot and its
+    /// subscription see the same moment.
+    pub(crate) publishing: Mutex<()>,
     shutdown: watch::Sender<bool>,
     /// Where profiles record analytics; unset records nothing.
     analytics: std::sync::OnceLock<Arc<dyn analytics::Sink>>,
@@ -263,9 +265,8 @@ impl Installation {
     }
 
     pub(crate) fn publish(&self, event: ProfileEvent) {
-        let mut sequence = self.sequence.lock().unwrap();
-        *sequence += 1;
-        let _ = self.events.send((*sequence, event));
+        let _publishing = self.publishing.lock().unwrap();
+        let _ = self.events.send(event);
     }
 
     /// Tells the front door's watchers a profile's description moved.
@@ -431,7 +432,7 @@ pub async fn start(
         hosted: Mutex::new(BTreeMap::new()),
         registry_changes: tokio::sync::Mutex::new(()),
         events: broadcast::channel(256).0,
-        sequence: Mutex::new(0),
+        publishing: Mutex::new(()),
         shutdown: watch::Sender::new(false),
         analytics: std::sync::OnceLock::new(),
     });

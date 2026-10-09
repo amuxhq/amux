@@ -976,7 +976,7 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
         ["newer", "older"],
         "newest first, deleted agents too"
     );
-    assert!(local.recent[0].last_used_unix_ms > local.recent[1].last_used_unix_ms);
+    assert!(local.recent[0].last_used_ms > local.recent[1].last_used_ms);
     assert_eq!(
         local.recent[0].path,
         newer.canonicalize().unwrap().to_str().unwrap()
@@ -991,7 +991,7 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
         local
             .repositories
             .iter()
-            .all(|entry| entry.last_used_unix_ms.is_none())
+            .all(|entry| entry.last_used_ms.is_none())
     );
     assert_eq!(
         local.roots,

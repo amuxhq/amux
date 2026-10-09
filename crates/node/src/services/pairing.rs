@@ -318,7 +318,7 @@ impl PairingService {
         .await?;
 
         let local_identity = wire::pb::PairingIdentity {
-            expires_at_unix_ms: Utc::now().timestamp_millis()
+            expires_at_ms: Utc::now().timestamp_millis()
                 + attempt
                     .remaining()
                     .min(self.spake2_responder_timeout)
@@ -473,7 +473,7 @@ pub(crate) struct PendingPairing {
 
 impl PendingPairing {
     pub(crate) async fn confirm(mut self) -> Result<SshPairingPeer, Status> {
-        if Utc::now().timestamp_millis() >= self.peer.expires_at_unix_ms {
+        if Utc::now().timestamp_millis() >= self.peer.expires_at_ms {
             return Err(pairing_status(Code::PermissionDenied, "INVALID_PIN"));
         }
         send_client_pairing_body(
@@ -634,7 +634,7 @@ async fn begin_pair_initiator_inner(
     }
 
     let local_pairing_identity = wire::pb::PairingIdentity {
-        expires_at_unix_ms: 0,
+        expires_at_ms: 0,
         host_id: local_identity.host_id.as_bytes().to_vec(),
         pubkey: local_identity.pubkey.clone(),
         name: local_name.to_string(),
@@ -1729,7 +1729,7 @@ mod tests {
         assert_eq!(responder_identity.name, "responder");
 
         let initiator_identity = wire::pb::PairingIdentity {
-            expires_at_unix_ms: 0,
+            expires_at_ms: 0,
             host_id: peer.host_id.as_bytes().to_vec(),
             pubkey: peer.public_key().to_vec(),
             name: "peer".to_string(),

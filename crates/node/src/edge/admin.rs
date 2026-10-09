@@ -11,11 +11,11 @@ use chrono::Utc;
 use ring::rand::SecureRandom as _;
 use tonic::Status;
 use uuid::Uuid;
-use wire::start_pairing_request::Mode;
-use wire::start_pairing_response::Secret;
+use wire::pairing_window::Secret;
+use wire::start_pairing_request::Method;
 use wire::{
-    BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PeerEntry, PeerVia,
-    PendingPairResponse, StartPairingRequest, StartPairingResponse, TrustSshPeerRequest,
+    BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PairingWindow, PeerEntry,
+    RouteKind, StartPairingRequest, TrustSshPeerRequest,
 };
 
 use super::Edge;
@@ -34,8 +34,9 @@ const PUBKEY_LEN: usize = 32;
 const MAX_PAIRING_NAME_BYTES: usize = 256;
 /// How long a pairing dial to one address may take before the next is tried.
 const PAIRING_QUIC_DIAL_TIMEOUT: Duration = Duration::from_secs(2);
-/// A demo session is a standing shared secret; bound how long one can live.
-const DEMO_PAIR_MODE_MAX_TTL: Duration = Duration::from_secs(90 * 86_400);
+/// A demo window is a standing shared secret; bound how long any window
+/// can live.
+const PAIR_MODE_MAX_TTL: Duration = Duration::from_secs(90 * 86_400);
 /// Pending pairings a profile holds at once, awaiting confirmation.
 const MAX_PENDING_PAIRS: usize = 32;
 
@@ -46,7 +47,7 @@ pub(crate) struct PendingPairs(Arc<Mutex<HashMap<Uuid, PendingPair>>>);
 struct PendingPair {
     pairing: PendingPairing,
     reachability: Reachability,
-    via: PeerVia,
+    via: RouteKind,
     method: analytics::Method,
 }
 
@@ -89,6 +90,19 @@ fn pair_mode_status(error: PairModeError) -> Status {
     }
 }
 
+/// How long a pairing window stays open: what the request asks, else the
+/// default, for every method alike.
+fn pairing_ttl(ttl_seconds: Option<u64>) -> Result<Duration, Status> {
+    let ttl = ttl_seconds.map_or(PAIR_MODE_TTL, Duration::from_secs);
+    if ttl.is_zero() || ttl > PAIR_MODE_MAX_TTL {
+        return Err(Status::invalid_argument(format!(
+            "pairing ttl must be between 1 second and {} days",
+            PAIR_MODE_MAX_TTL.as_secs() / 86_400
+        )));
+    }
+    Ok(ttl)
+}
+
 fn host_from_bytes(field: &str, bytes: &[u8]) -> Result<HostId, Status> {
     Uuid::from_slice(bytes)
         .map_err(|error| Status::invalid_argument(format!("{field} is invalid: {error}")))
@@ -99,7 +113,7 @@ pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> PeerEnt
         host_id: host_id.as_bytes().to_vec(),
         name: entry.name.clone(),
         pubkey: entry.pubkey.clone(),
-        paired_at_unix_ms: entry.paired_at.timestamp_millis(),
+        paired_at_ms: entry.paired_at.timestamp_millis(),
         reachabilities: entry
             .reachabilities
             .iter()
@@ -109,7 +123,7 @@ pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> PeerEnt
                     Reachability::Ssh { target, profile } => {
                         wire::peer_reachability::Kind::SshTarget(wire::SshTarget {
                             target: target.clone(),
-                            profile_id: profile.to_string(),
+                            profile_id: profile.as_bytes().to_vec(),
                         })
                     }
                     Reachability::Direct { addrs } => {
@@ -179,79 +193,50 @@ impl Edge {
     pub async fn start_pairing(
         &self,
         request: StartPairingRequest,
-    ) -> Result<StartPairingResponse, Status> {
+    ) -> Result<PairingWindow, Status> {
         let _operation = self.trust_gate.barrier().await;
         if self.trust_gate.is_closed() {
             return Err(Status::failed_precondition("profile is unavailable"));
         }
-        let mode = Mode::try_from(request.mode).map_err(|_| {
-            Status::invalid_argument(format!(
-                "invalid StartPairingRequest mode: {}",
-                request.mode
-            ))
-        })?;
-        if request.demo.is_some() && mode != Mode::Pin {
-            return Err(Status::invalid_argument("demo pairing requires PIN mode"));
-        }
+        let method = request
+            .method
+            .ok_or_else(|| Status::invalid_argument("StartPairingRequest.method is required"))?;
         if self.host_name.len() > MAX_PAIRING_NAME_BYTES {
             return Err(Status::invalid_argument(
                 "host_name is too long for pairing",
             ));
         }
+        let ttl = pairing_ttl(request.ttl_seconds)?;
         self.reachability.requery();
-        let (method, ttl, secret) = if let Some(demo) = request.demo {
-            if demo.ttl_seconds == 0 || demo.ttl_seconds > DEMO_PAIR_MODE_MAX_TTL.as_secs() {
-                return Err(Status::invalid_argument(format!(
-                    "demo pairing ttl must be between 1 second and {} days",
-                    DEMO_PAIR_MODE_MAX_TTL.as_secs() / 86_400
-                )));
+        let (method, secret) = match method {
+            Method::Pin(_) => {
+                let pin = format!("{:06}", Uuid::new_v4().as_u128() % 1_000_000);
+                self.pair_mode
+                    .start_pin_for_duration(pin.clone(), ttl)
+                    .map_err(pair_mode_status)?;
+                ("pin", Secret::Pin(pin))
             }
-            let ttl = Duration::from_secs(demo.ttl_seconds);
-            self.pair_mode
-                .start_demo_pin(demo.pin.clone(), ttl)
-                .map_err(pair_mode_status)
-                .inspect_err(|error| audit::pairing_failure("demo", error))?;
-            tracing::warn!(
-                ttl_seconds = demo.ttl_seconds,
-                "demo pairing active: a reusable fixed PIN pairs any device that presents it"
-            );
-            ("demo", ttl, Secret::Pin(demo.pin))
-        } else {
-            let ttl = request
-                .ttl_seconds
-                .map(Duration::from_secs)
-                .unwrap_or(PAIR_MODE_TTL);
-            if ttl.is_zero() || ttl > DEMO_PAIR_MODE_MAX_TTL {
-                return Err(Status::invalid_argument(format!(
-                    "pairing ttl must be between 1 second and {} days",
-                    DEMO_PAIR_MODE_MAX_TTL.as_secs() / 86_400
-                )));
+            Method::Qr(_) => {
+                let mut secret = [0_u8; QR_SECRET_LEN];
+                ring::rand::SystemRandom::new()
+                    .fill(&mut secret)
+                    .map_err(|_| pair_mode_status(PairModeError::SecretGeneration))?;
+                self.pair_mode
+                    .start_qr_secret_for_duration(secret, ttl)
+                    .map_err(pair_mode_status)?;
+                ("qr", Secret::QrSecret(secret.to_vec()))
             }
-            let (method, secret) = match mode {
-                Mode::Unspecified => {
-                    return Err(Status::invalid_argument(
-                        "StartPairingRequest.mode is required",
-                    ));
-                }
-                Mode::Pin => {
-                    let pin = format!("{:06}", Uuid::new_v4().as_u128() % 1_000_000);
-                    self.pair_mode
-                        .start_pin_for_duration(pin.clone(), ttl)
-                        .map_err(pair_mode_status)?;
-                    ("pin", Secret::Pin(pin))
-                }
-                Mode::Qr => {
-                    let mut secret = [0_u8; QR_SECRET_LEN];
-                    ring::rand::SystemRandom::new()
-                        .fill(&mut secret)
-                        .map_err(|_| pair_mode_status(PairModeError::SecretGeneration))?;
-                    self.pair_mode
-                        .start_qr_secret_for_duration(secret, ttl)
-                        .map_err(pair_mode_status)?;
-                    ("qr", Secret::QrSecret(secret.to_vec()))
-                }
-            };
-            (method, ttl, secret)
+            Method::DemoPin(pin) => {
+                self.pair_mode
+                    .start_demo_pin(pin.clone(), ttl)
+                    .map_err(pair_mode_status)
+                    .inspect_err(|error| audit::pairing_failure("demo", error))?;
+                tracing::warn!(
+                    ttl_seconds = ttl.as_secs(),
+                    "demo pairing active: a reusable fixed PIN pairs any device that presents it"
+                );
+                ("demo", Secret::Pin(pin))
+            }
         };
         audit::pairing_start(method);
         self.analytics.record(analytics::Event::PairingStarted {
@@ -261,9 +246,9 @@ impl Edge {
                 _ => analytics::Method::Pin,
             },
         });
-        Ok(StartPairingResponse {
+        Ok(PairingWindow {
             identity: Some(PairingIdentity {
-                expires_at_unix_ms: 0,
+                expires_at_ms: 0,
                 host_id: self.host_id().as_bytes().to_vec(),
                 pubkey: self.public_key().to_vec(),
                 name: self.host_name.clone(),
@@ -301,10 +286,7 @@ impl Edge {
     /// Runs the initiator's half of pairing against a host in pairing mode:
     /// its LAN addresses first, then the relay. The result is held until a
     /// person confirms the peer it names.
-    pub async fn begin_pair(
-        &self,
-        request: BeginPairRequest,
-    ) -> Result<PendingPairResponse, Status> {
+    pub async fn begin_pair(&self, request: BeginPairRequest) -> Result<wire::PendingPair, Status> {
         let method = match &request.secret {
             Some(wire::begin_pair_request::Secret::QrSecret(_)) => analytics::Method::Qr,
             _ => analytics::Method::Pin,
@@ -332,7 +314,7 @@ impl Edge {
         &self,
         request: BeginPairRequest,
         method: analytics::Method,
-    ) -> Result<PendingPairResponse, Status> {
+    ) -> Result<wire::PendingPair, Status> {
         if self.trust_gate.is_closed() {
             return Err(Status::failed_precondition("profile is unavailable"));
         }
@@ -413,7 +395,7 @@ impl Edge {
                     selected = Some((
                         pending,
                         Reachability::Direct { addrs: vec![addr] },
-                        PeerVia::Direct,
+                        RouteKind::Direct,
                         found_addrs.contains(&addr),
                     ));
                     break;
@@ -446,7 +428,7 @@ impl Edge {
             )
             .await
             .map_err(opaque_pairing_status)?;
-            selected = Some((pending, Reachability::Cloud, PeerVia::Relay, false));
+            selected = Some((pending, Reachability::Cloud, RouteKind::Relay, false));
         }
         let (pending, reachability, via, from_discovery) =
             selected.ok_or_else(|| {
@@ -473,12 +455,12 @@ impl Edge {
         }
         let remaining_ms = pending
             .peer
-            .expires_at_unix_ms
+            .expires_at_ms
             .checked_sub(Utc::now().timestamp_millis())
             .filter(|remaining| *remaining > 0)
             .ok_or_else(invalid_pin)?;
         let token = Uuid::new_v4();
-        let response = PendingPairResponse {
+        let response = wire::PendingPair {
             token: token.as_bytes().to_vec(),
             peer: Some(pending.peer.clone()),
             via: via as i32,
@@ -544,11 +526,11 @@ impl Edge {
             .map_err(|_| invalid_pin())?
             .map_err(opaque_pairing_status)?;
         let host = peer.host_id;
+        // Secret-based pairing reaches its peer directly or through the
+        // relay; SSH pairings commit through `trust_ssh_peer`.
         let method = match pending.via {
-            PeerVia::Direct => "direct_pin",
-            PeerVia::Relay => "cloud",
-            PeerVia::Ssh => "ssh",
-            PeerVia::Unspecified => "pairing",
+            RouteKind::Relay => "cloud",
+            _ => "direct_pin",
         };
         self.commit_peer(peer, Some(pending.reachability), method)
             .await?;
@@ -591,9 +573,9 @@ impl Edge {
                         "TrustSshPeerRequest.ssh_target is invalid",
                     ));
                 }
-                let profile = target.profile_id.parse().map_err(|_| {
+                let profile = Uuid::from_slice(&target.profile_id).map_err(|_| {
                     Status::invalid_argument(
-                        "TrustSshPeerRequest.ssh_target.profile_id must be a UUID",
+                        "TrustSshPeerRequest.ssh_target.profile_id must be 16 bytes",
                     )
                 })?;
                 Ok(Reachability::Ssh {

@@ -40,12 +40,10 @@ use sha2::{Digest, Sha256};
 use tonic::Request;
 use wire::profile_service_server::ProfileService as _;
 use wire::{
-    BeginPairRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, HostRef,
-    HostVia, Intent, ListProfilesRequest, Observed, PeerEntry, PeerVia, PendingPairRequest,
-    ProfileBeginPairRequest, ProfileInfo, ProfileOperation, ProfilePendingPairRequest,
-    ProfileRequest, ProfileStartPairingRequest, ProfileUnpairRequest, StartPairingRequest, Tier,
-    WatchProfilesRequest, WatchProfilesResponse, begin_pair_request, host_ref,
-    start_pairing_response, watch_profiles_response,
+    BeginPairRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, Empty,
+    HostRef, HostVia, Intent, Observed, PeerEntry, PendingPairRequest, ProfileInfo, ProfileRequest,
+    RouteKind, StartPairingRequest, Tier, UnpairRequest, begin_pair_request, host_ref,
+    pairing_window, profile_event, start_pairing_request,
 };
 
 /// What a test or a driving build changes about the network edge.
@@ -141,20 +139,18 @@ pub enum ProfileEvent {
 
 /// The registry's changes, from a snapshot of every profile on.
 pub struct ProfileEvents(
-    Pin<Box<dyn Stream<Item = Result<WatchProfilesResponse, tonic::Status>> + Send>>,
+    Pin<Box<dyn Stream<Item = Result<wire::ProfileEvent, tonic::Status>> + Send>>,
 );
 
 impl ProfileEvents {
     /// The next change, or none once the daemon stops or the watch falls
     /// too far behind, when the list has to be read again.
     pub async fn next(&mut self) -> Option<ProfileEvent> {
-        let event = self.0.next().await?.ok()?.event?;
+        let event = self.0.next().await?.ok()?.of?;
         Some(match event {
-            watch_profiles_response::Event::Upserted(info) => {
-                ProfileEvent::Upserted(profile_view(&info))
-            }
-            watch_profiles_response::Event::RemovedId(id) => ProfileEvent::Removed(id),
-            watch_profiles_response::Event::CaughtUp(_) => ProfileEvent::CaughtUp,
+            profile_event::Of::Upserted(info) => ProfileEvent::Upserted(profile_view(&info)),
+            profile_event::Of::RemovedId(id) => ProfileEvent::Removed(id_text(&id)),
+            profile_event::Of::CaughtUp(_) => ProfileEvent::CaughtUp,
         })
     }
 }
@@ -306,7 +302,7 @@ impl EmbeddedRuntime {
     pub async fn profiles(&self) -> Result<Vec<ProfileView>, EmbeddedError> {
         Ok(self
             .door()
-            .list_profiles(Request::new(ListProfilesRequest {}))
+            .list_profiles(Request::new(Empty {}))
             .await?
             .into_inner()
             .profiles
@@ -328,7 +324,7 @@ impl EmbeddedRuntime {
     pub async fn watch_profiles(&self) -> Result<ProfileEvents, EmbeddedError> {
         Ok(ProfileEvents(
             self.door()
-                .watch_profiles(Request::new(WatchProfilesRequest {}))
+                .watch_profiles(Request::new(Empty {}))
                 .await?
                 .into_inner(),
         ))
@@ -339,7 +335,6 @@ impl EmbeddedRuntime {
         let info = self
             .door()
             .create_profile(Request::new(CreateProfileRequest {
-                operation_id: operation(),
                 label: label.map(str::to_owned),
             }))
             .await?
@@ -352,18 +347,17 @@ impl EmbeddedRuntime {
     pub async fn delete_profile(&self, profile: ProfileId) -> Result<(), EmbeddedError> {
         let revision = self
             .door()
-            .list_profiles(Request::new(ListProfilesRequest {}))
+            .list_profiles(Request::new(Empty {}))
             .await?
             .into_inner()
             .profiles
             .into_iter()
-            .find(|info| info.id == profile.to_string())
+            .find(|info| info.id == profile.as_bytes())
             .ok_or(EmbeddedError::NoProfile(profile))?
             .revision;
         self.door()
             .delete_profile(Request::new(DeleteProfileRequest {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
+                profile_id: profile.as_bytes().to_vec(),
                 confirm_revision: revision,
             }))
             .await?;
@@ -387,8 +381,7 @@ impl EmbeddedRuntime {
         let info = self
             .door()
             .bind_profile(Request::new(BindProfileRequest {
-                operation_id: operation(),
-                profile_id: profile.map(|profile| profile.to_string()),
+                profile_id: profile.map(|profile| profile.as_bytes().to_vec()),
                 cloud_url: cloud_url.to_owned(),
                 staged_refresh_token: refresh_token.to_owned(),
                 adopt_non_pristine: profile.is_some(),
@@ -404,9 +397,8 @@ impl EmbeddedRuntime {
     pub async fn sign_out(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
         let info = self
             .door()
-            .logout_profile(Request::new(ProfileOperation {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
+            .logout_profile(Request::new(ProfileRequest {
+                profile_id: profile.as_bytes().to_vec(),
             }))
             .await?
             .into_inner();
@@ -418,9 +410,8 @@ impl EmbeddedRuntime {
     pub async fn pause(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
         let info = self
             .door()
-            .pause_profile(Request::new(ProfileOperation {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
+            .pause_profile(Request::new(ProfileRequest {
+                profile_id: profile.as_bytes().to_vec(),
             }))
             .await?
             .into_inner();
@@ -431,9 +422,8 @@ impl EmbeddedRuntime {
     pub async fn resume(&self, profile: ProfileId) -> Result<ProfileView, EmbeddedError> {
         let info = self
             .door()
-            .resume_profile(Request::new(ProfileOperation {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
+            .resume_profile(Request::new(ProfileRequest {
+                profile_id: profile.as_bytes().to_vec(),
             }))
             .await?
             .into_inner();
@@ -504,6 +494,7 @@ impl EmbeddedRuntime {
                 pin,
                 addrs,
             } => BeginPairRequest {
+                profile_id: profile.as_bytes().to_vec(),
                 host_id: host_id.clone(),
                 secret: Some(begin_pair_request::Secret::Pin(
                     pin.chars().filter(char::is_ascii_digit).collect(),
@@ -513,6 +504,7 @@ impl EmbeddedRuntime {
             PairRequest::Link(link) => {
                 let invitation = node::parse_pair_link(link)?;
                 BeginPairRequest {
+                    profile_id: profile.as_bytes().to_vec(),
                     host_id: invitation.host_id.as_bytes().to_vec(),
                     secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
                     addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
@@ -521,18 +513,14 @@ impl EmbeddedRuntime {
         };
         let pending = self
             .door()
-            .begin_pair(Request::new(ProfileBeginPairRequest {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
-                pairing: Some(pairing),
-            }))
+            .begin_pair(Request::new(pairing))
             .await?
             .into_inner();
         let via = match pending.via() {
-            PeerVia::Direct => HostVia::Direct,
-            PeerVia::Relay => HostVia::Relay,
-            PeerVia::Ssh => HostVia::Ssh,
-            PeerVia::Unspecified => HostVia::Unspecified,
+            RouteKind::Direct => HostVia::Direct,
+            RouteKind::Relay => HostVia::Relay,
+            RouteKind::Ssh => HostVia::Ssh,
+            RouteKind::Unspecified => HostVia::Unspecified,
         };
         let peer = pending.peer.unwrap_or_default();
         Ok(PendingPair {
@@ -540,7 +528,7 @@ impl EmbeddedRuntime {
             host_id: peer.host_id,
             name: peer.name,
             fingerprint: fingerprint(&peer.pubkey),
-            expires_at_ms: peer.expires_at_unix_ms,
+            expires_at_ms: peer.expires_at_ms,
             via,
         })
     }
@@ -552,17 +540,14 @@ impl EmbeddedRuntime {
     pub async fn offer_pairing(&self, profile: ProfileId) -> Result<String, EmbeddedError> {
         let started = self
             .door()
-            .start_pairing(Request::new(ProfileStartPairingRequest {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
-                pairing: Some(StartPairingRequest {
-                    mode: wire::start_pairing_request::Mode::Qr as i32,
-                    ..StartPairingRequest::default()
-                }),
+            .start_pairing(Request::new(StartPairingRequest {
+                profile_id: profile.as_bytes().to_vec(),
+                method: Some(start_pairing_request::Method::Qr(Empty {})),
+                ttl_seconds: None,
             }))
             .await?
             .into_inner();
-        let Some(start_pairing_response::Secret::QrSecret(secret)) = &started.secret else {
+        let Some(pairing_window::Secret::QrSecret(secret)) = &started.secret else {
             return Err(EmbeddedError::Relay(
                 "pairing mode opened without a link secret".into(),
             ));
@@ -593,17 +578,12 @@ impl EmbeddedRuntime {
     ) -> Result<PeerEntry, EmbeddedError> {
         Ok(self
             .door()
-            .confirm_pair(Request::new(ProfilePendingPairRequest {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
-                pairing: Some(PendingPairRequest {
-                    token: token.to_vec(),
-                }),
+            .confirm_pair(Request::new(PendingPairRequest {
+                profile_id: profile.as_bytes().to_vec(),
+                token: token.to_vec(),
             }))
             .await?
-            .into_inner()
-            .peer
-            .unwrap_or_default())
+            .into_inner())
     }
 
     /// Turns away the machine an attempt reached, telling it so.
@@ -613,12 +593,9 @@ impl EmbeddedRuntime {
         token: &[u8],
     ) -> Result<(), EmbeddedError> {
         self.door()
-            .abandon_pair(Request::new(ProfilePendingPairRequest {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
-                pairing: Some(PendingPairRequest {
-                    token: token.to_vec(),
-                }),
+            .abandon_pair(Request::new(PendingPairRequest {
+                profile_id: profile.as_bytes().to_vec(),
+                token: token.to_vec(),
             }))
             .await?;
         Ok(())
@@ -638,7 +615,7 @@ impl EmbeddedRuntime {
     pub async fn roster(&self, profile: ProfileId) -> Result<Roster, EmbeddedError> {
         let request = || {
             Request::new(ProfileRequest {
-                profile_id: profile.to_string(),
+                profile_id: profile.as_bytes().to_vec(),
             })
         };
         let identity = self
@@ -730,9 +707,8 @@ impl EmbeddedRuntime {
     /// reached.
     pub async fn unpair(&self, profile: ProfileId, host_id: &[u8]) -> Result<(), EmbeddedError> {
         self.door()
-            .unpair(Request::new(ProfileUnpairRequest {
-                operation_id: operation(),
-                profile_id: profile.to_string(),
+            .unpair(Request::new(UnpairRequest {
+                profile_id: profile.as_bytes().to_vec(),
                 peer: Some(HostRef {
                     of: Some(host_ref::Of::HostId(host_id.to_vec())),
                 }),
@@ -769,9 +745,14 @@ fn fingerprint(pubkey: &[u8]) -> String {
         .collect()
 }
 
+/// A profile id as the app holds it: its text form.
+fn id_text(id: &[u8]) -> String {
+    ProfileId::from_slice(id).map_or_else(|_| String::new(), |id| id.to_string())
+}
+
 fn profile_view(info: &ProfileInfo) -> ProfileView {
     ProfileView {
-        id: info.id.clone(),
+        id: id_text(&info.id),
         label: info.label.clone(),
         subject: info.account_subject.clone(),
         account: account_view(info),
@@ -806,8 +787,4 @@ fn account_view(info: &ProfileInfo) -> AccountView {
         pro,
         relay,
     }
-}
-
-fn operation() -> String {
-    uuid::Uuid::new_v4().to_string()
 }

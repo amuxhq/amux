@@ -13,23 +13,16 @@ use uuid::Uuid;
 use wire::client_service_client::ClientServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, HostEntry, HostRef, PairingIdentity, PeerEntry, PeerVia,
-    PendingPairRequest, PendingPairResponse, ProfileBeginPairRequest, ProfileInfo,
-    ProfileOperation, ProfilePairingStatusRequest, ProfilePendingPairRequest, ProfileRequest,
-    ProfileStartPairingRequest, ProfileTrustSshPeerRequest, ProfileUnpairRequest,
-    StartPairingRequest, StartPairingResponse, Trust, TrustSshPeerRequest, begin_pair_request,
-    host_ref, peer_reachability, start_pairing_request, start_pairing_response,
+    BeginPairRequest, BindProfileRequest, Empty, GetPeerRequest, HostEntry, HostRef,
+    PairingIdentity, PairingWindow, PeerEntry, PendingPair, PendingPairRequest, ProfileInfo,
+    ProfileRequest, RouteKind, StartPairingRequest, Trust, TrustSshPeerRequest, UnpairRequest,
+    begin_pair_request, host_ref, pairing_window, peer_reachability, start_pairing_request,
 };
 
 type Door = ProfileServiceClient<Channel>;
 
-/// The link a pairing QR code carries, which the phone opens.
 /// How often a waiting pairing mode asks whether it is still open.
 const PAIRING_POLL: Duration = Duration::from_secs(1);
-
-fn operation() -> String {
-    Uuid::new_v4().to_string()
-}
 
 fn plain(status: tonic::Status) -> anyhow::Error {
     crate::plain(status)
@@ -66,10 +59,10 @@ impl Target {
 /// expires, or the command is ended (Ctrl+C, its terminal closing, a kill),
 /// which closes it.
 pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -> Result<()> {
-    let mode = if qr {
-        start_pairing_request::Mode::Qr
+    let method = if qr {
+        start_pairing_request::Method::Qr(Empty {})
     } else {
-        start_pairing_request::Mode::Pin
+        start_pairing_request::Method::Pin(Empty {})
     };
     // Listening before pairing mode opens: a signal between the invitation
     // and the wait would otherwise end the command with pairing left open.
@@ -77,24 +70,13 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
     let ended = ended()?;
     tokio::pin!(ended);
     let started = door
-        .start_pairing(ProfileStartPairingRequest {
-            operation_id: operation(),
+        .start_pairing(StartPairingRequest {
             profile_id: profile.id.clone(),
-            pairing: Some(StartPairingRequest {
-                mode: mode as i32,
-                ..StartPairingRequest::default()
-            }),
+            method: Some(method),
+            ttl_seconds: None,
         })
         .await
-        .map_err(|status| {
-            if status.message() == PAIR_MODE_ALREADY_ACTIVE {
-                anyhow!(
-                    "Pairing is already open on this host; finish it or press Ctrl+C where it runs."
-                )
-            } else {
-                plain(status)
-            }
-        })?
+        .map_err(already_open)?
         .into_inner();
     match invitation(&started, link) {
         Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
@@ -103,6 +85,10 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
             return Err(error);
         }
     }
+    println!(
+        "Pairing mode is open for {}; Ctrl+C closes it.",
+        duration(started.ttl_seconds)
+    );
     let ttl = Duration::from_secs(started.ttl_seconds);
     let deadline = tokio::time::Instant::now() + ttl;
     loop {
@@ -110,7 +96,7 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
             () = &mut ended => return cancel(door, profile).await,
             () = tokio::time::sleep(PAIRING_POLL) => {
                 let active = door
-                    .get_pairing_status(ProfilePairingStatusRequest {
+                    .get_pairing_status(ProfileRequest {
                         profile_id: profile.id.clone(),
                     })
                     .await
@@ -126,8 +112,69 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
     }
 }
 
+/// Holds a PIN the person chose open for `ttl` and returns at once: the
+/// daemon keeps the window, which every device that presents the PIN pairs
+/// through, until it expires, `amux pair --cancel` closes it, or the daemon
+/// restarts. For an unattended demo, such as an app reviewer pairing a
+/// phone with a machine nobody watches.
+pub async fn demo(mut door: Door, profile: &ProfileInfo, pin: String, ttl: Duration) -> Result<()> {
+    let started = door
+        .start_pairing(StartPairingRequest {
+            profile_id: profile.id.clone(),
+            method: Some(start_pairing_request::Method::DemoPin(pin)),
+            ttl_seconds: Some(ttl.as_secs()),
+        })
+        .await
+        .map_err(already_open)?
+        .into_inner();
+    invitation(&started, false)?
+        .iter()
+        .for_each(|line| println!("{line}"));
+    println!(
+        "Demo pairing is open for {}: this PIN pairs any device that presents it, again and \
+         again, until it expires, `amux pair --cancel` closes it, or amux restarts.",
+        duration(started.ttl_seconds)
+    );
+    Ok(())
+}
+
 /// The daemon's refusal to open pairing mode while it is open already.
 const PAIR_MODE_ALREADY_ACTIVE: &str = "PAIR_MODE_ALREADY_ACTIVE";
+
+fn already_open(status: tonic::Status) -> anyhow::Error {
+    if status.message() == PAIR_MODE_ALREADY_ACTIVE {
+        anyhow!("Pairing is already open on this host; finish it or press Ctrl+C where it runs.")
+    } else {
+        plain(status)
+    }
+}
+
+/// Reads a duration as a person writes one: `30d`, `12h`, `45m`, `90s`, or
+/// a bare number of seconds.
+pub fn parse_duration(input: &str) -> Result<Duration, String> {
+    let input = input.trim();
+    let (digits, unit) = match input.find(|c: char| !c.is_ascii_digit()) {
+        Some(index) => input.split_at(index),
+        None => (input, "s"),
+    };
+    let value: u64 = digits
+        .parse()
+        .map_err(|_| format!("{input:?} is not a duration; write it like 30d, 12h or 45m"))?;
+    let unit = match unit.trim() {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3_600,
+        "d" => 86_400,
+        other => return Err(format!("{other:?} is not a unit; use s, m, h or d")),
+    };
+    let seconds = value
+        .checked_mul(unit)
+        .ok_or_else(|| format!("{input:?} is too long"))?;
+    if seconds == 0 {
+        return Err("a duration must be longer than nothing".to_owned());
+    }
+    Ok(Duration::from_secs(seconds))
+}
 
 /// Resolves when the command is asked to end: Ctrl+C, its terminal closing
 /// (SIGHUP) or a kill (SIGTERM). Any of them must close pairing mode, or it
@@ -162,10 +209,10 @@ fn ended() -> Result<impl std::future::Future<Output = ()>> {
 
 /// What pairing mode shows the other host's person: the PIN and where this
 /// host listens, or a QR code the phone scans.
-fn invitation(started: &StartPairingResponse, link: bool) -> Result<Vec<String>> {
+fn invitation(started: &PairingWindow, link: bool) -> Result<Vec<String>> {
     let mut lines = Vec::new();
     match &started.secret {
-        Some(start_pairing_response::Secret::Pin(pin)) => {
+        Some(pairing_window::Secret::Pin(pin)) => {
             lines.push(format!("Pairing PIN: {}", spaced(pin)));
             if !started.addrs.is_empty() {
                 lines.push(format!(
@@ -174,7 +221,7 @@ fn invitation(started: &StartPairingResponse, link: bool) -> Result<Vec<String>>
                 ));
             }
         }
-        Some(start_pairing_response::Secret::QrSecret(secret)) => {
+        Some(pairing_window::Secret::QrSecret(secret)) => {
             let payload = pair_link(started, secret)?;
             lines.push(terminal_qr(&payload)?);
             if link {
@@ -183,10 +230,6 @@ fn invitation(started: &StartPairingResponse, link: bool) -> Result<Vec<String>>
         }
         None => bail!("the daemon opened pairing mode without a secret"),
     }
-    lines.push(format!(
-        "Pairing mode is open for {}; Ctrl+C closes it.",
-        duration(started.ttl_seconds)
-    ));
     Ok(lines)
 }
 
@@ -200,13 +243,19 @@ fn spaced(pin: &str) -> String {
 }
 
 fn duration(seconds: u64) -> String {
-    match seconds {
-        s if s >= 120 && s % 60 == 0 => format!("{} minutes", s / 60),
-        s => format!("{s} seconds"),
+    let (count, unit) = match seconds {
+        s if s >= 86_400 && s % 86_400 == 0 => (s / 86_400, "day"),
+        s if s >= 3_600 && s % 3_600 == 0 => (s / 3_600, "hour"),
+        s if s >= 120 && s % 60 == 0 => (s / 60, "minute"),
+        s => (s, "second"),
+    };
+    match count {
+        1 => format!("1 {unit}"),
+        count => format!("{count} {unit}s"),
     }
 }
 
-fn pair_link(started: &StartPairingResponse, secret: &[u8]) -> Result<String> {
+fn pair_link(started: &PairingWindow, secret: &[u8]) -> Result<String> {
     let identity = started
         .identity
         .as_ref()
@@ -233,8 +282,7 @@ fn terminal_qr(payload: &str) -> Result<String> {
 
 /// Closes this host's pairing mode.
 pub async fn cancel(mut door: Door, profile: &ProfileInfo) -> Result<()> {
-    door.cancel_pairing(ProfileOperation {
-        operation_id: operation(),
+    door.cancel_pairing(ProfileRequest {
         profile_id: profile.id.clone(),
     })
     .await
@@ -266,8 +314,8 @@ pub async fn pair(
         begin_pair_request::Secret::Pin(pin.chars().filter(char::is_ascii_digit).collect());
     confirm(
         door,
-        profile,
         BeginPairRequest {
+            profile_id: profile.id.clone(),
             host_id,
             secret: Some(secret),
             addrs,
@@ -281,8 +329,8 @@ pub async fn pair_with_link(door: Door, profile: &ProfileInfo, link: &str) -> Re
     let invitation = node::parse_pair_link(link).context("the pairing link")?;
     confirm(
         door,
-        profile,
         BeginPairRequest {
+            profile_id: profile.id.clone(),
             host_id: invitation.host_id.as_bytes().to_vec(),
             secret: Some(begin_pair_request::Secret::QrSecret(invitation.secret)),
             addrs: invitation.addrs.iter().map(ToString::to_string).collect(),
@@ -311,33 +359,25 @@ fn candidate<'a>(hosts: &'a [HostEntry], name: &str) -> Result<&'a HostEntry> {
     }
 }
 
-async fn confirm(mut door: Door, profile: &ProfileInfo, pairing: BeginPairRequest) -> Result<()> {
+async fn confirm(mut door: Door, pairing: BeginPairRequest) -> Result<()> {
     let secret = match pairing.secret {
         Some(begin_pair_request::Secret::QrSecret(_)) => "pairing link",
         _ => "PIN",
     };
+    let profile_id = pairing.profile_id.clone();
     let pending = door
-        .begin_pair(ProfileBeginPairRequest {
-            operation_id: operation(),
-            profile_id: profile.id.clone(),
-            pairing: Some(pairing),
-        })
+        .begin_pair(pairing)
         .await
         .map_err(|status| refused(status, secret))?
         .into_inner();
     let peer = door
-        .confirm_pair(ProfilePendingPairRequest {
-            operation_id: operation(),
-            profile_id: profile.id.clone(),
-            pairing: Some(PendingPairRequest {
-                token: pending.token.clone(),
-            }),
+        .confirm_pair(PendingPairRequest {
+            profile_id,
+            token: pending.token.clone(),
         })
         .await
         .map_err(|status| refused(status, secret))?
-        .into_inner()
-        .peer
-        .unwrap_or_default();
+        .into_inner();
     println!("{}", paired(&peer, &pending));
     Ok(())
 }
@@ -355,11 +395,10 @@ fn refused(status: tonic::Status, secret: &str) -> anyhow::Error {
     plain(status)
 }
 
-fn paired(peer: &PeerEntry, pending: &PendingPairResponse) -> String {
+fn paired(peer: &PeerEntry, pending: &PendingPair) -> String {
     let route = match pending.via() {
-        PeerVia::Relay => "through the relay",
-        PeerVia::Ssh => "over SSH",
-        PeerVia::Direct | PeerVia::Unspecified => "on this network",
+        RouteKind::Relay => "through the relay",
+        _ => "on this network",
     };
     format!(
         "Paired with {} ({}) {route}.",
@@ -415,20 +454,17 @@ impl node::PairingAdmin for DoorAdmin {
     ) -> Result<(), String> {
         self.door
             .clone()
-            .trust_ssh_peer(ProfileTrustSshPeerRequest {
-                operation_id: operation(),
-                profile_id: self.profile.to_string(),
-                pairing: Some(TrustSshPeerRequest {
-                    peer: Some(PairingIdentity {
-                        host_id: peer.host_id.as_bytes().to_vec(),
-                        pubkey: peer.pubkey,
-                        name: peer.name,
-                        expires_at_unix_ms: 0,
-                    }),
-                    ssh_target: target.map(|target| wire::SshTarget {
-                        target: target.target,
-                        profile_id: target.profile.to_string(),
-                    }),
+            .trust_ssh_peer(TrustSshPeerRequest {
+                profile_id: self.profile.as_bytes().to_vec(),
+                peer: Some(PairingIdentity {
+                    host_id: peer.host_id.as_bytes().to_vec(),
+                    pubkey: peer.pubkey,
+                    name: peer.name,
+                    expires_at_ms: 0,
+                }),
+                ssh_target: target.map(|target| wire::SshTarget {
+                    target: target.target,
+                    profile_id: target.profile.as_bytes().to_vec(),
                 }),
             })
             .await
@@ -449,7 +485,7 @@ async fn admin(door: &Door, profile: &ProfileInfo) -> Result<(DoorAdmin, String)
         .name;
     let admin = DoorAdmin {
         door: door.clone(),
-        profile: Uuid::parse_str(&profile.id).context("the profile id")?,
+        profile: Uuid::from_slice(&profile.id).context("the profile id")?,
     };
     Ok((admin, name))
 }
@@ -587,15 +623,13 @@ pub async fn unpair(mut door: Door, profile: &ProfileInfo, peer: &str, force: bo
         }),
     };
     let entry = door
-        .get_peer(wire::ProfileGetPeerRequest {
+        .get_peer(GetPeerRequest {
             profile_id: profile.id.clone(),
             peer: Some(reference.clone()),
         })
         .await
         .map_err(plain)?
-        .into_inner()
-        .peer
-        .unwrap_or_default();
+        .into_inner();
     if !force {
         if !std::io::stdin().is_terminal() {
             bail!("unpairing asks first; pass --force to unpair without asking");
@@ -611,17 +645,14 @@ pub async fn unpair(mut door: Door, profile: &ProfileInfo, peer: &str, force: bo
         }
     }
     let removed = door
-        .unpair(ProfileUnpairRequest {
-            operation_id: operation(),
+        .unpair(UnpairRequest {
             profile_id: profile.id.clone(),
             peer: Some(reference),
             reason: "user".to_owned(),
         })
         .await
         .map_err(plain)?
-        .into_inner()
-        .removed_peer
-        .unwrap_or_default();
+        .into_inner();
     println!("Unpaired {} ({}).", removed.name, host(&removed.host_id));
     Ok(())
 }
@@ -635,7 +666,6 @@ pub async fn login(mut door: Door, profile: Option<&ProfileInfo>, cloud_url: &st
         .await
         .context("signing in")?;
     let mut request = BindProfileRequest {
-        operation_id: operation(),
         profile_id: profile.map(|profile| profile.id.clone()),
         cloud_url: cloud_url.to_owned(),
         staged_refresh_token: refresh,
@@ -656,7 +686,6 @@ pub async fn login(mut door: Door, profile: Option<&ProfileInfo>, cloud_url: &st
                 return Ok(());
             }
             request.adopt_non_pristine = true;
-            request.operation_id = operation();
             door.bind_profile(request).await
         }
         other => other,
@@ -674,8 +703,7 @@ pub async fn login(mut door: Door, profile: Option<&ProfileInfo>, cloud_url: &st
 
 /// Signs a profile out; its agents and paired hosts stay.
 pub async fn logout(mut door: Door, profile: &ProfileInfo) -> Result<()> {
-    door.logout_profile(ProfileOperation {
-        operation_id: operation(),
+    door.logout_profile(ProfileRequest {
         profile_id: profile.id.clone(),
     })
     .await
@@ -727,7 +755,7 @@ mod tests {
     #[test]
     fn a_qr_invitation_round_trips_through_its_link() {
         let host = Uuid::from_bytes([3; 16]);
-        let started = StartPairingResponse {
+        let started = PairingWindow {
             identity: Some(PairingIdentity {
                 host_id: host.as_bytes().to_vec(),
                 ..PairingIdentity::default()
@@ -735,7 +763,7 @@ mod tests {
             ttl_seconds: 300,
             addrs: vec!["10.0.0.2:7420".into()],
             cloud_url: None,
-            secret: Some(start_pairing_response::Secret::QrSecret(vec![9; 32])),
+            secret: Some(pairing_window::Secret::QrSecret(vec![9; 32])),
         };
         let lines = invitation(&started, true).unwrap();
         let link = lines
@@ -746,25 +774,42 @@ mod tests {
         assert_eq!(parsed.host_id, host);
         assert_eq!(parsed.secret, vec![9; 32]);
         assert_eq!(parsed.addrs, vec!["10.0.0.2:7420".parse().unwrap()]);
-        assert!(lines.last().unwrap().contains("5 minutes"));
     }
 
     #[test]
     fn a_pin_reads_in_two_groups() {
-        let started = StartPairingResponse {
+        let started = PairingWindow {
             ttl_seconds: 300,
             addrs: vec!["10.0.0.2:7420".into()],
-            secret: Some(start_pairing_response::Secret::Pin("482913".into())),
-            ..StartPairingResponse::default()
+            secret: Some(pairing_window::Secret::Pin("482913".into())),
+            ..PairingWindow::default()
         };
         assert_eq!(
             invitation(&started, false).unwrap(),
             vec![
                 "Pairing PIN: 482 913".to_owned(),
                 "This host listens at 10.0.0.2:7420.".to_owned(),
-                "Pairing mode is open for 5 minutes; Ctrl+C closes it.".to_owned(),
             ]
         );
+    }
+
+    #[test]
+    fn a_window_reads_in_its_largest_whole_unit() {
+        assert_eq!(duration(300), "5 minutes");
+        assert_eq!(duration(90), "90 seconds");
+        assert_eq!(duration(3_600), "1 hour");
+        assert_eq!(duration(30 * 86_400), "30 days");
+    }
+
+    #[test]
+    fn a_demo_duration_parses_its_unit_and_refuses_garbage() {
+        assert_eq!(parse_duration("45m"), Ok(Duration::from_secs(2_700)));
+        assert_eq!(parse_duration("12h"), Ok(Duration::from_secs(43_200)));
+        assert_eq!(parse_duration("30d"), Ok(Duration::from_secs(30 * 86_400)));
+        assert_eq!(parse_duration("90"), Ok(Duration::from_secs(90)));
+        assert!(parse_duration("0d").is_err());
+        assert!(parse_duration("3w").is_err());
+        assert!(parse_duration("abc").is_err());
     }
 
     #[test]

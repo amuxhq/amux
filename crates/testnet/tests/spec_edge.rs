@@ -20,11 +20,9 @@ use tonic::transport::{Channel, Endpoint};
 use uuid::Uuid;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, Empty, HostRef, InventoryEvent, ListProfilesRequest,
-    PendingPairRequest, ProfileBeginPairRequest, ProfileGetPeerRequest, ProfileInfo,
-    ProfilePendingPairRequest, ProfileRequest, ProfileStartPairingRequest, ProfileUnpairRequest,
-    StartPairingRequest, begin_pair_request, host_ref, inventory_event, start_pairing_request,
-    start_pairing_response,
+    BeginPairRequest, BindProfileRequest, Empty, GetPeerRequest, HostRef, InventoryEvent,
+    PendingPairRequest, ProfileInfo, ProfileRequest, StartPairingRequest, UnpairRequest,
+    begin_pair_request, host_ref, inventory_event, pairing_window, start_pairing_request,
 };
 
 /// The discovery scope the paired hosts share.
@@ -46,8 +44,8 @@ fn edge(net: &Net, host: &str) -> Arc<Edge> {
     net.edge(host).expect("the edge runs")
 }
 
-fn id(net: &Net, host: &str) -> String {
-    net.host(host).unwrap().profile.to_string()
+fn id(net: &Net, host: &str) -> Vec<u8> {
+    net.host(host).unwrap().profile.as_bytes().to_vec()
 }
 
 async fn door(net: &Net, host: &str) -> ProfileServiceClient<Channel> {
@@ -58,7 +56,7 @@ async fn info(net: &Net, host: &str) -> ProfileInfo {
     let profile = id(net, host);
     door(net, host)
         .await
-        .list_profiles(ListProfilesRequest {})
+        .list_profiles(Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -160,18 +158,15 @@ async fn peer_inventory_hosts(from: &Edge, to: Uuid) -> Vec<Vec<u8>> {
 async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::PeerEntry {
     let started = door(net, responder)
         .await
-        .start_pairing(ProfileStartPairingRequest {
+        .start_pairing(StartPairingRequest {
             profile_id: id(net, responder),
-            pairing: Some(StartPairingRequest {
-                mode: start_pairing_request::Mode::Pin as i32,
-                ..StartPairingRequest::default()
-            }),
-            ..ProfileStartPairingRequest::default()
+            method: Some(start_pairing_request::Method::Pin(Empty {})),
+            ttl_seconds: None,
         })
         .await
         .expect("the responder enters pairing mode")
         .into_inner();
-    let Some(start_pairing_response::Secret::Pin(pin)) = started.secret else {
+    let Some(pairing_window::Secret::Pin(pin)) = started.secret else {
         panic!("a PIN pairing hands out a PIN");
     };
     assert_eq!(
@@ -181,14 +176,11 @@ async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::PeerEntry {
     );
     let pending = door(net, initiator)
         .await
-        .begin_pair(ProfileBeginPairRequest {
+        .begin_pair(BeginPairRequest {
             profile_id: id(net, initiator),
-            pairing: Some(BeginPairRequest {
-                host_id: edge(net, responder).host_id().as_bytes().to_vec(),
-                secret: Some(begin_pair_request::Secret::Pin(pin)),
-                addrs: started.addrs,
-            }),
-            ..ProfileBeginPairRequest::default()
+            host_id: edge(net, responder).host_id().as_bytes().to_vec(),
+            secret: Some(begin_pair_request::Secret::Pin(pin)),
+            addrs: started.addrs,
         })
         .await
         .expect("the SPAKE2 exchange completes")
@@ -198,21 +190,16 @@ async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::PeerEntry {
         edge(net, responder).public_key(),
         "the pending pairing names the responder's key"
     );
-    assert_eq!(pending.via, wire::PeerVia::Direct as i32);
+    assert_eq!(pending.via, wire::RouteKind::Direct as i32);
     door(net, initiator)
         .await
-        .confirm_pair(ProfilePendingPairRequest {
+        .confirm_pair(PendingPairRequest {
             profile_id: id(net, initiator),
-            pairing: Some(PendingPairRequest {
-                token: pending.token,
-            }),
-            ..ProfilePendingPairRequest::default()
+            token: pending.token,
         })
         .await
         .expect("the person confirms the peer")
         .into_inner()
-        .peer
-        .expect("the confirmed peer")
 }
 
 #[tokio::test]
@@ -275,7 +262,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     println!(
         "laptop paired with {} over {:?}",
         peer.name,
-        wire::PeerVia::Direct
+        wire::RouteKind::Direct
     );
 
     // Both sides now trust each other, and the laptop dialled the desk.
@@ -376,13 +363,10 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     // only that.
     door(&net, "desk")
         .await
-        .start_pairing(ProfileStartPairingRequest {
+        .start_pairing(StartPairingRequest {
             profile_id: id(&net, "desk"),
-            pairing: Some(StartPairingRequest {
-                mode: start_pairing_request::Mode::Qr as i32,
-                ..StartPairingRequest::default()
-            }),
-            ..ProfileStartPairingRequest::default()
+            method: Some(start_pairing_request::Method::Qr(Empty {})),
+            ttl_seconds: None,
         })
         .await
         .unwrap();
@@ -400,9 +384,8 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     assert_eq!(in_pairing, tonic::Code::Unimplemented);
     door(&net, "desk")
         .await
-        .cancel_pairing(wire::ProfileOperation {
+        .cancel_pairing(ProfileRequest {
             profile_id: id(&net, "desk"),
-            ..wire::ProfileOperation::default()
         })
         .await
         .unwrap();
@@ -416,17 +399,14 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     // with the now unknown key is refused.
     let removed = door(&net, "desk")
         .await
-        .unpair(ProfileUnpairRequest {
+        .unpair(UnpairRequest {
             profile_id: id(&net, "desk"),
             peer: host_ref(laptop_id),
             reason: "retired".to_owned(),
-            ..ProfileUnpairRequest::default()
         })
         .await
         .unwrap()
-        .into_inner()
-        .removed_peer
-        .unwrap();
+        .into_inner();
     assert_eq!(removed.name, "laptop");
     until("the link to close both ways", || async {
         let via = (
@@ -441,7 +421,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     .unwrap();
     let gone = door(&net, "desk")
         .await
-        .get_peer(ProfileGetPeerRequest {
+        .get_peer(GetPeerRequest {
             profile_id: id(&net, "desk"),
             peer: host_ref(laptop_id),
         })
@@ -617,9 +597,8 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     // back; signing out forgets the credential and keeps the binding.
     let paused = door(&net, "desk")
         .await
-        .pause_profile(wire::ProfileOperation {
+        .pause_profile(ProfileRequest {
             profile_id: id(&net, "desk"),
-            ..wire::ProfileOperation::default()
         })
         .await
         .unwrap()
@@ -636,9 +615,8 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     .unwrap();
     door(&net, "desk")
         .await
-        .resume_profile(wire::ProfileOperation {
+        .resume_profile(ProfileRequest {
             profile_id: id(&net, "desk"),
-            ..wire::ProfileOperation::default()
         })
         .await
         .unwrap();
@@ -652,9 +630,8 @@ async fn a_signed_in_profile_refreshes_its_relay_credential_on_the_runtime_clock
     .unwrap();
     let signed_out = door(&net, "desk")
         .await
-        .logout_profile(wire::ProfileOperation {
+        .logout_profile(ProfileRequest {
             profile_id: id(&net, "desk"),
-            ..wire::ProfileOperation::default()
         })
         .await
         .unwrap()

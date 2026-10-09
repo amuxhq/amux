@@ -11,8 +11,8 @@ use futures_util::StreamExt as _;
 use provider_fakes::script::Step;
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use wire::{
-    ErrorCode, FetchRequest, GetBlobRequest, GetRequest, ListProfilesRequest, PutBlobRequest,
-    SubscribeRequest, inventory_event, session_event,
+    ErrorCode, FetchRequest, GetBlobRequest, GetRequest, PutBlobRequest, SubscribeRequest,
+    inventory_event, session_event,
 };
 
 const PATIENCE: Duration = Duration::from_secs(20);
@@ -22,7 +22,7 @@ async fn clients(net: &Net) -> [(&'static str, Arc<dyn Client>); 2] {
         .front_door("desk")
         .await
         .unwrap()
-        .list_profiles(ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()

@@ -5363,7 +5363,7 @@ pub struct PairingIdentity {
     pub name: ::prost::alloc::string::String,
     /// Authenticated along with the responder identity by SPAKE2 sealing.
     #[prost(int64, tag = "4")]
-    pub expires_at_unix_ms: i64,
+    pub expires_at_ms: i64,
 }
 impl ::prost::Name for PairingIdentity {
     const NAME: &'static str = "PairingIdentity";
@@ -6213,7 +6213,7 @@ pub struct ProjectEntry {
     #[prost(string, tag = "2")]
     pub name: ::prost::alloc::string::String,
     #[prost(int64, optional, tag = "3")]
-    pub last_used_unix_ms: ::core::option::Option<i64>,
+    pub last_used_ms: ::core::option::Option<i64>,
 }
 impl ::prost::Name for ProjectEntry {
     const NAME: &'static str = "ProjectEntry";
@@ -6267,8 +6267,8 @@ impl ::prost::Name for DumpReport {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProfileInfo {
-    #[prost(string, tag = "1")]
-    pub id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "1")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub label: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
@@ -6277,23 +6277,21 @@ pub struct ProfileInfo {
     pub account_name: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
     pub socket_path: ::prost::alloc::string::String,
-    #[prost(string, tag = "6")]
-    pub host_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "6")]
+    pub host_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(enumeration = "Intent", tag = "7")]
     pub intent: i32,
     #[prost(enumeration = "Observed", tag = "8")]
     pub observed: i32,
     #[prost(uint64, tag = "9")]
     pub revision: u64,
-    #[prost(bool, tag = "10")]
-    pub available: bool,
-    #[prost(enumeration = "Tier", tag = "11")]
+    #[prost(enumeration = "Tier", tag = "10")]
     pub tier: i32,
-    #[prost(enumeration = "RelayCarrier", tag = "12")]
+    #[prost(enumeration = "RelayCarrier", tag = "11")]
     pub relay_carrier: i32,
     /// The bound account's subject at its service, which stays after a
     /// sign-out; empty when unbound. What tells two profiles' accounts apart.
-    #[prost(string, tag = "13")]
+    #[prost(string, tag = "12")]
     pub account_subject: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProfileInfo {
@@ -6304,18 +6302,6 @@ impl ::prost::Name for ProfileInfo {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.ProfileInfo".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListProfilesRequest {}
-impl ::prost::Name for ListProfilesRequest {
-    const NAME: &'static str = "ListProfilesRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ListProfilesRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ListProfilesRequest".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6333,52 +6319,51 @@ impl ::prost::Name for ListProfilesResponse {
         "/amux.v1.ListProfilesResponse".into()
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct WatchProfilesRequest {}
-impl ::prost::Name for WatchProfilesRequest {
-    const NAME: &'static str = "WatchProfilesRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.WatchProfilesRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.WatchProfilesRequest".into()
-    }
-}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct WatchProfilesResponse {
-    #[prost(uint64, tag = "1")]
-    pub sequence: u64,
-    #[prost(oneof = "watch_profiles_response::Event", tags = "2, 3, 4")]
-    pub event: ::core::option::Option<watch_profiles_response::Event>,
+pub struct ProfileEvent {
+    #[prost(oneof = "profile_event::Of", tags = "1, 2, 3")]
+    pub of: ::core::option::Option<profile_event::Of>,
 }
-/// Nested message and enum types in `WatchProfilesResponse`.
-pub mod watch_profiles_response {
+/// Nested message and enum types in `ProfileEvent`.
+pub mod profile_event {
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Event {
-        #[prost(message, tag = "2")]
+    pub enum Of {
+        #[prost(message, tag = "1")]
         Upserted(super::ProfileInfo),
-        #[prost(string, tag = "3")]
-        RemovedId(::prost::alloc::string::String),
-        #[prost(message, tag = "4")]
+        #[prost(bytes, tag = "2")]
+        RemovedId(::prost::alloc::vec::Vec<u8>),
+        #[prost(message, tag = "3")]
         CaughtUp(super::CaughtUp),
     }
 }
-impl ::prost::Name for WatchProfilesResponse {
-    const NAME: &'static str = "WatchProfilesResponse";
+impl ::prost::Name for ProfileEvent {
+    const NAME: &'static str = "ProfileEvent";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.WatchProfilesResponse".into()
+        "amux.v1.ProfileEvent".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.WatchProfilesResponse".into()
+        "/amux.v1.ProfileEvent".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ProfileRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for ProfileRequest {
+    const NAME: &'static str = "ProfileRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ProfileRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ProfileRequest".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateProfileRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "2")]
+    #[prost(string, optional, tag = "1")]
     pub label: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for CreateProfileRequest {
@@ -6392,52 +6377,18 @@ impl ::prost::Name for CreateProfileRequest {
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileRequest {
-    #[prost(string, tag = "1")]
-    pub profile_id: ::prost::alloc::string::String,
-}
-impl ::prost::Name for ProfileRequest {
-    const NAME: &'static str = "ProfileRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfileRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileOperation {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
-}
-impl ::prost::Name for ProfileOperation {
-    const NAME: &'static str = "ProfileOperation";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileOperation".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfileOperation".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BindProfileRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "2")]
-    pub profile_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, tag = "3")]
+    #[prost(bytes = "vec", optional, tag = "1")]
+    pub profile_id: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    #[prost(string, tag = "2")]
     pub cloud_url: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
+    #[prost(string, tag = "3")]
     pub staged_refresh_token: ::prost::alloc::string::String,
-    #[prost(bool, tag = "5")]
+    #[prost(bool, tag = "4")]
     pub adopt_non_pristine: bool,
     /// The OAuth client the refresh token was issued to; empty is the CLI's.
     /// A token refreshes only under the client that obtained it.
-    #[prost(string, tag = "6")]
+    #[prost(string, tag = "5")]
     pub client_id: ::prost::alloc::string::String,
 }
 impl ::prost::Name for BindProfileRequest {
@@ -6452,13 +6403,11 @@ impl ::prost::Name for BindProfileRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RenameProfileRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "2")]
     pub expected_revision: u64,
-    #[prost(string, optional, tag = "4")]
+    #[prost(string, optional, tag = "3")]
     pub override_name: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for RenameProfileRequest {
@@ -6473,11 +6422,9 @@ impl ::prost::Name for RenameProfileRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteProfileRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "2")]
     pub confirm_revision: u64,
 }
 impl ::prost::Name for DeleteProfileRequest {
@@ -6490,167 +6437,219 @@ impl ::prost::Name for DeleteProfileRequest {
         "/amux.v1.DeleteProfileRequest".into()
     }
 }
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StartPairingRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    /// How long the window stays open; absent is the daemon's default for
+    /// the method.
+    #[prost(uint64, optional, tag = "5")]
+    pub ttl_seconds: ::core::option::Option<u64>,
+    #[prost(oneof = "start_pairing_request::Method", tags = "2, 3, 4")]
+    pub method: ::core::option::Option<start_pairing_request::Method>,
+}
+/// Nested message and enum types in `StartPairingRequest`.
+pub mod start_pairing_request {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Method {
+        /// A one-shot PIN the daemon generates.
+        #[prost(message, tag = "2")]
+        Pin(super::Empty),
+        /// A one-shot secret for a QR code.
+        #[prost(message, tag = "3")]
+        Qr(super::Empty),
+        /// An operator-chosen reusable PIN for unattended demos: the window is
+        /// neither consumed by success nor locked out by failures.
+        #[prost(string, tag = "4")]
+        DemoPin(::prost::alloc::string::String),
+    }
+}
+impl ::prost::Name for StartPairingRequest {
+    const NAME: &'static str = "StartPairingRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.StartPairingRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.StartPairingRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PairingWindow {
+    #[prost(message, optional, tag = "1")]
+    pub identity: ::core::option::Option<PairingIdentity>,
+    #[prost(uint64, tag = "2")]
+    pub ttl_seconds: u64,
+    #[prost(string, repeated, tag = "3")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "4")]
+    pub cloud_url: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(oneof = "pairing_window::Secret", tags = "5, 6")]
+    pub secret: ::core::option::Option<pairing_window::Secret>,
+}
+/// Nested message and enum types in `PairingWindow`.
+pub mod pairing_window {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Secret {
+        #[prost(string, tag = "5")]
+        Pin(::prost::alloc::string::String),
+        #[prost(bytes, tag = "6")]
+        QrSecret(::prost::alloc::vec::Vec<u8>),
+    }
+}
+impl ::prost::Name for PairingWindow {
+    const NAME: &'static str = "PairingWindow";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PairingWindow".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PairingWindow".into()
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DeleteProfileResponse {}
-impl ::prost::Name for DeleteProfileResponse {
-    const NAME: &'static str = "DeleteProfileResponse";
+pub struct PairingStatus {
+    #[prost(bool, tag = "1")]
+    pub active: bool,
+}
+impl ::prost::Name for PairingStatus {
+    const NAME: &'static str = "PairingStatus";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DeleteProfileResponse".into()
+        "amux.v1.PairingStatus".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.DeleteProfileResponse".into()
+        "/amux.v1.PairingStatus".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileStartPairingRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
+pub struct BeginPairRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub host_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, repeated, tag = "5")]
+    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(oneof = "begin_pair_request::Secret", tags = "3, 4")]
+    pub secret: ::core::option::Option<begin_pair_request::Secret>,
+}
+/// Nested message and enum types in `BeginPairRequest`.
+pub mod begin_pair_request {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Secret {
+        #[prost(string, tag = "3")]
+        Pin(::prost::alloc::string::String),
+        #[prost(bytes, tag = "4")]
+        QrSecret(::prost::alloc::vec::Vec<u8>),
+    }
+}
+impl ::prost::Name for BeginPairRequest {
+    const NAME: &'static str = "BeginPairRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.BeginPairRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.BeginPairRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PendingPair {
+    #[prost(bytes = "vec", tag = "1")]
+    pub token: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub peer: ::core::option::Option<PairingIdentity>,
+    #[prost(enumeration = "RouteKind", tag = "3")]
+    pub via: i32,
+}
+impl ::prost::Name for PendingPair {
+    const NAME: &'static str = "PendingPair";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PendingPair".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PendingPair".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PendingPairRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub token: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for PendingPairRequest {
+    const NAME: &'static str = "PendingPairRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PendingPairRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PendingPairRequest".into()
+    }
+}
+/// SSH has already authenticated its peer outside the secret-based pairing
+/// protocol, so its identity commit is a separate, SSH-only operation.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TrustSshPeerRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub peer: ::core::option::Option<PairingIdentity>,
     #[prost(message, optional, tag = "3")]
-    pub pairing: ::core::option::Option<StartPairingRequest>,
+    pub ssh_target: ::core::option::Option<SshTarget>,
 }
-impl ::prost::Name for ProfileStartPairingRequest {
-    const NAME: &'static str = "ProfileStartPairingRequest";
+impl ::prost::Name for TrustSshPeerRequest {
+    const NAME: &'static str = "TrustSshPeerRequest";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileStartPairingRequest".into()
+        "amux.v1.TrustSshPeerRequest".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfileStartPairingRequest".into()
+        "/amux.v1.TrustSshPeerRequest".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfilePairingStatusRequest {
-    #[prost(string, tag = "1")]
-    pub profile_id: ::prost::alloc::string::String,
-}
-impl ::prost::Name for ProfilePairingStatusRequest {
-    const NAME: &'static str = "ProfilePairingStatusRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfilePairingStatusRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfilePairingStatusRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileBeginPairRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
-    pub pairing: ::core::option::Option<BeginPairRequest>,
-}
-impl ::prost::Name for ProfileBeginPairRequest {
-    const NAME: &'static str = "ProfileBeginPairRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileBeginPairRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfileBeginPairRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfilePendingPairRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
-    pub pairing: ::core::option::Option<PendingPairRequest>,
-}
-impl ::prost::Name for ProfilePendingPairRequest {
-    const NAME: &'static str = "ProfilePendingPairRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfilePendingPairRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfilePendingPairRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileTrustSshPeerRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
-    pub pairing: ::core::option::Option<TrustSshPeerRequest>,
-}
-impl ::prost::Name for ProfileTrustSshPeerRequest {
-    const NAME: &'static str = "ProfileTrustSshPeerRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileTrustSshPeerRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfileTrustSshPeerRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileGetPeerRequest {
-    #[prost(string, tag = "1")]
-    pub profile_id: ::prost::alloc::string::String,
+pub struct GetPeerRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub peer: ::core::option::Option<HostRef>,
 }
-impl ::prost::Name for ProfileGetPeerRequest {
-    const NAME: &'static str = "ProfileGetPeerRequest";
+impl ::prost::Name for GetPeerRequest {
+    const NAME: &'static str = "GetPeerRequest";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileGetPeerRequest".into()
+        "amux.v1.GetPeerRequest".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfileGetPeerRequest".into()
+        "/amux.v1.GetPeerRequest".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ProfileUnpairRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
+pub struct UnpairRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
     pub peer: ::core::option::Option<HostRef>,
-    #[prost(string, tag = "4")]
+    #[prost(string, tag = "3")]
     pub reason: ::prost::alloc::string::String,
 }
-impl ::prost::Name for ProfileUnpairRequest {
-    const NAME: &'static str = "ProfileUnpairRequest";
+impl ::prost::Name for UnpairRequest {
+    const NAME: &'static str = "UnpairRequest";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ProfileUnpairRequest".into()
+        "amux.v1.UnpairRequest".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ProfileUnpairRequest".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetInfoRequest {}
-impl ::prost::Name for GetInfoRequest {
-    const NAME: &'static str = "GetInfoRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetInfoRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.GetInfoRequest".into()
+        "/amux.v1.UnpairRequest".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct InstallationInfo {
     #[prost(string, tag = "1")]
     pub version: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub root: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub front_door_path: ::prost::alloc::string::String,
 }
 impl ::prost::Name for InstallationInfo {
     const NAME: &'static str = "InstallationInfo";
@@ -6662,28 +6661,13 @@ impl ::prost::Name for InstallationInfo {
         "/amux.v1.InstallationInfo".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct InstallationShutdownRequest {
-    #[prost(string, tag = "1")]
-    pub operation_id: ::prost::alloc::string::String,
-}
-impl ::prost::Name for InstallationShutdownRequest {
-    const NAME: &'static str = "InstallationShutdownRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.InstallationShutdownRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.InstallationShutdownRequest".into()
-    }
-}
 /// SSH bootstrap includes the local selector needed for subsequent stdio relays.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SshPairingIdentity {
     #[prost(message, optional, tag = "1")]
     pub identity: ::core::option::Option<PairingIdentity>,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for SshPairingIdentity {
     const NAME: &'static str = "SshPairingIdentity";
@@ -6699,8 +6683,8 @@ impl ::prost::Name for SshPairingIdentity {
 pub struct SshTarget {
     #[prost(string, tag = "1")]
     pub target: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub profile_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub profile_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for SshTarget {
     const NAME: &'static str = "SshTarget";
@@ -6710,88 +6694,6 @@ impl ::prost::Name for SshTarget {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.SshTarget".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct BeginPairRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub host_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, repeated, tag = "4")]
-    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(oneof = "begin_pair_request::Secret", tags = "2, 3")]
-    pub secret: ::core::option::Option<begin_pair_request::Secret>,
-}
-/// Nested message and enum types in `BeginPairRequest`.
-pub mod begin_pair_request {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Secret {
-        #[prost(string, tag = "2")]
-        Pin(::prost::alloc::string::String),
-        #[prost(bytes, tag = "3")]
-        QrSecret(::prost::alloc::vec::Vec<u8>),
-    }
-}
-impl ::prost::Name for BeginPairRequest {
-    const NAME: &'static str = "BeginPairRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.BeginPairRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.BeginPairRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PendingPairResponse {
-    #[prost(bytes = "vec", tag = "1")]
-    pub token: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, optional, tag = "2")]
-    pub peer: ::core::option::Option<PairingIdentity>,
-    #[prost(enumeration = "PeerVia", tag = "3")]
-    pub via: i32,
-}
-impl ::prost::Name for PendingPairResponse {
-    const NAME: &'static str = "PendingPairResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PendingPairResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.PendingPairResponse".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PendingPairRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub token: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for PendingPairRequest {
-    const NAME: &'static str = "PendingPairRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PendingPairRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.PendingPairRequest".into()
-    }
-}
-/// SSH has already authenticated its peer outside the secret-based pairing
-/// protocol, so its identity commit remains a separate, SSH-only operation.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct TrustSshPeerRequest {
-    #[prost(message, optional, tag = "1")]
-    pub peer: ::core::option::Option<PairingIdentity>,
-    #[prost(message, optional, tag = "2")]
-    pub ssh_target: ::core::option::Option<SshTarget>,
-}
-impl ::prost::Name for TrustSshPeerRequest {
-    const NAME: &'static str = "TrustSshPeerRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.TrustSshPeerRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.TrustSshPeerRequest".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -6845,7 +6747,7 @@ pub struct PeerEntry {
     #[prost(bytes = "vec", tag = "3")]
     pub pubkey: ::prost::alloc::vec::Vec<u8>,
     #[prost(int64, tag = "4")]
-    pub paired_at_unix_ms: i64,
+    pub paired_at_ms: i64,
     #[prost(message, repeated, tag = "5")]
     pub reachabilities: ::prost::alloc::vec::Vec<PeerReachability>,
 }
@@ -6891,189 +6793,6 @@ impl ::prost::Name for ListPeersResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.ListPeersResponse".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPeerResponse {
-    #[prost(message, optional, tag = "1")]
-    pub peer: ::core::option::Option<PeerEntry>,
-}
-impl ::prost::Name for GetPeerResponse {
-    const NAME: &'static str = "GetPeerResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetPeerResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.GetPeerResponse".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UnpairResponse {
-    #[prost(message, optional, tag = "1")]
-    pub removed_peer: ::core::option::Option<PeerEntry>,
-}
-impl ::prost::Name for UnpairResponse {
-    const NAME: &'static str = "UnpairResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.UnpairResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.UnpairResponse".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ShutdownResponse {}
-impl ::prost::Name for ShutdownResponse {
-    const NAME: &'static str = "ShutdownResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ShutdownResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ShutdownResponse".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StartPairingRequest {
-    #[prost(enumeration = "start_pairing_request::Mode", tag = "1")]
-    pub mode: i32,
-    /// Operator-chosen reusable PIN for unattended demos. When set, `mode`
-    /// must be PIN; the session lasts `ttl_seconds` instead of the one-shot
-    /// window and is neither consumed by success nor locked out by failures.
-    #[prost(message, optional, tag = "2")]
-    pub demo: ::core::option::Option<DemoPairing>,
-    #[prost(uint64, optional, tag = "3")]
-    pub ttl_seconds: ::core::option::Option<u64>,
-}
-/// Nested message and enum types in `StartPairingRequest`.
-pub mod start_pairing_request {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
-    #[repr(i32)]
-    pub enum Mode {
-        Unspecified = 0,
-        Pin = 1,
-        Qr = 2,
-    }
-    impl Mode {
-        /// String value of the enum field names used in the ProtoBuf definition.
-        ///
-        /// The values are not transformed in any way and thus are considered stable
-        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-        pub fn as_str_name(&self) -> &'static str {
-            match self {
-                Self::Unspecified => "MODE_UNSPECIFIED",
-                Self::Pin => "PIN",
-                Self::Qr => "QR",
-            }
-        }
-        /// Creates an enum from field names used in the ProtoBuf definition.
-        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-            match value {
-                "MODE_UNSPECIFIED" => Some(Self::Unspecified),
-                "PIN" => Some(Self::Pin),
-                "QR" => Some(Self::Qr),
-                _ => None,
-            }
-        }
-    }
-}
-impl ::prost::Name for StartPairingRequest {
-    const NAME: &'static str = "StartPairingRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.StartPairingRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.StartPairingRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DemoPairing {
-    #[prost(string, tag = "1")]
-    pub pin: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "2")]
-    pub ttl_seconds: u64,
-}
-impl ::prost::Name for DemoPairing {
-    const NAME: &'static str = "DemoPairing";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DemoPairing".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.DemoPairing".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StartPairingResponse {
-    #[prost(message, optional, tag = "1")]
-    pub identity: ::core::option::Option<PairingIdentity>,
-    #[prost(uint64, tag = "2")]
-    pub ttl_seconds: u64,
-    #[prost(string, repeated, tag = "3")]
-    pub addrs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "4")]
-    pub cloud_url: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(oneof = "start_pairing_response::Secret", tags = "5, 6")]
-    pub secret: ::core::option::Option<start_pairing_response::Secret>,
-}
-/// Nested message and enum types in `StartPairingResponse`.
-pub mod start_pairing_response {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Secret {
-        #[prost(string, tag = "5")]
-        Pin(::prost::alloc::string::String),
-        #[prost(bytes, tag = "6")]
-        QrSecret(::prost::alloc::vec::Vec<u8>),
-    }
-}
-impl ::prost::Name for StartPairingResponse {
-    const NAME: &'static str = "StartPairingResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.StartPairingResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.StartPairingResponse".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetPairingStatusResponse {
-    #[prost(bool, tag = "1")]
-    pub active: bool,
-}
-impl ::prost::Name for GetPairingStatusResponse {
-    const NAME: &'static str = "GetPairingStatusResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetPairingStatusResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.GetPairingStatusResponse".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CancelPairingResponse {}
-impl ::prost::Name for CancelPairingResponse {
-    const NAME: &'static str = "CancelPairingResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CancelPairingResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.CancelPairingResponse".into()
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -7324,6 +7043,40 @@ impl HostVia {
         }
     }
 }
+/// How this machine reaches a host, or how a pairing peer was reached. No
+/// value for "no route": Presence says offline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RouteKind {
+    Unspecified = 0,
+    Direct = 1,
+    Relay = 2,
+    Ssh = 3,
+}
+impl RouteKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ROUTE_KIND_UNSPECIFIED",
+            Self::Direct => "ROUTE_KIND_DIRECT",
+            Self::Relay => "ROUTE_KIND_RELAY",
+            Self::Ssh => "ROUTE_KIND_SSH",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ROUTE_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "ROUTE_KIND_DIRECT" => Some(Self::Direct),
+            "ROUTE_KIND_RELAY" => Some(Self::Relay),
+            "ROUTE_KIND_SSH" => Some(Self::Ssh),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Lifecycle {
@@ -7558,38 +7311,6 @@ impl RelayCarrier {
             "RELAY_CARRIER_UNSPECIFIED" => Some(Self::Unspecified),
             "RELAY_CARRIER_QUIC" => Some(Self::Quic),
             "RELAY_CARRIER_TCP" => Some(Self::Tcp),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum PeerVia {
-    Unspecified = 0,
-    Direct = 1,
-    Relay = 2,
-    Ssh = 3,
-}
-impl PeerVia {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "PEER_VIA_UNSPECIFIED",
-            Self::Direct => "PEER_VIA_DIRECT",
-            Self::Relay => "PEER_VIA_RELAY",
-            Self::Ssh => "PEER_VIA_SSH",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "PEER_VIA_UNSPECIFIED" => Some(Self::Unspecified),
-            "PEER_VIA_DIRECT" => Some(Self::Direct),
-            "PEER_VIA_RELAY" => Some(Self::Relay),
-            "PEER_VIA_SSH" => Some(Self::Ssh),
             _ => None,
         }
     }
@@ -10894,6 +10615,10 @@ pub mod profile_service_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    /// The installation's front door: local Unix socket and in-process only.
+    /// Calls are not retried by any client; a mutation that loses its reply is
+    /// re-run by the person, and the revision checks on rename and delete
+    /// refuse a re-run against a profile that changed meanwhile.
     #[derive(Debug, Clone)]
     pub struct ProfileServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -10965,7 +10690,7 @@ pub mod profile_service_client {
         }
         pub async fn list_profiles(
             &mut self,
-            request: impl tonic::IntoRequest<super::ListProfilesRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::ListProfilesResponse>,
             tonic::Status,
@@ -10990,9 +10715,9 @@ pub mod profile_service_client {
         /// Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh watch.
         pub async fn watch_profiles(
             &mut self,
-            request: impl tonic::IntoRequest<super::WatchProfilesRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::WatchProfilesResponse>>,
+            tonic::Response<tonic::codec::Streaming<super::ProfileEvent>>,
             tonic::Status,
         > {
             self.inner
@@ -11056,7 +10781,7 @@ pub mod profile_service_client {
         }
         pub async fn logout_profile(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileOperation>,
+            request: impl tonic::IntoRequest<super::ProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
             self.inner
                 .ready()
@@ -11077,7 +10802,7 @@ pub mod profile_service_client {
         }
         pub async fn pause_profile(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileOperation>,
+            request: impl tonic::IntoRequest<super::ProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
             self.inner
                 .ready()
@@ -11098,7 +10823,7 @@ pub mod profile_service_client {
         }
         pub async fn resume_profile(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileOperation>,
+            request: impl tonic::IntoRequest<super::ProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status> {
             self.inner
                 .ready()
@@ -11141,10 +10866,7 @@ pub mod profile_service_client {
         pub async fn delete_profile(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteProfileRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteProfileResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11164,11 +10886,8 @@ pub mod profile_service_client {
         }
         pub async fn start_pairing(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileStartPairingRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::StartPairingResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::StartPairingRequest>,
+        ) -> std::result::Result<tonic::Response<super::PairingWindow>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11188,11 +10907,8 @@ pub mod profile_service_client {
         }
         pub async fn get_pairing_status(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfilePairingStatusRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetPairingStatusResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::ProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::PairingStatus>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11212,11 +10928,8 @@ pub mod profile_service_client {
         }
         pub async fn cancel_pairing(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileOperation>,
-        ) -> std::result::Result<
-            tonic::Response<super::CancelPairingResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::ProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11236,11 +10949,8 @@ pub mod profile_service_client {
         }
         pub async fn begin_pair(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileBeginPairRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::PendingPairResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::BeginPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PendingPair>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11260,11 +10970,8 @@ pub mod profile_service_client {
         }
         pub async fn confirm_pair(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfilePendingPairRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetPeerResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::PendingPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11284,11 +10991,8 @@ pub mod profile_service_client {
         }
         pub async fn abandon_pair(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfilePendingPairRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::PairingAbandoned>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::PendingPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11329,7 +11033,7 @@ pub mod profile_service_client {
         }
         pub async fn trust_ssh_peer(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileTrustSshPeerRequest>,
+            request: impl tonic::IntoRequest<super::TrustSshPeerRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
@@ -11374,11 +11078,8 @@ pub mod profile_service_client {
         }
         pub async fn get_peer(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileGetPeerRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetPeerResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::GetPeerRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11398,8 +11099,8 @@ pub mod profile_service_client {
         }
         pub async fn unpair(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProfileUnpairRequest>,
-        ) -> std::result::Result<tonic::Response<super::UnpairResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::UnpairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -11434,21 +11135,21 @@ pub mod profile_service_server {
     pub trait ProfileService: std::marker::Send + std::marker::Sync + 'static {
         async fn list_profiles(
             &self,
-            request: tonic::Request<super::ListProfilesRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::ListProfilesResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the WatchProfiles method.
         type WatchProfilesStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::WatchProfilesResponse, tonic::Status>,
+                Item = std::result::Result<super::ProfileEvent, tonic::Status>,
             >
             + std::marker::Send
             + 'static;
         /// Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh watch.
         async fn watch_profiles(
             &self,
-            request: tonic::Request<super::WatchProfilesRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<Self::WatchProfilesStream>,
             tonic::Status,
@@ -11463,15 +11164,15 @@ pub mod profile_service_server {
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
         async fn logout_profile(
             &self,
-            request: tonic::Request<super::ProfileOperation>,
+            request: tonic::Request<super::ProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
         async fn pause_profile(
             &self,
-            request: tonic::Request<super::ProfileOperation>,
+            request: tonic::Request<super::ProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
         async fn resume_profile(
             &self,
-            request: tonic::Request<super::ProfileOperation>,
+            request: tonic::Request<super::ProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::ProfileInfo>, tonic::Status>;
         async fn rename_profile(
             &self,
@@ -11480,56 +11181,38 @@ pub mod profile_service_server {
         async fn delete_profile(
             &self,
             request: tonic::Request<super::DeleteProfileRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteProfileResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn start_pairing(
             &self,
-            request: tonic::Request<super::ProfileStartPairingRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::StartPairingResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::StartPairingRequest>,
+        ) -> std::result::Result<tonic::Response<super::PairingWindow>, tonic::Status>;
         async fn get_pairing_status(
             &self,
-            request: tonic::Request<super::ProfilePairingStatusRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetPairingStatusResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::ProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::PairingStatus>, tonic::Status>;
         async fn cancel_pairing(
             &self,
-            request: tonic::Request<super::ProfileOperation>,
-        ) -> std::result::Result<
-            tonic::Response<super::CancelPairingResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::ProfileRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn begin_pair(
             &self,
-            request: tonic::Request<super::ProfileBeginPairRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::PendingPairResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::BeginPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PendingPair>, tonic::Status>;
         async fn confirm_pair(
             &self,
-            request: tonic::Request<super::ProfilePendingPairRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetPeerResponse>, tonic::Status>;
+            request: tonic::Request<super::PendingPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
         async fn abandon_pair(
             &self,
-            request: tonic::Request<super::ProfilePendingPairRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::PairingAbandoned>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::PendingPairRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn get_device_identity(
             &self,
             request: tonic::Request<super::ProfileRequest>,
         ) -> std::result::Result<tonic::Response<super::DeviceIdentity>, tonic::Status>;
         async fn trust_ssh_peer(
             &self,
-            request: tonic::Request<super::ProfileTrustSshPeerRequest>,
+            request: tonic::Request<super::TrustSshPeerRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn list_peers(
             &self,
@@ -11540,13 +11223,17 @@ pub mod profile_service_server {
         >;
         async fn get_peer(
             &self,
-            request: tonic::Request<super::ProfileGetPeerRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetPeerResponse>, tonic::Status>;
+            request: tonic::Request<super::GetPeerRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
         async fn unpair(
             &self,
-            request: tonic::Request<super::ProfileUnpairRequest>,
-        ) -> std::result::Result<tonic::Response<super::UnpairResponse>, tonic::Status>;
+            request: tonic::Request<super::UnpairRequest>,
+        ) -> std::result::Result<tonic::Response<super::PeerEntry>, tonic::Status>;
     }
+    /// The installation's front door: local Unix socket and in-process only.
+    /// Calls are not retried by any client; a mutation that loses its reply is
+    /// re-run by the person, and the revision checks on rename and delete
+    /// refuse a re-run against a profile that changed meanwhile.
     #[derive(Debug)]
     pub struct ProfileServiceServer<T> {
         inner: Arc<T>,
@@ -11626,9 +11313,7 @@ pub mod profile_service_server {
                 "/amux.v1.ProfileService/ListProfiles" => {
                     #[allow(non_camel_case_types)]
                     struct ListProfilesSvc<T: ProfileService>(pub Arc<T>);
-                    impl<
-                        T: ProfileService,
-                    > tonic::server::UnaryService<super::ListProfilesRequest>
+                    impl<T: ProfileService> tonic::server::UnaryService<super::Empty>
                     for ListProfilesSvc<T> {
                         type Response = super::ListProfilesResponse;
                         type Future = BoxFuture<
@@ -11637,7 +11322,7 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ListProfilesRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -11673,9 +11358,9 @@ pub mod profile_service_server {
                     struct WatchProfilesSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::ServerStreamingService<super::WatchProfilesRequest>
+                    > tonic::server::ServerStreamingService<super::Empty>
                     for WatchProfilesSvc<T> {
-                        type Response = super::WatchProfilesResponse;
+                        type Response = super::ProfileEvent;
                         type ResponseStream = T::WatchProfilesStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
@@ -11683,7 +11368,7 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::WatchProfilesRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -11809,7 +11494,7 @@ pub mod profile_service_server {
                     struct LogoutProfileSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileOperation>
+                    > tonic::server::UnaryService<super::ProfileRequest>
                     for LogoutProfileSvc<T> {
                         type Response = super::ProfileInfo;
                         type Future = BoxFuture<
@@ -11818,7 +11503,7 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileOperation>,
+                            request: tonic::Request<super::ProfileRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -11854,7 +11539,7 @@ pub mod profile_service_server {
                     struct PauseProfileSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileOperation>
+                    > tonic::server::UnaryService<super::ProfileRequest>
                     for PauseProfileSvc<T> {
                         type Response = super::ProfileInfo;
                         type Future = BoxFuture<
@@ -11863,7 +11548,7 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileOperation>,
+                            request: tonic::Request<super::ProfileRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -11899,7 +11584,7 @@ pub mod profile_service_server {
                     struct ResumeProfileSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileOperation>
+                    > tonic::server::UnaryService<super::ProfileRequest>
                     for ResumeProfileSvc<T> {
                         type Response = super::ProfileInfo;
                         type Future = BoxFuture<
@@ -11908,7 +11593,7 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileOperation>,
+                            request: tonic::Request<super::ProfileRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -11991,7 +11676,7 @@ pub mod profile_service_server {
                         T: ProfileService,
                     > tonic::server::UnaryService<super::DeleteProfileRequest>
                     for DeleteProfileSvc<T> {
-                        type Response = super::DeleteProfileResponse;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -12034,16 +11719,16 @@ pub mod profile_service_server {
                     struct StartPairingSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileStartPairingRequest>
+                    > tonic::server::UnaryService<super::StartPairingRequest>
                     for StartPairingSvc<T> {
-                        type Response = super::StartPairingResponse;
+                        type Response = super::PairingWindow;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileStartPairingRequest>,
+                            request: tonic::Request<super::StartPairingRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12079,16 +11764,16 @@ pub mod profile_service_server {
                     struct GetPairingStatusSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfilePairingStatusRequest>
+                    > tonic::server::UnaryService<super::ProfileRequest>
                     for GetPairingStatusSvc<T> {
-                        type Response = super::GetPairingStatusResponse;
+                        type Response = super::PairingStatus;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfilePairingStatusRequest>,
+                            request: tonic::Request<super::ProfileRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12125,16 +11810,16 @@ pub mod profile_service_server {
                     struct CancelPairingSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileOperation>
+                    > tonic::server::UnaryService<super::ProfileRequest>
                     for CancelPairingSvc<T> {
-                        type Response = super::CancelPairingResponse;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileOperation>,
+                            request: tonic::Request<super::ProfileRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12170,16 +11855,16 @@ pub mod profile_service_server {
                     struct BeginPairSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileBeginPairRequest>
+                    > tonic::server::UnaryService<super::BeginPairRequest>
                     for BeginPairSvc<T> {
-                        type Response = super::PendingPairResponse;
+                        type Response = super::PendingPair;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileBeginPairRequest>,
+                            request: tonic::Request<super::BeginPairRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12215,16 +11900,16 @@ pub mod profile_service_server {
                     struct ConfirmPairSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfilePendingPairRequest>
+                    > tonic::server::UnaryService<super::PendingPairRequest>
                     for ConfirmPairSvc<T> {
-                        type Response = super::GetPeerResponse;
+                        type Response = super::PeerEntry;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfilePendingPairRequest>,
+                            request: tonic::Request<super::PendingPairRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12260,16 +11945,16 @@ pub mod profile_service_server {
                     struct AbandonPairSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfilePendingPairRequest>
+                    > tonic::server::UnaryService<super::PendingPairRequest>
                     for AbandonPairSvc<T> {
-                        type Response = super::PairingAbandoned;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfilePendingPairRequest>,
+                            request: tonic::Request<super::PendingPairRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12351,7 +12036,7 @@ pub mod profile_service_server {
                     struct TrustSshPeerSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileTrustSshPeerRequest>
+                    > tonic::server::UnaryService<super::TrustSshPeerRequest>
                     for TrustSshPeerSvc<T> {
                         type Response = super::Empty;
                         type Future = BoxFuture<
@@ -12360,7 +12045,7 @@ pub mod profile_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileTrustSshPeerRequest>,
+                            request: tonic::Request<super::TrustSshPeerRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12441,16 +12126,16 @@ pub mod profile_service_server {
                     struct GetPeerSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileGetPeerRequest>
+                    > tonic::server::UnaryService<super::GetPeerRequest>
                     for GetPeerSvc<T> {
-                        type Response = super::GetPeerResponse;
+                        type Response = super::PeerEntry;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileGetPeerRequest>,
+                            request: tonic::Request<super::GetPeerRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12486,16 +12171,16 @@ pub mod profile_service_server {
                     struct UnpairSvc<T: ProfileService>(pub Arc<T>);
                     impl<
                         T: ProfileService,
-                    > tonic::server::UnaryService<super::ProfileUnpairRequest>
+                    > tonic::server::UnaryService<super::UnpairRequest>
                     for UnpairSvc<T> {
-                        type Response = super::UnpairResponse;
+                        type Response = super::PeerEntry;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProfileUnpairRequest>,
+                            request: tonic::Request<super::UnpairRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12648,7 +12333,7 @@ pub mod installation_service_client {
         }
         pub async fn get_info(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetInfoRequest>,
+            request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::InstallationInfo>,
             tonic::Status,
@@ -12672,11 +12357,8 @@ pub mod installation_service_client {
         }
         pub async fn shutdown(
             &mut self,
-            request: impl tonic::IntoRequest<super::InstallationShutdownRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ShutdownResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -12711,18 +12393,15 @@ pub mod installation_service_server {
     pub trait InstallationService: std::marker::Send + std::marker::Sync + 'static {
         async fn get_info(
             &self,
-            request: tonic::Request<super::GetInfoRequest>,
+            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::InstallationInfo>,
             tonic::Status,
         >;
         async fn shutdown(
             &self,
-            request: tonic::Request<super::InstallationShutdownRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ShutdownResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct InstallationServiceServer<T> {
@@ -12805,8 +12484,7 @@ pub mod installation_service_server {
                     struct GetInfoSvc<T: InstallationService>(pub Arc<T>);
                     impl<
                         T: InstallationService,
-                    > tonic::server::UnaryService<super::GetInfoRequest>
-                    for GetInfoSvc<T> {
+                    > tonic::server::UnaryService<super::Empty> for GetInfoSvc<T> {
                         type Response = super::InstallationInfo;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -12814,7 +12492,7 @@ pub mod installation_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetInfoRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -12850,16 +12528,15 @@ pub mod installation_service_server {
                     struct ShutdownSvc<T: InstallationService>(pub Arc<T>);
                     impl<
                         T: InstallationService,
-                    > tonic::server::UnaryService<super::InstallationShutdownRequest>
-                    for ShutdownSvc<T> {
-                        type Response = super::ShutdownResponse;
+                    > tonic::server::UnaryService<super::Empty> for ShutdownSvc<T> {
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::InstallationShutdownRequest>,
+                            request: tonic::Request<super::Empty>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

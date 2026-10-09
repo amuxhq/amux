@@ -127,7 +127,7 @@ async fn profile_socket(front_door: &Path) -> Result<PathBuf> {
         .await
         .with_context(|| format!("connecting to {}", front_door.display()))?;
     let profiles = wire::profile_service_client::ProfileServiceClient::new(channel)
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .map_err(|status| anyhow!("listing profiles: {status}"))?
         .into_inner()

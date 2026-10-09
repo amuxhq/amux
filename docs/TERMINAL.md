@@ -466,7 +466,7 @@ by its name or its id.
 | `amux rename <agent> <name>` | Renames an agent. |
 | `amux delete <agent>` (`rm`) | Deletes an agent, its history and its children. |
 | `amux dump [agents…]` | Writes a debug bundle for the named agents, or all of them, with an optional `--reason`, and prints its path. See [DEBUGGING.md](DEBUGGING.md). |
-| `amux pair [target]` | Pairs with another host found nearby by name, an address, or `user@host` over SSH. With no target this host opens pairing mode and shows a PIN, or a QR code for the phone with `--qr` (`--print-link` also prints its link); `--link` pairs from an `amux://pair` link; `--cancel` closes pairing mode. |
+| `amux pair [target]` | Pairs with another host found nearby by name, an address, or `user@host` over SSH. With no target this host opens pairing mode and shows a PIN, or a QR code for the phone with `--qr` (`--print-link` also prints its link); `--link` pairs from an `amux://pair` link; `--cancel` closes pairing mode. `--demo --pin <digits> --for <duration>` holds a PIN you choose open for an unattended demo (`30d`, `12h`, `45m`; at most 90 days) and returns at once. |
 | `amux peers` | Lists the paired hosts and the hosts found nearby. |
 | `amux unpair <peer>` | Stops trusting a paired host, asking first unless `--force`. |
 | `amux login` | Signs the profile in to an amux account so its hosts reach each other through the relay (`--cloud-url` for another account service). |

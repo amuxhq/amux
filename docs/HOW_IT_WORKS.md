@@ -158,6 +158,18 @@ key exchange (SPAKE2) that proves each is talking to the machine in front of
 you; someone listening learns nothing they can use. A PIN works once and
 expires with the pairing window, and five wrong guesses close the window.
 
+For an unattended demo, such as an app reviewer who will never see your
+screen, `amux pair --demo --pin 246810 --for 30d` holds a PIN you choose
+open for a fixed time, at most 90 days. It is the same exchange, but the PIN
+is reusable: pairing does not use it up and wrong guesses do not close the
+window. The command returns at once; the window stays open until it
+expires, `amux pair --cancel` closes it, or amux restarts. Treat the PIN as
+a shared secret for that time, and use it only on a machine you can give
+away.
+
+No pairing window survives amux restarting. If amux restarts while you are
+pairing, run `amux pair` again: it opens a fresh window with a new PIN.
+
 What pairing produces is small and local: each host remembers the other's
 public key. From then on, every connection between them starts with both
 sides proving they hold the key the other remembers. Nothing else, not an

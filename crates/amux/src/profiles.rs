@@ -3,7 +3,7 @@
 use anyhow::Result;
 use tonic::transport::Channel;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{CreateProfileRequest, DeleteProfileRequest, ListProfilesRequest, RenameProfileRequest};
+use wire::{CreateProfileRequest, DeleteProfileRequest, Empty, RenameProfileRequest};
 
 use crate::connect;
 
@@ -11,7 +11,7 @@ type Profiles = ProfileServiceClient<Channel>;
 
 pub async fn list(profiles: &mut Profiles) -> Result<()> {
     let listed = profiles
-        .list_profiles(ListProfilesRequest {})
+        .list_profiles(Empty {})
         .await
         .map_err(crate::plain)?
         .into_inner()
@@ -24,21 +24,26 @@ pub async fn list(profiles: &mut Profiles) -> Result<()> {
         .max(5);
     println!("{:width$}  ID", "LABEL");
     for profile in listed {
-        println!("{:width$}  {}", profile.label, profile.id);
+        println!(
+            "{:width$}  {}",
+            profile.label,
+            connect::profile_id(&profile)
+        );
     }
     Ok(())
 }
 
 pub async fn create(profiles: &mut Profiles, label: Option<String>) -> Result<()> {
     let created = profiles
-        .create_profile(CreateProfileRequest {
-            operation_id: uuid::Uuid::new_v4().to_string(),
-            label,
-        })
+        .create_profile(CreateProfileRequest { label })
         .await
         .map_err(crate::plain)?
         .into_inner();
-    println!("Created profile {} ({}).", created.label, created.id);
+    println!(
+        "Created profile {} ({}).",
+        created.label,
+        connect::profile_id(&created)
+    );
     Ok(())
 }
 
@@ -46,7 +51,6 @@ pub async fn rename(profiles: &mut Profiles, reference: &str, name: &str) -> Res
     let profile = connect::select(profiles, Some(reference)).await?;
     let renamed = profiles
         .rename_profile(RenameProfileRequest {
-            operation_id: uuid::Uuid::new_v4().to_string(),
             profile_id: profile.id.clone(),
             expected_revision: profile.revision,
             override_name: Some(name.to_owned()),
@@ -62,7 +66,6 @@ pub async fn delete(profiles: &mut Profiles, reference: &str) -> Result<()> {
     let profile = connect::select(profiles, Some(reference)).await?;
     profiles
         .delete_profile(DeleteProfileRequest {
-            operation_id: uuid::Uuid::new_v4().to_string(),
             profile_id: profile.id.clone(),
             confirm_revision: profile.revision,
         })

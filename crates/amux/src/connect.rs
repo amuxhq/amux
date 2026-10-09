@@ -10,7 +10,7 @@ use tonic::transport::{Channel, Endpoint};
 use wire::client_service_client::ClientServiceClient;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{ListProfilesRequest, ProfileInfo};
+use wire::{Empty, ProfileInfo};
 
 /// How long a client waits for a daemon it did not find.
 const WAIT_FOR_DAEMON: Duration = Duration::from_secs(30);
@@ -111,7 +111,7 @@ pub async fn select(
     wanted: Option<&str>,
 ) -> Result<ProfileInfo> {
     let listed = profiles
-        .list_profiles(ListProfilesRequest {})
+        .list_profiles(Empty {})
         .await
         .map_err(crate::plain)?
         .into_inner()
@@ -122,9 +122,10 @@ pub async fn select(
             .next()
             .ok_or_else(|| anyhow!("the installation has no profile"));
     };
+    let wanted_id = uuid::Uuid::parse_str(wanted).ok();
     listed
         .iter()
-        .find(|profile| profile.id == wanted)
+        .find(|profile| wanted_id.is_some_and(|id| profile.id == id.as_bytes()))
         .or_else(|| listed.iter().find(|profile| profile.label == wanted))
         .cloned()
         .ok_or_else(|| {
@@ -135,6 +136,11 @@ pub async fn select(
                 .join(", ");
             anyhow!("no profile {wanted}; profiles: {known}")
         })
+}
+
+/// A profile's id as a person reads and types it.
+pub fn profile_id(profile: &ProfileInfo) -> String {
+    uuid::Uuid::from_slice(&profile.id).map_or_else(|_| "unknown".to_owned(), |id| id.to_string())
 }
 
 /// The selected profile, as the front door describes it.

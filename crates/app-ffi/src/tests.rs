@@ -10,7 +10,7 @@ use app_runtime::values::{ActOutcome, ChatChanges, PageOutcome};
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use serde_json::{Value, json};
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, Topology};
-use wire::{ProfileStartPairingRequest, StartPairingRequest, start_pairing_request};
+use wire::{Empty, StartPairingRequest, start_pairing_request};
 
 use super::*;
 
@@ -230,19 +230,16 @@ fn pin(net: &Net, tokio: &tokio::runtime::Runtime) -> (String, Vec<String>) {
         net.front_door("desk")
             .await
             .unwrap()
-            .start_pairing(ProfileStartPairingRequest {
-                operation_id: "pair".into(),
-                profile_id: desk.profile.to_string(),
-                pairing: Some(StartPairingRequest {
-                    mode: start_pairing_request::Mode::Pin as i32,
-                    ..StartPairingRequest::default()
-                }),
+            .start_pairing(StartPairingRequest {
+                profile_id: desk.profile.as_bytes().to_vec(),
+                method: Some(start_pairing_request::Method::Pin(Empty {})),
+                ttl_seconds: None,
             })
             .await
             .unwrap()
             .into_inner()
     });
-    let Some(wire::start_pairing_response::Secret::Pin(pin)) = started.secret else {
+    let Some(wire::pairing_window::Secret::Pin(pin)) = started.secret else {
         panic!("the desk shows a PIN");
     };
     (pin, started.addrs)

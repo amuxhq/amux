@@ -134,7 +134,7 @@ async fn a_relay_link_whose_credential_lapses_at_the_relay_first_comes_back_on_a
 /// dials a new one, and waits for the new one.
 async fn reconnect(net: &Net, host: &str) {
     let mut door = door(net, host).await;
-    door.pause_profile(operation(profile(net, host)))
+    door.pause_profile(profile_request(net, host))
         .await
         .expect("the profile pauses");
     until(&format!("{host}'s relay link to close"), || async {
@@ -145,7 +145,7 @@ async fn reconnect(net: &Net, host: &str) {
     })
     .await
     .unwrap();
-    door.resume_profile(operation(profile(net, host)))
+    door.resume_profile(profile_request(net, host))
         .await
         .expect("the profile resumes");
     until(&format!("{host}'s relay link to come back"), || async {
@@ -250,18 +250,15 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
         assert_eq!(peer.host_id, desk.as_bytes());
         assert_eq!(peer.name, "desk");
         assert_eq!(peer.pubkey, edge(&net, "desk").public_key());
-        assert!(peer.expires_at_unix_ms > now_ms);
-        assert!(peer.expires_at_unix_ms <= now_ms + 5 * 60 * 1000 + 1000);
+        assert!(peer.expires_at_ms > now_ms);
+        assert!(peer.expires_at_ms <= now_ms + 5 * 60 * 1000 + 1000);
         assert!(edge(&net, "desk").trusted().is_empty());
         assert!(edge(&net, "laptop").trusted().is_empty());
         door(&net, "laptop")
             .await
-            .abandon_pair(wire::ProfilePendingPairRequest {
+            .abandon_pair(wire::PendingPairRequest {
                 profile_id: profile(&net, "laptop"),
-                pairing: Some(wire::PendingPairRequest {
-                    token: pending.token,
-                }),
-                ..wire::ProfilePendingPairRequest::default()
+                token: pending.token,
             })
             .await
             .expect("the person abandons the pairing");
@@ -395,7 +392,7 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     // interface say, gets one short try before the next.
     let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let started = start_pairing(&net, "porch", qr_mode()).await.unwrap();
-    let Some(wire::start_pairing_response::Secret::QrSecret(secret)) = started.secret else {
+    let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {
         panic!("a QR window hands out a secret");
     };
     let mut addrs = vec![silent.local_addr().unwrap().to_string()];
@@ -412,9 +409,158 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     .expect("the QR pairs past the silent address");
     let took = begun.elapsed();
     assert!(took < Duration::from_secs(4), "{took:?}");
-    assert_eq!(pending.via, wire::PeerVia::Direct as i32);
+    assert_eq!(pending.via, wire::RouteKind::Direct as i32);
     confirm_pair(&net, "laptop", pending.token).await.unwrap();
     println!("a QR code paired over its second address after {took:?} on the silent first");
+
+    net.shutdown().await.unwrap();
+}
+
+/// A pairing whose start lost its reply to a daemon that went away is run
+/// again by the person: the window died with the daemon, so nothing stuck
+/// is left open to refuse the re-run, the re-run opens a fresh window with
+/// a fresh PIN, and only that PIN pairs.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window() {
+    let mut net = Net::start(
+        Topology::new()
+            .host_decl(lan_host("desk", "home"))
+            .host_decl(lan_host("laptop", "home")),
+    )
+    .await
+    .unwrap();
+    let desk = host_id(&net, "desk");
+    let first = start_pairing(&net, "desk", pin_mode()).await.unwrap();
+    assert!(edge(&net, "desk").pairing_active());
+
+    // The daemon crashes mid-pairing, before the PIN reaches anyone.
+    net.kill_daemon("desk").await.unwrap();
+    net.restart_daemon("desk").await.unwrap();
+    let open = door(&net, "desk")
+        .await
+        .get_pairing_status(profile_request(&net, "desk"))
+        .await
+        .unwrap()
+        .into_inner()
+        .active;
+    assert!(!open, "no window outlives the daemon that opened it");
+
+    // The person runs it again: a window opens, not a refusal, and its PIN
+    // is a new one.
+    let second = start_pairing(&net, "desk", pin_mode())
+        .await
+        .expect("a re-run after the restart opens a window");
+    assert_ne!(pin_of(&second), pin_of(&first), "a fresh PIN");
+    let stale = begin_pair(
+        &net,
+        "laptop",
+        Some(desk),
+        begin_pair_request::Secret::Pin(pin_of(&first)),
+        second.addrs.clone(),
+    )
+    .await
+    .expect_err("the lost window's PIN pairs nothing");
+    assert!(is_invalid_secret(&stale), "{stale:?}");
+    let pending = begin_pair(
+        &net,
+        "laptop",
+        Some(desk),
+        begin_pair_request::Secret::Pin(pin_of(&second)),
+        second.addrs.clone(),
+    )
+    .await
+    .expect("the fresh PIN pairs");
+    let peer = confirm_pair(&net, "laptop", pending.token).await.unwrap();
+    assert_eq!(peer.host_id, desk.as_bytes());
+    assert!(edge(&net, "laptop").is_trusted(desk));
+    println!(
+        "restarted mid-pairing: no window left open, the re-run's fresh PIN paired, the lost one did not"
+    );
+
+    net.shutdown().await.unwrap();
+}
+
+/// `amux pair --demo --pin <digits> --for <duration>`, as an operator
+/// leaves a demo machine for an app reviewer: the command returns at once,
+/// the daemon holds the chosen PIN open, a wrong guess does not close it,
+/// and every device that presents the PIN pairs, until `amux pair
+/// --cancel` closes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn demo_pin_from_the_cli() {
+    let net = Net::start(
+        Topology::new()
+            .host_decl(lan_host("desk", "home"))
+            .host_decl(lan_host("laptop", "home"))
+            .host_decl(lan_host("phone", "home")),
+    )
+    .await
+    .unwrap();
+    let desk = host_id(&net, "desk");
+    let config = net.host("desk").unwrap().config.clone();
+    let amux = |args: &'static [&'static str]| {
+        let config = config.clone();
+        async move {
+            let ran = tokio::process::Command::new(testnet::Binaries::built().amux())
+                .arg("--config")
+                .arg(&config)
+                .args(args)
+                .env_remove("AMUX_LOG")
+                .output()
+                .await
+                .unwrap();
+            let out = String::from_utf8_lossy(&ran.stdout).into_owned();
+            assert!(
+                ran.status.success(),
+                "amux {args:?}: {out}{}",
+                String::from_utf8_lossy(&ran.stderr)
+            );
+            out
+        }
+    };
+
+    let said = amux(&["pair", "--demo", "--pin", "246810", "--for", "30d"]).await;
+    assert!(said.contains("Pairing PIN: 246 810"), "{said}");
+    assert!(said.contains("Demo pairing is open for 30 days"), "{said}");
+    assert!(
+        edge(&net, "desk").pairing_active(),
+        "the window outlives the command"
+    );
+    let addrs = vec![edge(&net, "desk").lan_addr().unwrap().to_string()];
+
+    let wrong = begin_pair(
+        &net,
+        "laptop",
+        Some(desk),
+        begin_pair_request::Secret::Pin("135790".to_owned()),
+        addrs.clone(),
+    )
+    .await
+    .expect_err("a wrong PIN pairs nothing");
+    assert!(is_invalid_secret(&wrong), "{wrong:?}");
+    for device in ["laptop", "phone"] {
+        let pending = begin_pair(
+            &net,
+            device,
+            Some(desk),
+            begin_pair_request::Secret::Pin("246810".to_owned()),
+            addrs.clone(),
+        )
+        .await
+        .unwrap_or_else(|status| panic!("{device} pairs with the demo PIN: {status:?}"));
+        confirm_pair(&net, device, pending.token).await.unwrap();
+        assert!(edge(&net, device).is_trusted(desk), "{device}");
+        assert!(
+            edge(&net, "desk").pairing_active(),
+            "{device}'s pairing leaves the window open"
+        );
+    }
+
+    let said = amux(&["pair", "--cancel"]).await;
+    assert!(said.contains("Pairing mode closed."), "{said}");
+    assert!(!edge(&net, "desk").pairing_active());
+    println!(
+        "amux pair --demo held 246810 open through a wrong guess and two pairings; --cancel closed it"
+    );
 
     net.shutdown().await.unwrap();
 }
@@ -820,7 +966,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
     // with a QR secret as well as a PIN.
     let links_before = net.relay().unwrap().links("ada").await;
     let started = start_pairing(&net, "desk", qr_mode()).await.unwrap();
-    let Some(wire::start_pairing_response::Secret::QrSecret(secret)) = started.secret else {
+    let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {
         panic!("a QR window hands out a secret");
     };
     let pending = begin_pair(
@@ -832,7 +978,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
     )
     .await
     .expect("pairing through the relay");
-    assert_eq!(pending.via, wire::PeerVia::Relay as i32);
+    assert_eq!(pending.via, wire::RouteKind::Relay as i32);
     confirm_pair(&net, "tablet", pending.token).await.unwrap();
     until("the tablet's calls to go through again", || async {
         peer_inventory_hosts(&edge(&net, "tablet"), desk)
@@ -909,11 +1055,11 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .expect_err("the desk's PIN window is still open");
     door(&net, "desk")
         .await
-        .cancel_pairing(operation(profile(&net, "desk")))
+        .cancel_pairing(profile_request(&net, "desk"))
         .await
         .unwrap();
     let qr = start_pairing(&net, "desk", qr_mode()).await.unwrap();
-    let Some(wire::start_pairing_response::Secret::QrSecret(secret)) = qr.secret else {
+    let Some(wire::pairing_window::Secret::QrSecret(secret)) = qr.secret else {
         panic!("a QR window hands out a secret");
     };
     let across_qr = begin_pair(
@@ -929,7 +1075,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     assert_eq!(across_qr.message(), across.message());
     door(&net, "desk")
         .await
-        .cancel_pairing(operation(profile(&net, "desk")))
+        .cancel_pairing(profile_request(&net, "desk"))
         .await
         .unwrap();
     let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
@@ -958,21 +1104,19 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .await
         .create_profile(wire::CreateProfileRequest {
             label: Some("work".to_owned()),
-            ..wire::CreateProfileRequest::default()
         })
         .await
         .unwrap()
         .into_inner();
-    let work_profile: node::ProfileId = work.id.parse().unwrap();
+    let work_profile = node::ProfileId::from_slice(&work.id).unwrap();
     let work_edge = net.profile_edge("desk", work_profile).unwrap();
     assert_ne!(work_edge.host_id(), desk);
     assert_ne!(work_edge.public_key(), edge(&net, "desk").public_key());
     let work_start = door(&net, "desk")
         .await
-        .start_pairing(wire::ProfileStartPairingRequest {
+        .start_pairing(wire::StartPairingRequest {
             profile_id: work.id.clone(),
-            pairing: Some(pin_mode()),
-            ..wire::ProfileStartPairingRequest::default()
+            ..pin_mode()
         })
         .await
         .expect("the work profile opens its own window beside the desk's")
@@ -1044,16 +1188,13 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         "a key one profile pinned never authenticates into another"
     );
     assert_eq!(work_edge.via(laptop).await, HostVia::Offline);
-    println!(
-        "work profile {}: own key, own window, the desk's peers refused",
-        work.id
-    );
+    println!("work profile {work_profile}: own key, own window, the desk's peers refused");
 
     // Administration is the installation's: a trusted peer's tunnel and a
     // profile's client socket serve neither profiles nor pairing.
     let tunnel = edge(&net, "laptop").channel(desk).await.unwrap();
     let over_tunnel = wire::profile_service_client::ProfileServiceClient::new(tunnel)
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .expect_err("no profile administration over a peer tunnel");
     assert_eq!(over_tunnel.code(), tonic::Code::Unimplemented);
@@ -1065,10 +1206,9 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     let on_socket = wire::profile_service_client::ProfileServiceClient::new(
         testnet::local_channel(&socket).await.unwrap(),
     )
-    .start_pairing(wire::ProfileStartPairingRequest {
+    .start_pairing(wire::StartPairingRequest {
         profile_id: profile(&net, "desk"),
-        pairing: Some(pin_mode()),
-        ..wire::ProfileStartPairingRequest::default()
+        ..pin_mode()
     })
     .await
     .expect_err("no pairing administration on a profile's client socket");
@@ -1187,7 +1327,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     )
     .await
     .expect("pairing on the local network on a free account");
-    assert_eq!(pending.via, wire::PeerVia::Direct as i32);
+    assert_eq!(pending.via, wire::RouteKind::Direct as i32);
     confirm_pair(&net, "tablet", pending.token).await.unwrap();
     row_until(
         &mut fleet,
@@ -1586,14 +1726,14 @@ async fn a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its
 async fn bind(
     net: &Net,
     host: &str,
-    profile: &str,
+    profile: &[u8],
     refresh: String,
     adopt: bool,
 ) -> Result<wire::ProfileInfo, tonic::Status> {
     door(net, host)
         .await
         .bind_profile(wire::BindProfileRequest {
-            profile_id: Some(profile.to_owned()),
+            profile_id: Some(profile.to_vec()),
             cloud_url: net.relay().unwrap().url().to_owned(),
             staged_refresh_token: refresh,
             adopt_non_pristine: adopt,
@@ -1603,10 +1743,10 @@ async fn bind(
         .map(tonic::Response::into_inner)
 }
 
-async fn profile_info(net: &Net, host: &str, profile: &str) -> wire::ProfileInfo {
+async fn profile_info(net: &Net, host: &str, profile: &[u8]) -> wire::ProfileInfo {
     door(net, host)
         .await
-        .list_profiles(wire::ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()
@@ -1616,17 +1756,18 @@ async fn profile_info(net: &Net, host: &str, profile: &str) -> wire::ProfileInfo
         .expect("the profile is listed")
 }
 
-async fn create(net: &Net, host: &str, label: &str) -> (String, std::sync::Arc<node::Edge>) {
+async fn create(net: &Net, host: &str, label: &str) -> (Vec<u8>, std::sync::Arc<node::Edge>) {
     let info = door(net, host)
         .await
         .create_profile(wire::CreateProfileRequest {
             label: Some(label.to_owned()),
-            ..wire::CreateProfileRequest::default()
         })
         .await
         .unwrap()
         .into_inner();
-    let edge = net.profile_edge(host, info.id.parse().unwrap()).unwrap();
+    let edge = net
+        .profile_edge(host, node::ProfileId::from_slice(&info.id).unwrap())
+        .unwrap();
     (info.id, edge)
 }
 
@@ -1716,12 +1857,16 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     net.relay().unwrap().revoke("bob");
     door(&net, "desk")
         .await
-        .pause_profile(operation(work.clone()))
+        .pause_profile(wire::ProfileRequest {
+            profile_id: work.clone(),
+        })
         .await
         .unwrap();
     door(&net, "desk")
         .await
-        .resume_profile(operation(work.clone()))
+        .resume_profile(wire::ProfileRequest {
+            profile_id: work.clone(),
+        })
         .await
         .unwrap();
     until("the work profile to need a sign-in", || async {
@@ -1742,7 +1887,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     // Resuming, twice over, brings back one link.
     door(&net, "desk")
         .await
-        .pause_profile(operation(main.clone()))
+        .pause_profile(wire::ProfileRequest {
+            profile_id: main.clone(),
+        })
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -1758,7 +1905,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     for _ in 0..2 {
         door(&net, "desk")
             .await
-            .resume_profile(operation(main.clone()))
+            .resume_profile(wire::ProfileRequest {
+                profile_id: main.clone(),
+            })
             .await
             .unwrap();
     }
@@ -1786,7 +1935,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     let key = edge(&net, "desk").public_key().to_vec();
     door(&net, "desk")
         .await
-        .logout_profile(operation(main.clone()))
+        .logout_profile(wire::ProfileRequest {
+            profile_id: main.clone(),
+        })
         .await
         .unwrap();
     until("Ada's relay link to close", || async {
@@ -1821,7 +1972,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     // A watcher from here on sees everything that follows, in order.
     let mut watch = door(&net, "desk")
         .await
-        .watch_profiles(wire::WatchProfilesRequest {})
+        .watch_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner();
@@ -1919,7 +2070,6 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         .delete_profile(wire::DeleteProfileRequest {
             profile_id: old.clone(),
             confirm_revision: revision,
-            ..wire::DeleteProfileRequest::default()
         })
         .await
         .unwrap();
@@ -1941,7 +2091,10 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         !matches!(reached, Ok(Ok(_))),
         "the deleted profile's listener is closed"
     );
-    assert!(net.profile_edge("desk", old.parse().unwrap()).is_err());
+    assert!(
+        net.profile_edge("desk", node::ProfileId::from_slice(&old).unwrap())
+            .is_err()
+    );
     assert_eq!(
         net.relay().unwrap().links("ada").await,
         vec![(desk, 1)],
@@ -1949,9 +2102,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     );
     assert_eq!(edge(&net, "desk").via(laptop).await, HostVia::Direct);
 
-    // The watcher saw all of it, in order: every change numbered, the
-    // deletion last.
-    let mut sequence = 0;
+    // The watcher saw all of it, the deletion last.
     let mut removed = None;
     let mut upserts = 0;
     let deadline = tokio::time::Instant::now() + testnet::PATIENCE;
@@ -1961,16 +2112,14 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
             .expect("the watcher to see the deletion")
             .unwrap()
             .unwrap();
-        assert!(event.sequence >= sequence, "in order");
-        sequence = event.sequence;
-        match event.event {
-            Some(wire::watch_profiles_response::Event::Upserted(_)) => upserts += 1,
-            Some(wire::watch_profiles_response::Event::RemovedId(id)) => removed = Some(id),
+        match event.of {
+            Some(wire::profile_event::Of::Upserted(_)) => upserts += 1,
+            Some(wire::profile_event::Of::RemovedId(id)) => removed = Some(id),
             _ => {}
         }
     }
-    assert_eq!(removed.as_deref(), Some(old.as_str()));
-    println!("the watcher saw {upserts} changes in order, then the deletion");
+    assert_eq!(removed, Some(old));
+    println!("the watcher saw {upserts} changes, then the deletion");
 
     net.shutdown().await.unwrap();
 }
@@ -2036,7 +2185,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     .await;
     door(&net, "desk")
         .await
-        .logout_profile(operation(profile(&net, "desk")))
+        .logout_profile(profile_request(&net, "desk"))
         .await
         .unwrap();
     net.sever_link("desk", "laptop").unwrap();
@@ -2080,7 +2229,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     )
     .await
     .expect("a PIN pairing through the relay");
-    assert_eq!(pending.via, wire::PeerVia::Relay as i32);
+    assert_eq!(pending.via, wire::RouteKind::Relay as i32);
     confirm_pair(&net, "tablet", pending.token).await.unwrap();
     until("the tablet's calls to go through", || async {
         peer_inventory_hosts(&edge(&net, "tablet"), desk)

@@ -23,7 +23,7 @@ use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use wire::client_service_client::ClientServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{ListProfilesRequest, SubscribeRequest, session_event};
+use wire::{Empty, SubscribeRequest, session_event};
 /// How long agents outlive their daemon. Long enough to restart a daemon
 /// under them in a test, short enough to wait out when a test wants them
 /// gone.
@@ -186,7 +186,7 @@ impl Install {
     async fn client(&self) -> ClientServiceClient<Channel> {
         let door = self.front_door().await.expect("a daemon answers");
         let profile = ProfileServiceClient::new(door)
-            .list_profiles(ListProfilesRequest {})
+            .list_profiles(Empty {})
             .await
             .unwrap()
             .into_inner()

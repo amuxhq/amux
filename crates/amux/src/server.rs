@@ -14,7 +14,7 @@ use anyhow::{Context as _, Result, bail};
 use node::{Launch, NoopSender, StartOptions};
 use settings::{InstallationConfig, Switch};
 use tracing_subscriber::EnvFilter;
-use wire::{GetInfoRequest, InstallationShutdownRequest};
+use wire::Empty;
 
 use crate::connect;
 use crate::supervise::SUPERVISOR_LOG;
@@ -239,10 +239,7 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
     let deadline = Instant::now() + PATIENCE;
     loop {
         if let Some(door) = connect::front_door_now(config).await
-            && connect::installation(door)
-                .get_info(GetInfoRequest {})
-                .await
-                .is_ok()
+            && connect::installation(door).get_info(Empty {}).await.is_ok()
         {
             println!("Started amux.");
             return Ok(());
@@ -343,9 +340,7 @@ pub async fn stop(config: &InstallationConfig) -> Result<()> {
         return Ok(());
     };
     connect::installation(door)
-        .shutdown(InstallationShutdownRequest {
-            operation_id: uuid::Uuid::new_v4().to_string(),
-        })
+        .shutdown(Empty {})
         .await
         .map_err(crate::plain)?;
     // The front door closes first; the daemon has stopped once it has

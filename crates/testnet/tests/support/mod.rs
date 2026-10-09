@@ -13,10 +13,9 @@ use tonic::transport::Channel;
 use uuid::Uuid;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    BeginPairRequest, Empty, HostRef, InventoryEvent, PendingPairRequest, ProfileBeginPairRequest,
-    ProfileOperation, ProfilePendingPairRequest, ProfileStartPairingRequest, StartPairingRequest,
-    StartPairingResponse, begin_pair_request, host_ref, inventory_event, start_pairing_request,
-    start_pairing_response,
+    BeginPairRequest, Empty, HostRef, InventoryEvent, PairingWindow, PendingPairRequest,
+    ProfileRequest, StartPairingRequest, begin_pair_request, host_ref, inventory_event,
+    pairing_window, start_pairing_request,
 };
 
 /// A host listening for direct links on loopback and on the net's
@@ -39,8 +38,19 @@ pub fn host_id(net: &Net, host: &str) -> Uuid {
     net.host(host).expect("the host").host_id
 }
 
-pub fn profile(net: &Net, host: &str) -> String {
-    net.host(host).expect("the host").profile.to_string()
+pub fn profile(net: &Net, host: &str) -> Vec<u8> {
+    net.host(host)
+        .expect("the host")
+        .profile
+        .as_bytes()
+        .to_vec()
+}
+
+/// A front-door call naming `host`'s profile.
+pub fn profile_request(net: &Net, host: &str) -> ProfileRequest {
+    ProfileRequest {
+        profile_id: profile(net, host),
+    }
 }
 
 pub async fn door(net: &Net, host: &str) -> ProfileServiceClient<Channel> {
@@ -51,13 +61,6 @@ pub fn host_ref(host: Uuid) -> Option<HostRef> {
     Some(HostRef {
         of: Some(host_ref::Of::HostId(host.as_bytes().to_vec())),
     })
-}
-
-pub fn operation(profile: String) -> ProfileOperation {
-    ProfileOperation {
-        profile_id: profile,
-        ..ProfileOperation::default()
-    }
 }
 
 /// Waits until each host reaches the other over `via`.
@@ -111,35 +114,45 @@ pub async fn start_pairing(
     net: &Net,
     responder: &str,
     pairing: StartPairingRequest,
-) -> Result<StartPairingResponse, tonic::Status> {
+) -> Result<PairingWindow, tonic::Status> {
     door(net, responder)
         .await
-        .start_pairing(ProfileStartPairingRequest {
+        .start_pairing(StartPairingRequest {
             profile_id: profile(net, responder),
-            pairing: Some(pairing),
-            ..ProfileStartPairingRequest::default()
+            ..pairing
         })
         .await
         .map(tonic::Response::into_inner)
 }
 
+/// A one-shot PIN window, for whichever profile `start_pairing` names.
 pub fn pin_mode() -> StartPairingRequest {
     StartPairingRequest {
-        mode: start_pairing_request::Mode::Pin as i32,
+        method: Some(start_pairing_request::Method::Pin(Empty {})),
         ..StartPairingRequest::default()
     }
 }
 
+/// A one-shot QR window, for whichever profile `start_pairing` names.
 pub fn qr_mode() -> StartPairingRequest {
     StartPairingRequest {
-        mode: start_pairing_request::Mode::Qr as i32,
+        method: Some(start_pairing_request::Method::Qr(Empty {})),
         ..StartPairingRequest::default()
     }
 }
 
-pub fn pin_of(started: &StartPairingResponse) -> String {
+/// A reusable demo window holding `pin` for `ttl_seconds`.
+pub fn demo_mode(pin: &str, ttl_seconds: u64) -> StartPairingRequest {
+    StartPairingRequest {
+        method: Some(start_pairing_request::Method::DemoPin(pin.to_owned())),
+        ttl_seconds: Some(ttl_seconds),
+        ..StartPairingRequest::default()
+    }
+}
+
+pub fn pin_of(started: &PairingWindow) -> String {
     match &started.secret {
-        Some(start_pairing_response::Secret::Pin(pin)) => pin.clone(),
+        Some(pairing_window::Secret::Pin(pin)) => pin.clone(),
         other => panic!("a PIN pairing hands out a PIN, not {other:?}"),
     }
 }
@@ -152,19 +165,16 @@ pub async fn begin_pair(
     host: Option<Uuid>,
     secret: begin_pair_request::Secret,
     addrs: Vec<String>,
-) -> Result<wire::PendingPairResponse, tonic::Status> {
+) -> Result<wire::PendingPair, tonic::Status> {
     door(net, initiator)
         .await
-        .begin_pair(ProfileBeginPairRequest {
+        .begin_pair(BeginPairRequest {
             profile_id: profile(net, initiator),
-            pairing: Some(BeginPairRequest {
-                host_id: host
-                    .map(|host| host.as_bytes().to_vec())
-                    .unwrap_or_default(),
-                secret: Some(secret),
-                addrs,
-            }),
-            ..ProfileBeginPairRequest::default()
+            host_id: host
+                .map(|host| host.as_bytes().to_vec())
+                .unwrap_or_default(),
+            secret: Some(secret),
+            addrs,
         })
         .await
         .map(tonic::Response::into_inner)
@@ -177,13 +187,12 @@ pub async fn confirm_pair(
 ) -> Result<wire::PeerEntry, tonic::Status> {
     door(net, initiator)
         .await
-        .confirm_pair(ProfilePendingPairRequest {
+        .confirm_pair(PendingPairRequest {
             profile_id: profile(net, initiator),
-            pairing: Some(PendingPairRequest { token }),
-            ..ProfilePendingPairRequest::default()
+            token,
         })
         .await
-        .map(|answer| answer.into_inner().peer.expect("the confirmed peer"))
+        .map(tonic::Response::into_inner)
 }
 
 /// Pairs `initiator` with `responder` through both front doors with a PIN

@@ -1,3 +1,33 @@
+2026-10-09 — **The front door's calls are plain: no operation ids, flat pairing requests, byte ids, and `amux pair --demo` back.**
+Eleven front-door requests carried an `operation_id` that the CLI minted
+fresh for every call and the daemon never read: the replay ledger it once
+keyed was dropped with the daemon rebuild, and no client resends a call. The
+ids are gone, and the guarantee with them: a front-door call whose reply is
+lost, which on the local socket means the daemon went away, fails and the
+person runs the command again. Rename and delete keep their revision checks,
+so a re-run cannot undo a change made meanwhile, and a pairing window lives
+only in the daemon's memory, so a start re-run after a restart opens a fresh
+window with a new PIN and nothing stuck refuses it. The pairing requests
+lost their profile envelopes (`StartPairingRequest`, `BeginPairRequest`,
+`PendingPairRequest`, `TrustSshPeerRequest`, `GetPeerRequest` and
+`UnpairRequest` each name their profile), and answers that wrapped one
+message are that message: `PairingWindow`, `PendingPair`, `PairingStatus`,
+a `PeerEntry`, or `Empty`. A pairing start names its method in a oneof (a
+one-shot PIN, a one-shot QR secret, or a demo PIN the operator chose) and
+its length in one `ttl_seconds`, five minutes when absent and one second to
+ninety days for every method; demo pairing used to carry a second TTL of
+its own. The profile watch sends `ProfileEvent`s without sequence numbers,
+and `ProfileInfo` lost `available`, `InstallationInfo` its paths. Profile
+and host ids travel as their sixteen bytes, on SSH pairing frames and SSH
+targets too; the CLI and the `amux relay --profile` argument use the text
+form. A pending pairing's route is a `RouteKind`. A confirm or abandon that
+names no token is now refused as malformed, where a missing token used to
+read as a wrong secret. `amux pair --demo --pin <digits> --for <duration>`,
+dropped with the CLI rebuild while the daemon kept the demo window, is back:
+it holds a chosen PIN open for an unattended demo, such as an app review,
+and returns at once; `amux pair --cancel` closes it. The protocol notes said
+ordinary windows always last five minutes; the length is the start's to name.
+
 2026-10-09 — **An agent tells its daemon why it ended, and the row says so; exit causes and removal reasons are enums.**
 The inventory row's exit cause was a sentence only the daemon wrote, from
 what it had asked for and what it saw, so a provider crash and a drain after

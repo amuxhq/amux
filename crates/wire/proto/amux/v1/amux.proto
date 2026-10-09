@@ -246,7 +246,7 @@ message PairingIdentity {
   bytes pubkey = 2;
   string name = 3;
   // Authenticated along with the responder identity by SPAKE2 sealing.
-  int64 expires_at_unix_ms = 4;
+  int64 expires_at_ms = 4;
 }
 
 
@@ -326,6 +326,15 @@ enum HostVia {
   HOST_VIA_DIRECT = 1;
   HOST_VIA_RELAY = 2;
   HOST_VIA_SSH = 3;
+}
+
+// How this machine reaches a host, or how a pairing peer was reached. No
+// value for "no route": Presence says offline.
+enum RouteKind {
+  ROUTE_KIND_UNSPECIFIED = 0;
+  ROUTE_KIND_DIRECT = 1;
+  ROUTE_KIND_RELAY = 2;
+  ROUTE_KIND_SSH = 3;
 }
 
 message HostRemoved {
@@ -680,7 +689,7 @@ message ListRepositoriesResponse {
 message ProjectEntry {
   string path = 1;
   string name = 2;
-  optional int64 last_used_unix_ms = 3;
+  optional int64 last_used_ms = 3;
 }
 
 // Assembles the host-side parts of a dump bundle into the reports
@@ -700,36 +709,40 @@ message DumpReport {
 }
 
 // ---------------------------------------------------------------------------
-// Installation front door (local Unix socket and in-process only)
+// Installation front door
 // ---------------------------------------------------------------------------
 
+// The installation's front door: local Unix socket and in-process only.
+// Calls are not retried by any client; a mutation that loses its reply is
+// re-run by the person, and the revision checks on rename and delete
+// refuse a re-run against a profile that changed meanwhile.
 service ProfileService {
-  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
+  rpc ListProfiles(Empty) returns (ListProfilesResponse);
   // Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh watch.
-  rpc WatchProfiles(WatchProfilesRequest) returns (stream WatchProfilesResponse);
+  rpc WatchProfiles(Empty) returns (stream ProfileEvent);
   rpc CreateProfile(CreateProfileRequest) returns (ProfileInfo);
   rpc BindProfile(BindProfileRequest) returns (ProfileInfo);
-  rpc LogoutProfile(ProfileOperation) returns (ProfileInfo);
-  rpc PauseProfile(ProfileOperation) returns (ProfileInfo);
-  rpc ResumeProfile(ProfileOperation) returns (ProfileInfo);
+  rpc LogoutProfile(ProfileRequest) returns (ProfileInfo);
+  rpc PauseProfile(ProfileRequest) returns (ProfileInfo);
+  rpc ResumeProfile(ProfileRequest) returns (ProfileInfo);
   rpc RenameProfile(RenameProfileRequest) returns (ProfileInfo);
-  rpc DeleteProfile(DeleteProfileRequest) returns (DeleteProfileResponse);
-  rpc StartPairing(ProfileStartPairingRequest) returns (StartPairingResponse);
-  rpc GetPairingStatus(ProfilePairingStatusRequest) returns (GetPairingStatusResponse);
-  rpc CancelPairing(ProfileOperation) returns (CancelPairingResponse);
-  rpc BeginPair(ProfileBeginPairRequest) returns (PendingPairResponse);
-  rpc ConfirmPair(ProfilePendingPairRequest) returns (GetPeerResponse);
-  rpc AbandonPair(ProfilePendingPairRequest) returns (PairingAbandoned);
+  rpc DeleteProfile(DeleteProfileRequest) returns (Empty);
+  rpc StartPairing(StartPairingRequest) returns (PairingWindow);
+  rpc GetPairingStatus(ProfileRequest) returns (PairingStatus);
+  rpc CancelPairing(ProfileRequest) returns (Empty);
+  rpc BeginPair(BeginPairRequest) returns (PendingPair);
+  rpc ConfirmPair(PendingPairRequest) returns (PeerEntry);
+  rpc AbandonPair(PendingPairRequest) returns (Empty);
   rpc GetDeviceIdentity(ProfileRequest) returns (DeviceIdentity);
-  rpc TrustSshPeer(ProfileTrustSshPeerRequest) returns (Empty);
+  rpc TrustSshPeer(TrustSshPeerRequest) returns (Empty);
   rpc ListPeers(ProfileRequest) returns (ListPeersResponse);
-  rpc GetPeer(ProfileGetPeerRequest) returns (GetPeerResponse);
-  rpc Unpair(ProfileUnpairRequest) returns (UnpairResponse);
+  rpc GetPeer(GetPeerRequest) returns (PeerEntry);
+  rpc Unpair(UnpairRequest) returns (PeerEntry);
 }
 
 service InstallationService {
-  rpc GetInfo(GetInfoRequest) returns (InstallationInfo);
-  rpc Shutdown(InstallationShutdownRequest) returns (ShutdownResponse);
+  rpc GetInfo(Empty) returns (InstallationInfo);
+  rpc Shutdown(Empty) returns (Empty);
 }
 
 enum Intent {
@@ -760,136 +773,138 @@ enum RelayCarrier {
   RELAY_CARRIER_QUIC = 1;
   RELAY_CARRIER_TCP = 2;
 }
+
 message ProfileInfo {
-  string id = 1;
+  bytes id = 1;
   string label = 2;
   string email = 3;
   string account_name = 4;
   string socket_path = 5;
-  string host_id = 6;
+  bytes host_id = 6;
   Intent intent = 7;
   Observed observed = 8;
   uint64 revision = 9;
-  bool available = 10;
-  Tier tier = 11;
-  RelayCarrier relay_carrier = 12;
+  Tier tier = 10;
+  RelayCarrier relay_carrier = 11;
   // The bound account's subject at its service, which stays after a
   // sign-out; empty when unbound. What tells two profiles' accounts apart.
-  string account_subject = 13;
+  string account_subject = 12;
 }
-message ListProfilesRequest {}
+
 message ListProfilesResponse { repeated ProfileInfo profiles = 1; }
-message WatchProfilesRequest {}
-message WatchProfilesResponse {
-  uint64 sequence = 1;
-  oneof event {
-    ProfileInfo upserted = 2;
-    string removed_id = 3;
-    CaughtUp caught_up = 4;
+
+message ProfileEvent {
+  oneof of {
+    ProfileInfo upserted = 1;
+    bytes removed_id = 2;
+    CaughtUp caught_up = 3;
   }
 }
-message CreateProfileRequest { string operation_id = 1; optional string label = 2; }
-message ProfileRequest { string profile_id = 1; }
-message ProfileOperation { string operation_id = 1; string profile_id = 2; }
+
+message ProfileRequest { bytes profile_id = 1; }
+message CreateProfileRequest { optional string label = 1; }
+
 message BindProfileRequest {
-  string operation_id = 1;
-  optional string profile_id = 2;
-  string cloud_url = 3;
-  string staged_refresh_token = 4;
-  bool adopt_non_pristine = 5;
+  optional bytes profile_id = 1;
+  string cloud_url = 2;
+  string staged_refresh_token = 3;
+  bool adopt_non_pristine = 4;
   // The OAuth client the refresh token was issued to; empty is the CLI's.
   // A token refreshes only under the client that obtained it.
-  string client_id = 6;
+  string client_id = 5;
 }
+
 message RenameProfileRequest {
-  string operation_id = 1;
-  string profile_id = 2;
-  uint64 expected_revision = 3;
-  optional string override_name = 4;
+  bytes profile_id = 1;
+  uint64 expected_revision = 2;
+  optional string override_name = 3;
 }
+
 message DeleteProfileRequest {
-  string operation_id = 1;
-  string profile_id = 2;
-  uint64 confirm_revision = 3;
+  bytes profile_id = 1;
+  uint64 confirm_revision = 2;
 }
-message DeleteProfileResponse {}
-message ProfileStartPairingRequest {
-  string operation_id = 1;
-  string profile_id = 2;
-  StartPairingRequest pairing = 3;
+
+message StartPairingRequest {
+  bytes profile_id = 1;
+  oneof method {
+    // A one-shot PIN the daemon generates.
+    Empty pin = 2;
+    // A one-shot secret for a QR code.
+    Empty qr = 3;
+    // An operator-chosen reusable PIN for unattended demos: the window is
+    // neither consumed by success nor locked out by failures.
+    string demo_pin = 4;
+  }
+  // How long the window stays open; absent is the daemon's default for
+  // the method.
+  optional uint64 ttl_seconds = 5;
 }
-message ProfilePairingStatusRequest { string profile_id = 1; }
-message ProfileBeginPairRequest {
-  string operation_id = 1;
-  string profile_id = 2;
-  BeginPairRequest pairing = 3;
+
+message PairingWindow {
+  PairingIdentity identity = 1;
+  uint64 ttl_seconds = 2;
+  repeated string addrs = 3;
+  optional string cloud_url = 4;
+  oneof secret {
+    string pin = 5;
+    bytes qr_secret = 6;
+  }
 }
-message ProfilePendingPairRequest {
-  string operation_id = 1;
-  string profile_id = 2;
-  PendingPairRequest pairing = 3;
+
+message PairingStatus { bool active = 1; }
+
+message BeginPairRequest {
+  bytes profile_id = 1;
+  bytes host_id = 2;
+  oneof secret {
+    string pin = 3;
+    bytes qr_secret = 4;
+  }
+  repeated string addrs = 5;
 }
-message ProfileTrustSshPeerRequest {
-  string operation_id = 1;
-  string profile_id = 2;
-  TrustSshPeerRequest pairing = 3;
+
+message PendingPair {
+  bytes token = 1;
+  PairingIdentity peer = 2;
+  RouteKind via = 3;
 }
-message ProfileGetPeerRequest { string profile_id = 1; HostRef peer = 2; }
-message ProfileUnpairRequest {
-  string operation_id = 1;
-  string profile_id = 2;
-  HostRef peer = 3;
-  string reason = 4;
+
+message PendingPairRequest {
+  bytes profile_id = 1;
+  bytes token = 2;
 }
-enum PeerVia {
-  PEER_VIA_UNSPECIFIED = 0;
-  PEER_VIA_DIRECT = 1;
-  PEER_VIA_RELAY = 2;
-  PEER_VIA_SSH = 3;
+
+// SSH has already authenticated its peer outside the secret-based pairing
+// protocol, so its identity commit is a separate, SSH-only operation.
+message TrustSshPeerRequest {
+  bytes profile_id = 1;
+  PairingIdentity peer = 2;
+  SshTarget ssh_target = 3;
 }
-message GetInfoRequest {}
-message InstallationInfo {
-  string version = 1;
-  string root = 2;
-  string front_door_path = 3;
+
+message GetPeerRequest {
+  bytes profile_id = 1;
+  HostRef peer = 2;
 }
-message InstallationShutdownRequest { string operation_id = 1; }
+
+message UnpairRequest {
+  bytes profile_id = 1;
+  HostRef peer = 2;
+  string reason = 3;
+}
+
+message InstallationInfo { string version = 1; }
 
 // SSH bootstrap includes the local selector needed for subsequent stdio relays.
 message SshPairingIdentity {
   PairingIdentity identity = 1;
-  string profile_id = 2;
+  bytes profile_id = 2;
 }
 
 message SshTarget {
   string target = 1;
-  string profile_id = 2;
-}
-
-message BeginPairRequest {
-  bytes host_id = 1;
-  oneof secret {
-    string pin = 2;
-    bytes qr_secret = 3;
-  }
-  repeated string addrs = 4;
-}
-
-message PendingPairResponse {
-  bytes token = 1;
-  PairingIdentity peer = 2;
-  PeerVia via = 3;
-}
-
-message PendingPairRequest {
-  bytes token = 1;
-}
-
-// SSH has already authenticated its peer outside the secret-based pairing
-// protocol, so its identity commit remains a separate, SSH-only operation.
-message TrustSshPeerRequest {
-  PairingIdentity peer = 1;
-  SshTarget ssh_target = 2;
+  bytes profile_id = 2;
 }
 
 message PeerReachability {
@@ -908,7 +923,7 @@ message PeerEntry {
   bytes host_id = 1;
   string name = 2;
   bytes pubkey = 3;
-  int64 paired_at_unix_ms = 4;
+  int64 paired_at_ms = 4;
   repeated PeerReachability reachabilities = 5;
 }
 
@@ -921,51 +936,3 @@ message DeviceIdentity {
 message ListPeersResponse {
   repeated PeerEntry peers = 1;
 }
-
-message GetPeerResponse {
-  PeerEntry peer = 1;
-}
-
-message UnpairResponse {
-  PeerEntry removed_peer = 1;
-}
-
-message ShutdownResponse {}
-
-message StartPairingRequest {
-  enum Mode {
-    MODE_UNSPECIFIED = 0;
-    PIN = 1;
-    QR = 2;
-  }
-
-  Mode mode = 1;
-  // Operator-chosen reusable PIN for unattended demos. When set, `mode`
-  // must be PIN; the session lasts `ttl_seconds` instead of the one-shot
-  // window and is neither consumed by success nor locked out by failures.
-  optional DemoPairing demo = 2;
-  optional uint64 ttl_seconds = 3;
-}
-
-message DemoPairing {
-  string pin = 1;
-  uint64 ttl_seconds = 2;
-}
-
-message StartPairingResponse {
-  PairingIdentity identity = 1;
-  uint64 ttl_seconds = 2;
-  repeated string addrs = 3;
-  optional string cloud_url = 4;
-
-  oneof secret {
-    string pin = 5;
-    bytes qr_secret = 6;
-  }
-}
-
-message GetPairingStatusResponse {
-  bool active = 1;
-}
-
-message CancelPairingResponse {}

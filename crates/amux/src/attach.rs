@@ -49,11 +49,10 @@ impl Attacher {
         let dir = socket
             .parent()
             .ok_or_else(|| anyhow!("the profile socket {} has no directory", socket.display()))?;
-        let local_host = Uuid::parse_str(&profile.host_id)
-            .with_context(|| format!("the profile's host id {:?}", profile.host_id))?;
+        Uuid::from_slice(&profile.host_id).context("the profile's host id")?;
         Ok(Attacher {
             agents: dir.join("agents"),
-            local_host: local_host.as_bytes().to_vec(),
+            local_host: profile.host_id.clone(),
             leader,
             held: HashMap::new(),
         })
@@ -458,7 +457,7 @@ mod tests {
     fn profile() -> ProfileInfo {
         ProfileInfo {
             socket_path: "/data/profiles/p/client.sock".into(),
-            host_id: Uuid::from_bytes([7; 16]).to_string(),
+            host_id: vec![7; 16],
             ..ProfileInfo::default()
         }
     }

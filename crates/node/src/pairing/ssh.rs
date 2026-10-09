@@ -260,12 +260,12 @@ where
     validate_peer(peer)?;
     let frame = wire::pb::SshPairingIdentity {
         identity: Some(wire::pb::PairingIdentity {
-            expires_at_unix_ms: 0,
+            expires_at_ms: 0,
             host_id: peer.host_id.as_bytes().to_vec(),
             pubkey: peer.pubkey.clone(),
             name: peer.name.clone(),
         }),
-        profile_id: profile.profile.to_string(),
+        profile_id: profile.profile.as_bytes().to_vec(),
     }
     .encode_to_vec();
     if frame.len() > SSH_PAIRING_FRAME_MAX_BYTES {
@@ -298,9 +298,7 @@ where
     let mut frame = vec![0_u8; len];
     io.read_exact(&mut frame).await?;
     let envelope = wire::pb::SshPairingIdentity::decode(frame.as_slice())?;
-    let profile: ProfileId = envelope
-        .profile_id
-        .parse()
+    let profile = ProfileId::from_slice(&envelope.profile_id)
         .map_err(|_| SshPairingError::Protocol("profile_id must be a UUID"))?;
     let identity = envelope
         .identity
@@ -510,12 +508,12 @@ mod tests {
         for selector in ["", "work"] {
             let frame = wire::pb::SshPairingIdentity {
                 identity: Some(wire::pb::PairingIdentity {
-                    expires_at_unix_ms: 0,
+                    expires_at_ms: 0,
                     host_id: HostId::new_v4().as_bytes().to_vec(),
                     pubkey: vec![1; PUBKEY_LEN],
                     name: "workstation".into(),
                 }),
-                profile_id: selector.into(),
+                profile_id: selector.as_bytes().to_vec(),
             }
             .encode_to_vec();
             let (mut writer, mut reader) = tokio::io::duplex(4096);

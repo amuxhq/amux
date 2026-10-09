@@ -11,7 +11,7 @@ use anyhow::{Context as _, Result, bail};
 use node::supervisor::login::LoginItem;
 use node::supervisor::{Request, ask};
 use settings::{Channel, InstallationConfig, Switch};
-use wire::GetInfoRequest;
+use wire::Empty;
 
 use crate::connect;
 use crate::server::running_supervisor;
@@ -237,9 +237,7 @@ pub async fn update(config: &InstallationConfig) -> Result<()> {
     let deadline = Instant::now() + RESTART_PATIENCE;
     while Instant::now() < deadline {
         if let Some(door) = connect::front_door_now(config).await
-            && let Ok(info) = connect::installation(door)
-                .get_info(GetInfoRequest {})
-                .await
+            && let Ok(info) = connect::installation(door).get_info(Empty {}).await
             && info.get_ref().version == version
         {
             println!("amux {version} is running.");

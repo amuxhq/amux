@@ -169,7 +169,7 @@ fn entry(path: PathBuf, last_used_ms: Option<i64>) -> Option<ProjectEntry> {
     Some(ProjectEntry {
         path: text,
         name,
-        last_used_unix_ms: last_used_ms,
+        last_used_ms,
     })
 }
 
@@ -193,7 +193,7 @@ mod tests {
         let listed = list(&[], &reloaded, None, 10);
         let paths: Vec<_> = listed.recent.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(paths, ["first", "second"]);
-        assert_eq!(listed.recent[0].last_used_unix_ms, Some(2_000));
+        assert_eq!(listed.recent[0].last_used_ms, Some(2_000));
 
         std::fs::remove_dir(&first).unwrap();
         #[cfg(unix)]

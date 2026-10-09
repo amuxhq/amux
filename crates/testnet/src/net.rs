@@ -1165,7 +1165,7 @@ impl Net {
         self.front_door(host)
             .await?
             .bind_profile(wire::BindProfileRequest {
-                profile_id: Some(profile.to_string()),
+                profile_id: Some(profile.as_bytes().to_vec()),
                 cloud_url: relay.url().to_owned(),
                 staged_refresh_token: Relay::login(account),
                 // The person confirms adopting whatever the profile holds.

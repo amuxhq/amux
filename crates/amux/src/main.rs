@@ -115,6 +115,28 @@ enum Command {
         /// Close this host's pairing mode.
         #[arg(long, conflicts_with = "target")]
         cancel: bool,
+        /// Hold a PIN you choose open for an unattended demo, such as an app
+        /// reviewer pairing a phone with a machine nobody watches. Every
+        /// device that presents it pairs, and wrong guesses do not close it.
+        /// The command returns; the window lasts until it expires,
+        /// `amux pair --cancel`, or amux restarts.
+        #[arg(
+            long,
+            requires_all = ["pin", "for"],
+            conflicts_with_all = ["target", "qr", "link", "cancel"]
+        )]
+        demo: bool,
+        /// The six-digit PIN a demo window holds.
+        #[arg(long, value_name = "DIGITS", requires = "demo")]
+        pin: Option<String>,
+        /// How long a demo window stays open: 30d, 12h, 45m; at most 90 days.
+        #[arg(
+            long = "for",
+            value_name = "DURATION",
+            requires = "demo",
+            value_parser = pairing::parse_duration
+        )]
+        r#for: Option<std::time::Duration>,
     },
     /// List the paired hosts and the hosts found nearby.
     Peers,
@@ -411,11 +433,16 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 print_link,
                 link,
                 cancel,
+                demo: _,
+                pin,
+                r#for,
             } => {
                 let door = connect::profiles(connect::front_door(&config).await?);
                 let selected = connect::select(&mut door.clone(), profile).await?;
                 if cancel {
                     pairing::cancel(door, &selected).await
+                } else if let (Some(pin), Some(ttl)) = (pin, r#for) {
+                    pairing::demo(door, &selected, pin, ttl).await
                 } else if let Some(link) = link {
                     pairing::pair_with_link(door, &selected, &link).await
                 } else if let Some(target) = target {
@@ -537,4 +564,34 @@ fn claude_hook() -> std::io::Result<()> {
     let mut payload = Vec::new();
     std::io::stdin().read_to_end(&mut payload)?;
     claude::hooks::forward_from_env(&payload, &socket)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_demo_window_needs_its_pin_and_its_length() {
+        let parse = |args: &[&str]| Cli::try_parse_from(args);
+        assert!(parse(&["amux", "pair", "--demo"]).is_err());
+        assert!(parse(&["amux", "pair", "--demo", "--pin", "123456"]).is_err());
+        assert!(parse(&["amux", "pair", "--pin", "123456", "--for", "1d"]).is_err());
+        assert!(
+            parse(&[
+                "amux", "pair", "--demo", "--pin", "123456", "--for", "30d", "--qr"
+            ])
+            .is_err()
+        );
+        let cli = parse(&["amux", "pair", "--demo", "--pin", "123456", "--for", "30d"]).unwrap();
+        match cli.command {
+            Some(Command::Pair {
+                demo, pin, r#for, ..
+            }) => {
+                assert!(demo);
+                assert_eq!(pin.as_deref(), Some("123456"));
+                assert_eq!(r#for, Some(std::time::Duration::from_secs(30 * 86_400)));
+            }
+            other => panic!("not a pairing: {other:?}"),
+        }
+    }
 }

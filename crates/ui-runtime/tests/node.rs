@@ -15,7 +15,6 @@ use support::until_within;
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use ui_runtime::{Fleet, Session, Window};
 use ui_state::{Connection, InputState};
-use wire::ListProfilesRequest;
 
 const PATIENCE: Duration = Duration::from_secs(20);
 /// The window's cap: more rows than any case here delivers.
@@ -48,7 +47,7 @@ async fn grpc(net: &Net) -> GrpcClient {
         .front_door("desk")
         .await
         .unwrap()
-        .list_profiles(ListProfilesRequest {})
+        .list_profiles(wire::Empty {})
         .await
         .unwrap()
         .into_inner()

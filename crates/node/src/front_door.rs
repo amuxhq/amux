@@ -14,15 +14,11 @@ use uuid::Uuid;
 use wire::installation_service_server::{InstallationService, InstallationServiceServer};
 use wire::profile_service_server::{ProfileService, ProfileServiceServer};
 use wire::{
-    BindProfileRequest, CancelPairingResponse, CaughtUp, CreateProfileRequest,
-    DeleteProfileRequest, DeleteProfileResponse, DeviceIdentity, Empty, ErrorCode, GetInfoRequest,
-    GetPairingStatusResponse, GetPeerResponse, InstallationInfo, InstallationShutdownRequest,
-    Intent, ListPeersResponse, ListProfilesRequest, ListProfilesResponse, PairingAbandoned,
-    PendingPairResponse, ProfileBeginPairRequest, ProfileGetPeerRequest, ProfileInfo,
-    ProfileOperation, ProfilePairingStatusRequest, ProfilePendingPairRequest, ProfileRequest,
-    ProfileStartPairingRequest, ProfileTrustSshPeerRequest, ProfileUnpairRequest,
-    RenameProfileRequest, ShutdownResponse, StartPairingResponse, UnpairResponse,
-    WatchProfilesRequest, WatchProfilesResponse, watch_profiles_response,
+    BeginPairRequest, BindProfileRequest, CaughtUp, CreateProfileRequest, DeleteProfileRequest,
+    DeviceIdentity, Empty, ErrorCode, GetPeerRequest, InstallationInfo, Intent, ListPeersResponse,
+    ListProfilesResponse, PairingStatus, PairingWindow, PeerEntry, PendingPair, PendingPairRequest,
+    ProfileInfo, ProfileRequest, RenameProfileRequest, StartPairingRequest, TrustSshPeerRequest,
+    UnpairRequest, profile_event,
 };
 
 use crate::Tier;
@@ -35,7 +31,7 @@ use crate::profiles::{PROFILE_SOCKET, Registry, profile_dir};
 #[derive(Clone, Debug)]
 pub(crate) enum ProfileEvent {
     Upserted(Box<ProfileInfo>),
-    Removed(String),
+    Removed(Uuid),
 }
 
 /// A hosted profile as the front door describes it.
@@ -75,7 +71,7 @@ pub(crate) fn info(hosted: &Hosted) -> ProfileInfo {
         observed: observed.map_or(wire::Observed::Local, |observed| observed.to_wire()) as i32,
         tier: tier as i32,
         relay_carrier: relay_carrier as i32,
-        id: hosted.entry.id.to_string(),
+        id: hosted.entry.id.as_bytes().to_vec(),
         label: hosted.entry.label.clone(),
         socket_path: hosted
             .runtime
@@ -83,9 +79,8 @@ pub(crate) fn info(hosted: &Hosted) -> ProfileInfo {
             .join(PROFILE_SOCKET)
             .to_string_lossy()
             .into_owned(),
-        host_id: hosted.runtime.host().to_string(),
+        host_id: hosted.runtime.host().as_bytes().to_vec(),
         revision: hosted.entry.revision,
-        available: true,
     }
 }
 
@@ -147,13 +142,20 @@ pub(crate) fn failed(code: ErrorCode, message: impl Into<String>) -> Status {
     status(wire_error(code, message))
 }
 
-fn profile_id(text: &str) -> Result<Uuid, Status> {
-    Uuid::parse_str(text).map_err(|_| {
-        failed(
+fn profile_id(bytes: &[u8]) -> Result<Uuid, Status> {
+    Uuid::from_slice(bytes)
+        .map_err(|_| failed(ErrorCode::InvalidArgument, "a profile id is 16 bytes"))
+}
+
+/// A pairing's token, which `BeginPair` handed out: never empty.
+fn token(request: &PendingPairRequest) -> Result<&[u8], Status> {
+    if request.token.is_empty() {
+        return Err(failed(
             ErrorCode::InvalidArgument,
-            format!("{text:?} is not a profile id"),
-        )
-    })
+            "name the pairing by the token BeginPair answered",
+        ));
+    }
+    Ok(&request.token)
 }
 
 impl FrontDoor {
@@ -172,7 +174,7 @@ impl FrontDoor {
     }
 
     /// A hosted profile's network edge.
-    fn edge(installation: &Installation, id: &str) -> Result<(Uuid, Arc<Edge>), Status> {
+    fn edge(installation: &Installation, id: &[u8]) -> Result<(Uuid, Arc<Edge>), Status> {
         let id = profile_id(id)?;
         let edge = installation
             .hosted
@@ -188,7 +190,7 @@ impl FrontDoor {
 
     async fn set_paused(
         &self,
-        request: ProfileOperation,
+        request: ProfileRequest,
         paused: bool,
     ) -> Result<Response<ProfileInfo>, Status> {
         let installation = self.installation()?;
@@ -217,7 +219,7 @@ impl FrontDoor {
     }
 }
 
-type Events = Pin<Box<dyn Stream<Item = Result<WatchProfilesResponse, Status>> + Send>>;
+type Events = Pin<Box<dyn Stream<Item = Result<wire::ProfileEvent, Status>> + Send>>;
 
 #[tonic::async_trait]
 impl ProfileService for FrontDoor {
@@ -225,7 +227,7 @@ impl ProfileService for FrontDoor {
 
     async fn list_profiles(
         &self,
-        _request: Request<ListProfilesRequest>,
+        _request: Request<Empty>,
     ) -> Result<Response<ListProfilesResponse>, Status> {
         let installation = self.installation()?;
         Ok(Response::new(ListProfilesResponse {
@@ -235,48 +237,36 @@ impl ProfileService for FrontDoor {
 
     async fn watch_profiles(
         &self,
-        _request: Request<WatchProfilesRequest>,
+        _request: Request<Empty>,
     ) -> Result<Response<Self::WatchProfilesStream>, Status> {
         let installation = self.installation()?;
-        // The sequence lock is held while every change is published, so
+        // The publishing lock is held while every change is published, so
         // the list read under it is exactly the state before the first
         // event the receiver sees.
-        let (sequence, profiles, events) = {
-            let sequence = installation.sequence.lock().unwrap();
+        let (profiles, events) = {
+            let _publishing = installation.publishing.lock().unwrap();
             let events = installation.events.subscribe();
-            (*sequence, Self::list(&installation), events)
+            (Self::list(&installation), events)
         };
         let opening = profiles
             .into_iter()
-            .map(|info| WatchProfilesResponse {
-                sequence,
-                event: Some(watch_profiles_response::Event::Upserted(info)),
-            })
-            .chain(std::iter::once(WatchProfilesResponse {
-                sequence,
-                event: Some(watch_profiles_response::Event::CaughtUp(CaughtUp {
-                    revision: sequence,
-                })),
-            }))
-            .map(Ok)
+            .map(profile_event::Of::Upserted)
+            .chain(std::iter::once(profile_event::Of::CaughtUp(CaughtUp {
+                revision: 0,
+            })))
+            .map(|of| Ok(wire::ProfileEvent { of: Some(of) }))
             .collect::<Vec<_>>();
         let live = futures_util::stream::unfold(Some(events), |events| async move {
             let mut events = events?;
             match events.recv().await {
-                Ok((sequence, event)) => {
-                    let event = match event {
-                        ProfileEvent::Upserted(info) => {
-                            watch_profiles_response::Event::Upserted(*info)
+                Ok(event) => {
+                    let of = match event {
+                        ProfileEvent::Upserted(info) => profile_event::Of::Upserted(*info),
+                        ProfileEvent::Removed(id) => {
+                            profile_event::Of::RemovedId(id.as_bytes().to_vec())
                         }
-                        ProfileEvent::Removed(id) => watch_profiles_response::Event::RemovedId(id),
                     };
-                    Some((
-                        Ok(WatchProfilesResponse {
-                            sequence,
-                            event: Some(event),
-                        }),
-                        Some(events),
-                    ))
+                    Some((Ok(wire::ProfileEvent { of: Some(of) }), Some(events)))
                 }
                 // A watcher that fell behind watches again for a fresh list.
                 Err(RecvError::Lagged(_)) => Some((
@@ -372,7 +362,7 @@ impl ProfileService for FrontDoor {
     async fn delete_profile(
         &self,
         request: Request<DeleteProfileRequest>,
-    ) -> Result<Response<DeleteProfileResponse>, Status> {
+    ) -> Result<Response<Empty>, Status> {
         let installation = self.installation()?;
         let request = request.into_inner();
         let id = profile_id(&request.profile_id)?;
@@ -428,8 +418,8 @@ impl ProfileService for FrontDoor {
         drop(runtime);
         std::fs::remove_dir_all(profile_dir(&installation.data_dir, id))
             .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        installation.publish(ProfileEvent::Removed(id.to_string()));
-        Ok(Response::new(DeleteProfileResponse {}))
+        installation.publish(ProfileEvent::Removed(id));
+        Ok(Response::new(Empty {}))
     }
 
     async fn bind_profile(
@@ -458,7 +448,7 @@ impl ProfileService for FrontDoor {
 
     async fn logout_profile(
         &self,
-        request: Request<ProfileOperation>,
+        request: Request<ProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
         let installation = self.installation()?;
         let (id, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
@@ -472,94 +462,78 @@ impl ProfileService for FrontDoor {
 
     async fn pause_profile(
         &self,
-        request: Request<ProfileOperation>,
+        request: Request<ProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
         self.set_paused(request.into_inner(), true).await
     }
 
     async fn resume_profile(
         &self,
-        request: Request<ProfileOperation>,
+        request: Request<ProfileRequest>,
     ) -> Result<Response<ProfileInfo>, Status> {
         self.set_paused(request.into_inner(), false).await
     }
 
     async fn start_pairing(
         &self,
-        request: Request<ProfileStartPairingRequest>,
-    ) -> Result<Response<StartPairingResponse>, Status> {
+        request: Request<StartPairingRequest>,
+    ) -> Result<Response<PairingWindow>, Status> {
         let installation = self.installation()?;
         let request = request.into_inner();
         let (_, edge) = Self::edge(&installation, &request.profile_id)?;
-        let pairing = request
-            .pairing
-            .ok_or_else(|| failed(ErrorCode::InvalidArgument, "the pairing request is missing"))?;
-        Ok(Response::new(edge.start_pairing(pairing).await?))
+        Ok(Response::new(edge.start_pairing(request).await?))
     }
 
     async fn get_pairing_status(
         &self,
-        request: Request<ProfilePairingStatusRequest>,
-    ) -> Result<Response<GetPairingStatusResponse>, Status> {
+        request: Request<ProfileRequest>,
+    ) -> Result<Response<PairingStatus>, Status> {
         let installation = self.installation()?;
         let (_, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
-        Ok(Response::new(GetPairingStatusResponse {
+        Ok(Response::new(PairingStatus {
             active: edge.pairing_active(),
         }))
     }
 
     async fn cancel_pairing(
         &self,
-        request: Request<ProfileOperation>,
-    ) -> Result<Response<CancelPairingResponse>, Status> {
+        request: Request<ProfileRequest>,
+    ) -> Result<Response<Empty>, Status> {
         let installation = self.installation()?;
         let (_, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
         edge.cancel_pairing().await?;
-        Ok(Response::new(CancelPairingResponse {}))
+        Ok(Response::new(Empty {}))
     }
 
     async fn begin_pair(
         &self,
-        request: Request<ProfileBeginPairRequest>,
-    ) -> Result<Response<PendingPairResponse>, Status> {
+        request: Request<BeginPairRequest>,
+    ) -> Result<Response<PendingPair>, Status> {
         let installation = self.installation()?;
         let request = request.into_inner();
         let (_, edge) = Self::edge(&installation, &request.profile_id)?;
-        let pairing = request
-            .pairing
-            .ok_or_else(|| failed(ErrorCode::InvalidArgument, "the pairing request is missing"))?;
-        Ok(Response::new(edge.begin_pair(pairing).await?))
+        Ok(Response::new(edge.begin_pair(request).await?))
     }
 
     async fn confirm_pair(
         &self,
-        request: Request<ProfilePendingPairRequest>,
-    ) -> Result<Response<GetPeerResponse>, Status> {
+        request: Request<PendingPairRequest>,
+    ) -> Result<Response<PeerEntry>, Status> {
         let installation = self.installation()?;
         let request = request.into_inner();
         let (_, edge) = Self::edge(&installation, &request.profile_id)?;
-        let token = request
-            .pairing
-            .map(|pairing| pairing.token)
-            .unwrap_or_default();
-        Ok(Response::new(GetPeerResponse {
-            peer: Some(edge.confirm_pair(&token).await?),
-        }))
+        Ok(Response::new(edge.confirm_pair(token(&request)?).await?))
     }
 
     async fn abandon_pair(
         &self,
-        request: Request<ProfilePendingPairRequest>,
-    ) -> Result<Response<PairingAbandoned>, Status> {
+        request: Request<PendingPairRequest>,
+    ) -> Result<Response<Empty>, Status> {
         let installation = self.installation()?;
         let request = request.into_inner();
         let (_, edge) = Self::edge(&installation, &request.profile_id)?;
-        let token = request
-            .pairing
-            .map(|pairing| pairing.token)
-            .unwrap_or_default();
-        edge.abandon_pair(&token).await?;
-        Ok(Response::new(PairingAbandoned {}))
+        edge.abandon_pair(token(&request)?).await?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_device_identity(
@@ -573,15 +547,12 @@ impl ProfileService for FrontDoor {
 
     async fn trust_ssh_peer(
         &self,
-        request: Request<ProfileTrustSshPeerRequest>,
+        request: Request<TrustSshPeerRequest>,
     ) -> Result<Response<Empty>, Status> {
         let installation = self.installation()?;
         let request = request.into_inner();
         let (_, edge) = Self::edge(&installation, &request.profile_id)?;
-        let pairing = request
-            .pairing
-            .ok_or_else(|| failed(ErrorCode::InvalidArgument, "the pairing request is missing"))?;
-        edge.trust_ssh_peer(pairing).await?;
+        edge.trust_ssh_peer(request).await?;
         Ok(Response::new(Empty {}))
     }
 
@@ -598,32 +569,25 @@ impl ProfileService for FrontDoor {
 
     async fn get_peer(
         &self,
-        request: Request<ProfileGetPeerRequest>,
-    ) -> Result<Response<GetPeerResponse>, Status> {
+        request: Request<GetPeerRequest>,
+    ) -> Result<Response<PeerEntry>, Status> {
         let installation = self.installation()?;
         let request = request.into_inner();
         let (_, edge) = Self::edge(&installation, &request.profile_id)?;
         let peer = request
             .peer
             .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to read"))?;
-        Ok(Response::new(GetPeerResponse {
-            peer: Some(edge.peer_entry(peer)?),
-        }))
+        Ok(Response::new(edge.peer_entry(peer)?))
     }
 
-    async fn unpair(
-        &self,
-        request: Request<ProfileUnpairRequest>,
-    ) -> Result<Response<UnpairResponse>, Status> {
+    async fn unpair(&self, request: Request<UnpairRequest>) -> Result<Response<PeerEntry>, Status> {
         let installation = self.installation()?;
         let request = request.into_inner();
         let (_, edge) = Self::edge(&installation, &request.profile_id)?;
         let peer = request
             .peer
             .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to unpair"))?;
-        Ok(Response::new(UnpairResponse {
-            removed_peer: Some(edge.unpair(peer, request.reason).await?),
-        }))
+        Ok(Response::new(edge.unpair(peer, request.reason).await?))
     }
 }
 
@@ -631,25 +595,16 @@ impl ProfileService for FrontDoor {
 impl InstallationService for FrontDoor {
     async fn get_info(
         &self,
-        _request: Request<GetInfoRequest>,
+        _request: Request<Empty>,
     ) -> Result<Response<InstallationInfo>, Status> {
-        let installation = self.installation()?;
+        self.installation()?;
         Ok(Response::new(InstallationInfo {
             version: crate::version().to_owned(),
-            root: installation.data_dir.to_string_lossy().into_owned(),
-            front_door_path: installation
-                .front_door
-                .as_deref()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_default(),
         }))
     }
 
-    async fn shutdown(
-        &self,
-        _request: Request<InstallationShutdownRequest>,
-    ) -> Result<Response<ShutdownResponse>, Status> {
+    async fn shutdown(&self, _request: Request<Empty>) -> Result<Response<Empty>, Status> {
         self.installation()?.request_shutdown();
-        Ok(Response::new(ShutdownResponse {}))
+        Ok(Response::new(Empty {}))
     }
 }

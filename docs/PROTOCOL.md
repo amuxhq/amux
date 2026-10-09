@@ -106,23 +106,31 @@ Every secret failure is the same opaque `INVALID_PIN`.
 
 Before trust exists, an open pairing window lets the dispatcher admit one
 anonymous channel to `PairingService`. SPAKE2 authenticates that exchange and
-creates the pins later channel handshakes check. Ordinary PIN and QR windows
-last five minutes, are one-shot, and allow five attempts. Demo PIN windows
-are reusable until their configured expiry, at most 90 days. SSH pairing instead exchanges
+creates the pins later channel handshakes check. A window lasts the length
+its `StartPairing` names, five minutes when it names none, and never more
+than 90 days, whatever its method. PIN and QR windows are one-shot and allow
+five attempts. A demo PIN window holds a PIN the operator chose
+(`amux pair --demo`) and is reusable: success does not consume it and failed
+attempts do not close it. A window lives in the daemon's memory, so none
+survives a restart, and a start run again afterwards opens a fresh one.
+SSH pairing instead exchanges
 identities over the already-authenticated SSH stream (`amux pair user@host`
 runs `amux pair-recv` on the far side) and records outbound reachability only
 on the side that knows how to dial it.
 
 A client can pause SPAKE2 before granting trust. `BeginPair` (PIN or QR
-secret, optional host id and addresses) returns a `PendingPairResponse`: an
+secret, optional host id and addresses) returns a `PendingPair`: an
 opaque token, the responder's `PairingIdentity` (host id, public key, name and
-an expiry sealed inside the responder identity) and the route pairing found.
+an expiry sealed inside the responder identity) and the route pairing found
+(a `RouteKind`: direct or through the relay).
 Neither trust store changes during this phase. The profile's pairing
 administration holds the open stream behind the single-use token until that
 expiry, and holds at most 32 at once. The token is a local capability, not a
 trust decision a client could recreate from the identity fields it displays.
 `ConfirmPair` sends the initiator's sealed identity, waits for the responder's
-trust commit, stores the peer and dials it. `AbandonPair` sends a rejection
+trust commit, stores the peer and dials it. A `ConfirmPair` or `AbandonPair`
+that names no token is refused as malformed (`INVALID_ARGUMENT`); a token that
+names no pending pairing reads as every other secret failure. `AbandonPair` sends a rejection
 and waits for `PairingAbandoned`, which the responder sends after releasing
 the attempt. Abandoning leaves existing trust unchanged and consumes no guess,
 and a token left to expire grants no trust. These calls, with
@@ -411,9 +419,19 @@ renames and deletes profiles; opens, reports and cancels pairing windows
 side of pairing (`BeginPair`, `ConfirmPair`, `AbandonPair`); reports this
 device's identity; records a peer an SSH exchange authenticated
 (`TrustSshPeer`); and lists, describes and unpairs peers. A call about one
-profile names it by id. `InstallationService` answers `GetInfo` and `Shutdown`.
-None of this is reachable from a link. The implementation is
+profile names it by id, and profile and host ids travel as their 16 bytes; the
+CLI reads and prints their text form. `WatchProfiles` sends every profile,
+`CaughtUp`, then each change in the order it happened; a watcher that falls
+behind is ended with `ABORTED` and watches again. `InstallationService`
+answers `GetInfo` (the daemon's version) and `Shutdown`. None of this is
+reachable from a link. The implementation is
 `crates/node/src/front_door.rs`.
+
+No client retries a front-door call. A call whose reply is lost, which on a
+local socket means the daemon went away, fails, and the person runs the
+command again. Rename and delete carry the revision the caller read and
+refuse a profile that changed since, so a re-run cannot undo a change made
+meanwhile.
 
 ### ClientService
 

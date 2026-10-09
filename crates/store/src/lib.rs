@@ -61,8 +61,9 @@ pub struct AgentRow {
     /// Copied from the snapshot envelope at commit.
     pub phase: i32,
     pub working_on: Option<String>,
-    /// The newest snapshot's at_ms, never commit time. Own rows only: a
-    /// replica's inventory row does not carry it.
+    /// The newest snapshot's at_ms, never commit time. Written by commit
+    /// and, for a replica, by absorbing a snapshot; an inventory put does
+    /// not carry it, so a replica nobody opened has none.
     pub last_activity_ms: Option<i64>,
     /// Copied from the snapshot envelope at commit: when the phase began.
     pub phase_since_ms: Option<i64>,

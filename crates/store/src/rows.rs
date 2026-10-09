@@ -1,10 +1,12 @@
 //! The store's SQL, inside one transaction.
 //!
-//! Every write to `agents` and `items` is an `INSERT ... ON CONFLICT DO
-//! UPDATE`, never a bare `UPDATE`, so a `BEFORE INSERT` trigger sees every
-//! row write: that is how failure injection reaches each one. An upsert
-//! names the columns its writer owns; the rest of a held row is left as it
-//! is.
+//! A commit's writes, its items and its row with the cursor, must stay
+//! `INSERT ... ON CONFLICT DO UPDATE`, never a bare `UPDATE`: the daemon's
+//! crash-injection tests fail a commit with a `BEFORE INSERT` trigger on
+//! `items` or `agents`, which a bare `UPDATE` would slip past. The other
+//! row writes are upserts too. An upsert names the columns its writer owns;
+//! the rest of a held row is left as it is. The one bare `UPDATE` is
+//! `rewind_cursor`, power-loss recovery that runs outside any commit.
 
 use prost::Message as _;
 use rusqlite::{Connection, OptionalExtension, Row, params};

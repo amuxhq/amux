@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 350" role="img">
-  <title>Sequence: the client mints an input id and sends. The daemon forwards over ctl.sock; the interpreter decides at once and replies accepted with a queued flag or rejected with a reason, and the daemon relays that reply. A prompt's reflection arrives later as an item carrying the input id through the journal, store and subscription. If the reply is lost, the client waits for CaughtUp and checks its own state; a prompt it cannot find is shown as not confirmed and left to the person.</title>
+  <title>Sequence: the client mints an input id and sends. The daemon forwards over ctl.sock; the interpreter decides at once and replies accepted with a queued flag or rejected with a refusal, and the daemon relays that reply. A prompt's reflection arrives later as an item carrying the input id through the journal, store and subscription. If the reply is lost, the client waits for CaughtUp and checks its own state; a prompt it cannot find is shown as not confirmed and left to the person.</title>
   <style>
     svg { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
     .box { fill: #6e7681; fill-opacity: 0.06; stroke: #6e7681; stroke-width: 1.2; }

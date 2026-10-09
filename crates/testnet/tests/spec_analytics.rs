@@ -49,7 +49,7 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_where_it_was_sent() {
     pair(&net, "laptop", "desk").await;
     until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     // A second window, joined with the wrong PIN.
-    let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let wrong = if pin_of(&started) == "000000" {
         "111111"
     } else {

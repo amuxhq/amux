@@ -2678,8 +2678,8 @@ fn unchangeable_words(
     }
 }
 
-/// "finished", "exited", or "exited · its directory is gone": how an
-/// exited agent's feed ends.
+/// "finished", "exited", or "exited · its directory failed: it is gone":
+/// how an exited agent's feed ends.
 fn exit_words(cause: &ExitCause) -> String {
     match cause {
         ExitCause::Finished => "finished".to_owned(),

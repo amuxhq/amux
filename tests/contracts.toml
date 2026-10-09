@@ -442,7 +442,7 @@ tests = [
 id = "a-host-speaks-for-its-own"
 source = "invariant"
 section = "Runtime"
-claim = "A message's sender is its caller, never request content: the agent whose tools socket made the call, else the person. A paired host is answered only for the answering host's own agents: its inventory carries that host's entry and agents, and a read or input for an agent the host only replicates is not found, never passed on."
+claim = "A message's sender is its caller, never request content: the agent whose tools socket made the call, else the person. A paired host is answered only for the answering host's own agents: its inventory carries that host's entry and agents, and any call naming an agent the host only replicates (a read, an input, a lifecycle call, a blob or a diff) is not found, never passed on."
 tests = [
   "node/messaging::send_message_sender_is_the_caller",
   "node/peer_service::inventory_is_origin_only",
@@ -637,10 +637,11 @@ tests = [
 id = "front-door-pairing-windows"
 source = "invariant"
 section = "Boundaries"
-claim = "A pairing window lasts the length its start names, else the default, whatever its method, and nothing outside one second to ninety days opens; a demo window from `amux pair --demo` holds its chosen PIN through a wrong guess and successive pairings until it is closed; no window outlives its daemon, so a start re-run after a restart opens a fresh one; a confirm or an abandon that names no pairing is a malformed call."
+claim = "A pairing window lasts the length its start names, else the default, whatever its method, and nothing outside one second to ninety days opens; a demo window from `amux pair --demo` holds its chosen PIN through a wrong guess and successive pairings until it is closed; no window outlives its daemon, so a start re-run after a restart opens a fresh one; a confirm or an abandon that names no pairing is a malformed call; a profile rename or delete that names a revision other than the current one is refused and changes nothing."
 tests = [
   "node/front_door::ttl_applies_to_each_method",
   "node/front_door::an_empty_pairing_token_is_invalid",
+  "node/front_door::rename_and_delete_refuse_a_stale_revision",
   "testnet/spec_network::demo_pin_from_the_cli",
   "testnet/spec_network::a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window",
   "amux/bin:amux::tests::a_demo_window_needs_its_pin_and_its_length",

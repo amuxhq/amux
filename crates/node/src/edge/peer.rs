@@ -2,8 +2,8 @@
 //! same runtime as the client service's; the caller is the host whose
 //! pinned key the stream's handshake presented. It answers only for this
 //! host's own agents and passes nothing on: the inventory it streams is
-//! this host's entry and agents, and a read or input for an agent this host
-//! only replicates is not found here.
+//! this host's entry and agents, and any call that names an agent this
+//! host only replicates is not found here.
 
 use std::sync::Weak;
 
@@ -206,6 +206,7 @@ impl PeerService for PeerApi {
         request: Request<RenameAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
         caller(&request)?;
+        self.own(&request.get_ref().agent_id).await?;
         self.client.rename_agent(request).await
     }
 
@@ -214,6 +215,7 @@ impl PeerService for PeerApi {
         request: Request<StopAgentRequest>,
     ) -> Result<Response<Empty>, Status> {
         caller(&request)?;
+        self.own(&request.get_ref().agent_id).await?;
         self.client.stop_agent(request).await
     }
 
@@ -222,6 +224,7 @@ impl PeerService for PeerApi {
         request: Request<ResumeAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
         caller(&request)?;
+        self.own(&request.get_ref().agent_id).await?;
         self.client.resume_agent(request).await
     }
 
@@ -230,6 +233,7 @@ impl PeerService for PeerApi {
         request: Request<DeleteAgentRequest>,
     ) -> Result<Response<DeleteAgentResponse>, Status> {
         caller(&request)?;
+        self.own(&request.get_ref().agent_id).await?;
         self.client.delete_agent(request).await
     }
 
@@ -250,6 +254,7 @@ impl PeerService for PeerApi {
         request: Request<PutBlobRequest>,
     ) -> Result<Response<BlobRef>, Status> {
         caller(&request)?;
+        self.own(&request.get_ref().agent_id).await?;
         self.client.put_blob(request).await
     }
 
@@ -258,11 +263,13 @@ impl PeerService for PeerApi {
         request: Request<GetBlobRequest>,
     ) -> Result<Response<GetBlobResponse>, Status> {
         caller(&request)?;
+        self.own(&request.get_ref().agent_id).await?;
         self.client.get_blob(request).await
     }
 
     async fn diff(&self, request: Request<DiffRequest>) -> Result<Response<wire::Diff>, Status> {
         caller(&request)?;
+        self.own(&request.get_ref().agent_id).await?;
         self.client.diff(request).await
     }
 

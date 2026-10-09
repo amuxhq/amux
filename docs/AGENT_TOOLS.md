@@ -67,7 +67,9 @@ may have taken the call, and that the call was not made again.
 
 A refusal comes back as the tool's error text, in words a model can act on:
 `no agent named <name>`, `<name> names several agents: <name> (<id>), …`,
-`rejected: exited`, `<host> cannot be reached`, or the daemon's own message.
+`rejected: exited` (a `send` to an exited agent that is not the sender's
+child), `<name> did not stop: <why>` (a `stop` the child refused, such as
+`exiting`), `<host> cannot be reached`, or the daemon's own message.
 
 ### agents
 
@@ -194,7 +196,7 @@ A send goes from the model to the recipient's provider like this:
    `SendMessageRequest`: a fresh id, the recipient as a host and an agent, the
    text and the context. The request has no sender and no kind.
 2. The daemon makes the `Envelope`: an ordinary message whose `from` is the
-   agent the socket belongs to (its id, host, name and kind). For a recipient
+   agent the socket belongs to (its id, host and name). For a recipient
    on another host it forwards the envelope there
    ([across hosts](#across-hosts)); otherwise it runs the recipient's lane.
 3. A recipient that has exited is resumed with the message as its first

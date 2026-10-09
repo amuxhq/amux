@@ -1,8 +1,8 @@
 //! What a paired host may ask of this one. The peer service answers only
 //! for this host's own agents and passes nothing on: the inventory it
-//! streams is this host's entry and agents, and a read or an input for an
-//! agent it only replicates is not found, so no host can reach a third
-//! host's agent through it or speak for one.
+//! streams is this host's entry and agents, and any call naming an agent it
+//! only replicates is not found, so no host can reach a third host's agent
+//! through it or speak for one.
 
 mod support;
 
@@ -13,8 +13,10 @@ use support::synthetic::*;
 use support::*;
 use tonic::Code;
 use wire::{
-    Empty, FetchRequest, GetRequest, InventoryEvent, PeerSubscribeRequest, Phase, SendInputRequest,
-    inventory_event, peer_subscribe_request, session_event,
+    DeleteAgentRequest, DiffRequest, Empty, FetchRequest, GetBlobRequest, GetRequest,
+    InventoryEvent, PeerSubscribeRequest, Phase, PutBlobRequest, RenameAgentRequest,
+    ResumeAgentRequest, SendInputRequest, StopAgentRequest, StopMode, inventory_event,
+    peer_subscribe_request, session_event,
 };
 
 const SEGMENTS: u64 = 1 << 20;
@@ -162,12 +164,41 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
         agent_id: agent.to_vec(),
         input: Some(sdk_prompt(b"through-the-laptop", "do this for me")),
     };
+    let put = |agent: &[u8]| PutBlobRequest {
+        agent_id: agent.to_vec(),
+        name: "photo.png".to_owned(),
+        mime: "image/png".to_owned(),
+        bytes: b"a photo".to_vec(),
+    };
+    let blob = |agent: &[u8], hash: &[u8]| GetBlobRequest {
+        agent_id: agent.to_vec(),
+        hash: hash.to_vec(),
+    };
+
+    // The laptop holds a blob of its own agent, and a copy of one of the
+    // desk's agent, kept under the replica as a forwarded read keeps it.
+    let own_blob = pair.laptop_runtime.put_blob(put(&notes)).await.unwrap();
+    let desk_blob = pair.desk_runtime.put_blob(put(&coder)).await.unwrap();
+    pair.laptop_runtime
+        .keep_replica_blob(&coder, &desk_blob.hash, b"a photo")
+        .await
+        .unwrap();
+    pair.laptop_runtime
+        .get_blob(blob(&coder, &desk_blob.hash))
+        .await
+        .expect("the laptop holds the replica's copy");
 
     // The laptop's own agent is answered.
     peer.subscribe(subscribe(&notes)).await.unwrap();
     let page = peer.fetch(fetch(&notes)).await.unwrap().into_inner();
     assert!(page.items.iter().any(|item| item.key == "n1"), "{page:?}");
     peer.get(get(&notes, "n1")).await.unwrap();
+    let read = peer
+        .get_blob(blob(&notes, &own_blob.hash))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(read.bytes, b"a photo");
 
     // The desk's agent, which the laptop holds rows for, is not.
     let refusals = [
@@ -175,6 +206,56 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
         ("Fetch", peer.fetch(fetch(&coder)).await.err()),
         ("Get", peer.get(get(&coder, "c1")).await.err()),
         ("SendInput", peer.send_input(input(&coder)).await.err()),
+        (
+            "GetBlob",
+            peer.get_blob(blob(&coder, &desk_blob.hash)).await.err(),
+        ),
+        ("PutBlob", peer.put_blob(put(&coder)).await.err()),
+        (
+            "Diff",
+            peer.diff(DiffRequest {
+                agent_id: coder.clone(),
+                base: None,
+                with_patch: false,
+            })
+            .await
+            .err(),
+        ),
+        (
+            "RenameAgent",
+            peer.rename_agent(RenameAgentRequest {
+                agent_id: coder.clone(),
+                name: "taken".to_owned(),
+            })
+            .await
+            .err(),
+        ),
+        (
+            "StopAgent",
+            peer.stop_agent(StopAgentRequest {
+                agent_id: coder.clone(),
+                mode: StopMode::Kill.into(),
+            })
+            .await
+            .err(),
+        ),
+        (
+            "ResumeAgent",
+            peer.resume_agent(ResumeAgentRequest {
+                agent_id: coder.clone(),
+                initial_prompt: None,
+            })
+            .await
+            .err(),
+        ),
+        (
+            "DeleteAgent",
+            peer.delete_agent(DeleteAgentRequest {
+                agent_id: coder.clone(),
+            })
+            .await
+            .err(),
+        ),
     ];
     for (call, refused) in refusals {
         let refused = refused.unwrap_or_else(|| panic!("{call} on a replica was answered"));

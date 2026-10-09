@@ -254,8 +254,10 @@ pub(crate) fn sweep_replicas(
         .iter()
         .filter(|row| !sourced.contains(&row.agent))
         .collect::<Vec<_>>();
-    // A replica row holds no last activity (its inventory row does not
-    // carry one), so one never read here goes by when its phase began.
+    // One never read here goes by when its phase began, which every
+    // replica row holds from its origin's inventory. Last activity is not
+    // used: it is written only when a snapshot is absorbed, so a replica
+    // nobody opened has none.
     unsourced.sort_by_key(|row| {
         (
             last_used

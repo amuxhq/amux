@@ -126,7 +126,7 @@ pub async fn start_pairing(
 }
 
 /// A one-shot PIN window, for whichever profile `start_pairing` names.
-pub fn pin_mode() -> StartPairingRequest {
+pub fn pin_window() -> StartPairingRequest {
     StartPairingRequest {
         method: Some(start_pairing_request::Method::Pin(Empty {})),
         ..StartPairingRequest::default()
@@ -134,7 +134,7 @@ pub fn pin_mode() -> StartPairingRequest {
 }
 
 /// A one-shot QR window, for whichever profile `start_pairing` names.
-pub fn qr_mode() -> StartPairingRequest {
+pub fn qr_window() -> StartPairingRequest {
     StartPairingRequest {
         method: Some(start_pairing_request::Method::Qr(Empty {})),
         ..StartPairingRequest::default()
@@ -142,7 +142,7 @@ pub fn qr_mode() -> StartPairingRequest {
 }
 
 /// A reusable demo window holding `pin` for `ttl_seconds`.
-pub fn demo_mode(pin: &str, ttl_seconds: u64) -> StartPairingRequest {
+pub fn demo_pin_window(pin: &str, ttl_seconds: u64) -> StartPairingRequest {
     StartPairingRequest {
         method: Some(start_pairing_request::Method::DemoPin(pin.to_owned())),
         ttl_seconds: Some(ttl_seconds),
@@ -198,7 +198,7 @@ pub async fn confirm_pair(
 /// Pairs `initiator` with `responder` through both front doors with a PIN
 /// over the responder's LAN listener.
 pub async fn pair(net: &Net, initiator: &str, responder: &str) -> wire::PeerEntry {
-    let started = start_pairing(net, responder, pin_mode())
+    let started = start_pairing(net, responder, pin_window())
         .await
         .expect("the responder enters pairing mode");
     let pending = begin_pair(

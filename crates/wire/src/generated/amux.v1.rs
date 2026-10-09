@@ -4704,8 +4704,10 @@ pub mod peer_service_client {
     /// daemon being a client of its peer. The peer service answers only for
     /// this host's own agents and never passes a call on, so no two hosts can
     /// bounce a call between them: its inventory stream carries this host's
-    /// entry and this host's agents; Subscribe, Fetch, Get and SendInput refuse
-    /// an agent owned elsewhere with NOT_FOUND.
+    /// entry and this host's agents; every call that names an agent (Subscribe,
+    /// Fetch, Get, SendInput, the rename, stop, resume and delete calls,
+    /// PutBlob, GetBlob and Diff) refuses an agent owned elsewhere with
+    /// NOT_FOUND.
     #[derive(Debug, Clone)]
     pub struct PeerServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -5266,8 +5268,10 @@ pub mod peer_service_server {
     /// daemon being a client of its peer. The peer service answers only for
     /// this host's own agents and never passes a call on, so no two hosts can
     /// bounce a call between them: its inventory stream carries this host's
-    /// entry and this host's agents; Subscribe, Fetch, Get and SendInput refuse
-    /// an agent owned elsewhere with NOT_FOUND.
+    /// entry and this host's agents; every call that names an agent (Subscribe,
+    /// Fetch, Get, SendInput, the rename, stop, resume and delete calls,
+    /// PutBlob, GetBlob and Diff) refuses an agent owned elsewhere with
+    /// NOT_FOUND.
     #[derive(Debug)]
     pub struct PeerServiceServer<T> {
         inner: Arc<T>,

@@ -942,7 +942,7 @@ async fn pairing_again_with_a_peer_that_revoked_trust_clears_the_mark_at_once() 
 
     // The desk shows a code and the tablet pairs with it over the relay;
     // the tablet's pairing commits the key it already held.
-    let started = support::start_pairing(&net, "desk", support::qr_mode())
+    let started = support::start_pairing(&net, "desk", support::qr_window())
         .await
         .unwrap();
     let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {

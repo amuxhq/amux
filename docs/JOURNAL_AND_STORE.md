@@ -307,10 +307,14 @@ The runtime's interface is `store::Sqlite`, in
 Each call is one transaction, and SQL does the work: an item is one upsert
 that keeps a held key's order, a replica's item is written only over an older
 revision, and a pool's bytes are one sum. Every write to `agents` and `items`
-is an `INSERT ... ON CONFLICT DO UPDATE` that names the columns its writer
-owns: an own row's registry columns come from the daemon, a replica's from its
-origin's inventory row, and the snapshot envelope and cursors from commit or
-absorb. The conformance suite in
+but one is an `INSERT ... ON CONFLICT DO UPDATE` that names the columns its
+writer owns, and a commit's writes must stay so, because the daemon's
+crash-injection tests fail a commit with a `BEFORE INSERT` trigger, which a
+bare `UPDATE` would slip past. The exception is `rewind_cursor`, a bare
+`UPDATE` run in power-loss recovery outside any commit. Each upsert's columns
+are its writer's: an own row's registry columns come from the daemon, a
+replica's from its origin's inventory row, and the snapshot envelope and
+cursors from commit or absorb. The conformance suite in
 [`crates/store/tests/conformance.rs`](../crates/store/tests/conformance.rs)
 holds the store to its answers against a temporary database file.
 
@@ -331,7 +335,7 @@ The schema is the migration in
 | `name`, `cwd` | As the registry holds them; every agent has a name, given or chosen by the daemon |
 | `parent_host`, `parent_id` | A child records its parent as host and id, because families cross hosts |
 | `lifecycle`, `exit_cause`, `exit_detail` | Live or exited, and why: the `ExitCause` as its wire integer, so a cause from a newer host is kept and served as it came, and the cause's own words. Owned by the daemon, which records the agent's own cause from its last control frame. |
-| `phase`, `working_on`, `phase_since_ms`, `git`, `last_activity_ms` | Copied from the newest snapshot's envelope at commit; `last_activity_ms` is the snapshot's `at_ms`, never commit time, and orders retention. A replica row takes `phase`, `working_on`, `phase_since_ms` and `git` from the origin's inventory row, which carries no last activity |
+| `phase`, `working_on`, `phase_since_ms`, `git`, `last_activity_ms` | Copied from the newest snapshot's envelope at commit, and on a replica row when absorb takes a snapshot from the origin; `last_activity_ms` is the snapshot's `at_ms`, never commit time, and orders own rows' retention. A replica row also takes `phase`, `working_on`, `phase_since_ms` and `git` from the origin's inventory row, which carries no last activity, so replica retention orders by `phase_since_ms`, which every replica row has |
 | `snapshot` | The newest snapshot, body opaque; it carries its own revision |
 | `ingest_cursor` | Own rows: the journal offset committed through |
 | `next_revision` | Own rows: the revision the next record takes |

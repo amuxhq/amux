@@ -1,5 +1,6 @@
 //! The installation's front door, called in process as the phone calls it:
-//! how long a pairing window stays open, and what a pairing call must name.
+//! how long a pairing window stays open, what a pairing call must name, and
+//! that a profile changes only from the revision its caller last read.
 
 mod support;
 
@@ -7,7 +8,10 @@ use support::synthetic::*;
 use support::*;
 use tonic::Request;
 use wire::profile_service_server::ProfileService as _;
-use wire::{Empty, PendingPairRequest, ProfileRequest, StartPairingRequest, start_pairing_request};
+use wire::{
+    CreateProfileRequest, DeleteProfileRequest, Empty, PendingPairRequest, ProfileRequest,
+    RenameProfileRequest, StartPairingRequest, start_pairing_request,
+};
 
 /// The five minutes a window lasts when the request names no length.
 const DEFAULT_TTL_SECONDS: u64 = 5 * 60;
@@ -173,6 +177,80 @@ async fn an_empty_pairing_token_is_invalid() {
         .await
         .expect_err("a profile id in its text form");
     assert_eq!(named_as_text.code(), tonic::Code::InvalidArgument);
+
+    drop(door);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A rename or a delete names the revision its caller read, and one that
+/// has moved on since is refused and changes nothing: that is what keeps a
+/// re-run of a half-applied change from acting on a profile it no longer
+/// describes.
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_and_delete_refuse_a_stale_revision() {
+    let install = Install::new();
+    let daemon = install.start("boot-1", quiet_launch()).await;
+    let door = daemon.front_door();
+    let created = door
+        .create_profile(Request::new(CreateProfileRequest {
+            label: Some("spare".to_owned()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let read = created.revision;
+    let listed = || {
+        let door = door.clone();
+        let id = created.id.clone();
+        async move {
+            door.list_profiles(Request::new(Empty {}))
+                .await
+                .unwrap()
+                .into_inner()
+                .profiles
+                .into_iter()
+                .find(|profile| profile.id == id)
+        }
+    };
+    let rename = |expected_revision: u64, name: &str| {
+        door.rename_profile(Request::new(RenameProfileRequest {
+            profile_id: created.id.clone(),
+            expected_revision,
+            override_name: Some(name.to_owned()),
+        }))
+    };
+
+    let renamed = rename(read, "kept").await.unwrap().into_inner();
+    assert_eq!(renamed.label, "kept");
+    assert!(renamed.revision > read, "a rename moves the revision on");
+
+    let stale = rename(read, "lost")
+        .await
+        .expect_err("a rename from the revision before the last one");
+    assert_eq!(stale.code(), tonic::Code::Aborted, "{stale:?}");
+    let after = listed().await.expect("the profile is still listed");
+    assert_eq!(after.label, "kept", "a refused rename changes nothing");
+    assert_eq!(after.revision, renamed.revision);
+
+    let delete = |confirm_revision: u64| {
+        door.delete_profile(Request::new(DeleteProfileRequest {
+            profile_id: created.id.clone(),
+            confirm_revision,
+        }))
+    };
+    let stale = delete(read)
+        .await
+        .expect_err("a delete confirming the revision before the last one");
+    assert_eq!(stale.code(), tonic::Code::Aborted, "{stale:?}");
+    assert!(
+        listed().await.is_some(),
+        "a refused delete leaves the profile"
+    );
+
+    // The same delete at the current revision goes through, so the stale
+    // revision was the only reason for the refusal.
+    delete(renamed.revision).await.unwrap();
+    assert!(listed().await.is_none(), "the profile is gone");
 
     drop(door);
     daemon.shutdown().await.unwrap();

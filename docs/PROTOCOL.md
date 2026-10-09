@@ -525,8 +525,10 @@ ways:
 
 - It answers only for this host's own agents. Its inventory stream carries
   this host's entry and this host's agents, never what this host knows of
-  other hosts; `Subscribe`, `Fetch`, `Get` and `SendInput` for an agent this
-  host only replicates are `NOT_FOUND`.
+  other hosts. Every call that names an agent (`Subscribe`, `Fetch`, `Get`,
+  `SendInput`, `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent`,
+  `PutBlob`, `GetBlob` and `Diff`) is `NOT_FOUND` for an agent this host only
+  replicates, even when this host holds that agent's rows or blobs.
 - `Subscribe` takes a `PeerSubscribeRequest`, which may ask for what came
   `after` a revision: that is how a replica catches up from its cursor
   ([the wire](WIRE.md) describes it).
@@ -560,7 +562,7 @@ no request carries an agent id or a token claiming one. On that socket:
 
 `SendMessage` carries a `SendMessageRequest` whose `to` is a host and an
 agent. The daemon makes the `Envelope`, its sender stamped from the caller (the
-person, or the calling agent with this host's id, name and kind). When the
+person, or the calling agent with this host's id and its name). When the
 host is another one, it makes the call on the recipient's daemon with that
 envelope. That daemon accepts an agent sender only if it
 belongs to the calling host, then delivers through the recipient's lane

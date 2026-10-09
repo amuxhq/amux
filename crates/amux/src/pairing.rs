@@ -141,9 +141,15 @@ pub async fn demo(mut door: Door, profile: &ProfileInfo, pin: String, ttl: Durat
 /// The daemon's refusal to open pairing mode while it is open already.
 const PAIR_MODE_ALREADY_ACTIVE: &str = "PAIR_MODE_ALREADY_ACTIVE";
 
+/// The refusal does not say which kind of window is open. A PIN or QR
+/// window lives as long as the `amux pair` that opened it, but a demo
+/// window outlives its command, so the words cover both.
 fn already_open(status: tonic::Status) -> anyhow::Error {
     if status.message() == PAIR_MODE_ALREADY_ACTIVE {
-        anyhow!("Pairing is already open on this host; finish it or press Ctrl+C where it runs.")
+        anyhow!(
+            "Pairing is already open on this host; finish it or press Ctrl+C where it runs. \
+             A demo window has no command running: `amux pair --cancel` closes it."
+        )
     } else {
         plain(status)
     }

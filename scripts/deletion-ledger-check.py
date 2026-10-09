@@ -306,7 +306,11 @@ ROWS = [
             r"(amux_)?session_strip|sessionStrip",
             r"(^|[^A-Za-z_])(amux_)?fleet_rows",
             r"RunInfo|CollapseRuns|run_expanded",
-            r"last_activity_ms|lastActivityMs",
+            # What went is the inventory Agent's field and the phone's copy
+            # of it. The store's agents column of the same name stays: it is
+            # the newest snapshot's time, which retention orders own agents by.
+            r"lastActivityMs",
+            r"last_activity_ms *= *[0-9]",
             r"workingOn",
         ],
     ),
@@ -545,14 +549,6 @@ EXEMPTIONS = [
         "crates/settings/src/lib.rs",
         "the retired-key table names the old key so an old config fails with the reason",
     ),
-    *(
-        Exemption(
-            r"last_activity_ms|lastActivityMs",
-            path,
-            "the store's agents column: the newest snapshot's at_ms retention orders by, not the phone's fleet row",
-        )
-        for path in ("crates/store/", "crates/node/tests/single_daemon.rs", "docs/JOURNAL_AND_STORE.md")
-    ),
 ]
 
 
@@ -564,14 +560,9 @@ def grep(pattern: str) -> list[str]:
     )
     if result.returncode not in (0, 1):
         raise SystemExit(f"git grep failed on {pattern!r}: {result.stderr.strip()}")
-    # An exempt path ending in "/" exempts everything under it.
-    exempt = [e.path for e in EXEMPTIONS if e.pattern == pattern]
-
-    def exempted(path: str) -> bool:
-        return any(path == e or (e.endswith("/") and path.startswith(e)) for e in exempt)
-
+    exempt = {e.path for e in EXEMPTIONS if e.pattern == pattern}
     return [line for line in result.stdout.splitlines()
-            if not exempted(line.split(":", 1)[0])]
+            if line.split(":", 1)[0] not in exempt]
 
 
 def workspace_drift() -> list[str]:

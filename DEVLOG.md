@@ -1,3 +1,28 @@
+2026-10-10 — **A paired host reads no blob of an agent it does not own, and the docs match the protocol.**
+A paired host asking this one for a blob was answered from this host's
+copy even when the agent was another host's, so a host could read the
+attachments and patches of a third host's agents through a host it was
+paired with. Every peer call that names an agent (reads, input, the
+rename, stop, resume and delete calls, blob writes and reads, and diffs)
+now answers only for this host's own agents and says not found for the
+rest, as the reads and input already did; a test proves each one refused
+on a replica whose rows and blob this host holds. A profile rename or
+delete that names a stale revision was refused but nothing proved it; a
+front-door test now does, and shows the refused call changed nothing. When
+pairing is already open, `amux pair` also says that a demo window, which
+no command holds open, closes with `amux pair --cancel`. The deletion
+ledger bans the inventory's old last-activity field by its proto and
+phone spellings again, instead of exempting the store's whole directory
+for a column that shares the name, and the directory exemptions are gone.
+Docs and comments that drifted are corrected: a create's config is decoded
+as its kind says and a well-formed config of the other kind is not
+detected; an agent sender carries no kind; a refusal is `REFUSAL_EXITED`;
+a lagging inventory stream says `Lagged` before it closes; a replica's
+last activity is written when a snapshot is absorbed, and replica
+retention orders by phase start because every replica row has one; only
+`rewind_cursor` is a bare `UPDATE`, outside any commit; and headless
+Claude's statuses are listed once, as hidden journal items.
+
 2026-10-10 — **The protocol's files say who reads them.**
 `amux.proto` held errors, link control, pairing, both services, the
 inventory and the front door, while the agent's private contract held the

@@ -205,7 +205,7 @@ Each input this client sends becomes a `SentInput` with an `InputState`:
 
 An uncertain input is resolved only at the next CaughtUp: found in the snapshot's queue it is queued; found among
 the items it is settled; found in neither it stays uncertain and the person decides to resend or discard it.
-Nothing is resent automatically. A rejection with reason `exited` flips the composer to Resume for that
+Nothing is resent automatically. A rejection with the refusal `REFUSAL_EXITED` flips the composer to Resume for that
 incarnation, so a send that raced the exit keeps its draft.
 
 ### The fleet state

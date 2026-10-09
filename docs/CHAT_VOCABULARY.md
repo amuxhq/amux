@@ -268,9 +268,8 @@ own `/model` and `/effort`, typed in the composer), and its permission changes o
 
 Never a row; kept in debug reports: hook started and finished (a notice only when a hook failed), startup
 details, thinking-token estimates, tool progress ticks (which feed the activity line), tool summaries,
-"requesting" and "compacting" statuses (the activity line), command-list changes, persisted files, plugin
-installs, memory recall, prompt suggestions, context reminders injected into a turn, checkpoints, session-state
-changes and model verification metadata.
+command-list changes, persisted files, plugin installs, memory recall, prompt suggestions, context reminders
+injected into a turn, checkpoints, session-state changes and model verification metadata.
 
 Some hidden facts are journal records: items kept, keyed and replicated like any other, that no client draws as a
 row. Headless Claude's `Status` items (Claude's "compacting" and "requesting", typed, with its own word kept;

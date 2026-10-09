@@ -49,9 +49,9 @@ dumping, diffs and `PutBlob` are a person's acts and are refused there with
 daemon being a client of its peer. A call on another host's agent arrives at
 the local runtime, which forwards it one hop to the owning host. The peer
 service answers only for its host's own agents and never passes a call on:
-its inventory stream carries that host's entry and agents, and `Subscribe`,
-`Fetch`, `Get` and `SendInput` for an agent it only replicates are
-`NOT_FOUND`. Three of its messages differ from the client's: `Subscribe` takes
+its inventory stream carries that host's entry and agents, and every call
+that names an agent it only replicates (reads, input, lifecycle, blobs and
+diffs) is `NOT_FOUND`. Three of its messages differ from the client's: `Subscribe` takes
 a `PeerSubscribeRequest`, which may carry a cursor; `SendMessage` takes the
 `Envelope` the sending daemon stamped; and `Dump` answers with the host's
 `DumpPart` itself.
@@ -128,9 +128,11 @@ message ResumeAgentRequest { bytes agent_id = 1; optional PromptSubmission initi
 knows it by, resolved against this host and the trusted ones: exact first,
 then ignoring case. A name more than one host answers to is refused with the
 candidates (`AmbiguousHostName`). `config` is `ClaudeCreateConfig` for both
-Claude kinds and `CodexCreateConfig` for Codex, encoded; the host that spawns
-the agent reads it as `kind` says, and settings that are not that kind's fail
-the call with `INVALID_ARGUMENT`. A daemon forwarding the create to another
+Claude kinds and `CodexCreateConfig` for Codex, encoded. `kind` alone decides
+how the host that spawns the agent decodes `config`: bytes that do not decode
+as that kind's config fail the call with `INVALID_ARGUMENT`, but the bytes
+carry no kind of their own, so a well-formed config of the other kind is not
+detected and is read as this kind's. A daemon forwarding the create to another
 host passes the bytes on untouched, so a setting it does not know arrives
 intact. `initial_prompt` is a prompt with its attachments and the client's
 input id; it is queued before the agent starts. A resume takes the same: the
@@ -622,8 +624,8 @@ agent (whatever the reason there), and `REMOVAL_REASON_HOST_UNTRUSTED` is every
 row of a host this machine stopped trusting. A client subscribed to that agent sees its
 stream end.
 
-An inventory stream that falls behind simply ends; the client subscribes again
-for a fresh current set. `amux ls`-style one-shot listings read to `CaughtUp`
+An inventory stream that falls behind sends `Lagged` and closes; the client
+subscribes again at once for a fresh current set. `amux ls`-style one-shot listings read to `CaughtUp`
 and close.
 
 ## Compatibility

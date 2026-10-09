@@ -486,10 +486,11 @@ impl Sqlite {
 
     /// Brings replica rows under `budget` bytes: every row of agents with
     /// no open source, least recently used first by `last_used` (the
-    /// runtime's clock; the row's `phase_since_ms` where it has no entry,
-    /// since a replica row holds no last activity), keeping their agents
-    /// rows with an empty block; then sourced agents trimmed to their
-    /// newest `floor_k` rows, largest first.
+    /// runtime's clock; where it has no entry, the row's `phase_since_ms`,
+    /// which every replica row holds from its origin's inventory, unlike
+    /// last activity, written only when a snapshot is absorbed), keeping
+    /// their agents rows with an empty block; then sourced agents trimmed
+    /// to their newest `floor_k` rows, largest first.
     pub fn sweep_replicas(
         &mut self,
         budget: u64,

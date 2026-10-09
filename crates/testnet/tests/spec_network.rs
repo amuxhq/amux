@@ -192,8 +192,8 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     );
 
     // One responder at a time, whatever the secret's form.
-    let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
-    for second in [pin_mode(), qr_mode()] {
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
+    for second in [pin_window(), qr_window()] {
         let refused = start_pairing(&net, "desk", second)
             .await
             .expect_err("a second window while one is open");
@@ -307,7 +307,7 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
 
     // Five wrong guesses close the window; after that the right PIN is
     // refused like the consumed one until someone opens a new window.
-    let started = start_pairing(&net, "shed", pin_mode()).await.unwrap();
+    let started = start_pairing(&net, "shed", pin_window()).await.unwrap();
     let pin = pin_of(&started);
     for _ in 0..5 {
         let status = begin_pair(
@@ -341,7 +341,7 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
         "attic",
         wire::StartPairingRequest {
             ttl_seconds: Some(1),
-            ..pin_mode()
+            ..pin_window()
         },
     )
     .await
@@ -364,7 +364,7 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     .await
     .expect_err("an expired PIN");
     assert!(is_invalid_secret(&expired), "{expired:?}");
-    let started = start_pairing(&net, "attic", pin_mode())
+    let started = start_pairing(&net, "attic", pin_window())
         .await
         .expect("a new window after expiry");
 
@@ -390,7 +390,7 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     // discovery and no account; an address that answers nothing, a stale
     // interface say, gets one short try before the next.
     let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-    let started = start_pairing(&net, "porch", qr_mode()).await.unwrap();
+    let started = start_pairing(&net, "porch", qr_window()).await.unwrap();
     let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {
         panic!("a QR window hands out a secret");
     };
@@ -429,7 +429,7 @@ async fn a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window() {
     .await
     .unwrap();
     let desk = host_id(&net, "desk");
-    let first = start_pairing(&net, "desk", pin_mode()).await.unwrap();
+    let first = start_pairing(&net, "desk", pin_window()).await.unwrap();
     assert!(edge(&net, "desk").pairing_active());
 
     // The daemon crashes mid-pairing, before the PIN reaches anyone.
@@ -446,7 +446,7 @@ async fn a_pairing_rerun_after_the_daemon_restarts_opens_a_fresh_window() {
 
     // The person runs it again: a window opens, not a refusal, and its PIN
     // is a new one.
-    let second = start_pairing(&net, "desk", pin_mode())
+    let second = start_pairing(&net, "desk", pin_window())
         .await
         .expect("a re-run after the restart opens a window");
     assert_ne!(pin_of(&second), pin_of(&first), "a fresh PIN");
@@ -523,6 +523,22 @@ async fn demo_pin_from_the_cli() {
     assert!(
         edge(&net, "desk").pairing_active(),
         "the window outlives the command"
+    );
+    // A second window is refused, and the words say how to close a demo
+    // window, which has no command of its own to stop.
+    let second = tokio::process::Command::new(testnet::Binaries::built().amux())
+        .arg("--config")
+        .arg(&config)
+        .args(["pair", "--demo", "--pin", "135790", "--for", "1h"])
+        .env_remove("AMUX_LOG")
+        .output()
+        .await
+        .unwrap();
+    assert!(!second.status.success(), "a second window is refused");
+    let refused = String::from_utf8_lossy(&second.stderr);
+    assert!(
+        refused.contains("`amux pair --cancel` closes it"),
+        "{refused}"
     );
     let addrs = vec![edge(&net, "desk").lan_addr().unwrap().to_string()];
 
@@ -964,7 +980,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
     // the exchange runs inside a tunnel the relay pipes and cannot read,
     // with a QR secret as well as a PIN.
     let links_before = net.relay().unwrap().links("ada").await;
-    let started = start_pairing(&net, "desk", qr_mode()).await.unwrap();
+    let started = start_pairing(&net, "desk", qr_window()).await.unwrap();
     let Some(wire::pairing_window::Secret::QrSecret(secret)) = started.secret else {
         panic!("a QR window hands out a secret");
     };
@@ -1038,7 +1054,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
             || edge(&net, "desk").via(shop).await != LiveRoute::Offline
     })
     .await;
-    let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let across = begin_pair(
         &net,
         "shop",
@@ -1049,7 +1065,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     .await
     .expect_err("no pairing route through another account's relay");
     assert_eq!(across.code(), tonic::Code::Unavailable);
-    start_pairing(&net, "desk", qr_mode())
+    start_pairing(&net, "desk", qr_window())
         .await
         .expect_err("the desk's PIN window is still open");
     door(&net, "desk")
@@ -1057,7 +1073,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .cancel_pairing(profile_request(&net, "desk"))
         .await
         .unwrap();
-    let qr = start_pairing(&net, "desk", qr_mode()).await.unwrap();
+    let qr = start_pairing(&net, "desk", qr_window()).await.unwrap();
     let Some(wire::pairing_window::Secret::QrSecret(secret)) = qr.secret else {
         panic!("a QR window hands out a secret");
     };
@@ -1077,7 +1093,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .cancel_pairing(profile_request(&net, "desk"))
         .await
         .unwrap();
-    let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     println!("ada's relay links {ada:?}; bob's shop sees none of them: {across:?}");
 
     // Pairing at an address the desk hands out is authority of its own,
@@ -1115,12 +1131,12 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
         .await
         .start_pairing(wire::StartPairingRequest {
             profile_id: work.id.clone(),
-            ..pin_mode()
+            ..pin_window()
         })
         .await
         .expect("the work profile opens its own window beside the desk's")
         .into_inner();
-    let desk_start = start_pairing(&net, "desk", pin_mode()).await.unwrap();
+    let desk_start = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let wrong_for_work = begin_pair(
         &net,
         "laptop",
@@ -1207,7 +1223,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     )
     .start_pairing(wire::StartPairingRequest {
         profile_id: profile(&net, "desk"),
-        ..pin_mode()
+        ..pin_window()
     })
     .await
     .expect_err("no pairing administration on a profile's client socket");
@@ -1369,7 +1385,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     let call = peer_inventory_hosts(&edge(&net, "phone"), desk)
         .await
         .expect_err("no tunnel on a free account");
-    let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let pairing = begin_pair(
         &net,
         "phone",
@@ -2292,7 +2308,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
 
     // That sight is what lets the two pair by a PIN through the relay; and
     // once the tablet goes away, the desk sees it go.
-    let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
+    let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let pending = begin_pair(
         &net,
         "tablet",

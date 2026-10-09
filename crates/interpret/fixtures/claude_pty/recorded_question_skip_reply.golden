@@ -26,7 +26,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1791347391973 asks=[ask:1->toolu_019
 ## 50 recorded 48: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_0196c8NDHwUFaphpMbGGECtK
 snapshot NEEDS_YOU queue=[] working_on=- at=1791347391996 asks=[ask:1->toolu_0196c8NDHwUFaphpMbGGECtK question:2+other,2+other] session=3474e08e-b957-4a5a-9619-9a6376ce04e8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=37218 tasks=? background=?
 ## 52 recorded 50: fact Transcript type=user uuid=cc9c25cf-4040-43c6-8ce6-6f7bf4a84dc2
-item toolu_0196c8NDHwUFaphpMbGGECtK ask final at=1791347390986 text="" question×2 ASK_OUTCOME_ANSWERED answered 1 of 2 [(skipped); Small]
+item toolu_0196c8NDHwUFaphpMbGGECtK ask final at=1791347390986 text="" question×2 ASK_OUTCOME_ANSWERED answered 1 of 2 [(skipped); Small] opened=1791347390365 closed=1791347392115
 snapshot WORKING queue=[] working_on=- at=1791347392115 asks=[] session=3474e08e-b957-4a5a-9619-9a6376ce04e8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=37218 tasks=? background=?
 ## 64 recorded 62: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01UZMyb1FACueoTfUVbbjpWe
 snapshot WORKING queue=[] working_on=- at=1791347394222 asks=[] session=3474e08e-b957-4a5a-9619-9a6376ce04e8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=37218 tasks=? background=? running=toolu_01UZMyb1FACueoTfUVbbjpWe AskUserQuestion since=1791347394222
@@ -39,7 +39,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1791347394376 asks=[ask:2->- questio
 item toolu_01UZMyb1FACueoTfUVbbjpWe ask final at=1791347394865 text="" question×1 open
 snapshot NEEDS_YOU queue=[] working_on=- at=1791347394376 asks=[ask:2->toolu_01UZMyb1FACueoTfUVbbjpWe question:2+other] session=3474e08e-b957-4a5a-9619-9a6376ce04e8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=37643 tasks=? background=? running=toolu_01UZMyb1FACueoTfUVbbjpWe AskUserQuestion since=1791347394222
 ## 70 recorded 68: fact Transcript type=user uuid=02e8d96f-5e1a-4c3f-80ca-333aea3eebe6
-item toolu_01UZMyb1FACueoTfUVbbjpWe ask final at=1791347394865 text="" question×1 ASK_OUTCOME_DISMISSED
+item toolu_01UZMyb1FACueoTfUVbbjpWe ask final at=1791347394865 text="" question×1 ASK_OUTCOME_DISMISSED opened=1791347394236 closed=1791347394376
 snapshot WORKING queue=[] working_on=- at=1791347394376 asks=[] session=3474e08e-b957-4a5a-9619-9a6376ce04e8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=37643 tasks=? background=?
 ## 72 recorded 70: fact Transcript type=user uuid=8ea71a57-7a8d-4f2c-9a5f-aa6b777080b9
 item 8ea71a57-7a8d-4f2c-9a5f-aa6b777080b9 interruption final at=1791347394946 text=""

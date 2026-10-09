@@ -599,6 +599,11 @@ pub struct Plan {
     /// The whole plan is in: Claude declares it whole; Codex streams it.
     #[prost(bool, tag = "3")]
     pub complete: bool,
+    /// When it was decided, or dismissed: the provider's time where it gives
+    /// one, else the interpreter's clock when it observed the decision.
+    /// Absent while undecided.
+    #[prost(int64, optional, tag = "4")]
+    pub decided_at_ms: ::core::option::Option<i64>,
 }
 impl ::prost::Name for Plan {
     const NAME: &'static str = "Plan";
@@ -705,6 +710,12 @@ pub struct ToolDecision {
     /// Answered in the provider's own interface rather than through amux.
     #[prost(bool, tag = "3")]
     pub elsewhere: bool,
+    /// When the permission was asked and decided; absent when the provider
+    /// decided without asking amux (auto-approved, or in its own interface).
+    #[prost(int64, optional, tag = "6")]
+    pub asked_at_ms: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "7")]
+    pub decided_at_ms: ::core::option::Option<i64>,
     /// What an allowance granted beyond this one call. Absent when it allowed
     /// the call alone, and when the provider did not say which choice was
     /// made: Claude's own terminal does not report it.
@@ -1481,6 +1492,12 @@ pub struct AskClosed {
     /// What an access grant granted.
     #[prost(message, optional, tag = "5")]
     pub grant: ::core::option::Option<GrantAnswer>,
+    /// When the ask opened and closed: the provider's time where it gives
+    /// one, else the interpreter's clock when it observed each.
+    #[prost(int64, optional, tag = "6")]
+    pub opened_at_ms: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "7")]
+    pub closed_at_ms: ::core::option::Option<i64>,
 }
 impl ::prost::Name for AskClosed {
     const NAME: &'static str = "AskClosed";
@@ -3996,6 +4013,10 @@ pub struct CodexAsk {
     /// The decisions this request offers, in the server's order.
     #[prost(enumeration = "Decision", repeated, tag = "11")]
     pub decisions: ::prost::alloc::vec::Vec<i32>,
+    /// When the ask opened, by the interpreter's clock: Codex's requests
+    /// carry no time of their own.
+    #[prost(int64, tag = "12")]
+    pub opened_at_ms: i64,
     #[prost(oneof = "codex_ask::Body", tags = "3, 4, 5, 6, 7, 8, 9, 10")]
     pub body: ::core::option::Option<codex_ask::Body>,
 }

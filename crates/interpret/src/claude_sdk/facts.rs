@@ -311,6 +311,7 @@ impl State {
                         grant: None,
                         note,
                     }),
+                    None,
                 );
             }
             Message::ElicitationComplete(complete) => {
@@ -802,6 +803,7 @@ impl State {
             plan: (server.is_empty() && tool_name == PLAN_TOOL).then(Verdict::default),
             question: server.is_empty() && tool_name == QUESTION_TOOL,
             asked: None,
+            ask_times: None,
             name: tool_name,
             server,
             input: String::new(),

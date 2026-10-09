@@ -208,6 +208,9 @@ message CodexAsk {
   }
   // The decisions this request offers, in the server's order.
   repeated Decision decisions = 11;
+  // When the ask opened, by the interpreter's clock: Codex's requests
+  // carry no time of their own.
+  int64 opened_at_ms = 12;
 }
 
 message CommandApproval {

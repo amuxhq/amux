@@ -43,7 +43,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000005000 asks=[ask:1->- permiss
 item t3 tool final at=1800000007000 text="" Write TOOL_STATE_RUNNING input="{\"content\":\"x\",\"file_path\":\"notes.md\"}"
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000007000 asks=[ask:1->t3 permission:Write deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Write since=1800000005000
 ## 22 fact {"channel":"transcript","json":{"message":{"content":[{"content":"File created successfully at: notes.md","is_error":false,"tool_use_id":"t3","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:07.050Z","toolUseResult":{"content":"x","filePath":"notes.md","type":"create"},"type":"user","uuid":"r3"}}
-item t3 tool final at=1800000007000 text="" Write TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000007050 created input="{\"content\":\"x\",\"file_path\":\"notes.md\"}" out="File created successfully at: notes.md"
+item t3 tool final at=1800000007000 text="" Write TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere asked=1800000005000 decided=1800000007000 ended=1800000007050 created input="{\"content\":\"x\",\"file_path\":\"notes.md\"}" out="File created successfully at: notes.md"
 snapshot WORKING queue=[] working_on=- at=1800000007000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 23 fact {"channel":"hook","json":{"duration_ms":40,"hook_event_name":"PostToolUse","tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write","tool_response":{"type":"create"},"tool_use_id":"t3"}}
 ## 24 fact {"channel":"hook","json":{"background_tasks":[],"hook_event_name":"Stop"}}

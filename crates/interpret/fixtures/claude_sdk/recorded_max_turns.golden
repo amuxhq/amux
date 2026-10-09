@@ -26,10 +26,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1787961130009 asks=[0b05a30e-e39d-4e
 ## 23 recorded 22: input stdin-3
 effect write "{\"response\":{\"request_id\":\"0b05a30e-e39d-4ed4-8128-68436829707d\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"content\":\"A\",\"file_path\":\"<MACHINE_PATH>\"}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply stdin-3 accepted
-item toolu_01BKZvAXFn8dyHs4jMMgWxEc tool final at=1787961129994 text="" Write TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED input="{\"content\":\"A\",\"file_path\":\"<MACHINE_PATH>\"}"
+item toolu_01BKZvAXFn8dyHs4jMMgWxEc tool final at=1787961129994 text="" Write TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED asked=1787961130009 decided=1787961130010 input="{\"content\":\"A\",\"file_path\":\"<MACHINE_PATH>\"}"
 snapshot WORKING queue=[] working_on=- at=1787961130010 asks=[] session=05fc9971-dae4-4b0d-9c04-520ac34465c0 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=28952/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 25 recorded 24: fact Stream type=user uuid=54b8981c-6d91-4905-942d-29ca294a9048
-item toolu_01BKZvAXFn8dyHs4jMMgWxEc tool final at=1787961129994 text="" Write TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1787961130018 created input="{\"content\":\"A\",\"file_path\":\"<MACHINE_PATH>\"}" out="File created successfully at: <MACHINE_PATH> (file state is …"
+item toolu_01BKZvAXFn8dyHs4jMMgWxEc tool final at=1787961129994 text="" Write TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED asked=1787961130009 decided=1787961130010 ended=1787961130018 created input="{\"content\":\"A\",\"file_path\":\"<MACHINE_PATH>\"}" out="File created successfully at: <MACHINE_PATH> (file state is …"
 ## 27 recorded 26: fact Stream type=assistant uuid=4a61a29b-984f-45d8-a84d-72e0ea1193f3
 item toolu_01HdQGvREG7VZBP1bzkm6xCa tool final at=1787961130480 text="" Write TOOL_STATE_RUNNING input="{\"content\":\"B\",\"file_path\":\"<MACHINE_PATH>\"}"
 ## 29 recorded 28: fact Stream type=control_request
@@ -37,10 +37,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1787961130491 asks=[0aface3b-0270-45
 ## 30 recorded 29: input stdin-4
 effect write "{\"response\":{\"request_id\":\"0aface3b-0270-45a5-b4be-9d5f7f5b817a\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"content\":\"B\",\"file_path\":\"<MACHINE_PATH>\"}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply stdin-4 accepted
-item toolu_01HdQGvREG7VZBP1bzkm6xCa tool final at=1787961130480 text="" Write TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED input="{\"content\":\"B\",\"file_path\":\"<MACHINE_PATH>\"}"
+item toolu_01HdQGvREG7VZBP1bzkm6xCa tool final at=1787961130480 text="" Write TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED asked=1787961130491 decided=1787961130491 input="{\"content\":\"B\",\"file_path\":\"<MACHINE_PATH>\"}"
 snapshot WORKING queue=[] working_on=- at=1787961130491 asks=[] session=05fc9971-dae4-4b0d-9c04-520ac34465c0 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=28952/? tasks=? active=[] usage=near 5h:19%(?) 7d:83%(near) servers=HEALTH_STATE_HEALTHY[plugin:stripe:stripe:TOOL_SERVER_STATUS_READY,linear-server:TOOL_SERVER_STATUS_READY,claude.ai Google Drive:TOOL_SERVER_STATUS_NEEDS_AUTH,claude.ai Google Calendar:TOOL_SERVER_STATUS_READY,claude.ai Gmail:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 32 recorded 31: fact Stream type=user uuid=19b7fd14-b584-4284-a80a-c772bbe11cd8
-item toolu_01HdQGvREG7VZBP1bzkm6xCa tool final at=1787961130480 text="" Write TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1787961130497 created input="{\"content\":\"B\",\"file_path\":\"<MACHINE_PATH>\"}" out="File created successfully at: <MACHINE_PATH> (file state is …"
+item toolu_01HdQGvREG7VZBP1bzkm6xCa tool final at=1787961130480 text="" Write TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED asked=1787961130491 decided=1787961130491 ended=1787961130497 created input="{\"content\":\"B\",\"file_path\":\"<MACHINE_PATH>\"}" out="File created successfully at: <MACHINE_PATH> (file state is …"
 ## 34 recorded 33: fact Stream type=result subtype=error_max_turns uuid=ed0281f7-d745-42ac-a608-d77f1ab10b69
 item ed0281f7-d745-42ac-a608-d77f1ab10b69:error api_error final at=1787961130501 text="" error_max_turns "Reached maximum number of turns (1)" retry=false 0/0
 item turn:1 turn final at=1787961130501 text="" #1 TURN_OUTCOME_FAILED started=1787961127091 cost=0.023921

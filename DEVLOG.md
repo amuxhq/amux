@@ -1,3 +1,17 @@
+2026-10-09 — **The record of an ask says when it opened and when it closed.**
+Once an ask closed, nothing said how long a person took to answer it: an
+ask's item keeps the time it was first written, a Codex ask's item was
+closed with its opening time, and the store keeps only an item's last
+revision. Every record that outlives an ask now carries both ends: an ask
+item's close has `opened_at_ms` and `closed_at_ms`, a call's permission
+decision `asked_at_ms` and `decided_at_ms`, and a plan `decided_at_ms`.
+A Codex ask in the snapshot carries `opened_at_ms`, as a Claude ask already
+did. Each interpreter stamps them from its own clock as it observes the
+ask open and close, since no provider puts a time on either. A decision the
+provider made without asking amux (an auto-approval, Codex's reviewer, a
+denial Claude made itself) has neither time. Nothing reads the fields yet;
+the interpreter goldens print them.
+
 2026-10-09 — **The daemon's link code calls a runtime's life a runtime instance.**
 The random id a host's runtime draws when it starts, which a link handshake
 carries so a peer can tell a restarted process from the one it already has

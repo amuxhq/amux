@@ -296,6 +296,10 @@ message Plan {
   optional string note = 2;
   // The whole plan is in: Claude declares it whole; Codex streams it.
   bool complete = 3;
+  // When it was decided, or dismissed: the provider's time where it gives
+  // one, else the interpreter's clock when it observed the decision.
+  // Absent while undecided.
+  optional int64 decided_at_ms = 4;
 }
 
 enum PlanVerdict {
@@ -384,6 +388,10 @@ message ToolDecision {
     ClaudeGrant claude = 4;
     CodexGrant codex = 5;
   }
+  // When the permission was asked and decided; absent when the provider
+  // decided without asking amux (auto-approved, or in its own interface).
+  optional int64 asked_at_ms = 6;
+  optional int64 decided_at_ms = 7;
 }
 
 // Where Claude saves a standing permission.
@@ -771,6 +779,10 @@ message AskClosed {
   repeated string fields = 4;
   // What an access grant granted.
   GrantAnswer grant = 5;
+  // When the ask opened and closed: the provider's time where it gives
+  // one, else the interpreter's clock when it observed each.
+  optional int64 opened_at_ms = 6;
+  optional int64 closed_at_ms = 7;
 }
 
 enum AskOutcome {

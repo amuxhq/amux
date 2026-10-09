@@ -20,7 +20,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[7→cmd-1 comman
 ## 6 input {"answer":{"answer":{"decision":"approve_network"},"ask":"7"},"id":"a1"}
 effect write "{\"id\":7,\"result\":{\"decision\":{\"applyNetworkPolicyAmendment\":{\"network_policy_amendment\":{\"action\":\"allow\",\"host\":\"api.example.com\"}}}}}"
 effect reply a1 accepted
-item cmd-1 work open at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_PENDING decision=DECISION_OUTCOME_ALLOWED grant=hosts["api.example.com"]
+item cmd-1 work open at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_PENDING decision=DECISION_OUTCOME_ALLOWED grant=hosts["api.example.com"] asked=1800000000000 decided=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 7 input {"answer":{"answer":{"decision":"approve"},"ask":"7"},"id":"a2"}
 effect reply a2 rejected:CLOSED_ASK
@@ -33,17 +33,17 @@ effect reply a3 rejected:UNSUPPORTED
 ## 11 input {"answer":{"answer":{"decision":"deny"},"ask":"8"},"id":"a4"}
 effect write "{\"id\":8,\"result\":{\"decision\":\"decline\"}}"
 effect reply a4 accepted
-item fc-1 work open at=1800000000500 text="" file_change [FILE_CHANGE_KIND_UPDATE /work/a.txt patch="@@ -1 +1 @@\n-a\n+b\n"] TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED
+item fc-1 work open at=1800000000500 text="" file_change [FILE_CHANGE_KIND_UPDATE /work/a.txt patch="@@ -1 +1 @@\n-a\n+b\n"] TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED asked=1800000000000 decided=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 12 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000000600,"item":{"changes":[{"diff":"@@ -1 +1 @@\n-a\n+b\n","kind":{"move_path":null,"type":"update"},"path":"/work/a.txt"}],"id":"fc-1","status":"declined","type":"fileChange"},"threadId":"t1","turnId":"turn-1"}}}
-item fc-1 work final at=1800000000500 text="" file_change [FILE_CHANGE_KIND_UPDATE /work/a.txt patch="@@ -1 +1 @@\n-a\n+b\n"] TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED ended=1800000000600
+item fc-1 work final at=1800000000500 text="" file_change [FILE_CHANGE_KIND_UPDATE /work/a.txt patch="@@ -1 +1 @@\n-a\n+b\n"] TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED asked=1800000000000 decided=1800000000000 ended=1800000000600
 ## 13 fact {"channel":"rpc","json":{"id":9,"method":"item/tool/requestUserInput","params":{"itemId":"call-1","questions":[{"header":"Token","id":"token","isOther":true,"isSecret":true,"options":null,"question":"Paste the deploy token."},{"header":"Env","id":"env","isOther":false,"isSecret":false,"options":[{"description":"Safe first.","label":"staging (Recommended)"},{"description":"Live.","label":"production"}],"question":"Which environment?"}],"threadId":"t1","turnId":"turn-1"}}}
 item ask:9 ask final at=1800000000000 text="" question×2 open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[9→ask:9 question ["Paste the deploy token." other secret (); "Which environment?" (staging (Recommended)*|production)] decisions=[]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 14 input {"answer":{"answer":{"note":"rotate it after the deploy","selected":["tok-SECRET-1234",0]},"ask":"9"},"id":"a5"}
 effect write "{\"id\":9,\"result\":{\"answers\":{\"env\":{\"answers\":[\"staging (Recommended)\",\"user_note: rotate it after the deploy\"]},\"token\":{\"answers\":[\"tok-SECRET-1234\"]}}}}"
 effect reply a5 accepted
-item ask:9 ask final at=1800000000000 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 [(hidden); staging (Recommended) note="rotate it after the deploy"]
+item ask:9 ask final at=1800000000000 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 [(hidden); staging (Recommended) note="rotate it after the deploy"] opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 15 fact {"channel":"rpc","json":{"id":20,"method":"item/permissions/requestApproval","params":{"itemId":"exec-9","permissions":{"fileSystem":{"read":["/etc/shared"],"write":["/var/cache"]},"network":{"enabled":true}},"reason":"Read the shared config and reach the registry.","threadId":"t1","turnId":"turn-1"}}}
 item ask:20 ask final at=1800000000000 text="" access read=["/etc/shared"] write=["/var/cache"] network=true open
@@ -53,7 +53,7 @@ effect reply a6 rejected:UNSUPPORTED
 ## 17 input {"answer":{"answer":{"grant":{"for_session":true,"network":true,"read":["/etc/shared"]}},"ask":"20"},"id":"a7"}
 effect write "{\"id\":20,\"result\":{\"permissions\":{\"fileSystem\":{\"read\":[\"/etc/shared\"],\"write\":[]},\"network\":{\"enabled\":true}},\"scope\":\"session\"}}"
 effect reply a7 accepted
-item ask:20 ask final at=1800000000000 text="" access read=["/etc/shared"] write=["/var/cache"] network=true ASK_OUTCOME_ANSWERED granted read=["/etc/shared"] write=[] network=true session
+item ask:20 ask final at=1800000000000 text="" access read=["/etc/shared"] write=["/var/cache"] network=true ASK_OUTCOME_ANSWERED granted read=["/etc/shared"] write=[] network=true session opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 18 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"arguments":{},"error":null,"id":"mcp-1","result":null,"server":"docs","status":"inProgress","tool":"sign_in","type":"mcpToolCall"},"startedAtMs":1800000000700,"threadId":"t1","turnId":"turn-1"}}}
 item mcp-1 work open at=1800000000700 text="" mcp docs·sign_in args="{}" result="" TOOL_STATE_RUNNING
@@ -63,7 +63,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=["elicit-1"→ask
 ## 20 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"\"elicit-1\""},"id":"a8"}
 effect write "{\"id\":\"elicit-1\",\"result\":{\"action\":\"accept\",\"content\":null}}"
 effect reply a8 accepted
-item ask:"elicit-1" ask final at=1800000000000 text="" link docs ASK_OUTCOME_ANSWERED
+item ask:"elicit-1" ask final at=1800000000000 text="" link docs ASK_OUTCOME_ANSWERED opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 21 fact {"channel":"rpc","json":{"id":"elicit-2","method":"mcpServer/elicitation/request","params":{"message":"Which space?","mode":"form","requestedSchema":{"properties":{"space":{"type":"string"}},"type":"object"},"serverName":"docs","threadId":"t1","turnId":"turn-1"}}}
 item ask:"elicit-2" ask final at=1800000000000 text="" form docs open
@@ -71,7 +71,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=["elicit-2"→ask
 ## 22 input {"answer":{"answer":{"form":{"action":"accept","content":{"space":"eng"}}},"ask":"\"elicit-2\""},"id":"a9"}
 effect write "{\"id\":\"elicit-2\",\"result\":{\"action\":\"accept\",\"content\":{\"space\":\"eng\"}}}"
 effect reply a9 accepted
-item ask:"elicit-2" ask final at=1800000000000 text="" form docs ASK_OUTCOME_ANSWERED fields=["space"]
+item ask:"elicit-2" ask final at=1800000000000 text="" form docs ASK_OUTCOME_ANSWERED fields=["space"] opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 23 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000000800,"item":{"arguments":{},"error":null,"id":"mcp-1","result":{"content":[{"text":"ok","type":"text"}]},"server":"docs","status":"completed","tool":"sign_in","type":"mcpToolCall"},"threadId":"t1","turnId":"turn-1"}}}
 item mcp-1 work final at=1800000000700 text="" mcp docs·sign_in args="{}" result="{\"content\":[{\"text\":\"ok\",\"type\":\"text\"}]…" TOOL_STATE_SUCCEEDED ended=1800000000800
@@ -79,13 +79,13 @@ item mcp-1 work final at=1800000000700 text="" mcp docs·sign_in args="{}" resul
 item cmd-2 work open at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_PENDING
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[30→cmd-2 command "/bin/zsh -lc 'curl -s https://api.example.com/stat…" reason="Reach the status API." prefix=["curl", "-s"] hosts=["api.example.com"] decisions=[APPROVE,APPROVE_SESSION,DENY,ABORT]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 25 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":30,"threadId":"t1"}}}
-item cmd-2 work open at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_PENDING decision=DECISION_OUTCOME_UNKNOWN elsewhere
+item cmd-2 work open at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_PENDING decision=DECISION_OUTCOME_UNKNOWN elsewhere asked=1800000000000 decided=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 26 fact {"channel":"rpc","json":{"id":33,"method":"item/tool/requestUserInput","params":{"itemId":"call-2","questions":[{"header":"Region","id":"region","isOther":true,"isSecret":false,"options":null,"question":"Which region?"}],"threadId":"t1","turnId":"turn-1"}}}
 item ask:33 ask final at=1800000000000 text="" question×1 open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[33→ask:33 question ["Which region?" other ()] decisions=[]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 27 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":33,"threadId":"t1"}}}
-item ask:33 ask final at=1800000000000 text="" question×1 ASK_OUTCOME_DISMISSED
+item ask:33 ask final at=1800000000000 text="" question×1 ASK_OUTCOME_DISMISSED opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 28 fact {"channel":"rpc","json":{"id":31,"method":"account/chatgptAuthTokens/refresh","params":{"reason":"unauthorized"}}}
 effect write "{\"error\":{\"code\":-32601,\"message\":\"amux does not handle account/chatgptAuthTokens/refresh\"},\"id\":31}"
@@ -96,17 +96,17 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[34→cmd-4 comma
 ## 30 input {"answer":{"answer":{"decision":"deny"},"ask":"34"},"id":"a9"}
 effect write "{\"id\":34,\"result\":{\"decision\":\"decline\"}}"
 effect reply a9 accepted
-item cmd-4 work open at=1800000000000 text="" command "/bin/zsh -lc 'touch notes.txt'" cwd=/work TOOL_STATE_PENDING decision=DECISION_OUTCOME_DENIED
+item cmd-4 work open at=1800000000000 text="" command "/bin/zsh -lc 'touch notes.txt'" cwd=/work TOOL_STATE_PENDING decision=DECISION_OUTCOME_DENIED asked=1800000000000 decided=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 31 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"aggregatedOutput":null,"command":"/bin/zsh -lc 'touch notes.txt'","commandActions":[],"cwd":"/work","durationMs":null,"exitCode":null,"id":"cmd-4","status":"declined","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-item cmd-4 work final at=1800000000000 text="" command "/bin/zsh -lc 'touch notes.txt'" cwd=/work TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED ended=1800000000000
+item cmd-4 work final at=1800000000000 text="" command "/bin/zsh -lc 'touch notes.txt'" cwd=/work TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED asked=1800000000000 decided=1800000000000 ended=1800000000000
 ## 32 fact {"channel":"rpc","json":{"id":32,"method":"item/commandExecution/requestApproval","params":{"availableDecisions":["accept",{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["curl","-s"]}},{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"action":"allow","host":"api.example.com"}}},"decline","cancel"],"command":"/bin/zsh -lc 'curl -s https://api.example.com/status'","cwd":"/work","itemId":"cmd-3","networkApprovalContext":{"host":"api.example.com","protocol":"https"},"proposedExecpolicyAmendment":["curl","-s"],"reason":"Reach the status API.","threadId":"t1","turnId":"turn-1"}}}
 item cmd-3 work open at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_PENDING
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[32→cmd-3 command "/bin/zsh -lc 'curl -s https://api.example.com/stat…" reason="Reach the status API." prefix=["curl", "-s"] hosts=["api.example.com"] decisions=[APPROVE,APPROVE_SIMILAR,APPROVE_NETWORK,DENY,ABORT]] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 33 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}
-item cmd-3 work final at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_CANCELLED decision=DECISION_OUTCOME_UNKNOWN
-item cmd-1 work final at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_CANCELLED decision=DECISION_OUTCOME_ALLOWED grant=hosts["api.example.com"]
-item cmd-2 work final at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_CANCELLED decision=DECISION_OUTCOME_UNKNOWN elsewhere
+item cmd-3 work final at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_CANCELLED decision=DECISION_OUTCOME_UNKNOWN asked=1800000000000 decided=1800000000000
+item cmd-1 work final at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_CANCELLED decision=DECISION_OUTCOME_ALLOWED grant=hosts["api.example.com"] asked=1800000000000 decided=1800000000000
+item cmd-2 work final at=1800000000000 text="" command "/bin/zsh -lc 'curl -s https://api.example.com/status'" cwd=/work TOOL_STATE_CANCELLED decision=DECISION_OUTCOME_UNKNOWN elsewhere asked=1800000000000 decided=1800000000000
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1800000000000
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=[]
 turn_end 1 last=-

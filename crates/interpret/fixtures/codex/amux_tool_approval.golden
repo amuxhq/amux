@@ -27,10 +27,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[1→exec-2 mcp_t
 ## 10 input {"answer":{"answer":{"decision":"approve"},"ask":"1"},"id":"a1"}
 effect write "{\"id\":1,\"result\":{\"action\":\"accept\",\"content\":{}}}"
 effect reply a1 accepted
-item exec-2 work open at=1800000000000 text="" mcp spec·ask_the_operator args="{\"word\":\"BLUE\"}" result="" TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED
+item exec-2 work open at=1800000000000 text="" mcp spec·ask_the_operator args="{\"word\":\"BLUE\"}" result="" TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED asked=1800000000000 decided=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 11 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"appContext":null,"arguments":{"word":"BLUE"},"durationMs":1,"error":null,"id":"exec-2","mcpAppUi":null,"pluginId":null,"readOnlyHint":null,"result":{"_meta":null,"content":[{"text":"BLUE","type":"text"}],"structuredContent":null},"server":"spec","status":"completed","tool":"ask_the_operator","type":"mcpToolCall"},"threadId":"t1","turnId":"turn-1"}}}
-item exec-2 work final at=1800000000000 text="" mcp spec·ask_the_operator args="{\"word\":\"BLUE\"}" result="{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",…" TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1800000000001
+item exec-2 work final at=1800000000000 text="" mcp spec·ask_the_operator args="{\"word\":\"BLUE\"}" result="{\"_meta\":null,\"content\":[{\"text\":\"BLUE\",…" TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED asked=1800000000000 decided=1800000000000 ended=1800000000001
 ## 12 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=[]

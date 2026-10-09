@@ -703,6 +703,7 @@ impl State {
                     plan,
                     question,
                     asked: None,
+                    ask_times: None,
                     emitted: Vec::new(),
                 },
             );

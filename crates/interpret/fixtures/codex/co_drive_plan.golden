@@ -23,7 +23,7 @@ item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED starte
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[plan:turn-1-plan→turn-1-plan plan:[PLAN_CHOICE_START,PLAN_CHOICE_KEEP_PLANNING] decisions=[]] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request sandbox=workspace-write reviewer=? collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=[]
 turn_end 1 last=turn-1-plan
 ## 9 fact {"channel":"rpc","json":{"method":"thread/settings/updated","params":{"threadId":"t1","threadSettings":{"approvalPolicy":"on-request","collaborationMode":{"mode":"default","settings":{"model":"gpt-5.6-luna","reasoning_effort":null}},"cwd":"/work","effort":null,"model":"gpt-5.6-luna","sandboxPolicy":{"type":"workspaceWrite"}}}}}
-item turn-1-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_APPROVED
+item turn-1-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_APPROVED decided=1800000000000
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=default approval=on-request sandbox=workspace-write reviewer=? collaboration=default context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 10 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-2","status":"inProgress"}}}}
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-2 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=default approval=on-request sandbox=workspace-write reviewer=? collaboration=default context=? plan=? usage=? servers=? sign_in=? background=[]
@@ -52,7 +52,7 @@ item turn:3 turn final at=1800000000000 text="" #3 TURN_OUTCOME_COMPLETED starte
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[plan:turn-3-plan→turn-3-plan plan:[PLAN_CHOICE_START,PLAN_CHOICE_KEEP_PLANNING] decisions=[]] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request sandbox=workspace-write reviewer=? collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=[]
 turn_end 3 last=turn-3-plan
 ## 21 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-4","status":"inProgress"}}}}
-item turn-3-plan plan final at=1800000000000 text="## Write the colour and the README\n\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n" PLAN_VERDICT_SENT_BACK
+item turn-3-plan plan final at=1800000000000 text="## Write the colour and the README\n\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n" PLAN_VERDICT_SENT_BACK decided=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-4 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request sandbox=workspace-write reviewer=? collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 22 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"clientId":"tui-4","content":[{"text":"Leave the README alone.","type":"text"}],"id":"u-4","type":"userMessage"},"threadId":"t1","turnId":"turn-4"}}}
 item u-4 prompt final at=1800000000000 text="Leave the README alone."

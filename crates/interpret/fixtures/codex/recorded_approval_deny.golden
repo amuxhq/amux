@@ -54,10 +54,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1788037190383 asks=[0→exec-5509f50
 ## 59 recorded 58: input stdin-5
 effect write "{\"id\":0,\"result\":{\"decision\":\"decline\"}}"
 effect reply stdin-5 accepted
-item exec-5509f507-4aa7-4fac-aa66-d088ac31060f work open at=1788037190382 text="" command "/bin/zsh -lc '/usr/bin/touch <MACHINE_PATH>'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED
+item exec-5509f507-4aa7-4fac-aa66-d088ac31060f work open at=1788037190382 text="" command "/bin/zsh -lc '/usr/bin/touch <MACHINE_PATH>'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED asked=1788037190383 decided=1788037190384
 snapshot WORKING queue=[] working_on=- at=1788037190384 asks=[] thread=01a04f52-3831-7ae3-98df-e2803ff93d13 turn=01a04f52-3849-79c0-9b98-6eaf941aa8b0 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=read-only mode=? approval=on-request sandbox=read-only reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 61 recorded 60: fact Rpc method=item/completed
-item exec-5509f507-4aa7-4fac-aa66-d088ac31060f work final at=1788037190382 text="" command "/bin/zsh -lc '/usr/bin/touch <MACHINE_PATH>'" cwd=<MACHINE_PATH> TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED ended=1788037190384
+item exec-5509f507-4aa7-4fac-aa66-d088ac31060f work final at=1788037190382 text="" command "/bin/zsh -lc '/usr/bin/touch <MACHINE_PATH>'" cwd=<MACHINE_PATH> TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED asked=1788037190383 decided=1788037190384 ended=1788037190384
 ## 64 recorded 63: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1788037190385 asks=[] thread=01a04f52-3831-7ae3-98df-e2803ff93d13 turn=01a04f52-3849-79c0-9b98-6eaf941aa8b0 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=read-only mode=? approval=on-request sandbox=read-only reviewer=user collaboration=? context=14441/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 66 recorded 65: fact Rpc method=account/rateLimits/updated

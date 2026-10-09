@@ -20,7 +20,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[9→ask:9 questi
 ## 6 input {"answer":{"answer":{"notes":["after the freeze",null,"cut it from main"],"selected":[1,null,"v2.3"]},"ask":"9"},"id":"a1"}
 effect write "{\"id\":9,\"result\":{\"answers\":{\"env\":{\"answers\":[\"production\",\"user_note: after the freeze\"]},\"tag\":{\"answers\":[\"v2.3\",\"user_note: cut it from main\"]},\"window\":{\"answers\":[]}}}}"
 effect reply a1 accepted
-item ask:9 ask final at=1800000000000 text="" question×3 ASK_OUTCOME_ANSWERED answered 2 of 3 [production note="after the freeze"; (skipped); "v2.3" note="cut it from main"]
+item ask:9 ask final at=1800000000000 text="" question×3 ASK_OUTCOME_ANSWERED answered 2 of 3 [production note="after the freeze"; (skipped); "v2.3" note="cut it from main"] opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 7 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":9,"threadId":"t1"}}}
 ## 8 fact {"channel":"rpc","json":{"id":10,"method":"item/tool/requestUserInput","params":{"itemId":"call-2","questions":[{"header":"Env","id":"env","isOther":false,"isSecret":false,"options":[{"description":"Safe first.","label":"staging (Recommended)"},{"description":"Live.","label":"production"}],"question":"Which environment?"},{"header":"Window","id":"window","isOther":false,"isSecret":false,"options":[{"description":"","label":"now"},{"description":"","label":"tonight"}],"question":"When should it go out?"},{"header":"Tag","id":"tag","isOther":true,"isSecret":false,"options":null,"question":"Which tag?"}],"threadId":"t1","turnId":"turn-1"}}}
@@ -29,7 +29,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[10→ask:10 ques
 ## 9 input {"answer":{"answer":{"reply":{"selected":[0,null,null],"text":"Hold the deploy until Monday."}},"ask":"10"},"id":"a2"}
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/interrupt\",\"params\":{\"threadId\":\"t1\",\"turnId\":\"turn-1\"}}"
 effect reply a2 queued
-item ask:10 ask final at=1800000000000 text="" question×3 ASK_OUTCOME_REPLIED answered 1 of 3 [staging (Recommended); (skipped); (skipped)] reply="Hold the deploy until Monday."
+item ask:10 ask final at=1800000000000 text="" question×3 ASK_OUTCOME_REPLIED answered 1 of 3 [staging (Recommended); (skipped); (skipped)] reply="Hold the deploy until Monday." opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[a2] working_on=- at=1800000000000 asks=[] thread=t1 turn=turn-1 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=? plan=? usage=? servers=? sign_in=? background=?
 ## 10 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":10,"threadId":"t1"}}}
 ## 11 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"interrupted"}}}}

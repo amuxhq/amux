@@ -125,7 +125,7 @@ turn_end 1 last=01a11479-9d93-7370-983a-6db72e75ab63-plan
 ## 121 recorded 120: input 0x089f0b3764f54cb0b1856c9c12b19fff
 effect reply 0x089f0b3764f54cb0b1856c9c12b19fff accepted
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"089f0b3764f54cb0b1856c9c12b19fff\",\"collaborationMode\":{\"mode\":\"default\",\"settings\":{\"developer_instructions\":null,\"model\":\"gpt-6.1-sol\",\"reasoning_effort\":null}},\"input\":[{\"text\":\"Implement the plan.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a11479-98c6-7920-a1cc-1589acc2902a\"}}"
-item 01a11479-9d93-7370-983a-6db72e75ab63-plan plan final at=1791344882023 text="Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n" PLAN_VERDICT_APPROVED
+item 01a11479-9d93-7370-983a-6db72e75ab63-plan plan final at=1791344882023 text="Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n" PLAN_VERDICT_APPROVED decided=1791344882678
 item prompt:089f0b3764f54cb0b1856c9c12b19fff prompt final input=0x089f0b3764f54cb0b1856c9c12b19fff at=1791344882678 text="Implement the plan."
 snapshot WORKING queue=[] working_on=- at=1791344882678 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=- model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request sandbox=read-only reviewer=user collaboration=default context=17158/258400 plan=? usage=ok 7d:0%(ok) credits=62500 servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 124 recorded 123: fact Rpc "{\"id\":\"amux-2\",\"result\":{\"turn\":{\"completedAt\":null,\"durationMs\":nu…
@@ -171,10 +171,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1791344885522 asks=[0→exec-1ce5edf
 ## 165 recorded 164: input stdin-10
 effect write "{\"id\":0,\"result\":{\"decision\":\"accept\"}}"
 effect reply stdin-10 accepted
-item exec-1ce5edf9-a814-458c-a852-ef3356c960e7 work open at=1791344885521 text="" command "/bin/zsh -lc \"printf 'UPDATED\\\\n' > README.md\"" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED
+item exec-1ce5edf9-a814-458c-a852-ef3356c960e7 work open at=1791344885521 text="" command "/bin/zsh -lc \"printf 'UPDATED\\\\n' > README.md\"" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED asked=1791344885522 decided=1791344885571
 snapshot WORKING queue=[] working_on=- at=1791344885571 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=01a11479-b3f7-7e91-8338-0b6d2950d347 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request sandbox=read-only reviewer=user collaboration=default context=17158/258400 plan=? usage=ok 7d:0%(ok) credits=62500 servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 170 recorded 169: fact Rpc method=item/completed
-item exec-1ce5edf9-a814-458c-a852-ef3356c960e7 work final at=1791344885521 text="" command "/bin/zsh -lc \"printf 'UPDATED\\\\n' > README.md\"" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1791344885620
+item exec-1ce5edf9-a814-458c-a852-ef3356c960e7 work final at=1791344885521 text="" command "/bin/zsh -lc \"printf 'UPDATED\\\\n' > README.md\"" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED asked=1791344885522 decided=1791344885571 ended=1791344885620
 ## 172 recorded 171: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1791344885624 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=01a11479-b3f7-7e91-8338-0b6d2950d347 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request sandbox=read-only reviewer=user collaboration=default context=19344/258400 plan=? usage=ok 7d:0%(ok) credits=62500 servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 175 recorded 174: fact Rpc method=item/started

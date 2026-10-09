@@ -75,8 +75,9 @@ use wire::{
 
 use crate::claude_common::{
     Jobs, Task, Verdict, describe_asks, describe_tasks, describe_tool, file_step_facts, or_dash,
-    plan_item, question_item, same_json, split_tool_name, task_list,
+    plan_item, question_closed, question_item, same_json, split_tool_name, task_list,
 };
+use crate::shared::AskTimes;
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
     RedactTarget, SendOutcome, Shared, SnapshotView, Stepped, agent_message_body,
@@ -355,6 +356,9 @@ struct Tool {
     question: bool,
     #[serde(with = "serde_pb::opt_msg")]
     asked: Option<AskClosed>,
+    /// When the last ask amux held for the call opened and closed; what
+    /// its decision, plan or question records.
+    ask_times: Option<AskTimes>,
     #[serde(with = "serde_pb::item_body")]
     emitted: Vec<u8>,
 }
@@ -379,6 +383,9 @@ struct Decision {
     /// How a question closed, which its item carries instead.
     #[serde(with = "serde_pb::opt_msg")]
     record: Option<AskClosed>,
+    /// When the ask it closed opened and closed; None when no ask was
+    /// open.
+    asked: Option<AskTimes>,
 }
 
 impl Decision {
@@ -390,6 +397,7 @@ impl Decision {
             elsewhere: true,
             verdict: None,
             record: None,
+            asked: None,
         }
     }
 
@@ -401,6 +409,7 @@ impl Decision {
             elsewhere: false,
             verdict: None,
             record: None,
+            asked: None,
         }
     }
 
@@ -431,12 +440,20 @@ impl Decision {
         }
     }
 
-    fn to_wire(&self) -> ToolDecision {
-        ToolDecision {
+    /// The decision as its call records it, with when it was asked and
+    /// decided when amux held the ask.
+    fn to_wire(&self, asked: Option<AskTimes>) -> ToolDecision {
+        let decision = ToolDecision {
             outcome: self.outcome,
             note: self.note.clone(),
             elsewhere: self.elsewhere,
             granted: self.grant.clone().map(tool_decision::Granted::Claude),
+            asked_at_ms: None,
+            decided_at_ms: None,
+        };
+        match asked {
+            Some(asked) => asked.decide(decision),
+            None => decision,
         }
     }
 }
@@ -662,7 +679,13 @@ impl State {
             return;
         }
         if tool.question {
-            let Some(item) = question_item(&tool.input, tool.asked.clone(), true) else {
+            let closed = question_closed(
+                tool.asked.as_ref(),
+                tool.ask_times,
+                tool.at_ms,
+                tool.ended_at_ms,
+            );
+            let Some(item) = question_item(&tool.input, closed, true) else {
                 return;
             };
             let body = item_body(claude_pty_item::Kind::Ask(item));
@@ -683,7 +706,7 @@ impl State {
             );
         }
         if let Some(verdict) = &tool.plan {
-            let Some((text, plan)) = plan_item(&tool.input, verdict) else {
+            let Some((text, plan)) = plan_item(&tool.input, verdict, tool.ask_times) else {
                 return;
             };
             let body = item_body(claude_pty_item::Kind::Plan(plan));
@@ -743,7 +766,10 @@ impl State {
             outcome_json: tool.outcome_json.clone().into_bytes(),
             attachments: tool.images.clone(),
             class: tool.class,
-            decision: tool.decision.as_ref().map(Decision::to_wire),
+            decision: tool
+                .decision
+                .as_ref()
+                .map(|decision| decision.to_wire(tool.ask_times)),
             background: tool.background,
             parent_key: String::new(),
             subagent: tool.subagent.as_ref().map(|subagent| SubagentProgress {
@@ -802,6 +828,9 @@ impl State {
 
     fn decide(&mut self, emit: &mut Emit, tool_id: &str, decision: Decision) {
         if let Some(tool) = self.tools.get_mut(tool_id) {
+            if decision.asked.is_some() {
+                tool.ask_times = decision.asked;
+            }
             if tool.question {
                 // Answered in Claude's own terminal, the question's result
                 // says how; anything else closed it without answers.
@@ -833,7 +862,9 @@ impl State {
             }
             _ => {}
         }
-        self.shared.close_ask(ask_key);
+        if let Some(ask) = self.shared.close_ask(ask_key) {
+            decision.asked = Some(self.shared.ask_times(ask.opened_at_ms));
+        }
         let Some(meta) = self.asks.get_mut(ask_key) else {
             return;
         };
@@ -913,8 +944,11 @@ impl State {
             _ => return,
         };
         let item = ask_item::opened(item);
+        // Written closed only as the ask closes: now.
         let item = match closed {
-            Some(closed) => ask_item::close(item, closed),
+            Some(closed) => {
+                ask_item::close(item, self.shared.ask_times(ask.opened_at_ms).close(closed))
+            }
             None => item,
         };
         self.shared.item(
@@ -1247,11 +1281,14 @@ impl State {
             (Some(meta), Some(parsed)) => terminal_answer(&meta.shape, asked.as_ref(), parsed),
             _ => Err(unsupported()),
         };
-        let (terminal, decision) = match answered {
+        let (terminal, mut decision) = match answered {
             Ok(answered) => answered,
             Err(why) => return self.shared.refuse(emit, id, why),
         };
-        self.shared.answer(emit, id, &key);
+        decision.asked = self
+            .shared
+            .answer(emit, id, &key)
+            .map(|ask| self.shared.ask_times(ask.opened_at_ms));
         self.close(emit, &key, decision);
         emit.effect(Effect::Terminal(terminal));
         self.shared.accept(emit, id, false);
@@ -1277,8 +1314,12 @@ impl State {
         else {
             return self.shared.reject(emit, id, Refusal::Unsupported);
         };
-        self.shared.answer(emit, id, key);
-        self.close(emit, key, Decision::question(record));
+        let mut decision = Decision::question(record);
+        decision.asked = self
+            .shared
+            .answer(emit, id, key)
+            .map(|ask| self.shared.ask_times(ask.opened_at_ms));
+        self.close(emit, key, decision);
         emit.effect(Effect::Terminal(TerminalInput::Interrupt));
         let prompt = wire::PromptInput {
             text: reply.text.clone(),
@@ -1354,6 +1395,7 @@ fn terminal_answer(
         elsewhere: false,
         verdict: None,
         record: None,
+        asked: None,
     };
     match (shape, answer) {
         (

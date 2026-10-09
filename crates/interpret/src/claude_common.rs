@@ -20,6 +20,7 @@ use wire::{
 
 use crate::Effect;
 use crate::claude_pty::QuestionShape;
+use crate::shared::AskTimes;
 
 /// Built-in tools that only look, each by what it looks at: views fold runs
 /// of them together and name each by this verb.
@@ -89,9 +90,14 @@ impl Verdict {
     }
 }
 
-/// The plan item of an ExitPlanMode call: its text and body. None until
-/// the call's input carries the plan, so the plan lands whole.
-pub(crate) fn plan_item(input: &str, verdict: &Verdict) -> Option<(String, wire::Plan)> {
+/// The plan item of an ExitPlanMode call: its text and body, decided at
+/// the close of the ask that decided it. None until the call's input
+/// carries the plan, so the plan lands whole.
+pub(crate) fn plan_item(
+    input: &str,
+    verdict: &Verdict,
+    asked: Option<AskTimes>,
+) -> Option<(String, wire::Plan)> {
     let plan = serde_json::from_str::<PlanInput>(input).ok()?.plan;
     (!plan.is_empty()).then(|| {
         (
@@ -100,8 +106,33 @@ pub(crate) fn plan_item(input: &str, verdict: &Verdict) -> Option<(String, wire:
                 verdict: verdict.verdict,
                 note: verdict.note.clone(),
                 complete: true,
+                decided_at_ms: asked
+                    .filter(|_| !verdict.undecided())
+                    .map(|asked| asked.closed_at_ms),
             },
         )
+    })
+}
+
+/// How a question call closed, with when it opened and closed: the ends of
+/// the ask amux held for it, else, when Claude's own record of the answers
+/// is all there was, the call's start and end.
+pub(crate) fn question_closed(
+    closed: Option<&wire::AskClosed>,
+    asked: Option<AskTimes>,
+    at_ms: i64,
+    ended_at_ms: Option<i64>,
+) -> Option<wire::AskClosed> {
+    let closed = closed?.clone();
+    let asked = asked.or_else(|| {
+        ended_at_ms.map(|ended| AskTimes {
+            opened_at_ms: at_ms,
+            closed_at_ms: ended,
+        })
+    });
+    Some(match asked {
+        Some(asked) => asked.close(closed),
+        None => closed,
     })
 }
 
@@ -348,7 +379,7 @@ pub(crate) fn describe_tool(tool: &ToolCall) -> String {
     }
     if let Some(decision) = &tool.decision {
         text.push_str(&format!(
-            " decision={}{}{}{}",
+            " decision={}{}{}{}{}",
             DecisionOutcome::try_from(decision.outcome)
                 .map_or("?", |outcome| outcome.as_str_name()),
             describe_grant(decision.granted.as_ref()),
@@ -357,7 +388,8 @@ pub(crate) fn describe_tool(tool: &ToolCall) -> String {
             } else {
                 format!(" note={}", Value::String(decision.note.clone()))
             },
-            if decision.elsewhere { " elsewhere" } else { "" }
+            if decision.elsewhere { " elsewhere" } else { "" },
+            crate::shared::describe_decision_times(decision)
         ));
     }
     if let Some(ended) = tool.ended_at_ms {

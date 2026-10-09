@@ -56,10 +56,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1788037180705 asks=[0→exec-8ed0fba
 ## 60 recorded 59: input stdin-5
 effect write "{\"id\":0,\"result\":{\"decision\":\"accept\"}}"
 effect reply stdin-5 accepted
-item exec-8ed0fba0-f88b-452f-911c-79283dcb350f work open at=1788037180705 text="" command "/bin/zsh -lc '/usr/bin/touch <MACHINE_PATH>'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED
+item exec-8ed0fba0-f88b-452f-911c-79283dcb350f work open at=1788037180705 text="" command "/bin/zsh -lc '/usr/bin/touch <MACHINE_PATH>'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED asked=1788037180705 decided=1788037180705
 snapshot WORKING queue=[] working_on=- at=1788037180705 asks=[] thread=01a04f52-152b-71a0-a023-161853ed3fdf turn=01a04f52-1542-7381-8de6-9a891732c730 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=read-only mode=? approval=on-request sandbox=read-only reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 65 recorded 64: fact Rpc method=item/completed
-item exec-8ed0fba0-f88b-452f-911c-79283dcb350f work final at=1788037180705 text="" command "/bin/zsh -lc '/usr/bin/touch <MACHINE_PATH>'" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1788037180753
+item exec-8ed0fba0-f88b-452f-911c-79283dcb350f work final at=1788037180705 text="" command "/bin/zsh -lc '/usr/bin/touch <MACHINE_PATH>'" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED asked=1788037180705 decided=1788037180705 ended=1788037180753
 ## 67 recorded 66: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1788037180754 asks=[] thread=01a04f52-152b-71a0-a023-161853ed3fdf turn=01a04f52-1542-7381-8de6-9a891732c730 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=read-only mode=? approval=on-request sandbox=read-only reviewer=user collaboration=? context=14408/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 68 recorded 67: fact Rpc method=account/rateLimits/updated

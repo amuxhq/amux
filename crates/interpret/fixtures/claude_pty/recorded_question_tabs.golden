@@ -26,5 +26,5 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1788080239486 asks=[ask:1->- questio
 item toolu_01EeF7mQRsSV31NfGS4gzqJY ask final at=1788080237911 text="" question×2 open
 snapshot NEEDS_YOU queue=[] working_on=- at=1788080239487 asks=[ask:1->toolu_01EeF7mQRsSV31NfGS4gzqJY question:2+other,2+other] session=85392a72-77ea-4a16-a0a6-cc5f120557d7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34361 tasks=? background=?
 ## 31 recorded 29: fact Transcript type=user uuid=70a38f84-a2a0-408e-b888-be6d0d64a341
-item toolu_01EeF7mQRsSV31NfGS4gzqJY ask final at=1788080237911 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 [Red; Large]
+item toolu_01EeF7mQRsSV31NfGS4gzqJY ask final at=1788080237911 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 [Red; Large] opened=1788080237777 closed=1788080239487
 snapshot WORKING queue=[] working_on=- at=1788080239487 asks=[] session=85392a72-77ea-4a16-a0a6-cc5f120557d7 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=34361 tasks=? background=?

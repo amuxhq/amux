@@ -15,12 +15,12 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-1->t1 permis
 ## 5 input {"answer":{"answer":{"allow":{"scope":1}},"ask":"req-1"},"id":"a1"}
 effect write "{\"response\":{\"request_id\":\"req-1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"rm -rf target\"},\"updatedPermissions\":[{\"destination\":\"session\",\"directories\":[\"/work/other\"],\"type\":\"addDirectories\"}]},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a1 accepted
-item t1 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/work/other"]) input="{\"command\":\"rm -rf target\"}"
+item t1 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/work/other"]) asked=1800000000000 decided=1800000000000 input="{\"command\":\"rm -rf target\"}"
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 6 input {"answer":{"answer":{"allow":{}},"ask":"req-1"},"id":"a1b"}
 effect reply a1b rejected:CLOSED_ASK
 ## 7 fact {"channel":"stream","json":{"message":{"content":[{"content":"","tool_use_id":"t1","type":"tool_result"}],"role":"user"},"type":"user","uuid":"u1"}}
-item t1 tool final at=1800000000000 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/work/other"]) ended=1800000000000 input="{\"command\":\"rm -rf target\"}"
+item t1 tool final at=1800000000000 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED grant=claude(destination=session directories=["/work/other"]) asked=1800000000000 decided=1800000000000 ended=1800000000000 input="{\"command\":\"rm -rf target\"}"
 ## 8 fact {"channel":"stream","json":{"message":{"content":[{"id":"t2","input":{"command":"git push --force"},"name":"Bash","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m2"}}
 item t2 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"git push --force\"}"
 ## 9 fact {"channel":"stream","json":{"request":{"input":{"command":"git push --force"},"permission_suggestions":[],"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"t2"},"request_id":"req-2","type":"control_request"}}
@@ -28,10 +28,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-2->t2 permis
 ## 10 input {"answer":{"answer":{"deny":{"note":"not on main"}},"ask":"req-2"},"id":"a2"}
 effect write "{\"response\":{\"request_id\":\"req-2\",\"response\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nnot on main\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a2 accepted
-item t2 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED note="not on main" input="{\"command\":\"git push --force\"}"
+item t2 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED note="not on main" asked=1800000000000 decided=1800000000000 input="{\"command\":\"git push --force\"}"
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 11 fact {"channel":"stream","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\nnot on main","is_error":true,"tool_use_id":"t2","type":"tool_result"}],"role":"user"},"type":"user","uuid":"u2"}}
-item t2 tool final at=1800000000000 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED note="not on main" ended=1800000000000 input="{\"command\":\"git push --force\"}"
+item t2 tool final at=1800000000000 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED note="not on main" asked=1800000000000 decided=1800000000000 ended=1800000000000 input="{\"command\":\"git push --force\"}"
 ## 12 fact {"channel":"stream","json":{"message":{"content":[{"id":"t2b","input":{"command":"git reset --hard"},"name":"Bash","type":"tool_use"}],"id":"m2b","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m2b"}}
 item t2b tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"git reset --hard\"}"
 ## 13 fact {"channel":"stream","json":{"request":{"input":{"command":"git reset --hard"},"permission_suggestions":[],"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"t2b"},"request_id":"req-2b","type":"control_request"}}
@@ -39,10 +39,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-2b->t2b perm
 ## 14 input {"answer":{"answer":{"deny":{}},"ask":"req-2b"},"id":"a2b"}
 effect write "{\"response\":{\"request_id\":\"req-2b\",\"response\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a2b accepted
-item t2b tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED input="{\"command\":\"git reset --hard\"}"
+item t2b tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED asked=1800000000000 decided=1800000000000 input="{\"command\":\"git reset --hard\"}"
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 15 fact {"channel":"stream","json":{"message":{"content":[{"content":"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file).","is_error":true,"tool_use_id":"t2b","type":"tool_result"}],"role":"user"},"type":"user","uuid":"u2b"}}
-item t2b tool final at=1800000000000 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED ended=1800000000000 input="{\"command\":\"git reset --hard\"}"
+item t2b tool final at=1800000000000 text="" Bash TOOL_STATE_DENIED decision=DECISION_OUTCOME_DENIED asked=1800000000000 decided=1800000000000 ended=1800000000000 input="{\"command\":\"git reset --hard\"}"
 ## 16 fact {"channel":"stream","json":{"message":{"content":[{"id":"t3","input":{"command":"curl evil"},"name":"Bash","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m3"}}
 item t3 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"curl evil\"}"
 ## 17 fact {"channel":"stream","json":{"request":{"input":{"command":"curl evil"},"permission_suggestions":[],"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"t3"},"request_id":"req-3","type":"control_request"}}
@@ -50,7 +50,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-3->t3 permis
 ## 18 input {"answer":{"answer":{"deny":{"note":"stop there","stop":true}},"ask":"req-3"},"id":"a3"}
 effect write "{\"response\":{\"request_id\":\"req-3\",\"response\":{\"behavior\":\"deny\",\"interrupt\":true,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nstop there\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a3 accepted
-item t3 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED note="stop there" input="{\"command\":\"curl evil\"}"
+item t3 tool final at=1800000000000 text="" Bash TOOL_STATE_RUNNING decision=DECISION_OUTCOME_DENIED note="stop there" asked=1800000000000 decided=1800000000000 input="{\"command\":\"curl evil\"}"
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 19 fact {"channel":"stream","json":{"request":{"elicitation_id":"el-1","mcp_server_name":"github","message":"Sign in to GitHub","mode":"url","subtype":"elicitation","url":"https://github.com/login/device"},"request_id":"req-4","type":"control_request"}}
 item ask:req-4 ask final at=1800000000000 text="" link github open
@@ -58,7 +58,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-4->ask:req-4
 ## 20 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"req-4"},"id":"a4"}
 effect write "{\"response\":{\"request_id\":\"req-4\",\"response\":{\"action\":\"accept\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a4 accepted
-item ask:req-4 ask final at=1800000000000 text="" link github ASK_OUTCOME_ANSWERED
+item ask:req-4 ask final at=1800000000000 text="" link github ASK_OUTCOME_ANSWERED opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 21 fact {"channel":"stream","json":{"request":{"mcp_server_name":"github","message":"Issue details","mode":"form","requested_schema":{"properties":{"title":{"type":"string"}},"type":"object"},"subtype":"elicitation"},"request_id":"req-5","type":"control_request"}}
 item ask:req-5 ask final at=1800000000000 text="" form github open
@@ -66,19 +66,19 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-5->ask:req-5
 ## 22 input {"answer":{"answer":{"form":{"action":"decline"}},"ask":"req-5"},"id":"a5"}
 effect write "{\"response\":{\"request_id\":\"req-5\",\"response\":{\"action\":\"decline\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a5 accepted
-item ask:req-5 ask final at=1800000000000 text="" form github ASK_OUTCOME_DECLINED
+item ask:req-5 ask final at=1800000000000 text="" form github ASK_OUTCOME_DECLINED opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 23 fact {"channel":"stream","json":{"request":{"elicitation_id":"el-6","mcp_server_name":"linear","message":"Authorize","mode":"url","subtype":"elicitation","url":"https://linear.app/oauth?elicitation=el-6"},"request_id":"req-6","type":"control_request"}}
 item ask:req-6 ask final at=1800000000000 text="" link linear open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-6->ask:req-6 link:linear "Authorize" https://linear.app/oauth?elicitation=el-6] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 24 fact {"channel":"stream","json":{"elicitation_id":"el-6","mcp_server_name":"linear","subtype":"elicitation_complete","type":"system","uuid":"ec6"}}
-item ask:req-6 ask final at=1800000000000 text="" link linear ASK_OUTCOME_ANSWERED
+item ask:req-6 ask final at=1800000000000 text="" link linear ASK_OUTCOME_ANSWERED opened=1800000000000 closed=1800000000000
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 25 fact {"channel":"stream","json":{"request":{"mcp_server_name":"github","message":"Labels","mode":"form","requested_schema":{"properties":{"title":{"type":"string"}},"type":"object"},"subtype":"elicitation"},"request_id":"req-7","type":"control_request"}}
 item ask:req-7 ask final at=1800000000000 text="" form github open
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-7->ask:req-7 form:github "Labels"] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 26 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r1"}}
-item ask:req-7 ask final at=1800000000000 text="" form github ASK_OUTCOME_DISMISSED
+item ask:req-7 ask final at=1800000000000 text="" form github ASK_OUTCOME_DISMISSED opened=1800000000000 closed=1800000000000
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1799999999000 cost=0.010000
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 turn_end 1 last=-

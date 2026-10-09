@@ -23,7 +23,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1788075575399 asks=[ask:1->- questio
 item toolu_01RvcE5CZ5FufiVEqtUdnTxL ask final at=1788075571417 text="" question×2 open
 snapshot NEEDS_YOU queue=[] working_on=- at=1788075575399 asks=[ask:1->toolu_01RvcE5CZ5FufiVEqtUdnTxL question:2+other,3m+other] session=d688f3cb-9fa0-4965-b912-44a93bf7593a model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=48328 tasks=? background=?
 ## 27 recorded 25: fact Transcript type=user uuid=87d78350-2c3b-460d-84e1-48fa6e7dbe6d
-item toolu_01RvcE5CZ5FufiVEqtUdnTxL ask final at=1788075571417 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 [Blue; Hammer+Drill]
+item toolu_01RvcE5CZ5FufiVEqtUdnTxL ask final at=1788075571417 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 [Blue; Hammer+Drill] opened=1788075571379 closed=1788075575399
 snapshot WORKING queue=[] working_on=- at=1788075575399 asks=[] session=d688f3cb-9fa0-4965-b912-44a93bf7593a model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=48328 tasks=? background=?
 ## 36 recorded 34: fact Hook hook_event_name=Stop
 snapshot WORKING queue=[] working_on=- at=1788075575400 asks=[] session=d688f3cb-9fa0-4965-b912-44a93bf7593a model=claude-sonnet-5 model_name="Sonnet 5" mode=auto context=48328 tasks=? background=[]

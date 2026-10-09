@@ -37,7 +37,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1791344095242 asks=[ae56c573-d7c5-4e
 ## 112 recorded 111: input stdin-4
 effect write "{\"response\":{\"request_id\":\"ae56c573-d7c5-4ef5-825a-7dc4f7991015\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"answers\":{\"Which size?\":\"Small\"},\"questions\":[{\"header\":\"Colour\",\"multiSelect\":false,\"options\":[{\"description\":\"The colour red\",\"label\":\"Red\"},{\"description\":\"The colour blue\",\"label\":\"Blue\"}],\"question\":\"Which colour?\"},{\"header\":\"Size\",\"multiSelect\":false,\"options\":[{\"description\":\"Small size\",\"label\":\"Small\"},{\"description\":\"Large size\",\"label\":\"Large\"}],\"question\":\"Which size?\"}]}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply stdin-4 accepted
-item toolu_01W6kGbyyVYBBy7NZibWCqgJ ask final at=1791344094325 text="" question×2 ASK_OUTCOME_ANSWERED answered 1 of 2 [(skipped); Small]
+item toolu_01W6kGbyyVYBBy7NZibWCqgJ ask final at=1791344094325 text="" question×2 ASK_OUTCOME_ANSWERED answered 1 of 2 [(skipped); Small] opened=1791344095235 closed=1791344095304
 snapshot WORKING queue=[] working_on=- at=1791344095304 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=22498/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 118 recorded 117: fact Stream type=system subtype=status uuid=357ca1f0-abb5-4bc2-85b5-8a7aedddfb51
 item 357ca1f0-abb5-4bc2-85b5-8a7aedddfb51 status final at=1791344095315 text="" SDK_STATUS_REQUESTING requesting
@@ -58,7 +58,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1791344097256 asks=[0565081e-db13-4d
 ## 170 recorded 169: input stdin-5
 effect write "{\"response\":{\"request_id\":\"0565081e-db13-4db2-980e-60da1365bc0e\",\"response\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"Never mind the shape. Reply with the single word done and nothing else.\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply stdin-5 accepted
-item toolu_01MrEoASRJVXZ8HofCXcyLnY ask final at=1791344096904 text="" question×1 ASK_OUTCOME_REPLIED answered 0 of 1 [(skipped)] reply="Never mind the shape. Reply with the single word done and nothing else."
+item toolu_01MrEoASRJVXZ8HofCXcyLnY ask final at=1791344096904 text="" question×1 ASK_OUTCOME_REPLIED answered 0 of 1 [(skipped)] reply="Never mind the shape. Reply with the single word done and nothing else." opened=1791344097256 closed=1791344097367
 snapshot WORKING queue=[] working_on=- at=1791344097367 asks=[] session=57aa0e10-cd09-4b47-a847-9bd1e155bdc8 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=22838/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 176 recorded 175: fact Stream type=system subtype=status uuid=1934a552-c50e-4688-b6c7-cd9285ea2826
 item 1934a552-c50e-4688-b6c7-cd9285ea2826 status final at=1791344097374 text="" SDK_STATUS_REQUESTING requesting

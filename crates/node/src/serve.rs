@@ -123,9 +123,8 @@ pub struct InventorySubscription {
 }
 
 impl InventorySubscription {
-    /// The next event, or None once the stream has ended. A reader that
-    /// falls behind the ring is closed and subscribes again for a fresh
-    /// current set.
+    /// The next event, or None once the stream has ended: after Lagged, or
+    /// when the profile shuts down.
     pub async fn next(&mut self) -> Option<Arc<InventoryEvent>> {
         if let Some(event) = self.opening.pop_front() {
             return Some(event);
@@ -137,7 +136,15 @@ impl InventorySubscription {
             match self.live.recv().await {
                 Ok(event) if self.carries(&event) => return Some(event),
                 Ok(_) => {}
-                Err(RecvError::Lagged(_) | RecvError::Closed) => {
+                Err(RecvError::Lagged(_)) => {
+                    // The ring moved on without this reader. Saying so in
+                    // band lets the reader resubscribe at once for a fresh
+                    // listing, where a bare close would read as the far
+                    // side going away.
+                    self.ended = true;
+                    return Some(Arc::new(inventory(inventory_event::Of::Lagged(Lagged {}))));
+                }
+                Err(RecvError::Closed) => {
                     self.ended = true;
                     return None;
                 }
@@ -154,7 +161,7 @@ impl InventorySubscription {
             Some(inventory_event::Of::HostRemoved(removed)) => &removed.host_id == only,
             Some(inventory_event::Of::Agent(agent)) => &agent.host_id == only,
             Some(inventory_event::Of::AgentRemoved(removed)) => &removed.host_id == only,
-            Some(inventory_event::Of::CaughtUp(_)) | None => true,
+            Some(inventory_event::Of::CaughtUp(_) | inventory_event::Of::Lagged(_)) | None => true,
         }
     }
 }

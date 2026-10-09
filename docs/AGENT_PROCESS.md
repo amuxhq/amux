@@ -120,8 +120,8 @@ of three modes:
 | Mode | Meaning |
 |---|---|
 | `Running` | Ordinary life. Inputs go to the interpreter. |
-| `Draining` | On its way out once the turn in progress ends; carries why (the daemon was lost, a graceful stop, an abort). Input is answered `rejected{draining}`. |
-| `Exiting` | The final boundary is written and the provider has been asked to finish. Input is answered `rejected{exiting}`. |
+| `Draining` | On its way out once the turn in progress ends; carries why (the daemon was lost, a graceful stop, an abort). Input is answered `REFUSAL_DRAINING`. |
+| `Exiting` | The final boundary is written and the provider has been asked to finish. Input is answered `REFUSAL_EXITING`. |
 
 These modes are the process's lifecycle. They are not the phase a client
 shows (starting, working, needs you, idle), which the interpreter derives
@@ -187,7 +187,7 @@ stop deadline (30 seconds), the daemon falls back to killing the agent
 process's own process group.
 
 The one-shot rule is what having a parent means: there is no flag. An input
-that arrives while such an agent is exiting is answered `rejected{exiting}`,
+that arrives while such an agent is exiting is answered `REFUSAL_EXITING`,
 and the daemon then treats it as exited and resumes it if the sender is its
 parent. See [agent tools](AGENT_TOOLS.md) for families.
 

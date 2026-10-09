@@ -260,6 +260,9 @@ message InventoryEvent {
     Agent agent = 3;
     AgentRemoved agent_removed = 4;
     CaughtUp caught_up = 5;
+    // The stream fell behind and closes after this; the client resubscribes
+    // at once and reconciles against the fresh listing.
+    Lagged lagged = 6;
   }
 }
 

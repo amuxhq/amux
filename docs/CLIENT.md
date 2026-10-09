@@ -277,7 +277,9 @@ reconnects to the origin on its own.
 
 [`Fleet`](../crates/ui-runtime/src/fleet.rs) is the same shape one level up: `Fleet::connect(client, clock)`
 subscribes to the inventory and resolves once it has caught up (or once the stream ended first, in which case
-the pump reconnects). `take_changed()` returns the agent keys that moved and `take_hosts_changed()` whether any
+the pump reconnects). Its pump treats the inventory as the session's treats a chat: after `Lagged` it subscribes
+again at once, without reading as `Reconnecting`, and drops what the fresh listing no longer names at its
+`CaughtUp`; any other end reconnects with the same backoff. `take_changed()` returns the agent keys that moved and `take_hosts_changed()` whether any
 host did. It also holds the sessions:
 
 | Method | What it does |

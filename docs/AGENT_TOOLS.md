@@ -255,7 +255,7 @@ parent hears that it failed.
 queued, nothing running and no accepted message still pending (the
 interpreter's `quiescent`); its exit cause is `FINISHED`, which the agent
 process tells the daemon in its last control frame. Input that arrives
-while it exits is answered `rejected{exiting}`. Its transcript and its parent
+while it exits is answered `REFUSAL_EXITING`. Its transcript and its parent
 edge stay.
 
 **Resume.** A parent's send to its exited child, or to one answering

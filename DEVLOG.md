@@ -1,3 +1,23 @@
+2026-10-09 — **A lagging inventory says so, and the docs say what the protocol now is.**
+A reader that fell behind the inventory's ring was closed without a word,
+which every reader took for an outage: the fleet showed "reconnecting" and
+backed off, and a paired host following the inventory tore down every
+source it held for that host's agents and marked their chats stale. The
+inventory now sends `Lagged` before it closes, as a chat's stream already
+did. The fleet subscribes again at once, never reads as reconnecting, and
+drops what the fresh listing no longer names at its `CaughtUp`; a paired
+host follows again under the same session, so its sources keep running
+while the listing reconciles the rows. Only a stream that ends without
+`Lagged` backs off. The chat vocabulary's placement rule now says what it
+always meant: a client draws a fact in at most one place, while the journal
+may hold records no client draws, as long as each is durable, keyed and of
+use to the daemon or a later reader (a compaction summary, an interruption,
+a tool server's startup, a turn's whole diff). The protocol docs stop
+claiming fields are never renumbered before release, describe refusals by
+their enum, re-tail at once after `Lagged` in the client checklist, name the
+diff's `head` base, and say that a replica's current catalogue survives the
+blob sweep.
+
 2026-10-09 — **One route vocabulary, one usage-limit vocabulary, and wire names that say what they hold.**
 How this machine reaches a host and how a pairing peer was reached are the
 same four answers, so a host entry's route is now a `RouteKind`, like a

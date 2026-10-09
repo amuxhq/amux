@@ -182,6 +182,7 @@ fn inventory(event: &InventoryEvent) -> String {
             hex(&removed.agent_id)
         ),
         Some(Of::CaughtUp(caught_up)) => format!("CaughtUp rev={}", caught_up.revision),
+        Some(Of::Lagged(_)) => "Lagged".into(),
         None => "Event none".into(),
     }
 }

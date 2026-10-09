@@ -457,7 +457,9 @@ impl Server {
                     Some(inventory_event::Of::CaughtUp(_)) => {
                         return Ok(tonic::Response::new((hosts, agents)));
                     }
-                    None => {}
+                    // The opening ends at CaughtUp, so a lag cannot come
+                    // first; if it did, the stream ends here.
+                    Some(inventory_event::Of::Lagged(_)) | None => {}
                 }
             }
             Err(Status::unavailable(

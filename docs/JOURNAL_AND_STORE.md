@@ -474,7 +474,9 @@ since the journal below the cursor was already deleted.
 
 **Replica blob files** have their own byte budget, evicted least recently read
 first (`store::BlobLru`), independent of rows: they are disposable and
-refetchable. Own blobs have no budget of their own; they go with their agent's
+refetchable. The one exception is the catalogue blob each remaining replica's
+snapshot names, which the sweep never evicts, so a chat can still offer its
+agent's models and commands while the agent's host is away. Own blobs have no budget of their own; they go with their agent's
 directory, and the own budget counts rows, not blob files.
 
 The budgets and K are listed in [parameters](PARAMETERS.md).

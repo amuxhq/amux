@@ -280,10 +280,13 @@ impl Inner {
     }
 
     fn event(&self, event: InventoryEvent) {
-        let caught_up = matches!(event.of, Some(inventory_event::Of::CaughtUp(_)));
+        let caught_up = matches!(
+            event.of,
+            Some(inventory_event::Of::CaughtUp(_) | inventory_event::Of::Lagged(_))
+        );
         self.apply(FleetMsg::Event(Box::new(event)));
         if caught_up {
-            // A caught-up fleet is news even when no row moved.
+            // Being caught up, or no longer, is news even when no row moved.
             self.changed.send_replace(());
         }
     }
@@ -344,17 +347,22 @@ impl Fleet {
             match stream.next().await {
                 Some(Ok(event)) => {
                     let caught_up = matches!(event.of, Some(inventory_event::Of::CaughtUp(_)));
+                    let lagged = matches!(event.of, Some(inventory_event::Of::Lagged(_)));
                     inner.event(event);
+                    if lagged {
+                        ended = Some(End::Lagged);
+                        break;
+                    }
                     if caught_up {
                         break;
                     }
                 }
                 Some(Err(error)) => {
-                    ended = Some(Some(error));
+                    ended = Some(End::Closed(Some(error)));
                     break;
                 }
                 None => {
-                    ended = Some(None);
+                    ended = Some(End::Closed(None));
                     break;
                 }
             }
@@ -552,45 +560,75 @@ impl DriverTrace<FleetState, FleetMsg> {
     }
 }
 
-/// Reads the inventory until it ends, then reconnects with backoff; the
+/// How one inventory stream ended.
+enum End {
+    /// The runtime fell behind and said so before closing: resubscribe at
+    /// once, since nothing is wrong with the connection.
+    Lagged,
+    /// The stream closed or the transport failed: reconnect with backoff.
+    Closed(Option<RpcError>),
+}
+
+/// Reads one inventory stream until it ends.
+async fn read(
+    inner: &Inner,
+    stream: &mut EventStream<InventoryEvent>,
+    backoff: &mut Backoff,
+) -> End {
+    loop {
+        match stream.next().await {
+            Some(Ok(event)) => {
+                let lagged = matches!(event.of, Some(inventory_event::Of::Lagged(_)));
+                if matches!(event.of, Some(inventory_event::Of::CaughtUp(_))) {
+                    backoff.reset();
+                }
+                inner.event(event);
+                if lagged {
+                    return End::Lagged;
+                }
+            }
+            Some(Err(error)) => return End::Closed(Some(error)),
+            None => return End::Closed(None),
+        }
+    }
+}
+
+/// Reads the inventory until it ends. After Lagged it resubscribes at
+/// once; after any other end it reconnects with backoff. Either way the
 /// state re-lists and drops what the new stream no longer names at its
 /// CaughtUp.
-async fn pump(
-    inner: Arc<Inner>,
-    stream: EventStream<InventoryEvent>,
-    ended: Option<Option<RpcError>>,
-) {
+async fn pump(inner: Arc<Inner>, stream: EventStream<InventoryEvent>, ended: Option<End>) {
     let mut backoff = Backoff::default();
     let mut stream = Some(stream);
     let mut ended = ended;
     loop {
-        let error = match ended.take() {
-            Some(error) => error,
+        let end = match ended.take() {
+            Some(end) => end,
             None => {
                 let Some(open) = stream.as_mut() else { return };
-                loop {
-                    match open.next().await {
-                        Some(Ok(event)) => {
-                            if matches!(event.of, Some(inventory_event::Of::CaughtUp(_))) {
-                                backoff.reset();
-                            }
-                            inner.event(event);
-                        }
-                        Some(Err(error)) => break Some(error),
-                        None => break None,
-                    }
-                }
+                read(&inner, open, &mut backoff).await
             }
         };
         stream = None;
-        inner.note(DriverEvent::StreamEnded {
-            error: error.map(|error| error.to_string()),
-        });
-        inner.apply(FleetMsg::Connection(Connection::Reconnecting));
+        let mut wait = match end {
+            End::Lagged => {
+                inner.note(DriverEvent::Retail);
+                false
+            }
+            End::Closed(error) => {
+                inner.note(DriverEvent::StreamEnded {
+                    error: error.map(|error| error.to_string()),
+                });
+                inner.apply(FleetMsg::Connection(Connection::Reconnecting));
+                true
+            }
+        };
         while stream.is_none() {
-            let until_ms = inner.clock.now_ms() + backoff.next_ms();
-            inner.note(DriverEvent::Backoff { until_ms });
-            inner.clock.sleep_until(until_ms).await;
+            if wait {
+                let until_ms = inner.clock.now_ms() + backoff.next_ms();
+                inner.note(DriverEvent::Backoff { until_ms });
+                inner.clock.sleep_until(until_ms).await;
+            }
             match inner.client.subscribe_inventory().await {
                 Ok(opened) => {
                     inner.note(DriverEvent::Subscribed { tail: 0 });
@@ -599,6 +637,10 @@ async fn pump(
                 }
                 Err(RpcError::Transport(error)) => {
                     inner.note(DriverEvent::SubscribeFailed { error });
+                    if !wait {
+                        inner.apply(FleetMsg::Connection(Connection::Reconnecting));
+                    }
+                    wait = true;
                 }
                 Err(error) => {
                     inner.note(DriverEvent::Ended {

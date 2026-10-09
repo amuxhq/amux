@@ -470,7 +470,7 @@ refusal it has no words for reads as a plain refusal.
 | sent | `SendInput` is in flight. The optimistic row exists. |
 | queued | The reply was `accepted { queued: true }`; every snapshot lists the input id in its `queue` until it is submitted. |
 | settled | The reply was `accepted`, and for a prompt an item carries the input id. |
-| rejected | The reply was `rejected { reason }`. |
+| rejected | The reply was `rejected`, carrying its `Refusal` and any `detail`. |
 | uncertain | The connection dropped before a reply, or the runtime answered `ABORTED`. Shown as "not confirmed". |
 
 An uncertain input is judged only at the next `CaughtUp`: found in the
@@ -512,7 +512,7 @@ them under `replicas/` exactly as the origin sent them and returns them.
 `Diff(agent_id, base, with_patch)` compares the agent's working directory on
 its own host, through the `git-facts` crate the agent process also reads its
 row's totals with. It runs to the working tree, untracked files included, from
-HEAD for a working-tree base, or from where the branch left the named base
+HEAD for the `head` base, or from where the branch left the named base
 branch for a branch base, so the branch's commits and its uncommitted work both
 count. The `Diff` value carries the base, `head` (empty before the first
 commit), the `merge_base` for a branch base, and `files`: each changed file's
@@ -560,6 +560,15 @@ host and every discovered candidate, `Agent` for every agent row the runtime
 holds (its own and its paired hosts'), then `CaughtUp`, then changes as they
 happen (`HostEntry`, `HostRemoved`, `Agent`, `AgentRemoved`). A paired host's
 stream of it carries only the answering host's own entry and agents.
+
+A reader that falls more than the inventory ring's capacity behind is sent
+`Lagged`, and the stream closes. The reader subscribes again at once, with no
+backoff, since nothing is wrong with the connection, and reconciles against
+the fresh listing: what that listing no longer names at its `CaughtUp` is
+gone. A stream that ends without `Lagged` is an outage, and the reader backs
+off between attempts. A paired host following this host's inventory does the
+same: on `Lagged` it follows again under the same session, and its sources
+for that host's agents keep running.
 
 `Agent` is the inventory row. It carries `kind`, `name` (always set),
 `cwd`, `parent` (a host and an id, since families cross hosts), `lifecycle`
@@ -633,8 +642,8 @@ What the design already relies on:
 
 - A body is decoded only by the interpreter that wrote it and by clients, so
   the daemon and store pass bodies through without reading them.
-- An input arm an interpreter does not know is answered `rejected { reason:
-  "unsupported" }`.
+- An input arm an interpreter does not know is answered `Rejected` with
+  `REFUSAL_UNSUPPORTED`.
 
 ### Versions
 
@@ -653,8 +662,7 @@ Nothing else carries a version integer:
   client shows "amux *version* is running · restart to update" when they
   differ.
 - **`ctl.sock` and the journal** have no version integer at all. The agent's
-  `AgentHello` carries its binary version, which the daemon records on the
-  agent row as `producer_version`, and every item carries the
+  `AgentHello` carries its binary version, and every item carries the
   `producer_version` of the binary that wrote it.
 - **The store** has a schema stamp, the minimum number of migrations a binary
   needs to open it (see [the journal and store](JOURNAL_AND_STORE.md)).
@@ -664,14 +672,15 @@ Nothing else carries a version integer:
 A checklist for a client against `ClientService`:
 
 1. Subscribe to the inventory and draw the fleet from `Agent` rows; treat the
-   first `CaughtUp` as "the list is complete".
+   first `CaughtUp` as "the list is complete". On `Lagged`, subscribe again at
+   once and drop what the fresh listing no longer names at its `CaughtUp`.
 2. To open a chat, `Subscribe` with a tail. Draw from the snapshot at once;
    merge items by key, keep the highest revision, sort by order.
 3. Apply appends only on a matching base; `Get` an item held at another
    revision; drop an append for a key you hold nothing for.
 4. On `Reset`, build a fresh transcript and swap it in at `CaughtUp`. On
-   `Lagged` or a dropped stream, subscribe again with a tail and back off
-   between attempts.
+   `Lagged`, re-tail at once: subscribe again with a tail. On a dropped
+   stream, subscribe again with a tail and back off between attempts.
 5. Page older history with `Fetch` below the oldest held order until
    `exhausted`.
 6. Give every input a fresh `input_id`, keep an optimistic row, and settle it

@@ -5347,7 +5347,7 @@ impl ::prost::Name for PairingIdentity {
 /// this stream read to CaughtUp.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InventoryEvent {
-    #[prost(oneof = "inventory_event::Of", tags = "1, 2, 3, 4, 5")]
+    #[prost(oneof = "inventory_event::Of", tags = "1, 2, 3, 4, 5, 6")]
     pub of: ::core::option::Option<inventory_event::Of>,
 }
 /// Nested message and enum types in `InventoryEvent`.
@@ -5364,6 +5364,10 @@ pub mod inventory_event {
         AgentRemoved(super::AgentRemoved),
         #[prost(message, tag = "5")]
         CaughtUp(super::CaughtUp),
+        /// The stream fell behind and closes after this; the client resubscribes
+        /// at once and reconciles against the fresh listing.
+        #[prost(message, tag = "6")]
+        Lagged(super::Lagged),
     }
 }
 impl ::prost::Name for InventoryEvent {

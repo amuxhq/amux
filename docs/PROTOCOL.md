@@ -578,10 +578,12 @@ answering, which a caller retries; another host being unreachable, and a
 failed precondition, both map to `FAILED_PRECONDITION`, because they are
 answers, not outages. `PAYMENT_REQUIRED` maps to `PERMISSION_DENIED`.
 
-The protobuf files follow three rules, stated at the top of `amux.proto`:
-never renumber a field, never reuse a number, never make a field required.
-`PROTOCOL_VERSION` exists only in the link handshake and changes only for a
-deliberate break. The local sockets carry no version at all.
+Until the first release the protobuf files change freely, as the top of
+`amux.proto` says: a removed field is deleted outright, leaving no
+reservation, and the remaining fields are renumbered so the numbers stay in
+reading order (see [the wire](WIRE.md#compatibility)). `PROTOCOL_VERSION`
+exists only in the link handshake and stays 1 until then. The local sockets
+carry no version at all.
 
 ## Chapter 8: Diagnostics
 

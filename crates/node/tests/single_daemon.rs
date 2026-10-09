@@ -1326,6 +1326,7 @@ fn describe_inventory(event: &InventoryEvent) -> String {
             format!("agent removed {:?}", removed.reason())
         }
         inventory_event::Of::CaughtUp(_) => "caught_up".into(),
+        inventory_event::Of::Lagged(_) => "lagged".into(),
     }
 }
 
@@ -1389,6 +1390,41 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
         assert_eq!(row.git, Some(git), "git facts are the snapshot's");
     }
     println!("inventory: {described:#?}");
+    crash(daemon, runtime).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lagging_inventory_subscriber_is_told_it_lagged() {
+    let install = Install::new();
+    let agent = SyntheticAgent::new(&install, "alpha", BIG_SEGMENTS);
+    agent.register_offline(&install);
+    let launch = Launch {
+        inventory_capacity: 2,
+        ..quiet_launch()
+    };
+    let (daemon, runtime) = start(&install, "boot-1", launch).await;
+    let mut stalled = runtime.subscribe_inventory().await.unwrap();
+    for n in 0..5 {
+        runtime.rename(agent.id, &format!("name{n}")).await.unwrap();
+    }
+    let mut seen = Vec::new();
+    while let Some(event) = tokio::time::timeout(PATIENCE, stalled.next())
+        .await
+        .unwrap()
+    {
+        seen.push((*event).clone());
+    }
+    let described: Vec<String> = seen.iter().map(describe_inventory).collect();
+    assert_eq!(
+        described,
+        vec![
+            "host generation=1 trust=Trusted presence=Online",
+            "agent alpha Exited Starting working_on=None",
+            "caught_up",
+            "lagged",
+        ],
+        "the opening, then one Lagged, then the stream ends"
+    );
     crash(daemon, runtime).await;
 }
 

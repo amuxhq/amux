@@ -233,6 +233,12 @@ impl FleetState {
                         };
                         self.put(at, None, &mut changed);
                     }
+                    inventory_event::Of::Lagged(_) => {
+                        // The stream closes and a fresh listing follows at
+                        // once; what it no longer names goes at its CaughtUp.
+                        self.caught_up = false;
+                        self.relisted = Some(Default::default());
+                    }
                     inventory_event::Of::CaughtUp(_) => {
                         self.caught_up = true;
                         if let Some((hosts, agents)) = self.relisted.take() {

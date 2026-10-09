@@ -294,6 +294,7 @@ impl Describe for InventoryEvent {
                 format!("AgentRemoved {}", short(&removed.agent_id))
             }
             Some(inventory_event::Of::CaughtUp(_)) => "CaughtUp".to_owned(),
+            Some(inventory_event::Of::Lagged(_)) => "Lagged".to_owned(),
             None => "(empty event)".to_owned(),
         }
     }

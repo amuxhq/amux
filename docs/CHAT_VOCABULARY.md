@@ -14,9 +14,12 @@ protocol). [INTERPRETERS.md](INTERPRETERS.md) covers how each one's native event
 The pictures on this page are the terminal client's own renderings of each component, drawn from authored view
 values at 100 columns. The phone draws the same facts in its own idiom; neither is a pixel spec for the other.
 
-## Every fact goes to exactly one of five places
+## A client draws each fact in at most one of five places
 
-The rule is a question about the person, not about the protocol.
+The rule is a question about the person, not about the protocol. It binds what a client draws, not what the journal
+holds: the journal may keep more than any client draws. A record kept but never drawn earns its place by being
+durable, keyed like any other item, and useful to the daemon or to a later reader, such as a debug report or a
+future client.
 
 | Place | The question | What it is in the system | How clients read it |
 |---|---|---|---|
@@ -24,7 +27,7 @@ The rule is a question about the person, not about the protocol.
 | **Activity line** | Does it only matter while it is happening? | Derived from the newest items and the snapshot's phase by `SessionState::activity`, timed by the renderer against item timestamps. Replaced as the agent moves on; never a row. | `ui_view::composer(state, now_ms).activity` |
 | **Ask** | Does it need your decision? | An entry in the snapshot's ask list, opened and closed only by provider facts. It takes over the composer; once settled it leaves a decision in the chat. | `ui_view::ask_card` |
 | **Session fact** | Does it describe the session rather than an event? | The snapshot's per-kind fields: tasks, context, model, effort, mode, usage, tool servers, sign-in, background processes. Always the latest value. | `ui_view::overview`, `ui_view::context`, `ui_view::sign_in`, `ui_view::settings` |
-| **Hidden** | None of the above? | Plumbing, kept in the interpreter's facts ring for debug reports. An item that belongs to the overview or the activity line maps to `RowKind::Hidden`. A failure can promote a fact to a notice row. | never drawn |
+| **Hidden** | None of the above? | Plumbing, kept in the interpreter's facts ring for debug reports, or a journal record no client draws. An item that belongs to the overview or the activity line maps to `RowKind::Hidden`. A failure can promote a fact to a notice row. | never drawn |
 
 Placement is decided once, by the interpreter inside each agent process, and stored: the item kind, the
 snapshot's asks and session facts are what every client, every replica and the store see. The phone and the
@@ -267,10 +270,14 @@ Never a row; kept in debug reports: hook started and finished (a notice only whe
 details, thinking-token estimates, tool progress ticks (which feed the activity line), tool summaries,
 "requesting" and "compacting" statuses (the activity line), command-list changes, persisted files, plugin
 installs, memory recall, prompt suggestions, context reminders injected into a turn, checkpoints, session-state
-changes and model verification metadata. In the view, headless Claude's status items (Claude's "compacting" and
-"requesting", typed, with its own word kept; "compacting" is what the activity line reads until the compaction row
-lands), terminal Claude's compaction summary and interruption items, and Codex's tool-server startup and whole-turn diff items map to
-`RowKind::Hidden`. A body this build cannot decode is an `Unrecognized` row, never hidden.
+changes and model verification metadata.
+
+Some hidden facts are journal records: items kept, keyed and replicated like any other, that no client draws as a
+row. Headless Claude's `Status` items (Claude's "compacting" and "requesting", typed, with its own word kept;
+"compacting" is what the activity line reads until the compaction row lands), terminal Claude's `CompactSummary`
+(the summary a compaction wrote) and `Interruption`, and Codex's `McpStartup` (a tool server's startup outcome) and
+`TurnDiff` (the whole turn's patch) map to `RowKind::Hidden` in the view. A body this build cannot decode is an
+`Unrecognized` row, never hidden.
 
 ## Claude versus Codex
 

@@ -407,14 +407,17 @@ impl ProfileRuntime {
     /// a source for every agent the store remembers of the host, so their
     /// subscriptions leave with the inventory's; the session is confirmed
     /// when the inventory catches up, and an agent it no longer lists is
-    /// dropped then, source and all.
-    async fn begin_following(&self, host: HostId) -> u64 {
+    /// dropped then, source and all. `resume` is the session of a stream
+    /// that lagged: its sources stay current across the fresh listing.
+    async fn begin_following(&self, host: HostId, resume: Option<u64>) -> u64 {
         let host_bytes = host.as_bytes().to_vec();
         let store = self.store.lock().await;
         let rows = store.agents().unwrap_or_default();
         let mut sources = self.sources.lock().unwrap();
-        sources.next_session += 1;
-        let session = sources.next_session;
+        let session = resume.unwrap_or_else(|| {
+            sources.next_session += 1;
+            sources.next_session
+        });
         sources.following.insert(host_bytes.clone(), session);
         if sources.policy == SourcePolicy::Listed {
             for row in rows.iter().filter(|row| row.agent.host == host_bytes) {
@@ -853,7 +856,21 @@ async fn follow(runtime: Weak<ProfileRuntime>, host: HostId) {
             tokio::time::sleep(ROUTE_POLL).await;
             continue;
         }
-        let caught_up = follow_once(&runtime, host).await;
+        // A stream that lagged is followed again at once under the same
+        // session: the host is still there, and its sources are not
+        // disturbed while the fresh listing reconciles the rows.
+        let mut resume = None;
+        let mut caught_up_before = false;
+        let caught_up = loop {
+            match follow_once(&runtime, host, resume).await {
+                Followed::Lagged { session, caught_up } => {
+                    tracing::debug!(%host, "the host's inventory lagged; following it again");
+                    resume = Some(session);
+                    caught_up_before |= caught_up;
+                }
+                Followed::Lost { caught_up } => break caught_up || caught_up_before,
+            }
+        };
         let Some(me) = runtime.upgrade() else { return };
         me.host_lost(host);
         let launch = me.launch();
@@ -943,23 +960,40 @@ async fn hook_keeps(runtime: &Weak<ProfileRuntime>, host: HostId, event: &Invent
     }
 }
 
-/// One inventory stream: returns once it ends, saying whether it had
-/// caught up.
-async fn follow_once(runtime: &Weak<ProfileRuntime>, host: HostId) -> bool {
+/// How one inventory stream ended.
+enum Followed {
+    /// The stream ended or failed; whether it had caught up.
+    Lost { caught_up: bool },
+    /// The host fell behind on this host's stream and said so before
+    /// closing: the session to follow it again under, and whether the
+    /// stream had caught up.
+    Lagged { session: u64, caught_up: bool },
+}
+
+const NOT_CAUGHT_UP: Followed = Followed::Lost { caught_up: false };
+const CAUGHT_UP: Followed = Followed::Lost { caught_up: true };
+
+/// One inventory stream, from the request to its end. `resume` is the
+/// session of the stream before it, when that one lagged.
+async fn follow_once(
+    runtime: &Weak<ProfileRuntime>,
+    host: HostId,
+    resume: Option<u64>,
+) -> Followed {
     let Some(edge) = runtime.upgrade().and_then(|me| me.edge()) else {
-        return false;
+        return NOT_CAUGHT_UP;
     };
     // The sources open their channel while the inventory's opens, not
     // after it: over a relay each takes two round trips.
     let session = match runtime.upgrade() {
-        Some(me) => me.begin_following(host).await,
-        None => return false,
+        Some(me) => me.begin_following(host, resume).await,
+        None => return NOT_CAUGHT_UP,
     };
     let mut client = match edge.peer(host).await {
         Ok(client) => client,
         Err(error) => {
             tracing::debug!(%host, %error, "no channel for the host's inventory");
-            return false;
+            return NOT_CAUGHT_UP;
         }
     };
     drop(edge);
@@ -967,7 +1001,7 @@ async fn follow_once(runtime: &Weak<ProfileRuntime>, host: HostId) -> bool {
         Ok(response) => response.into_inner(),
         Err(error) => {
             tracing::debug!(%host, %error, "the host refused its inventory");
-            return false;
+            return NOT_CAUGHT_UP;
         }
     };
     tracing::debug!(%host, "subscribed to the host's inventory");
@@ -976,10 +1010,10 @@ async fn follow_once(runtime: &Weak<ProfileRuntime>, host: HostId) -> bool {
     let mut listed = BTreeMap::new();
     loop {
         let Ok(Some(message)) = stream.message().await else {
-            return false;
+            return NOT_CAUGHT_UP;
         };
         if !hook_keeps(runtime, host, &message).await {
-            return false;
+            return NOT_CAUGHT_UP;
         }
         match message.of {
             Some(inventory_event::Of::Host(entry)) if entry.host_id == host_bytes => {
@@ -998,31 +1032,37 @@ async fn follow_once(runtime: &Weak<ProfileRuntime>, host: HostId) -> bool {
                 tracing::debug!(%host, agents = listed.len(), "the host's inventory caught up");
                 break;
             }
+            Some(inventory_event::Of::Lagged(_)) => {
+                return Followed::Lagged {
+                    session,
+                    caught_up: false,
+                };
+            }
             _ => {}
         }
     }
     {
         let Some(me) = runtime.upgrade() else {
-            return false;
+            return NOT_CAUGHT_UP;
         };
         if let Err(error) = me
             .inventory_caught_up(host, session, generation, listed.into_values().collect())
             .await
         {
             tracing::warn!(%host, %error, "reconciling the host's inventory failed");
-            return false;
+            return NOT_CAUGHT_UP;
         }
         me.sweep_sources().await;
     }
     loop {
         let Ok(Some(message)) = stream.message().await else {
-            return true;
+            return CAUGHT_UP;
         };
         if !hook_keeps(runtime, host, &message).await {
-            return true;
+            return CAUGHT_UP;
         }
         let Some(me) = runtime.upgrade() else {
-            return true;
+            return CAUGHT_UP;
         };
         let changed = match message.of {
             // What its providers offer is said on its own entry.
@@ -1045,13 +1085,21 @@ async fn follow_once(runtime: &Weak<ProfileRuntime>, host: HostId) -> bool {
                     Err(error) => Err(error),
                 }
             }
+            // What it missed is in the fresh listing, which reconciles
+            // the rows at its CaughtUp.
+            Some(inventory_event::Of::Lagged(_)) => {
+                return Followed::Lagged {
+                    session,
+                    caught_up: true,
+                };
+            }
             // A generation changes only across a restart, which ends this
             // stream.
             _ => continue,
         };
         if let Err(error) = changed {
             tracing::warn!(%host, %error, "applying an inventory change failed");
-            return true;
+            return CAUGHT_UP;
         }
         me.sweep_sources().await;
     }

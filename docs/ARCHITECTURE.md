@@ -198,8 +198,9 @@ stream. It holds the opening read, taken under the store lock, and a
 receiver on the agent's broadcast channel. Fan-out keeps one bounded
 channel per agent with a subscriber, plus one for the inventory; publishing
 never waits, and a subscriber that falls more than the channel's capacity
-behind is told it lagged and closed, and re-tails from the store. The store
-is never a buffer for a live stream.
+behind is told it lagged and closed, and reads the store again at once: a
+chat with a fresh tail, a fleet with a fresh listing. The store is never a
+buffer for a live stream.
 
 After a restart both are rebuilt: agent handles from the directories on
 disk and the store's rows, subscription handles from clients reconnecting.

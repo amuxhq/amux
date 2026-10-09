@@ -38,7 +38,8 @@ pub enum DriverEvent {
     StreamEnded {
         error: Option<String>,
     },
-    /// The runtime closed the stream after Lagged: reopened with a tail.
+    /// The runtime closed the stream after Lagged: reopened at once (a
+    /// session with a tail).
     Retail,
     /// The reader returned after the head moved on: reopened with a tail
     /// that builds the window apart.

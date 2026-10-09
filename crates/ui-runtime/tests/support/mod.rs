@@ -415,6 +415,12 @@ pub fn inventory_agent(agent: Agent) -> InventoryEvent {
     }
 }
 
+pub fn inventory_lagged() -> InventoryEvent {
+    InventoryEvent {
+        of: Some(inventory_event::Of::Lagged(wire::Lagged {})),
+    }
+}
+
 pub fn inventory_caught_up() -> InventoryEvent {
     InventoryEvent {
         of: Some(inventory_event::Of::CaughtUp(wire::CaughtUp {

@@ -280,6 +280,19 @@ tests = [
 ]
 
 [[contract]]
+id = "a-lagged-stream-says-so"
+source = "invariant"
+section = "Daemon"
+claim = "A reader that falls behind a stream's ring is sent Lagged before the stream closes, on a chat and on the inventory alike, and resubscribes at once; only an ordinary close backs off."
+tests = [
+  "node/single_daemon::a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits",
+  "node/single_daemon::a_lagging_inventory_subscriber_is_told_it_lagged",
+  "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
+  "ui-runtime/fleet::inventory_lag_resubscribes_at_once",
+  "ui-runtime/fleet::the_fleet_opens_at_caught_up_and_relists_after_a_reconnect",
+]
+
+[[contract]]
 id = "segments-deleted-below-durable-cursor"
 source = "invariant"
 section = "Daemon"

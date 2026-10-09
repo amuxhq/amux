@@ -48,7 +48,9 @@ pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent
                     agents.into_values().collect(),
                 ));
             }
-            None => {}
+            // The opening ends at CaughtUp, so a lag cannot come first; if
+            // it did, the stream ends here.
+            Some(inventory_event::Of::Lagged(_)) | None => {}
         }
     }
     bail!("the inventory ended before it caught up")

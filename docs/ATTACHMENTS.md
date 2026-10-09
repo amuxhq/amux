@@ -202,7 +202,7 @@ A review starts with the `Diff` call. The daemon runs git in the agent's
 working directory on the agent's own host and writes the patch as a blob of
 that agent:
 
-- The working-tree base diffs HEAD against the working tree, untracked files
+- The `head` base diffs HEAD against the working tree, untracked files
   included. A temporary index holds HEAD plus intent-to-add entries for the
   untracked files, so the person's own index is never touched. The patch is
   named `working-tree.diff`.

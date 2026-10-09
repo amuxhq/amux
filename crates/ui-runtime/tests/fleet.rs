@@ -8,7 +8,7 @@ use std::sync::Arc;
 use client::ManualClock;
 use prost::Message as _;
 use support::*;
-use ui_runtime::{Fleet, HELD_ROWS, Window};
+use ui_runtime::{DriverEvent, Fleet, HELD_ROWS, TraceEvent, Window};
 use ui_state::{AgentKey, Connection};
 use wire::{FetchResponse, Kind, SessionEvent};
 
@@ -73,6 +73,72 @@ async fn the_fleet_opens_at_caught_up_and_relists_after_a_reconnect() {
         .map(|file| file.name)
         .collect();
     assert_eq!(names, ["client/fleet/state.txt", "client/fleet/trace.txt"]);
+}
+
+#[tokio::test]
+async fn inventory_lag_resubscribes_at_once() {
+    let clock = ManualClock::new(0);
+    let (client, mut calls) = runtime();
+    let open = tokio::spawn(Fleet::connect(client, clock.clone()));
+    let feed = calls.inventory().await;
+    feed.send(inventory_agent(named(b"a")));
+    feed.send(inventory_agent(named(b"b")));
+    feed.send(inventory_caught_up());
+    let fleet = open.await.unwrap().expect("the fleet opens");
+    let mut streams = Streams::default();
+    streams.answer(&mut calls).await;
+    streams.answer(&mut calls).await;
+    fleet.take_changed();
+
+    // The runtime fell behind: it says so and closes. The fleet subscribes
+    // again with no backoff and never reads as reconnecting; it is not
+    // caught up until the fresh listing is.
+    feed.send(inventory_lagged());
+    drop(feed);
+    let feed = calls.inventory().await;
+    assert!(clock.sleeping().is_empty(), "no backoff after Lagged");
+    assert!(!fleet.state().caught_up());
+    assert_eq!(fleet.state().connection(), Connection::Live);
+    feed.send(inventory_agent(named(b"a")));
+    feed.send(inventory_caught_up());
+    until(fleet.changed(), || fleet.state().caught_up().then_some(())).await;
+    let ids: Vec<Vec<u8>> = fleet
+        .state()
+        .agents()
+        .map(|agent| agent.agent_id.clone())
+        .collect();
+    assert_eq!(
+        ids,
+        [b"a".to_vec()],
+        "the fresh listing reconciles the rows"
+    );
+    assert!(fleet.session(&key(b"b")).is_none());
+    streams.until_closed(b"b").await;
+    let state = fleet.state();
+    let trace = state.trace();
+    let driver: Vec<&DriverEvent> = trace
+        .events
+        .iter()
+        .filter_map(|traced| match &traced.event {
+            TraceEvent::Driver(event) => Some(event),
+            TraceEvent::Msg(_) => None,
+        })
+        .collect();
+    assert!(driver.contains(&&DriverEvent::Retail));
+    assert!(
+        !driver.iter().any(|event| matches!(
+            event,
+            DriverEvent::StreamEnded { .. } | DriverEvent::Backoff { .. }
+        )),
+        "a lag is not an outage: {driver:?}"
+    );
+    assert!(
+        !trace
+            .msgs()
+            .any(|msg| *msg == ui_state::FleetMsg::Connection(Connection::Reconnecting)),
+        "the fleet never read as reconnecting"
+    );
+    assert_eq!(trace.replay(), *state);
 }
 
 #[tokio::test]

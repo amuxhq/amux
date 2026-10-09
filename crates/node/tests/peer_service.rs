@@ -200,7 +200,7 @@ fn listed(events: &[InventoryEvent]) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
             Some(inventory_event::Of::AgentRemoved(removed)) => {
                 agents.push(removed.agent_id.clone())
             }
-            Some(inventory_event::Of::CaughtUp(_)) | None => {}
+            Some(inventory_event::Of::CaughtUp(_) | inventory_event::Of::Lagged(_)) | None => {}
         }
     }
     (hosts, agents)

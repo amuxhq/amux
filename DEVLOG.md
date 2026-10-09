@@ -1,3 +1,12 @@
+2026-10-09 — **A thinking row's "thought for" counts from the item before Claude's request again.**
+Headless Claude's request status became a hidden item in the previous
+change, and a thinking row measured its duration from whatever item came
+just before it, so every "thought for" in headless Claude shrank to the time
+since the request went out. The time Claude spent before sending the
+request, after the person's prompt or the last tool result, is part of how
+long it thought as the person saw it, so the duration now passes over status
+items and reads as it did before they existed.
+
 2026-10-09 — **A host only a free account's relay reaches is away, headless Claude's compacting status reaches the activity line, and fields nothing read are gone.**
 The phone has drawn an away banner and an away host group since the free
 tier began, and the docs promised that a host the relay sees while the

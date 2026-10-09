@@ -88,7 +88,7 @@ impl std::fmt::Display for Route {
 
 /// How a host is reached now: the live route new calls take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HostVia {
+pub enum LiveRoute {
     Direct,
     Relay,
     Ssh,
@@ -96,13 +96,13 @@ pub enum HostVia {
     Offline,
 }
 
-impl HostVia {
-    pub fn to_wire(self) -> pb::HostVia {
+impl LiveRoute {
+    pub fn to_wire(self) -> pb::RouteKind {
         match self {
-            Self::Direct => pb::HostVia::Direct,
-            Self::Relay => pb::HostVia::Relay,
-            Self::Ssh => pb::HostVia::Ssh,
-            Self::Offline => pb::HostVia::Unspecified,
+            Self::Direct => pb::RouteKind::Direct,
+            Self::Relay => pb::RouteKind::Relay,
+            Self::Ssh => pb::RouteKind::Ssh,
+            Self::Offline => pb::RouteKind::Unspecified,
         }
     }
 }
@@ -113,7 +113,7 @@ pub fn host_to_wire(host: &Host) -> pb::Host {
         name: host.name.clone(),
         version: host.version.clone(),
         capabilities: Some(host.capabilities.clone()),
-        signed_in: host.signed_in,
+        account_signed_in: host.signed_in,
         platform: host.platform.clone(),
     }
 }
@@ -124,7 +124,7 @@ pub(crate) fn host_from_wire(host: pb::Host) -> Result<Host, String> {
         name: host.name,
         version: host.version,
         capabilities: host.capabilities.unwrap_or_default(),
-        signed_in: host.signed_in,
+        signed_in: host.account_signed_in,
         platform: host.platform,
     })
 }

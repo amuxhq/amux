@@ -178,7 +178,7 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
 
 pub fn item(kind: Kind, order: u64, revision: u64, text: &str, body: Body) -> Item {
     Item {
-        agent: b"agent-1".to_vec(),
+        agent_id: b"agent-1".to_vec(),
         key: format!("k{order}"),
         order,
         revision,
@@ -322,7 +322,7 @@ pub fn snapshot(
     queue: &[(&[u8], bool)],
 ) -> Snapshot {
     Snapshot {
-        agent: b"agent-1".to_vec(),
+        agent_id: b"agent-1".to_vec(),
         revision,
         queue: queue
             .iter()
@@ -356,7 +356,7 @@ pub fn ev_snapshot(snapshot: Snapshot) -> Msg {
 
 pub fn ev_append(key: &str, base: u64, revision: u64, text: &str) -> Msg {
     event(session_event::Of::Append(wire::Append {
-        agent: b"agent-1".to_vec(),
+        agent_id: b"agent-1".to_vec(),
         key: key.into(),
         base_revision: base,
         revision,

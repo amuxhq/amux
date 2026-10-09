@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 pub use ui_state::ExitCause;
 use ui_state::{Activity, ActivityKind, AgentKey, Attention, FleetState, ItemBody, SessionState};
-use wire::{Agent, HostVia, Kind, Presence, SignInState, UsageState};
+use wire::{Agent, Kind, Presence, RouteKind, SignInState, UsageState};
 
 use crate::ask::{AskBody, ask_card};
 
@@ -496,7 +496,7 @@ fn push(
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub enum Reach {
     /// A link stands, over this route; this machine's own host has none.
-    Online(HostVia),
+    Online(RouteKind),
     /// Out of reach for a reason this machine can name.
     Away(Away),
     /// Out of reach with no route, or not known to be reachable at all.
@@ -531,7 +531,7 @@ pub enum Away {
 fn signed_out(fleet: &FleetState, local_host: &[u8]) -> bool {
     fleet
         .host(local_host)
-        .is_some_and(|entry| entry.signed_in == Some(false))
+        .is_some_and(|entry| entry.account_signed_in == Some(false))
 }
 
 /// How this machine reaches `host`. Its own host is always online. What the
@@ -541,7 +541,7 @@ fn signed_out(fleet: &FleetState, local_host: &[u8]) -> bool {
 pub fn reach(fleet: &FleetState, local_host: &[u8], host: &[u8]) -> Reach {
     let entry = fleet.host(host);
     if host == local_host {
-        return Reach::Online(entry.map_or(HostVia::Unspecified, |entry| entry.via()));
+        return Reach::Online(entry.map_or(RouteKind::Unspecified, |entry| entry.via()));
     }
     let Some(entry) = entry else {
         return Reach::Offline;

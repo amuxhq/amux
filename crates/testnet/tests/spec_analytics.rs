@@ -5,7 +5,7 @@
 mod support;
 
 use analytics::{Event, Kind, Method, On, PairingFailure, Recording, Role};
-use node::harness::HostVia;
+use node::harness::LiveRoute;
 use provider_fakes::script::Step;
 use support::*;
 use testnet::{AgentDecl, Net, NetOptions, Topology, until};
@@ -47,7 +47,7 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_where_it_was_sent() {
     let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
 
     pair(&net, "laptop", "desk").await;
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     // A second window, joined with the wrong PIN.
     let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
     let wrong = if pin_of(&started) == "000000" {

@@ -175,7 +175,7 @@ impl ProfileRuntime {
         }
         let base = request.base.and_then(|base| base.base);
         let (comparison, name) = match &base {
-            Some(diff_base::Base::WorkingTree(_)) => {
+            Some(diff_base::Base::Head(_)) => {
                 (Comparison::Uncommitted, "working-tree.diff".to_owned())
             }
             Some(diff_base::Base::Branch(branch)) => (

@@ -101,10 +101,10 @@ message Hello {
   repeated Host neighbors = 3;
   optional string auth_token = 4;
   // 16 random bytes drawn when the sender's runtime starts and kept for its
-  // life. A link that arrives carrying a different incarnation than an
-  // earlier link from the same host proves that earlier link belongs to a
-  // process that no longer exists, however healthy it still looks.
-  bytes incarnation = 5;
+  // life. A link that arrives carrying a different runtime instance id than
+  // an earlier link from the same host proves that earlier link belongs to
+  // a process that no longer exists, however healthy it still looks.
+  bytes runtime_instance_id = 5;
 }
 
 message HelloAck {
@@ -118,8 +118,8 @@ message HelloAccepted {
   uint32 protocol_version = 1;
   Host host = 2;
   repeated Host neighbors = 3;
-  // The acceptor's incarnation; see `Hello.incarnation`.
-  bytes incarnation = 4;
+  // The acceptor's; see `Hello.runtime_instance_id`.
+  bytes runtime_instance_id = 4;
 }
 
 // "I have a direct link to this host." Strictly adjacency: a node never
@@ -197,7 +197,7 @@ message Host {
   // What kind of machine this is, in the host's own words: the operating
   // system it runs, as it named itself when it was built.
   optional string platform = 5;
-  optional bool signed_in = 6;
+  optional bool account_signed_in = 6;
 }
 
 
@@ -274,8 +274,8 @@ message HostEntry {
   // The outcome of the daemon's last failed dial attempt at this host,
   // cleared when a route comes up.
   optional string last_dial_error = 5;
-  HostVia via = 6;
-  optional bool signed_in = 7;
+  RouteKind via = 6;
+  optional bool account_signed_in = 7;
   // The machine's kind, as it announced itself in the handshake. Unset for a
   // host that has never been adjacent.
   optional string platform = 8;
@@ -318,13 +318,6 @@ enum Presence {
   PRESENCE_AWAY = 3;
 }
 
-enum HostVia {
-  HOST_VIA_UNSPECIFIED = 0;
-  HOST_VIA_DIRECT = 1;
-  HOST_VIA_RELAY = 2;
-  HOST_VIA_SSH = 3;
-}
-
 // How this machine reaches a host, or how a pairing peer was reached. No
 // value for "no route": Presence says offline.
 enum RouteKind {
@@ -347,7 +340,7 @@ message Agent {
   // Every agent has one: the one it was given, else one the daemon chose.
   string name = 4;
   string cwd = 5;
-  optional AgentParent parent = 6;
+  optional AgentRef parent = 6;
   int64 created_at_ms = 7;
   Lifecycle lifecycle = 8;
   ExitCause exit_cause = 9;
@@ -547,7 +540,7 @@ message CreateAgentRequest {
   // Lowercase letters, digits and hyphens, starting with a letter or digit
   // (wire::agent_name_problem); the host picks a free one when absent.
   optional string name = 3;
-  optional AgentParent parent = 4;
+  optional AgentRef parent = 4;
   string cwd = 5;
   // Which interpreter, and that kind's creation settings encoded, decoded
   // by the host that spawns it: ClaudeCreateConfig for both Claude kinds,
@@ -610,7 +603,7 @@ message DeleteAgentResponse {
 // messages are the daemon's own and cannot be submitted.
 message SendMessageRequest {
   bytes id = 1;
-  AgentParent to = 2;
+  AgentRef to = 2;
   string text = 3;
   optional bytes context = 4;
 }

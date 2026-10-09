@@ -17,7 +17,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use agent_dir::Clock;
-use node::harness::{HostVia, ScriptedDiscovery, scripted_discovery};
+use node::harness::{LiveRoute, ScriptedDiscovery, scripted_discovery};
 use node::{
     ClientApi, Daemon, Edge, EdgeOptions, LanOptions, Launch, LoopbackLink, ProfileId,
     ProfileRuntime,
@@ -30,7 +30,7 @@ use uuid::Uuid;
 use wire::client_service_server::ClientService as _;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    AgentParent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
+    AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Input, PromptInput, StopMode,
     WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input,
 };
@@ -116,8 +116,8 @@ impl NetAgent {
         )
     }
 
-    pub fn parent(&self) -> AgentParent {
-        AgentParent {
+    pub fn parent(&self) -> AgentRef {
+        AgentRef {
             host_id: self.host_id.as_bytes().to_vec(),
             agent_id: self.id.as_bytes().to_vec(),
         }
@@ -1597,8 +1597,8 @@ impl Net {
         else {
             return false;
         };
-        edge_a.via(info_b.host_id).await == HostVia::Direct
-            && edge_b.via(info_a.host_id).await == HostVia::Direct
+        edge_a.via(info_b.host_id).await == LiveRoute::Direct
+            && edge_b.via(info_a.host_id).await == LiveRoute::Direct
     }
 
     /// Waits until the link between two hosts is up, or down on both ends.
@@ -1606,18 +1606,18 @@ impl Net {
         let (id_a, id_b) = (self.host(a)?.host_id, self.host(b)?.host_id);
         let what = format!("link {a} - {b} {}", if up { "up" } else { "down" });
         let wanted = if up {
-            HostVia::Direct
+            LiveRoute::Direct
         } else {
-            HostVia::Offline
+            LiveRoute::Offline
         };
         observe::until(&what, || async {
             let via_ab = match self.edge(a) {
                 Ok(edge) => edge.via(id_b).await,
-                Err(_) => HostVia::Offline,
+                Err(_) => LiveRoute::Offline,
             };
             let via_ba = match self.edge(b) {
                 Ok(edge) => edge.via(id_a).await,
-                Err(_) => HostVia::Offline,
+                Err(_) => LiveRoute::Offline,
             };
             (via_ab == wanted && via_ba == wanted)
                 .then_some(())
@@ -1636,7 +1636,7 @@ impl Net {
         observe::until(&what, || async {
             for (near, far, name) in [(a, id_b, a), (b, id_a, b)] {
                 if let Ok(edge) = self.edge(near)
-                    && edge.via(far).await == HostVia::Direct
+                    && edge.via(far).await == LiveRoute::Direct
                 {
                     return Err(format!("{name} still routes direct"));
                 }

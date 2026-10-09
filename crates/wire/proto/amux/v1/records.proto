@@ -10,6 +10,10 @@ package amux.v1;
 // `kind`, encoded, and is decoded only by the interpreter that wrote it and
 // by the client's per-kind layer. Bodies therefore pass through a daemon of
 // any version intact.
+//
+// Every timestamp in the protocol is a field named `..._ms`: milliseconds
+// since the Unix epoch, as an int64. A duration names its own unit
+// (`grace_ms`, `ttl_seconds`, `window_minutes`) and is not a timestamp.
 
 // ---------------------------------------------------------------------------
 // Common
@@ -17,8 +21,9 @@ package amux.v1;
 
 message Empty {}
 
-// A parent may live on another host, so a parent is a host and an id.
-message AgentParent {
+// An agent anywhere in the fleet: the host it lives on and its id. A
+// message's recipient and an agent's parent are both one.
+message AgentRef {
   bytes host_id = 1;
   bytes agent_id = 2;
 }
@@ -29,7 +34,7 @@ message Envelope {
   bytes id = 1;
   optional bytes context = 2;
   Sender from = 3;
-  AgentParent to = 4;
+  AgentRef to = 4;
   EnvelopeKind kind = 5;
   string text = 6;
   // The recipient's incarnation the message is for, when only that one
@@ -82,7 +87,7 @@ message Step {
 // and revision are zero in the journal and assigned by the owning daemon at
 // commit: order once per key, revision on every upsert.
 message Item {
-  bytes agent = 1;
+  bytes agent_id = 1;
   string key = 2;
   uint64 order = 3;
   uint64 revision = 4;
@@ -102,10 +107,10 @@ message Item {
   int64 at_ms = 11;
 }
 
-// The one delta: extends `text` on the newest item. Sent only live, after
+// The one delta: extends `text` on an open item. Sent only live, after
 // CaughtUp; a base mismatch makes the client Get the item.
 message Append {
-  bytes agent = 1;
+  bytes agent_id = 1;
   string key = 2;
   uint64 base_revision = 3;
   uint64 revision = 4;
@@ -116,7 +121,7 @@ message Append {
 // the per-kind body is present in every snapshot, at an explicit unknown
 // until the interpreter learns it.
 message Snapshot {
-  bytes agent = 1;
+  bytes agent_id = 1;
   uint64 revision = 2;
   repeated QueuedInput queue = 3;
   // Which per-kind snapshot `body` holds. Before the interpreter's first
@@ -251,7 +256,8 @@ enum DiffFileChange {
 
 message DiffBase {
   oneof base {
-    Empty working_tree = 1;
+    // From the folder's HEAD commit.
+    Empty head = 1;
     string branch = 2;
   }
 }
@@ -854,7 +860,7 @@ message ClaudeUsage {
 }
 
 message ClaudeUsageWindow {
-  ClaudeLimit limit = 1;
+  Limit limit = 1;
   // Set for a limit that belongs to one model.
   optional string model = 2;
   // Claude's own name for the window, shown when `limit` is unspecified.
@@ -862,10 +868,11 @@ message ClaudeUsageWindow {
   UsageMeter meter = 4;
 }
 
-enum ClaudeLimit {
-  CLAUDE_LIMIT_UNSPECIFIED = 0;
-  CLAUDE_LIMIT_FIVE_HOUR = 1;
-  CLAUDE_LIMIT_WEEKLY = 2;
+// A usage window's length, the same for every provider.
+enum Limit {
+  LIMIT_UNSPECIFIED = 0;
+  LIMIT_FIVE_HOUR = 1;
+  LIMIT_WEEKLY = 2;
 }
 
 // Codex's usage limits.
@@ -877,16 +884,10 @@ message CodexUsage {
 
 message CodexUsageWindow {
   // Named from the window's length.
-  CodexLimit limit = 1;
+  Limit limit = 1;
   // The only description Codex gives of a window.
   uint32 window_minutes = 2;
   UsageMeter meter = 3;
-}
-
-enum CodexLimit {
-  CODEX_LIMIT_UNSPECIFIED = 0;
-  CODEX_LIMIT_FIVE_HOUR = 1;
-  CODEX_LIMIT_WEEKLY = 2;
 }
 
 // Session strip: tool-server health, shown only when one fails.
@@ -943,7 +944,7 @@ message BackgroundJobs {
 message BackgroundJob {
   // The key of the item whose call started the job; empty when the
   // provider has not said which call it was.
-  string step = 1;
+  string item_key = 1;
   // The command, or what the provider calls the task.
   string command = 2;
   int64 started_at_ms = 3;

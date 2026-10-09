@@ -346,7 +346,7 @@ impl ChatView {
             attach,
             // Nothing is known against the host until the app reads the
             // fleet, before the chat is first drawn.
-            reach: Reach::Online(wire::HostVia::Unspecified),
+            reach: Reach::Online(wire::RouteKind::Unspecified),
             leader: 'a',
             open_runs: HashSet::new(),
             tools: ToolSteps::Collapse,

@@ -399,8 +399,8 @@ pub struct Decision {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub enum PermissionGrant {
     /// Claude's standing permission: what it allows ("cargo test", as on
-    /// the card), folders added, the permission it switched to, and where
-    /// it was saved.
+    /// the card), folders added, the permission it switched to, and the
+    /// grant's destination: where Claude keeps it.
     Claude {
         subjects: Vec<String>,
         directories: Vec<String>,
@@ -409,7 +409,7 @@ pub enum PermissionGrant {
         /// That permission by the catalogue's name; empty when the
         /// catalogue does not name it.
         mode_name: String,
-        saved_to: Scope,
+        destination: Scope,
     },
     /// Codex: approvals like this one, for the rest of the session.
     Session,
@@ -572,7 +572,7 @@ fn decision_view(
                     .map(|permission| permission.display_name.clone())
                     .unwrap_or_default(),
                 mode,
-                saved_to: scope_of(grant),
+                destination: scope_of(grant),
             })
         }
         Some(wire::tool_decision::Granted::Codex(grant)) => match &grant.of {

@@ -65,7 +65,7 @@ pub enum LineKind {
 pub fn review_doc(diff: &Diff, patch: &str, comments: &[ReviewComment]) -> ReviewDoc {
     let base = match diff.base.as_ref().and_then(|base| base.base.as_ref()) {
         Some(wire::diff_base::Base::Branch(branch)) => branch.clone(),
-        Some(wire::diff_base::Base::WorkingTree(_)) | None => String::new(),
+        Some(wire::diff_base::Base::Head(_)) | None => String::new(),
     };
     let mut doc = ReviewDoc {
         base,

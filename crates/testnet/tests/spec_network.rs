@@ -17,7 +17,7 @@ mod support;
 use std::time::Duration;
 
 use node::RelayCarrier;
-use node::harness::{Advertisement, HostVia};
+use node::harness::{Advertisement, LiveRoute};
 use store::Store as _;
 use support::*;
 use testnet::{Net, RELAY_HOST, Topology, holds_for, until};
@@ -43,7 +43,7 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
 
     // One relay joins the two carriers: each host reaches the other and
     // calls it, through a tunnel the relay pipes but cannot read.
-    until_via(&net, "desk", "phone", HostVia::Relay).await;
+    until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     let from_phone = peer_inventory_hosts(&edge(&net, "phone"), desk)
         .await
         .expect("the phone calls the desk through the relay");
@@ -87,7 +87,7 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     assert!(!edge(&net, "phone").remembers_udp_blocked(RELAY_HOST));
     reconnect(&net, "phone").await;
     assert_eq!(carrier(&net, "phone"), Some(RelayCarrier::Quic));
-    until_via(&net, "desk", "phone", HostVia::Relay).await;
+    until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     println!("memory held TCP-only until it expired; the next link rides QUIC");
 
     net.shutdown().await.unwrap();
@@ -603,7 +603,7 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
         host_id(&net, "impostor"),
     );
     pair(&net, "laptop", "desk").await;
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let desk_key = edge(&net, "desk").public_key().to_vec();
 
     // A machine on the network that nobody paired is a candidate to pair
@@ -615,7 +615,7 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
             .any(|advert| advert.host_id == impostor)
     );
     never("the laptop links to an unpaired machine", async || {
-        edge(&net, "laptop").via(impostor).await != HostVia::Offline
+        edge(&net, "laptop").via(impostor).await != LiveRoute::Offline
     })
     .await;
 
@@ -650,7 +650,7 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
     // The dial's outcome is in: the stranger's key never matches the pin.
     assert_eq!(
         edge(&net, "laptop").via(desk).await,
-        HostVia::Offline,
+        LiveRoute::Offline,
         "the laptop never links to a stranger claiming the desk's id"
     );
     let pinned = edge(&net, "laptop")
@@ -694,15 +694,15 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
     })
     .await
     .unwrap();
-    assert_eq!(edge(&net, "laptop").via(desk).await, HostVia::Offline);
-    assert_eq!(edge(&net, "desk").via(laptop).await, HostVia::Offline);
+    assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Offline);
+    assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Offline);
     assert!(
         peer_inventory_hosts(&edge(&net, "laptop"), desk)
             .await
             .is_err()
     );
     pair(&net, "desk", "laptop").await;
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let pinned = edge(&net, "laptop")
         .trusted()
         .into_iter()
@@ -804,14 +804,14 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
     net.trust("phone", "desk").await.unwrap();
     never(
         "the phone to dial before the desk is found again",
-        async || edge(&net, "phone").via(desk).await != HostVia::Offline,
+        async || edge(&net, "phone").via(desk).await != LiveRoute::Offline,
     )
     .await;
     let first = edge(&net, "desk").lan_addr().unwrap();
     assert_eq!(first, held.local_addr().unwrap());
     net.discovery()
         .announce(advert(&net, "desk", first, "home"));
-    until_via(&net, "phone", "desk", HostVia::Direct).await;
+    until_via(&net, "phone", "desk", LiveRoute::Direct).await;
     // The dialler stores an address once its link is established, just
     // after routing already names the link.
     until("the phone to store the desk's address", || async {
@@ -840,7 +840,7 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
     let second = edge(&net, "desk").lan_addr().unwrap();
     assert_ne!(second, first);
     let started = tokio::time::Instant::now();
-    until_via(&net, "phone", "desk", HostVia::Direct).await;
+    until_via(&net, "phone", "desk", LiveRoute::Direct).await;
     assert!(
         started.elapsed() < Duration::from_secs(2),
         "the found address was dialled before the stale one timed out"
@@ -900,8 +900,8 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
     pair(&net, "phone", "desk").await;
     net.trust("desk", "tablet").await.unwrap();
     net.trust("tablet", "desk").await.unwrap();
-    until_via(&net, "phone", "desk", HostVia::Direct).await;
-    until_via(&net, "tablet", "desk", HostVia::Relay).await;
+    until_via(&net, "phone", "desk", LiveRoute::Direct).await;
+    until_via(&net, "tablet", "desk", LiveRoute::Relay).await;
 
     // Each holds the worker's session and the desk's inventory open.
     let mut held = Vec::new();
@@ -1033,10 +1033,10 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     assert_eq!(relay.links("bob").await, vec![(shop, 1)]);
     // Hosts on one account see each other through the relay before any
     // trust, which is what lets them pair there.
-    until_via(&net, "desk", "laptop", HostVia::Relay).await;
+    until_via(&net, "desk", "laptop", LiveRoute::Relay).await;
     never("the relay routes between accounts", async || {
-        edge(&net, "shop").via(desk).await != HostVia::Offline
-            || edge(&net, "desk").via(shop).await != HostVia::Offline
+        edge(&net, "shop").via(desk).await != LiveRoute::Offline
+            || edge(&net, "desk").via(shop).await != LiveRoute::Offline
     })
     .await;
     let started = start_pairing(&net, "desk", pin_mode()).await.unwrap();
@@ -1093,7 +1093,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     .await
     .expect("pairing across accounts at the desk's address");
     confirm_pair(&net, "shop", pending.token).await.unwrap();
-    until_via(&net, "shop", "desk", HostVia::Direct).await;
+    until_via(&net, "shop", "desk", LiveRoute::Direct).await;
     peer_inventory_hosts(&edge(&net, "shop"), desk)
         .await
         .expect("the shop calls the desk it paired with");
@@ -1161,7 +1161,7 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     .await
     .unwrap();
     confirm_pair(&net, "laptop", pending.token).await.unwrap();
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     assert!(
         work_edge.trusted().is_empty(),
         "the desk's pairing commits nothing to work"
@@ -1184,10 +1184,10 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     .unwrap();
     assert_eq!(
         edge(&net, "laptop").via(work_edge.host_id()).await,
-        HostVia::Offline,
+        LiveRoute::Offline,
         "a key one profile pinned never authenticates into another"
     );
-    assert_eq!(work_edge.via(laptop).await, HostVia::Offline);
+    assert_eq!(work_edge.via(laptop).await, LiveRoute::Offline);
     println!("work profile {work_profile}: own key, own window, the desk's peers refused");
 
     // Administration is the installation's: a trusted peer's tunnel and a
@@ -1273,20 +1273,20 @@ async fn free_tier_relay_only_host_is_away() {
     let mut fleet = net.observe_inventory("laptop").await.unwrap();
     let presence = |row: &wire::HostEntry| (row.presence(), row.via());
 
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let row = row_until(&mut fleet, desk, "the desk online over its link", |row| {
-        presence(row) == (wire::Presence::Online, wire::HostVia::Direct)
+        presence(row) == (wire::Presence::Online, wire::RouteKind::Direct)
     })
     .await;
     println!("linked: the desk is {:?}", presence(&row));
 
     net.sever_link("desk", "laptop").unwrap();
-    until_via(&net, "laptop", "desk", HostVia::Relay).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
     let row = row_until(
         &mut fleet,
         desk,
         "the desk away on the relay alone",
-        |row| presence(row) == (wire::Presence::Away, wire::HostVia::Relay),
+        |row| presence(row) == (wire::Presence::Away, wire::RouteKind::Relay),
     )
     .await;
     let own = row_until(&mut fleet, laptop, "the laptop's own entry", |_| true).await;
@@ -1298,20 +1298,20 @@ async fn free_tier_relay_only_host_is_away() {
     println!("relay only, free: the desk is {:?}", presence(&row));
 
     net.restore_link("desk", "laptop").await.unwrap();
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let row = row_until(
         &mut fleet,
         desk,
         "the desk online over its link again",
-        |row| presence(row) == (wire::Presence::Online, wire::HostVia::Direct),
+        |row| presence(row) == (wire::Presence::Online, wire::RouteKind::Direct),
     )
     .await;
     println!("linked again: the desk is {:?}", presence(&row));
 
     net.sever_link("desk", "laptop").unwrap();
-    until_via(&net, "laptop", "desk", HostVia::Relay).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
     row_until(&mut fleet, desk, "the desk away again", |row| {
-        presence(row) == (wire::Presence::Away, wire::HostVia::Relay)
+        presence(row) == (wire::Presence::Away, wire::RouteKind::Relay)
     })
     .await;
     net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
@@ -1319,7 +1319,7 @@ async fn free_tier_relay_only_host_is_away() {
         &mut fleet,
         desk,
         "the desk online through the relay on Pro",
-        |row| presence(row) == (wire::Presence::Online, wire::HostVia::Relay),
+        |row| presence(row) == (wire::Presence::Online, wire::RouteKind::Relay),
     )
     .await;
     println!("relay only, Pro: the desk is {:?}", presence(&row));
@@ -1366,7 +1366,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     // On a free account the relay lists the account's hosts and opens no
     // tunnel between them, for calls or for pairing; the refused pairing
     // leaves the responder's window open, as the secret never reached it.
-    until_via(&net, "desk", "phone", HostVia::Relay).await;
+    until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     let call = peer_inventory_hosts(&edge(&net, "phone"), desk)
         .await
         .expect_err("no tunnel on a free account");
@@ -1407,7 +1407,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         &mut fleet,
         desk,
         "the tablet's client told of the direct link",
-        |row| row.via == wire::HostVia::Direct as i32 && row.trust == wire::Trust::Trusted as i32,
+        |row| row.via == wire::RouteKind::Direct as i32 && row.trust == wire::Trust::Trusted as i32,
     )
     .await;
     peer_inventory_hosts(&edge(&net, "tablet"), desk)
@@ -1546,7 +1546,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     .unwrap();
     let desk = host_id(&net, "desk");
     pair(&net, "laptop", "desk").await;
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let worker = net.agent("worker").unwrap().id.as_bytes().to_vec();
     let mut peer = edge(&net, "laptop").peer(desk).await.unwrap();
 
@@ -1672,7 +1672,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
         }
     }
     assert!(ignored >= 2, "{answered} answered, {ignored} ignored");
-    assert_eq!(edge(&net, "laptop").via(desk).await, HostVia::Direct);
+    assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Direct);
     peer_inventory_hosts(&edge(&net, "laptop"), desk)
         .await
         .expect("the laptop's link is untouched by the flood");
@@ -1729,7 +1729,7 @@ async fn a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its
     .unwrap();
     let desk = host_id(&net, "desk");
     pair(&net, "laptop", "desk").await;
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let chatty = net.agent("chatty").unwrap().id;
 
     // Two subscriptions from the laptop, each on a stream of its own over
@@ -1859,7 +1859,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
     let main = profile(&net, "desk");
     pair(&net, "laptop", "desk").await;
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let (work, work_edge) = create(&net, "desk", "work").await;
     let relay_login = testnet::Relay::login;
 
@@ -1975,7 +1975,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     })
     .await
     .unwrap();
-    assert_eq!(edge(&net, "desk").via(laptop).await, HostVia::Direct);
+    assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
     for _ in 0..2 {
         door(&net, "desk")
             .await
@@ -2027,7 +2027,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         profile_info(&net, "desk", &main).await.intent,
         wire::Intent::LoggedOut as i32
     );
-    assert_eq!(edge(&net, "desk").via(laptop).await, HostVia::Direct);
+    assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
     assert!(edge(&net, "desk").is_trusted(laptop));
     assert_eq!(edge(&net, "desk").public_key(), key.as_slice());
     let listed = net
@@ -2073,7 +2073,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     assert_eq!(host_id(&net, "desk"), desk);
     until("the laptop linked again", || async {
         let via = edge(&net, "desk").via(laptop).await;
-        (via == HostVia::Direct)
+        (via == LiveRoute::Direct)
             .then_some(())
             .ok_or_else(|| format!("via {via:?}"))
     })
@@ -2174,7 +2174,7 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
         vec![(desk, 1)],
         "the other profiles keep routing"
     );
-    assert_eq!(edge(&net, "desk").via(laptop).await, HostVia::Direct);
+    assert_eq!(edge(&net, "desk").via(laptop).await, LiveRoute::Direct);
 
     // The watcher saw all of it, the deletion last.
     let mut removed = None;
@@ -2245,16 +2245,16 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     // in or out says so in its next handshake, with neither end
     // restarting.
     let row = row_until(&mut fleet, desk, "the desk, online and signed in", |row| {
-        row.presence == wire::Presence::Online as i32 && row.signed_in == Some(true)
+        row.presence == wire::Presence::Online as i32 && row.account_signed_in == Some(true)
     })
     .await;
-    assert_eq!(row.via, wire::HostVia::Direct as i32);
+    assert_eq!(row.via, wire::RouteKind::Direct as i32);
     let mut desk_fleet = net.observe_inventory("desk").await.unwrap();
     row_until(
         &mut desk_fleet,
         laptop,
         "the laptop, never signed in",
-        |row| row.signed_in == Some(false),
+        |row| row.account_signed_in == Some(false),
     )
     .await;
     door(&net, "desk")
@@ -2265,14 +2265,14 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     net.sever_link("desk", "laptop").unwrap();
     net.restore_link("desk", "laptop").await.unwrap();
     row_until(&mut fleet, desk, "the desk signed out", |row| {
-        row.signed_in == Some(false)
+        row.account_signed_in == Some(false)
     })
     .await;
     net.sign_in("desk", "ada").await.unwrap();
     net.sever_link("desk", "laptop").unwrap();
     net.restore_link("desk", "laptop").await.unwrap();
     row_until(&mut fleet, desk, "the desk signed in again", |row| {
-        row.signed_in == Some(true)
+        row.account_signed_in == Some(true)
     })
     .await;
     println!("the laptop saw the desk sign out and in, each at its next handshake");
@@ -2281,7 +2281,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     // and no call is made to it.
     until("the desk to see the tablet through the relay", || async {
         let via = edge(&net, "desk").via(tablet).await;
-        (via == HostVia::Relay)
+        (via == LiveRoute::Relay)
             .then_some(())
             .ok_or_else(|| format!("via {via:?}"))
     })
@@ -2316,7 +2316,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     net.stop_daemon("tablet").await.unwrap();
     until("the desk to see the tablet go", || async {
         let via = edge(&net, "desk").via(tablet).await;
-        (via == HostVia::Offline)
+        (via == LiveRoute::Offline)
             .then_some(())
             .ok_or_else(|| format!("via {via:?}"))
     })
@@ -2332,7 +2332,7 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
     })
     .await;
     assert_eq!(row.trust, wire::Trust::Trusted as i32);
-    assert_eq!(row.signed_in, Some(true));
+    assert_eq!(row.account_signed_in, Some(true));
     peer_inventory_hosts(&edge(&net, "laptop"), desk)
         .await
         .expect_err("no calls to a host that is down");
@@ -2430,7 +2430,7 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_held_transfer_and_a_
     net.trust("desk", "laptop").await.unwrap();
     net.trust("laptop", "desk").await.unwrap();
     edge(&net, "laptop").dial(desk, gate.addr());
-    until_via(&net, "laptop", "desk", HostVia::Direct).await;
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let mut session = open_session(&edge(&net, "laptop"), desk, worker)
         .await
         .unwrap();
@@ -2442,7 +2442,7 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_held_transfer_and_a_
     edge(&net, "laptop").rebind_lan(moved).unwrap();
     net.open_gate("one").unwrap();
     until_item(&mut session, "after the rebind").await;
-    assert_eq!(edge(&net, "laptop").via(desk).await, HostVia::Direct);
+    assert_eq!(edge(&net, "laptop").via(desk).await, LiveRoute::Direct);
     println!("the laptop moved to {moved_to}; the session carried on");
 
     // A blob fetch held mid-transfer does not hold up the session beside

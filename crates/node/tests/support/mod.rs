@@ -12,7 +12,7 @@ use node::{Daemon, Launch, ProfileId, ProfileRuntime, StartOptions};
 pub use patience::{PATIENCE, Stuck, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
 use wire::{
-    AgentParent, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
+    AgentRef, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
     StopMode, claude_sdk_input,
 };
 
@@ -198,7 +198,7 @@ pub fn id_of(agent: &wire::Agent) -> uuid::Uuid {
     uuid::Uuid::from_slice(&agent.agent_id).unwrap()
 }
 
-pub fn parent_of(agent: &wire::Agent) -> Option<AgentParent> {
+pub fn parent_of(agent: &wire::Agent) -> Option<AgentRef> {
     agent.parent.clone()
 }
 

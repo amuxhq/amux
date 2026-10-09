@@ -7,8 +7,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{Key, SessionState, Usage};
 use wire::{
-    ClaudeLimit, CodexLimit, Diff, DiffBase, DiffFileChange, TaskListStatus, UsageMeter,
-    UsageState, diff_base,
+    Diff, DiffBase, DiffFileChange, Limit, TaskListStatus, UsageMeter, UsageState, diff_base,
 };
 
 use crate::review::FileStatus;
@@ -151,7 +150,7 @@ pub enum Comparison {
 /// names no base branch.
 pub fn diff_base(state: &SessionState, comparison: Comparison) -> Option<DiffBase> {
     let base = match comparison {
-        Comparison::Uncommitted => diff_base::Base::WorkingTree(wire::Empty {}),
+        Comparison::Uncommitted => diff_base::Base::Head(wire::Empty {}),
         Comparison::OnBranch => diff_base::Base::Branch(
             state
                 .agent()
@@ -214,7 +213,7 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
             .jobs
             .iter()
             .map(|job| JobRow {
-                step: (!job.step.is_empty()).then(|| job.step.clone()),
+                step: (!job.item_key.is_empty()).then(|| job.item_key.clone()),
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
             })
@@ -321,13 +320,9 @@ pub fn usage_windows(usage: &Usage) -> Vec<UsageWindowView> {
             .windows
             .iter()
             .map(|window| {
-                let label = match window.limit() {
-                    ClaudeLimit::FiveHour => UsageLabel::FiveHour,
-                    ClaudeLimit::Weekly => UsageLabel::Weekly {
-                        model: window.model.clone(),
-                    },
-                    ClaudeLimit::Unspecified => UsageLabel::Named(window.provider_name.clone()),
-                };
+                let label = window_label(window.limit(), window.model.clone(), || {
+                    UsageLabel::Named(window.provider_name.clone())
+                });
                 view(label, window.meter)
             })
             .collect(),
@@ -335,13 +330,26 @@ pub fn usage_windows(usage: &Usage) -> Vec<UsageWindowView> {
             .windows
             .iter()
             .map(|window| {
-                let label = match window.limit() {
-                    CodexLimit::FiveHour => UsageLabel::FiveHour,
-                    CodexLimit::Weekly => UsageLabel::Weekly { model: None },
-                    CodexLimit::Unspecified => UsageLabel::Minutes(window.window_minutes),
-                };
+                let label = window_label(window.limit(), None, || {
+                    UsageLabel::Minutes(window.window_minutes)
+                });
                 view(label, window.meter)
             })
             .collect(),
+    }
+}
+
+/// A window's label from its length. `model` is the one model a weekly
+/// window belongs to, when it belongs to one; `unnamed` labels a length
+/// this build has no word for, from what the provider said of it.
+fn window_label(
+    limit: Limit,
+    model: Option<String>,
+    unnamed: impl FnOnce() -> UsageLabel,
+) -> UsageLabel {
+    match limit {
+        Limit::FiveHour => UsageLabel::FiveHour,
+        Limit::Weekly => UsageLabel::Weekly { model },
+        Limit::Unspecified => unnamed(),
     }
 }

@@ -90,12 +90,12 @@ final class ChatWordsTests: XCTestCase {
     func testADecidedPermissionSaysWhatWasGranted() {
         let always = Decision(
             outcome: .allowed, elsewhere: false,
-            granted: .claude(subjects: ["cargo test"], directories: [], mode: "", modeName: "", savedTo: .project),
+            granted: .claude(subjects: ["cargo test"], directories: [], mode: "", modeName: "", destination: .project),
             note: nil)
         XCTAssertEqual(ChatWords.decision(always), "allowed · always cargo test in this project")
         let switched = Decision(
             outcome: .allowed, elsewhere: false,
-            granted: .claude(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", savedTo: .session),
+            granted: .claude(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", destination: .session),
             note: nil)
         XCTAssertEqual(ChatWords.decision(switched), "allowed · switched to Accept edits")
         let prefix = Decision(outcome: .allowed, elsewhere: false, granted: .commandPrefix(words: ["curl", "-s"]), note: nil)

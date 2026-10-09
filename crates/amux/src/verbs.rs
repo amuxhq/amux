@@ -128,7 +128,7 @@ pub async fn ls(client: &mut Client) -> Result<()> {
     let several_hosts = agents
         .iter()
         .any(|agent| agent.host_id != agents[0].host_id);
-    let is_listed = |parent: &wire::AgentParent| {
+    let is_listed = |parent: &wire::AgentRef| {
         agents
             .iter()
             .any(|agent| agent.host_id == parent.host_id && agent.agent_id == parent.agent_id)

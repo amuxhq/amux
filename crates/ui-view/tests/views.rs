@@ -369,7 +369,7 @@ fn fleet_entry(
         name: id.into(),
         lifecycle: wire::Lifecycle::Live as i32,
         phase: phase as i32,
-        parent: parent.map(|parent| wire::AgentParent {
+        parent: parent.map(|parent| wire::AgentRef {
             host_id: host.as_bytes().to_vec(),
             agent_id: parent.as_bytes().to_vec(),
         }),
@@ -580,7 +580,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
     let claude_usage = wire::ClaudeUsage {
         state: wire::UsageState::NearLimit as i32,
         windows: vec![wire::ClaudeUsageWindow {
-            limit: wire::ClaudeLimit::FiveHour as i32,
+            limit: wire::Limit::FiveHour as i32,
             model: None,
             provider_name: "five_hour".into(),
             meter,
@@ -589,7 +589,7 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
     let codex_usage = wire::CodexUsage {
         state: wire::UsageState::NearLimit as i32,
         windows: vec![wire::CodexUsageWindow {
-            limit: wire::CodexLimit::FiveHour as i32,
+            limit: wire::Limit::FiveHour as i32,
             window_minutes: 300,
             meter,
         }],
@@ -619,12 +619,12 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         known: true,
         jobs: vec![
             wire::BackgroundJob {
-                step: "t1".into(),
+                item_key: "t1".into(),
                 command: "npm run dev".into(),
                 started_at_ms: 1_000,
             },
             wire::BackgroundJob {
-                step: "t2".into(),
+                item_key: "t2".into(),
                 command: "cargo watch".into(),
                 started_at_ms: 2_000,
             },
@@ -1008,7 +1008,7 @@ fn host_entry(host: &str, signed_in: Option<bool>) -> FleetMsg {
         of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
             host_id: host.as_bytes().to_vec(),
             name: host.into(),
-            signed_in,
+            account_signed_in: signed_in,
             trust: wire::Trust::Trusted as i32,
             presence: wire::Presence::Online as i32,
             ..wire::HostEntry::default()
@@ -1036,11 +1036,11 @@ fn a_host_is_reached_by_its_route_or_away_or_offline_for_what_this_machine_knows
     // A profile never bound to an account is not signed out.
     fleet.update(host_entry("laptop", None));
     set_host(&mut fleet, "desk", |entry| {
-        entry.via = wire::HostVia::Relay as i32
+        entry.via = wire::RouteKind::Relay as i32
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
-        Reach::Online(wire::HostVia::Relay)
+        Reach::Online(wire::RouteKind::Relay)
     );
     // This machine always reaches itself, and knows nothing of a host it
     // was never told about.
@@ -1061,7 +1061,9 @@ fn a_host_is_reached_by_its_route_or_away_or_offline_for_what_this_machine_knows
     assert_eq!(reach(&fleet, b"laptop", b"desk"), Reach::Away(Away::Plain));
 
     // Signed out, a host this machine does not reach is away for that.
-    set_host(&mut fleet, "laptop", |entry| entry.signed_in = Some(false));
+    set_host(&mut fleet, "laptop", |entry| {
+        entry.account_signed_in = Some(false)
+    });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
         Reach::Away(Away::SignedOut)
@@ -1072,11 +1074,11 @@ fn a_host_is_reached_by_its_route_or_away_or_offline_for_what_this_machine_knows
     // A host reached directly needs no account.
     set_host(&mut fleet, "desk", |entry| {
         entry.presence = wire::Presence::Online as i32;
-        entry.via = wire::HostVia::Direct as i32;
+        entry.via = wire::RouteKind::Direct as i32;
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
-        Reach::Online(wire::HostVia::Direct)
+        Reach::Online(wire::RouteKind::Direct)
     );
 
     // A host that no longer trusts this machine says so first, whatever
@@ -2058,7 +2060,7 @@ fn each_row_says_what_its_state_calls_for() {
         account: "me@example.com".into(),
         message: String::new(),
     };
-    let window = |limit: wire::ClaudeLimit, used_percent, resets_at_ms, state: wire::UsageState| {
+    let window = |limit: wire::Limit, used_percent, resets_at_ms, state: wire::UsageState| {
         wire::ClaudeUsageWindow {
             limit: limit as i32,
             model: None,
@@ -2074,12 +2076,12 @@ fn each_row_says_what_its_state_calls_for() {
         state: wire::UsageState::Blocked as i32,
         windows: vec![
             window(
-                wire::ClaudeLimit::FiveHour,
+                wire::Limit::FiveHour,
                 100.0,
                 9_000,
                 wire::UsageState::Blocked,
             ),
-            window(wire::ClaudeLimit::Weekly, 40.0, 3_000, wire::UsageState::Ok),
+            window(wire::Limit::Weekly, 40.0, 3_000, wire::UsageState::Ok),
         ],
     };
     let rows = [

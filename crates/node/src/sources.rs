@@ -51,7 +51,7 @@ use wire::{
 };
 
 use crate::HostId;
-use crate::routing::HostVia;
+use crate::routing::LiveRoute;
 use crate::runtime::ProfileRuntime;
 use crate::serve::{event, inventory};
 
@@ -845,7 +845,7 @@ async fn follow(runtime: Weak<ProfileRuntime>, host: HostId) {
         let Some(edge) = runtime.upgrade().and_then(|me| me.edge()) else {
             return;
         };
-        let reachable = edge.via(host).await != HostVia::Offline;
+        let reachable = edge.via(host).await != LiveRoute::Offline;
         let route = edge.route(host).await;
         drop(edge);
         if !reachable {
@@ -1274,7 +1274,7 @@ fn fold_tail(
         }
     }
     let snapshot = snapshot.unwrap_or_else(|| wire::Snapshot {
-        agent: row.agent.agent.clone(),
+        agent_id: row.agent.agent.clone(),
         kind: row.kind,
         ..wire::Snapshot::default()
     });

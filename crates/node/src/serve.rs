@@ -286,7 +286,7 @@ impl ProfileRuntime {
         }
         let snapshot = cut.snapshot.unwrap_or_else(|| Snapshot {
             // Nothing emitted yet: the kind tag and an empty body.
-            agent: row.agent.agent.clone(),
+            agent_id: row.agent.agent.clone(),
             kind: row.kind,
             ..Snapshot::default()
         });

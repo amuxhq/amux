@@ -16,10 +16,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use wire::claude_sdk_item::Kind;
 use wire::{
-    BoundaryKind, ClaudeLimit, ClaudeUsage, ClaudeUsageWindow, DecisionOutcome, FormAsk,
-    HealthState, LinkAsk, PermissionAsk, SignIn, SignInState, TaskState as WireTaskState,
-    ToolServer, ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter,
-    UsageState,
+    BoundaryKind, ClaudeUsage, ClaudeUsageWindow, DecisionOutcome, FormAsk, HealthState, Limit,
+    LinkAsk, PermissionAsk, SignIn, SignInState, TaskState as WireTaskState, ToolServer,
+    ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState,
 };
 
 use super::{
@@ -1407,7 +1406,7 @@ fn claude_window<'a>(usage: &'a mut ClaudeUsage, name: &str) -> &'a mut UsageMet
     {
         Some(at) => at,
         None => {
-            let (limit, model) = claude_limit(name).unwrap_or((ClaudeLimit::Unspecified, None));
+            let (limit, model) = claude_limit(name).unwrap_or((Limit::Unspecified, None));
             usage.windows.push(ClaudeUsageWindow {
                 limit: limit as i32,
                 model: model.map(str::to_owned),

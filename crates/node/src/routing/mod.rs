@@ -30,7 +30,7 @@ pub(crate) use link_registry::{
 };
 pub use link_registry::{LinkCarrier, LinkRegistry, LinkRole};
 pub(crate) use types::host_from_wire;
-pub use types::{Capabilities, Host, HostVia, LinkId, Route, host_to_wire};
+pub use types::{Capabilities, Host, LinkId, LiveRoute, Route, host_to_wire};
 pub(crate) use wire::{inbound_host_from_wire, neighbor_down_from_wire, neighbor_up_from_wire};
 
 pub(crate) use crate::link::run::{

@@ -18,7 +18,7 @@ use wire::{HostEntry, HostRemoved, Presence, ProviderOnHost, Trust, inventory_ev
 
 use crate::Tier;
 use crate::edge::Observed;
-use crate::routing::HostVia;
+use crate::routing::LiveRoute;
 use crate::runtime::ProfileRuntime;
 use crate::serve::inventory;
 
@@ -39,7 +39,7 @@ impl ProfileRuntime {
                 .as_ref()
                 .map(|edge| edge.host_name().to_owned())
                 .unwrap_or_default(),
-            signed_in: edge.as_ref().and_then(|edge| edge.account_signed_in()),
+            account_signed_in: edge.as_ref().and_then(|edge| edge.account_signed_in()),
             generation: self.generation(),
             trust: Trust::Trusted as i32,
             presence: Presence::Online as i32,
@@ -90,7 +90,7 @@ impl ProfileRuntime {
                 // a client must not read as a working host.
                 let revoked = edge.revoked(host);
                 let via = if revoked {
-                    HostVia::Offline
+                    LiveRoute::Offline
                 } else {
                     edge.via(host).await
                 };
@@ -98,9 +98,9 @@ impl ProfileRuntime {
                 // opens no tunnel between them: a host only it reaches is
                 // seen and cannot be called, which is away.
                 let presence = match via {
-                    HostVia::Offline => Presence::Offline,
-                    HostVia::Relay if free => Presence::Away,
-                    HostVia::Relay | HostVia::Direct | HostVia::Ssh => Presence::Online,
+                    LiveRoute::Offline => Presence::Offline,
+                    LiveRoute::Relay if free => Presence::Away,
+                    LiveRoute::Relay | LiveRoute::Direct | LiveRoute::Ssh => Presence::Online,
                 };
                 let (version, capabilities) = edge.described(host).await.unzip();
                 fresh.insert(
@@ -112,7 +112,7 @@ impl ProfileRuntime {
                         capabilities,
                         last_dial_error: edge.last_dial_error(host).await,
                         via: via.to_wire() as i32,
-                        signed_in: edge.signed_in(host),
+                        account_signed_in: edge.signed_in(host),
                         platform: edge.platform(host),
                         revoked: revoked.then_some(true),
                         trust: Trust::Trusted as i32,

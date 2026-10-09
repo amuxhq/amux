@@ -1522,7 +1522,7 @@ async fn blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the
                 .diff(tonic::Request::new(wire::DiffRequest {
                     agent_id,
                     base: Some(wire::DiffBase {
-                        base: Some(wire::diff_base::Base::WorkingTree(wire::Empty {})),
+                        base: Some(wire::diff_base::Base::Head(wire::Empty {})),
                     }),
                     with_patch,
                 }))

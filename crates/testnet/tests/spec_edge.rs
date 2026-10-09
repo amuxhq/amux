@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use hyper_util::rt::TokioIo;
 use node::Edge;
-use node::harness::{HostVia, Tier};
+use node::harness::{LiveRoute, Tier};
 use testnet::{ClockMode, HostDecl, Net, NetOptions, PATIENCE, Relay, TierDecl, Topology, until};
 use tonic::transport::{Channel, Endpoint};
 use uuid::Uuid;
@@ -279,7 +279,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
             edge(&net, "desk").via(laptop_id).await,
             edge(&net, "laptop").via(desk_id).await,
         );
-        (via == (HostVia::Direct, HostVia::Direct))
+        (via == (LiveRoute::Direct, LiveRoute::Direct))
             .then_some(())
             .ok_or_else(|| format!("desk -> laptop, laptop -> desk: {via:?}"))
     })
@@ -320,7 +320,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
                 name: "someone".to_owned(),
             })),
         }),
-        to: Some(wire::AgentParent {
+        to: Some(wire::AgentRef {
             host_id: desk_id.as_bytes().to_vec(),
             agent_id: Uuid::new_v4().as_bytes().to_vec(),
         }),
@@ -346,8 +346,14 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     let before = edge(&net, "stranger").last_dial_error(desk_id).await;
     edge(&net, "stranger").dial(desk_id, edge(&net, "desk").lan_addr().unwrap());
     let refused = dial_failed(&net, "stranger", desk_id, before).await;
-    assert_eq!(edge(&net, "desk").via(stranger_id).await, HostVia::Offline);
-    assert_eq!(edge(&net, "stranger").via(desk_id).await, HostVia::Offline);
+    assert_eq!(
+        edge(&net, "desk").via(stranger_id).await,
+        LiveRoute::Offline
+    );
+    assert_eq!(
+        edge(&net, "stranger").via(desk_id).await,
+        LiveRoute::Offline
+    );
     println!("the stranger's dial was refused: {refused}");
     let desk_addr = edge(&net, "desk").lan_addr().unwrap();
     let outside_pairing = match edge(&net, "stranger").unpinned_channel(desk_addr).await {
@@ -413,7 +419,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
             edge(&net, "desk").via(laptop_id).await,
             edge(&net, "laptop").via(desk_id).await,
         );
-        (via == (HostVia::Offline, HostVia::Offline))
+        (via == (LiveRoute::Offline, LiveRoute::Offline))
             .then_some(())
             .ok_or_else(|| format!("desk -> laptop, laptop -> desk: {via:?}"))
     })
@@ -431,7 +437,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     let before = edge(&net, "laptop").last_dial_error(desk_id).await;
     edge(&net, "laptop").dial(desk_id, edge(&net, "desk").lan_addr().unwrap());
     let refused = dial_failed(&net, "laptop", desk_id, before).await;
-    assert_eq!(edge(&net, "desk").via(laptop_id).await, HostVia::Offline);
+    assert_eq!(edge(&net, "desk").via(laptop_id).await, LiveRoute::Offline);
     println!("desk unpaired the laptop; its redial is refused: {refused}");
 
     net.shutdown().await.unwrap();
@@ -462,7 +468,7 @@ async fn trusted_edges_link_in_process_until_the_link_is_severed() {
             edge(&net, "one").via(two_id).await,
             edge(&net, "two").via(one_id).await,
         );
-        (via == (HostVia::Direct, HostVia::Direct))
+        (via == (LiveRoute::Direct, LiveRoute::Direct))
             .then_some(())
             .ok_or_else(|| format!("one -> two, two -> one: {via:?}"))
     })
@@ -480,7 +486,7 @@ async fn trusted_edges_link_in_process_until_the_link_is_severed() {
             edge(&net, "one").via(two_id).await,
             edge(&net, "two").via(one_id).await,
         );
-        (via == (HostVia::Offline, HostVia::Offline))
+        (via == (LiveRoute::Offline, LiveRoute::Offline))
             .then_some(())
             .ok_or_else(|| format!("one -> two, two -> one: {via:?}"))
     })

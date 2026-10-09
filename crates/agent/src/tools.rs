@@ -24,10 +24,10 @@ use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::client_service_client::ClientServiceClient;
 use wire::{
-    Agent, AgentParent, AmbiguousAgentName, Attachment, BlobRef, CreateAgentRequest, Empty,
-    HostEntry, HostRef, Input, Interrupt, Kind, Lifecycle, PromptInput, PromptSubmission,
-    ResolveAgentRequest, SendInputRequest, SendMessageRequest, Trust, attachment, host_ref,
-    inventory_event, send_input_response,
+    Agent, AgentRef, AmbiguousAgentName, Attachment, BlobRef, CreateAgentRequest, Empty, HostEntry,
+    HostRef, Input, Interrupt, Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest,
+    SendInputRequest, SendMessageRequest, Trust, attachment, host_ref, inventory_event,
+    send_input_response,
 };
 
 use crate::dir;
@@ -239,7 +239,7 @@ impl Server {
                 .find(|host| host.host_id == id)
                 .map_or_else(|| interpret::to_hex(id), |host| host.name.clone())
         };
-        let agent_name = |parent: &AgentParent| {
+        let agent_name = |parent: &AgentRef| {
             agents
                 .iter()
                 .find(|agent| agent.agent_id == parent.agent_id)
@@ -310,7 +310,7 @@ impl Server {
         let recipient = self.resolve(&to).await?;
         let request = SendMessageRequest {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            to: Some(AgentParent {
+            to: Some(AgentRef {
                 host_id: recipient.host_id,
                 agent_id: recipient.agent_id,
             }),

@@ -12,7 +12,7 @@ use store::{AgentKey, AgentRow, Store as _, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
 use wire::{
-    AgentParent, AmbiguousHostName, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse,
+    AgentRef, AmbiguousHostName, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse,
     ErrorCode, ErrorDetail, HostEntry, HostRef, Trust, host_ref,
 };
 
@@ -89,7 +89,7 @@ impl ForwardError {
 pub(crate) fn forwarded_create(
     mut request: CreateAgentRequest,
     host: HostId,
-    parent: Option<AgentParent>,
+    parent: Option<AgentRef>,
 ) -> CreateAgentRequest {
     if parent.is_some() {
         request.parent = parent;

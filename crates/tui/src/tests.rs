@@ -954,8 +954,8 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
         wire::Presence::Online,
     );
     if let wire::inventory_event::Of::Host(entry) = &mut laptop {
-        entry.via = wire::HostVia::Unspecified as i32;
-        entry.signed_in = Some(false);
+        entry.via = wire::RouteKind::Unspecified as i32;
+        entry.account_signed_in = Some(false);
     }
     inventory(&mut fleet, laptop);
     let mut desk = host(
@@ -965,7 +965,7 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
         wire::Presence::Offline,
     );
     if let wire::inventory_event::Of::Host(entry) = &mut desk {
-        entry.signed_in = Some(true);
+        entry.account_signed_in = Some(true);
     }
     inventory(&mut fleet, desk);
 
@@ -1023,8 +1023,8 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
         wire::Presence::Online,
     );
     if let wire::inventory_event::Of::Host(entry) = &mut signed_in {
-        entry.via = wire::HostVia::Unspecified as i32;
-        entry.signed_in = Some(true);
+        entry.via = wire::RouteKind::Unspecified as i32;
+        entry.account_signed_in = Some(true);
     }
     inventory(&mut fleet, signed_in);
     view.reach = ui_view::reach(&fleet, b"laptop", b"host");
@@ -1055,8 +1055,8 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         wire::Presence::Offline,
     );
     if let wire::inventory_event::Of::Host(entry) = &mut desk {
-        entry.via = wire::HostVia::Unspecified as i32;
-        entry.signed_in = Some(false);
+        entry.via = wire::RouteKind::Unspecified as i32;
+        entry.account_signed_in = Some(false);
         entry.revoked = Some(true);
     }
     inventory(&mut fleet, desk);
@@ -1145,7 +1145,7 @@ fn host(
         name: name.into(),
         trust: trust as i32,
         presence: presence as i32,
-        via: wire::HostVia::Direct as i32,
+        via: wire::RouteKind::Direct as i32,
         ..Default::default()
     })
 }
@@ -1217,7 +1217,7 @@ fn agent_row(
         name: name.into(),
         lifecycle: wire::Lifecycle::Live as i32,
         phase: phase as i32,
-        parent: parent.map(|parent| wire::AgentParent {
+        parent: parent.map(|parent| wire::AgentRef {
             host_id: b"a".to_vec(),
             agent_id: parent.to_vec(),
         }),
@@ -1360,7 +1360,7 @@ fn working_tree_diff() -> wire::Diff {
             size: PATCH.len() as u64,
         }),
         base: Some(wire::DiffBase {
-            base: Some(wire::diff_base::Base::WorkingTree(wire::Empty {})),
+            base: Some(wire::diff_base::Base::Head(wire::Empty {})),
         }),
         head: "3f2a1c9e0000".into(),
         merge_base: None,
@@ -1545,7 +1545,7 @@ impl client::Client for DiffHost {
     async fn diff(&self, request: wire::DiffRequest) -> Result<wire::Diff, client::RpcError> {
         assert!(matches!(
             request.base.and_then(|base| base.base),
-            Some(wire::diff_base::Base::WorkingTree(_))
+            Some(wire::diff_base::Base::Head(_))
         ));
         self.asked.lock().unwrap().push("diff".into());
         Ok(working_tree_diff())
@@ -1646,7 +1646,7 @@ impl client::Client for DiffHost {
 async fn a_review_asks_for_the_working_tree_diff_then_its_patch() {
     let host = DiffHost::default();
     let base = wire::DiffBase {
-        base: Some(wire::diff_base::Base::WorkingTree(wire::Empty {})),
+        base: Some(wire::diff_base::Base::Head(wire::Empty {})),
     };
     let (diff, patch) = ui_runtime::review::review(&host, b"agent", base)
         .await
@@ -1839,7 +1839,7 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
         presence: wire::Presence::Online as i32,
         ..Default::default()
     }));
-    view.reach = ui_view::Reach::Online(wire::HostVia::Direct);
+    view.reach = ui_view::Reach::Online(wire::RouteKind::Direct);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     // Stopped is an ordinary end: the header says exited, and no more.
     let screen = text(&buffer);
@@ -3400,7 +3400,7 @@ fn the_overview_fetches_its_changed_files_once_per_comparison_and_totals() {
     view.open_pane();
     let (key, base) = view.wants_changes(&state).expect("asked on opening");
     assert_eq!(key.comparison, Comparison::Uncommitted);
-    assert!(matches!(base.base, Some(Base::WorkingTree(_))));
+    assert!(matches!(base.base, Some(Base::Head(_))));
     assert!(view.wants_changes(&state).is_none(), "asked once");
 
     assert!(view.switch_comparison(&state));
@@ -3439,7 +3439,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
         background_jobs: Some(wire::BackgroundJobs {
             known: true,
             jobs: vec![wire::BackgroundJob {
-                step: "k2".into(),
+                item_key: "k2".into(),
                 command: "npm run dev".into(),
                 started_at_ms: 0,
             }],
@@ -3448,12 +3448,12 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
             state: wire::UsageState::NearLimit as i32,
             windows: vec![
                 wire::ClaudeUsageWindow {
-                    limit: wire::ClaudeLimit::FiveHour as i32,
+                    limit: wire::Limit::FiveHour as i32,
                     meter: meter(91.0, wire::UsageState::NearLimit),
                     ..Default::default()
                 },
                 wire::ClaudeUsageWindow {
-                    limit: wire::ClaudeLimit::Weekly as i32,
+                    limit: wire::Limit::Weekly as i32,
                     model: Some("Fable".into()),
                     meter: meter(30.0, wire::UsageState::Ok),
                     ..Default::default()

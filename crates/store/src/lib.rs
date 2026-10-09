@@ -788,7 +788,7 @@ fn commit(
     for (offset, step) in frames {
         for item in &step.items {
             let mut item = item.clone();
-            item.agent = agent.agent.clone();
+            item.agent_id = agent.agent.clone();
             item.revision = row.next_revision;
             row.next_revision += 1;
             item.order = match tables.item(agent, &item.key)? {
@@ -812,7 +812,7 @@ fn commit(
             row.next_revision += 1;
             tables.put_item(agent, &held)?;
             committed.records.push(Record::Append(Append {
-                agent: agent.agent.clone(),
+                agent_id: agent.agent.clone(),
                 key: append.key.clone(),
                 base_revision,
                 revision: held.revision,
@@ -821,7 +821,7 @@ fn commit(
         }
         if let Some(snapshot) = &step.snapshot {
             let mut snapshot = snapshot.clone();
-            snapshot.agent = agent.agent.clone();
+            snapshot.agent_id = agent.agent.clone();
             snapshot.revision = row.next_revision;
             row.next_revision += 1;
             let was = row.phase;
@@ -915,7 +915,7 @@ fn upsert_newer(
         return Ok(false);
     }
     let mut item = item.clone();
-    item.agent = agent.agent.clone();
+    item.agent_id = agent.agent.clone();
     tables.put_item(agent, &item)?;
     Ok(true)
 }

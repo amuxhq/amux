@@ -32,8 +32,8 @@ use tokio::sync::{Notify, oneshot, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
-    Agent, AgentHello, AgentParent, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest,
-    CtlFrame, DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, ExitCause, Kind, Lifecycle,
+    Agent, AgentHello, AgentRef, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest, CtlFrame,
+    DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, ExitCause, Kind, Lifecycle,
     RemovalReason, Rename, SendInputResponse, Stop, StopMode, ctl_frame, inventory_event,
     session_event,
 };
@@ -803,7 +803,7 @@ impl ProfileRuntime {
             return Err(RegistryError::BadCwd(request.cwd));
         }
         let parent = match caller {
-            Some(caller) => Some(AgentParent {
+            Some(caller) => Some(AgentRef {
                 host_id: self.host.as_bytes().to_vec(),
                 agent_id: caller.as_bytes().to_vec(),
             }),
@@ -944,7 +944,7 @@ impl ProfileRuntime {
         request: CreateAgentRequest,
         caller: Option<AgentId>,
     ) -> Result<Agent, RegistryError> {
-        let parent = caller.map(|caller| AgentParent {
+        let parent = caller.map(|caller| AgentRef {
             host_id: self.host.as_bytes().to_vec(),
             agent_id: caller.as_bytes().to_vec(),
         });
@@ -2059,7 +2059,7 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         kind: row.kind,
         name: row.name.clone().unwrap_or_default(),
         cwd: row.cwd.clone(),
-        parent: row.parent.as_ref().map(|parent| AgentParent {
+        parent: row.parent.as_ref().map(|parent| AgentRef {
             host_id: parent.host.clone(),
             agent_id: parent.agent.clone(),
         }),

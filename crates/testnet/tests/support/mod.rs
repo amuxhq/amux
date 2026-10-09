@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use node::harness::HostVia;
+use node::harness::LiveRoute;
 use node::{Edge, Observed, RelayCarrier};
 use testnet::{HostDecl, Net, PATIENCE, until};
 use tonic::transport::Channel;
@@ -64,7 +64,7 @@ pub fn host_ref(host: Uuid) -> Option<HostRef> {
 }
 
 /// Waits until each host reaches the other over `via`.
-pub async fn until_via(net: &Net, a: &str, b: &str, via: HostVia) {
+pub async fn until_via(net: &Net, a: &str, b: &str, via: LiveRoute) {
     let (a_id, b_id) = (host_id(net, a), host_id(net, b));
     let (near, far) = (edge(net, a), edge(net, b));
     until(&format!("{a} and {b} to reach each other {via:?}"), || {

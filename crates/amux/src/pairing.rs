@@ -549,8 +549,8 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
     for peer in &paired {
         let reached = match hosts.iter().find(|host| host.host_id == peer.host_id) {
             Some(host) if host.presence() == wire::Presence::Online => match host.via() {
-                wire::HostVia::Relay => "online, through the relay",
-                wire::HostVia::Ssh => "online, over SSH",
+                wire::RouteKind::Relay => "online, through the relay",
+                wire::RouteKind::Ssh => "online, over SSH",
                 _ => "online, on this network",
             },
             Some(_) => "away",
@@ -819,7 +819,7 @@ mod tests {
             name: "studio".into(),
             trust: Trust::Trusted as i32,
             presence: wire::Presence::Online as i32,
-            via: wire::HostVia::Relay as i32,
+            via: wire::RouteKind::Relay as i32,
             ..HostEntry::default()
         };
         let nearby = HostEntry {

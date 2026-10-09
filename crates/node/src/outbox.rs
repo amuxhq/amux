@@ -22,7 +22,7 @@ use std::pin::Pin;
 
 use store::{Delivery, Notification, Store as _};
 use uuid::Uuid;
-use wire::{AgentParent, Envelope, ErrorCode, Lifecycle};
+use wire::{AgentRef, Envelope, ErrorCode, Lifecycle};
 
 use crate::forward::ForwardError;
 use crate::relay::{RelayError, delivery_envelope_id};
@@ -222,7 +222,7 @@ impl ProfileRuntime {
             id: delivery_envelope_id(&row),
             context: None,
             from: Some(self.agent_sender(child_id, child.as_ref())),
-            to: Some(AgentParent {
+            to: Some(AgentRef {
                 host_id: row.parent.host.clone(),
                 agent_id: row.parent.agent.clone(),
             }),

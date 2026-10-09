@@ -213,23 +213,25 @@ message is protobuf encoded after a big-endian `u32` byte length and is bounded
 by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
 
 - `Hello`: supported protocol versions, this host, the current neighbor
-  snapshot, the sender's incarnation, and an authentication token only for a
-  cloud link.
+  snapshot, the sender's runtime instance id, and an authentication token only
+  for a cloud link.
 - `HelloAck`: either the accepted version plus the acceptor's host, neighbor
-  snapshot and incarnation, or an error.
+  snapshot and runtime instance id, or an error.
 - `NeighborUp` and `NeighborDown`: adjacency deltas after the handshake.
 - `Reauth`: a fire-and-forget replacement token for a cloud link.
 - `LinkClose`: an immediate close with a reason and optional error.
 
-A link incarnation is 16 random bytes a host's runtime draws when it starts
-and keeps until it stops. A process that is killed or crashes closes nothing,
-so its peers keep its direct links until QUIC's idle timeout. When two direct
-links to the same host are live, the incarnations decide which stays:
+A runtime instance id is 16 random bytes a host's runtime draws when it
+starts and keeps until it stops; it is not an agent's incarnation, which
+counts that agent's process runs. A process that is killed or crashes closes
+nothing, so its peers keep its direct links until QUIC's idle timeout. When
+two direct links to the same host are live, the runtime instance ids decide
+which stays:
 
-- A link from a different incarnation than the one already held means the host
-  restarted. The held link is dead, and the later link takes its place
+- A link from a different runtime instance than the one already held means the
+  host restarted. The held link is dead, and the later link takes its place
   whichever direction either was dialled in.
-- Two links from the same incarnation are a crossed dial. Both peers keep the
+- Two links from the same runtime instance are a crossed dial. Both peers keep the
   link dialled by the lower host id and refuse the other. A second link in the
   same direction is refused too.
 
@@ -238,7 +240,7 @@ second before asking the local network for the peer again, so a refused link is
 not rediscovered and redialled in a loop.
 
 Versioning is equality, not feature negotiation: both peers must select
-`PROTOCOL_VERSION` (`crates/wire/src/lib.rs`, currently 4). A peer offering
+`PROTOCOL_VERSION` (`crates/wire/src/lib.rs`, currently 1). A peer offering
 no common version is closed with `VERSION_MISMATCH` and the error detail
 `ProtocolVersionMismatch`; clients show that host as "the other machine needs
 updating", never as a silent absence. A failed or expired cloud token closes

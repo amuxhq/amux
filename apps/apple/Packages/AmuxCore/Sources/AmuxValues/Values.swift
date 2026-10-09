@@ -1130,11 +1130,12 @@ public enum Away: String, Codable, Hashable, Sendable, CaseIterable {
 }
 
 public enum Base: Codable, Hashable, Sendable {
-    case workingTree(Empty)
+    /// From the folder's HEAD commit.
+    case head(Empty)
     case branch(String)
 
     private enum Tag: String, CodingKey {
-        case workingTree = "WorkingTree"
+        case head = "Head"
         case branch = "Branch"
     }
 
@@ -1147,8 +1148,8 @@ public enum Base: Codable, Hashable, Sendable {
                     debugDescription: "a Base names exactly one variant"))
         }
         switch _tag {
-        case .workingTree:
-            self = .workingTree(try _container.decode(Empty.self, forKey: .workingTree))
+        case .head:
+            self = .head(try _container.decode(Empty.self, forKey: .head))
         case .branch:
             self = .branch(try _container.decode(String.self, forKey: .branch))
         }
@@ -1156,9 +1157,9 @@ public enum Base: Codable, Hashable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
-        case .workingTree(let _value):
+        case .head(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .workingTree)
+            try _container.encode(_value, forKey: .head)
         case .branch(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .branch)
@@ -3170,13 +3171,6 @@ public struct Granted: Codable, Hashable, Sendable {
     }
 }
 
-public enum HostVia: String, Codable, Hashable, Sendable, CaseIterable {
-    case unspecified = "Unspecified"
-    case direct = "Direct"
-    case relay = "Relay"
-    case ssh = "Ssh"
-}
-
 /// A host in the fleet as a screen lists it.
 public struct HostView: Codable, Hashable, Sendable {
     public var hostId: [UInt8]
@@ -3916,9 +3910,9 @@ public struct PendingPair: Codable, Hashable, Sendable {
     public var fingerprint: String
     /// When the machine stops holding this attempt open.
     public var expiresAtMs: Int64
-    public var via: HostVia
+    public var via: RouteKind
 
-    public init(token: [UInt8], hostId: [UInt8], name: String, fingerprint: String, expiresAtMs: Int64, via: HostVia) {
+    public init(token: [UInt8], hostId: [UInt8], name: String, fingerprint: String, expiresAtMs: Int64, via: RouteKind) {
         self.token = token
         self.hostId = hostId
         self.name = name
@@ -3982,9 +3976,9 @@ public struct PermissionChoice: Codable, Hashable, Sendable {
 /// What a permission allowed from then on.
 public enum PermissionGrant: Codable, Hashable, Sendable {
     /// Claude's standing permission: what it allows ("cargo test", as on
-    /// the card), folders added, the permission it switched to, and where
-    /// it was saved.
-    case claude(subjects: [String], directories: [String], mode: String, modeName: String, savedTo: Scope)
+    /// the card), folders added, the permission it switched to, and the
+    /// grant's destination: where Claude keeps it.
+    case claude(subjects: [String], directories: [String], mode: String, modeName: String, destination: Scope)
     /// Codex: approvals like this one, for the rest of the session.
     case session
     /// Codex: commands starting with these words.
@@ -4003,7 +3997,7 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
         case directories
         case mode
         case modeName = "mode_name"
-        case savedTo = "saved_to"
+        case destination
     }
 
     private enum CommandPrefixKeys: String, CodingKey {
@@ -4042,7 +4036,7 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
                 directories: try _fields.decode([String].self, forKey: .directories),
                 mode: try _fields.decode(String.self, forKey: .mode),
                 modeName: try _fields.decode(String.self, forKey: .modeName),
-                savedTo: try _fields.decode(Scope.self, forKey: .savedTo))
+                destination: try _fields.decode(Scope.self, forKey: .destination))
         case .commandPrefix:
             let _fields = try _container.nestedContainer(
                 keyedBy: CommandPrefixKeys.self, forKey: .commandPrefix)
@@ -4058,14 +4052,14 @@ public enum PermissionGrant: Codable, Hashable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
-        case .claude(let subjects, let directories, let mode, let modeName, let savedTo):
+        case .claude(let subjects, let directories, let mode, let modeName, let destination):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: ClaudeKeys.self, forKey: .claude)
             try _fields.encode(subjects, forKey: .subjects)
             try _fields.encode(directories, forKey: .directories)
             try _fields.encode(mode, forKey: .mode)
             try _fields.encode(modeName, forKey: .modeName)
-            try _fields.encode(savedTo, forKey: .savedTo)
+            try _fields.encode(destination, forKey: .destination)
         case .session:
             var _container = encoder.singleValueContainer()
             try _container.encode("Session")
@@ -4328,7 +4322,7 @@ public struct QueuedRow: Codable, Hashable, Sendable {
 /// the host itself and for every agent on it.
 public enum Reach: Codable, Hashable, Sendable {
     /// A link stands, over this route; this machine's own host has none.
-    case online(HostVia)
+    case online(RouteKind)
     /// Out of reach for a reason this machine can name.
     case away(Away)
     /// Out of reach with no route, or not known to be reachable at all.
@@ -4360,7 +4354,7 @@ public enum Reach: Codable, Hashable, Sendable {
         }
         switch _tag {
         case .online:
-            self = .online(try _container.decode(HostVia.self, forKey: .online))
+            self = .online(try _container.decode(RouteKind.self, forKey: .online))
         case .away:
             self = .away(try _container.decode(Away.self, forKey: .away))
         }
@@ -4563,6 +4557,15 @@ public struct Roster: Codable, Hashable, Sendable {
         case identity
         case peers
     }
+}
+
+/// How this machine reaches a host, or how a pairing peer was reached. No
+/// value for "no route": Presence says offline.
+public enum RouteKind: String, Codable, Hashable, Sendable, CaseIterable {
+    case unspecified = "Unspecified"
+    case direct = "Direct"
+    case relay = "Relay"
+    case ssh = "Ssh"
 }
 
 public struct Row: Codable, Hashable, Sendable {

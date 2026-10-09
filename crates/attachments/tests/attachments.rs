@@ -79,7 +79,7 @@ fn every_arm() -> Vec<Attachment> {
         image(),
         file(),
         text(),
-        review(Some(Base::WorkingTree(Empty {})), None),
+        review(Some(Base::Head(Empty {})), None),
         review(Some(Base::Branch("main".into())), Some("9e465b2")),
         review(None, None),
     ]

@@ -47,7 +47,7 @@ message AgentSpec {
   string name = 5;
   // The inventory row's parent, host and id, so a child resumed from its
   // spec on one host still addresses a parent on another.
-  optional AgentParent parent = 6;
+  optional AgentRef parent = 6;
   // Exactly what the daemon resolved: model, permission mode, sandbox.
   repeated string provider_args = 7;
   map<string, string> provider_env = 8;

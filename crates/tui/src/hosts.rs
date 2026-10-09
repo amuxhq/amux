@@ -6,7 +6,7 @@
 use ratatui::text::{Line, Span};
 use ui_state::FleetState;
 use ui_view::{Away, Reach};
-use wire::{HostEntry, HostVia, Trust};
+use wire::{HostEntry, RouteKind, Trust};
 
 use crate::text::{self, pad_to};
 use crate::theme::Theme;
@@ -16,11 +16,11 @@ use crate::theme::Theme;
 /// no route.
 pub fn route(reach: Reach, local: bool) -> &'static str {
     match reach {
-        Reach::Online(HostVia::Direct) => "direct",
-        Reach::Online(HostVia::Relay) => "relay",
-        Reach::Online(HostVia::Ssh) => "ssh",
-        Reach::Online(HostVia::Unspecified) if local => "local",
-        Reach::Online(HostVia::Unspecified) => "online",
+        Reach::Online(RouteKind::Direct) => "direct",
+        Reach::Online(RouteKind::Relay) => "relay",
+        Reach::Online(RouteKind::Ssh) => "ssh",
+        Reach::Online(RouteKind::Unspecified) if local => "local",
+        Reach::Online(RouteKind::Unspecified) => "online",
         Reach::Away(_) => "away",
         Reach::Offline => "offline",
     }
@@ -37,8 +37,8 @@ pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> Stri
         Reach::Away(Away::Revoked) => parts.push("no longer trusts this machine".into()),
         Reach::Away(Away::SignedOut) => parts.push("this machine is signed out".into()),
         // Signing in matters only for reaching a host through the relay.
-        Reach::Online(HostVia::Relay) | Reach::Away(Away::Plain) | Reach::Offline
-            if entry.signed_in == Some(false) =>
+        Reach::Online(RouteKind::Relay) | Reach::Away(Away::Plain) | Reach::Offline
+            if entry.account_signed_in == Some(false) =>
         {
             parts.push("not signed in".into());
         }

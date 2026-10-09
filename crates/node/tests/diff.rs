@@ -84,7 +84,7 @@ fn request(agent: &SyntheticAgent, base: diff_base::Base, with_patch: bool) -> D
 }
 
 fn working_tree() -> diff_base::Base {
-    diff_base::Base::WorkingTree(wire::Empty {})
+    diff_base::Base::Head(wire::Empty {})
 }
 
 fn file(path: &str, added: u32, removed: u32, change: DiffFileChange) -> DiffFile {

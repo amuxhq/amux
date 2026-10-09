@@ -20,7 +20,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tonic::{Request, Response, Status};
 use wire::client_service_server::ClientService;
 use wire::{
-    Agent as Row, AgentParent, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
+    Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
     InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest, SendInputResponse,
     SendMessageRequest, SendMessageResponse, StopMode, Trust, inventory_event, send_input_response,
 };
@@ -406,7 +406,7 @@ fn fleet() -> Fleet {
     let mut reviewer = row(&REVIEWER, &STUDIO, "reviewer");
     reviewer.kind = Kind::Codex as i32;
     let mut child = row(&CHILD, &HERE, "helper");
-    child.parent = Some(AgentParent {
+    child.parent = Some(AgentRef {
         host_id: HERE.to_vec(),
         agent_id: ME.to_vec(),
     });
@@ -615,7 +615,7 @@ async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
     assert_eq!(envelope.context.as_deref(), Some(b"parser".as_slice()));
     assert_eq!(
         envelope.to,
-        Some(AgentParent {
+        Some(AgentRef {
             host_id: STUDIO.to_vec(),
             agent_id: REVIEWER.to_vec(),
         })

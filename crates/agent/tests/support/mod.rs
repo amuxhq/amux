@@ -15,9 +15,9 @@ use provider_fakes::{SCRIPT_ENV, Script, Step};
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::task::JoinHandle;
 use wire::{
-    AgentHello, AgentParent, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput,
-    ClaudeSdkItem, ClaudeSdkSnapshot, CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input,
-    Kind, Phase, PromptInput, Stop, StopMode, claude_pty_input, claude_pty_item, claude_sdk_input,
+    AgentHello, AgentRef, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
+    ClaudeSdkSnapshot, CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase,
+    PromptInput, Stop, StopMode, claude_pty_input, claude_pty_item, claude_sdk_input,
     claude_sdk_item, codex_input, codex_item, ctl_frame, send_input_response,
 };
 
@@ -319,7 +319,7 @@ impl Agent {
             kind: setup.kind as i32,
             cwd: work.to_str().unwrap().to_owned(),
             name: "test".into(),
-            parent: setup.parent.then(|| AgentParent {
+            parent: setup.parent.then(|| AgentRef {
                 host_id: vec![1; 16],
                 agent_id: vec![2; 16],
             }),

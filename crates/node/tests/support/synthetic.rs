@@ -216,7 +216,7 @@ impl SyntheticAgent {
             kind: KIND as i32,
             cwd: self.cwd.to_string_lossy().into_owned(),
             name: self.name.clone(),
-            parent: self.parent.as_ref().map(|parent| wire::AgentParent {
+            parent: self.parent.as_ref().map(|parent| wire::AgentRef {
                 host_id: parent.host.clone(),
                 agent_id: parent.agent.clone(),
             }),

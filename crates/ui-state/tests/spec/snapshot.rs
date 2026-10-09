@@ -17,7 +17,7 @@ fn strip_facts() -> (
         wire::ClaudeUsage {
             state: wire::UsageState::NearLimit as i32,
             windows: vec![wire::ClaudeUsageWindow {
-                limit: wire::ClaudeLimit::Weekly as i32,
+                limit: wire::Limit::Weekly as i32,
                 model: Some("Fable".into()),
                 provider_name: "seven_day_overage_included".into(),
                 meter: Some(wire::UsageMeter {
@@ -30,7 +30,7 @@ fn strip_facts() -> (
         wire::CodexUsage {
             state: wire::UsageState::Blocked as i32,
             windows: vec![wire::CodexUsageWindow {
-                limit: wire::CodexLimit::FiveHour as i32,
+                limit: wire::Limit::FiveHour as i32,
                 window_minutes: 300,
                 meter: Some(wire::UsageMeter {
                     used_percent: 100.0,
@@ -57,12 +57,12 @@ fn strip_facts() -> (
             known: true,
             jobs: vec![
                 wire::BackgroundJob {
-                    step: "t1".into(),
+                    item_key: "t1".into(),
                     command: "npm run dev".into(),
                     started_at_ms: 1_000,
                 },
                 wire::BackgroundJob {
-                    step: "t2".into(),
+                    item_key: "t2".into(),
                     command: "cargo watch".into(),
                     started_at_ms: 2_000,
                 },

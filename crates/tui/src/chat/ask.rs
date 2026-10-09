@@ -125,24 +125,24 @@ pub(crate) fn grant_words(granted: &PermissionGrant) -> String {
             directories,
             mode,
             mode_name,
-            saved_to,
+            destination,
         } => {
             if !subjects.is_empty() {
                 format!(
                     "always allowed {} {}",
                     subjects.join(", "),
-                    scope_words(saved_to)
+                    scope_words(destination)
                 )
             } else if !directories.is_empty() {
                 format!(
                     "allowed access to {} {}",
                     directories.join(", "),
-                    scope_words(saved_to)
+                    scope_words(destination)
                 )
             } else if !mode.is_empty() {
                 format!("switched to {}", crate::words::named(mode_name, mode))
             } else {
-                format!("always allowed {}", scope_words(saved_to))
+                format!("always allowed {}", scope_words(destination))
             }
         }
         PermissionGrant::Session => "allowed for this session".into(),

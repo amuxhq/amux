@@ -88,7 +88,7 @@ ROWS = [
     ),
     Row(
         "wire",
-        "session subscriptions and replay outcomes, terminal bytes over the network, summary inventory events, AgentRef and the duplicate client requests, agent kinds and Claude drivers, the test agent, artifact references, diff responses, Debug",
+        "session subscriptions and replay outcomes, terminal bytes over the network, summary inventory events, the old AgentRef and the duplicate client requests, agent kinds and Claude drivers, the test agent, artifact references, diff responses, Debug",
         [
             r"ReplayFacts",
             r"ReplayQuery",
@@ -99,7 +99,9 @@ ROWS = [
             r"ProtocolNotExposed|AgentProtocol([^A-Za-z_]|$)",
             r"StructuredRow",
             r"SessionControl",
-            r"AgentRef([^A-Za-z_]|$)",
+            # AgentRef is back on purpose: it names any agent by host and id,
+            # a message's recipient and an agent's parent alike, not the old
+            # duplicate reference.
             r"Client(CreateAgent|RenameAgent|DeleteAgent|SendMessage|SetAgentStatus|SubscribeSession|SendInput|PutArtifact|GetArtifact|Diff|ListRepositories)Request",
             r"ListHostsRequest|ListHostsResponse|ListAgentsRequest|ListAgentsResponse|rpc ListHosts|rpc ListAgents",
             r"SubscribeHosts|SubscribeAgentsRequest|SubscribeAgentsResponse|rpc SubscribeAgents|SubscribeAgentEvents",
@@ -498,6 +500,19 @@ ROWS = [
         "the chapter on agent messaging and remote sessions",
         [
             r"Chapter 7: Agent messaging and remote sessions",
+        ],
+    ),
+    Row(
+        "names the protocol renamed",
+        "per-provider and per-use copies of one vocabulary, and timestamp suffixes that said Unix twice",
+        [
+            r"AgentParent([^A-Za-z_]|$)",
+            r"HostVia([^A-Za-z_]|$)",
+            r"HOST_VIA_",
+            r"ClaudeLimit([^A-Za-z_]|$)",
+            r"CodexLimit([^A-Za-z_]|$)",
+            r"CLAUDE_LIMIT_|CODEX_LIMIT_",
+            r"_unix_ms",
         ],
     ),
 ]

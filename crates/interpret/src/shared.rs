@@ -456,7 +456,7 @@ impl<A: OpenAsk> Shared<A> {
             _ => self.now_ms,
         };
         let snapshot = Snapshot {
-            agent: self.agent.clone(),
+            agent_id: self.agent.clone(),
             revision: 0,
             queue: self.queue.entries.clone(),
             kind: self.kind,
@@ -554,7 +554,7 @@ impl<A: OpenAsk> Shared<A> {
                 .map_or(self.now_ms, |open| open.at_ms)
         });
         let item = Item {
-            agent: self.agent.clone(),
+            agent_id: self.agent.clone(),
             key: draft.key,
             order: 0,
             revision: 0,
@@ -593,7 +593,7 @@ impl<A: OpenAsk> Shared<A> {
             return true;
         }
         emit.step.appends.push(Append {
-            agent: self.agent.clone(),
+            agent_id: self.agent.clone(),
             key: key.to_owned(),
             base_revision: 0,
             revision: 0,
@@ -1025,8 +1025,32 @@ pub(crate) fn describe_usage_state(state: i32) -> &'static str {
     }
 }
 
+/// One usage window as goldens print it: its limit, with the one model a
+/// weekly window belongs to when it belongs to one, then its use and its
+/// state. `unnamed` labels a length this build has no word for, from what
+/// the provider said of it.
+pub(crate) fn describe_usage_window(
+    limit: wire::Limit,
+    model: Option<&str>,
+    unnamed: impl FnOnce() -> String,
+    meter: Option<wire::UsageMeter>,
+) -> String {
+    let label = match (limit, model) {
+        (wire::Limit::FiveHour, _) => "5h".to_owned(),
+        (wire::Limit::Weekly, None) => "7d".to_owned(),
+        (wire::Limit::Weekly, Some(model)) => format!("7d/{model}"),
+        (wire::Limit::Unspecified, _) => unnamed(),
+    };
+    let meter = meter.unwrap_or_default();
+    format!(
+        " {label}:{:.0}%({})",
+        meter.used_percent,
+        describe_usage_state(meter.state)
+    )
+}
+
 /// A background job list as goldens print it: `?` while unknown, else each
-/// job as its step, command and start time.
+/// job as the key of the item that started it, its command and start time.
 pub(crate) fn describe_jobs(jobs: Option<&wire::BackgroundJobs>) -> String {
     match jobs {
         Some(jobs) if jobs.known => format!(
@@ -1035,7 +1059,11 @@ pub(crate) fn describe_jobs(jobs: Option<&wire::BackgroundJobs>) -> String {
                 .iter()
                 .map(|job| format!(
                     "{}:{}@{}",
-                    if job.step.is_empty() { "-" } else { &job.step },
+                    if job.item_key.is_empty() {
+                        "-"
+                    } else {
+                        &job.item_key
+                    },
                     serde_json::Value::String(job.command.clone()),
                     job.started_at_ms
                 ))

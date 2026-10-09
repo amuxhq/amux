@@ -141,7 +141,7 @@ enum ComponentCatalog {
                 command: "cargo test -p amux-ui", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
                 durationMs: 12_000, exitCode: 0),
                 decision: Decision(outcome: .allowed, elsewhere: false, granted: .claude(
-                    subjects: ["cargo test"], directories: [], mode: "", modeName: "", savedTo: .project), note: nil))),
+                    subjects: ["cargo test"], directories: [], mode: "", modeName: "", destination: .project), note: nil))),
             row("command-allowed-prefix", r("x9", 14, .command(
                 command: "curl -s localhost:8080/health", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
                 durationMs: 300, exitCode: 0),

@@ -509,7 +509,7 @@ fn spec<I: Interpreter>(spec: &FixtureSpec) -> AgentSpec {
         created_at_ms: spec.created_at_ms,
         incarnation: 1,
         provider_args: spec.provider_args.clone(),
-        parent: spec.parent.then(|| wire::AgentParent {
+        parent: spec.parent.then(|| wire::AgentRef {
             host_id: b"parent-host".to_vec(),
             agent_id: b"parent".to_vec(),
         }),

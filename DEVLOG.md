@@ -1,3 +1,23 @@
+2026-10-09 — **One route vocabulary, one usage-limit vocabulary, and wire names that say what they hold.**
+How this machine reaches a host and how a pairing peer was reached are the
+same four answers, so a host entry's route is now a `RouteKind`, like a
+pending pairing's, and `HostVia` is gone; the phone mirrors `RouteKind`.
+Claude's and Codex's usage windows had identical limit enums, now one
+`Limit`, and the overview words a window from it in one place. Names that
+misled are renamed: a host-and-id reference to an agent is an `AgentRef`
+(it names a message's recipient as well as a parent); an item, append or
+snapshot names its agent as `agent_id`, like every other message; the link
+handshake's 16 random bytes are a `runtime_instance_id`, so `incarnation`
+means only an agent's process count; a host's `account_signed_in` is its
+cloud account, not a provider's sign-in; a background job names the
+`item_key` of the call that started it; and a diff from HEAD is the `head`
+base. An append extends text on any open item, as its comment now says.
+Every timestamp is `_ms`, Unix milliseconds, stated once at the top of
+records.proto. The phone's permission grant names where Claude keeps it as
+its `destination`, as the wire does. The daemon's own live-route enum,
+which also says offline, is `LiveRoute`, so it is not mistaken for the wire
+one.
+
 2026-10-09 — **The phone's bridge names a provider through the app runtime again.**
 Asking a host's catalogue by provider made the bridge crate depend on the
 wire crate directly, which the dependency policy refuses: the bridge is a C

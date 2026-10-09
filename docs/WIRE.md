@@ -107,7 +107,7 @@ message CreateAgentRequest {
   bytes agent_id = 1;
   optional HostRef host = 2;                  // absent: this host
   optional string name = 3;
-  optional AgentParent parent = 4;
+  optional AgentRef parent = 4;
   string cwd = 5;
   Kind kind = 6;
   bytes config = 7;                           // the kind's creation settings, encoded
@@ -244,7 +244,7 @@ frames them, the store keeps them and every stream carries them.
 
 ```proto
 message Item {
-  bytes agent = 1;
+  bytes agent_id = 1;
   string key = 2;             // from the interpreter
   uint64 order = 3;           // assigned once per key by the owning daemon
   uint64 revision = 4;        // assigned on every upsert by the owning daemon
@@ -252,7 +252,7 @@ message Item {
   bytes input_id = 6;         // on a prompt's reflection and an agent message
   string text = 7;            // the one appendable field
   repeated Attachment attachments = 8;
-  string kind = 9;            // claude_pty | claude_sdk | codex
+  Kind kind = 9;              // which per-kind item `body` holds
   bytes body = 10;            // the per-kind item, encoded
   int64 at_ms = 11;           // when it happened
 }
@@ -317,7 +317,7 @@ explicit unknown value until the interpreter learns it.
 Exactly one field is appendable: `Item.text`.
 
 ```proto
-message Append { bytes agent = 1; string key = 2; uint64 base_revision = 3;
+message Append { bytes agent_id = 1; string key = 2; uint64 base_revision = 3;
                  uint64 revision = 4; string text = 5; }
 ```
 
@@ -366,7 +366,7 @@ recovers when an append's base does not match the revision it holds.
 ```proto
 message SendMessageRequest {
   bytes id = 1;                 // the caller's, for dedupe
-  AgentParent to = 2;
+  AgentRef to = 2;
   string text = 3;
   optional bytes context = 4;
 }

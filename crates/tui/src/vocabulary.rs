@@ -266,7 +266,7 @@ fn home_rows(theme: Theme) -> Buffer {
             name: name.into(),
             trust: wire::Trust::Trusted as i32,
             presence: presence as i32,
-            via: wire::HostVia::Direct as i32,
+            via: wire::RouteKind::Direct as i32,
             ..Default::default()
         }));
     }
@@ -466,7 +466,7 @@ fn home_rows(theme: Theme) -> Buffer {
             exit_detail: exit_cause.and_then(|(_, detail)| detail.map(str::to_owned)),
             phase: phase as i32,
             phase_since_ms: NOW - minutes * MINUTE,
-            parent: parent.map(|parent| wire::AgentParent {
+            parent: parent.map(|parent| wire::AgentRef {
                 host_id: host.as_bytes().to_vec(),
                 agent_id: parent.as_bytes().to_vec(),
             }),
@@ -542,7 +542,7 @@ index 0000000..3333333
             size: patch.len() as u64,
         }),
         base: Some(wire::DiffBase {
-            base: Some(wire::diff_base::Base::WorkingTree(wire::Empty {})),
+            base: Some(wire::diff_base::Base::Head(wire::Empty {})),
         }),
         head: "0463fb2c".into(),
         merge_base: None,
@@ -1000,7 +1000,7 @@ fn row_sets() -> Vec<RowSet> {
                             directories: vec![],
                             mode: String::new(),
                             mode_name: String::new(),
-                            saved_to: Scope::Project,
+                            destination: Scope::Project,
                         }),
                         None,
                     ),
@@ -1979,14 +1979,14 @@ fn composers() -> Vec<(&'static str, &'static str, Composer, Reach, &'static str
             "composer_exited",
             "The exited composer: one Enter resumes the agent with the draft as its first prompt.",
             Composer::Resume,
-            Reach::Online(wire::HostVia::Direct),
+            Reach::Online(wire::RouteKind::Direct),
             "Carry on from the failing test.",
         ),
         (
             "composer_exited_empty",
             "The exited composer before anything is typed.",
             Composer::Resume,
-            Reach::Online(wire::HostVia::Direct),
+            Reach::Online(wire::RouteKind::Direct),
             "",
         ),
         (
@@ -2072,12 +2072,12 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
         known: true,
         jobs: vec![
             wire::BackgroundJob {
-                step: "t1".into(),
+                item_key: "t1".into(),
                 command: "npm run dev -- --port 5173".into(),
                 started_at_ms: now - 14 * MINUTE,
             },
             wire::BackgroundJob {
-                step: "t2".into(),
+                item_key: "t2".into(),
                 command: "cargo watch -x 'test -p ui-view'".into(),
                 started_at_ms: now - 40_000,
             },
@@ -2095,19 +2095,19 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
         state: NearLimit as i32,
         windows: vec![
             wire::ClaudeUsageWindow {
-                limit: wire::ClaudeLimit::FiveHour as i32,
+                limit: wire::Limit::FiveHour as i32,
                 model: None,
                 provider_name: "five_hour".into(),
                 meter: meter(91.0, now + 2 * HOUR, NearLimit),
             },
             wire::ClaudeUsageWindow {
-                limit: wire::ClaudeLimit::Weekly as i32,
+                limit: wire::Limit::Weekly as i32,
                 model: None,
                 provider_name: "seven_day".into(),
                 meter: meter(40.0, now + 72 * HOUR, Ok),
             },
             wire::ClaudeUsageWindow {
-                limit: wire::ClaudeLimit::Weekly as i32,
+                limit: wire::Limit::Weekly as i32,
                 model: Some("Fable".into()),
                 provider_name: "seven_day_overage_included".into(),
                 meter: meter(84.0, now + 72 * HOUR, NearLimit),
@@ -2118,12 +2118,12 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
         state: NearLimit as i32,
         windows: vec![
             wire::CodexUsageWindow {
-                limit: wire::CodexLimit::FiveHour as i32,
+                limit: wire::Limit::FiveHour as i32,
                 window_minutes: 300,
                 meter: meter(95.0, now + 3 * HOUR, NearLimit),
             },
             wire::CodexUsageWindow {
-                limit: wire::CodexLimit::Weekly as i32,
+                limit: wire::Limit::Weekly as i32,
                 window_minutes: 10_080,
                 meter: meter(30.0, now + 100 * HOUR, Ok),
             },

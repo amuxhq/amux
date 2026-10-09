@@ -1,7 +1,7 @@
 //! The fleet: hosts, agent rows and families from the inventory stream.
 
 use ui_state::{AgentKey, Attention, Connection, FleetMsg, FleetState};
-use wire::{Agent, AgentParent, HostEntry, InventoryEvent, Lifecycle, Phase, inventory_event};
+use wire::{Agent, AgentRef, HostEntry, InventoryEvent, Lifecycle, Phase, inventory_event};
 
 fn row(host: &str, id: &str, phase: Phase, parent: Option<(&str, &str)>) -> Agent {
     Agent {
@@ -11,7 +11,7 @@ fn row(host: &str, id: &str, phase: Phase, parent: Option<(&str, &str)>) -> Agen
         name: id.into(),
         lifecycle: Lifecycle::Live as i32,
         phase: phase as i32,
-        parent: parent.map(|(host, id)| AgentParent {
+        parent: parent.map(|(host, id)| AgentRef {
             host_id: host.as_bytes().to_vec(),
             agent_id: id.as_bytes().to_vec(),
         }),

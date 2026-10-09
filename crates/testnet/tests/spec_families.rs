@@ -22,7 +22,7 @@ use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
 use wire::client_service_server::ClientService as _;
 use wire::{
-    AgentParent, AgentSender, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, Envelope,
+    AgentRef, AgentSender, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, Envelope,
     EnvelopeKind, InventoryEvent, Kind, Lifecycle, Phase, Sender, claude_sdk_input,
     inventory_event, sender,
 };
@@ -70,7 +70,7 @@ fn question() -> Step {
 }
 
 /// A message as an agent's tool server submits it.
-fn message(id: &[u8], to: &AgentParent, text: &str) -> wire::SendMessageRequest {
+fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::SendMessageRequest {
     wire::SendMessageRequest {
         id: id.to_vec(),
         to: Some(to.clone()),
@@ -80,7 +80,7 @@ fn message(id: &[u8], to: &AgentParent, text: &str) -> wire::SendMessageRequest 
 }
 
 /// A message as a peer daemon forwards it, its sender stamped.
-fn envelope(id: &[u8], to: &AgentParent, text: &str) -> Envelope {
+fn envelope(id: &[u8], to: &AgentRef, text: &str) -> Envelope {
     Envelope {
         id: id.to_vec(),
         to: Some(to.clone()),
@@ -412,7 +412,7 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
     let mut peer = desk.peer(box_id).await.unwrap();
     let forged = peer
         .create_agent(CreateAgentRequest {
-            parent: Some(AgentParent {
+            parent: Some(AgentRef {
                 host_id: net.host("BOX").unwrap().host_id.as_bytes().to_vec(),
                 agent_id: Uuid::new_v4().as_bytes().to_vec(),
             }),

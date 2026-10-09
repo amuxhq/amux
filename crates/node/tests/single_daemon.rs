@@ -1492,7 +1492,7 @@ async fn retention_sweep() {
     use agent_dir::ManualClock;
     use node::StartOptions;
     use store::SweepStep;
-    use wire::AgentParent;
+    use wire::AgentRef;
 
     let say = |line: String| println!("{line}");
     let install = Install::new();
@@ -1696,7 +1696,7 @@ async fn retention_sweep() {
         .send_message(
             wire::SendMessageRequest {
                 id: b"after-retention".to_vec(),
-                to: Some(AgentParent {
+                to: Some(AgentRef {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),

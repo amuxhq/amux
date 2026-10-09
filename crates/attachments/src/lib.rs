@@ -197,7 +197,7 @@ pub fn element(attachment: &Attachment, path: Option<&Path>) -> String {
             let diff = review.diff.clone().unwrap_or_default();
             blob_attributes(&mut out, &diff.patch.unwrap_or_default());
             match diff.base.and_then(|base| base.base) {
-                Some(Base::WorkingTree(_)) => attribute(&mut out, "base", WORKING_TREE),
+                Some(Base::Head(_)) => attribute(&mut out, "base", WORKING_TREE),
                 Some(Base::Branch(branch)) => {
                     attribute(&mut out, "base", &format!("{BRANCH_PREFIX}{branch}"));
                 }
@@ -417,7 +417,7 @@ fn parse_element(text: &str, start: usize) -> Result<(Attachment, usize), Proble
             let patch = take_blob(&mut attributes)?;
             let base = match attributes.remove("base") {
                 None => None,
-                Some(base) if base == WORKING_TREE => Some(Base::WorkingTree(Empty {})),
+                Some(base) if base == WORKING_TREE => Some(Base::Head(Empty {})),
                 Some(base) => Some(Base::Branch(
                     base.strip_prefix(BRANCH_PREFIX)
                         .ok_or_else(|| Problem::BadAttribute("base".into()))?

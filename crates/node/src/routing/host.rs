@@ -14,7 +14,7 @@ pub(crate) const MAX_HOST_NAME_BYTES: usize = 256;
 /// the id alone whether a new link comes from the process it already has a
 /// link to. A killed or crashed process closes nothing, and its links look
 /// healthy until they idle out. Every link handshake carries the sender's
-/// incarnation, and a different one proves the older links are dead.
+/// runtime instance id, and a different one proves the older links are dead.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) struct Incarnation(Uuid);
 
@@ -28,9 +28,12 @@ impl Incarnation {
     }
 
     pub(crate) fn from_wire(bytes: &[u8]) -> Result<Self, String> {
-        Uuid::from_slice(bytes)
-            .map(Self)
-            .map_err(|_| format!("incarnation must be 16 bytes, got {}", bytes.len()))
+        Uuid::from_slice(bytes).map(Self).map_err(|_| {
+            format!(
+                "a runtime instance id must be 16 bytes, got {}",
+                bytes.len()
+            )
+        })
     }
 }
 

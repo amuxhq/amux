@@ -13,7 +13,7 @@ use ui_view::{
     ChangeTotals, ComposerView, ContextView, ControlsSummary, QueuedRow, Reach, RefusedPrompt,
     SentPrompt, SignInView, ToolRows,
 };
-use wire::{BlobRef, HostVia, Kind};
+use wire::{BlobRef, Kind, RouteKind};
 
 /// What an embedded runtime starts from.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -457,7 +457,7 @@ pub struct PendingPair {
     pub fingerprint: String,
     /// When the machine stops holding this attempt open.
     pub expires_at_ms: i64,
-    pub via: HostVia,
+    pub via: RouteKind,
 }
 
 /// This device as the machines it pairs with know it.

@@ -961,7 +961,8 @@ fn accept_peer_hello(
             host.id
         )));
     }
-    let incarnation = Incarnation::from_wire(&hello.incarnation).map_err(invalid_argument_error)?;
+    let incarnation =
+        Incarnation::from_wire(&hello.runtime_instance_id).map_err(invalid_argument_error)?;
     Ok((host, neighbors_from_wire(hello.neighbors)?, incarnation))
 }
 
@@ -995,7 +996,7 @@ fn accept_peer_hello_ack(
         ));
     }
     let incarnation =
-        Incarnation::from_wire(&accepted.incarnation).map_err(invalid_argument_error)?;
+        Incarnation::from_wire(&accepted.runtime_instance_id).map_err(invalid_argument_error)?;
     Ok((host, neighbors_from_wire(accepted.neighbors)?, incarnation))
 }
 
@@ -1009,7 +1010,7 @@ fn connector_hello(ctx: &LinkCtx, snapshot: &[Host]) -> wire::pb::Message {
                 .connector_auth
                 .as_ref()
                 .map(|auth| auth.token.token.clone()),
-            incarnation: ctx.local_host.incarnation().to_wire(),
+            runtime_instance_id: ctx.local_host.incarnation().to_wire(),
         })),
     }
 }
@@ -1026,7 +1027,7 @@ fn accepted_hello_ack(ctx: &LinkCtx, snapshot: &[Host], peer: HostId) -> wire::p
                         .filter(|host| host.id != peer)
                         .map(host_to_wire)
                         .collect(),
-                    incarnation: ctx.local_host.incarnation().to_wire(),
+                    runtime_instance_id: ctx.local_host.incarnation().to_wire(),
                 },
             )),
         })),
@@ -1335,7 +1336,7 @@ mod tests {
                     host: Some(host_to_wire(peer)),
                     neighbors: Vec::new(),
                     auth_token: auth_token.map(str::to_string),
-                    incarnation: crate::routing::Incarnation::random().to_wire(),
+                    runtime_instance_id: crate::routing::Incarnation::random().to_wire(),
                 })),
             },
         )
@@ -1482,7 +1483,7 @@ mod tests {
                     host: Some(host_to_wire(&peer)),
                     neighbors: Vec::new(),
                     auth_token: None,
-                    incarnation: crate::routing::Incarnation::random().to_wire(),
+                    runtime_instance_id: crate::routing::Incarnation::random().to_wire(),
                 })),
             },
         )
@@ -1586,7 +1587,7 @@ mod tests {
                     host: Some(host_to_wire(&origin)),
                     neighbors: Vec::new(),
                     auth_token: None,
-                    incarnation: crate::routing::Incarnation::random().to_wire(),
+                    runtime_instance_id: crate::routing::Incarnation::random().to_wire(),
                 })),
             },
         )

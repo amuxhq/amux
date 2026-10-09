@@ -209,15 +209,15 @@ public enum ChatWords {
     /// What an allowance granted beyond the one call.
     public static func grant(_ grant: PermissionGrant) -> String {
         switch grant {
-        case .claude(let subjects, let directories, _, let modeName, let savedTo):
+        case .claude(let subjects, let directories, _, let modeName, let destination):
             if !subjects.isEmpty {
-                String(localized: "always \(subjects.joined(separator: ", ")) \(scope(savedTo))")
+                String(localized: "always \(subjects.joined(separator: ", ")) \(scope(destination))")
             } else if !directories.isEmpty {
-                String(localized: "access to \(directories.joined(separator: ", ")) \(scope(savedTo))")
+                String(localized: "access to \(directories.joined(separator: ", ")) \(scope(destination))")
             } else if !modeName.isEmpty {
                 String(localized: "switched to \(modeName)")
             } else {
-                String(localized: "always \(scope(savedTo))")
+                String(localized: "always \(scope(destination))")
             }
         case .session: String(localized: "this session")
         case .commandPrefix(let words):

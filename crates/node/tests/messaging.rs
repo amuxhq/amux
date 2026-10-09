@@ -19,7 +19,7 @@ use support::*;
 use tonic::{Code, Request};
 use wire::client_service_server::ClientService as _;
 use wire::{
-    AgentParent, ClaudeSdkInput, DeleteAgentRequest, EnvelopeKind, Input, Lifecycle, PromptInput,
+    AgentRef, ClaudeSdkInput, DeleteAgentRequest, EnvelopeKind, Input, Lifecycle, PromptInput,
     RenameAgentRequest, SendInputRequest, SendInputResponse, SendMessageRequest, StopAgentRequest,
     StopMode, claude_sdk_input, send_input_response, sender,
 };
@@ -80,8 +80,8 @@ fn verdict(response: &SendInputResponse) -> String {
     }
 }
 
-fn to(agent: &SyntheticAgent, install: &Install) -> Option<AgentParent> {
-    Some(AgentParent {
+fn to(agent: &SyntheticAgent, install: &Install) -> Option<AgentRef> {
+    Some(AgentRef {
         host_id: host(install).as_bytes().to_vec(),
         agent_id: agent.id.as_bytes().to_vec(),
     })
@@ -1076,7 +1076,7 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
 
     let envelope = SendMessageRequest {
         id: b"follow-up".to_vec(),
-        to: Some(AgentParent {
+        to: Some(AgentRef {
             host_id: runtime.host().as_bytes().to_vec(),
             agent_id: child.as_bytes().to_vec(),
         }),
@@ -1117,7 +1117,7 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         .send_message(
             SendMessageRequest {
                 id: b"stranger".to_vec(),
-                to: Some(AgentParent {
+                to: Some(AgentRef {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),

@@ -23,12 +23,12 @@ use codex_protocol::{
 };
 use serde_json::Value;
 use wire::{
-    AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexLimit, CodexUsage, CodexUsageWindow,
-    CommandApproval, Decision, DecisionOutcome, FileChangeApproval, FormAsk, LinkAsk,
-    McpToolApproval, ModelSwitch, OfferedCommand, OfferedModel, Question, QuestionAsk,
-    QuestionOption, ReviewerVerdict, SignIn, SignInState, TaskListStatus, ToolClass, ToolDecision,
-    ToolServer, ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter,
-    UsageState, Work, codex_ask, codex_item, work,
+    AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexUsage, CodexUsageWindow, CommandApproval,
+    Decision, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
+    ModelSwitch, OfferedCommand, OfferedModel, Question, QuestionAsk, QuestionOption,
+    ReviewerVerdict, SignIn, SignInState, TaskListStatus, ToolClass, ToolDecision, ToolServer,
+    ToolServerHealth, ToolServerStatus, ToolState, Turn, TurnOutcome, UsageMeter, UsageState, Work,
+    codex_ask, codex_item, work,
 };
 
 use super::{
@@ -592,7 +592,7 @@ impl State {
         let now = self.shared.now_ms();
         listed.extend(page.data.iter().map(|terminal| {
             BackgroundJob {
-                step: terminal.item_id.clone(),
+                item_key: terminal.item_id.clone(),
                 command: terminal.command.clone(),
                 started_at_ms: self
                     .works
@@ -611,9 +611,9 @@ impl State {
     /// A command Codex ran in the background finished: it leaves the list.
     fn job_ended(&mut self, key: &str) {
         let jobs = self.shared.jobs();
-        if jobs.known && jobs.jobs.iter().any(|job| job.step == key) {
+        if jobs.known && jobs.jobs.iter().any(|job| job.item_key == key) {
             let mut jobs = jobs.jobs;
-            jobs.retain(|job| job.step != key);
+            jobs.retain(|job| job.item_key != key);
             self.shared.set_jobs(jobs);
         }
     }
@@ -2225,9 +2225,9 @@ fn codex_usage(limits: &RateLimitSnapshot) -> CodexUsage {
             let used = window.used_percent as f64;
             CodexUsageWindow {
                 limit: match minutes {
-                    300 => CodexLimit::FiveHour,
-                    10_080 => CodexLimit::Weekly,
-                    _ => CodexLimit::Unspecified,
+                    300 => Limit::FiveHour,
+                    10_080 => Limit::Weekly,
+                    _ => Limit::Unspecified,
                 } as i32,
                 window_minutes: minutes,
                 meter: Some(UsageMeter {

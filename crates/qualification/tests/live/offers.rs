@@ -45,7 +45,7 @@ fn windows(kind: Kind, log: &Log) -> Vec<String> {
             .windows
             .iter()
             .map(|window| match window.limit() {
-                wire::ClaudeLimit::Unspecified => window.provider_name.clone(),
+                wire::Limit::Unspecified => window.provider_name.clone(),
                 limit => limit.as_str_name().to_owned(),
             })
             .collect(),

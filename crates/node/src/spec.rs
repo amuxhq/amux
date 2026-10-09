@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use prost::Message as _;
 use wire::{
-    AgentParent, AgentSpec, Bootstrap, Catalogue, ClaudeCreateConfig, CodexCreateConfig,
+    AgentRef, AgentSpec, Bootstrap, Catalogue, ClaudeCreateConfig, CodexCreateConfig,
     EffectiveConfig, Kind, PromptSubmission, bootstrap,
 };
 
@@ -140,7 +140,7 @@ pub struct Incarnation<'a> {
     pub kind: Kind,
     pub cwd: &'a str,
     pub name: &'a str,
-    pub parent: Option<AgentParent>,
+    pub parent: Option<AgentRef>,
     pub resolved: &'a Resolved,
     pub created_at_ms: i64,
     pub incarnation: u32,

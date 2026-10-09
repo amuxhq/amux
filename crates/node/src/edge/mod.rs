@@ -43,7 +43,7 @@ use crate::identity::{DeviceIdentity, IdentityError};
 use crate::link::{CarrierKind, ChannelPool, MuxCarrier, MuxRole, run_link, serve_inbound_streams};
 use crate::pairing::PairMode;
 use crate::routing::{
-    Capabilities, ConnectRole, HostVia, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost,
+    Capabilities, ConnectRole, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute,
     RoutingCore, local_host,
 };
 use crate::runtime::ProfileRuntime;
@@ -512,7 +512,7 @@ impl Edge {
     }
 
     /// How new calls to a host go now.
-    pub async fn via(&self, host: HostId) -> HostVia {
+    pub async fn via(&self, host: HostId) -> LiveRoute {
         self.connections.via_for(host).await
     }
 
@@ -562,7 +562,7 @@ impl Edge {
     pub async fn wait_for_route(&self, host: HostId, timeout: Duration) -> bool {
         tokio::time::timeout(timeout, async {
             loop {
-                if self.via(host).await != HostVia::Offline {
+                if self.via(host).await != LiveRoute::Offline {
                     return;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;

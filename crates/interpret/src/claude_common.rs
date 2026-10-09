@@ -12,10 +12,10 @@ use claude_protocol::stream::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeLimit, ClaudeUsage,
-    DecisionOutcome, OfferedCommand, OfferedModel, OfferedPermission, Question, QuestionAsk,
-    QuestionOption, ScopeChoice, ScopeDestination, TaskList, TaskListEntry, TaskListStatus,
-    ToolCall, ToolClass, ToolState, UsageState, attachment, codex_grant, tool_decision,
+    Ask, Attachment, BackgroundJob, BlobRef, ClaudeGrant, ClaudeUsage, DecisionOutcome, Limit,
+    OfferedCommand, OfferedModel, OfferedPermission, Question, QuestionAsk, QuestionOption,
+    ScopeChoice, ScopeDestination, TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass,
+    ToolState, UsageState, attachment, codex_grant, tool_decision,
 };
 
 use crate::Effect;
@@ -405,13 +405,13 @@ pub(crate) struct BackgroundInput {
 /// Which limit a usage window Claude names is: five-hour, weekly, or weekly
 /// for one model, named as Claude's own labels name it. None for a window
 /// amux does not recognise.
-pub(crate) fn claude_limit(name: &str) -> Option<(ClaudeLimit, Option<&'static str>)> {
+pub(crate) fn claude_limit(name: &str) -> Option<(Limit, Option<&'static str>)> {
     Some(match name {
-        "five_hour" => (ClaudeLimit::FiveHour, None),
-        "seven_day" => (ClaudeLimit::Weekly, None),
-        "seven_day_opus" => (ClaudeLimit::Weekly, Some("Opus")),
-        "seven_day_sonnet" => (ClaudeLimit::Weekly, Some("Sonnet")),
-        "seven_day_overage_included" => (ClaudeLimit::Weekly, Some("Fable")),
+        "five_hour" => (Limit::FiveHour, None),
+        "seven_day" => (Limit::Weekly, None),
+        "seven_day_opus" => (Limit::Weekly, Some("Opus")),
+        "seven_day_sonnet" => (Limit::Weekly, Some("Sonnet")),
+        "seven_day_overage_included" => (Limit::Weekly, Some("Fable")),
         _ => return None,
     })
 }
@@ -424,17 +424,11 @@ pub(crate) fn describe_claude_usage(usage: &ClaudeUsage) -> String {
     }
     let mut text = crate::shared::describe_usage_state(usage.state).to_owned();
     for window in &usage.windows {
-        let label = match (window.limit(), &window.model) {
-            (ClaudeLimit::FiveHour, _) => "5h".to_owned(),
-            (ClaudeLimit::Weekly, None) => "7d".to_owned(),
-            (ClaudeLimit::Weekly, Some(model)) => format!("7d/{model}"),
-            (ClaudeLimit::Unspecified, _) => format!("{}?", window.provider_name),
-        };
-        let meter = window.meter.unwrap_or_default();
-        text.push_str(&format!(
-            " {label}:{:.0}%({})",
-            meter.used_percent,
-            crate::shared::describe_usage_state(meter.state)
+        text.push_str(&crate::shared::describe_usage_window(
+            window.limit(),
+            window.model.as_deref(),
+            || format!("{}?", window.provider_name),
+            window.meter,
         ));
     }
     text
@@ -531,7 +525,7 @@ impl Jobs {
             .iter()
             .filter_map(|id| self.jobs.get(id))
             .map(|job| BackgroundJob {
-                step: job.step.clone(),
+                item_key: job.step.clone(),
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
             })

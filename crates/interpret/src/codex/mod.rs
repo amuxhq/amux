@@ -1946,16 +1946,11 @@ fn describe_codex_usage(usage: &wire::CodexUsage) -> String {
     }
     let mut text = crate::shared::describe_usage_state(usage.state).to_owned();
     for window in &usage.windows {
-        let label = match window.limit() {
-            wire::CodexLimit::FiveHour => "5h".to_owned(),
-            wire::CodexLimit::Weekly => "7d".to_owned(),
-            wire::CodexLimit::Unspecified => format!("{}m?", window.window_minutes),
-        };
-        let meter = window.meter.unwrap_or_default();
-        text.push_str(&format!(
-            " {label}:{:.0}%({})",
-            meter.used_percent,
-            crate::shared::describe_usage_state(meter.state)
+        text.push_str(&crate::shared::describe_usage_window(
+            window.limit(),
+            None,
+            || format!("{}m?", window.window_minutes),
+            window.meter,
         ));
     }
     if let Some(credits) = &usage.credits {

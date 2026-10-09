@@ -183,7 +183,7 @@ impl AppRuntime {
                 version: host.version.clone(),
                 last_dial_error: host.last_dial_error.clone(),
                 addrs: host.addrs.clone(),
-                signed_in: host.signed_in,
+                signed_in: host.account_signed_in,
                 current: host.current.unwrap_or(false),
                 providers: host
                     .providers

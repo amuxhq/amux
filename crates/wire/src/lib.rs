@@ -332,9 +332,9 @@ mod tests {
             .find(|field| field.name() == "parent")
             .expect("AgentSpec.parent");
         assert_eq!(parent.number(), 6);
-        assert_eq!(parent.type_name(), ".amux.v1.AgentParent");
+        assert_eq!(parent.type_name(), ".amux.v1.AgentRef");
         assert_eq!(
-            fields(&messages["AgentParent"]),
+            fields(&messages["AgentRef"]),
             BTreeMap::from([("host_id", 1), ("agent_id", 2)])
         );
     }

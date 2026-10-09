@@ -41,9 +41,9 @@ use tonic::Request;
 use wire::profile_service_server::ProfileService as _;
 use wire::{
     BeginPairRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, Empty,
-    HostRef, HostVia, Intent, Observed, PeerEntry, PendingPairRequest, ProfileInfo, ProfileRequest,
-    RouteKind, StartPairingRequest, Tier, UnpairRequest, begin_pair_request, host_ref,
-    pairing_window, profile_event, start_pairing_request,
+    HostRef, Intent, Observed, PeerEntry, PendingPairRequest, ProfileInfo, ProfileRequest,
+    StartPairingRequest, Tier, UnpairRequest, begin_pair_request, host_ref, pairing_window,
+    profile_event, start_pairing_request,
 };
 
 /// What a test or a driving build changes about the network edge.
@@ -516,12 +516,7 @@ impl EmbeddedRuntime {
             .begin_pair(Request::new(pairing))
             .await?
             .into_inner();
-        let via = match pending.via() {
-            RouteKind::Direct => HostVia::Direct,
-            RouteKind::Relay => HostVia::Relay,
-            RouteKind::Ssh => HostVia::Ssh,
-            RouteKind::Unspecified => HostVia::Unspecified,
-        };
+        let via = pending.via();
         let peer = pending.peer.unwrap_or_default();
         Ok(PendingPair {
             token: pending.token,

@@ -520,7 +520,7 @@ async fn the_own_entry_carries_this_profiles_sign_in() {
         .await
         .unwrap();
     let own = |events: &[InventoryEvent]| {
-        host_named(&net, &inventory_hosts(events), "laptop").map(|entry| entry.signed_in)
+        host_named(&net, &inventory_hosts(events), "laptop").map(|entry| entry.account_signed_in)
     };
     let mut fleet = net.observe_inventory("laptop").await.unwrap();
     let opening = fleet
@@ -891,7 +891,7 @@ async fn a_peer_that_revokes_trust_over_the_relay_is_listed_as_having_revoked_it
     // rides on.
     assert_eq!(
         net.edge("tablet").unwrap().via(desk_id).await,
-        node::harness::HostVia::Relay
+        node::harness::LiveRoute::Relay
     );
 
     net.trust("desk", "tablet").await.unwrap();

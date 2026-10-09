@@ -12,22 +12,23 @@ impl ::prost::Name for Empty {
         "/amux.v1.Empty".into()
     }
 }
-/// A parent may live on another host, so a parent is a host and an id.
+/// An agent anywhere in the fleet: the host it lives on and its id. A
+/// message's recipient and an agent's parent are both one.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AgentParent {
+pub struct AgentRef {
     #[prost(bytes = "vec", tag = "1")]
     pub host_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
 }
-impl ::prost::Name for AgentParent {
-    const NAME: &'static str = "AgentParent";
+impl ::prost::Name for AgentRef {
+    const NAME: &'static str = "AgentRef";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AgentParent".into()
+        "amux.v1.AgentRef".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.AgentParent".into()
+        "/amux.v1.AgentRef".into()
     }
 }
 /// An agent message. `from` is set by the daemon from the caller's identity;
@@ -41,7 +42,7 @@ pub struct Envelope {
     #[prost(message, optional, tag = "3")]
     pub from: ::core::option::Option<Sender>,
     #[prost(message, optional, tag = "4")]
-    pub to: ::core::option::Option<AgentParent>,
+    pub to: ::core::option::Option<AgentRef>,
     #[prost(enumeration = "EnvelopeKind", tag = "5")]
     pub kind: i32,
     #[prost(string, tag = "6")]
@@ -150,7 +151,7 @@ impl ::prost::Name for Step {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Item {
     #[prost(bytes = "vec", tag = "1")]
-    pub agent: ::prost::alloc::vec::Vec<u8>,
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub key: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
@@ -189,12 +190,12 @@ impl ::prost::Name for Item {
         "/amux.v1.Item".into()
     }
 }
-/// The one delta: extends `text` on the newest item. Sent only live, after
+/// The one delta: extends `text` on an open item. Sent only live, after
 /// CaughtUp; a base mismatch makes the client Get the item.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Append {
     #[prost(bytes = "vec", tag = "1")]
-    pub agent: ::prost::alloc::vec::Vec<u8>,
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub key: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
@@ -220,7 +221,7 @@ impl ::prost::Name for Append {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
     #[prost(bytes = "vec", tag = "1")]
-    pub agent: ::prost::alloc::vec::Vec<u8>,
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint64, tag = "2")]
     pub revision: u64,
     #[prost(message, repeated, tag = "3")]
@@ -500,8 +501,9 @@ pub mod diff_base {
     #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Base {
+        /// From the folder's HEAD commit.
         #[prost(message, tag = "1")]
-        WorkingTree(super::Empty),
+        Head(super::Empty),
         #[prost(string, tag = "2")]
         Branch(::prost::alloc::string::String),
     }
@@ -1653,7 +1655,7 @@ impl ::prost::Name for ClaudeUsage {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClaudeUsageWindow {
-    #[prost(enumeration = "ClaudeLimit", tag = "1")]
+    #[prost(enumeration = "Limit", tag = "1")]
     pub limit: i32,
     /// Set for a limit that belongs to one model.
     #[prost(string, optional, tag = "2")]
@@ -1697,7 +1699,7 @@ impl ::prost::Name for CodexUsage {
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CodexUsageWindow {
     /// Named from the window's length.
-    #[prost(enumeration = "CodexLimit", tag = "1")]
+    #[prost(enumeration = "Limit", tag = "1")]
     pub limit: i32,
     /// The only description Codex gives of a window.
     #[prost(uint32, tag = "2")]
@@ -1799,7 +1801,7 @@ pub struct BackgroundJob {
     /// The key of the item whose call started the job; empty when the
     /// provider has not said which call it was.
     #[prost(string, tag = "1")]
-    pub step: ::prost::alloc::string::String,
+    pub item_key: ::prost::alloc::string::String,
     /// The command, or what the provider calls the task.
     #[prost(string, tag = "2")]
     pub command: ::prost::alloc::string::String,
@@ -2752,60 +2754,32 @@ impl UsageState {
         }
     }
 }
+/// A usage window's length, the same for every provider.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum ClaudeLimit {
+pub enum Limit {
     Unspecified = 0,
     FiveHour = 1,
     Weekly = 2,
 }
-impl ClaudeLimit {
+impl Limit {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::Unspecified => "CLAUDE_LIMIT_UNSPECIFIED",
-            Self::FiveHour => "CLAUDE_LIMIT_FIVE_HOUR",
-            Self::Weekly => "CLAUDE_LIMIT_WEEKLY",
+            Self::Unspecified => "LIMIT_UNSPECIFIED",
+            Self::FiveHour => "LIMIT_FIVE_HOUR",
+            Self::Weekly => "LIMIT_WEEKLY",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "CLAUDE_LIMIT_UNSPECIFIED" => Some(Self::Unspecified),
-            "CLAUDE_LIMIT_FIVE_HOUR" => Some(Self::FiveHour),
-            "CLAUDE_LIMIT_WEEKLY" => Some(Self::Weekly),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum CodexLimit {
-    Unspecified = 0,
-    FiveHour = 1,
-    Weekly = 2,
-}
-impl CodexLimit {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "CODEX_LIMIT_UNSPECIFIED",
-            Self::FiveHour => "CODEX_LIMIT_FIVE_HOUR",
-            Self::Weekly => "CODEX_LIMIT_WEEKLY",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "CODEX_LIMIT_UNSPECIFIED" => Some(Self::Unspecified),
-            "CODEX_LIMIT_FIVE_HOUR" => Some(Self::FiveHour),
-            "CODEX_LIMIT_WEEKLY" => Some(Self::Weekly),
+            "LIMIT_UNSPECIFIED" => Some(Self::Unspecified),
+            "LIMIT_FIVE_HOUR" => Some(Self::FiveHour),
+            "LIMIT_WEEKLY" => Some(Self::Weekly),
             _ => None,
         }
     }
@@ -4383,7 +4357,7 @@ pub struct AgentSpec {
     /// The inventory row's parent, host and id, so a child resumed from its
     /// spec on one host still addresses a parent on another.
     #[prost(message, optional, tag = "6")]
-    pub parent: ::core::option::Option<AgentParent>,
+    pub parent: ::core::option::Option<AgentRef>,
     /// Exactly what the daemon resolved: model, permission mode, sandbox.
     #[prost(string, repeated, tag = "7")]
     pub provider_args: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -5013,11 +4987,11 @@ pub struct Hello {
     #[prost(string, optional, tag = "4")]
     pub auth_token: ::core::option::Option<::prost::alloc::string::String>,
     /// 16 random bytes drawn when the sender's runtime starts and kept for its
-    /// life. A link that arrives carrying a different incarnation than an
-    /// earlier link from the same host proves that earlier link belongs to a
-    /// process that no longer exists, however healthy it still looks.
+    /// life. A link that arrives carrying a different runtime instance id than
+    /// an earlier link from the same host proves that earlier link belongs to
+    /// a process that no longer exists, however healthy it still looks.
     #[prost(bytes = "vec", tag = "5")]
-    pub incarnation: ::prost::alloc::vec::Vec<u8>,
+    pub runtime_instance_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for Hello {
     const NAME: &'static str = "Hello";
@@ -5062,9 +5036,9 @@ pub struct HelloAccepted {
     pub host: ::core::option::Option<Host>,
     #[prost(message, repeated, tag = "3")]
     pub neighbors: ::prost::alloc::vec::Vec<Host>,
-    /// The acceptor's incarnation; see `Hello.incarnation`.
+    /// The acceptor's; see `Hello.runtime_instance_id`.
     #[prost(bytes = "vec", tag = "4")]
-    pub incarnation: ::prost::alloc::vec::Vec<u8>,
+    pub runtime_instance_id: ::prost::alloc::vec::Vec<u8>,
 }
 impl ::prost::Name for HelloAccepted {
     const NAME: &'static str = "HelloAccepted";
@@ -5207,7 +5181,7 @@ pub struct Host {
     #[prost(string, optional, tag = "5")]
     pub platform: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(bool, optional, tag = "6")]
-    pub signed_in: ::core::option::Option<bool>,
+    pub account_signed_in: ::core::option::Option<bool>,
 }
 impl ::prost::Name for Host {
     const NAME: &'static str = "Host";
@@ -5419,10 +5393,10 @@ pub struct HostEntry {
     /// cleared when a route comes up.
     #[prost(string, optional, tag = "5")]
     pub last_dial_error: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(enumeration = "HostVia", tag = "6")]
+    #[prost(enumeration = "RouteKind", tag = "6")]
     pub via: i32,
     #[prost(bool, optional, tag = "7")]
-    pub signed_in: ::core::option::Option<bool>,
+    pub account_signed_in: ::core::option::Option<bool>,
     /// The machine's kind, as it announced itself in the handshake. Unset for a
     /// host that has never been adjacent.
     #[prost(string, optional, tag = "8")]
@@ -5512,7 +5486,7 @@ pub struct Agent {
     #[prost(string, tag = "5")]
     pub cwd: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "6")]
-    pub parent: ::core::option::Option<AgentParent>,
+    pub parent: ::core::option::Option<AgentRef>,
     #[prost(int64, tag = "7")]
     pub created_at_ms: i64,
     #[prost(enumeration = "Lifecycle", tag = "8")]
@@ -5843,7 +5817,7 @@ pub struct CreateAgentRequest {
     #[prost(string, optional, tag = "3")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "4")]
-    pub parent: ::core::option::Option<AgentParent>,
+    pub parent: ::core::option::Option<AgentRef>,
     #[prost(string, tag = "5")]
     pub cwd: ::prost::alloc::string::String,
     /// Which interpreter, and that kind's creation settings encoded, decoded
@@ -6000,7 +5974,7 @@ pub struct SendMessageRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
-    pub to: ::core::option::Option<AgentParent>,
+    pub to: ::core::option::Option<AgentRef>,
     #[prost(string, tag = "3")]
     pub text: ::prost::alloc::string::String,
     #[prost(bytes = "vec", optional, tag = "4")]
@@ -6979,41 +6953,9 @@ impl Presence {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum HostVia {
-    Unspecified = 0,
-    Direct = 1,
-    Relay = 2,
-    Ssh = 3,
-}
-impl HostVia {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "HOST_VIA_UNSPECIFIED",
-            Self::Direct => "HOST_VIA_DIRECT",
-            Self::Relay => "HOST_VIA_RELAY",
-            Self::Ssh => "HOST_VIA_SSH",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "HOST_VIA_UNSPECIFIED" => Some(Self::Unspecified),
-            "HOST_VIA_DIRECT" => Some(Self::Direct),
-            "HOST_VIA_RELAY" => Some(Self::Relay),
-            "HOST_VIA_SSH" => Some(Self::Ssh),
-            _ => None,
-        }
-    }
-}
 /// How this machine reaches a host, or how a pairing peer was reached. No
 /// value for "no route": Presence says offline.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum RouteKind {

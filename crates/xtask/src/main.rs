@@ -58,7 +58,7 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.DiffFileChange",
     "amux.v1.Empty",
     "amux.v1.EnvelopeKind",
-    "amux.v1.HostVia",
+    "amux.v1.RouteKind",
     "amux.v1.Kind",
     "amux.v1.OfferedCommand",
     "amux.v1.OfferedMode",

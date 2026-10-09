@@ -36,7 +36,7 @@ fn item(key: &str, text: &str) -> Item {
 /// An item as an origin sends it: order and revision assigned.
 fn origin_item(key: &str, order: u64, revision: u64, text: &str) -> Item {
     Item {
-        agent: b"remote".to_vec(),
+        agent_id: b"remote".to_vec(),
         order,
         revision,
         ..item(key, text)
@@ -240,7 +240,7 @@ fn commit_assigns_revisions_per_record_and_orders_once_per_key<S: Store>(store: 
     let stored = store.get(&agent, "m1").unwrap().unwrap();
     assert_eq!((stored.order, stored.revision), (1, 3));
     assert_eq!(stored.text, "one, revised");
-    assert_eq!(stored.agent, b"a");
+    assert_eq!(stored.agent_id, b"a");
     assert_eq!(stored.body, vec![1, 2, 3]);
     assert_eq!(store.agent(&agent).unwrap().unwrap().next_revision, 7);
 }
@@ -277,14 +277,14 @@ fn appends_extend_text_and_carry_their_base<S: Store>(store: S) {
         committed.records,
         vec![
             Record::Append(Append {
-                agent: b"a".to_vec(),
+                agent_id: b"a".to_vec(),
                 key: "msg".into(),
                 base_revision: 1,
                 revision: 2,
                 text: "lo w".into(),
             }),
             Record::Append(Append {
-                agent: b"a".to_vec(),
+                agent_id: b"a".to_vec(),
                 key: "msg".into(),
                 base_revision: 2,
                 revision: 3,
@@ -326,7 +326,7 @@ fn snapshots_copy_their_envelope_onto_the_row<S: Store>(store: S) {
         panic!("{:?}", committed.records)
     };
     assert_eq!(snap.revision, 2);
-    assert_eq!(snap.agent, b"a");
+    assert_eq!(snap.agent_id, b"a");
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.phase, Phase::Working as i32);
     assert_eq!(row.working_on.as_deref(), Some("fixing the build"));
@@ -735,7 +735,7 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor<S: Store>(store: S)
                 events: vec![
                     SourceEvent::Item(origin_item("k3", 3, 13, "Hel")),
                     SourceEvent::Append(Append {
-                        agent: b"remote".to_vec(),
+                        agent_id: b"remote".to_vec(),
                         key: "k3".into(),
                         base_revision: 13,
                         revision: 14,
@@ -744,7 +744,7 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor<S: Store>(store: S)
                     // A base the replica does not hold is left for the full
                     // item every stream ends with.
                     SourceEvent::Append(Append {
-                        agent: b"remote".to_vec(),
+                        agent_id: b"remote".to_vec(),
                         key: "k3".into(),
                         base_revision: 99,
                         revision: 100,

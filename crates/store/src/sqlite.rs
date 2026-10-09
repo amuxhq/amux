@@ -253,7 +253,7 @@ fn finish_agent((mut row, snapshot, git): RawAgent) -> Result<AgentRow, StoreErr
 fn item_row(row: &Row<'_>, agent: &AgentKey) -> rusqlite::Result<(Item, Option<Vec<u8>>)> {
     Ok((
         Item {
-            agent: agent.agent.clone(),
+            agent_id: agent.agent.clone(),
             key: row.get(0)?,
             order: row.get::<_, i64>(1)? as u64,
             revision: row.get::<_, i64>(2)? as u64,

@@ -238,12 +238,12 @@ impl ProfileRuntime {
     }
 }
 
-pub(crate) fn route(via: crate::routing::HostVia) -> Option<Route> {
+pub(crate) fn route(via: crate::routing::LiveRoute) -> Option<Route> {
     match via {
-        crate::routing::HostVia::Direct => Some(Route::Direct),
-        crate::routing::HostVia::Relay => Some(Route::Relay),
-        crate::routing::HostVia::Ssh => Some(Route::Ssh),
-        crate::routing::HostVia::Offline => None,
+        crate::routing::LiveRoute::Direct => Some(Route::Direct),
+        crate::routing::LiveRoute::Relay => Some(Route::Relay),
+        crate::routing::LiveRoute::Ssh => Some(Route::Ssh),
+        crate::routing::LiveRoute::Offline => None,
     }
 }
 

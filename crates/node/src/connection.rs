@@ -9,7 +9,7 @@ use tonic::transport::Channel;
 
 use crate::HostId;
 use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
-use crate::routing::{HostVia, LinkCarrier, LinkCloseRequest, Route, RoutingCore, RoutingEvent};
+use crate::routing::{LinkCarrier, LinkCloseRequest, LiveRoute, Route, RoutingCore, RoutingEvent};
 use crate::transport::{TrustedPeerConnections, pairing_channel_from_io};
 
 pub struct ConnectionManager {
@@ -35,7 +35,7 @@ struct ConnectionState {
 /// The route's identity belongs here beside the way it reads, because one
 /// direct link replacing another reads the same both times and still ends
 /// every stream on the carrier that went away.
-type HostDescription = (Option<Route>, HostVia, Option<bool>);
+type HostDescription = (Option<Route>, LiveRoute, Option<bool>);
 
 impl ConnectionManager {
     pub(crate) fn new(routing: Arc<RoutingCore>, channels: Arc<ChannelPool>) -> Self {
@@ -195,15 +195,15 @@ impl ConnectionManager {
         }
     }
 
-    pub(crate) async fn via_for(&self, peer: HostId) -> HostVia {
+    pub(crate) async fn via_for(&self, peer: HostId) -> LiveRoute {
         match self.route_for(peer).await {
-            Some(Route::Via(_)) => HostVia::Relay,
+            Some(Route::Via(_)) => LiveRoute::Relay,
             Some(Route::Direct(link)) => match self.channels.link_registry().carrier(&link).await {
-                Some(LinkCarrier::Ssh) => HostVia::Ssh,
-                Some(LinkCarrier::Direct) => HostVia::Direct,
-                None => HostVia::Offline,
+                Some(LinkCarrier::Ssh) => LiveRoute::Ssh,
+                Some(LinkCarrier::Direct) => LiveRoute::Direct,
+                None => LiveRoute::Offline,
             },
-            None => HostVia::Offline,
+            None => LiveRoute::Offline,
         }
     }
 

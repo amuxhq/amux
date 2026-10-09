@@ -1,3 +1,12 @@
+2026-10-09 — **The daemon's link code calls a runtime's life a runtime instance.**
+The random id a host's runtime draws when it starts, which a link handshake
+carries so a peer can tell a restarted process from the one it already has
+a link to, was typed `Incarnation` inside the daemon, though the wire field
+is `runtime_instance_id` and "incarnation" means an agent's process count
+everywhere else. The type is now `RuntimeInstance`, and the fields, locals
+and the two link-registry tests that named it follow. Nothing changes in
+behaviour.
+
 2026-10-09 — **A lagging inventory says so, and the docs say what the protocol now is.**
 A reader that fell behind the inventory's ring was closed without a word,
 which every reader took for an outage: the fleet showed "reconnecting" and

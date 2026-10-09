@@ -19,7 +19,7 @@ use wire::pb;
 use crate::link::LinkCarrier as NativeLinkCarrier;
 use crate::routing::types::LinkId;
 use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
-use crate::routing::{ConnectRole, Host, Incarnation};
+use crate::routing::{ConnectRole, Host, RuntimeInstance};
 use crate::{HostId, Tier, audit};
 
 pub(crate) type LinkOutputTx = mpsc::Sender<pb::Message>;
@@ -64,7 +64,7 @@ pub(crate) struct LinkProperties {
     pub(crate) admission: LinkAdmission,
     pub(crate) carrier: LinkCarrier,
     /// The life of the peer's runtime this link was opened by.
-    pub(crate) incarnation: Incarnation,
+    pub(crate) runtime_instance: RuntimeInstance,
     pub(crate) direct_order: Option<DirectLinkOrder>,
 }
 
@@ -97,7 +97,7 @@ struct LinkWriter {
     role: LinkRole,
     admission: LinkAdmission,
     carrier: LinkCarrier,
-    incarnation: Incarnation,
+    runtime_instance: RuntimeInstance,
     direct_order: Option<DirectLinkOrder>,
     native_carrier: Option<Arc<dyn NativeLinkCarrier>>,
 }
@@ -149,7 +149,7 @@ impl LinkRegistry {
                 role,
                 admission: LinkAdmission::PinnedKey,
                 carrier: LinkCarrier::Direct,
-                incarnation: crate::routing::Incarnation::random(),
+                runtime_instance: crate::routing::RuntimeInstance::random(),
                 direct_order: None,
             },
             advertised_snapshot,
@@ -177,7 +177,7 @@ impl LinkRegistry {
                 role,
                 admission,
                 carrier: LinkCarrier::Direct,
-                incarnation: crate::routing::Incarnation::random(),
+                runtime_instance: crate::routing::RuntimeInstance::random(),
                 direct_order: None,
             },
             advertised_snapshot,
@@ -210,7 +210,7 @@ impl LinkRegistry {
     }
 
     /// Registers a link and names the direct links it superseded, or refuses
-    /// it where the same incarnation of the peer already holds a direct link
+    /// it where the same runtime instance of the peer already holds a direct link
     /// that wins against it.
     pub(crate) async fn register_displacing(
         &self,
@@ -225,7 +225,7 @@ impl LinkRegistry {
             role,
             admission,
             carrier,
-            incarnation,
+            runtime_instance,
             direct_order,
         } = properties;
         let (close_tx, close_rx) = mpsc::channel(1);
@@ -250,14 +250,14 @@ impl LinkRegistry {
                         && writer.carrier == LinkCarrier::Direct
                         && writer.direct_order.is_some()
                 })
-                .map(|(id, writer)| (*id, writer.direct_order.unwrap(), writer.incarnation))
+                .map(|(id, writer)| (*id, writer.direct_order.unwrap(), writer.runtime_instance))
                 .collect::<Vec<_>>();
-            // A duplicate from the same incarnation is the same live process:
+            // A duplicate from the same runtime instance is the same live process:
             // a crossed dial, settled by keeping the preferred link. One from
-            // another incarnation belongs to a process that has since died, so
+            // another runtime instance belongs to a process that has since died, so
             // it is replaced whichever direction either link was dialled in.
             if duplicates.iter().any(|(_, existing, from)| {
-                *from == incarnation
+                *from == runtime_instance
                     && (*existing == DirectLinkOrder::Preferred || *existing == order)
             }) {
                 return None;
@@ -305,7 +305,7 @@ impl LinkRegistry {
                 role,
                 admission,
                 carrier,
-                incarnation,
+                runtime_instance,
                 direct_order,
                 native_carrier,
             },
@@ -767,7 +767,7 @@ mod tests {
         let peer = host(2);
         let fallback = link(2, 1);
         let preferred = link(2, 2);
-        let life = crate::routing::Incarnation::random();
+        let life = crate::routing::RuntimeInstance::random();
 
         let (fallback_tx, _) = mpsc::channel(8);
         let mut fallback_close = registry
@@ -779,7 +779,7 @@ mod tests {
                     role: LinkRole::Peer,
                     admission: LinkAdmission::PinnedKey,
                     carrier: LinkCarrier::Direct,
-                    incarnation: life,
+                    runtime_instance: life,
                     direct_order: Some(DirectLinkOrder::Fallback),
                 },
                 &[],
@@ -798,7 +798,7 @@ mod tests {
                     role: LinkRole::Peer,
                     admission: LinkAdmission::PinnedKey,
                     carrier: LinkCarrier::Direct,
-                    incarnation: life,
+                    runtime_instance: life,
                     direct_order: Some(DirectLinkOrder::Preferred),
                 },
                 &[],
@@ -824,7 +824,7 @@ mod tests {
                         role: LinkRole::Peer,
                         admission: LinkAdmission::PinnedKey,
                         carrier: LinkCarrier::Direct,
-                        incarnation: life,
+                        runtime_instance: life,
                         direct_order: Some(DirectLinkOrder::Fallback),
                     },
                     &[],
@@ -839,18 +839,18 @@ mod tests {
         );
     }
 
-    fn direct(order: DirectLinkOrder, incarnation: Incarnation) -> LinkProperties {
+    fn direct(order: DirectLinkOrder, runtime_instance: RuntimeInstance) -> LinkProperties {
         LinkProperties {
             role: LinkRole::Peer,
             admission: LinkAdmission::PinnedKey,
             carrier: LinkCarrier::Direct,
-            incarnation,
+            runtime_instance,
             direct_order: Some(order),
         }
     }
 
     #[tokio::test]
-    async fn a_link_from_a_new_incarnation_replaces_the_old_one_in_either_direction() {
+    async fn a_link_from_a_new_runtime_instance_replaces_the_old_one_in_either_direction() {
         use DirectLinkOrder::{Fallback, Preferred};
         for (held, arriving) in [
             (Fallback, Fallback),
@@ -867,7 +867,7 @@ mod tests {
                     dead,
                     peer.clone(),
                     dead_tx,
-                    direct(held, Incarnation::random()),
+                    direct(held, RuntimeInstance::random()),
                     &[],
                     None,
                 )
@@ -880,7 +880,7 @@ mod tests {
                     link(2, 2),
                     peer.clone(),
                     restarted_tx,
-                    direct(arriving, Incarnation::random()),
+                    direct(arriving, RuntimeInstance::random()),
                     &[],
                     None,
                 )
@@ -893,11 +893,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn one_incarnation_keeps_its_first_link_in_each_direction() {
+    async fn one_runtime_instance_keeps_its_first_link_in_each_direction() {
         for order in [DirectLinkOrder::Fallback, DirectLinkOrder::Preferred] {
             let registry = LinkRegistry::default();
             let peer = host(2);
-            let life = Incarnation::random();
+            let life = RuntimeInstance::random();
             let (first_tx, _) = mpsc::channel(8);
             registry
                 .register_with_details(

@@ -19,11 +19,12 @@ use wire::{self, PROTOCOL_VERSION};
 use super::{LinkCarrier as Carrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
-    ConnectHandshake, ConnectHandshakeEvent, DirectLinkOrder, Host, Incarnation, LinkAdmission,
+    ConnectHandshake, ConnectHandshakeEvent, DirectLinkOrder, Host, LinkAdmission,
     LinkCarrier as RoutingCarrier, LinkCloseRequest, LinkId, LinkProperties, LinkRegistry,
-    LinkRole, LiveLocalHost, Registration, RouteUpdateOutcome, RoutingCore, host_from_wire,
-    host_to_wire, inbound_host_from_wire, neighbor_down_from_wire, neighbor_up_from_wire,
-    protocol_error_hello_ack, protocol_error_link_close, validate_remote_host,
+    LinkRole, LiveLocalHost, Registration, RouteUpdateOutcome, RoutingCore, RuntimeInstance,
+    host_from_wire, host_to_wire, inbound_host_from_wire, neighbor_down_from_wire,
+    neighbor_up_from_wire, protocol_error_hello_ack, protocol_error_link_close,
+    validate_remote_host,
 };
 use crate::{Clock, HostId, audit};
 
@@ -360,7 +361,7 @@ pub async fn run_link(
 ) -> Result<(), LinkError> {
     let (mut sink, mut source) = carrier.control();
     let mut handshake = ConnectHandshake::new(role);
-    let ((peer_host, peer_incarnation), peer_neighbors, snapshot) = match role {
+    let ((peer_host, peer_instance), peer_neighbors, snapshot) = match role {
         crate::routing::ConnectRole::Connector => {
             let snapshot = ctx.links.neighbor_snapshot().await;
             write_message(&mut sink, &connector_hello(&ctx, &snapshot)).await?;
@@ -375,9 +376,9 @@ pub async fn run_link(
             }
             match handshake.receive(first) {
                 Ok(ConnectHandshakeEvent::Accepted(accepted)) => {
-                    let (peer, neighbors, incarnation) =
+                    let (peer, neighbors, runtime_instance) =
                         accept_peer_hello_ack(&ctx, accepted).map_err(protocol_status)?;
-                    ((peer, incarnation), neighbors, snapshot)
+                    ((peer, runtime_instance), neighbors, snapshot)
                 }
                 Ok(ConnectHandshakeEvent::Rejected(error)) => {
                     return Err(protocol_status(error).into());
@@ -449,7 +450,7 @@ pub async fn run_link(
             };
             tracing::debug!(
                 peer = %peer.0.id,
-                incarnation = ?peer.2,
+                runtime_instance = ?peer.2,
                 "accepted a link from a peer"
             );
             write_message(&mut sink, &accepted_hello_ack(&ctx, &snapshot, peer.0.id)).await?;
@@ -467,7 +468,7 @@ pub async fn run_link(
         sink,
         source,
         handshake,
-        (peer_host, peer_incarnation, peer_neighbors, role),
+        (peer_host, peer_instance, peer_neighbors, role),
         snapshot.into_iter().map(|host| host.id).collect(),
     )
     .await
@@ -505,11 +506,16 @@ async fn run_established(
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
     mut handshake: ConnectHandshake,
-    peer: (Host, Incarnation, Vec<Host>, crate::routing::ConnectRole),
+    peer: (
+        Host,
+        RuntimeInstance,
+        Vec<Host>,
+        crate::routing::ConnectRole,
+    ),
     sent_snapshot: Vec<HostId>,
 ) -> Result<(), LinkError> {
     debug_assert!(handshake.is_established());
-    let (peer_host, peer_incarnation, peer_neighbors, connect_role) = peer;
+    let (peer_host, peer_instance, peer_neighbors, connect_role) = peer;
     if ctx
         .shutdown_rx
         .as_ref()
@@ -548,7 +554,7 @@ async fn run_established(
                 role: link_role,
                 admission,
                 carrier: carrier_tag,
-                incarnation: peer_incarnation,
+                runtime_instance: peer_instance,
                 direct_order: (link_role == LinkRole::Peer
                     && carrier_tag == RoutingCarrier::Direct)
                     .then(|| {
@@ -931,7 +937,7 @@ fn accept_peer_hello(
     ctx: &LinkCtx,
     hello: wire::pb::Hello,
     _auth_session: Option<&LinkAuthSession>,
-) -> Result<(Host, Vec<Host>, Incarnation), wire::pb::Error> {
+) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::pb::Error> {
     if !hello
         .supported_protocol_versions
         .contains(&PROTOCOL_VERSION)
@@ -961,15 +967,19 @@ fn accept_peer_hello(
             host.id
         )));
     }
-    let incarnation =
-        Incarnation::from_wire(&hello.runtime_instance_id).map_err(invalid_argument_error)?;
-    Ok((host, neighbors_from_wire(hello.neighbors)?, incarnation))
+    let runtime_instance =
+        RuntimeInstance::from_wire(&hello.runtime_instance_id).map_err(invalid_argument_error)?;
+    Ok((
+        host,
+        neighbors_from_wire(hello.neighbors)?,
+        runtime_instance,
+    ))
 }
 
 fn accept_peer_hello_ack(
     ctx: &LinkCtx,
     accepted: wire::pb::HelloAccepted,
-) -> Result<(Host, Vec<Host>, Incarnation), wire::pb::Error> {
+) -> Result<(Host, Vec<Host>, RuntimeInstance), wire::pb::Error> {
     if accepted.protocol_version != PROTOCOL_VERSION {
         return Err(net_error::version_mismatch(
             vec![PROTOCOL_VERSION],
@@ -995,9 +1005,13 @@ fn accept_peer_hello_ack(
             "peer host_id matches local host_id",
         ));
     }
-    let incarnation =
-        Incarnation::from_wire(&accepted.runtime_instance_id).map_err(invalid_argument_error)?;
-    Ok((host, neighbors_from_wire(accepted.neighbors)?, incarnation))
+    let runtime_instance = RuntimeInstance::from_wire(&accepted.runtime_instance_id)
+        .map_err(invalid_argument_error)?;
+    Ok((
+        host,
+        neighbors_from_wire(accepted.neighbors)?,
+        runtime_instance,
+    ))
 }
 
 fn connector_hello(ctx: &LinkCtx, snapshot: &[Host]) -> wire::pb::Message {
@@ -1010,7 +1024,7 @@ fn connector_hello(ctx: &LinkCtx, snapshot: &[Host]) -> wire::pb::Message {
                 .connector_auth
                 .as_ref()
                 .map(|auth| auth.token.token.clone()),
-            runtime_instance_id: ctx.local_host.incarnation().to_wire(),
+            runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
         })),
     }
 }
@@ -1027,7 +1041,7 @@ fn accepted_hello_ack(ctx: &LinkCtx, snapshot: &[Host], peer: HostId) -> wire::p
                         .filter(|host| host.id != peer)
                         .map(host_to_wire)
                         .collect(),
-                    runtime_instance_id: ctx.local_host.incarnation().to_wire(),
+                    runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
                 },
             )),
         })),
@@ -1336,7 +1350,7 @@ mod tests {
                     host: Some(host_to_wire(peer)),
                     neighbors: Vec::new(),
                     auth_token: auth_token.map(str::to_string),
-                    runtime_instance_id: crate::routing::Incarnation::random().to_wire(),
+                    runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                 })),
             },
         )
@@ -1483,7 +1497,7 @@ mod tests {
                     host: Some(host_to_wire(&peer)),
                     neighbors: Vec::new(),
                     auth_token: None,
-                    runtime_instance_id: crate::routing::Incarnation::random().to_wire(),
+                    runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                 })),
             },
         )
@@ -1552,7 +1566,7 @@ mod tests {
                     role: LinkRole::Peer,
                     admission: LinkAdmission::PinnedKey,
                     carrier: RoutingCarrier::Direct,
-                    incarnation: crate::routing::Incarnation::random(),
+                    runtime_instance: crate::routing::RuntimeInstance::random(),
                     direct_order: None,
                 },
                 &[],
@@ -1587,7 +1601,7 @@ mod tests {
                     host: Some(host_to_wire(&origin)),
                     neighbors: Vec::new(),
                     auth_token: None,
-                    runtime_instance_id: crate::routing::Incarnation::random().to_wire(),
+                    runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
                 })),
             },
         )

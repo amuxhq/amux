@@ -530,7 +530,7 @@ mod tests {
                     role: LinkRole::Peer,
                     admission: LinkAdmission::PinnedKey,
                     carrier: RoutingCarrier::Direct,
-                    incarnation: crate::routing::Incarnation::random(),
+                    runtime_instance: crate::routing::RuntimeInstance::random(),
                     direct_order: None,
                 },
                 &[],

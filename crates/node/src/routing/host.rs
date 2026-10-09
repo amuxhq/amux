@@ -16,9 +16,9 @@ pub(crate) const MAX_HOST_NAME_BYTES: usize = 256;
 /// healthy until they idle out. Every link handshake carries the sender's
 /// runtime instance id, and a different one proves the older links are dead.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) struct Incarnation(Uuid);
+pub(crate) struct RuntimeInstance(Uuid);
 
-impl Incarnation {
+impl RuntimeInstance {
     pub(crate) fn random() -> Self {
         Self(Uuid::new_v4())
     }
@@ -45,7 +45,7 @@ impl Incarnation {
 pub(crate) struct LiveLocalHost {
     host: Host,
     signed_in: Arc<AtomicBool>,
-    incarnation: Incarnation,
+    runtime_instance: RuntimeInstance,
 }
 
 impl LiveLocalHost {
@@ -53,7 +53,7 @@ impl LiveLocalHost {
         Self {
             signed_in: Arc::new(AtomicBool::new(host.signed_in.unwrap_or(false))),
             host,
-            incarnation: Incarnation::random(),
+            runtime_instance: RuntimeInstance::random(),
         }
     }
 
@@ -61,8 +61,8 @@ impl LiveLocalHost {
         self.host.id
     }
 
-    pub(crate) fn incarnation(&self) -> Incarnation {
-        self.incarnation
+    pub(crate) fn runtime_instance(&self) -> RuntimeInstance {
+        self.runtime_instance
     }
 
     pub(crate) fn snapshot(&self) -> Host {

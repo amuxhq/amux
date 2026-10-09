@@ -1,3 +1,28 @@
+2026-10-10 — **The protocol's files say who reads them.**
+`amux.proto` held errors, link control, pairing, both services, the
+inventory and the front door, while the agent's private contract held the
+public input envelope, and the session records held every shared chat body.
+The definitions now sit in ten files of the same package, each for one
+audience: `error.proto` (the carrier and its code), `link.proto` (host-to-host
+control), `pairing.proto`, `front_door.proto` (profiles and the
+installation), `service.proto` (`ClientService`, `PeerService`, the
+inventory, their requests, `Input` with the input pieces every kind shares,
+and the verdict), `records.proto` (the envelope records, `Kind`, agent
+messages, attachments, blobs and diffs), `chat.proto` (the bodies, snapshot
+pieces, asks, answer pieces and catalogue the kinds share), `agent.proto`
+(the spec and the ctl and pty frames), and `claude.proto` and `codex.proto`,
+which now also hold each provider's usage messages. Every definition moved
+verbatim; the wire identity of a message is its package and name, so nothing
+on the wire changed, and the generated Rust differs only in order. The
+imports run one way: the agent's contract reads the services, never the
+reverse, so the public vocabulary is not owned by the private one. The
+exit-cause enum sits beside the inventory row; `Kind` stays with the records,
+which name it and which every other file reads. Two wire types the phone
+never receives as such, presence and a diff file's change, no longer derive
+the serialization the Swift mirror is built from. The phone's code caught up
+with two earlier wire changes it had not been built against: a permission
+scope has no label, and a diff from HEAD is the base's `head` arm.
+
 2026-10-09 — **The profile store is one SQLite schema, and a store from before it is refused by name.**
 The store's schema had grown as a base and six alterations, three of them
 written this week to turn kinds and exit causes into wire integers and to

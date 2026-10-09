@@ -38,7 +38,7 @@ enum ReviewFixtures {
 
     static let frozen = FrozenReview(
         diff: Diff(
-            head: "4f2a9c1", files: [], base: DiffBase(base: .workingTree(Empty())), mergeBase: nil,
+            head: "4f2a9c1", files: [], base: DiffBase(base: .head(Empty())), mergeBase: nil,
             patch: BlobRef(hash: [7, 7, 7], name: "patch", mime: "text/x-diff", size: UInt64(patch.utf8.count))),
         patch: patch)
 }

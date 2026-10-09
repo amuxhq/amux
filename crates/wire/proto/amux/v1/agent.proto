@@ -2,34 +2,13 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/claude.proto";
-import "amux/v1/codex.proto";
+import "amux/v1/chat.proto";
 import "amux/v1/records.proto";
+import "amux/v1/service.proto";
 
-// The agent process's contract with its daemon: the input vocabulary, the
-// immutable spec file each incarnation starts from, and the frames on the
-// agent directory's ctl.sock. The journal between them frames Step
-// (records.proto).
-
-// A client-generated input id, the agent's kind, and that kind's input
-// message encoded. Daemons forward the bytes untouched; only the agent of
-// that kind decodes them, so an arm or field this daemon does not know
-// reaches a newer agent intact. The reply is the interpreter's verdict,
-// never a handover receipt. The daemon decodes a copy for its analytics and
-// tolerates a copy it cannot decode.
-message Input {
-  bytes input_id = 1;
-  Kind kind = 2;
-  // ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
-  bytes body = 3;
-}
-
-// A prompt with its client-generated input id, where a whole Input would
-// admit arms that are not a prompt.
-message PromptSubmission {
-  bytes input_id = 1;
-  PromptInput prompt = 2;
-}
+// The agent process's contract with its daemon: the immutable spec file each
+// incarnation starts from, and the frames on the agent directory's ctl.sock
+// and pty.sock. The journal between them frames Step (records.proto).
 
 // One immutable file per incarnation, spec.<n> in the agent directory. The
 // daemon writes it before each spawn and never rewrites it; a resume writes
@@ -173,25 +152,6 @@ message Nudge {}
 
 message Stop {
   StopMode mode = 1;
-}
-
-// Named apart from the Interrupt input so the two are never confused.
-enum StopMode {
-  STOP_MODE_GRACEFUL = 0;
-  STOP_MODE_ABORT = 1;
-  STOP_MODE_KILL = 2;
-}
-
-// The agent process's part of a dump: its facts ring and checkpoint,
-// already redacted.
-message DumpPart {
-  bytes dump_id = 1;
-  repeated DumpFile files = 2;
-}
-
-message DumpFile {
-  string name = 1;
-  bytes contents = 2;
 }
 
 message Verdict {

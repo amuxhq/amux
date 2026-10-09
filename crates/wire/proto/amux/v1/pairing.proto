@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package amux.v1;
+
+// Pairing: how two hosts come to trust each other, through PairingService
+// with a one-shot secret, or over SSH.
+
+service PairingService {
+  rpc Pair(stream PairMessage) returns (stream PairMessage);
+}
+
+message PairMessage {
+  oneof body {
+    bytes spake2_message = 1;
+    bytes key_confirmation = 2;
+    bytes sealed_identity = 3;
+    PairingError error = 4;
+    PairingComplete pairing_complete = 5;
+    PairingAbandoned pairing_abandoned = 6;
+  }
+}
+
+message PairingComplete {}
+message PairingAbandoned {}
+
+message PairingError {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    NOT_IN_PAIRING_MODE = 1;
+    INVALID_PIN = 2;
+    PROTOCOL_VIOLATION = 3;
+    TIMEOUT = 4;
+    USER_REJECTED = 5;
+    SELF_PAIRING = 6;
+  }
+
+  Reason reason = 1;
+  string detail = 2;
+}
+
+message PairingIdentity {
+  bytes host_id = 1;
+  bytes pubkey = 2;
+  string name = 3;
+  // Authenticated along with the responder identity by SPAKE2 sealing.
+  int64 expires_at_ms = 4;
+}
+
+// SSH bootstrap includes the local selector needed for subsequent stdio relays.
+message SshPairingIdentity {
+  PairingIdentity identity = 1;
+  bytes profile_id = 2;
+}

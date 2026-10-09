@@ -2,7 +2,8 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/records.proto";
+import "amux/v1/chat.proto";
+import "amux/v1/service.proto";
 
 // Claude's per-kind bodies: the item and snapshot messages encoded into
 // Item.body and Snapshot.body for kinds claude_pty and claude_sdk, the
@@ -195,6 +196,26 @@ message ClaudeSdkInput {
     SetEffort effort = 8;
     SendQueuedNow send_now = 9;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Usage (for both Claude kinds)
+// ---------------------------------------------------------------------------
+
+// Claude's usage limits. `state` says whether the agent can work at all,
+// which is not the same as any one window when Claude allows overage.
+message ClaudeUsage {
+  UsageState state = 1;
+  repeated ClaudeUsageWindow windows = 2;
+}
+
+message ClaudeUsageWindow {
+  Limit limit = 1;
+  // Set for a limit that belongs to one model.
+  optional string model = 2;
+  // Claude's own name for the window, shown when `limit` is unspecified.
+  string provider_name = 3;
+  UsageMeter meter = 4;
 }
 
 // ---------------------------------------------------------------------------

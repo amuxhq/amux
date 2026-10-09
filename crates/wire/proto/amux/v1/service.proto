@@ -17,235 +17,11 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/agent.proto";
-import "amux/v1/claude.proto";
-import "amux/v1/codex.proto";
+import "amux/v1/link.proto";
 import "amux/v1/records.proto";
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-message Error {
-  ErrorCode code = 1;
-  string message = 2;
-  repeated ErrorDetail details = 3;
-}
-
-message ErrorDetail {
-  // Fully-qualified message name, e.g. "amux.v1.ProtocolVersionMismatch".
-  string type = 1;
-  // Proto-encoded detail message of the named type.
-  bytes value = 2;
-}
-
-// The one break-glass error: the peers share no protocol version.
-message ProtocolVersionMismatch {
-  repeated uint32 supported_protocol_versions = 1;
-  repeated uint32 peer_supported_protocol_versions = 2;
-}
-
-// ResolveAgent found more than one agent by that name.
-message AmbiguousAgentName {
-  string name = 1;
-  repeated Agent candidates = 2;
-}
-
-// A spawn named a host that more than one trusted host answers to.
-message AmbiguousHostName {
-  string name = 1;
-  repeated HostEntry candidates = 2;
-}
-
-enum ErrorCode {
-  ERROR_CODE_UNSPECIFIED = 0;
-  ERROR_CODE_CANCELLED = 1;
-  ERROR_CODE_INVALID_ARGUMENT = 2;
-  ERROR_CODE_NOT_FOUND = 3;
-  ERROR_CODE_ALREADY_EXISTS = 4;
-  ERROR_CODE_PERMISSION_DENIED = 5;
-  ERROR_CODE_UNAUTHENTICATED = 6;
-  ERROR_CODE_FAILED_PRECONDITION = 7;
-  ERROR_CODE_ABORTED = 8;
-  ERROR_CODE_RESOURCE_EXHAUSTED = 9;
-  ERROR_CODE_UNIMPLEMENTED = 10;
-  ERROR_CODE_UNAVAILABLE = 11;
-  ERROR_CODE_UNREACHABLE = 12;
-  ERROR_CODE_INTERNAL = 13;
-  ERROR_CODE_PAYMENT_REQUIRED = 14;
-  ERROR_CODE_DATA_LOSS = 15;
-}
-
-// ---------------------------------------------------------------------------
-// Transport setup and control
-// ---------------------------------------------------------------------------
-
-// Host-to-host control envelope exchanged on the link's control stream.
-message Message {
-
-  oneof body {
-    Hello hello = 1;
-    HelloAck hello_ack = 2;
-    NeighborUp neighbor_up = 3;
-    NeighborDown neighbor_down = 4;
-    Reauth reauth = 5;
-    LinkClose link_close = 6;
-  }
-}
-
-// The handshake carries the sender's current neighbor snapshot; everything
-// after it is a delta (NeighborUp/NeighborDown) by definition.
-message Hello {
-  repeated uint32 supported_protocol_versions = 1;
-  Host host = 2;
-  repeated Host neighbors = 3;
-  optional string auth_token = 4;
-  // 16 random bytes drawn when the sender's runtime starts and kept for its
-  // life. A link that arrives carrying a different runtime instance id than
-  // an earlier link from the same host proves that earlier link belongs to
-  // a process that no longer exists, however healthy it still looks.
-  bytes runtime_instance_id = 5;
-}
-
-message HelloAck {
-  oneof outcome {
-    HelloAccepted accepted = 1;
-    Error error = 2;
-  }
-}
-
-message HelloAccepted {
-  uint32 protocol_version = 1;
-  Host host = 2;
-  repeated Host neighbors = 3;
-  // The acceptor's; see `Hello.runtime_instance_id`.
-  bytes runtime_instance_id = 4;
-}
-
-// "I have a direct link to this host." Strictly adjacency: a node never
-// advertises anything it learned from someone else.
-message NeighborUp {
-  Host host = 1;
-}
-
-// "I lost my last direct link to this host."
-message NeighborDown {
-  bytes host_id = 1;
-}
-
-// Written by the opener as the first bytes of every non-control stream. The
-// destination is routing information only; the pinned handshake inside the
-// stream establishes the caller's authority, unless the stream is `plain`.
-message StreamPreface {
-  bytes dst = 1;
-  // The stream carries no handshake of its own: the opener is the host at
-  // the near end of the link it arrived on, already authenticated by that
-  // link, and the stream's bytes start at once. Honoured only on a direct
-  // link to a paired host; a relay never forwards a plain stream as plain.
-  bool plain = 2;
-}
-
-// A stream reset before acceptance carries one of these refusal reasons.
-enum StreamRefusal {
-  STREAM_REFUSAL_UNSPECIFIED = 0;
-  STREAM_REFUSAL_NO_ROUTE = 1;
-  STREAM_REFUSAL_PAYMENT_REQUIRED = 2;
-  STREAM_REFUSAL_RATE_LIMITED = 3;
-  STREAM_REFUSAL_NOT_ADJACENT = 4;
-  STREAM_REFUSAL_SHUTTING_DOWN = 5;
-}
-
-// Fire-and-forget credential refresh on the cloud link, sent before the
-// current token expires. There is no acknowledgement — the protocol never
-// acknowledges housekeeping; it only signals state changes. The receiver's
-// only answers are silence (refresh accepted, the link continues) or
-// `LinkClose(AUTH_EXPIRED)` (the sender reconnects with a fresh token).
-message Reauth {
-  string auth_token = 1;
-}
-
-message Capabilities {
-  // The host serves as a cloud relay.
-  bool cloud_relay = 1;
-  // The agent kinds this host can run, from its platform: terminal Claude
-  // is not hosted on Windows.
-  repeated Kind kinds = 2;
-}
-
-// "The link is closed now, here's why." No grace period: a receiver treats
-// the link as gone the moment this arrives.
-message LinkClose {
-  LinkCloseReason reason = 1;
-  optional Error error = 2;
-}
-
-enum LinkCloseReason {
-  LINK_CLOSE_REASON_UNSPECIFIED = 0;
-  LINK_CLOSE_REASON_USER_SHUTDOWN = 1;
-  LINK_CLOSE_REASON_AUTH_EXPIRED = 2;
-  LINK_CLOSE_REASON_PROTOCOL_ERROR = 3;
-  // The peers share no protocol version; the older one needs updating.
-  LINK_CLOSE_REASON_VERSION_MISMATCH = 4;
-  LINK_CLOSE_REASON_USER_REVOKED = 5;
-}
-
-message Host {
-  bytes host_id = 1;
-  string name = 2;
-  string version = 3;
-  Capabilities capabilities = 4;
-  // What kind of machine this is, in the host's own words: the operating
-  // system it runs, as it named itself when it was built.
-  optional string platform = 5;
-  optional bool account_signed_in = 6;
-}
-
-
-// ---------------------------------------------------------------------------
-// Pairing service
-// ---------------------------------------------------------------------------
-
-service PairingService {
-  rpc Pair(stream PairMessage) returns (stream PairMessage);
-}
-
-message PairMessage {
-  oneof body {
-    bytes spake2_message = 1;
-    bytes key_confirmation = 2;
-    bytes sealed_identity = 3;
-    PairingError error = 4;
-    PairingComplete pairing_complete = 5;
-    PairingAbandoned pairing_abandoned = 6;
-  }
-}
-
-message PairingComplete {}
-message PairingAbandoned {}
-
-message PairingError {
-  enum Reason {
-    REASON_UNSPECIFIED = 0;
-    NOT_IN_PAIRING_MODE = 1;
-    INVALID_PIN = 2;
-    PROTOCOL_VIOLATION = 3;
-    TIMEOUT = 4;
-    USER_REJECTED = 5;
-    SELF_PAIRING = 6;
-  }
-
-  Reason reason = 1;
-  string detail = 2;
-}
-
-message PairingIdentity {
-  bytes host_id = 1;
-  bytes pubkey = 2;
-  string name = 3;
-  // Authenticated along with the responder identity by SPAKE2 sealing.
-  int64 expires_at_ms = 4;
-}
-
+// ClientService and PeerService: the inventory they stream, their requests,
+// and the public input envelope with the verdict on it.
 
 // ---------------------------------------------------------------------------
 // Inventory
@@ -307,6 +83,12 @@ message ProviderOnHost {
   bool signed_in = 3;
 }
 
+// A spawn named a host that more than one trusted host answers to.
+message AmbiguousHostName {
+  string name = 1;
+  repeated HostEntry candidates = 2;
+}
+
 enum Trust {
   TRUST_UNSPECIFIED = 0;
   TRUST_TRUSTED = 1;
@@ -359,10 +141,44 @@ message Agent {
   optional Git git = 15;
 }
 
+// ResolveAgent found more than one agent by that name.
+message AmbiguousAgentName {
+  string name = 1;
+  repeated Agent candidates = 2;
+}
+
 enum Lifecycle {
   LIFECYCLE_UNSPECIFIED = 0;
   LIFECYCLE_LIVE = 1;
   LIFECYCLE_EXITED = 2;
+}
+
+// Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a
+// cause this build does not know: unknown is not failure.
+enum ExitCause {
+  EXIT_CAUSE_UNSPECIFIED = 0;
+  // A child's turn ended with nothing queued: the one-shot rule.
+  EXIT_CAUSE_FINISHED = 1;
+  EXIT_CAUSE_STOPPED = 2;
+  EXIT_CAUSE_ABORTED = 3;
+  EXIT_CAUSE_KILLED = 4;
+  // The provider process ended on its own; the detail is its exit code
+  // or signal.
+  EXIT_CAUSE_PROVIDER_EXITED = 5;
+  // The agent drained after its daemon was gone past the grace period.
+  EXIT_CAUSE_DAEMON_LOST = 6;
+  // An ask was open with nobody to answer it when the daemon was lost.
+  EXIT_CAUSE_ORPHANED = 7;
+  // The agent process or its provider could not start; the detail says
+  // which and why.
+  EXIT_CAUSE_COULD_NOT_START = 8;
+  // Its directory is gone, or a write to it failed; the detail says which.
+  EXIT_CAUSE_DIRECTORY_FAILED = 9;
+  // The process was found dead when a daemon returned, with no record of
+  // why.
+  EXIT_CAUSE_ENDED_WHILE_AWAY = 10;
+  // The provider loop ended without any of the above.
+  EXIT_CAUSE_ENDED_UNEXPECTEDLY = 11;
 }
 
 // Why the row left this daemon's view, which is not always deletion at
@@ -584,6 +400,13 @@ message StopAgentRequest {
   StopMode mode = 2;
 }
 
+// Named apart from the Interrupt input so the two are never confused.
+enum StopMode {
+  STOP_MODE_GRACEFUL = 0;
+  STOP_MODE_ABORT = 1;
+  STOP_MODE_KILL = 2;
+}
+
 // The composer of an exited chat sends its draft through initial_prompt.
 message ResumeAgentRequest {
   bytes agent_id = 1;
@@ -695,230 +518,117 @@ message DumpReport {
   string report_path = 1;
 }
 
+// The agent process's part of a dump: its facts ring and checkpoint,
+// already redacted.
+message DumpPart {
+  bytes dump_id = 1;
+  repeated DumpFile files = 2;
+}
+
+message DumpFile {
+  string name = 1;
+  bytes contents = 2;
+}
+
 // ---------------------------------------------------------------------------
-// Installation front door
+// Input and the verdict on it
 // ---------------------------------------------------------------------------
 
-// The installation's front door: local Unix socket and in-process only.
-// Calls are not retried by any client; a mutation that loses its reply is
-// re-run by the person, and the revision checks on rename and delete
-// refuse a re-run against a profile that changed meanwhile.
-service ProfileService {
-  rpc ListProfiles(Empty) returns (ListProfilesResponse);
-  // Snapshot, CaughtUp, then ordered events; ABORTED requires a fresh watch.
-  rpc WatchProfiles(Empty) returns (stream ProfileEvent);
-  rpc CreateProfile(CreateProfileRequest) returns (ProfileInfo);
-  rpc BindProfile(BindProfileRequest) returns (ProfileInfo);
-  rpc LogoutProfile(ProfileRequest) returns (ProfileInfo);
-  rpc PauseProfile(ProfileRequest) returns (ProfileInfo);
-  rpc ResumeProfile(ProfileRequest) returns (ProfileInfo);
-  rpc RenameProfile(RenameProfileRequest) returns (ProfileInfo);
-  rpc DeleteProfile(DeleteProfileRequest) returns (Empty);
-  rpc StartPairing(StartPairingRequest) returns (PairingWindow);
-  rpc GetPairingStatus(ProfileRequest) returns (PairingStatus);
-  rpc CancelPairing(ProfileRequest) returns (Empty);
-  rpc BeginPair(BeginPairRequest) returns (PendingPair);
-  rpc ConfirmPair(PendingPairRequest) returns (PeerEntry);
-  rpc AbandonPair(PendingPairRequest) returns (Empty);
-  rpc GetDeviceIdentity(ProfileRequest) returns (DeviceIdentity);
-  rpc TrustSshPeer(TrustSshPeerRequest) returns (Empty);
-  rpc ListPeers(ProfileRequest) returns (ListPeersResponse);
-  rpc GetPeer(GetPeerRequest) returns (PeerEntry);
-  rpc Unpair(UnpairRequest) returns (PeerEntry);
+// A client-generated input id, the agent's kind, and that kind's input
+// message encoded. Daemons forward the bytes untouched; only the agent of
+// that kind decodes them, so an arm or field this daemon does not know
+// reaches a newer agent intact. The reply is the interpreter's verdict,
+// never a handover receipt. The daemon decodes a copy for its analytics and
+// tolerates a copy it cannot decode.
+message Input {
+  bytes input_id = 1;
+  Kind kind = 2;
+  // ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
+  bytes body = 3;
 }
 
-service InstallationService {
-  rpc GetInfo(Empty) returns (InstallationInfo);
-  rpc Shutdown(Empty) returns (Empty);
+// A prompt with its client-generated input id, where a whole Input would
+// admit arms that are not a prompt.
+message PromptSubmission {
+  bytes input_id = 1;
+  PromptInput prompt = 2;
 }
 
-enum Intent {
-  INTENT_UNSPECIFIED = 0;
-  INTENT_UNBOUND = 1;
-  INTENT_BOUND = 2;
-  INTENT_LOGGED_OUT = 3;
-  INTENT_PAUSED = 4;
-}
-enum Observed {
-  OBSERVED_UNSPECIFIED = 0;
-  OBSERVED_LOCAL = 1;
-  OBSERVED_CONNECTING = 2;
-  OBSERVED_CONNECTED = 3;
-  OBSERVED_RETRYING = 4;
-  OBSERVED_AUTHENTICATION_REQUIRED = 5;
-  // The cloud refused this build as too old for its protocol.
-  OBSERVED_VERSION_MISMATCH = 6;
-}
-enum Tier {
-  TIER_UNSPECIFIED = 0;
-  TIER_FREE = 1;
-  TIER_PRO = 2;
-}
-enum RelayCarrier {
-  RELAY_CARRIER_UNSPECIFIED = 0;
-  RELAY_CARRIER_QUIC = 1;
-  RELAY_CARRIER_TCP = 2;
+// U+FFFC per attachment.
+message PromptInput {
+  string text = 1;
+  repeated Attachment attachments = 2;
+  // Prompts always queue; steering is SendQueuedNow on a queued entry.
 }
 
-message ProfileInfo {
-  bytes id = 1;
-  string label = 2;
-  string email = 3;
-  string account_name = 4;
-  string socket_path = 5;
-  bytes host_id = 6;
-  Intent intent = 7;
-  Observed observed = 8;
-  uint64 revision = 9;
-  Tier tier = 10;
-  RelayCarrier relay_carrier = 11;
-  // The bound account's subject at its service, which stays after a
-  // sign-out; empty when unbound. What tells two profiles' accounts apart.
-  string account_subject = 12;
+// Rejected REFUSAL_NOT_QUEUED if the target is not queued.
+message WithdrawQueued {
+  bytes queued_input_id = 1;
 }
 
-message ListProfilesResponse { repeated ProfileInfo profiles = 1; }
+// Delivers one queued prompt into the running turn through the provider's
+// own steering path; the entry reads steered until its reflection lands.
+// Rejected REFUSAL_NOT_QUEUED if the target is not waiting in the queue,
+// and REFUSAL_UNSUPPORTED if no turn is running.
+message SendQueuedNow {
+  bytes queued_input_id = 1;
+}
 
-message ProfileEvent {
+message Interrupt {}
+
+message Clear {}
+
+// How much the agent may do without asking, by a value its catalogue
+// offers; the interpreter turns it into the provider's own settings.
+message SetPermission {
+  string value = 1;
+}
+
+// How the agent works (Codex: default or plan), by a value its catalogue
+// offers.
+message SetMode {
+  string value = 1;
+}
+
+message SetModel {
+  // Absent restores the launch model.
+  optional string model = 1;
+}
+
+message SetEffort {
+  // Absent clears the session override.
+  optional string effort = 1;
+}
+
+// The interpreter's verdict.
+message SendInputResponse {
   oneof of {
-    ProfileInfo upserted = 1;
-    bytes removed_id = 2;
-    CaughtUp caught_up = 3;
+    Accepted accepted = 1;
+    Rejected rejected = 2;
   }
 }
 
-message ProfileRequest { bytes profile_id = 1; }
-message CreateProfileRequest { optional string label = 1; }
-
-message BindProfileRequest {
-  optional bytes profile_id = 1;
-  string cloud_url = 2;
-  string staged_refresh_token = 3;
-  bool adopt_non_pristine = 4;
-  // The OAuth client the refresh token was issued to; empty is the CLI's.
-  // A token refreshes only under the client that obtained it.
-  string client_id = 5;
+message Accepted {
+  bool queued = 1;
 }
 
-message RenameProfileRequest {
-  bytes profile_id = 1;
-  uint64 expected_revision = 2;
-  optional string override_name = 3;
+message Rejected {
+  Refusal refusal = 1;
+  // The provider's or interpreter's own words, when it has any: terminal
+  // Claude's sentence about a send-now it cannot do.
+  optional string detail = 2;
 }
 
-message DeleteProfileRequest {
-  bytes profile_id = 1;
-  uint64 confirm_revision = 2;
-}
-
-message StartPairingRequest {
-  bytes profile_id = 1;
-  oneof method {
-    // A one-shot PIN the daemon generates.
-    Empty pin = 2;
-    // A one-shot secret for a QR code.
-    Empty qr = 3;
-    // An operator-chosen reusable PIN for unattended demos: the window is
-    // neither consumed by success nor locked out by failures.
-    string demo_pin = 4;
-  }
-  // How long the window stays open; absent is the daemon's default for
-  // the method.
-  optional uint64 ttl_seconds = 5;
-}
-
-message PairingWindow {
-  PairingIdentity identity = 1;
-  uint64 ttl_seconds = 2;
-  repeated string addrs = 3;
-  optional string cloud_url = 4;
-  oneof secret {
-    string pin = 5;
-    bytes qr_secret = 6;
-  }
-}
-
-message PairingStatus { bool active = 1; }
-
-message BeginPairRequest {
-  bytes profile_id = 1;
-  bytes host_id = 2;
-  oneof secret {
-    string pin = 3;
-    bytes qr_secret = 4;
-  }
-  repeated string addrs = 5;
-}
-
-message PendingPair {
-  bytes token = 1;
-  PairingIdentity peer = 2;
-  RouteKind via = 3;
-}
-
-message PendingPairRequest {
-  bytes profile_id = 1;
-  bytes token = 2;
-}
-
-// SSH has already authenticated its peer outside the secret-based pairing
-// protocol, so its identity commit is a separate, SSH-only operation.
-message TrustSshPeerRequest {
-  bytes profile_id = 1;
-  PairingIdentity peer = 2;
-  SshTarget ssh_target = 3;
-}
-
-message GetPeerRequest {
-  bytes profile_id = 1;
-  HostRef peer = 2;
-}
-
-message UnpairRequest {
-  bytes profile_id = 1;
-  HostRef peer = 2;
-  string reason = 3;
-}
-
-message InstallationInfo { string version = 1; }
-
-// SSH bootstrap includes the local selector needed for subsequent stdio relays.
-message SshPairingIdentity {
-  PairingIdentity identity = 1;
-  bytes profile_id = 2;
-}
-
-message SshTarget {
-  string target = 1;
-  bytes profile_id = 2;
-}
-
-message PeerReachability {
-  oneof kind {
-    Empty cloud = 1;
-    SshTarget ssh_target = 2;
-    DirectReachability direct = 3;
-  }
-}
-
-message DirectReachability {
-  repeated string addrs = 1;
-}
-
-message PeerEntry {
-  bytes host_id = 1;
-  string name = 2;
-  bytes pubkey = 3;
-  int64 paired_at_ms = 4;
-  repeated PeerReachability reachabilities = 5;
-}
-
-message DeviceIdentity {
-  bytes host_id = 1;
-  string name = 2;
-  bytes pubkey = 3;
-}
-
-message ListPeersResponse {
-  repeated PeerEntry peers = 1;
+enum Refusal {
+  REFUSAL_UNSPECIFIED = 0;
+  // The answer's ask is not open.
+  REFUSAL_CLOSED_ASK = 1;
+  // The withdraw or send-now target is not waiting in the queue.
+  REFUSAL_NOT_QUEUED = 2;
+  // This agent version, kind or state cannot take the input.
+  REFUSAL_UNSUPPORTED = 3;
+  REFUSAL_DRAINING = 4;
+  REFUSAL_EXITING = 5;
+  REFUSAL_EXITED = 6;
+  REFUSAL_HOST_UNREACHABLE = 7;
 }

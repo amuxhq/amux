@@ -763,15 +763,13 @@ public enum ChatWords {
     public static func choice(_ choice: Choice) -> String {
         let label: String = switch choice.outcome {
         case .allowOnce: String(localized: "Allow once")
-        case .allowAlways(let subjects, let directories, let mode, let modeName, let scope, let label):
+        case .allowAlways(let subjects, let directories, let mode, let modeName, let scope):
             if !subjects.isEmpty {
                 String(localized: "Always allow \(subjects.joined(separator: ", ")) \(Self.scope(scope))")
             } else if !directories.isEmpty {
                 String(localized: "Allow access to \(directories.joined(separator: ", ")) \(Self.scope(scope))")
             } else if !mode.isEmpty {
                 String(localized: "Switch to \(modeName.isEmpty ? mode : modeName)")
-            } else if !label.isEmpty {
-                label
             } else {
                 String(localized: "Always allow \(Self.scope(scope))")
             }
@@ -809,7 +807,7 @@ public enum ChatWords {
     /// reaches.
     public static func scopeRow(_ choice: Choice) -> (title: String, detail: String?) {
         switch choice.outcome {
-        case .allowAlways(let subjects, let directories, let mode, let modeName, let scope, let label):
+        case .allowAlways(let subjects, let directories, let mode, let modeName, let scope):
             if !subjects.isEmpty {
                 return (String(localized: "Always allow \(subjects.joined(separator: ", "))"), reach(scope))
             } else if !directories.isEmpty {
@@ -820,8 +818,6 @@ public enum ChatWords {
                         String(localized: "in \(directories.joined(separator: ", "))"))
             } else if !mode.isEmpty {
                 return (String(localized: "Switch to \(modeName.isEmpty ? mode : modeName)"), reach(scope))
-            } else if !label.isEmpty {
-                return (label, nil)
             }
             return (String(localized: "Always allow"), reach(scope))
         case .allowSimilar(let prefix):

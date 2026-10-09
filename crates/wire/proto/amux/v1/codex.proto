@@ -2,7 +2,8 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/records.proto";
+import "amux/v1/chat.proto";
+import "amux/v1/service.proto";
 
 // Codex's per-kind bodies: the item and snapshot messages encoded into
 // Item.body and Snapshot.body for kind codex, the inputs it accepts, and the
@@ -186,6 +187,21 @@ message CodexSnapshot {
   // Absent until the thread start response names it.
   optional string thread_id = 18;
   // What it offers is in the catalogue the Snapshot names.
+}
+
+// Codex's usage limits.
+message CodexUsage {
+  UsageState state = 1;
+  repeated CodexUsageWindow windows = 2;
+  optional string credits = 3;
+}
+
+message CodexUsageWindow {
+  // Named from the window's length.
+  Limit limit = 1;
+  // The only description Codex gives of a window.
+  uint32 window_minutes = 2;
+  UsageMeter meter = 3;
 }
 
 message CodexAsk {

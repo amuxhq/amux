@@ -16,7 +16,10 @@ runtime, channel pool, relay forwarding), `crates/node/src/routing/`
 the relay server), and `crates/node/src/grpc.rs`,
 `crates/node/src/front_door.rs` and `crates/node/src/edge/peer.rs` (the
 services). The protobuf source is in
-[`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/amux.proto).
+[`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/): link control in
+[`link.proto`](../crates/wire/proto/amux/v1/link.proto), pairing in
+[`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto), the front door in
+[`front_door.proto`](../crates/wire/proto/amux/v1/front_door.proto).
 
 ## The mental model
 
@@ -579,7 +582,7 @@ failed precondition, both map to `FAILED_PRECONDITION`, because they are
 answers, not outages. `PAYMENT_REQUIRED` maps to `PERMISSION_DENIED`.
 
 Until the first release the protobuf files change freely, as the top of
-`amux.proto` says: a removed field is deleted outright, leaving no
+`service.proto` says: a removed field is deleted outright, leaving no
 reservation, and the remaining fields are renumbered so the numbers stay in
 reading order (see [the wire](WIRE.md#compatibility)). `PROTOCOL_VERSION`
 exists only in the link handshake and stays 1 until then. The local sockets

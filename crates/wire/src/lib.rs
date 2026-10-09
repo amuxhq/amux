@@ -4,7 +4,7 @@
 //! installation services.
 
 /// Protocol version for the native-stream link handshake. It stays 1 until
-/// the first release; see the header of `amux.proto`.
+/// the first release; see the header of `service.proto`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 pub mod amux {

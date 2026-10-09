@@ -55,7 +55,6 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.DiffBase",
     "amux.v1.DiffBase.base",
     "amux.v1.DiffFile",
-    "amux.v1.DiffFileChange",
     "amux.v1.Empty",
     "amux.v1.EnvelopeKind",
     "amux.v1.RouteKind",
@@ -64,13 +63,26 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.OfferedMode",
     "amux.v1.OfferedModel",
     "amux.v1.OfferedPermission",
-    "amux.v1.Presence",
     "amux.v1.Provider",
     "amux.v1.ReviewComment",
     "amux.v1.ReviewStatus",
     "amux.v1.SendState",
     "amux.v1.SignInState",
     "amux.v1.UsageState",
+];
+
+/// The proto files that make up the wire, relative to the proto root.
+const PROTO_FILES: &[&str] = &[
+    "amux/v1/error.proto",
+    "amux/v1/link.proto",
+    "amux/v1/pairing.proto",
+    "amux/v1/front_door.proto",
+    "amux/v1/service.proto",
+    "amux/v1/records.proto",
+    "amux/v1/chat.proto",
+    "amux/v1/agent.proto",
+    "amux/v1/claude.proto",
+    "amux/v1/codex.proto",
 ];
 
 /// Regenerates the committed protobuf code under
@@ -80,15 +92,6 @@ const VIEW_VALUES: &[&str] = &[
 /// generated Rust is an ordinary tracked input — visible to git, review,
 /// rust-analyzer, and every build cache — and so building amux needs no
 /// protoc. CI regenerates and fails if the committed output is stale.
-/// The proto files that make up the wire, relative to the proto root.
-const PROTO_FILES: &[&str] = &[
-    "amux/v1/amux.proto",
-    "amux/v1/agent.proto",
-    "amux/v1/claude.proto",
-    "amux/v1/codex.proto",
-    "amux/v1/records.proto",
-];
-
 fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     let wire_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

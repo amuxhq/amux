@@ -3,7 +3,7 @@
 *For developers writing a client or changing the amux.v1 service.*
 
 The wire is the protobuf package `amux.v1`, in
-[`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/amux.proto), with
+[`crates/wire/proto/amux/v1/`](../crates/wire/proto/amux/v1/), with
 generated Rust committed under `crates/wire/src/generated/`. This page covers
 the client-facing surface: the `ClientService` calls, the records its streams
 carry, how inputs are answered, and the discipline that keeps binaries of
@@ -12,10 +12,14 @@ different versions talking. Host-to-host links, pairing and the relay are in
 
 | File | Holds |
 | --- | --- |
-| [`amux.proto`](../crates/wire/proto/amux/v1/amux.proto) | Errors, link control, pairing, `ClientService`, `PeerService`, inventory, the profile and installation services |
-| [`records.proto`](../crates/wire/proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, attachments, blobs, diffs, shared item bodies, shared inputs, `SendInputResponse` |
-| [`agent.proto`](../crates/wire/proto/amux/v1/agent.proto) | `Input`, the agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
+| [`service.proto`](../crates/wire/proto/amux/v1/service.proto) | `ClientService`, `PeerService`, the inventory, their requests, `Input` with the shared input pieces, and `SendInputResponse` |
+| [`records.proto`](../crates/wire/proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, agent messages, attachments, blobs, diffs |
+| [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, answer pieces, the catalogue |
 | [`claude.proto`](../crates/wire/proto/amux/v1/claude.proto), [`codex.proto`](../crates/wire/proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
+| [`agent.proto`](../crates/wire/proto/amux/v1/agent.proto) | The agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
+| [`error.proto`](../crates/wire/proto/amux/v1/error.proto) | The error carrier and its code |
+| [`link.proto`](../crates/wire/proto/amux/v1/link.proto), [`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto) | Host-to-host link control, and pairing |
+| [`front_door.proto`](../crates/wire/proto/amux/v1/front_door.proto) | The profile and installation services |
 
 ## Where clients call
 
@@ -73,7 +77,7 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 
 ## The calls
 
-`service ClientService` in [`amux.proto`](../crates/wire/proto/amux/v1/amux.proto):
+`service ClientService` in [`service.proto`](../crates/wire/proto/amux/v1/service.proto):
 
 | Call | Returns | Meaning |
 | --- | --- | --- |
@@ -237,8 +241,9 @@ returns to the fleet.
 ## Records
 
 The records are defined once in
-[`records.proto`](../crates/wire/proto/amux/v1/records.proto). The journal
-frames them, the store keeps them and every stream carries them.
+[`records.proto`](../crates/wire/proto/amux/v1/records.proto), and the bodies
+the kinds share in [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto). The
+journal frames them, the store keeps them and every stream carries them.
 
 ### The envelope
 
@@ -401,11 +406,12 @@ permission-mode cycle, the one keystroke a remote client sends. Raw terminal
 bytes never cross the wire; anything else in Claude's terminal is typed at the
 machine, and a dialog amux cannot answer is left by stopping the agent or
 attaching there. The shared pieces (`PromptInput`, `WithdrawQueued`,
-`SendQueuedNow`, `Interrupt`, `Clear`, `SetModel`, `SetEffort`, and the answer
-pieces) are in `records.proto`; each kind's input oneof, with its own settings
-and its answer message (`ClaudeAnswer`, `CodexAnswer`, each carrying the key of
-the ask it answers), is in `claude.proto` and `codex.proto`. A Codex approval
-is a `CodexAnswer` whose decision must be one the ask offered.
+`SendQueuedNow`, `Interrupt`, `Clear`, `SetModel`, `SetEffort`) are in
+`service.proto`, and the answer pieces in `chat.proto`; each kind's input
+oneof, with its own settings and its answer message (`ClaudeAnswer`,
+`CodexAnswer`, each carrying the key of the ask it answers), is in
+`claude.proto` and `codex.proto`. A Codex approval is a `CodexAnswer` whose
+decision must be one the ask offered.
 
 The body is the kind's input message encoded, and it crosses daemons as bytes:
 a daemon forwarding an input to a paired host, or handing it to the agent,

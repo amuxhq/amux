@@ -866,7 +866,7 @@ enum CatalogFixtures {
 
     static let review = FrozenReview(
         diff: Diff(
-            head: "4f2a9c1", files: [], base: DiffBase(base: .workingTree(Empty())), mergeBase: nil,
+            head: "4f2a9c1", files: [], base: DiffBase(base: .head(Empty())), mergeBase: nil,
             patch: BlobRef(hash: [5, 5, 5], name: "patch", mime: "text/x-diff", size: UInt64(reviewPatch.utf8.count))),
         patch: reviewPatch)
 

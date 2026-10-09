@@ -117,6 +117,9 @@ pub struct InventorySubscription {
     opening: VecDeque<Arc<InventoryEvent>>,
     live: broadcast::Receiver<Arc<InventoryEvent>>,
     ended: bool,
+    /// The one host whose entry and agents the stream carries, for a
+    /// paired host's stream; every host's for a client's.
+    only: Option<Vec<u8>>,
 }
 
 impl InventorySubscription {
@@ -130,12 +133,28 @@ impl InventorySubscription {
         if self.ended {
             return None;
         }
-        match self.live.recv().await {
-            Ok(event) => Some(event),
-            Err(RecvError::Lagged(_) | RecvError::Closed) => {
-                self.ended = true;
-                None
+        loop {
+            match self.live.recv().await {
+                Ok(event) if self.carries(&event) => return Some(event),
+                Ok(_) => {}
+                Err(RecvError::Lagged(_) | RecvError::Closed) => {
+                    self.ended = true;
+                    return None;
+                }
             }
+        }
+    }
+
+    fn carries(&self, event: &InventoryEvent) -> bool {
+        let Some(only) = &self.only else {
+            return true;
+        };
+        match &event.of {
+            Some(inventory_event::Of::Host(host)) => &host.host_id == only,
+            Some(inventory_event::Of::HostRemoved(removed)) => &removed.host_id == only,
+            Some(inventory_event::Of::Agent(agent)) => &agent.host_id == only,
+            Some(inventory_event::Of::AgentRemoved(removed)) => &removed.host_id == only,
+            Some(inventory_event::Of::CaughtUp(_)) | None => true,
         }
     }
 }
@@ -353,6 +372,15 @@ impl ProfileRuntime {
         }
     }
 
+    /// Whether the agent is one of this host's own, not a replica of
+    /// another host's.
+    pub(crate) async fn is_own(&self, agent_id: &[u8]) -> Result<bool, ServeError> {
+        let store = self.store.lock().await;
+        Ok(store
+            .agent(&AgentKey::new(store.own_host(), agent_id))?
+            .is_some())
+    }
+
     /// One item in full.
     pub async fn get(&self, request: &GetRequest) -> Result<Item, ServeError> {
         let store = self.store.lock().await;
@@ -365,6 +393,23 @@ impl ProfileRuntime {
     /// Opens a SubscribeInventory stream: the host set and every agent row
     /// the store holds, CaughtUp, then every change.
     pub async fn subscribe_inventory(&self) -> Result<InventorySubscription, ServeError> {
+        self.open_inventory(None).await
+    }
+
+    /// Opens the SubscribeInventory stream a paired host reads: this host's
+    /// entry and its own agents, on opening and live. What this host knows
+    /// of other hosts is theirs to tell, so it is never passed on.
+    pub(crate) async fn subscribe_own_inventory(
+        &self,
+    ) -> Result<InventorySubscription, ServeError> {
+        self.open_inventory(Some(self.host().as_bytes().to_vec()))
+            .await
+    }
+
+    async fn open_inventory(
+        &self,
+        only: Option<Vec<u8>>,
+    ) -> Result<InventorySubscription, ServeError> {
         // Locked across the join and the read for the reason Subscribe is:
         // every row change publishes while it holds the store.
         let store = self.store.lock().await;
@@ -373,10 +418,11 @@ impl ProfileRuntime {
         let hosts = self.published_hosts();
         drop(store);
         let mut opening = VecDeque::with_capacity(rows.len() + hosts.len() + 1);
-        for host in hosts {
+        let carried = |host: &[u8]| only.as_deref().is_none_or(|only| only == host);
+        for host in hosts.into_iter().filter(|host| carried(&host.host_id)) {
             opening.push_back(Arc::new(inventory(inventory_event::Of::Host(host))));
         }
-        for row in &rows {
+        for row in rows.iter().filter(|row| carried(&row.agent.host)) {
             opening.push_back(Arc::new(inventory(inventory_event::Of::Agent(to_wire(
                 row,
             )))));
@@ -388,6 +434,7 @@ impl ProfileRuntime {
             opening,
             live,
             ended: false,
+            only,
         })
     }
 

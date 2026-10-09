@@ -11,7 +11,7 @@ use ui_runtime::{DriverEvent, InputError, PageError, Session, TRACE_EVENTS, Trac
 use ui_state::{Composer, Connection, InputOutcome, InputState, RefusalReason, Waiting};
 use wire::{
     ErrorCode, FetchResponse, GetBlobResponse, Input, Kind, SendInputRequest, claude_pty_input,
-    claude_sdk_input, codex_input, subscribe_request,
+    claude_sdk_input, codex_input,
 };
 
 const KIND: Kind = Kind::ClaudeSdk;
@@ -71,11 +71,7 @@ async fn open_paints_the_snapshot_and_held_rows_before_it_returns() {
         ManualClock::new(0),
     ));
     let (request, feed) = calls.subscribe().await;
-    assert_eq!(
-        request.from,
-        Some(subscribe_request::From::Tail(40)),
-        "a client asks for a tail"
-    );
+    assert_eq!(request.tail, 40, "a client asks for a tail");
     feed.send(snapshot(KIND, 7, &[]));
     feed.send(ev(text_item(KIND, 6, 6, "older")));
     feed.send(ev(text_item(KIND, 7, 7, "newest")));
@@ -123,7 +119,7 @@ async fn lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap() {
     let (session, mut calls, feed) = open_caught_up(&clock, 3).await;
     feed.send(lagged());
     let (request, feed) = calls.subscribe().await;
-    assert_eq!(request.from, Some(subscribe_request::From::Tail(40)));
+    assert_eq!(request.tail, 40);
     assert!(clock.sleeping().is_empty(), "no backoff after Lagged");
     assert!(!session.state().caught_up());
     assert_eq!(session.state().connection(), Connection::Live);
@@ -454,7 +450,7 @@ async fn the_exited_composer_resumes_with_the_draft_as_the_first_prompt() {
     assert_eq!(session.state().composer(), Composer::Resume);
 
     // A failed resume keeps nothing: the draft is still the composer's.
-    let draft = ui_runtime::inputs::prompt(KIND, "carry on", Vec::new()).unwrap();
+    let draft = ui_runtime::inputs::submission("carry on", Vec::new());
     let resuming = tokio::spawn({
         let (session, draft) = (session.clone(), draft.clone());
         async move { session.resume_with(draft).await }
@@ -838,7 +834,7 @@ async fn a_following_window_trims_to_its_cap_and_a_return_past_the_held_rows_rel
     // window on screen until the fresh one is caught up.
     session.follow(true);
     let (request, fresh) = calls.subscribe().await;
-    assert_eq!(request.from, Some(subscribe_request::From::Tail(3)));
+    assert_eq!(request.tail, 3);
     assert!(feed.is_closed(), "the old stream is dropped");
     fresh.send(snapshot(KIND, 9, &[]));
     for order in 7..=9 {

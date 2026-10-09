@@ -9,7 +9,7 @@ publish = false
 [features]
 default = []
 # Named frames over interpreter fixtures, for goldens and screenshots.
-fixtures = ["dep:prost"]
+fixtures = []
 
 # Views come from ui-view over the state ui-runtime's drivers keep; the TUI
 # owns layout, keys and ephemeral view state only.
@@ -27,7 +27,7 @@ crossterm = { workspace = true, features = ["event-stream"] }
 futures-util = { workspace = true }
 png = { workspace = true }
 ratatui = { workspace = true }
-prost = { workspace = true, optional = true }
+prost = { workspace = true }
 pulldown-cmark = { workspace = true }
 syntect = { workspace = true }
 chrono = { workspace = true }

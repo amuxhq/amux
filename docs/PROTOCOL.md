@@ -426,7 +426,7 @@ None of this is reachable from a link. The implementation is
 | `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
 | `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. Delete cascades to children. |
-| `SendMessage` | An agent message; see [agent tools](AGENT_TOOLS.md). |
+| `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `Diff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What an agent offers, read from its directory by the hash its snapshot names; see [the wire](WIRE.md). |
 | `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots. |
@@ -457,17 +457,19 @@ reached the owner:
   the input as uncertain and settles it at its next catch-up, and nothing
   sends it again.
 
-Forwarding goes one hop. `PeerService` is `ClientApi` built for a peer
-(`ClientApi::for_peer`): it answers only for this host's own agents and never
-passes a call on, so no two hosts can bounce a call between them.
+Forwarding goes one hop. `PeerService` answers only for this host's own
+agents and never passes a call on, so no two hosts can bounce a call between
+them, and no host reaches a third host's agent, or speaks for one, through
+another.
 
 `GetBlob` is answered from this host first: a replica's blob that was fetched
 before is read from the replica directory. Otherwise the owner is asked, the
 bytes are checked against their hash, and they are kept under the replica for
 the next reader.
 
-`CreateAgent` with a `host_id` or `host_name` for another host becomes the same
-create on that host. A name is resolved against this host and the trusted
+`CreateAgent` whose `host` names another host, by id or by name, becomes the
+same create on that host, its kind's settings passed on as the bytes they came
+as. A name is resolved against this host and the trusted
 hosts, an exact match first and then one ignoring case; no match is
 `NOT_FOUND` listing the known names, and several are `AmbiguousHostName`
 with the candidates.
@@ -489,21 +491,27 @@ the folder, branch and base it gets back as given.
 
 ### PeerService
 
-`PeerService` (`crates/node/src/edge/peer.rs`) carries the same requests and
-responses as `ClientService`; replication is a daemon being a client of its
-peer. The caller is the host whose pinned key the stream's handshake
-presented, and a call without one is refused as `UNAUTHENTICATED`. The
-differences are few:
+`PeerService` (`crates/node/src/edge/peer.rs`) is the daemon-to-daemon
+service; replication is a daemon being a client of its peer. The caller is the
+host whose pinned key the stream's handshake presented, and a call without one
+is refused as `UNAUTHENTICATED`. It differs from `ClientService` in these
+ways:
 
-- `Subscribe` also accepts `after` a revision, which is how a replica catches
-  up from its cursor ([the wire](WIRE.md) describes it).
+- It answers only for this host's own agents. Its inventory stream carries
+  this host's entry and this host's agents, never what this host knows of
+  other hosts; `Subscribe`, `Fetch`, `Get` and `SendInput` for an agent this
+  host only replicates are `NOT_FOUND`.
+- `Subscribe` takes a `PeerSubscribeRequest`, which may ask for what came
+  `after` a revision: that is how a replica catches up from its cursor
+  ([the wire](WIRE.md) describes it).
 - `CreateAgent` refuses a parent that is not one of the calling host's own
   agents: a host creates children only for its own agents or for the person.
-- `SendMessage` takes an agent sender from the envelope only if that agent
-  belongs to the calling host; a host speaks only for its own agents.
+- `SendMessage` takes the `Envelope` the calling host's daemon stamped, and
+  takes an agent sender from it only if that agent belongs to the calling
+  host; a host speaks only for its own agents.
 - `ListRepositories` answers for this host only.
-- `Dump` returns this host's part of the caller's report packed in the
-  response, since the caller is on another machine.
+- `Dump` answers with this host's part of the caller's report, a `DumpPart`,
+  since the caller is on another machine.
 
 ### The tools socket
 
@@ -513,7 +521,7 @@ starts the agent's process, and whatever arrives on it is from that agent, so
 no request carries an agent id or a token claiming one. On that socket:
 
 - `CreateAgent` makes the caller the child's parent.
-- `SendMessage` sets the envelope's sender to the caller.
+- `SendMessage` stamps the caller as the message's sender.
 - `SendInput` goes only to one of the caller's own direct children; the stop
   tool's interrupt is the only input an agent sends.
 - `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent`, `PutBlob`, `Diff`,
@@ -524,10 +532,11 @@ no request carries an agent id or a token claiming one. On that socket:
 
 ### Agent messaging across hosts
 
-`SendMessage` carries an `Envelope` whose `to` is a host and an agent. When
-the host is another one, the local daemon sets `from` itself (the person, or
-the calling agent with this host's id, name and kind) and makes the call on
-the recipient's daemon. That daemon accepts an agent sender only if it
+`SendMessage` carries a `SendMessageRequest` whose `to` is a host and an
+agent. The daemon makes the `Envelope`, its sender stamped from the caller (the
+person, or the calling agent with this host's id, name and kind). When the
+host is another one, it makes the call on the recipient's daemon with that
+envelope. That daemon accepts an agent sender only if it
 belongs to the calling host, then delivers through the recipient's lane
 exactly as it would for a local sender. A message that arrived from a peer
 for a third host is not passed on. A child's "finished" or "failed" report to
@@ -557,8 +566,8 @@ deliberate break. The local sockets carry no version at all.
 slices, journal tails and each agent process's own redacted part) and answers
 with its path. For an agent another host runs, the report holds only this
 host's row and store slice, and asks that host for its side through
-`PeerService.Dump`; the answer is a bundle of its own packed into one
-`DumpPart` in the response, and a host that cannot be reached is named in the
+`PeerService.Dump`; the answer is that host's own bundle as one `DumpPart`,
+and a host that cannot be reached is named in the
 report's manifest. Diagnostics use the ordinary calls; they create no extra
 link messages or authority path. [Debugging](DEBUGGING.md) covers reading a
 report.

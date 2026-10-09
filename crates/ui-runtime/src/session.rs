@@ -21,8 +21,8 @@ use ui_state::{
 use ui_view::SessionLine;
 use wire::{
     Agent, BlobRef, DumpFile, DumpPart, ErrorCode, FetchRequest, GetBlobRequest, GetRequest,
-    HostEntry, Input, PutBlobRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
-    SessionEvent, SubscribeRequest, send_input_response, session_event, subscribe_request,
+    HostEntry, Input, PromptSubmission, PutBlobRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SessionEvent, SubscribeRequest, send_input_response, session_event,
 };
 
 use crate::trace::{DriverEvent, DriverTrace, Ring, Structure as _, TraceEvent};
@@ -212,9 +212,7 @@ impl Inner {
     fn subscribe_request(&self) -> SubscribeRequest {
         SubscribeRequest {
             agent_id: self.agent_id.clone(),
-            from: Some(subscribe_request::From::Tail(
-                self.tail.load(Ordering::Acquire),
-            )),
+            tail: self.tail.load(Ordering::Acquire),
         }
     }
 
@@ -712,12 +710,15 @@ impl Session {
     /// The exited composer's one tap: the draft becomes the new
     /// incarnation's first prompt. On failure the draft is the composer's
     /// to keep.
-    pub async fn resume_with(&self, mut draft: Input) -> Result<Agent, RpcError> {
+    pub async fn resume_with(&self, mut draft: PromptSubmission) -> Result<Agent, RpcError> {
         if draft.input_id.is_empty() {
             draft.input_id = inputs::input_id();
         }
         let id = draft.input_id.clone();
-        self.inner.apply(Msg::Send(draft.clone()));
+        // The draft shows as a prompt on its way until the resume answers.
+        if let Some(sending) = inputs::submitted(self.kind(), &draft) {
+            self.inner.apply(Msg::Send(sending));
+        }
         let request = ResumeAgentRequest {
             agent_id: self.inner.agent_id.clone(),
             initial_prompt: Some(draft),

@@ -22,6 +22,7 @@ pub use chat::Chat;
 use client::{Client, RpcError};
 pub use coalesce::{Batch, Coalescer, WakeFn};
 use model::AgentKey;
+use prost::Message as _;
 use tokio::task::JoinHandle;
 pub use ui_runtime::OpenError;
 use ui_runtime::{Fleet, Window};
@@ -30,7 +31,7 @@ use values::{AgentAct, Directories, Directory, NewAgent, ProviderSignIn};
 pub use values::{FleetChanges, HostView};
 use wire::{
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Kind, ListRepositoriesRequest,
-    ProjectEntry, RenameAgentRequest, StopAgentRequest, StopMode, Trust, create_agent_request,
+    ProjectEntry, RenameAgentRequest, StopAgentRequest, StopMode, Trust,
 };
 
 /// How many rows a chat opens with unless the host says otherwise.
@@ -205,29 +206,27 @@ impl AppRuntime {
     /// Starts an agent on a host and returns it as the fleet names it.
     pub async fn create_agent(&self, agent: &NewAgent) -> Result<AgentKey, RpcError> {
         let config = match agent.kind {
-            Kind::Codex => Some(create_agent_request::Config::Codex(
-                wire::CodexCreateConfig {
-                    model: agent.model.clone(),
-                    effort: agent.effort.clone(),
-                    permission: agent.permission.clone(),
-                    mode: agent.mode.clone(),
-                },
-            )),
-            Kind::ClaudeSdk | Kind::ClaudePty => Some(create_agent_request::Config::Claude(
-                wire::ClaudeCreateConfig {
-                    model: agent.model.clone(),
-                    effort: agent.effort.clone(),
-                    permission: agent.permission.clone(),
-                    ..Default::default()
-                },
-            )),
-            Kind::Unspecified => None,
+            Kind::Codex => wire::CodexCreateConfig {
+                model: agent.model.clone(),
+                effort: agent.effort.clone(),
+                permission: agent.permission.clone(),
+                mode: agent.mode.clone(),
+            }
+            .encode_to_vec(),
+            Kind::ClaudeSdk | Kind::ClaudePty => wire::ClaudeCreateConfig {
+                model: agent.model.clone(),
+                effort: agent.effort.clone(),
+                permission: agent.permission.clone(),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            Kind::Unspecified => Vec::new(),
         };
         let created = self
             .client
             .create_agent(CreateAgentRequest {
                 agent_id: ui_runtime::inputs::input_id(),
-                host_id: Some(agent.host_id.clone()),
+                host: Some(wire::HostRef::id(agent.host_id.clone())),
                 name: Some(agent.name.clone()).filter(|name| !name.is_empty()),
                 cwd: agent.cwd.clone(),
                 kind: agent.kind as i32,

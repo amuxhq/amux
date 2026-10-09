@@ -3,7 +3,8 @@
 
 use wire::{
     Attachment, ClaudePtyInput, ClaudeSdkInput, CodexInput, Input, Interrupt, Kind, PromptInput,
-    SendQueuedNow, WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input,
+    PromptSubmission, SendQueuedNow, WithdrawQueued, claude_pty_input, claude_sdk_input,
+    codex_input,
 };
 
 /// A fresh client-generated input id.
@@ -48,6 +49,28 @@ fn wrap(kind: Kind, act: Act) -> Option<Input> {
         Kind::Unspecified => return None,
     };
     Some(Input::new(input_id(), of))
+}
+
+/// A first prompt for a create or a resume, under a fresh id.
+pub fn submission(text: &str, attachments: Vec<Attachment>) -> PromptSubmission {
+    PromptSubmission {
+        input_id: input_id(),
+        prompt: Some(PromptInput {
+            text: text.to_owned(),
+            attachments,
+        }),
+    }
+}
+
+/// A first prompt as the kind's prompt input under the same id, as the
+/// chat shows it while it is on its way; `None` for an unknown kind.
+pub fn submitted(kind: Kind, submission: &PromptSubmission) -> Option<Input> {
+    let mut input = wrap(
+        kind,
+        Act::Prompt(submission.prompt.clone().unwrap_or_default()),
+    )?;
+    input.input_id = submission.input_id.clone();
+    Some(input)
 }
 
 /// A prompt in the kind's arm, under a fresh id; `None` for an unknown kind.

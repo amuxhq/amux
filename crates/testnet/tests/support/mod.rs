@@ -13,9 +13,9 @@ use tonic::transport::Channel;
 use uuid::Uuid;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    BeginPairRequest, Empty, InventoryEvent, PeerRef, PendingPairRequest, ProfileBeginPairRequest,
+    BeginPairRequest, Empty, HostRef, InventoryEvent, PendingPairRequest, ProfileBeginPairRequest,
     ProfileOperation, ProfilePendingPairRequest, ProfileStartPairingRequest, StartPairingRequest,
-    StartPairingResponse, begin_pair_request, inventory_event, peer_ref, start_pairing_request,
+    StartPairingResponse, begin_pair_request, host_ref, inventory_event, start_pairing_request,
     start_pairing_response,
 };
 
@@ -47,9 +47,9 @@ pub async fn door(net: &Net, host: &str) -> ProfileServiceClient<Channel> {
     net.front_door(host).await.expect("the front door answers")
 }
 
-pub fn host_ref(host: Uuid) -> Option<PeerRef> {
-    Some(PeerRef {
-        identifier: Some(peer_ref::Identifier::HostId(host.as_bytes().to_vec())),
+pub fn host_ref(host: Uuid) -> Option<HostRef> {
+    Some(HostRef {
+        of: Some(host_ref::Of::HostId(host.as_bytes().to_vec())),
     })
 }
 
@@ -218,9 +218,9 @@ pub async fn open_session(
         .await
         .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
     let mut events = client
-        .subscribe(wire::SubscribeRequest {
+        .subscribe(wire::PeerSubscribeRequest {
             agent_id: agent.as_bytes().to_vec(),
-            from: Some(wire::subscribe_request::From::Tail(10)),
+            from: Some(wire::peer_subscribe_request::From::Tail(10)),
         })
         .await?
         .into_inner();

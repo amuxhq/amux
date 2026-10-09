@@ -20,9 +20,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tonic::{Request, Response, Status};
 use wire::client_service_server::ClientService;
 use wire::{
-    Agent as Row, AgentParent, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, Envelope,
-    HostEntry, InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest,
-    SendInputResponse, SendMessageResponse, StopMode, Trust, WorkingOn, inventory_event,
+    Agent as Row, AgentParent, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
+    InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest, SendInputResponse,
+    SendMessageRequest, SendMessageResponse, StopMode, Trust, WorkingOn, inventory_event,
     send_input_response,
 };
 
@@ -39,7 +39,7 @@ const STUDIO: [u8; 16] = [0x02; 16];
 enum Call {
     Inventory,
     Resolve(String),
-    Send(Envelope),
+    Send(SendMessageRequest),
     Create(Box<CreateAgentRequest>),
     Input(SendInputRequest),
 }
@@ -150,7 +150,7 @@ impl ClientService for Fleet {
 
     async fn send_message(
         &self,
-        request: Request<Envelope>,
+        request: Request<SendMessageRequest>,
     ) -> Result<Response<SendMessageResponse>, Status> {
         let envelope = request.into_inner();
         self.record(Call::Send(envelope.clone()));
@@ -171,14 +171,17 @@ impl ClientService for Fleet {
         self.record(Call::Create(Box::new(request.clone())));
         self.severed().await?;
         // The daemon resolves a host name against the hosts it trusts.
-        let host = match request.host_name.as_deref() {
-            Some(name) if name.eq_ignore_ascii_case("studio") => STUDIO.to_vec(),
-            Some(name) => {
+        let host = match request.host.as_ref().and_then(|host| host.of.as_ref()) {
+            Some(wire::host_ref::Of::Name(name)) if name.eq_ignore_ascii_case("studio") => {
+                STUDIO.to_vec()
+            }
+            Some(wire::host_ref::Of::Name(name)) => {
                 return Err(Status::not_found(format!(
                     "no trusted host is named {name}; trusted hosts: laptop, Studio"
                 )));
             }
-            None => request.host_id.clone().unwrap_or(HERE.to_vec()),
+            Some(wire::host_ref::Of::HostId(host)) => host.clone(),
+            None => HERE.to_vec(),
         };
         let name = request.name.clone().unwrap_or_else(|| "quiet-otter".into());
         Ok(Response::new(row(&request.agent_id, &host, &name)))
@@ -269,7 +272,7 @@ impl ClientService for Fleet {
     async fn dump(
         &self,
         _: Request<wire::DumpRequest>,
-    ) -> Result<Response<wire::DumpResponse>, Status> {
+    ) -> Result<Response<wire::DumpReport>, Status> {
         Err(Status::unimplemented("dump"))
     }
 }
@@ -616,8 +619,6 @@ async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
     assert_eq!(sent, json!({ "id": interpret::to_hex(&envelope.id) }));
     assert_eq!(envelope.text, "Please review.");
     assert_eq!(envelope.context.as_deref(), Some(b"parser".as_slice()));
-    assert_eq!(envelope.kind(), wire::EnvelopeKind::Message);
-    assert_eq!(envelope.from, None);
     assert_eq!(
         envelope.to,
         Some(AgentParent {
@@ -682,10 +683,7 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         spawned,
         json!({ "name": "tester", "id": interpret::to_hex(&here.agent_id) })
     );
-    assert_eq!(
-        here.host_id, None,
-        "the daemon that took the call places it"
-    );
+    assert_eq!(here.host, None, "the daemon that took the call places it");
     assert_eq!(
         here.parent, None,
         "the daemon sets the parent from the caller"
@@ -693,16 +691,9 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     assert_eq!(here.cwd, mcp.cwd.display().to_string());
     assert_eq!(here.kind(), Kind::Codex);
     let prompt = here.initial_prompt.clone().unwrap();
-    assert!(matches!(
-        prompt.decode_body(),
-        Some(wire::KindInput::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(ref p)),
-        })) if p.text == "Write the tests."
-    ));
-    assert!(matches!(
-        here.config,
-        Some(wire::create_agent_request::Config::Codex(_))
-    ));
+    assert_eq!(prompt.prompt.unwrap().text, "Write the tests.");
+    assert!(!prompt.input_id.is_empty());
+    assert!(here.config.is_empty(), "Codex's default settings");
 
     mcp.ok(
         "spawn",
@@ -714,11 +705,10 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         panic!("a second create, got {calls:?}");
     };
     assert_eq!(
-        there.host_name.as_deref(),
-        Some("studio"),
+        there.host,
+        Some(wire::HostRef::named("studio")),
         "the daemon resolves the name"
     );
-    assert_eq!(there.host_id, None);
     assert_eq!(there.cwd, "", "a path here means nothing there");
     assert_eq!(there.kind(), Kind::ClaudeSdk);
 

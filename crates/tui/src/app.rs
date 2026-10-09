@@ -885,7 +885,7 @@ impl App {
                     let prompt = if text.trim().is_empty() && attachments.is_empty() {
                         None
                     } else {
-                        inputs::prompt(setup.kind(), &text, attachments)
+                        Some(inputs::submission(&text, attachments))
                     };
                     let request = setup.request(inputs::input_id(), prompt);
                     Some(match client.create_agent(request).await {
@@ -988,9 +988,8 @@ impl App {
                 })
             }
             ChatEffect::Resume { text, attachments } => self.spawn(async move {
-                let kind = session.state().kind();
-                let input = inputs::prompt(kind, &text, attachments.clone())?;
-                match session.resume_with(input).await {
+                let prompt = inputs::submission(&text, attachments.clone());
+                match session.resume_with(prompt).await {
                     Ok(_) => None,
                     Err(error) => Some(AppEvent::Restore {
                         agent_id,

@@ -627,9 +627,6 @@ async fn renaming_a_live_codex_agent_renames_its_thread() {
             .spawn(
                 wire::CreateAgentRequest {
                     kind: wire::Kind::Codex as i32,
-                    config: Some(wire::create_agent_request::Config::Codex(
-                        wire::CodexCreateConfig::default(),
-                    )),
                     ..create(&install.work, "before", None)
                 },
                 None,
@@ -915,8 +912,8 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
     // The desk stops trusting the laptop: its listing is refused.
     desk_edge
         .unpair(
-            wire::PeerRef {
-                identifier: Some(wire::peer_ref::Identifier::HostId(
+            wire::HostRef {
+                of: Some(wire::host_ref::Of::HostId(
                     laptop_runtime.host().as_bytes().to_vec(),
                 )),
             },

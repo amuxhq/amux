@@ -104,6 +104,12 @@ reaches the agent.
 The spec is frozen for the incarnation. A change to settings affects the next
 spawn or resume, never a running agent.
 
+The spec's `bootstrap` is what seeds the new incarnation's queue, if anything
+does: the first prompt a create or a resume carried, with its attachments and
+input id, or, when a parent's message resumes its exited child, that message.
+Only the daemon writes it; what a client sends on create or resume can only be
+a prompt.
+
 ## Lifecycle
 
 The host in [`host.rs`](../crates/agent/src/host.rs) is a single loop over

@@ -14,7 +14,7 @@ use uuid::Uuid;
 use wire::start_pairing_request::Mode;
 use wire::start_pairing_response::Secret;
 use wire::{
-    BeginPairRequest, DeviceIdentity, PairingIdentity, PeerEntry, PeerRef, PeerVia,
+    BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PeerEntry, PeerVia,
     PendingPairResponse, StartPairingRequest, StartPairingResponse, TrustSshPeerRequest,
 };
 
@@ -123,20 +123,20 @@ pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> PeerEnt
     }
 }
 
-fn resolve_peer(store: &TrustStore, peer: PeerRef) -> Result<(HostId, TrustEntry), Status> {
-    match peer.identifier {
-        None => Err(Status::invalid_argument("PeerRef.identifier is required")),
-        Some(wire::peer_ref::Identifier::HostId(bytes)) => {
-            let host = host_from_bytes("PeerRef.host_id", &bytes)?;
+fn resolve_peer(store: &TrustStore, peer: HostRef) -> Result<(HostId, TrustEntry), Status> {
+    match peer.of {
+        None => Err(Status::invalid_argument("HostRef.of is required")),
+        Some(wire::host_ref::Of::HostId(bytes)) => {
+            let host = host_from_bytes("HostRef.host_id", &bytes)?;
             let entry = store
                 .entry(host)
                 .cloned()
                 .ok_or_else(|| Status::not_found(format!("peer {host} is not trusted")))?;
             Ok((host, entry))
         }
-        Some(wire::peer_ref::Identifier::Name(name)) => {
+        Some(wire::host_ref::Of::Name(name)) => {
             if name.is_empty() {
-                return Err(Status::invalid_argument("PeerRef.name must not be empty"));
+                return Err(Status::invalid_argument("HostRef.name must not be empty"));
             }
             let matches = store
                 .entries()
@@ -533,8 +533,8 @@ impl Edge {
             Err(status) => self.pairing_failed(method, status),
         }
         let host = confirmed?;
-        self.peer_entry(PeerRef {
-            identifier: Some(wire::peer_ref::Identifier::HostId(host.as_bytes().to_vec())),
+        self.peer_entry(HostRef {
+            of: Some(wire::host_ref::Of::HostId(host.as_bytes().to_vec())),
         })
     }
 
@@ -692,7 +692,7 @@ impl Edge {
             .collect())
     }
 
-    pub fn peer_entry(&self, peer: PeerRef) -> Result<PeerEntry, Status> {
+    pub fn peer_entry(&self, peer: HostRef) -> Result<PeerEntry, Status> {
         let store = self
             .trust
             .read()
@@ -703,7 +703,7 @@ impl Edge {
 
     /// Forgets a paired host: its key leaves the trust store, its links
     /// close with USER_REVOKED, and every connection it holds here ends.
-    pub async fn unpair(&self, peer: PeerRef, reason: String) -> Result<PeerEntry, Status> {
+    pub async fn unpair(&self, peer: HostRef, reason: String) -> Result<PeerEntry, Status> {
         let reason = match reason.trim() {
             "" => "user".to_owned(),
             reason => reason.to_owned(),

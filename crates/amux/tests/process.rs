@@ -23,7 +23,7 @@ use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
 use wire::client_service_client::ClientServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{ListProfilesRequest, SubscribeRequest, session_event, subscribe_request};
+use wire::{ListProfilesRequest, SubscribeRequest, session_event};
 /// How long agents outlive their daemon. Long enough to restart a daemon
 /// under them in a test, short enough to wait out when a test wants them
 /// gone.
@@ -247,7 +247,7 @@ async fn chat(client: &mut ClientServiceClient<Channel>, agent: &[u8]) -> Vec<(S
     let mut stream = client
         .subscribe(SubscribeRequest {
             agent_id: agent.to_vec(),
-            from: Some(subscribe_request::From::Tail(1000)),
+            tail: 1000,
         })
         .await
         .expect("the chat opens")

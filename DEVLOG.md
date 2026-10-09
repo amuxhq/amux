@@ -1,3 +1,27 @@
+2026-10-09 — **A message's sender is its caller, a paired host is answered only for its host's own agents, and a create carries its kind's settings as bytes.**
+`ClientService.SendMessage` took a whole `Envelope`, so a caller could fill in
+the sender, the kind (finished, failed) and an incarnation; it now takes a
+`SendMessageRequest { id, to, text, context }` and the daemon stamps the
+sender from the socket the call came in on: the person, or the agent whose
+tools socket made it. Finished and failed messages come only from the
+daemon's outbox. `PeerService.SendMessage` keeps the stamped envelope, and the
+receiving daemon still takes an agent sender only if that agent belongs to
+the calling host. The peer service answers only for this host's own agents:
+its inventory stream carries this host's entry and agents, never what this
+host knows of others, and `Subscribe`, `Fetch`, `Get` and `SendInput` for an
+agent this host only replicates are `NOT_FOUND`, where before they were
+answered from the replica or reached its owner's daemon. A client's
+`SubscribeRequest` is `{ agent_id, tail }`; the cursor a replica resumes from
+lives only on the peer's `PeerSubscribeRequest`. `Dump` answers a client with
+`DumpReport { report_path }` and a paired host with its `DumpPart`, instead
+of one response carrying both. `CreateAgentRequest` names its host with a
+`HostRef` (an id or a name, the shape the front door's `PeerRef` had and now
+shares), its settings as `Kind kind` plus the kind's create config encoded in
+`bytes config`, read by the spawning host as the kind says and refused when
+they do not decode, and passed on untouched by a forwarding daemon; its first
+prompt, and a resume's, is a `PromptSubmission`, so a client cannot send
+anything but a prompt there and the daemon's "not a prompt" refusal is gone.
+
 2026-10-09 — **A person's input is opaque bytes of its kind; what only the daemon may send moves to the control socket.**
 A paired host could call `SendInput` with an `Input.agent_message` naming any
 sender, and the agent's interpreter took the envelope as given, bypassing the

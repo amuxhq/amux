@@ -12,8 +12,8 @@ use store::{AgentKey, AgentRow, Store as _, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
 use wire::{
-    AmbiguousHostName, DeleteAgentRequest, DeleteAgentResponse, ErrorCode, ErrorDetail, HostEntry,
-    Trust,
+    AgentParent, AmbiguousHostName, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse,
+    ErrorCode, ErrorDetail, HostEntry, HostRef, Trust, host_ref,
 };
 
 use crate::HostId;
@@ -79,6 +79,28 @@ impl ForwardError {
             }
         }
     }
+}
+
+/// A create as it goes to the host that runs the agent: that host named by
+/// id, the parent set when one of this host's agents asked, and an agent id
+/// chosen here when the caller left it to the host. The kind's settings
+/// travel as the bytes they came as, so a setting this daemon does not know
+/// reaches a host that does.
+pub(crate) fn forwarded_create(
+    mut request: CreateAgentRequest,
+    host: HostId,
+    parent: Option<AgentParent>,
+) -> CreateAgentRequest {
+    if parent.is_some() {
+        request.parent = parent;
+    }
+    request.host = Some(HostRef {
+        of: Some(host_ref::Of::HostId(host.as_bytes().to_vec())),
+    });
+    if request.agent_id.is_empty() {
+        request.agent_id = Uuid::new_v4().as_bytes().to_vec();
+    }
+    request
 }
 
 /// A spawn's host name that answers to no trusted host, or to several.
@@ -291,5 +313,67 @@ impl ProfileRuntime {
                 candidates: several.iter().map(|host| (*host).clone()).collect(),
             })),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use prost::Message as _;
+    use wire::{ClaudeCreateConfig, Kind};
+
+    use super::*;
+
+    /// Claude's creation settings as a newer client knows them: one setting
+    /// more than this daemon's.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct NewerClaudeCreateConfig {
+        #[prost(string, optional, tag = "2")]
+        model: Option<String>,
+        #[prost(string, optional, tag = "40")]
+        newer: Option<String>,
+    }
+
+    #[test]
+    fn unknown_config_field_survives_forwarding() {
+        let config = NewerClaudeCreateConfig {
+            model: Some("opus".into()),
+            newer: Some("a setting this daemon does not know".into()),
+        };
+        let sent = CreateAgentRequest {
+            kind: Kind::ClaudeSdk as i32,
+            config: config.encode_to_vec(),
+            cwd: "/work".into(),
+            ..CreateAgentRequest::default()
+        };
+
+        // This daemon reads the call, names the host, and makes it there.
+        let received = CreateAgentRequest::decode(sent.encode_to_vec().as_slice()).unwrap();
+        let host = Uuid::new_v4();
+        let forwarded = forwarded_create(received, host, None);
+        let at_owner = CreateAgentRequest::decode(forwarded.encode_to_vec().as_slice()).unwrap();
+
+        assert_eq!(at_owner.config, sent.config, "the settings arrive as sent");
+        assert_eq!(
+            NewerClaudeCreateConfig::decode(at_owner.config.as_slice()).unwrap(),
+            config,
+            "a host that knows the newer setting reads it"
+        );
+        assert_eq!(
+            ClaudeCreateConfig::decode(at_owner.config.as_slice())
+                .unwrap()
+                .model
+                .as_deref(),
+            Some("opus"),
+            "one that does not still reads the settings it knows"
+        );
+        assert_eq!(
+            at_owner.host.and_then(|host| host.of),
+            Some(host_ref::Of::HostId(host.as_bytes().to_vec()))
+        );
+        assert_eq!(
+            at_owner.agent_id.len(),
+            16,
+            "the id is chosen before it goes"
+        );
     }
 }

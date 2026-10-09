@@ -13,12 +13,13 @@
 //! interface on the same thread.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use prost::Message as _;
 use ratatui::Frame as Paint;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
-use wire::{ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, Input, Kind};
+use wire::{ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, Kind, PromptSubmission};
 
 use crate::editor::Editor;
 use crate::text::{self, push};
@@ -430,7 +431,11 @@ impl Setup {
     }
 
     /// The create request, with the first prompt when there is one.
-    pub fn request(&self, agent_id: Vec<u8>, prompt: Option<Input>) -> CreateAgentRequest {
+    pub fn request(
+        &self,
+        agent_id: Vec<u8>,
+        prompt: Option<PromptSubmission>,
+    ) -> CreateAgentRequest {
         // Used in its own terminal, the agent's terminal sets these.
         let own = self.chat_in == ChatIn::Terminal;
         let permission = if own { None } else { self.permission.clone() };
@@ -438,28 +443,30 @@ impl Setup {
         let effort = if own { None } else { self.effort.clone() };
         let mode = if own { None } else { self.mode.clone() };
         let config = if self.claude() {
-            wire::create_agent_request::Config::Claude(ClaudeCreateConfig {
+            ClaudeCreateConfig {
                 args: Vec::new(),
                 model: model.clone(),
                 permission,
                 effort: effort.clone(),
-            })
+            }
+            .encode_to_vec()
         } else {
-            wire::create_agent_request::Config::Codex(CodexCreateConfig {
+            CodexCreateConfig {
                 model,
                 permission,
                 mode,
                 effort,
-            })
+            }
+            .encode_to_vec()
         };
         CreateAgentRequest {
             agent_id,
-            host_id: Some(self.host.clone()),
+            host: Some(wire::HostRef::id(self.host.clone())),
             name: self.name.clone(),
             cwd: self.folder.clone(),
             kind: self.kind() as i32,
             initial_prompt: prompt,
-            config: Some(config),
+            config,
             new_worktree: self.worktree,
             ..CreateAgentRequest::default()
         }

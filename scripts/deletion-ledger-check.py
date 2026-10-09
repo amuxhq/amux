@@ -330,6 +330,25 @@ ROWS = [
         ],
     ),
     Row(
+        "loose create and resume requests",
+        "a create's separate host id and host name, its per-provider config oneof, and a whole input as the first prompt of a create or resume",
+        [
+            r"create_agent_request::",
+            r"host_name: (Some|None)",
+            r"NotAPrompt",
+            r"PeerRef([^A-Za-z_]|$)",
+            r"peer_ref::",
+        ],
+    ),
+    Row(
+        "requests the client and peer services shared",
+        "a client's subscribe cursor and the dump answer that packed a peer's bundle beside a local path",
+        [
+            r"(^|[^_a-z])subscribe_request::",
+            r"DumpResponse",
+        ],
+    ),
+    Row(
         "docs",
         "the chapter on agent messaging and remote sessions",
         [

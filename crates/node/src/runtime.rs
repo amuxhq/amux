@@ -214,8 +214,8 @@ pub enum RegistryError {
     BadId(usize),
     #[error("agents of kind {0} are unknown")]
     UnknownKind(i32),
-    #[error("an agent's first input is a prompt")]
-    NotAPrompt,
+    #[error(transparent)]
+    Config(#[from] spec::ConfigError),
     #[error("the working directory {0} is not a directory on this host")]
     BadCwd(String),
     #[error("{}", name_words(*.0))]
@@ -264,7 +264,7 @@ impl RegistryError {
             Self::Live(_) | Self::StillLocked(_) => ErrorCode::FailedPrecondition,
             Self::BadId(_)
             | Self::UnknownKind(_)
-            | Self::NotAPrompt
+            | Self::Config(_)
             | Self::BadCwd(_)
             | Self::BadName(_) => ErrorCode::InvalidArgument,
             Self::OtherHost => ErrorCode::Unimplemented,
@@ -774,11 +774,9 @@ impl ProfileRuntime {
         let Some(kind_name) = spec::kind_name(kind) else {
             return Err(RegistryError::UnknownKind(request.kind));
         };
-        let bootstrap = match &request.initial_prompt {
-            Some(input) => Some(spec::prompt_bootstrap(input).ok_or(RegistryError::NotAPrompt)?),
-            None => None,
-        };
+        let resolved = spec::resolve(kind, &request.config)?;
         let mut request = request;
+        let bootstrap = request.initial_prompt.take().map(spec::prompt_bootstrap);
         if request.cwd.is_empty()
             && let Some(caller) = caller
         {
@@ -878,7 +876,6 @@ impl ProfileRuntime {
         let dir = self.agent_dir(id);
         private_dir(&dir)?;
         let launch = self.launch();
-        let resolved = spec::resolve(&request);
         let offered = self.offered_to(kind).await;
         let spec = spec::build(
             &launch,
@@ -922,14 +919,15 @@ impl ProfileRuntime {
         .expect("listing repositories does not panic")
     }
 
-    /// The host a create request is for: its id, else its name resolved
-    /// against this host and the trusted ones, else this host.
+    /// The host a create request is for: the one it names, by id or by name
+    /// resolved against this host and the trusted ones, else this host.
     pub fn target_host(&self, request: &CreateAgentRequest) -> Result<HostId, RegistryError> {
-        if let Some(host) = &request.host_id {
-            return Uuid::from_slice(host).map_err(|_| RegistryError::BadId(host.len()));
-        }
-        match request.host_name.as_deref() {
-            Some(name) if !name.is_empty() => Ok(self.resolve_host(name)?),
+        use wire::host_ref::Of;
+        match request.host.as_ref().and_then(|host| host.of.as_ref()) {
+            Some(Of::HostId(host)) => {
+                Uuid::from_slice(host).map_err(|_| RegistryError::BadId(host.len()))
+            }
+            Some(Of::Name(name)) if !name.is_empty() => Ok(self.resolve_host(name)?),
             _ => Ok(self.host),
         }
     }
@@ -940,20 +938,14 @@ impl ProfileRuntime {
     pub async fn spawn_on(
         &self,
         host: HostId,
-        mut request: CreateAgentRequest,
+        request: CreateAgentRequest,
         caller: Option<AgentId>,
     ) -> Result<Agent, RegistryError> {
-        if let Some(caller) = caller {
-            request.parent = Some(AgentParent {
-                host_id: self.host.as_bytes().to_vec(),
-                agent_id: caller.as_bytes().to_vec(),
-            });
-        }
-        request.host_id = Some(host.as_bytes().to_vec());
-        request.host_name = None;
-        if request.agent_id.is_empty() {
-            request.agent_id = Uuid::new_v4().as_bytes().to_vec();
-        }
+        let parent = caller.map(|caller| AgentParent {
+            host_id: self.host.as_bytes().to_vec(),
+            agent_id: caller.as_bytes().to_vec(),
+        });
+        let request = crate::forward::forwarded_create(request, host, parent);
         Ok(self
             .on_peer(host, |mut client| async move {
                 client.create_agent(request).await

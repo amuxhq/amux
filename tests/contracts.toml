@@ -411,7 +411,29 @@ tests = [
   "node/messaging::a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped",
   "node/messaging::a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_once",
   "node/messaging::an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill",
+  "node/messaging::resend_with_same_id_is_one_item",
   "testnet/spec_families::concurrent_duplicate_sends_across_hosts_yield_one_item",
+]
+
+[[contract]]
+id = "a-host-speaks-for-its-own"
+source = "invariant"
+section = "Runtime"
+claim = "A message's sender is its caller, never request content: the agent whose tools socket made the call, else the person. A paired host is answered only for the answering host's own agents: its inventory carries that host's entry and agents, and a read or input for an agent the host only replicates is not found, never passed on."
+tests = [
+  "node/messaging::send_message_sender_is_the_caller",
+  "node/peer_service::inventory_is_origin_only",
+  "node/peer_service::replica_agent_is_refused_on_every_read_and_input",
+]
+
+[[contract]]
+id = "create-settings-by-kind"
+source = "invariant"
+section = "Runtime"
+claim = "A create's settings are read as its kind's own, never as another provider's, and settings that are not the kind's refuse the create; a daemon forwarding a create passes them on as the bytes they came as."
+tests = [
+  "node/lib::spec::tests::config_must_match_kind",
+  "node/lib::forward::tests::unknown_config_field_survives_forwarding",
 ]
 
 # --- Invariants: session state ----------------------------------------------

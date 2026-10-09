@@ -12,7 +12,7 @@ use provider_fakes::script::Step;
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use wire::{
     ErrorCode, FetchRequest, GetBlobRequest, GetRequest, ListProfilesRequest, PutBlobRequest,
-    SubscribeRequest, inventory_event, session_event, subscribe_request,
+    SubscribeRequest, inventory_event, session_event,
 };
 
 const PATIENCE: Duration = Duration::from_secs(20);
@@ -80,7 +80,7 @@ async fn the_in_process_and_socket_clients_answer_alike() {
         let mut stream = client
             .subscribe(SubscribeRequest {
                 agent_id: worker.clone(),
-                from: Some(subscribe_request::From::Tail(40)),
+                tail: 40,
             })
             .await
             .unwrap();

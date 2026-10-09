@@ -98,8 +98,9 @@ tool's description tells it to reply with `send` to that agent's name.
 
 ### spawn
 
-Starts a child agent of `kind` with `prompt` as its first input. `name` names
-it. `host` is a trusted host's name, as a person would say it; the daemon
+Starts a child agent of `kind` with `prompt` as its first input: the create
+carries it as a prompt submission, which can hold nothing but a prompt, and
+the kind's default settings. `name` names it. `host` is a trusted host's name, as a person would say it; the daemon
 resolves it, and omitted it means the caller's own host. `cwd` is a path on
 the host the child runs on: omitted on the caller's host (named or not, by
 any of its names) it is the caller's own working directory, and omitted on
@@ -188,13 +189,13 @@ that the answer waits for ingest, which is milliseconds. A person's
 A send goes from the model to the recipient's provider like this:
 
 1. The harness calls `send` on the tool server, which resolves `to` with
-   `ResolveAgent` and calls `SendMessage` on `tools.sock` with an `Envelope`:
-   a fresh id, the recipient as a host and an agent, the text, the context,
-   and the kind `message`.
-2. The daemon sets `from` from the socket the call arrived on (the agent's id,
-   host, name and kind), never from the request. For a recipient on another
-   host it forwards the envelope there ([across hosts](#across-hosts));
-   otherwise it runs the recipient's lane.
+   `ResolveAgent` and calls `SendMessage` on `tools.sock` with a
+   `SendMessageRequest`: a fresh id, the recipient as a host and an agent, the
+   text and the context. The request has no sender and no kind.
+2. The daemon makes the `Envelope`: an ordinary message whose `from` is the
+   agent the socket belongs to (its id, host, name and kind). For a recipient
+   on another host it forwards the envelope there
+   ([across hosts](#across-hosts)); otherwise it runs the recipient's lane.
 3. A recipient that has exited is resumed with the message as its first
    input when the sender is its parent. Any other sender is answered
    `rejected: exited`.
@@ -330,8 +331,9 @@ Messages, spawns and stops reach agents on paired hosts through the daemons'
 ordinary peer calls; nothing about them is specific to messaging.
 
 - **Send.** `ResolveAgent` finds a remote agent by its replica row. The local
-  daemon sets `from` to the calling agent, with this host's id, and makes the
-  `SendMessage` call on the recipient's daemon over the peer link. That daemon
+  daemon stamps the envelope as from the calling agent, with this host's id,
+  and makes the peer service's `SendMessage` call, which carries that
+  envelope, on the recipient's daemon over the peer link. That daemon
   accepts an agent sender only if it belongs to the calling host, since a
   host speaks only for its own agents, and then runs the recipient's lane as
   for a local sender. A message that arrived from a peer for a third host is

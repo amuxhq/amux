@@ -237,13 +237,7 @@ impl ProfileRuntime {
             }
         });
         for (host, ids, answer) in futures_util::future::join_all(asked).await {
-            let part = answer
-                .map_err(|error| error.to_string())
-                .and_then(|answer| {
-                    DumpPart::decode(answer.bundle.as_slice())
-                        .map_err(|error| format!("its dump could not be read: {error}"))
-                });
-            match part {
+            match answer.map_err(|error| error.to_string()) {
                 Ok(part) => unpack_host(host, &ids, part, bundle, agents, errors)?,
                 Err(error) => {
                     for id in &ids {

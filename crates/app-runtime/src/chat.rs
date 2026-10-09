@@ -381,12 +381,9 @@ impl Chat {
     /// The exited composer's one tap: the draft is the new incarnation's
     /// first prompt.
     pub async fn resume_with(&self, draft: &Draft) -> ActOutcome {
-        let kind = self.session.state().kind();
         let attachments = draft.attachments.iter().map(|a| a.to_wire()).collect();
-        let Some(input) = ui_runtime::inputs::prompt(kind, &draft.text, attachments) else {
-            return ActOutcome::Rejected(RefusalReason::Unsupported);
-        };
-        match self.session.resume_with(input).await {
+        let prompt = ui_runtime::inputs::submission(&draft.text, attachments);
+        match self.session.resume_with(prompt).await {
             Ok(_) => ActOutcome::Done,
             Err(error) if error.is_transport() => ActOutcome::NotConfirmed,
             Err(error) => ActOutcome::Failed(error.to_string()),

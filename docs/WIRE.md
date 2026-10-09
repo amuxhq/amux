@@ -41,10 +41,16 @@ input only to its own direct children; renaming, stopping, resuming, deleting,
 dumping, diffs and `PutBlob` are a person's acts and are refused there with
 `PERMISSION_DENIED`.
 
-`PeerService` has the same calls with the same request and response messages
-as `ClientService`. Replication is a daemon being a client of its peer. A call
-on another host's agent arrives at the local runtime, which forwards it one hop
-to the owning host.
+`PeerService` is the daemon-to-daemon service over a link. Replication is a
+daemon being a client of its peer. A call on another host's agent arrives at
+the local runtime, which forwards it one hop to the owning host. The peer
+service answers only for its host's own agents and never passes a call on:
+its inventory stream carries that host's entry and agents, and `Subscribe`,
+`Fetch`, `Get` and `SendInput` for an agent it only replicates are
+`NOT_FOUND`. Three of its messages differ from the client's: `Subscribe` takes
+a `PeerSubscribeRequest`, which may carry a cursor; `SendMessage` takes the
+`Envelope` the sending daemon stamped; and `Dump` answers with the host's
+`DumpPart` itself.
 
 ### Errors
 
@@ -77,27 +83,64 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | `Fetch(FetchRequest)` | `FetchResponse` | A page of older items |
 | `Get(GetRequest)` | `Item` | One item in full |
 | `SendInput(SendInputRequest)` | `SendInputResponse` | The interpreter's verdict on one input |
-| `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
+| `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
 | `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`. The agent's branch keeps the name it was made with |
 | `StopAgent(StopAgentRequest)` | `Empty` | `GRACEFUL`, `ABORT` or `KILL`; a registry act, never a chat control |
 | `ResumeAgent(ResumeAgentRequest)` | `Agent` | Start the agent's directory again, optionally with a first prompt |
 | `DeleteAgent` | `DeleteAgentResponse` | Cascades to children; lists removed and unreachable children |
-| `SendMessage(Envelope)` | `SendMessageResponse` | Agent messaging (see [agent tools](AGENT_TOOLS.md)) |
+| `SendMessage(SendMessageRequest)` | `SendMessageResponse` | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
 | `PutBlob(PutBlobRequest)` | `BlobRef` | Bytes into an agent's directory |
 | `GetBlob(GetBlobRequest)` | `GetBlobResponse` | Bytes out |
 | `Diff(DiffRequest)` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
 | `GetCatalogue(GetCatalogueRequest)` | `Catalogue` | What an agent offers now, by agent id, or a provider on a host with no agent running, with its hash |
 | `ListRepositories` | `ListRepositoriesResponse` | Repositories a host offers to spawn agents in |
-| `Dump(DumpRequest)` | `DumpResponse` | A debug bundle (see [debugging](DEBUGGING.md)) |
+| `Dump(DumpRequest)` | `DumpReport` | A debug bundle, and where it was written (see [debugging](DEBUGGING.md)) |
 
 There are no unary list calls: a listing is `SubscribeInventory` read to
 `CaughtUp`. There is no status call: what an agent is working on is a field of
 its snapshot.
 
+### Creating and resuming
+
+```proto
+message CreateAgentRequest {
+  bytes agent_id = 1;
+  optional HostRef host = 2;                  // absent: this host
+  optional string name = 3;
+  optional AgentParent parent = 4;
+  string cwd = 5;
+  Kind kind = 6;
+  bytes config = 7;                           // the kind's creation settings, encoded
+  optional PromptSubmission initial_prompt = 8;
+  bool new_worktree = 9;
+}
+
+message HostRef { oneof of { bytes host_id = 1; string name = 2; } }
+message PromptSubmission { bytes input_id = 1; PromptInput prompt = 2; }
+message ResumeAgentRequest { bytes agent_id = 1; optional PromptSubmission initial_prompt = 2; }
+```
+
+`host` names the host that runs the agent, by id or by the name a person
+knows it by, resolved against this host and the trusted ones: exact first,
+then ignoring case. A name more than one host answers to is refused with the
+candidates (`AmbiguousHostName`). `config` is `ClaudeCreateConfig` for both
+Claude kinds and `CodexCreateConfig` for Codex, encoded; the host that spawns
+the agent reads it as `kind` says, and settings that are not that kind's fail
+the call with `INVALID_ARGUMENT`. A daemon forwarding the create to another
+host passes the bytes on untouched, so a setting it does not know arrives
+intact. `initial_prompt` is a prompt with its attachments and the client's
+input id; it is queued before the agent starts. A resume takes the same: the
+exited chat's composer sends its draft that way.
+
 ## Subscribe
 
 ```proto
 message SubscribeRequest {
+  bytes agent_id = 1;
+  uint32 tail = 2;
+}
+
+message PeerSubscribeRequest {
   bytes agent_id = 1;
   oneof from { uint32 tail = 2; After after = 3; }
 }
@@ -107,9 +150,9 @@ A client sends one integer, `tail`: how many of the newest rows it wants. It
 never sends a revision. The runtime caps the tail at K, the rows a replica
 keeps (200, `TAIL_ROWS` in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs)).
 The tail is a minimum: a client that cannot fill its screen pages older at once
-with `Fetch`. `after` is how a peer's source resumes toward an origin: the
-revision it holds, a cap, and the origin generation that revision was taken
-under. A client that sends it on `ClientService` gets `UNIMPLEMENTED`.
+with `Fetch`. `after` exists only on the peer service's request: it is how a
+peer's source resumes toward an origin, with the revision it holds, a cap, and
+the origin generation that revision was taken under.
 
 A stream is `SessionEvent`s:
 
@@ -317,6 +360,27 @@ held they are returned with `exhausted` false, and the next page asks again.
 `Get(agent_id, key)` returns one held item in full. It is how a client
 recovers when an append's base does not match the revision it holds.
 
+## Messages
+
+```proto
+message SendMessageRequest {
+  bytes id = 1;                 // the caller's, for dedupe
+  AgentParent to = 2;
+  string text = 3;
+  optional bytes context = 4;
+}
+```
+
+A message to an agent, on this host or another. The daemon stamps who it is
+from: the person on a client socket, the agent whose tools socket made the
+call. The request has nowhere to name a sender, so no caller can speak for
+anyone else. Finished and failed messages are the daemon's own, sent when a
+child's turn ends, and cannot be submitted. The recipient's daemon dedupes by
+`id` against the recipient's items, so a resend after a lost answer is one
+message. The answer comes once the recipient has accepted it. A paired host
+forwards the envelope its daemon stamped, and the receiving daemon takes an
+agent sender only if that agent is the forwarding host's own.
+
 ## Inputs
 
 ```proto
@@ -487,7 +551,8 @@ A blob lives as long as its agent's directory. See
 `SubscribeInventory` streams `InventoryEvent`s: `HostEntry` for every trusted
 host and every discovered candidate, `Agent` for every agent row the runtime
 holds (its own and its paired hosts'), then `CaughtUp`, then changes as they
-happen (`HostEntry`, `HostRemoved`, `Agent`, `AgentRemoved`).
+happen (`HostEntry`, `HostRemoved`, `Agent`, `AgentRemoved`). A paired host's
+stream of it carries only the answering host's own entry and agents.
 
 `Agent` is the inventory row. It carries `kind`, `name` (always set),
 `cwd`, `parent` (a host and an id, since families cross hosts), `lifecycle`

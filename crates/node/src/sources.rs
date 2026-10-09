@@ -46,7 +46,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
     Agent, AgentRemoved, Detached, Empty, FetchRequest, FetchResponse, InventoryEvent, Item,
-    SessionEvent, SubscribeRequest, inventory_event, session_event, subscribe_request,
+    PeerSubscribeRequest, SessionEvent, inventory_event, peer_subscribe_request, session_event,
 };
 
 use crate::HostId;
@@ -1119,13 +1119,13 @@ async fn source_once(
             _ => return Ended::Stale,
         };
         let from = if row.complete_from_order.is_some() {
-            subscribe_request::From::After(wire::After {
+            peer_subscribe_request::From::After(wire::After {
                 revision: row.source_cursor,
                 cap: k,
                 generation: row.source_generation,
             })
         } else {
-            subscribe_request::From::Tail(k)
+            peer_subscribe_request::From::Tail(k)
         };
         let Some(edge) = me.edge() else {
             return Ended::Stale;
@@ -1135,7 +1135,7 @@ async fn source_once(
             return Ended::Stale;
         };
         (
-            SubscribeRequest {
+            PeerSubscribeRequest {
                 agent_id: key.agent.clone(),
                 from: Some(from),
             },
@@ -1144,7 +1144,7 @@ async fn source_once(
             agent_id,
         )
     };
-    let tail = matches!(request.from, Some(subscribe_request::From::Tail(_)));
+    let tail = matches!(request.from, Some(peer_subscribe_request::From::Tail(_)));
     let mut client = match edge.session_peer(host).await {
         Ok(client) => client,
         Err(_) => return Ended::Lost { caught_up: false },

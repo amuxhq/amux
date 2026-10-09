@@ -12,8 +12,8 @@ use node::{Daemon, Launch, ProfileId, ProfileRuntime, StartOptions};
 pub use patience::{PATIENCE, Stuck, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
 use wire::{
-    AgentParent, ClaudeCreateConfig, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput,
-    StopMode, claude_sdk_input, create_agent_request,
+    AgentParent, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
+    StopMode, claude_sdk_input,
 };
 
 /// The amux binary and the fake providers, built once per test run.
@@ -159,17 +159,26 @@ pub fn runtime(daemon: &Daemon, install: &Install) -> Arc<ProfileRuntime> {
 pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> CreateAgentRequest {
     CreateAgentRequest {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-        host_id: None,
+        host: None,
         name: Some(name.to_owned()),
         parent: None,
-        initial_prompt: prompt.map(|text| sdk_prompt(b"p0", text)),
         cwd: cwd.to_string_lossy().into_owned(),
         kind: Kind::ClaudeSdk as i32,
-        config: Some(create_agent_request::Config::Claude(
-            ClaudeCreateConfig::default(),
-        )),
-        host_name: None,
+        // Claude's default settings encode as no bytes.
+        config: Vec::new(),
+        initial_prompt: prompt.map(|text| submission(b"p0", text)),
         new_worktree: false,
+    }
+}
+
+/// A first prompt for a create or a resume.
+pub fn submission(id: &[u8], text: &str) -> PromptSubmission {
+    PromptSubmission {
+        input_id: id.to_vec(),
+        prompt: Some(PromptInput {
+            text: text.to_owned(),
+            attachments: Vec::new(),
+        }),
     }
 }
 

@@ -19,8 +19,8 @@ use support::*;
 use tonic::{Code, Request};
 use wire::client_service_server::ClientService as _;
 use wire::{
-    AgentParent, ClaudeSdkInput, DeleteAgentRequest, Envelope, EnvelopeKind, Input, Lifecycle,
-    PromptInput, RenameAgentRequest, SendInputRequest, SendInputResponse, StopAgentRequest,
+    AgentParent, ClaudeSdkInput, DeleteAgentRequest, EnvelopeKind, Input, Lifecycle, PromptInput,
+    RenameAgentRequest, SendInputRequest, SendInputResponse, SendMessageRequest, StopAgentRequest,
     StopMode, claude_sdk_input, send_input_response, sender,
 };
 
@@ -327,15 +327,11 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     recipient.go_live();
     let (daemon, runtime) = start(&install, "boot-1").await;
 
-    let envelope = Envelope {
+    let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
         text: "can you look at the build?".into(),
-        // Whatever the caller claims is replaced by what its socket says.
-        from: Some(wire::Sender {
-            value: Some(sender::Value::Human(wire::Human {})),
-        }),
-        ..Envelope::default()
+        ..SendMessageRequest::default()
     };
     let sent = runtime
         .send_message(envelope.clone(), Some(sender.id))
@@ -386,17 +382,125 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .unwrap();
     let refused = runtime
         .send_message(
-            Envelope {
+            SendMessageRequest {
                 id: b"envelope-2".to_vec(),
                 to: to(&recipient, &install),
                 text: "still there?".into(),
-                ..Envelope::default()
+                ..SendMessageRequest::default()
             },
             Some(sender.id),
         )
         .await
         .unwrap_err();
     assert!(matches!(refused, RelayError::Rejected(ref reason) if reason == "exited"));
+    crash(daemon, runtime).await;
+}
+
+/// The sender on what the recipient is handed is whoever called: the agent
+/// whose tools socket the call came in on, or the person on the profile
+/// socket. The request has nowhere to name anyone else, and what it sends
+/// is an ordinary message.
+#[tokio::test(flavor = "multi_thread")]
+async fn send_message_sender_is_the_caller() {
+    let install = Install::new();
+    let sender = SyntheticAgent::new(&install, "sender", SEGMENTS);
+    sender.register_offline(&install);
+    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
+    recipient.register_offline(&install);
+    recipient.go_live();
+    let (daemon, runtime) = start(&install, "boot-1").await;
+
+    let on_tools = ClientApi::new(&runtime, Some(sender.id));
+    let on_profile = ClientApi::new(&runtime, None);
+    for (api, id) in [
+        (&on_tools, b"from-the-agent".as_slice()),
+        (&on_profile, b"from-the-person".as_slice()),
+    ] {
+        let sent = api
+            .send_message(Request::new(SendMessageRequest {
+                id: id.to_vec(),
+                to: to(&recipient, &install),
+                text: "a word".into(),
+                context: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(sent.get_ref().envelope_id, id);
+    }
+
+    let handed = recipient
+        .inputs()
+        .into_iter()
+        .map(|handed| match handed {
+            Handed::Message(envelope) => envelope,
+            Handed::Input(input) => panic!("an agent message, not {input:?}"),
+        })
+        .collect::<Vec<_>>();
+    let [from_agent, from_person] = handed.as_slice() else {
+        panic!("two messages, got {handed:?}");
+    };
+    match from_agent
+        .from
+        .as_ref()
+        .and_then(|from| from.value.as_ref())
+    {
+        Some(sender::Value::Agent(from)) => {
+            assert_eq!(from.agent_id, sender.id.as_bytes().to_vec());
+            assert_eq!(from.host_id, host(&install).as_bytes().to_vec());
+            assert_eq!(from.name, "sender");
+        }
+        other => panic!("the calling agent sent it, not {other:?}"),
+    }
+    assert!(
+        matches!(
+            from_person
+                .from
+                .as_ref()
+                .and_then(|from| from.value.as_ref()),
+            Some(sender::Value::Human(_))
+        ),
+        "the person sent it: {from_person:?}"
+    );
+    for envelope in &handed {
+        assert_eq!(envelope.kind, EnvelopeKind::Message as i32);
+        assert_eq!(envelope.incarnation, None);
+    }
+    crash(daemon, runtime).await;
+}
+
+/// A caller that resends with the id it chose, as one whose answer was
+/// lost does, makes one item on the recipient and one hand-off.
+#[tokio::test(flavor = "multi_thread")]
+async fn resend_with_same_id_is_one_item() {
+    let install = Install::new();
+    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
+    recipient.register_offline(&install);
+    recipient.go_live();
+    let (daemon, runtime) = start(&install, "boot-1").await;
+    let api = ClientApi::new(&runtime, None);
+    let request = SendMessageRequest {
+        id: b"chosen-by-the-caller".to_vec(),
+        to: to(&recipient, &install),
+        text: "can you look at the build?".into(),
+        context: Some(b"build".to_vec()),
+    };
+    for _ in 0..2 {
+        let sent = api
+            .send_message(Request::new(request.clone()))
+            .await
+            .unwrap();
+        assert_eq!(sent.get_ref().envelope_id, request.id);
+    }
+    assert_eq!(recipient.inputs().len(), 1, "handed over once");
+    let items = items_with_input(&runtime, &recipient.key(&install)).await;
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.input_id.as_slice())
+            .collect::<Vec<_>>(),
+        vec![request.id.as_slice()],
+        "one item for the message"
+    );
     crash(daemon, runtime).await;
 }
 
@@ -410,11 +514,11 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
     recipient.go_live();
     recipient.answer_with(Answer::AcceptWithoutNudge);
     let (daemon, runtime) = start(&install, "boot-1").await;
-    let envelope = Envelope {
+    let envelope = SendMessageRequest {
         id: b"envelope-1".to_vec(),
         to: to(&recipient, &install),
         text: "can you look at the build?".into(),
-        ..Envelope::default()
+        ..SendMessageRequest::default()
     };
     let send = || {
         let runtime = runtime.clone();
@@ -483,11 +587,11 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     child.answer_with(Answer::Reject(node::EXITING.into()));
     let (daemon, runtime) = start_resuming(&install).await;
 
-    let envelope = Envelope {
+    let envelope = SendMessageRequest {
         id: b"wrap-up".to_vec(),
         to: to(&child, &install),
         text: "wrap up and report".into(),
-        ..Envelope::default()
+        ..SendMessageRequest::default()
     };
     let sent = tokio::spawn({
         let runtime = runtime.clone();
@@ -583,11 +687,11 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
     parent.answer_with(Answer::AcceptWithoutNudge);
     let held = tokio::spawn({
         let runtime = runtime.clone();
-        let envelope = Envelope {
+        let envelope = SendMessageRequest {
             id: b"hold".to_vec(),
             to: to(&parent, &install),
             text: "a word".into(),
-            ..Envelope::default()
+            ..SendMessageRequest::default()
         };
         async move { runtime.send_message(envelope, None).await }
     });
@@ -976,14 +1080,14 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         .await
         .unwrap();
 
-    let envelope = Envelope {
+    let envelope = SendMessageRequest {
         id: b"follow-up".to_vec(),
         to: Some(AgentParent {
             host_id: runtime.host().as_bytes().to_vec(),
             agent_id: child.as_bytes().to_vec(),
         }),
         text: "one more thing".into(),
-        ..Envelope::default()
+        ..SendMessageRequest::default()
     };
     runtime
         .send_message(envelope, Some(parent))
@@ -1017,14 +1121,14 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
     // Anyone but the parent is told the child has exited.
     let refused = runtime
         .send_message(
-            Envelope {
+            SendMessageRequest {
                 id: b"stranger".to_vec(),
                 to: Some(AgentParent {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
                 }),
                 text: "hello?".into(),
-                ..Envelope::default()
+                ..SendMessageRequest::default()
             },
             None,
         )

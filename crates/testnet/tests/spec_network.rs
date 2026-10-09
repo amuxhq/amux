@@ -1344,18 +1344,18 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     let mut answers = Vec::new();
     answers.push((
         "Subscribe with a three-byte agent id",
-        peer.subscribe(wire::SubscribeRequest {
+        peer.subscribe(wire::PeerSubscribeRequest {
             agent_id: short.clone(),
-            from: Some(wire::subscribe_request::From::Tail(5)),
+            from: Some(wire::peer_subscribe_request::From::Tail(5)),
         })
         .await
         .map(|_| ()),
     ));
     answers.push((
         "Subscribe to an agent the desk never had",
-        peer.subscribe(wire::SubscribeRequest {
+        peer.subscribe(wire::PeerSubscribeRequest {
             agent_id: unknown.clone(),
-            from: Some(wire::subscribe_request::From::Tail(5)),
+            from: Some(wire::peer_subscribe_request::From::Tail(5)),
         })
         .await
         .map(|_| ()),

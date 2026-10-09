@@ -151,6 +151,22 @@ impl Input {
     }
 }
 
+impl HostRef {
+    /// A host by its id.
+    pub fn id(host_id: impl Into<Vec<u8>>) -> Self {
+        Self {
+            of: Some(host_ref::Of::HostId(host_id.into())),
+        }
+    }
+
+    /// A host as a person names it.
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            of: Some(host_ref::Of::Name(name.into())),
+        }
+    }
+}
+
 /// Why an input was refused: the reasons a `Rejected` reply carries. Every
 /// side that refuses an input takes its reason from here, and the clients'
 /// shared state maps each to a typed value, so the two cannot drift.

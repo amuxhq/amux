@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 client = { workspace = true }
 model = { workspace = true }
+prost = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

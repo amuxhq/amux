@@ -394,8 +394,9 @@ service ClientService {
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
   // Cascades to children.
   rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
-  // Also called by the tool server with the agent's identity.
-  rpc SendMessage(Envelope) returns (SendMessageResponse);
+  // Also called by the tool server with the agent's identity. The daemon
+  // stamps the sender from the caller and never from the request.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
   // The only put: written into that agent's directory.
   rpc PutBlob(PutBlobRequest) returns (BlobRef);
   rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
@@ -406,15 +407,20 @@ service ClientService {
   rpc GetCatalogue(GetCatalogueRequest) returns (Catalogue);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   // The one bundle format.
-  rpc Dump(DumpRequest) returns (DumpResponse);
+  rpc Dump(DumpRequest) returns (DumpReport);
 }
 
 // Daemon to daemon, over the link's application streams. Replication is a
-// daemon being a client of its peer; every request and response is the one
-// ClientService uses.
+// daemon being a client of its peer. The peer service answers only for
+// this host's own agents and never passes a call on, so no two hosts can
+// bounce a call between them: its inventory stream carries this host's
+// entry and this host's agents; Subscribe, Fetch, Get and SendInput refuse
+// an agent owned elsewhere with NOT_FOUND.
 service PeerService {
   rpc SubscribeInventory(Empty) returns (stream InventoryEvent);
-  rpc Subscribe(SubscribeRequest) returns (stream SessionEvent);
+  // A peer source sends `after` toward its origin once it holds a cursor,
+  // else `tail`.
+  rpc Subscribe(PeerSubscribeRequest) returns (stream SessionEvent);
   rpc Fetch(FetchRequest) returns (FetchResponse);
   rpc Get(GetRequest) returns (Item);
   rpc SendInput(SendInputRequest) returns (SendInputResponse);
@@ -429,17 +435,22 @@ service PeerService {
   rpc Diff(DiffRequest) returns (amux.v1.Diff);
   rpc GetCatalogue(GetCatalogueRequest) returns (Catalogue);
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
-  // The host-side parts of the caller's dump for agents this host runs:
-  // the bundle travels packed in the response.
-  rpc Dump(DumpRequest) returns (DumpResponse);
+  // The host-side parts of the caller's dump for agents this host runs,
+  // packed in the response.
+  rpc Dump(DumpRequest) returns (DumpPart);
 }
 
 message ResolveAgentRequest {
   string name = 1;
 }
 
-// Clients send tail; a peer source sends after toward its origin.
+// Clients tail; the daemon never accepts a cursor from a client.
 message SubscribeRequest {
+  bytes agent_id = 1;
+  uint32 tail = 2;
+}
+
+message PeerSubscribeRequest {
   bytes agent_id = 1;
   oneof from {
     uint32 tail = 2;
@@ -517,32 +528,38 @@ message SendInputRequest {
 
 message CreateAgentRequest {
   bytes agent_id = 1;
-  optional bytes host_id = 2;
+  // The host that runs it; absent means this host.
+  optional HostRef host = 2;
   // Lowercase letters, digits and hyphens, starting with a letter or digit
   // (wire::agent_name_problem); the host picks a free one when absent.
   optional string name = 3;
   optional AgentParent parent = 4;
-  // A prompt as SendInput carries one, so it brings its attachments; any
-  // other input is refused.
-  optional Input initial_prompt = 5;
-  string cwd = 6;
-  // Which interpreter: the config arm names only the provider.
-  Kind kind = 7;
-  // The host as a person names it, resolved against this host and the
-  // trusted ones: exact first, then ignoring case. host_id wins when both
-  // are set; neither means this host.
-  optional string host_name = 8;
-  oneof config {
-    ClaudeCreateConfig claude = 9;
-    CodexCreateConfig codex = 10;
-  }
+  string cwd = 5;
+  // Which interpreter, and that kind's creation settings encoded, decoded
+  // by the host that spawns it: ClaudeCreateConfig for both Claude kinds,
+  // CodexCreateConfig for Codex. Opaque so a forwarding daemon of another
+  // version passes a setting it does not know through intact.
+  Kind kind = 6;
+  bytes config = 7;
+  // The first prompt, with attachments, queued before the agent starts.
+  optional PromptSubmission initial_prompt = 8;
   // Start the agent in a new git worktree of cwd's repository, on a new
   // branch named after the agent, made from whatever cwd has checked out.
   // The agent's host chooses where the worktree lives; the agent's cwd is
   // the worktree. Fails the call, making no agent, when cwd is not in a
   // repository or the branch exists. The name is valid as a branch, so it
   // is the branch as given.
-  bool new_worktree = 11;
+  bool new_worktree = 9;
+}
+
+// A host by id, or as a person names it, resolved against this host and
+// the trusted ones: exact first, then ignoring case. AmbiguousHostName
+// when more than one answers.
+message HostRef {
+  oneof of {
+    bytes host_id = 1;
+    string name = 2;
+  }
 }
 
 message RenameAgentRequest {
@@ -560,7 +577,7 @@ message StopAgentRequest {
 // The composer of an exited chat sends its draft through initial_prompt.
 message ResumeAgentRequest {
   bytes agent_id = 1;
-  optional Input initial_prompt = 2;
+  optional PromptSubmission initial_prompt = 2;
 }
 
 message DeleteAgentRequest {
@@ -570,6 +587,18 @@ message DeleteAgentRequest {
 message DeleteAgentResponse {
   repeated Agent removed_children = 1;
   repeated Agent unreachable_children = 2;
+}
+
+// A message to an agent. `id` is the caller's, so the recipient's daemon
+// can dedupe a resend against the recipient's items; the tool server mints
+// one per send. Who it is from is the caller: a person on a client socket,
+// or the agent whose tools socket made the call. Finished and failed
+// messages are the daemon's own and cannot be submitted.
+message SendMessageRequest {
+  bytes id = 1;
+  AgentParent to = 2;
+  string text = 3;
+  optional bytes context = 4;
 }
 
 message SendMessageResponse {
@@ -645,12 +674,9 @@ message DumpRequest {
   bool automatic = 3;
 }
 
-message DumpResponse {
-  // Where the bundle was written, for a caller on the same machine.
+// Where the bundle was written, for a caller on the same machine.
+message DumpReport {
   string report_path = 1;
-  // An encoded DumpPart holding the whole bundle, for a paired host's
-  // call; empty for a local caller.
-  bytes bundle = 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -788,11 +814,11 @@ message ProfileTrustSshPeerRequest {
   string profile_id = 2;
   TrustSshPeerRequest pairing = 3;
 }
-message ProfileGetPeerRequest { string profile_id = 1; PeerRef peer = 2; }
+message ProfileGetPeerRequest { string profile_id = 1; HostRef peer = 2; }
 message ProfileUnpairRequest {
   string operation_id = 1;
   string profile_id = 2;
-  PeerRef peer = 3;
+  HostRef peer = 3;
   string reason = 4;
 }
 enum PeerVia {
@@ -844,13 +870,6 @@ message PendingPairRequest {
 message TrustSshPeerRequest {
   PairingIdentity peer = 1;
   SshTarget ssh_target = 2;
-}
-
-message PeerRef {
-  oneof identifier {
-    bytes host_id = 1;
-    string name = 2;
-  }
 }
 
 message PeerReachability {

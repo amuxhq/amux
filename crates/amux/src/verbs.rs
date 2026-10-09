@@ -5,15 +5,16 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
+use prost::Message as _;
 use tonic::transport::Channel;
 use uuid::Uuid;
 use wire::client_service_client::ClientServiceClient;
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Empty, HostEntry, Input, Kind, Lifecycle,
-    Phase, PromptInput, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest,
-    SendInputRequest, StopAgentRequest, StopMode, claude_pty_input, claude_sdk_input, codex_input,
-    create_agent_request, inventory_event, send_input_response,
+    Phase, PromptInput, PromptSubmission, RenameAgentRequest, ResolveAgentRequest,
+    ResumeAgentRequest, SendInputRequest, StopAgentRequest, StopMode, claude_pty_input,
+    claude_sdk_input, codex_input, inventory_event, send_input_response,
 };
 
 type Client = ClientServiceClient<Channel>;
@@ -204,6 +205,17 @@ pub enum CliStopMode {
 }
 
 /// A prompt in the input arm the agent's kind takes.
+/// A first prompt for a create or a resume.
+fn submission(text: &str) -> PromptSubmission {
+    PromptSubmission {
+        input_id: Uuid::new_v4().as_bytes().to_vec(),
+        prompt: Some(PromptInput {
+            text: text.to_owned(),
+            attachments: Vec::new(),
+        }),
+    }
+}
+
 pub fn prompt(kind: i32, text: &str) -> Input {
     let prompt = PromptInput {
         text: text.to_owned(),
@@ -247,28 +259,27 @@ pub async fn create(client: &mut Client, create: Create) -> Result<()> {
             if !create.args.is_empty() {
                 bail!("codex agents take no extra provider arguments");
             }
-            create_agent_request::Config::Codex(CodexCreateConfig {
+            CodexCreateConfig {
                 model: create.model,
                 ..CodexCreateConfig::default()
-            })
+            }
+            .encode_to_vec()
         }
-        _ => create_agent_request::Config::Claude(ClaudeCreateConfig {
+        _ => ClaudeCreateConfig {
             args: create.args,
             model: create.model,
             ..ClaudeCreateConfig::default()
-        }),
+        }
+        .encode_to_vec(),
     };
     let agent = client
         .create_agent(CreateAgentRequest {
             agent_id: Uuid::new_v4().as_bytes().to_vec(),
             name: create.name,
-            initial_prompt: create
-                .prompt
-                .as_deref()
-                .map(|text| prompt(kind as i32, text)),
+            initial_prompt: create.prompt.as_deref().map(submission),
             cwd: cwd.to_string_lossy().into_owned(),
             kind: kind as i32,
-            config: Some(config),
+            config,
             ..CreateAgentRequest::default()
         })
         .await
@@ -352,7 +363,7 @@ pub async fn resume(client: &mut Client, reference: &str, text: Option<&str>) ->
     let resumed = client
         .resume_agent(ResumeAgentRequest {
             agent_id: agent.agent_id.clone(),
-            initial_prompt: text.map(|text| prompt(agent.kind, text)),
+            initial_prompt: text.map(submission),
         })
         .await
         .map_err(crate::plain)?

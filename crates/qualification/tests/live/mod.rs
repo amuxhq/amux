@@ -48,7 +48,7 @@ use wire::{
     ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, Input, Item, Kind, ListProfilesRequest, Phase, SendInputRequest, Snapshot,
     SubscribeRequest, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
-    create_agent_request, permission_answer, send_input_response, session_event, subscribe_request,
+    permission_answer, send_input_response, session_event,
 };
 
 /// Claude runs on its cheapest model; the lane judges structure, not wit.
@@ -730,7 +730,7 @@ impl Install {
                 name: Some(scenario.name().to_owned()),
                 cwd: self.project(scenario)?.to_string_lossy().into_owned(),
                 kind: Kind::Codex as i32,
-                config: Some(create_agent_request::Config::Codex(config)),
+                config: prost::Message::encode_to_vec(&config),
                 ..CreateAgentRequest::default()
             })
             .await
@@ -753,7 +753,7 @@ impl Install {
                     let stream = client
                         .subscribe(SubscribeRequest {
                             agent_id: agent.clone(),
-                            from: Some(subscribe_request::From::Tail(1000)),
+                            tail: 1000,
                         })
                         .await;
                     if let Ok(stream) = stream {

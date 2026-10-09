@@ -40,11 +40,11 @@ use sha2::{Digest, Sha256};
 use tonic::Request;
 use wire::profile_service_server::ProfileService as _;
 use wire::{
-    BeginPairRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, HostVia,
-    Intent, ListProfilesRequest, Observed, PeerEntry, PeerRef, PeerVia, PendingPairRequest,
+    BeginPairRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, HostRef,
+    HostVia, Intent, ListProfilesRequest, Observed, PeerEntry, PeerVia, PendingPairRequest,
     ProfileBeginPairRequest, ProfileInfo, ProfileOperation, ProfilePendingPairRequest,
     ProfileRequest, ProfileStartPairingRequest, ProfileUnpairRequest, StartPairingRequest, Tier,
-    WatchProfilesRequest, WatchProfilesResponse, begin_pair_request, peer_ref,
+    WatchProfilesRequest, WatchProfilesResponse, begin_pair_request, host_ref,
     start_pairing_response, watch_profiles_response,
 };
 
@@ -733,8 +733,8 @@ impl EmbeddedRuntime {
             .unpair(Request::new(ProfileUnpairRequest {
                 operation_id: operation(),
                 profile_id: profile.to_string(),
-                peer: Some(PeerRef {
-                    identifier: Some(peer_ref::Identifier::HostId(host_id.to_vec())),
+                peer: Some(HostRef {
+                    of: Some(host_ref::Of::HostId(host_id.to_vec())),
                 }),
                 reason: String::new(),
             }))

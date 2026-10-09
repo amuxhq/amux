@@ -251,7 +251,11 @@ async fn an_agent_created_from_another_host_gets_its_worktree_on_its_own_host() 
     );
     let from_laptop = node::ClientApi::new(&laptop_runtime, None);
     let on_desk = |name: &str| CreateAgentRequest {
-        host_id: Some(desk_runtime.host().as_bytes().to_vec()),
+        host: Some(wire::HostRef {
+            of: Some(wire::host_ref::Of::HostId(
+                desk_runtime.host().as_bytes().to_vec(),
+            )),
+        }),
         ..in_worktree(&repo, Some(name))
     };
 

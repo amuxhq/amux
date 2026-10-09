@@ -1625,7 +1625,7 @@ impl client::Client for DiffHost {
     }
     async fn send_message(
         &self,
-        _: wire::Envelope,
+        _: wire::SendMessageRequest,
     ) -> Result<wire::SendMessageResponse, client::RpcError> {
         unimplemented!()
     }
@@ -1638,7 +1638,7 @@ impl client::Client for DiffHost {
     ) -> Result<wire::ListRepositoriesResponse, client::RpcError> {
         unimplemented!()
     }
-    async fn dump(&self, _: wire::DumpRequest) -> Result<wire::DumpResponse, client::RpcError> {
+    async fn dump(&self, _: wire::DumpRequest) -> Result<wire::DumpReport, client::RpcError> {
         unimplemented!()
     }
 }
@@ -2753,9 +2753,9 @@ fn a_new_agent_offers_what_its_host_offers() {
         .open_setup(&HOME_PLACE)
         .unwrap()
         .request(b"id".to_vec(), None);
-    let Some(wire::create_agent_request::Config::Codex(config)) = request.config else {
-        panic!("{request:?}");
-    };
+    assert_eq!(request.kind, wire::Kind::Codex as i32, "{request:?}");
+    let config =
+        <wire::CodexCreateConfig as prost::Message>::decode(request.config.as_slice()).unwrap();
     assert_eq!(
         (config.model.as_deref(), config.effort.as_deref()),
         (Some("gpt-6-mini"), Some("low"))

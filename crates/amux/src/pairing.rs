@@ -13,12 +13,12 @@ use uuid::Uuid;
 use wire::client_service_client::ClientServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, HostEntry, PairingIdentity, PeerEntry, PeerRef, PeerVia,
+    BeginPairRequest, BindProfileRequest, HostEntry, HostRef, PairingIdentity, PeerEntry, PeerVia,
     PendingPairRequest, PendingPairResponse, ProfileBeginPairRequest, ProfileInfo,
     ProfileOperation, ProfilePairingStatusRequest, ProfilePendingPairRequest, ProfileRequest,
     ProfileStartPairingRequest, ProfileTrustSshPeerRequest, ProfileUnpairRequest,
     StartPairingRequest, StartPairingResponse, Trust, TrustSshPeerRequest, begin_pair_request,
-    peer_reachability, peer_ref, start_pairing_request, start_pairing_response,
+    host_ref, peer_reachability, start_pairing_request, start_pairing_response,
 };
 
 type Door = ProfileServiceClient<Channel>;
@@ -580,10 +580,10 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
 
 /// Stops trusting a paired host, asking first unless forced.
 pub async fn unpair(mut door: Door, profile: &ProfileInfo, peer: &str, force: bool) -> Result<()> {
-    let reference = PeerRef {
-        identifier: Some(match Uuid::parse_str(peer) {
-            Ok(id) => peer_ref::Identifier::HostId(id.as_bytes().to_vec()),
-            Err(_) => peer_ref::Identifier::Name(peer.to_owned()),
+    let reference = HostRef {
+        of: Some(match Uuid::parse_str(peer) {
+            Ok(id) => host_ref::Of::HostId(id.as_bytes().to_vec()),
+            Err(_) => host_ref::Of::Name(peer.to_owned()),
         }),
     };
     let entry = door

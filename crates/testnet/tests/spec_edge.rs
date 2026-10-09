@@ -20,10 +20,10 @@ use tonic::transport::{Channel, Endpoint};
 use uuid::Uuid;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, Empty, InventoryEvent, ListProfilesRequest, PeerRef,
+    BeginPairRequest, BindProfileRequest, Empty, HostRef, InventoryEvent, ListProfilesRequest,
     PendingPairRequest, ProfileBeginPairRequest, ProfileGetPeerRequest, ProfileInfo,
     ProfilePendingPairRequest, ProfileRequest, ProfileStartPairingRequest, ProfileUnpairRequest,
-    StartPairingRequest, begin_pair_request, inventory_event, peer_ref, start_pairing_request,
+    StartPairingRequest, begin_pair_request, host_ref, inventory_event, start_pairing_request,
     start_pairing_response,
 };
 
@@ -83,9 +83,9 @@ async fn channel(path: &Path) -> Channel {
         .expect("the front door answers")
 }
 
-fn host_ref(host: Uuid) -> Option<PeerRef> {
-    Some(PeerRef {
-        identifier: Some(peer_ref::Identifier::HostId(host.as_bytes().to_vec())),
+fn host_ref(host: Uuid) -> Option<HostRef> {
+    Some(HostRef {
+        of: Some(host_ref::Of::HostId(host.as_bytes().to_vec())),
     })
 }
 

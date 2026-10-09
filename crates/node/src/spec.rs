@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 
 use prost::Message as _;
 use wire::{
-    AgentParent, AgentSpec, Bootstrap, Catalogue, CreateAgentRequest, EffectiveConfig, Input, Kind,
-    KindInput, PromptSubmission, bootstrap,
+    AgentParent, AgentSpec, Bootstrap, Catalogue, ClaudeCreateConfig, CodexCreateConfig,
+    EffectiveConfig, Kind, PromptSubmission, bootstrap,
 };
 
 use crate::runtime::Launch;
@@ -38,28 +38,20 @@ pub fn kind_from_name(name: &str) -> Kind {
     }
 }
 
-/// A client's first input as what seeds the new incarnation's queue. Only a
-/// prompt seeds it; None for any other input, which the call refuses.
-pub fn prompt_bootstrap(input: &Input) -> Option<Bootstrap> {
-    use wire::{claude_pty_input, claude_sdk_input, codex_input};
-    let prompt = match input.decode_body()? {
-        KindInput::ClaudePty(wire::ClaudePtyInput {
-            of: Some(claude_pty_input::Of::Prompt(prompt)),
-        })
-        | KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Prompt(prompt)),
-        })
-        | KindInput::Codex(wire::CodexInput {
-            of: Some(codex_input::Of::Prompt(prompt)),
-        }) => prompt,
-        _ => return None,
-    };
-    Some(Bootstrap {
-        of: Some(bootstrap::Of::Prompt(PromptSubmission {
-            input_id: input.input_id.clone(),
-            prompt: Some(prompt),
-        })),
-    })
+/// A client's first prompt as what seeds the new incarnation's queue.
+pub fn prompt_bootstrap(prompt: PromptSubmission) -> Bootstrap {
+    Bootstrap {
+        of: Some(bootstrap::Of::Prompt(prompt)),
+    }
+}
+
+/// A creation's settings that do not decode as its kind's: the call is
+/// refused rather than resolved as some other provider's settings.
+#[derive(Debug, thiserror::Error)]
+#[error("the creation settings are not {kind:?} settings: {error}")]
+pub struct ConfigError {
+    pub kind: Kind,
+    pub error: prost::DecodeError,
 }
 
 /// What a creation asked for, resolved into provider arguments and the
@@ -72,14 +64,16 @@ pub struct Resolved {
     pub mode: Option<String>,
 }
 
-/// Resolves a creation's per-provider settings. Claude takes its model and
-/// permission as arguments; Codex takes the model in its thread start, the
-/// settings a permission names as configuration overrides, and its mode
+/// Resolves a creation's per-provider settings, decoded as the message
+/// `kind` names: the kind decides, never the bytes. Claude takes its model
+/// and permission as arguments; Codex takes the model in its thread start,
+/// the settings a permission names as configuration overrides, and its mode
 /// in the first turn the interpreter starts.
-pub fn resolve(request: &CreateAgentRequest) -> Resolved {
-    use wire::create_agent_request::Config;
-    match &request.config {
-        Some(Config::Claude(claude)) => {
+pub fn resolve(kind: Kind, config: &[u8]) -> Result<Resolved, ConfigError> {
+    let refused = |error| ConfigError { kind, error };
+    Ok(match kind {
+        Kind::ClaudePty | Kind::ClaudeSdk => {
+            let claude = ClaudeCreateConfig::decode(config).map_err(refused)?;
             let mut args = claude.args.clone();
             if let Some(model) = &claude.model {
                 args.extend(["--model".to_owned(), model.clone()]);
@@ -92,12 +86,13 @@ pub fn resolve(request: &CreateAgentRequest) -> Resolved {
             }
             Resolved {
                 provider_args: args,
-                model: claude.model.clone(),
-                permission: claude.permission.clone(),
+                model: claude.model,
+                permission: claude.permission,
                 mode: None,
             }
         }
-        Some(Config::Codex(codex)) => {
+        Kind::Codex => {
+            let codex = CodexCreateConfig::decode(config).map_err(refused)?;
             let mut args = Vec::new();
             let named = codex
                 .permission
@@ -121,13 +116,13 @@ pub fn resolve(request: &CreateAgentRequest) -> Resolved {
             }
             Resolved {
                 provider_args: args,
-                model: codex.model.clone(),
-                permission: codex.permission.clone(),
-                mode: codex.mode.clone(),
+                model: codex.model,
+                permission: codex.permission,
+                mode: codex.mode,
             }
         }
-        None => Resolved::default(),
-    }
+        Kind::Unspecified => Resolved::default(),
+    })
 }
 
 /// The provider command as configured for a kind.
@@ -270,35 +265,41 @@ pub fn newest(dir: &Path) -> io::Result<Option<AgentSpec>> {
 
 #[cfg(test)]
 mod tests {
-    use wire::create_agent_request::Config;
-    use wire::{ClaudeCreateConfig, CodexCreateConfig};
-
     use super::*;
 
-    fn creating(config: Config) -> CreateAgentRequest {
-        CreateAgentRequest {
-            config: Some(config),
-            ..CreateAgentRequest::default()
-        }
+    fn claude(config: ClaudeCreateConfig) -> Vec<u8> {
+        config.encode_to_vec()
+    }
+
+    fn codex(config: CodexCreateConfig) -> Vec<u8> {
+        config.encode_to_vec()
     }
 
     #[test]
     fn a_claude_permission_is_its_permission_mode_argument() {
-        let resolved = resolve(&creating(Config::Claude(ClaudeCreateConfig {
-            permission: Some("acceptEdits".into()),
-            ..ClaudeCreateConfig::default()
-        })));
+        let resolved = resolve(
+            Kind::ClaudeSdk,
+            &claude(ClaudeCreateConfig {
+                permission: Some("acceptEdits".into()),
+                ..ClaudeCreateConfig::default()
+            }),
+        )
+        .unwrap();
         assert_eq!(resolved.provider_args, ["--permission-mode", "acceptEdits"]);
         assert_eq!(resolved.permission.as_deref(), Some("acceptEdits"));
     }
 
     #[test]
     fn a_codex_permission_is_the_settings_it_names_and_its_mode_rides_along() {
-        let resolved = resolve(&creating(Config::Codex(CodexCreateConfig {
-            permission: Some("auto".into()),
-            mode: Some("plan".into()),
-            ..CodexCreateConfig::default()
-        })));
+        let resolved = resolve(
+            Kind::Codex,
+            &codex(CodexCreateConfig {
+                permission: Some("auto".into()),
+                mode: Some("plan".into()),
+                ..CodexCreateConfig::default()
+            }),
+        )
+        .unwrap();
         assert_eq!(
             resolved.provider_args,
             [
@@ -312,10 +313,63 @@ mod tests {
         );
         assert_eq!(resolved.mode.as_deref(), Some("plan"));
 
-        let unnamed = resolve(&creating(Config::Codex(CodexCreateConfig {
-            permission: Some("on-request/read-only".into()),
-            ..CodexCreateConfig::default()
-        })));
+        let unnamed = resolve(
+            Kind::Codex,
+            &codex(CodexCreateConfig {
+                permission: Some("on-request/read-only".into()),
+                ..CodexCreateConfig::default()
+            }),
+        )
+        .unwrap();
         assert!(unnamed.provider_args.is_empty(), "{unnamed:?}");
+    }
+
+    /// The kind decides how the settings are read. Claude's and Codex's
+    /// settings are both strings on the wire, so one decodes as the other;
+    /// what matters is that it is then read as the kind's own settings and
+    /// never handed to the other provider, and that bytes which are not the
+    /// kind's settings at all refuse the creation.
+    #[test]
+    fn config_must_match_kind() {
+        let claude_settings = claude(ClaudeCreateConfig {
+            args: vec!["--dangerously-skip-permissions".into()],
+            model: Some("opus".into()),
+            effort: None,
+            permission: Some("bypassPermissions".into()),
+        });
+        let as_codex = resolve(Kind::Codex, &claude_settings).unwrap();
+        assert!(
+            !as_codex
+                .provider_args
+                .iter()
+                .any(|arg| arg.starts_with("--dangerously") || arg == "--permission-mode"),
+            "a Codex agent never takes Claude's arguments: {as_codex:?}"
+        );
+        assert_ne!(
+            as_codex.permission.as_deref(),
+            Some("bypassPermissions"),
+            "read as Codex settings, Claude's permission is not Codex's"
+        );
+
+        let codex_settings = codex(CodexCreateConfig {
+            permission: Some("full-access".into()),
+            ..CodexCreateConfig::default()
+        });
+        for kind in [Kind::ClaudePty, Kind::ClaudeSdk] {
+            let as_claude = resolve(kind, &codex_settings).unwrap();
+            assert!(
+                !as_claude.provider_args.iter().any(|arg| arg == "--config"),
+                "a Claude agent never takes Codex's overrides: {as_claude:?}"
+            );
+        }
+
+        // A string field holding bytes that are not text, and a field cut
+        // short: neither is any kind's settings.
+        for bytes in [vec![0x12, 0x01, 0xff], vec![0x0a, 0x05, b'x']] {
+            for kind in [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex] {
+                let refused = resolve(kind, &bytes).unwrap_err();
+                assert_eq!(refused.kind, kind);
+            }
+        }
     }
 }

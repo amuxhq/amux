@@ -142,7 +142,7 @@ clients: the journal and the control socket are an agent's only interface.
 |---|---|---|
 | CLI and terminal client | the front door (`amux.sock` in the per-user runtime directory), then the profile's `profiles/<id>/sock` | `ProfileService` and `InstallationService` on the front door; `ClientService` on the profile socket |
 | phone UI | in process, through [`client::InProcess`](../crates/client/src/lib.rs) | the same `ClientService` calls |
-| paired daemon | a link stream, after a pinned mutual-TLS handshake | `PeerService`, the peer-facing subset of the same calls |
+| paired daemon | a link stream, after a pinned mutual-TLS handshake | `PeerService`, the same calls answered only for this host's own agents |
 | an agent's tool server | `agents/<id>/tools.sock`, which the daemon listens on for that agent alone | `ClientService`; the socket it arrived on is the caller's identity |
 
 The daemon dials in the other direction exactly once per agent: it connects

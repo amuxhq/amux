@@ -32,7 +32,7 @@ use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     AgentParent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Input, PromptInput, StopMode,
-    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input, create_agent_request,
+    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input,
 };
 
 use crate::binaries::Binaries;
@@ -555,17 +555,16 @@ impl Net {
         }
         let request = CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
-            host_id: None,
+            host: None,
             name: Some(decl.name.clone()),
             parent,
+            cwd,
+            kind: decl.kind.wire() as i32,
+            config: create_config(&decl),
             initial_prompt: decl
                 .prompt
                 .as_deref()
-                .map(|text| prompt(decl.kind, b"testnet-first", text)),
-            cwd,
-            kind: decl.kind.wire() as i32,
-            config: Some(create_config(&decl)),
-            host_name: None,
+                .map(|text| submission(b"testnet-first", text)),
             new_worktree: false,
         };
         let runtime = self.runtime(&decl.host)?;
@@ -784,18 +783,18 @@ impl Net {
         let id = Uuid::new_v4();
         let request = CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
-            host_name: Some(decl.host.clone()),
+            host: Some(wire::HostRef::named(decl.host.clone())),
             name: Some(decl.name.clone()),
             initial_prompt: decl
                 .prompt
                 .as_deref()
-                .map(|text| prompt(decl.kind, b"testnet-first", text)),
+                .map(|text| submission(b"testnet-first", text)),
             cwd: decl
                 .cwd
                 .clone()
                 .unwrap_or_else(|| host.work.to_string_lossy().into_owned()),
             kind: decl.kind.wire() as i32,
-            config: Some(create_config(&decl)),
+            config: create_config(&decl),
             ..CreateAgentRequest::default()
         };
         let tools = self.tools(parent)?;
@@ -1282,8 +1281,8 @@ impl Net {
         let peer = self.host(b)?.host_id;
         self.edge(a)?
             .unpair(
-                wire::PeerRef {
-                    identifier: Some(wire::peer_ref::Identifier::HostId(peer.as_bytes().to_vec())),
+                wire::HostRef {
+                    of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
                 },
                 "testnet".to_owned(),
             )
@@ -1879,6 +1878,17 @@ pub async fn local_channel(
 }
 
 /// A first prompt or a message in the kind's own input arm.
+/// A first prompt for a create or a resume.
+pub fn submission(id: &[u8], text: &str) -> wire::PromptSubmission {
+    wire::PromptSubmission {
+        input_id: id.to_vec(),
+        prompt: Some(PromptInput {
+            text: text.to_owned(),
+            attachments: Vec::new(),
+        }),
+    }
+}
+
 pub fn prompt(kind: FakeKind, id: &[u8], text: &str) -> Input {
     let prompt = PromptInput {
         text: text.to_owned(),
@@ -2023,19 +2033,22 @@ fn on_branch(host: &str, dir: &Path, branch: &str) -> Result<(), NetError> {
 /// The directory an agent starts in: its host's work directory, a folder
 /// below it named relatively (made when missing), or an absolute path as
 /// it is.
-/// The provider settings an agent is created with: its declared
-/// permission, nothing else.
-fn create_config(decl: &AgentDecl) -> create_agent_request::Config {
+/// The provider settings an agent is created with, encoded for its kind:
+/// its declared permission, nothing else.
+fn create_config(decl: &AgentDecl) -> Vec<u8> {
+    use prost::Message as _;
     let permission = decl.permission.clone();
     match decl.kind {
-        FakeKind::Codex => create_agent_request::Config::Codex(CodexCreateConfig {
+        FakeKind::Codex => CodexCreateConfig {
             permission,
             ..CodexCreateConfig::default()
-        }),
-        _ => create_agent_request::Config::Claude(ClaudeCreateConfig {
+        }
+        .encode_to_vec(),
+        _ => ClaudeCreateConfig {
             permission,
             ..ClaudeCreateConfig::default()
-        }),
+        }
+        .encode_to_vec(),
     }
 }
 

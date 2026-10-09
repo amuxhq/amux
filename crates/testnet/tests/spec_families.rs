@@ -22,9 +22,9 @@ use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
 use wire::client_service_server::ClientService as _;
 use wire::{
-    AgentParent, AgentSender, AmbiguousHostName, ClaudeCreateConfig, ClaudeSdkInput,
-    CreateAgentRequest, Envelope, EnvelopeKind, InventoryEvent, Kind, Lifecycle, Phase, Sender,
-    claude_sdk_input, create_agent_request, inventory_event, sender,
+    AgentParent, AgentSender, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, Envelope,
+    EnvelopeKind, InventoryEvent, Kind, Lifecycle, Phase, Sender, claude_sdk_input,
+    inventory_event, sender,
 };
 
 fn text(text: &str) -> Step {
@@ -69,6 +69,17 @@ fn question() -> Step {
     })
 }
 
+/// A message as an agent's tool server submits it.
+fn message(id: &[u8], to: &AgentParent, text: &str) -> wire::SendMessageRequest {
+    wire::SendMessageRequest {
+        id: id.to_vec(),
+        to: Some(to.clone()),
+        text: text.into(),
+        context: None,
+    }
+}
+
+/// A message as a peer daemon forwards it, its sender stamped.
 fn envelope(id: &[u8], to: &AgentParent, text: &str) -> Envelope {
     Envelope {
         id: id.to_vec(),
@@ -269,11 +280,8 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
     .unwrap();
     let tools = net.tools("lead").unwrap();
     let request = |host: &str| CreateAgentRequest {
-        host_name: Some(host.to_owned()),
+        host: Some(wire::HostRef::named(host)),
         kind: Kind::ClaudeSdk as i32,
-        config: Some(create_agent_request::Config::Claude(
-            ClaudeCreateConfig::default(),
-        )),
         ..CreateAgentRequest::default()
     };
 
@@ -486,7 +494,7 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     let refused = net
         .tools("other")
         .unwrap()
-        .send_message(Request::new(envelope(b"from-other", &to, "Still there?")))
+        .send_message(Request::new(message(b"from-other", &to, "Still there?")))
         .await
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
@@ -507,7 +515,7 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     .unwrap();
     net.tools("lead")
         .unwrap()
-        .send_message(Request::new(envelope(b"from-lead", &to, "Run it again.")))
+        .send_message(Request::new(message(b"from-lead", &to, "Run it again.")))
         .await
         .expect("the parent's send resumes its child");
     let resumed = row(&net, "server", "helper").await.unwrap();
@@ -914,7 +922,7 @@ async fn concurrent_duplicate_sends_across_hosts_yield_one_item() {
     .await
     .unwrap();
     let to = net.agent("reviewer").unwrap().parent();
-    let message = envelope(b"twice", &to, "Please review the survey.");
+    let message = message(b"twice", &to, "Please review the survey.");
     let tools = net.tools("lead").unwrap();
     let (first, second) = tokio::join!(
         tools.send_message(Request::new(message.clone())),
@@ -1130,7 +1138,7 @@ async fn cross_host_family_journey() {
     .unwrap();
     net.tools("lead")
         .unwrap()
-        .send_message(Request::new(envelope(
+        .send_message(Request::new(message(
             b"follow-up",
             &helper.parent(),
             "Add the flaky test to the report.",

@@ -27,6 +27,7 @@ clap = { workspace = true }
 crossterm = { workspace = true }
 hyper-util = { workspace = true }
 node = { workspace = true }
+prost = { workspace = true }
 qrcode = { workspace = true }
 quinn = { workspace = true }
 serde = { workspace = true }
@@ -60,7 +61,6 @@ rcgen = { workspace = true }
 agent = { workspace = true }
 interpret = { workspace = true }
 journal = { workspace = true }
-prost = { workspace = true }
 provider-fakes = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

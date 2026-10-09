@@ -24,10 +24,10 @@ use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::client_service_client::ClientServiceClient;
 use wire::{
-    Agent, AgentParent, AmbiguousAgentName, Attachment, BlobRef, ClaudeCreateConfig,
-    CodexCreateConfig, CreateAgentRequest, Empty, Envelope, EnvelopeKind, HostEntry, Input,
-    Interrupt, Kind, Lifecycle, PromptInput, ResolveAgentRequest, SendInputRequest, Trust,
-    attachment, create_agent_request, inventory_event, send_input_response,
+    Agent, AgentParent, AmbiguousAgentName, Attachment, BlobRef, CreateAgentRequest, Empty,
+    HostEntry, HostRef, Input, Interrupt, Kind, Lifecycle, PromptInput, PromptSubmission,
+    ResolveAgentRequest, SendInputRequest, SendMessageRequest, Trust, attachment, host_ref,
+    inventory_event, send_input_response,
 };
 
 use crate::dir;
@@ -307,27 +307,24 @@ impl Server {
         let text = required(arguments, "text")?;
         let context = arguments["context"].as_str().map(|context| context.into());
         let recipient = self.resolve(&to).await?;
-        let envelope = Envelope {
+        let request = SendMessageRequest {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            context,
-            from: None,
             to: Some(AgentParent {
                 host_id: recipient.host_id,
                 agent_id: recipient.agent_id,
             }),
-            kind: EnvelopeKind::Message as i32,
             text,
-            incarnation: None,
+            context,
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {
-                let envelope = envelope.clone();
-                async move { client.send_message(envelope).await }
+                let request = request.clone();
+                async move { client.send_message(request).await }
             })
             .await
             .map_err(|refusal| refusal.or_else(|status| refused(&status, &to)))?;
         let id = if sent.envelope_id.is_empty() {
-            envelope.id
+            request.id
         } else {
             sent.envelope_id
         };
@@ -365,20 +362,19 @@ impl Server {
         };
         let request = CreateAgentRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-            host_id: None,
+            host: host.map(|name| HostRef {
+                of: Some(host_ref::Of::Name(name)),
+            }),
             name,
             parent: None,
-            initial_prompt: Some(Input::new(
-                uuid::Uuid::new_v4().as_bytes().to_vec(),
-                prompt_input(kind, prompt),
-            )),
             cwd,
             kind: kind as i32,
-            config: Some(match kind {
-                Kind::Codex => create_agent_request::Config::Codex(CodexCreateConfig::default()),
-                _ => create_agent_request::Config::Claude(ClaudeCreateConfig::default()),
+            // The kind's default settings, which encode as no bytes.
+            config: Vec::new(),
+            initial_prompt: Some(PromptSubmission {
+                input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                prompt: Some(prompt),
             }),
-            host_name: host,
             new_worktree: false,
         };
         let agent = self
@@ -669,20 +665,6 @@ fn kind_name(kind: Kind) -> &'static str {
         Kind::ClaudeSdk => "claude_sdk",
         Kind::Codex => "codex",
         Kind::Unspecified => "unknown",
-    }
-}
-
-fn prompt_input(kind: Kind, prompt: PromptInput) -> wire::KindInput {
-    match kind {
-        Kind::Codex => wire::KindInput::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Prompt(prompt)),
-        }),
-        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Prompt(prompt)),
-        }),
-        _ => wire::KindInput::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Prompt(prompt)),
-        }),
     }
 }
 

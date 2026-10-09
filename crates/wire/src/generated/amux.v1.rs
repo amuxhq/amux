@@ -5397,23 +5397,13 @@ impl ::prost::Name for ResolveAgentRequest {
         "/amux.v1.ResolveAgentRequest".into()
     }
 }
-/// Clients send tail; a peer source sends after toward its origin.
+/// Clients tail; the daemon never accepts a cursor from a client.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SubscribeRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(oneof = "subscribe_request::From", tags = "2, 3")]
-    pub from: ::core::option::Option<subscribe_request::From>,
-}
-/// Nested message and enum types in `SubscribeRequest`.
-pub mod subscribe_request {
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum From {
-        #[prost(uint32, tag = "2")]
-        Tail(u32),
-        #[prost(message, tag = "3")]
-        After(super::After),
-    }
+    #[prost(uint32, tag = "2")]
+    pub tail: u32,
 }
 impl ::prost::Name for SubscribeRequest {
     const NAME: &'static str = "SubscribeRequest";
@@ -5423,6 +5413,33 @@ impl ::prost::Name for SubscribeRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.SubscribeRequest".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PeerSubscribeRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(oneof = "peer_subscribe_request::From", tags = "2, 3")]
+    pub from: ::core::option::Option<peer_subscribe_request::From>,
+}
+/// Nested message and enum types in `PeerSubscribeRequest`.
+pub mod peer_subscribe_request {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum From {
+        #[prost(uint32, tag = "2")]
+        Tail(u32),
+        #[prost(message, tag = "3")]
+        After(super::After),
+    }
+}
+impl ::prost::Name for PeerSubscribeRequest {
+    const NAME: &'static str = "PeerSubscribeRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PeerSubscribeRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PeerSubscribeRequest".into()
     }
 }
 /// The delta if it is at most cap rows and the origin still runs the
@@ -5631,52 +5648,40 @@ impl ::prost::Name for SendInputRequest {
         "/amux.v1.SendInputRequest".into()
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", optional, tag = "2")]
-    pub host_id: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// The host that runs it; absent means this host.
+    #[prost(message, optional, tag = "2")]
+    pub host: ::core::option::Option<HostRef>,
     /// Lowercase letters, digits and hyphens, starting with a letter or digit
     /// (wire::agent_name_problem); the host picks a free one when absent.
     #[prost(string, optional, tag = "3")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "4")]
     pub parent: ::core::option::Option<AgentParent>,
-    /// A prompt as SendInput carries one, so it brings its attachments; any
-    /// other input is refused.
-    #[prost(message, optional, tag = "5")]
-    pub initial_prompt: ::core::option::Option<Input>,
-    #[prost(string, tag = "6")]
+    #[prost(string, tag = "5")]
     pub cwd: ::prost::alloc::string::String,
-    /// Which interpreter: the config arm names only the provider.
-    #[prost(enumeration = "Kind", tag = "7")]
+    /// Which interpreter, and that kind's creation settings encoded, decoded
+    /// by the host that spawns it: ClaudeCreateConfig for both Claude kinds,
+    /// CodexCreateConfig for Codex. Opaque so a forwarding daemon of another
+    /// version passes a setting it does not know through intact.
+    #[prost(enumeration = "Kind", tag = "6")]
     pub kind: i32,
-    /// The host as a person names it, resolved against this host and the
-    /// trusted ones: exact first, then ignoring case. host_id wins when both
-    /// are set; neither means this host.
-    #[prost(string, optional, tag = "8")]
-    pub host_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bytes = "vec", tag = "7")]
+    pub config: ::prost::alloc::vec::Vec<u8>,
+    /// The first prompt, with attachments, queued before the agent starts.
+    #[prost(message, optional, tag = "8")]
+    pub initial_prompt: ::core::option::Option<PromptSubmission>,
     /// Start the agent in a new git worktree of cwd's repository, on a new
     /// branch named after the agent, made from whatever cwd has checked out.
     /// The agent's host chooses where the worktree lives; the agent's cwd is
     /// the worktree. Fails the call, making no agent, when cwd is not in a
     /// repository or the branch exists. The name is valid as a branch, so it
     /// is the branch as given.
-    #[prost(bool, tag = "11")]
+    #[prost(bool, tag = "9")]
     pub new_worktree: bool,
-    #[prost(oneof = "create_agent_request::Config", tags = "9, 10")]
-    pub config: ::core::option::Option<create_agent_request::Config>,
-}
-/// Nested message and enum types in `CreateAgentRequest`.
-pub mod create_agent_request {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Config {
-        #[prost(message, tag = "9")]
-        Claude(super::ClaudeCreateConfig),
-        #[prost(message, tag = "10")]
-        Codex(super::CodexCreateConfig),
-    }
 }
 impl ::prost::Name for CreateAgentRequest {
     const NAME: &'static str = "CreateAgentRequest";
@@ -5686,6 +5691,34 @@ impl ::prost::Name for CreateAgentRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.CreateAgentRequest".into()
+    }
+}
+/// A host by id, or as a person names it, resolved against this host and
+/// the trusted ones: exact first, then ignoring case. AmbiguousHostName
+/// when more than one answers.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HostRef {
+    #[prost(oneof = "host_ref::Of", tags = "1, 2")]
+    pub of: ::core::option::Option<host_ref::Of>,
+}
+/// Nested message and enum types in `HostRef`.
+pub mod host_ref {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(bytes, tag = "1")]
+        HostId(::prost::alloc::vec::Vec<u8>),
+        #[prost(string, tag = "2")]
+        Name(::prost::alloc::string::String),
+    }
+}
+impl ::prost::Name for HostRef {
+    const NAME: &'static str = "HostRef";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.HostRef".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.HostRef".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5725,12 +5758,12 @@ impl ::prost::Name for StopAgentRequest {
     }
 }
 /// The composer of an exited chat sends its draft through initial_prompt.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResumeAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
-    pub initial_prompt: ::core::option::Option<Input>,
+    pub initial_prompt: ::core::option::Option<PromptSubmission>,
 }
 impl ::prost::Name for ResumeAgentRequest {
     const NAME: &'static str = "ResumeAgentRequest";
@@ -5772,6 +5805,32 @@ impl ::prost::Name for DeleteAgentResponse {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.DeleteAgentResponse".into()
+    }
+}
+/// A message to an agent. `id` is the caller's, so the recipient's daemon
+/// can dedupe a resend against the recipient's items; the tool server mints
+/// one per send. Who it is from is the caller: a person on a client socket,
+/// or the agent whose tools socket made the call. Finished and failed
+/// messages are the daemon's own and cannot be submitted.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SendMessageRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub to: ::core::option::Option<AgentParent>,
+    #[prost(string, tag = "3")]
+    pub text: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", optional, tag = "4")]
+    pub context: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+}
+impl ::prost::Name for SendMessageRequest {
+    const NAME: &'static str = "SendMessageRequest";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SendMessageRequest".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SendMessageRequest".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5992,24 +6051,20 @@ impl ::prost::Name for DumpRequest {
         "/amux.v1.DumpRequest".into()
     }
 }
+/// Where the bundle was written, for a caller on the same machine.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DumpResponse {
-    /// Where the bundle was written, for a caller on the same machine.
+pub struct DumpReport {
     #[prost(string, tag = "1")]
     pub report_path: ::prost::alloc::string::String,
-    /// An encoded DumpPart holding the whole bundle, for a paired host's
-    /// call; empty for a local caller.
-    #[prost(bytes = "vec", tag = "2")]
-    pub bundle: ::prost::alloc::vec::Vec<u8>,
 }
-impl ::prost::Name for DumpResponse {
-    const NAME: &'static str = "DumpResponse";
+impl ::prost::Name for DumpReport {
+    const NAME: &'static str = "DumpReport";
     const PACKAGE: &'static str = "amux.v1";
     fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DumpResponse".into()
+        "amux.v1.DumpReport".into()
     }
     fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.DumpResponse".into()
+        "/amux.v1.DumpReport".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -6345,7 +6400,7 @@ pub struct ProfileGetPeerRequest {
     #[prost(string, tag = "1")]
     pub profile_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
-    pub peer: ::core::option::Option<PeerRef>,
+    pub peer: ::core::option::Option<HostRef>,
 }
 impl ::prost::Name for ProfileGetPeerRequest {
     const NAME: &'static str = "ProfileGetPeerRequest";
@@ -6364,7 +6419,7 @@ pub struct ProfileUnpairRequest {
     #[prost(string, tag = "2")]
     pub profile_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
-    pub peer: ::core::option::Option<PeerRef>,
+    pub peer: ::core::option::Option<HostRef>,
     #[prost(string, tag = "4")]
     pub reason: ::prost::alloc::string::String,
 }
@@ -6539,31 +6594,6 @@ impl ::prost::Name for TrustSshPeerRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.TrustSshPeerRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PeerRef {
-    #[prost(oneof = "peer_ref::Identifier", tags = "1, 2")]
-    pub identifier: ::core::option::Option<peer_ref::Identifier>,
-}
-/// Nested message and enum types in `PeerRef`.
-pub mod peer_ref {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Identifier {
-        #[prost(bytes, tag = "1")]
-        HostId(::prost::alloc::vec::Vec<u8>),
-        #[prost(string, tag = "2")]
-        Name(::prost::alloc::string::String),
-    }
-}
-impl ::prost::Name for PeerRef {
-    const NAME: &'static str = "PeerRef";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PeerRef".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.PeerRef".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -7915,10 +7945,11 @@ pub mod client_service_client {
                 .insert(GrpcMethod::new("amux.v1.ClientService", "DeleteAgent"));
             self.inner.unary(req, path, codec).await
         }
-        /// Also called by the tool server with the agent's identity.
+        /// Also called by the tool server with the agent's identity. The daemon
+        /// stamps the sender from the caller and never from the request.
         pub async fn send_message(
             &mut self,
-            request: impl tonic::IntoRequest<super::Envelope>,
+            request: impl tonic::IntoRequest<super::SendMessageRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SendMessageResponse>,
             tonic::Status,
@@ -8059,7 +8090,7 @@ pub mod client_service_client {
         pub async fn dump(
             &mut self,
             request: impl tonic::IntoRequest<super::DumpRequest>,
-        ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::DumpReport>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -8162,10 +8193,11 @@ pub mod client_service_server {
             tonic::Response<super::DeleteAgentResponse>,
             tonic::Status,
         >;
-        /// Also called by the tool server with the agent's identity.
+        /// Also called by the tool server with the agent's identity. The daemon
+        /// stamps the sender from the caller and never from the request.
         async fn send_message(
             &self,
-            request: tonic::Request<super::Envelope>,
+            request: tonic::Request<super::SendMessageRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SendMessageResponse>,
             tonic::Status,
@@ -8201,7 +8233,7 @@ pub mod client_service_server {
         async fn dump(
             &self,
             request: tonic::Request<super::DumpRequest>,
-        ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::DumpReport>, tonic::Status>;
     }
     /// The whole client-facing surface.
     #[derive(Debug)]
@@ -8778,7 +8810,9 @@ pub mod client_service_server {
                 "/amux.v1.ClientService/SendMessage" => {
                     #[allow(non_camel_case_types)]
                     struct SendMessageSvc<T: ClientService>(pub Arc<T>);
-                    impl<T: ClientService> tonic::server::UnaryService<super::Envelope>
+                    impl<
+                        T: ClientService,
+                    > tonic::server::UnaryService<super::SendMessageRequest>
                     for SendMessageSvc<T> {
                         type Response = super::SendMessageResponse;
                         type Future = BoxFuture<
@@ -8787,7 +8821,7 @@ pub mod client_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Envelope>,
+                            request: tonic::Request<super::SendMessageRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -9049,7 +9083,7 @@ pub mod client_service_server {
                     impl<
                         T: ClientService,
                     > tonic::server::UnaryService<super::DumpRequest> for DumpSvc<T> {
-                        type Response = super::DumpResponse;
+                        type Response = super::DumpReport;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -9139,8 +9173,11 @@ pub mod peer_service_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     /// Daemon to daemon, over the link's application streams. Replication is a
-    /// daemon being a client of its peer; every request and response is the one
-    /// ClientService uses.
+    /// daemon being a client of its peer. The peer service answers only for
+    /// this host's own agents and never passes a call on, so no two hosts can
+    /// bounce a call between them: its inventory stream carries this host's
+    /// entry and this host's agents; Subscribe, Fetch, Get and SendInput refuse
+    /// an agent owned elsewhere with NOT_FOUND.
     #[derive(Debug, Clone)]
     pub struct PeerServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -9234,9 +9271,11 @@ pub mod peer_service_client {
                 .insert(GrpcMethod::new("amux.v1.PeerService", "SubscribeInventory"));
             self.inner.server_streaming(req, path, codec).await
         }
+        /// A peer source sends `after` toward its origin once it holds a cursor,
+        /// else `tail`.
         pub async fn subscribe(
             &mut self,
-            request: impl tonic::IntoRequest<super::SubscribeRequest>,
+            request: impl tonic::IntoRequest<super::PeerSubscribeRequest>,
         ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::SessionEvent>>,
             tonic::Status,
@@ -9560,12 +9599,12 @@ pub mod peer_service_client {
                 .insert(GrpcMethod::new("amux.v1.PeerService", "ListRepositories"));
             self.inner.unary(req, path, codec).await
         }
-        /// The host-side parts of the caller's dump for agents this host runs:
-        /// the bundle travels packed in the response.
+        /// The host-side parts of the caller's dump for agents this host runs,
+        /// packed in the response.
         pub async fn dump(
             &mut self,
             request: impl tonic::IntoRequest<super::DumpRequest>,
-        ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::DumpPart>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -9614,9 +9653,11 @@ pub mod peer_service_server {
             >
             + std::marker::Send
             + 'static;
+        /// A peer source sends `after` toward its origin once it holds a cursor,
+        /// else `tail`.
         async fn subscribe(
             &self,
-            request: tonic::Request<super::SubscribeRequest>,
+            request: tonic::Request<super::PeerSubscribeRequest>,
         ) -> std::result::Result<tonic::Response<Self::SubscribeStream>, tonic::Status>;
         async fn fetch(
             &self,
@@ -9686,16 +9727,19 @@ pub mod peer_service_server {
             tonic::Response<super::ListRepositoriesResponse>,
             tonic::Status,
         >;
-        /// The host-side parts of the caller's dump for agents this host runs:
-        /// the bundle travels packed in the response.
+        /// The host-side parts of the caller's dump for agents this host runs,
+        /// packed in the response.
         async fn dump(
             &self,
             request: tonic::Request<super::DumpRequest>,
-        ) -> std::result::Result<tonic::Response<super::DumpResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::DumpPart>, tonic::Status>;
     }
     /// Daemon to daemon, over the link's application streams. Replication is a
-    /// daemon being a client of its peer; every request and response is the one
-    /// ClientService uses.
+    /// daemon being a client of its peer. The peer service answers only for
+    /// this host's own agents and never passes a call on, so no two hosts can
+    /// bounce a call between them: its inventory stream carries this host's
+    /// entry and this host's agents; Subscribe, Fetch, Get and SendInput refuse
+    /// an agent owned elsewhere with NOT_FOUND.
     #[derive(Debug)]
     pub struct PeerServiceServer<T> {
         inner: Arc<T>,
@@ -9824,7 +9868,7 @@ pub mod peer_service_server {
                     struct SubscribeSvc<T: PeerService>(pub Arc<T>);
                     impl<
                         T: PeerService,
-                    > tonic::server::ServerStreamingService<super::SubscribeRequest>
+                    > tonic::server::ServerStreamingService<super::PeerSubscribeRequest>
                     for SubscribeSvc<T> {
                         type Response = super::SessionEvent;
                         type ResponseStream = T::SubscribeStream;
@@ -9834,7 +9878,7 @@ pub mod peer_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SubscribeRequest>,
+                            request: tonic::Request<super::PeerSubscribeRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -10492,7 +10536,7 @@ pub mod peer_service_server {
                     struct DumpSvc<T: PeerService>(pub Arc<T>);
                     impl<T: PeerService> tonic::server::UnaryService<super::DumpRequest>
                     for DumpSvc<T> {
-                        type Response = super::DumpResponse;
+                        type Response = super::DumpPart;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

@@ -351,7 +351,7 @@ async fn a_paired_host_answers_for_its_peers_providers() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn terminal_claude_offers_what_its_hosts_claude_offers() {
-    use wire::{ClaudeCreateConfig, CreateAgentRequest, Kind, create_agent_request, session_event};
+    use wire::{CreateAgentRequest, Kind, session_event};
 
     let host = Host::new(&Script {
         models: vec![model("opus"), model("haiku")],
@@ -369,9 +369,6 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
                 name: Some("terminal".into()),
                 cwd: host.install.work.to_string_lossy().into_owned(),
                 kind: Kind::ClaudePty as i32,
-                config: Some(create_agent_request::Config::Claude(
-                    ClaudeCreateConfig::default(),
-                )),
                 ..CreateAgentRequest::default()
             },
             None,

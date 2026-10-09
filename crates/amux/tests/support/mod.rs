@@ -18,7 +18,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tonic::transport::{Channel as GrpcChannel, Endpoint};
 use wire::client_service_client::ClientServiceClient;
 use wire::profile_service_client::ProfileServiceClient;
-use wire::{ListProfilesRequest, SubscribeRequest, session_event, subscribe_request};
+use wire::{ListProfilesRequest, SubscribeRequest, session_event};
 
 /// What every test daemon runs with: a scripted local network instead of
 /// real mDNS, which would have macOS ask for Local Network access once per
@@ -205,7 +205,7 @@ pub async fn chat(
     let mut stream = client
         .subscribe(SubscribeRequest {
             agent_id: agent.to_vec(),
-            from: Some(subscribe_request::From::Tail(1000)),
+            tail: 1000,
         })
         .await
         .expect("the chat opens")

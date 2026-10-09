@@ -20,17 +20,17 @@ use uuid::Uuid;
 use wire::client_service_server::ClientService;
 use wire::{
     Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, DiffRequest,
-    DumpRequest, DumpResponse, Empty, Envelope, ErrorCode, FetchRequest, FetchResponse,
-    GetBlobRequest, GetBlobResponse, GetRequest, InventoryEvent, Item, ListRepositoriesRequest,
+    DumpReport, DumpRequest, Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest,
+    GetBlobResponse, GetRequest, InventoryEvent, Item, ListRepositoriesRequest,
     ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent,
-    StopAgentRequest, StopMode, SubscribeRequest, subscribe_request,
+    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageRequest,
+    SendMessageResponse, SessionEvent, StopAgentRequest, StopMode, SubscribeRequest,
 };
 
 use crate::blobs::BlobError;
 use crate::catalogue::CatalogueError;
 use crate::forward::{ForwardError, Owner};
-use crate::runtime::{AgentId, ProfileRuntime, RegistryError};
+use crate::runtime::{AgentId, ProfileRuntime};
 use crate::telemetry::{self, InputShape};
 
 /// A wire error as a gRPC status: the coarse code for generic clients, and
@@ -338,19 +338,9 @@ impl ClientService for ClientApi {
         request: Request<SubscribeRequest>,
     ) -> Result<Response<Self::SubscribeStream>, Status> {
         let request = request.into_inner();
-        let tail = match request.from {
-            Some(subscribe_request::From::Tail(tail)) => tail,
-            None => 0,
-            Some(subscribe_request::From::After(_)) => {
-                return Err(status(wire_error(
-                    ErrorCode::Unimplemented,
-                    "subscribing after a revision is how a peer catches up; clients ask for a tail",
-                )));
-            }
-        };
         let subscription = self
             .runtime()?
-            .subscribe(&request.agent_id, tail)
+            .subscribe(&request.agent_id, request.tail)
             .await
             .map_err(|error| status(error.to_wire()))?;
         let stream = futures_util::stream::unfold(subscription, |mut subscription| async move {
@@ -427,7 +417,9 @@ impl ClientService for ClientApi {
             .target_host(&request)
             .map_err(|error| status(error.to_wire()))?;
         let kind = telemetry::kind(request.kind());
-        let first = request.initial_prompt.as_ref().and_then(InputShape::of);
+        let first = kind
+            .filter(|_| request.initial_prompt.is_some())
+            .map(InputShape::Prompt);
         let on = if host == runtime.host() || !self.forwards {
             analytics::On::ThisHost
         } else {
@@ -508,7 +500,16 @@ impl ClientService for ClientApi {
         self.people_only("resume an agent")?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
-        let first = request.initial_prompt.as_ref().and_then(InputShape::of);
+        let first = match &request.initial_prompt {
+            Some(_) => runtime
+                .row_by_id(&request.agent_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|row| telemetry::kind_named(&row.kind))
+                .map(InputShape::Prompt),
+            None => None,
+        };
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let resumed = forwarded(&runtime, host, |mut client| async move {
                 client.resume_agent(request).await
@@ -518,13 +519,7 @@ impl ClientService for ClientApi {
             self.record_input(&runtime, first, on, Some(false));
             return Ok(resumed);
         }
-        let bootstrap = match &request.initial_prompt {
-            Some(input) => Some(
-                crate::spec::prompt_bootstrap(input)
-                    .ok_or_else(|| status(RegistryError::NotAPrompt.to_wire()))?,
-            ),
-            None => None,
-        };
+        let bootstrap = request.initial_prompt.map(crate::spec::prompt_bootstrap);
         let resumed = runtime
             .resume(agent_id(&request.agent_id)?, bootstrap)
             .await
@@ -555,7 +550,7 @@ impl ClientService for ClientApi {
 
     async fn send_message(
         &self,
-        request: Request<Envelope>,
+        request: Request<SendMessageRequest>,
     ) -> Result<Response<SendMessageResponse>, Status> {
         self.runtime()?
             .send_message(request.into_inner(), self.caller)
@@ -703,18 +698,16 @@ impl ClientService for ClientApi {
         ))
     }
 
-    async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpResponse>, Status> {
+    async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpReport>, Status> {
         self.people_only("write a debug report")?;
-        // A local caller reads the bundle where it was written; the bytes
-        // travel only to a caller on another machine.
+        // A local caller reads the bundle where it was written.
         let path = self
             .runtime()?
             .dump(request.into_inner())
             .await
             .map_err(|error| status(error.to_wire()))?;
-        Ok(Response::new(DumpResponse {
+        Ok(Response::new(DumpReport {
             report_path: path.to_string_lossy().into_owned(),
-            bundle: Vec::new(),
         }))
     }
 }

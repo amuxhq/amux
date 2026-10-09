@@ -21,8 +21,8 @@ use uuid::Uuid;
 pub use wire::refusal::{EXITED, EXITING};
 use wire::{
     AgentSender, Bootstrap, Envelope, EnvelopeKind, ErrorCode, Human, Lifecycle, Rejected,
-    SendInputRequest, SendInputResponse, SendMessageResponse, Sender, bootstrap, ctl_frame,
-    send_input_response, sender,
+    SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, Sender,
+    bootstrap, ctl_frame, send_input_response, sender,
 };
 
 use crate::runtime::{AgentId, ProfileRuntime, RegistryError, Sent, ms};
@@ -217,14 +217,26 @@ impl ProfileRuntime {
         }
     }
 
-    /// Sends an agent message. `caller` is the agent whose tools socket the
-    /// call came in on; the envelope's sender is set from it, never taken
-    /// from the request. Answers once the recipient has accepted.
+    /// Sends a message a person or one of this host's agents submitted.
+    /// `caller` is the agent whose tools socket the call came in on, else
+    /// the person; the envelope's sender is set from it, since the request
+    /// cannot name one. It is an ordinary message: finished and failed
+    /// messages come only from the outbox. Answers once the recipient has
+    /// accepted.
     pub async fn send_message(
         &self,
-        envelope: Envelope,
+        request: SendMessageRequest,
         caller: Option<AgentId>,
     ) -> Result<SendMessageResponse, RelayError> {
+        let envelope = Envelope {
+            id: request.id,
+            context: request.context,
+            from: None,
+            to: request.to,
+            kind: EnvelopeKind::Message as i32,
+            text: request.text,
+            incarnation: None,
+        };
         self.send_message_from(envelope, caller.map_or(From::Person, From::Agent))
             .await
     }
@@ -259,9 +271,6 @@ impl ProfileRuntime {
         let to = envelope.to.clone().ok_or(RelayError::NoAgent)?;
         if envelope.id.is_empty() {
             envelope.id = Uuid::new_v4().as_bytes().to_vec();
-        }
-        if envelope.kind == EnvelopeKind::Unspecified as i32 {
-            envelope.kind = EnvelopeKind::Message as i32;
         }
         if to.host_id != self.host().as_bytes() {
             return self.forward_message(envelope, caller, &to.host_id).await;

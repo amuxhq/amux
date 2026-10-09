@@ -19,11 +19,11 @@ use wire::client_service_client::ClientServiceClient;
 use wire::client_service_server::ClientService;
 use wire::{
     Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Diff, DiffRequest,
-    DumpRequest, DumpResponse, Empty, Envelope, ErrorCode, FetchRequest, FetchResponse,
-    GetBlobRequest, GetBlobResponse, GetRequest, InventoryEvent, Item, ListRepositoriesRequest,
+    DumpReport, DumpRequest, Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest,
+    GetBlobResponse, GetRequest, InventoryEvent, Item, ListRepositoriesRequest,
     ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent,
-    StopAgentRequest, SubscribeRequest,
+    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageRequest,
+    SendMessageResponse, SessionEvent, StopAgentRequest, SubscribeRequest,
 };
 
 /// A server stream. An `Err` item or the end of the stream both mean the
@@ -115,7 +115,10 @@ pub trait Client: Send + Sync + 'static {
         &self,
         request: DeleteAgentRequest,
     ) -> Result<DeleteAgentResponse, RpcError>;
-    async fn send_message(&self, envelope: Envelope) -> Result<SendMessageResponse, RpcError>;
+    async fn send_message(
+        &self,
+        request: SendMessageRequest,
+    ) -> Result<SendMessageResponse, RpcError>;
     async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, RpcError>;
     async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, RpcError>;
     async fn diff(&self, request: DiffRequest) -> Result<Diff, RpcError>;
@@ -127,7 +130,7 @@ pub trait Client: Send + Sync + 'static {
         &self,
         request: ListRepositoriesRequest,
     ) -> Result<ListRepositoriesResponse, RpcError>;
-    async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError>;
+    async fn dump(&self, request: DumpRequest) -> Result<DumpReport, RpcError>;
 }
 
 /// One implementation of [`Client`] per way of reaching the service:
@@ -193,9 +196,9 @@ macro_rules! client_impl {
 
             async fn send_message(
                 &self,
-                envelope: Envelope,
+                request: SendMessageRequest,
             ) -> Result<SendMessageResponse, RpcError> {
-                Ok($call!(self, send_message, envelope).await?.into_inner())
+                Ok($call!(self, send_message, request).await?.into_inner())
             }
 
             async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, RpcError> {
@@ -224,7 +227,7 @@ macro_rules! client_impl {
                 Ok($call!(self, list_repositories, request).await?.into_inner())
             }
 
-            async fn dump(&self, request: DumpRequest) -> Result<DumpResponse, RpcError> {
+            async fn dump(&self, request: DumpRequest) -> Result<DumpReport, RpcError> {
                 Ok($call!(self, dump, request).await?.into_inner())
             }
         }

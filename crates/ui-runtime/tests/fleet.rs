@@ -10,7 +10,7 @@ use prost::Message as _;
 use support::*;
 use ui_runtime::{Fleet, HELD_ROWS, Window};
 use ui_state::{AgentKey, Connection};
-use wire::{FetchResponse, Kind, SessionEvent, subscribe_request};
+use wire::{FetchResponse, Kind, SessionEvent};
 
 fn named(id: &[u8]) -> wire::Agent {
     wire::Agent {
@@ -134,9 +134,7 @@ impl Streams {
     /// other stream open. Returns the agent and the tail it asked for.
     async fn answer(&mut self, calls: &mut Calls) -> (Vec<u8>, u32) {
         let (request, feed) = calls.subscribe().await;
-        let Some(subscribe_request::From::Tail(tail)) = request.from else {
-            panic!("a session subscribes with a tail");
-        };
+        let tail = request.tail;
         let agent = request.agent_id;
         assert_eq!(
             self.open(&agent),

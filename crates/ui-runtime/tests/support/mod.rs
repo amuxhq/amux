@@ -14,12 +14,12 @@ use client::{Client, EventStream, RpcError};
 use tokio::sync::{mpsc, oneshot};
 use wire::{
     Agent, Attachment, BlobRef, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Diff,
-    DiffRequest, DumpRequest, DumpResponse, Envelope, ErrorCode, FetchRequest, FetchResponse,
-    GetBlobRequest, GetBlobResponse, GetRequest, InventoryEvent, Item, Kind, Lifecycle,
-    ListRepositoriesRequest, ListRepositoriesResponse, Phase, PutBlobRequest, QueuedInput,
-    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SendMessageResponse, SessionEvent, Snapshot, StopAgentRequest,
-    SubscribeRequest, attachment, inventory_event, send_input_response, session_event,
+    DiffRequest, DumpReport, DumpRequest, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest,
+    GetBlobResponse, GetRequest, InventoryEvent, Item, Kind, Lifecycle, ListRepositoriesRequest,
+    ListRepositoriesResponse, Phase, PutBlobRequest, QueuedInput, RenameAgentRequest,
+    ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
+    SendMessageResponse, SessionEvent, Snapshot, StopAgentRequest, SubscribeRequest, attachment,
+    inventory_event, send_input_response, session_event,
 };
 
 /// How long a test waits for the driver's next call before failing.
@@ -155,7 +155,10 @@ impl Client for FakeRuntime {
         unimplemented!("delete_agent")
     }
 
-    async fn send_message(&self, _: Envelope) -> Result<SendMessageResponse, RpcError> {
+    async fn send_message(
+        &self,
+        _: wire::SendMessageRequest,
+    ) -> Result<SendMessageResponse, RpcError> {
         unimplemented!("send_message")
     }
 
@@ -185,7 +188,7 @@ impl Client for FakeRuntime {
         unimplemented!("list_repositories")
     }
 
-    async fn dump(&self, _: DumpRequest) -> Result<DumpResponse, RpcError> {
+    async fn dump(&self, _: DumpRequest) -> Result<DumpReport, RpcError> {
         unimplemented!("dump")
     }
 }

@@ -1,3 +1,10 @@
+2026-10-10 — **The phone's auto-review row baseline shows the worded verdict.**
+The phone words a Codex reviewer's verdict from its status ("Auto-approved")
+with the risk beside it, where it used to show the reviewer's free text. The
+component catalogue's auto-review example changed with it, but its reference
+images were not re-recorded, so the iOS gate's component snapshots failed on
+main. Both images are re-recorded; nothing else in the catalogue moved.
+
 2026-10-10 — **A daemon takes what a paired daemon stamped as given.**
 Only amux daemons call each other's peer service, and each stamps a
 message's sender and a create's parent from its own callers. Three checks

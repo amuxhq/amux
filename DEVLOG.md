@@ -1,3 +1,16 @@
+2026-10-10 — **A resumed agent's row ends with its own cause, and a live row's cause is not filtered on.**
+When an incarnation ends without writing its final boundary (killed, or
+crashed), the next incarnation writes it on start and leaves that step without
+a cause, because the earlier incarnation's row already says how it ended and
+the commit would otherwise put the earlier end on the new, live incarnation's
+row, where a later kill would keep it. A node test now resumes a killed agent,
+checks the repair step and the live row carry no cause, and kills it again to
+see `KILLED`; it fails without that clearing. The TUI's fleet filter matches a
+cause only on an exited row, as the protocol says clients read it, and the
+agents tool's test now gives a live row a cause the tool must not report. The
+deletion ledger also catches Codex's ask opening time coming back, and a
+stray row in the agent process's exit table is back inside the table.
+
 2026-10-10 — **An agent's tools socket no longer refuses a person's calls.**
 The client service on an agent's tools socket refused renaming, stopping,
 resuming and deleting agents, storing blobs, reading diffs, listing

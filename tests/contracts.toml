@@ -145,10 +145,11 @@ tests = [
 id = "exit-cause-in-the-journal"
 source = "invariant"
 section = "Agent lifecycle"
-claim = "Why an incarnation ended is the last step of its journal. The daemon copies it onto the row in the commit that ingests that step and reads the journal to its end before it marks the agent exited, so the row carries the agent's own cause even when no daemon saw it go or a daemon died between ingesting the step and marking, and uses its own cause only where the journal has none. A failed report to a parent carries the cause as data, and the parent's interpreter words it for its provider."
+claim = "Why an incarnation ended is the last step of its journal. The daemon copies it onto the row in the commit that ingests that step and reads the journal to its end before it marks the agent exited, so the row carries the agent's own cause even when no daemon saw it go or a daemon died between ingesting the step and marking, and uses its own cause only where the journal has none. The boundary a new incarnation writes for one that ended without its own carries no cause, so the live incarnation's row holds none and its own end is recorded as itself. A failed report to a parent carries the cause as data, and the parent's interpreter words it for its provider."
 tests = [
   "node/registry::agent_cause_reaches_the_row",
   "node/registry::an_ingested_cause_survives_a_daemon_that_died_before_marking",
+  "node/registry::a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary_names",
   "node/registry::a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones",
   "node/messaging::a_child_gone_without_a_turn_end_tells_its_parent_it_failed",
   "interpret/claude_pty::a_failed_report_is_worded_for_the_parents_provider",

@@ -561,7 +561,13 @@ async fn the_server_lists_the_seven_tools() {
 #[tokio::test(flavor = "multi_thread")]
 async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
     let mut mcp = Mcp::start(WINDOW).await;
-    let fleet = fleet();
+    let mut fleet = fleet();
+    // A live row can already hold the cause its journal ended with, until
+    // its daemon marks it exited; the tool says none for a live agent.
+    let reviewer = &mut fleet.agents[1];
+    assert_eq!(reviewer.name, "reviewer");
+    reviewer.exit_cause = wire::ExitCause::ProviderExited as i32;
+    reviewer.exit_detail = Some("exit code 1".into());
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     let listed = mcp.ok("agents", json!({})).await;
     assert_eq!(

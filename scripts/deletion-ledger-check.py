@@ -566,6 +566,7 @@ ROWS = [
             r"AskTimes",
             r"an_answered_ask_records_when_it_opened_and_closed",
             r"optional int64 (opened|closed|asked|decided)_at_ms",
+            r"^ *int64 opened_at_ms = ",
         ],
     ),
     Row(
@@ -600,6 +601,11 @@ EXEMPTIONS = [
         r"artifact_cache_mib|artifact_cache_dir",
         "crates/settings/src/lib.rs",
         "the retired-key table names the old key so an old config fails with the reason",
+    ),
+    Exemption(
+        r"^ *int64 opened_at_ms = ",
+        "crates/wire/proto/amux/v1/chat.proto",
+        "Claude's Ask keeps its opening time; only Codex's ask lost it",
     ),
 ]
 

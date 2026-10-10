@@ -23,7 +23,7 @@ use ui_view::{
     ActivityLine, AskSubject, AskSummary, Away, ExitCause, FleetRow, FleetSection, FleetView,
     Reach, SecondLine, SectionKind, SessionLine, StuckReason,
 };
-use wire::{Agent, Kind, SignInState, Trust};
+use wire::{Agent, Kind, Lifecycle, SignInState, Trust};
 
 use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
@@ -385,13 +385,16 @@ impl Home {
         let host = fleet.host(&agent.host_id).map(|host| host.name.as_str());
         let branch = agent.git.as_ref().and_then(|git| git.branch.as_deref());
         // The cause as the row words it, so the filter finds what it shows.
-        let cause = ui_state::exit_words(agent.exit_cause, agent.exit_detail.as_deref());
+        // Only an exited row shows one: a live row can briefly hold the
+        // cause its journal ended with, until the daemon marks it exited.
+        let cause = (agent.lifecycle() == Lifecycle::Exited)
+            .then(|| ui_state::exit_words(agent.exit_cause, agent.exit_detail.as_deref()));
         [
             Some(agent.name.as_str()),
             branch,
             Some(agent.cwd.as_str()),
             host,
-            Some(cause.as_str()),
+            cause.as_deref(),
             Some(kind_word(agent.kind())),
         ]
         .into_iter()

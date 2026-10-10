@@ -534,6 +534,92 @@ async fn stop_modes_end_the_process_and_record_why() {
     daemon.shutdown().await.unwrap();
 }
 
+/// A killed incarnation writes no final boundary, so the next one writes it
+/// when it starts. That step carries no cause: the killed incarnation's row
+/// was marked with the daemon's own when its process went, and a cause on
+/// the step would land on the new, live incarnation's row and stand in for
+/// how that one ends.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary_names() {
+    let install = Install::new();
+    let never = install.path("never");
+    let daemon = install
+        .start("boot-1", install.launch("held", vec![wait_for(&never)]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let agent = runtime
+        .spawn(
+            create(&install.work, "killed-twice", Some("work until killed")),
+            None,
+        )
+        .await
+        .unwrap();
+    let id = id_of(&agent);
+    let dir = install.agent_dir(id);
+    until("the turn to start", || working(&runtime, id))
+        .await
+        .unwrap();
+    let killed = runtime.stop(id, StopMode::Kill).await.unwrap();
+    assert_eq!(killed.exit_cause(), ExitCause::Killed);
+    let end = journal_end(&dir);
+
+    let resumed = runtime.resume(id, None).await.unwrap();
+    assert_eq!(resumed.incarnation, 2);
+    // The repair boundary, then the resume step, both committed.
+    let frames = until(
+        "the new incarnation's first steps to be committed",
+        || async {
+            let mut reader = journal::Reader::new(dir.join(agent_dir::JOURNAL), end);
+            let frames = reader
+                .read_to_end()
+                .map_err(|error| error.to_string())?
+                .frames;
+            let row = runtime
+                .store()
+                .await
+                .agent(&key(&runtime, id))
+                .unwrap()
+                .unwrap();
+            if frames.len() >= 2 && row.ingest_cursor >= reader.cursor() {
+                Ok(frames)
+            } else {
+                Err(format!(
+                    "{} new frames, cursor {}",
+                    frames.len(),
+                    row.ingest_cursor
+                ))
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        frames[0].1.incarnation_end, None,
+        "the repair boundary carries no cause"
+    );
+    let row = runtime
+        .store()
+        .await
+        .agent(&key(&runtime, id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.lifecycle, Lifecycle::Live as i32);
+    assert_eq!(
+        (row.exit_cause, row.exit_detail.as_deref()),
+        (ExitCause::Unspecified as i32, None),
+        "the live incarnation's row holds no cause"
+    );
+
+    let killed = runtime.stop(id, StopMode::Kill).await.unwrap();
+    assert_eq!(
+        killed.exit_cause(),
+        ExitCause::Killed,
+        "the second kill records its own cause"
+    );
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn resume_writes_the_next_spec_and_waits_for_a_dying_process() {
     let install = Install::new();

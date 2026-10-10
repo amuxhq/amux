@@ -162,6 +162,7 @@ provider's process group at once and writes nothing.
 | Any | The provider exits | The loop ends; `PROVIDER_EXITED` with the exit code or signal |
 | Any | `Stop(Kill)` arrives | The provider's process group is killed; `KILLED` |
 | Start | The provider cannot be started | `COULD_NOT_START`, with why |
+| `Exiting` | Ten seconds pass | The provider's process group is killed |
 
 Why the incarnation ended travels in the journal, not on `ctl.sock`: the
 step that writes the final boundary also carries `incarnation_end`, and the
@@ -176,7 +177,6 @@ directory) gets the daemon's own cause. An incarnation that ended with no
 final boundary at all gets one with `ENDED_UNEXPECTEDLY` when the next
 incarnation starts; that step carries no `incarnation_end`, since the row
 already says how the earlier incarnation ended.
-| `Exiting` | Ten seconds pass | The provider's process group is killed |
 
 A dump request is answered in every mode, since a draining agent is often the
 one someone wants to look at.

@@ -32,7 +32,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1790388558753 asks=[0→ask:0 questi
 ## 36 recorded 35: input stdin-5
 effect write "{\"id\":0,\"result\":{\"answers\":{\"color\":{\"answers\":[\"Blue\"]}}}}"
 effect reply stdin-5 accepted
-item ask:0 ask final at=1790388558753 text="" question×1 ASK_OUTCOME_ANSWERED answered 1 of 1 [Blue] opened=1790388558753 closed=1790388558754
+item ask:0 ask final at=1790388558753 text="" question×1 ASK_OUTCOME_ANSWERED answered 1 of 1 [Blue]
 snapshot WORKING queue=[] working_on=- at=1790388558754 asks=[] thread=01a0db79-4c61-7cb2-b8cd-9e2746736759 turn=01a0db79-4c7f-7203-8634-b9dd5af5ce23 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=plan approval=never sandbox=workspace-write reviewer=user collaboration=plan context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 41 recorded 40: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790388558779 asks=[] thread=01a0db79-4c61-7cb2-b8cd-9e2746736759 turn=01a0db79-4c7f-7203-8634-b9dd5af5ce23 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=plan approval=never sandbox=workspace-write reviewer=user collaboration=plan context=14349/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?

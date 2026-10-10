@@ -345,12 +345,6 @@ pub(crate) fn describe(item: &AskItem) -> String {
             }
         ));
     }
-    if let Some(opened) = closed.opened_at_ms {
-        text.push_str(&format!(" opened={opened}"));
-    }
-    if let Some(closed) = closed.closed_at_ms {
-        text.push_str(&format!(" closed={closed}"));
-    }
     text
 }
 

@@ -169,6 +169,8 @@ struct AskMeta {
     responses: Vec<String>,
     /// For questions: each question's id and option labels.
     questions: Vec<(String, Vec<String>)>,
+    /// When it opened, for the item of an ask that is the work.
+    at_ms: i64,
 }
 
 /// A unit of work as last emitted.
@@ -203,8 +205,6 @@ struct Proposed {
     complete: bool,
     verdict: i32,
     note: Option<String>,
-    /// When the plan ask closed with the verdict.
-    decided_at_ms: Option<i64>,
 }
 
 /// What a plan ask's implement choice sends, as Codex's own app does.
@@ -675,16 +675,13 @@ impl State {
     }
 
     /// Writes the item of an ask that is the work, open or closed; asks that
-    /// point at a unit of work have none. It is written closed only as the
-    /// ask closes: now.
-    fn emit_ask(&mut self, emit: &mut Emit, ask: &CodexAsk, closed: Option<AskClosed>) {
+    /// point at a unit of work have none.
+    fn emit_ask(&mut self, emit: &mut Emit, ask: &CodexAsk, at_ms: i64, closed: Option<AskClosed>) {
         let Some(item) = work_ask(ask) else {
             return;
         };
         let item = match closed {
-            Some(closed) => {
-                ask_item::close(item, self.shared.ask_times(ask.opened_at_ms).close(closed))
-            }
+            Some(closed) => ask_item::close(item, closed),
             None => item,
         };
         self.emit_item(
@@ -692,7 +689,7 @@ impl State {
             ItemDraft {
                 key: ask.item_key.clone(),
                 body: item_body(codex_item::Kind::Ask(item)),
-                at_ms: Some(ask.opened_at_ms),
+                at_ms: Some(at_ms),
                 complete: true,
                 ..Default::default()
             },
@@ -702,16 +699,16 @@ impl State {
     /// Closes an ask the server resolved without saying how: the decision
     /// on its unit of work, or its own item, reads dismissed.
     fn dismiss(&mut self, emit: &mut Emit, ask: &CodexAsk, meta: Option<AskMeta>) {
-        let decision = self
-            .shared
-            .ask_times(ask.opened_at_ms)
-            .decide(ToolDecision {
+        self.decide(
+            emit,
+            &ask.item_key,
+            ToolDecision {
                 outcome: DecisionOutcome::Unknown as i32,
                 ..Default::default()
-            });
-        self.decide(emit, &ask.item_key, decision);
-        if meta.is_some() {
-            self.emit_ask(emit, ask, Some(ask_item::dismissed()));
+            },
+        );
+        if let Some(meta) = meta {
+            self.emit_ask(emit, ask, meta.at_ms, Some(ask_item::dismissed()));
         }
     }
 
@@ -719,17 +716,17 @@ impl State {
     /// so, and takes its outcome from how the work then goes; an ask that
     /// is the work reads dismissed, as Codex does not say what was answered.
     fn answered_elsewhere(&mut self, emit: &mut Emit, ask: &CodexAsk, meta: Option<AskMeta>) {
-        let decision = self
-            .shared
-            .ask_times(ask.opened_at_ms)
-            .decide(ToolDecision {
+        self.decide(
+            emit,
+            &ask.item_key,
+            ToolDecision {
                 outcome: DecisionOutcome::Unknown as i32,
                 elsewhere: true,
                 ..Default::default()
-            });
-        self.decide(emit, &ask.item_key, decision);
-        if meta.is_some() {
-            self.emit_ask(emit, ask, Some(ask_item::dismissed()));
+            },
+        );
+        if let Some(meta) = meta {
+            self.emit_ask(emit, ask, meta.at_ms, Some(ask_item::dismissed()));
         }
     }
 
@@ -1123,7 +1120,7 @@ impl State {
         self.shared.answer(emit, id, &key);
         self.asks.remove(&key);
         self.respond(emit, &meta.id, Ok(response));
-        self.emit_ask(emit, &ask, Some(closed));
+        self.emit_ask(emit, &ask, meta.at_ms, Some(closed));
         self.shared.accept(emit, id, false);
     }
 
@@ -1156,15 +1153,16 @@ impl State {
             Decision::Deny | Decision::Abort => DecisionOutcome::Denied,
             Decision::Unspecified => DecisionOutcome::Unknown,
         };
-        let decision = self
-            .shared
-            .ask_times(ask.opened_at_ms)
-            .decide(ToolDecision {
+        self.decide(
+            emit,
+            &ask.item_key,
+            ToolDecision {
                 outcome: outcome as i32,
+                note: String::new(),
+                elsewhere: false,
                 granted: granted.map(tool_decision::Granted::Codex),
-                ..Default::default()
-            });
-        self.decide(emit, &ask.item_key, decision);
+            },
+        );
         self.shared.accept(emit, id, false);
     }
 }
@@ -1176,16 +1174,13 @@ impl State {
         self.shared.asks().get(&key).is_some().then_some(key)
     }
 
-    /// Records how the last plan was decided, as its ask closes, and sends
-    /// its item again.
+    /// Records how the last plan was decided and sends its item again.
     fn decide_plan(&mut self, emit: &mut Emit, verdict: wire::PlanVerdict, note: Option<String>) {
-        let now = self.shared.now_ms();
         let Some(proposed) = &mut self.proposed else {
             return;
         };
         proposed.verdict = verdict as i32;
         proposed.note = note;
-        proposed.decided_at_ms = Some(now);
         self.emit_plan(emit);
     }
 
@@ -1202,7 +1197,6 @@ impl State {
                     verdict: proposed.verdict,
                     note: proposed.note,
                     complete: proposed.complete,
-                    decided_at_ms: proposed.decided_at_ms,
                 })),
                 at_ms: Some(proposed.at_ms),
                 complete: proposed.complete,
@@ -1234,7 +1228,6 @@ impl State {
                 ],
             })),
             decisions: Vec::new(),
-            opened_at_ms: self.shared.now_ms(),
         });
     }
 
@@ -1285,8 +1278,8 @@ impl State {
         if self.shared.answer(emit, id, &ask.key).is_none() {
             return;
         }
-        self.asks.remove(&ask.key);
-        self.emit_ask(emit, ask, Some(closed));
+        let meta = self.asks.remove(&ask.key);
+        self.emit_ask(emit, ask, meta.map_or(0, |meta| meta.at_ms), Some(closed));
         self.interrupt(emit);
         let prompt = wire::PromptInput {
             text: reply.text.clone(),
@@ -1682,12 +1675,11 @@ fn describe_work(work: &Work) -> String {
     text.push_str(crate::claude_common::describe_class(work.class));
     if let Some(decision) = &work.decision {
         text.push_str(&format!(
-            " decision={}{}{}{}",
+            " decision={}{}{}",
             DecisionOutcome::try_from(decision.outcome)
                 .map_or("?", |outcome| outcome.as_str_name()),
             crate::claude_common::describe_grant(decision.granted.as_ref()),
-            if decision.elsewhere { " elsewhere" } else { "" },
-            crate::shared::describe_decision_times(decision)
+            if decision.elsewhere { " elsewhere" } else { "" }
         ));
     }
     if let Some(ended) = work.ended_at_ms {

@@ -59,7 +59,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1790389950293 asks=[0→ask:0 access
 ## 62 recorded 61: input stdin-5
 effect write "{\"id\":0,\"result\":{\"permissions\":{\"network\":{\"enabled\":true}},\"scope\":\"turn\"}}"
 effect reply stdin-5 accepted
-item ask:0 ask final at=1790389950293 text="" access read=[] write=[] network=true ASK_OUTCOME_ANSWERED granted read=[] write=[] network=true turn opened=1790389950293 closed=1790389950293
+item ask:0 ask final at=1790389950293 text="" access read=[] write=[] network=true ASK_OUTCOME_ANSWERED granted read=[] write=[] network=true turn
 snapshot WORKING queue=[] working_on=- at=1790389950293 asks=[] thread=01a0db8e-71ec-7590-a408-1d2c490cb309 turn=01a0db8e-71f9-74c0-b70c-668aac211c6a model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=? sandbox=workspace-write reviewer=user collaboration=? context=? plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 67 recorded 66: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790389951271 asks=[] thread=01a0db8e-71ec-7590-a408-1d2c490cb309 turn=01a0db8e-71f9-74c0-b70c-668aac211c6a model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=? sandbox=workspace-write reviewer=user collaboration=? context=12863/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?

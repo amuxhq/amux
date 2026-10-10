@@ -93,7 +93,7 @@ snapshot NEEDS_YOU queue=[p5] working_on=- at=1800000000000 asks=[ask:1->toolu_2
 ## 35 input {"id":"n6","send_now":{"target":"p5"}}
 effect reply n6 rejected:UNSUPPORTED
 ## 36 fact {"channel":"transcript","json":{"message":{"content":[{"content":"tests ran","tool_use_id":"toolu_2","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.185Z","type":"user","uuid":"u7"}}
-item toolu_2 tool final at=1800000000180 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere asked=1800000000000 decided=1800000000000 ended=1800000000185 input="{\"command\":\"make test\"}" out="tests ran"
+item toolu_2 tool final at=1800000000180 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000000185 input="{\"command\":\"make test\"}" out="tests ran"
 snapshot WORKING queue=[p5] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 37 input {"id":"n7","send_now":{"target":"p5"}}
 effect reply n7 accepted

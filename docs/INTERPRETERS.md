@@ -112,15 +112,6 @@ answered accepted and queued, and goes when the provider next becomes ready.
 `Shared` also derives the phase: needs you whenever an ask is open; starting
 until the provider accepts input; working while a turn runs; idle otherwise.
 
-Every record that outlives an ask carries when the ask opened and closed, as
-nothing else does: an item keeps the time it was first written, and a store
-keeps only an item's last revision. An ask item's close has `opened_at_ms`
-and `closed_at_ms`; a call's decision has `asked_at_ms` and `decided_at_ms`,
-absent when the provider decided without asking amux (an auto-approval,
-Codex's reviewer, a denial Claude made itself); a plan has `decided_at_ms`
-once decided or dismissed. No provider puts a time on its asks or their
-answers, so both ends are the interpreter's clock when it observed each.
-
 The first frame is always a snapshot with phase starting and every body field
 at its unknown. [`unknown.rs`](../crates/interpret/src/unknown.rs) builds
 those unknowns with exhaustive struct literals, so a field added to a

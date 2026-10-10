@@ -24,7 +24,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1790386560072 asks=[ask:1->- questio
 item toolu_01NRiLvbG2zjs5v2m2r7HNAC ask final at=1790386560284 text="" question×1 open
 snapshot NEEDS_YOU queue=[] working_on=- at=1790386560072 asks=[ask:1->toolu_01NRiLvbG2zjs5v2m2r7HNAC question:2+other] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36219 tasks=? background=? running=toolu_01NRiLvbG2zjs5v2m2r7HNAC AskUserQuestion since=1790386559853
 ## 46 recorded 44: fact Transcript type=user uuid=323384d6-6b58-4884-a639-e526ac614510
-item toolu_01NRiLvbG2zjs5v2m2r7HNAC ask final at=1790386560284 text="" question×1 ASK_OUTCOME_DISMISSED opened=1790386559875 closed=1790386560072
+item toolu_01NRiLvbG2zjs5v2m2r7HNAC ask final at=1790386560284 text="" question×1 ASK_OUTCOME_DISMISSED
 snapshot WORKING queue=[] working_on=- at=1790386560072 asks=[] session=2ca876f6-495e-4ee7-8e55-9a787892da3b model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=default context=36219 tasks=? background=?
 ## 50 recorded 48: fact Transcript type=user uuid=a6dd91d0-4536-4059-99d9-953473724959
 item a6dd91d0-4536-4059-99d9-953473724959 interruption final at=1790386560384 text=""

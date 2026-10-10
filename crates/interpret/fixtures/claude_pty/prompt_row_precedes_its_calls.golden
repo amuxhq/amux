@@ -44,7 +44,7 @@ item u2 prompt final input=p2 at=1800000005500 text="Sign in to the tracker."
 ## 18 input {"id":"i1","interrupt":{}}
 effect terminal interrupt
 effect reply i1 accepted
-item ask:ask:1 ask final at=1800000006000 text="" unanswerable "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." ASK_OUTCOME_CANCELLED opened=1800000006000 closed=1800000006000
+item ask:ask:1 ask final at=1800000006000 text="" unanswerable "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." ASK_OUTCOME_CANCELLED
 snapshot WORKING queue=[] working_on=- at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 ## 19 fact {"channel":"transcript","json":{"message":{"content":"[Request interrupted by user]","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.100Z","type":"user","uuid":"u3"}}
 item u3 interruption final at=1800000006100 text=""

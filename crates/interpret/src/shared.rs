@@ -192,35 +192,6 @@ impl<A: OpenAsk> Asks<A> {
     }
 }
 
-/// When an ask opened and when it closed, kept with what it decided until
-/// the record that outlives the ask is written. Both are the interpreter's
-/// clock: no provider puts a time on its asks or on their answers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct AskTimes {
-    pub(crate) opened_at_ms: i64,
-    pub(crate) closed_at_ms: i64,
-}
-
-impl AskTimes {
-    /// An ask that closed with this record, stamped with both ends.
-    pub(crate) fn close(self, closed: wire::AskClosed) -> wire::AskClosed {
-        wire::AskClosed {
-            opened_at_ms: Some(self.opened_at_ms),
-            closed_at_ms: Some(self.closed_at_ms),
-            ..closed
-        }
-    }
-
-    /// A permission decision, stamped with when it was asked and decided.
-    pub(crate) fn decide(self, decision: wire::ToolDecision) -> wire::ToolDecision {
-        wire::ToolDecision {
-            asked_at_ms: Some(self.opened_at_ms),
-            decided_at_ms: Some(self.closed_at_ms),
-            ..decision
-        }
-    }
-}
-
 /// The per-agent turn counter. A turn begins when a prompt is submitted or
 /// the provider reports one starting, and ends on the provider's turn-end
 /// fact; an ask is mid-turn.
@@ -843,14 +814,6 @@ impl<A: OpenAsk> Shared<A> {
         &self.asks
     }
 
-    /// The ends of an ask that opened at `opened_at_ms` and closes now.
-    pub(crate) fn ask_times(&self, opened_at_ms: i64) -> AskTimes {
-        AskTimes {
-            opened_at_ms,
-            closed_at_ms: self.now_ms,
-        }
-    }
-
     /// The stale-answer rule. An answer to an open ask closes it and hands
     /// it back, so the kind writes the answer and accepts. An answer to an
     /// ask that is not open is refused as `REFUSAL_CLOSED_ASK` and writes nothing.
@@ -1125,22 +1088,6 @@ pub(crate) fn describe_plan(plan: &wire::Plan) -> String {
     let mut out = plan.verdict().as_str_name().to_owned();
     if let Some(note) = &plan.note {
         out.push_str(&format!(" note={note:?}"));
-    }
-    if let Some(decided) = plan.decided_at_ms {
-        out.push_str(&format!(" decided={decided}"));
-    }
-    out
-}
-
-/// A permission decision's times as goldens print them; nothing when the
-/// provider decided without asking.
-pub(crate) fn describe_decision_times(decision: &wire::ToolDecision) -> String {
-    let mut out = String::new();
-    if let Some(asked) = decision.asked_at_ms {
-        out.push_str(&format!(" asked={asked}"));
-    }
-    if let Some(decided) = decision.decided_at_ms {
-        out.push_str(&format!(" decided={decided}"));
     }
     out
 }

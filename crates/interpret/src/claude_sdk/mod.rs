@@ -40,10 +40,9 @@ use wire::{
 
 use crate::claude_common::{
     Jobs, Task, Verdict, claude_grant, describe_asks, describe_claude_usage, describe_tasks,
-    describe_tool, file_step_facts, or_dash, permission_scopes, plan_item, question_closed,
-    question_item, task_list,
+    describe_tool, file_step_facts, or_dash, permission_scopes, plan_item, question_item,
+    task_list,
 };
-use crate::shared::AskTimes;
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
     RedactTarget, SendOutcome, Shared, SnapshotView, Stepped, agent_message_body,
@@ -128,9 +127,6 @@ struct Tool {
     question: bool,
     #[serde(with = "serde_pb::opt_msg")]
     asked: Option<AskClosed>,
-    /// When the last ask amux held for the call opened and closed; what
-    /// its decision, plan or question records.
-    ask_times: Option<AskTimes>,
     #[serde(with = "serde_pb::item_body")]
     emitted: Vec<u8>,
 }
@@ -602,14 +598,11 @@ impl State {
         verdict: Verdict,
     ) {
         self.asks.remove(key);
-        let asked = self
-            .shared
-            .close_ask(key)
-            .map(|ask| self.shared.ask_times(ask.opened_at_ms));
+        self.shared.close_ask(key);
         emit.effect(write(&claude_stream::Input::ControlResponse(
             ControlResponse::success(key, &result),
         )));
-        self.decide(emit, tool_use_id, Decided::Plan(verdict), asked);
+        self.decide(emit, tool_use_id, Decided::Plan(verdict));
     }
 
     /// A prompt typed instead of deciding the open plan: the plan is
@@ -750,11 +743,8 @@ impl State {
                 SdkAnswer::Elicitation(result) => ControlResponse::success(&key, &result),
             },
         )));
-        let asked = ask
-            .as_ref()
-            .map(|ask| self.shared.ask_times(ask.opened_at_ms));
         if let (Some(meta), Some(decided)) = (meta, decision) {
-            self.decide(emit, &meta.tool_use_id, decided, asked);
+            self.decide(emit, &meta.tool_use_id, decided);
         }
         if let (Some(ask), Some(closed)) = (ask, closed) {
             self.emit_ask(emit, &ask, Some(closed));
@@ -771,11 +761,8 @@ impl State {
             _ => return,
         };
         let item = ask_item::opened(asked);
-        // Written closed only as the ask closes: now.
         let item = match closed {
-            Some(closed) => {
-                ask_item::close(item, self.shared.ask_times(ask.opened_at_ms).close(closed))
-            }
+            Some(closed) => ask_item::close(item, closed),
             None => item,
         };
         self.shared.item(
@@ -815,17 +802,14 @@ impl State {
         let Some(id) = meta.map(|meta| meta.tool_use_id) else {
             return;
         };
-        let asked = self.shared.ask_times(ask.opened_at_ms);
         let Some(tool) = self.tools.get_mut(&id) else {
             return;
         };
         if let Some(plan) = tool.plan.as_mut().filter(|plan| plan.undecided()) {
             *plan = Verdict::of(wire::PlanVerdict::Dismissed);
-            tool.ask_times = Some(asked);
         }
         if tool.question && tool.asked.is_none() {
             tool.asked = Some(ask_item::dismissed());
-            tool.ask_times = Some(asked);
         }
         if matches!(
             wire::ToolState::try_from(tool.state),
@@ -837,40 +821,17 @@ impl State {
         self.emit_tool(emit, &id);
     }
 
-    /// Puts what an ask decided on its call; `asked` is when the ask amux
-    /// held opened and closed, None when Claude decided without asking.
-    fn decide(
-        &mut self,
-        emit: &mut Emit,
-        tool_use_id: &str,
-        decided: Decided,
-        asked: Option<AskTimes>,
-    ) {
+    fn decide(&mut self, emit: &mut Emit, tool_use_id: &str, decided: Decided) {
         if let Some(tool) = self.tools.get_mut(tool_use_id) {
-            let wrote = match decided {
+            match decided {
                 // A question cannot be declined: one refused anyway closed
                 // without answers.
                 Decided::Tool(_) if tool.question => {
-                    let unanswered = tool.asked.is_none();
                     tool.asked.get_or_insert_with(ask_item::dismissed);
-                    unanswered
                 }
-                Decided::Tool(decision) => {
-                    tool.decision = Some(decision);
-                    true
-                }
-                Decided::Plan(verdict) => {
-                    tool.plan = Some(verdict);
-                    true
-                }
-                Decided::Question(closed) => {
-                    tool.asked = Some(closed);
-                    true
-                }
-            };
-            // A record already written keeps the times it was written with.
-            if wrote && asked.is_some() {
-                tool.ask_times = asked;
+                Decided::Tool(decision) => tool.decision = Some(decision),
+                Decided::Plan(verdict) => tool.plan = Some(verdict),
+                Decided::Question(closed) => tool.asked = Some(closed),
             }
             self.emit_tool(emit, tool_use_id);
         }
@@ -884,13 +845,7 @@ impl State {
             return;
         }
         if tool.question {
-            let closed = question_closed(
-                tool.asked.as_ref(),
-                tool.ask_times,
-                tool.at_ms,
-                tool.ended_at_ms,
-            );
-            let Some(item) = question_item(&tool.input, closed, false) else {
+            let Some(item) = question_item(&tool.input, tool.asked.clone(), false) else {
                 return;
             };
             let body = item_body(claude_sdk_item::Kind::Ask(item));
@@ -911,7 +866,7 @@ impl State {
             );
         }
         if let Some(verdict) = &tool.plan {
-            let Some((text, plan)) = plan_item(&tool.input, verdict, tool.ask_times) else {
+            let Some((text, plan)) = plan_item(&tool.input, verdict) else {
                 return;
             };
             let body = item_body(claude_sdk_item::Kind::Plan(plan));
@@ -971,19 +926,11 @@ impl State {
             outcome_json: tool.outcome_json.clone().into_bytes(),
             attachments: tool.images.clone(),
             class: tool.class,
-            decision: tool.decision.as_ref().map(|decision| {
-                let decision = ToolDecision {
-                    outcome: decision.outcome,
-                    note: decision.note.clone(),
-                    elsewhere: false,
-                    granted: decision.grant.clone().map(tool_decision::Granted::Claude),
-                    asked_at_ms: None,
-                    decided_at_ms: None,
-                };
-                match tool.ask_times {
-                    Some(asked) => asked.decide(decision),
-                    None => decision,
-                }
+            decision: tool.decision.as_ref().map(|decision| ToolDecision {
+                outcome: decision.outcome,
+                note: decision.note.clone(),
+                elsewhere: false,
+                granted: decision.grant.clone().map(tool_decision::Granted::Claude),
             }),
             background: tool.background,
             parent_key: tool.parent_key.clone(),

@@ -1,3 +1,11 @@
+2026-10-10 — **An ask's records no longer carry when it opened and closed.**
+The times added to an ask's close, a call's permission decision, a plan's
+decision and a Codex ask in the snapshot had no reader, so they are gone,
+with the helper each interpreter stamped them through and the tests that
+checked their order. A Codex ask keeps its opening time privately inside
+the interpreter, as before, for the item it closes. The interpreter goldens
+return to their earlier lines.
+
 2026-10-10 — **A paired host reads no blob of an agent it does not own, and the docs match the protocol.**
 A paired host asking this one for a blob was answered from this host's
 copy even when the agent was another host's, so a host could read the

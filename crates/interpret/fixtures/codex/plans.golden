@@ -30,7 +30,7 @@ turn_end 1 last=turn-1-plan
 ## 11 input {"answer":{"answer":{"plan":{"choice":"start"}},"ask":"plan:turn-1-plan"},"id":"a1"}
 effect reply a1 accepted
 effect write "{\"id\":\"amux-2\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"6131\",\"collaborationMode\":{\"mode\":\"default\",\"settings\":{\"developer_instructions\":null,\"model\":\"gpt-5.6-luna\",\"reasoning_effort\":null}},\"input\":[{\"text\":\"Implement the plan.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
-item turn-1-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_APPROVED decided=1800000000000
+item turn-1-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_APPROVED
 item prompt:6131 prompt final input=a1 at=1800000000000 text="Implement the plan."
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=default approval=on-request sandbox=workspace-write reviewer=? collaboration=default context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 12 fact {"channel":"rpc","json":{"id":"amux-2","result":{"turn":{"id":"turn-2"}}}}
@@ -68,7 +68,7 @@ turn_end 3 last=turn-3-plan
 ## 26 input {"answer":{"answer":{"plan":{"choice":"keep_planning","note":"Leave the README alone."}},"ask":"plan:turn-3-plan"},"id":"a2"}
 effect reply a2 accepted
 effect write "{\"id\":\"amux-4\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"6132\",\"input\":[{\"text\":\"Leave the README alone.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
-item turn-3-plan plan final at=1800000000000 text="## Write the colour and the README\n\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n" PLAN_VERDICT_SENT_BACK note="Leave the README alone." decided=1800000000000
+item turn-3-plan plan final at=1800000000000 text="## Write the colour and the README\n\n- Write `Blue` to `color.txt`.\n- Say so in `README.md`.\n" PLAN_VERDICT_SENT_BACK note="Leave the README alone."
 item prompt:6132 prompt final input=a2 at=1800000000000 text="Leave the README alone."
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request sandbox=workspace-write reviewer=? collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 27 fact {"channel":"rpc","json":{"id":"amux-4","result":{"turn":{"id":"turn-4"}}}}
@@ -89,7 +89,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[plan:turn-4-plan
 turn_end 4 last=turn-4-plan
 ## 35 input {"answer":{"answer":{"plan":{"choice":"keep_planning"}},"ask":"plan:turn-4-plan"},"id":"a3"}
 effect reply a3 accepted
-item turn-4-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_SENT_BACK decided=1800000000000
+item turn-4-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_SENT_BACK
 snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request sandbox=workspace-write reviewer=? collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 36 input {"id":"p3","prompt":{"text":"One more pass on the plan."}}
 effect reply p3 accepted
@@ -115,7 +115,7 @@ turn_end 5 last=turn-5-plan
 ## 45 input {"id":"p4","prompt":{"text":"Forget the plan; just write Blue."}}
 effect reply p4 accepted
 effect write "{\"id\":\"amux-6\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"7034\",\"input\":[{\"text\":\"Forget the plan; just write Blue.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"t1\"}}"
-item turn-5-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_DISMISSED decided=1800000000000
+item turn-5-plan plan final at=1800000000000 text="## Write the colour\n\n- Write `Blue` to `color.txt`.\n- Check it holds exactly `Blue`.\n" PLAN_VERDICT_DISMISSED
 item prompt:7034 prompt final input=p4 at=1800000000000 text="Forget the plan; just write Blue."
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=plan approval=on-request sandbox=workspace-write reviewer=? collaboration=plan context=? plan=? usage=? servers=? sign_in=? background=[]
 ## 46 input {"answer":{"answer":{"plan":{"choice":"start"}},"ask":"plan:turn-5-plan"},"id":"bad"}

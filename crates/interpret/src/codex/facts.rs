@@ -832,13 +832,13 @@ impl State {
                             provider_dialog: false,
                         })),
                         decisions: Vec::new(),
-                        opened_at_ms: 0,
                     },
                     AskMeta {
                         id: key,
                         method: method.to_owned(),
                         responses: Vec::new(),
                         questions: shapes,
+                        at_ms: 0,
                     },
                 );
             }
@@ -871,13 +871,13 @@ impl State {
                 item_key,
                 body: Some(body),
                 decisions,
-                opened_at_ms: 0,
             },
             AskMeta {
                 id: key,
                 method: method.to_owned(),
                 responses,
                 questions: Vec::new(),
+                at_ms: 0,
             },
         );
     }
@@ -951,13 +951,13 @@ impl State {
         )
     }
 
-    /// Opens an ask, now: Codex's requests carry no time. One that is the
-    /// work gets its own item, which the ask points at.
-    fn open(&mut self, emit: &mut Emit, mut ask: CodexAsk, meta: AskMeta) {
-        ask.opened_at_ms = self.shared.now_ms();
+    /// Opens an ask; one that is the work gets its own item, which the ask
+    /// points at.
+    fn open(&mut self, emit: &mut Emit, mut ask: CodexAsk, mut meta: AskMeta) {
+        meta.at_ms = self.shared.now_ms();
         if work_ask(&ask).is_some() {
             ask.item_key = ask_item::key(&ask.key);
-            self.emit_ask(emit, &ask, None);
+            self.emit_ask(emit, &ask, meta.at_ms, None);
         }
         self.asks.insert(ask.key.clone(), meta);
         self.shared.open_ask(ask);
@@ -1074,13 +1074,13 @@ impl State {
                 item_key,
                 body: Some(body),
                 decisions,
-                opened_at_ms: 0,
             },
             AskMeta {
                 id: key,
                 method: method.to_owned(),
                 responses,
                 questions: Vec::new(),
+                at_ms: 0,
             },
         );
     }
@@ -1484,7 +1484,6 @@ impl State {
                     complete: completed,
                     verdict: wire::PlanVerdict::Undecided as i32,
                     note: None,
-                    decided_at_ms: None,
                 });
                 self.emit_plan(emit);
                 if completed {
@@ -2200,8 +2199,8 @@ impl State {
             if let Some(codex_ask::Body::Plan(_)) = ask.body {
                 self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
             }
-            if self.asks.remove(&ask.key).is_some() {
-                self.emit_ask(emit, &ask, Some(ask_item::dismissed()));
+            if let Some(meta) = self.asks.remove(&ask.key) {
+                self.emit_ask(emit, &ask, meta.at_ms, Some(ask_item::dismissed()));
             }
         }
         self.settle_open(emit, false);

@@ -17,7 +17,7 @@ effect reply bad rejected:UNSUPPORTED
 ## 6 input {"answer":{"answer":{"note":"keep the old strings for one release","selected":["Teal",[0,2]]},"ask":"req-1"},"id":"a1"}
 effect write "{\"response\":{\"request_id\":\"req-1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"annotations\":{\"Pick tools\":{\"notes\":\"keep the old strings for one release\"}},\"answers\":{\"Pick a color\":\"Teal\",\"Pick tools\":\"Hammer, Drill\"},\"questions\":[{\"header\":\"Color\",\"multiSelect\":false,\"options\":[{\"description\":\"\",\"label\":\"Red\"},{\"description\":\"\",\"label\":\"Blue\"}],\"question\":\"Pick a color\"},{\"header\":\"Tools\",\"multiSelect\":true,\"options\":[{\"description\":\"\",\"label\":\"Hammer\"},{\"description\":\"\",\"label\":\"Saw\"},{\"description\":\"\",\"label\":\"Drill\"}],\"question\":\"Pick tools\"}]}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a1 accepted
-item t1 ask final at=1800000000000 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 ["Teal"; Hammer+Drill note="keep the old strings for one release"] opened=1800000000000 closed=1800000000000
+item t1 ask final at=1800000000000 text="" question×2 ASK_OUTCOME_ANSWERED answered 2 of 2 ["Teal"; Hammer+Drill note="keep the old strings for one release"]
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 7 fact {"channel":"stream","json":{"message":{"content":[{"id":"t2","input":{"plan":"# Plan\n- edit"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m2"}}
 item t2 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_UNDECIDED
@@ -26,7 +26,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-2->t2 plan:[
 ## 9 input {"answer":{"answer":{"approve_plan":{"auto_accept_edits":true}},"ask":"req-2"},"id":"a2"}
 effect write "{\"response\":{\"request_id\":\"req-2\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"plan\":\"# Plan\\n- edit\"},\"updatedPermissions\":[{\"destination\":\"session\",\"mode\":\"acceptEdits\",\"type\":\"setMode\"}]},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a2 accepted
-item t2 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_APPROVED_ACCEPTING_EDITS decided=1800000000000
+item t2 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_APPROVED_ACCEPTING_EDITS
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 10 fact {"channel":"stream","json":{"message":{"content":[{"id":"t3","input":{"plan":"# Plan\n- edit"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m3"}}
 item t3 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_UNDECIDED
@@ -35,7 +35,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-3->t3 plan:[
 ## 12 input {"answer":{"answer":{"approve_plan":{}},"ask":"req-3"},"id":"a3"}
 effect write "{\"response\":{\"request_id\":\"req-3\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"plan\":\"# Plan\\n- edit\"},\"updatedPermissions\":[{\"destination\":\"session\",\"mode\":\"default\",\"type\":\"setMode\"}]},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a3 accepted
-item t3 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_APPROVED decided=1800000000000
+item t3 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_APPROVED
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 13 fact {"channel":"stream","json":{"message":{"content":[{"id":"t4","input":{"plan":"# Plan\n- edit"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"type":"assistant","uuid":"m4"}}
 item t4 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_UNDECIDED
@@ -44,7 +44,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[req-4->t4 plan:[
 ## 15 input {"answer":{"answer":{"send_back":{"note":"say why"}},"ask":"req-4"},"id":"a4"}
 effect write "{\"response\":{\"request_id\":\"req-4\",\"response\":{\"behavior\":\"deny\",\"interrupt\":false,\"message\":\"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\\nsay why\"},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply a4 accepted
-item t4 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_SENT_BACK note="say why" decided=1800000000000
+item t4 plan final at=1800000000000 text="# Plan\n- edit" PLAN_VERDICT_SENT_BACK note="say why"
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 16 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.01,"type":"result","uuid":"r1"}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1799999999000 cost=0.010000

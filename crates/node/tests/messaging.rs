@@ -19,9 +19,8 @@ use support::*;
 use tonic::{Code, Request};
 use wire::client_service_server::ClientService as _;
 use wire::{
-    AgentRef, ClaudeSdkInput, DeleteAgentRequest, EnvelopeKind, Input, Lifecycle, PromptInput,
-    RenameAgentRequest, SendInputRequest, SendInputResponse, SendMessageRequest, StopAgentRequest,
-    StopMode, claude_sdk_input, send_input_response, sender,
+    AgentRef, ClaudeSdkInput, EnvelopeKind, Input, Lifecycle, PromptInput, SendInputRequest,
+    SendInputResponse, SendMessageRequest, StopMode, claude_sdk_input, send_input_response, sender,
 };
 
 const SEGMENTS: u64 = 1 << 20;
@@ -200,7 +199,7 @@ async fn send_input_returns_the_interpreters_verdict_or_answers_for_an_exited_ag
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_interrupts_only_its_own_children_and_manages_no_other_agent() {
+async fn an_agent_sends_input_only_to_its_own_children() {
     let install = Install::new();
     let caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
     caller.register_offline(&install);
@@ -222,47 +221,13 @@ async fn an_agent_interrupts_only_its_own_children_and_manages_no_other_agent() 
 
     let refused = tools.send_input(send(&stranger, b"i1")).await.unwrap_err();
     assert_eq!(refused.code(), Code::PermissionDenied);
-    let refused = tools
-        .delete_agent(Request::new(DeleteAgentRequest {
-            agent_id: stranger.id.as_bytes().to_vec(),
-        }))
-        .await
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::PermissionDenied);
-    let refused = tools
-        .stop_agent(Request::new(StopAgentRequest {
-            agent_id: child.id.as_bytes().to_vec(),
-            mode: 0,
-        }))
-        .await
-        .unwrap_err();
-    assert_eq!(
-        refused.code(),
-        Code::PermissionDenied,
-        "an agent stops even its child only by interrupting it"
-    );
-    let refused = tools
-        .rename_agent(Request::new(RenameAgentRequest {
-            agent_id: child.id.as_bytes().to_vec(),
-            name: "renamed".into(),
-        }))
-        .await
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::PermissionDenied);
     assert!(stranger.inputs().is_empty(), "nothing reached the stranger");
-    let row = runtime.agent(stranger.id).await.unwrap();
-    assert_eq!(
-        (row.name.as_str(), row.lifecycle),
-        ("stranger", Lifecycle::Live as i32)
-    );
-    let row = runtime.agent(child.id).await.unwrap();
-    assert_eq!(row.name, "child");
 
     let answer = tools.send_input(send(&child, b"i2")).await.unwrap();
     assert_eq!(verdict(answer.get_ref()), "queued");
     assert_eq!(child.inputs().len(), 1, "the child's input was relayed");
 
-    // The profile socket is a person's: the same calls go through.
+    // The profile socket is a person's: the same input goes through.
     let person = ClientApi::new(&runtime, None);
     let answer = person.send_input(send(&stranger, b"i3")).await.unwrap();
     assert_eq!(verdict(answer.get_ref()), "queued");

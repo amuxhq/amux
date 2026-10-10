@@ -1119,12 +1119,10 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
     // A forced delay: the listing orders repositories by the agents'
     // creation times, which the clock stamps in milliseconds.
     tokio::time::sleep(Duration::from_millis(5)).await;
-    let second = id_of(
-        &desk_runtime
-            .spawn(create(&newer, "second", None), None)
-            .await
-            .unwrap(),
-    );
+    desk_runtime
+        .spawn(create(&newer, "second", None), None)
+        .await
+        .unwrap();
     desk_runtime.delete(first).await.unwrap();
 
     let person = node::ClientApi::new(&desk_runtime, None);
@@ -1179,13 +1177,6 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
         ["amux"],
         "the limit counts both lists"
     );
-
-    let tools = node::ClientApi::new(&desk_runtime, Some(second));
-    let refused = tools
-        .list_repositories(listing(None, 50, None))
-        .await
-        .unwrap_err();
-    assert_eq!(refused.code(), tonic::Code::PermissionDenied);
 
     // A paired laptop asks the desk by its host id.
     let laptop = Install::new();

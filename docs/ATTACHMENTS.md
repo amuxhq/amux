@@ -135,8 +135,7 @@ reference in its attachments. The terminal attaches a clipboard image or a
 copied file path with Ctrl+V, and turns a paste of eight lines or 1000
 characters into a `text` attachment; the phone stores bytes with
 `amux_session_put_blob`. `PutBlob` for another host's agent is forwarded to
-that host, since only the agent's own host writes its directory, and it is
-refused on an agent's tools socket, since it is a person's act.
+that host, since only the agent's own host writes its directory.
 
 **A model's attachment.** The `attach` tool reads a file on the agent's host,
 hashes it, writes it into the agent's directory and returns the element that

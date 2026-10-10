@@ -185,20 +185,6 @@ impl ClientApi {
             .ok_or_else(|| Status::unavailable("the profile is no longer running"))
     }
 
-    /// Refuses a call an agent's tool set never makes. An agent manages
-    /// other agents only by messaging them and interrupting its children;
-    /// renaming, stopping, resuming, deleting, dumping and writing blobs are
-    /// a person's acts, taken on the profile socket.
-    fn people_only(&self, call: &str) -> Result<(), Status> {
-        match self.caller {
-            Some(_) => Err(status(wire_error(
-                ErrorCode::PermissionDenied,
-                format!("an agent cannot {call}"),
-            ))),
-            None => Ok(()),
-        }
-    }
-
     /// On an agent's tools socket, input goes only to the caller's own
     /// direct children: an agent acts on the agents it started, and reaches
     /// any other only by messaging it.
@@ -429,7 +415,6 @@ impl ClientService for ClientApi {
         &self,
         request: Request<RenameAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        self.people_only("rename an agent")?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
@@ -449,7 +434,6 @@ impl ClientService for ClientApi {
         &self,
         request: Request<StopAgentRequest>,
     ) -> Result<Response<Empty>, Status> {
-        self.people_only("stop an agent")?;
         let request = request.into_inner();
         // A stop this daemon cannot read is refused, never taken as some
         // other stop.
@@ -477,7 +461,6 @@ impl ClientService for ClientApi {
         &self,
         request: Request<ResumeAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        self.people_only("resume an agent")?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         let first = match &request.initial_prompt {
@@ -512,7 +495,6 @@ impl ClientService for ClientApi {
         &self,
         request: Request<DeleteAgentRequest>,
     ) -> Result<Response<DeleteAgentResponse>, Status> {
-        self.people_only("delete an agent")?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
@@ -543,7 +525,6 @@ impl ClientService for ClientApi {
         &self,
         request: Request<PutBlobRequest>,
     ) -> Result<Response<BlobRef>, Status> {
-        self.people_only("store a blob")?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
@@ -593,7 +574,6 @@ impl ClientService for ClientApi {
     }
 
     async fn diff(&self, request: Request<DiffRequest>) -> Result<Response<wire::Diff>, Status> {
-        self.people_only("read a diff")?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         // The working tree is on the agent's own host, and so is the patch.
@@ -621,7 +601,6 @@ impl ClientService for ClientApi {
         &self,
         request: Request<ListRepositoriesRequest>,
     ) -> Result<Response<ListRepositoriesResponse>, Status> {
-        self.people_only("list repositories")?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
         let named = request.host_id.as_deref().map(host_id).transpose()?;
@@ -646,7 +625,6 @@ impl ClientService for ClientApi {
     }
 
     async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpReport>, Status> {
-        self.people_only("write a debug report")?;
         // A local caller reads the bundle where it was written.
         let path = self
             .runtime()?

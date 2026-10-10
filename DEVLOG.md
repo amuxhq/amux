@@ -1,3 +1,13 @@
+2026-10-10 — **An agent's tools socket no longer refuses a person's calls.**
+The client service on an agent's tools socket refused renaming, stopping,
+resuming and deleting agents, storing blobs, reading diffs, listing
+repositories and writing debug reports. The agent's tool server never makes
+those calls, so the refusal only caught calls made by hand, and an agent can
+run the `amux` CLI against the person's socket anyway; the check is gone,
+with the assertions that held it. The socket still makes the caller a
+created agent's parent, stamps it as a message's sender, and sends its input
+only to its own direct children.
+
 2026-10-10 — **An agent's exit cause reaches its row when the daemon ingests it.**
 The daemon held the cause from an agent's last journal step in memory until
 it marked the agent exited, so a daemon that ingested that step and stopped

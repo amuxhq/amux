@@ -552,9 +552,6 @@ no request carries an agent id or a token claiming one. On that socket:
 - `SendMessage` stamps the caller as the message's sender.
 - `SendInput` goes only to one of the caller's own direct children; the stop
   tool's interrupt is the input an agent sends.
-- `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent`, `PutBlob`, `Diff`,
-  `ListRepositories` and `Dump` are refused with `PERMISSION_DENIED`: those are
-  a person's acts.
 
 [Agent tools](AGENT_TOOLS.md) describes the tool server that dials it.
 

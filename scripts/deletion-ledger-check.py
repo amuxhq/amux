@@ -576,6 +576,14 @@ ROWS = [
             r"the one input an agent sends is an interrupt",
         ],
     ),
+    Row(
+        "the tools socket's refusal of a person's calls",
+        "a check that refused renaming, stopping, resuming, deleting, blobs, diffs, repository listings and dumps from an agent",
+        [
+            r"people_only",
+            r"manages_no_other_agent",
+        ],
+    ),
 ]
 
 # Files that name removed things on purpose, to hold them gone.

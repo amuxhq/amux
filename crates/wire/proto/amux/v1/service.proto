@@ -17,6 +17,7 @@ syntax = "proto3";
 
 package amux.v1;
 
+import "amux/v1/chat.proto";
 import "amux/v1/link.proto";
 import "amux/v1/records.proto";
 
@@ -151,34 +152,6 @@ enum Lifecycle {
   LIFECYCLE_UNSPECIFIED = 0;
   LIFECYCLE_LIVE = 1;
   LIFECYCLE_EXITED = 2;
-}
-
-// Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a
-// cause this build does not know: unknown is not failure.
-enum ExitCause {
-  EXIT_CAUSE_UNSPECIFIED = 0;
-  // A child's turn ended with nothing queued: the one-shot rule.
-  EXIT_CAUSE_FINISHED = 1;
-  EXIT_CAUSE_STOPPED = 2;
-  EXIT_CAUSE_ABORTED = 3;
-  EXIT_CAUSE_KILLED = 4;
-  // The provider process ended on its own; the detail is its exit code
-  // or signal.
-  EXIT_CAUSE_PROVIDER_EXITED = 5;
-  // The agent drained after its daemon was gone past the grace period.
-  EXIT_CAUSE_DAEMON_LOST = 6;
-  // An ask was open with nobody to answer it when the daemon was lost.
-  EXIT_CAUSE_ORPHANED = 7;
-  // The agent process or its provider could not start; the detail says
-  // which and why.
-  EXIT_CAUSE_COULD_NOT_START = 8;
-  // Its directory is gone, or a write to it failed; the detail says which.
-  EXIT_CAUSE_DIRECTORY_FAILED = 9;
-  // The process was found dead when a daemon returned, with no record of
-  // why.
-  EXIT_CAUSE_ENDED_WHILE_AWAY = 10;
-  // The provider loop ended without any of the above.
-  EXIT_CAUSE_ENDED_UNEXPECTEDLY = 11;
 }
 
 // Why the row left this daemon's view, which is not always deletion at
@@ -554,52 +527,6 @@ message Input {
 message PromptSubmission {
   bytes input_id = 1;
   PromptInput prompt = 2;
-}
-
-// U+FFFC per attachment.
-message PromptInput {
-  string text = 1;
-  repeated Attachment attachments = 2;
-  // Prompts always queue; steering is SendQueuedNow on a queued entry.
-}
-
-// Rejected REFUSAL_NOT_QUEUED if the target is not queued.
-message WithdrawQueued {
-  bytes queued_input_id = 1;
-}
-
-// Delivers one queued prompt into the running turn through the provider's
-// own steering path; the entry reads steered until its reflection lands.
-// Rejected REFUSAL_NOT_QUEUED if the target is not waiting in the queue,
-// and REFUSAL_UNSUPPORTED if no turn is running.
-message SendQueuedNow {
-  bytes queued_input_id = 1;
-}
-
-message Interrupt {}
-
-message Clear {}
-
-// How much the agent may do without asking, by a value its catalogue
-// offers; the interpreter turns it into the provider's own settings.
-message SetPermission {
-  string value = 1;
-}
-
-// How the agent works (Codex: default or plan), by a value its catalogue
-// offers.
-message SetMode {
-  string value = 1;
-}
-
-message SetModel {
-  // Absent restores the launch model.
-  optional string model = 1;
-}
-
-message SetEffort {
-  // Absent clears the session override.
-  optional string effort = 1;
 }
 
 // The interpreter's verdict.

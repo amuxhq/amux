@@ -12,9 +12,9 @@ different versions talking. Host-to-host links, pairing and the relay are in
 
 | File | Holds |
 | --- | --- |
-| [`service.proto`](../crates/wire/proto/amux/v1/service.proto) | `ClientService`, `PeerService`, the inventory, their requests, `Input` with the shared input pieces, and `SendInputResponse` |
-| [`records.proto`](../crates/wire/proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, agent messages, attachments, blobs, diffs |
-| [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, answer pieces, the catalogue |
+| [`service.proto`](../crates/wire/proto/amux/v1/service.proto) | `ClientService`, `PeerService`, the inventory, their requests, `Input`, and `SendInputResponse` |
+| [`records.proto`](../crates/wire/proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, diffs |
+| [`chat.proto`](../crates/wire/proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
 | [`claude.proto`](../crates/wire/proto/amux/v1/claude.proto), [`codex.proto`](../crates/wire/proto/amux/v1/codex.proto) | The per-kind item, snapshot and input bodies |
 | [`agent.proto`](../crates/wire/proto/amux/v1/agent.proto) | The agent spec and what seeds its queue, and the `ctl.sock` and `pty.sock` frames |
 | [`error.proto`](../crates/wire/proto/amux/v1/error.proto) | The error carrier and its code |
@@ -408,8 +408,8 @@ permission-mode cycle, the one keystroke a remote client sends. Raw terminal
 bytes never cross the wire; anything else in Claude's terminal is typed at the
 machine, and a dialog amux cannot answer is left by stopping the agent or
 attaching there. The shared pieces (`PromptInput`, `WithdrawQueued`,
-`SendQueuedNow`, `Interrupt`, `Clear`, `SetModel`, `SetEffort`) are in
-`service.proto`, and the answer pieces in `chat.proto`; each kind's input
+`SendQueuedNow`, `Interrupt`, `Clear`, `SetModel`, `SetEffort`) and the
+answer pieces are in `chat.proto`; each kind's input
 oneof, with its own settings and its answer message (`ClaudeAnswer`,
 `CodexAnswer`, each carrying the key of the ask it answers), is in
 `claude.proto` and `codex.proto`. A Codex approval is a `CodexAnswer` whose

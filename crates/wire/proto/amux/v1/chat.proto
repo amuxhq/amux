@@ -3,11 +3,10 @@ syntax = "proto3";
 package amux.v1;
 
 import "amux/v1/records.proto";
-import "amux/v1/service.proto";
 
-// The chat vocabulary the kinds share: item bodies, snapshot pieces, asks
-// and the pieces of each kind's answers, and the catalogue. claude.proto and
-// codex.proto build each kind's own messages from these.
+// The chat vocabulary the kinds share: item bodies, snapshot pieces, asks,
+// the pieces of each kind's inputs and answers, and the catalogue.
+// claude.proto and codex.proto build each kind's own messages from these.
 
 // ---------------------------------------------------------------------------
 // Item bodies shared by more than one kind
@@ -620,6 +619,56 @@ message BackgroundJob {
   // The command, or what the provider calls the task.
   string command = 2;
   int64 started_at_ms = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Input pieces shared by the per-kind inputs
+// ---------------------------------------------------------------------------
+
+// U+FFFC per attachment.
+message PromptInput {
+  string text = 1;
+  repeated Attachment attachments = 2;
+  // Prompts always queue; steering is SendQueuedNow on a queued entry.
+}
+
+// Rejected REFUSAL_NOT_QUEUED if the target is not queued.
+message WithdrawQueued {
+  bytes queued_input_id = 1;
+}
+
+// Delivers one queued prompt into the running turn through the provider's
+// own steering path; the entry reads steered until its reflection lands.
+// Rejected REFUSAL_NOT_QUEUED if the target is not waiting in the queue,
+// and REFUSAL_UNSUPPORTED if no turn is running.
+message SendQueuedNow {
+  bytes queued_input_id = 1;
+}
+
+message Interrupt {}
+
+message Clear {}
+
+// How much the agent may do without asking, by a value its catalogue
+// offers; the interpreter turns it into the provider's own settings.
+message SetPermission {
+  string value = 1;
+}
+
+// How the agent works (Codex: default or plan), by a value its catalogue
+// offers.
+message SetMode {
+  string value = 1;
+}
+
+message SetModel {
+  // Absent restores the launch model.
+  optional string model = 1;
+}
+
+message SetEffort {
+  // Absent clears the session override.
+  optional string effort = 1;
 }
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,6 @@ syntax = "proto3";
 package amux.v1;
 
 import "amux/v1/chat.proto";
-import "amux/v1/service.proto";
 
 // Codex's per-kind bodies: the item and snapshot messages encoded into
 // Item.body and Snapshot.body for kind codex, the inputs it accepts, and the

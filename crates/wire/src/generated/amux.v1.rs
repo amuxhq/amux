@@ -736,6 +736,75 @@ impl Kind {
         }
     }
 }
+/// Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a
+/// cause this build does not know: unknown is not failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ExitCause {
+    Unspecified = 0,
+    /// A child's turn ended with nothing queued: the one-shot rule.
+    Finished = 1,
+    Stopped = 2,
+    Aborted = 3,
+    Killed = 4,
+    /// The provider process ended on its own; the detail is its exit code
+    /// or signal.
+    ProviderExited = 5,
+    /// The agent drained after its daemon was gone past the grace period.
+    DaemonLost = 6,
+    /// An ask was open with nobody to answer it when the daemon was lost.
+    Orphaned = 7,
+    /// The agent process or its provider could not start; the detail says
+    /// which and why.
+    CouldNotStart = 8,
+    /// Its directory is gone, or a write to it failed; the detail says which.
+    DirectoryFailed = 9,
+    /// The process was found dead when a daemon returned, with no record of
+    /// why.
+    EndedWhileAway = 10,
+    /// The provider loop ended without any of the above.
+    EndedUnexpectedly = 11,
+}
+impl ExitCause {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "EXIT_CAUSE_UNSPECIFIED",
+            Self::Finished => "EXIT_CAUSE_FINISHED",
+            Self::Stopped => "EXIT_CAUSE_STOPPED",
+            Self::Aborted => "EXIT_CAUSE_ABORTED",
+            Self::Killed => "EXIT_CAUSE_KILLED",
+            Self::ProviderExited => "EXIT_CAUSE_PROVIDER_EXITED",
+            Self::DaemonLost => "EXIT_CAUSE_DAEMON_LOST",
+            Self::Orphaned => "EXIT_CAUSE_ORPHANED",
+            Self::CouldNotStart => "EXIT_CAUSE_COULD_NOT_START",
+            Self::DirectoryFailed => "EXIT_CAUSE_DIRECTORY_FAILED",
+            Self::EndedWhileAway => "EXIT_CAUSE_ENDED_WHILE_AWAY",
+            Self::EndedUnexpectedly => "EXIT_CAUSE_ENDED_UNEXPECTEDLY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "EXIT_CAUSE_UNSPECIFIED" => Some(Self::Unspecified),
+            "EXIT_CAUSE_FINISHED" => Some(Self::Finished),
+            "EXIT_CAUSE_STOPPED" => Some(Self::Stopped),
+            "EXIT_CAUSE_ABORTED" => Some(Self::Aborted),
+            "EXIT_CAUSE_KILLED" => Some(Self::Killed),
+            "EXIT_CAUSE_PROVIDER_EXITED" => Some(Self::ProviderExited),
+            "EXIT_CAUSE_DAEMON_LOST" => Some(Self::DaemonLost),
+            "EXIT_CAUSE_ORPHANED" => Some(Self::Orphaned),
+            "EXIT_CAUSE_COULD_NOT_START" => Some(Self::CouldNotStart),
+            "EXIT_CAUSE_DIRECTORY_FAILED" => Some(Self::DirectoryFailed),
+            "EXIT_CAUSE_ENDED_WHILE_AWAY" => Some(Self::EndedWhileAway),
+            "EXIT_CAUSE_ENDED_UNEXPECTEDLY" => Some(Self::EndedUnexpectedly),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Phase {
@@ -1604,6 +1673,2052 @@ pub mod pairing_service_server {
     pub const SERVICE_NAME: &str = "amux.v1.PairingService";
     impl<T> tonic::server::NamedService for PairingServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
+    }
+}
+/// A person's prompt as the provider reflected it. Text and attachments are
+/// in the envelope.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Prompt {}
+impl ::prost::Name for Prompt {
+    const NAME: &'static str = "Prompt";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Prompt".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Prompt".into()
+    }
+}
+/// A prompt delivered into the running turn; the text is the envelope's.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Steer {}
+impl ::prost::Name for Steer {
+    const NAME: &'static str = "Steer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Steer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Steer".into()
+    }
+}
+/// A plan the agent put to the person. The plan is the envelope text.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Plan {
+    #[prost(enumeration = "PlanVerdict", tag = "1")]
+    pub verdict: i32,
+    /// What the person said when sending it back.
+    #[prost(string, optional, tag = "2")]
+    pub note: ::core::option::Option<::prost::alloc::string::String>,
+    /// The whole plan is in: Claude declares it whole; Codex streams it.
+    #[prost(bool, tag = "3")]
+    pub complete: bool,
+}
+impl ::prost::Name for Plan {
+    const NAME: &'static str = "Plan";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Plan".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Plan".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Text {
+    #[prost(bool, tag = "1")]
+    pub complete: bool,
+}
+impl ::prost::Name for Text {
+    const NAME: &'static str = "Text";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Text".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Text".into()
+    }
+}
+/// "Thought for 8s" is the difference of two item timestamps; the thinking
+/// text, when the provider records it, is the envelope text.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Thinking {
+    #[prost(bool, tag = "1")]
+    pub complete: bool,
+}
+impl ::prost::Name for Thinking {
+    const NAME: &'static str = "Thinking";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Thinking".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Thinking".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToolCall {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub input_json: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "ToolState", tag = "3")]
+    pub state: i32,
+    #[prost(string, tag = "4")]
+    pub outcome_text: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "5")]
+    pub outcome_json: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, repeated, tag = "6")]
+    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
+    #[prost(enumeration = "ToolClass", tag = "7")]
+    pub class: i32,
+    /// A permission decision is meta on the tool call's own row.
+    #[prost(message, optional, tag = "8")]
+    pub decision: ::core::option::Option<ToolDecision>,
+    /// Started in the background: a shell or task that outlives the call.
+    #[prost(bool, tag = "9")]
+    pub background: bool,
+    /// The key of the subagent call this step belongs to, for nested steps.
+    #[prost(string, tag = "10")]
+    pub parent_key: ::prost::alloc::string::String,
+    /// Live progress of a subagent call.
+    #[prost(message, optional, tag = "11")]
+    pub subagent: ::core::option::Option<SubagentProgress>,
+    /// The tool server, for a tool-server call.
+    #[prost(string, tag = "12")]
+    pub server: ::prost::alloc::string::String,
+    #[prost(int32, optional, tag = "13")]
+    pub exit_code: ::core::option::Option<i32>,
+    /// When the call finished, the provider's timestamp where it has one.
+    #[prost(int64, optional, tag = "14")]
+    pub ended_at_ms: ::core::option::Option<i64>,
+    /// A file write that finished: whether it made the file (else it
+    /// replaced one). Claude says which only once the write is done.
+    #[prost(bool, optional, tag = "15")]
+    pub created: ::core::option::Option<bool>,
+    /// A file edit that finished: the line its first change landed on.
+    #[prost(uint32, optional, tag = "16")]
+    pub line: ::core::option::Option<u32>,
+}
+impl ::prost::Name for ToolCall {
+    const NAME: &'static str = "ToolCall";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ToolCall".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ToolCall".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ToolDecision {
+    #[prost(enumeration = "DecisionOutcome", tag = "1")]
+    pub outcome: i32,
+    #[prost(string, tag = "2")]
+    pub note: ::prost::alloc::string::String,
+    /// Answered in the provider's own interface rather than through amux.
+    #[prost(bool, tag = "3")]
+    pub elsewhere: bool,
+    /// What an allowance granted beyond this one call. Absent when it allowed
+    /// the call alone, and when the provider did not say which choice was
+    /// made: Claude's own terminal does not report it.
+    #[prost(oneof = "tool_decision::Granted", tags = "4, 5")]
+    pub granted: ::core::option::Option<tool_decision::Granted>,
+}
+/// Nested message and enum types in `ToolDecision`.
+pub mod tool_decision {
+    /// What an allowance granted beyond this one call. Absent when it allowed
+    /// the call alone, and when the provider did not say which choice was
+    /// made: Claude's own terminal does not report it.
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Granted {
+        #[prost(message, tag = "4")]
+        Claude(super::ClaudeGrant),
+        #[prost(message, tag = "5")]
+        Codex(super::CodexGrant),
+    }
+}
+impl ::prost::Name for ToolDecision {
+    const NAME: &'static str = "ToolDecision";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ToolDecision".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ToolDecision".into()
+    }
+}
+/// A standing permission Claude offers or added when a call was allowed.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClaudeGrant {
+    /// The rules, as Claude writes them: "Bash(npm test:\*)".
+    #[prost(string, repeated, tag = "1")]
+    pub rules: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Folders added to those Claude may work in.
+    #[prost(string, repeated, tag = "2")]
+    pub directories: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// A permission mode Claude switched to.
+    #[prost(string, optional, tag = "3")]
+    pub mode: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(enumeration = "ScopeDestination", tag = "4")]
+    pub destination: i32,
+    /// Claude's own word for the destination, always carried: what a client
+    /// shows for a destination it does not know.
+    #[prost(string, tag = "5")]
+    pub destination_word: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ClaudeGrant {
+    const NAME: &'static str = "ClaudeGrant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClaudeGrant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClaudeGrant".into()
+    }
+}
+/// What Codex allows from now on.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CodexGrant {
+    #[prost(oneof = "codex_grant::Of", tags = "1, 2, 3")]
+    pub of: ::core::option::Option<codex_grant::Of>,
+}
+/// Nested message and enum types in `CodexGrant`.
+pub mod codex_grant {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Of {
+        /// Approvals like this one, for the rest of the session.
+        #[prost(message, tag = "1")]
+        Session(super::Empty),
+        /// Commands starting with these words.
+        #[prost(message, tag = "2")]
+        CommandPrefix(super::CommandPrefix),
+        /// Network access to these hosts.
+        #[prost(message, tag = "3")]
+        NetworkHosts(super::NetworkHosts),
+    }
+}
+impl ::prost::Name for CodexGrant {
+    const NAME: &'static str = "CodexGrant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.CodexGrant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.CodexGrant".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CommandPrefix {
+    #[prost(string, repeated, tag = "1")]
+    pub words: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for CommandPrefix {
+    const NAME: &'static str = "CommandPrefix";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.CommandPrefix".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.CommandPrefix".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NetworkHosts {
+    #[prost(string, repeated, tag = "1")]
+    pub hosts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for NetworkHosts {
+    const NAME: &'static str = "NetworkHosts";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.NetworkHosts".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.NetworkHosts".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SubagentProgress {
+    #[prost(uint32, tag = "1")]
+    pub tool_count: u32,
+    #[prost(string, tag = "2")]
+    pub last_tool: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub finished: bool,
+}
+impl ::prost::Name for SubagentProgress {
+    const NAME: &'static str = "SubagentProgress";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SubagentProgress".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SubagentProgress".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Boundary {
+    #[prost(enumeration = "BoundaryKind", tag = "1")]
+    pub kind: i32,
+    #[prost(string, tag = "2")]
+    pub provider_session: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub provider_version: ::prost::alloc::string::String,
+    /// For EXITED: why, and the cause's own words.
+    #[prost(enumeration = "ExitCause", tag = "4")]
+    pub cause: i32,
+    #[prost(string, optional, tag = "5")]
+    pub cause_detail: ::core::option::Option<::prost::alloc::string::String>,
+    /// The keymap the agent process resolved for the observed provider version.
+    #[prost(string, tag = "6")]
+    pub keymap: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Boundary {
+    const NAME: &'static str = "Boundary";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Boundary".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Boundary".into()
+    }
+}
+/// A message between agents; the text is in the envelope.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentMessage {
+    #[prost(bytes = "vec", tag = "1")]
+    pub envelope_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "EnvelopeKind", tag = "2")]
+    pub kind: i32,
+    #[prost(message, optional, tag = "3")]
+    pub from: ::core::option::Option<Sender>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub context: ::prost::alloc::vec::Vec<u8>,
+    /// Set on a message this agent sent with amux's send tool: the recipient as
+    /// the model named it. Empty on a message this agent received.
+    #[prost(string, tag = "5")]
+    pub to: ::prost::alloc::string::String,
+    /// How a sent message's send went; unspecified on a received message.
+    #[prost(enumeration = "SendState", tag = "6")]
+    pub send_state: i32,
+    /// For SEND_STATE_REJECTED: why, as the send reported it.
+    #[prost(string, tag = "7")]
+    pub rejection: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AgentMessage {
+    const NAME: &'static str = "AgentMessage";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentMessage".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.AgentMessage".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct Turn {
+    #[prost(uint64, tag = "1")]
+    pub turn_id: u64,
+    #[prost(enumeration = "TurnOutcome", tag = "2")]
+    pub outcome: i32,
+    /// When the turn started; "Worked 1m 42s" is at_ms minus this.
+    #[prost(int64, tag = "3")]
+    pub started_at_ms: i64,
+    #[prost(double, optional, tag = "4")]
+    pub cost_usd: ::core::option::Option<f64>,
+}
+impl ::prost::Name for Turn {
+    const NAME: &'static str = "Turn";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Turn".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Turn".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Compaction {
+    #[prost(uint64, optional, tag = "1")]
+    pub tokens_before: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "2")]
+    pub tokens_after: ::core::option::Option<u64>,
+    #[prost(bool, tag = "3")]
+    pub automatic: bool,
+}
+impl ::prost::Name for Compaction {
+    const NAME: &'static str = "Compaction";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Compaction".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Compaction".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ApiError {
+    /// The provider's typed error kind, where it has one.
+    #[prost(string, tag = "1")]
+    pub error_kind: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub will_retry: bool,
+    #[prost(uint32, tag = "4")]
+    pub attempt: u32,
+    #[prost(uint32, tag = "5")]
+    pub max_attempts: u32,
+    #[prost(int64, optional, tag = "6")]
+    pub retry_at_ms: ::core::option::Option<i64>,
+}
+impl ::prost::Name for ApiError {
+    const NAME: &'static str = "ApiError";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ApiError".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ApiError".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ModelSwitch {
+    #[prost(string, tag = "1")]
+    pub from: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub to: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub reason: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ModelSwitch {
+    const NAME: &'static str = "ModelSwitch";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ModelSwitch".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ModelSwitch".into()
+    }
+}
+/// Output of a slash command; the output is the envelope text.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SlashOutput {
+    #[prost(string, tag = "1")]
+    pub command: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub args: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SlashOutput {
+    const NAME: &'static str = "SlashOutput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SlashOutput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SlashOutput".into()
+    }
+}
+/// A provider fact the interpreter could not place, made visible. Never raw
+/// bytes: the fact itself is in the facts ring.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Unrecognized {
+    #[prost(string, tag = "1")]
+    pub fact_type: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub summary: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Unrecognized {
+    const NAME: &'static str = "Unrecognized";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Unrecognized".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Unrecognized".into()
+    }
+}
+/// What an agent offers to pick from, not what is picked: that stays in the
+/// snapshot. An agent writes it as a blob of its directory and names the
+/// blob's hash in its snapshot; identical catalogues share one. Fetched by
+/// GetBlob, so a catalogue passes through a daemon of any version intact.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Catalogue {
+    #[prost(message, repeated, tag = "1")]
+    pub models: ::prost::alloc::vec::Vec<OfferedModel>,
+    #[prost(message, repeated, tag = "2")]
+    pub commands: ::prost::alloc::vec::Vec<OfferedCommand>,
+    /// How much the agent may do without asking.
+    #[prost(message, repeated, tag = "3")]
+    pub permissions: ::prost::alloc::vec::Vec<OfferedPermission>,
+    /// How it works; empty for Claude.
+    #[prost(message, repeated, tag = "4")]
+    pub modes: ::prost::alloc::vec::Vec<OfferedMode>,
+}
+impl ::prost::Name for Catalogue {
+    const NAME: &'static str = "Catalogue";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Catalogue".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Catalogue".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OfferedPermission {
+    /// What SetPermission names and the snapshot reports.
+    #[prost(string, tag = "1")]
+    pub value: ::prost::alloc::string::String,
+    /// Written by the interpreter; no provider supplies one.
+    #[prost(string, tag = "2")]
+    pub display_name: ::prost::alloc::string::String,
+    /// The provider's ordinary one; a client may leave it unsaid.
+    #[prost(bool, tag = "3")]
+    pub normal: bool,
+    /// Acts without asking; clients warn.
+    #[prost(bool, tag = "4")]
+    pub never_asks: bool,
+    /// False: only reachable in the provider's own interface.
+    #[prost(bool, tag = "5")]
+    pub settable: bool,
+    /// Empty: every model. Otherwise only these.
+    #[prost(string, repeated, tag = "6")]
+    pub models: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for OfferedPermission {
+    const NAME: &'static str = "OfferedPermission";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.OfferedPermission".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.OfferedPermission".into()
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OfferedMode {
+    #[prost(string, tag = "1")]
+    pub value: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub display_name: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub normal: bool,
+    #[prost(bool, tag = "4")]
+    pub settable: bool,
+}
+impl ::prost::Name for OfferedMode {
+    const NAME: &'static str = "OfferedMode";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.OfferedMode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.OfferedMode".into()
+    }
+}
+/// A model the provider offers this session, as the provider lists it.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OfferedModel {
+    /// What a model input names.
+    #[prost(string, tag = "1")]
+    pub value: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub display_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub description: ::prost::alloc::string::String,
+    /// The effort levels the model takes, in the provider's order; empty when
+    /// it takes none.
+    #[prost(string, repeated, tag = "4")]
+    pub efforts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The effort the model runs at when none is chosen, when the provider
+    /// says.
+    #[prost(string, optional, tag = "5")]
+    pub default_effort: ::core::option::Option<::prost::alloc::string::String>,
+    /// The model id an alias stands for, as the agent reports its model;
+    /// empty when the provider does not say.
+    #[prost(string, tag = "6")]
+    pub resolved_model: ::prost::alloc::string::String,
+}
+impl ::prost::Name for OfferedModel {
+    const NAME: &'static str = "OfferedModel";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.OfferedModel".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.OfferedModel".into()
+    }
+}
+/// A command or skill the provider offers this session, typed as a prompt
+/// that starts with a slash.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OfferedCommand {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub description: ::prost::alloc::string::String,
+    /// What the command takes after its name, in the provider's words.
+    #[prost(string, tag = "3")]
+    pub argument_hint: ::prost::alloc::string::String,
+    /// Where it comes from: a plugin's namespace, or the provider's scope word
+    /// (user, repo, system). Empty when the provider does not say.
+    #[prost(string, tag = "4")]
+    pub source: ::prost::alloc::string::String,
+}
+impl ::prost::Name for OfferedCommand {
+    const NAME: &'static str = "OfferedCommand";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.OfferedCommand".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.OfferedCommand".into()
+    }
+}
+/// An open ask. Opened and closed only by provider facts.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Ask {
+    /// What an answer names.
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// The item this ask points at: the tool call it would let run, or, for
+    /// an ask that is the work, its own AskItem.
+    #[prost(string, tag = "2")]
+    pub item_key: ::prost::alloc::string::String,
+    #[prost(int64, tag = "9")]
+    pub opened_at_ms: i64,
+    #[prost(oneof = "ask::Body", tags = "3, 4, 5, 6, 7, 8")]
+    pub body: ::core::option::Option<ask::Body>,
+}
+/// Nested message and enum types in `Ask`.
+pub mod ask {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Body {
+        #[prost(message, tag = "3")]
+        Permission(super::PermissionAsk),
+        #[prost(message, tag = "4")]
+        Question(super::QuestionAsk),
+        #[prost(message, tag = "5")]
+        Plan(super::PlanAsk),
+        #[prost(message, tag = "6")]
+        Form(super::FormAsk),
+        #[prost(message, tag = "7")]
+        Link(super::LinkAsk),
+        #[prost(message, tag = "8")]
+        Unanswerable(super::UnanswerableAsk),
+    }
+}
+impl ::prost::Name for Ask {
+    const NAME: &'static str = "Ask";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Ask".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Ask".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PermissionAsk {
+    #[prost(string, tag = "1")]
+    pub tool_name: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub input_json: ::prost::alloc::vec::Vec<u8>,
+    /// Every scope the provider offered, in order.
+    #[prost(message, repeated, tag = "3")]
+    pub scopes: ::prost::alloc::vec::Vec<ScopeChoice>,
+    #[prost(string, tag = "4")]
+    pub reason: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub description: ::prost::alloc::string::String,
+    /// Denying always ends the turn (terminal Claude).
+    #[prost(bool, tag = "6")]
+    pub deny_stops: bool,
+    /// Deny can be sent with or without stopping the turn.
+    #[prost(bool, tag = "7")]
+    pub deny_can_stop: bool,
+    #[prost(string, tag = "8")]
+    pub server: ::prost::alloc::string::String,
+}
+impl ::prost::Name for PermissionAsk {
+    const NAME: &'static str = "PermissionAsk";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PermissionAsk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PermissionAsk".into()
+    }
+}
+/// One scope the provider offered; answers name its index.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ScopeChoice {
+    #[prost(uint32, tag = "1")]
+    pub index: u32,
+    #[prost(message, optional, tag = "2")]
+    pub grant: ::core::option::Option<ClaudeGrant>,
+}
+impl ::prost::Name for ScopeChoice {
+    const NAME: &'static str = "ScopeChoice";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ScopeChoice".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ScopeChoice".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuestionAsk {
+    #[prost(message, repeated, tag = "1")]
+    pub questions: ::prost::alloc::vec::Vec<Question>,
+    /// The provider's own dialog rather than a question the agent asked in a
+    /// turn (Claude's folder trust): there is no turn to reply into instead.
+    #[prost(bool, tag = "2")]
+    pub provider_dialog: bool,
+}
+impl ::prost::Name for QuestionAsk {
+    const NAME: &'static str = "QuestionAsk";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.QuestionAsk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.QuestionAsk".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Question {
+    #[prost(string, tag = "1")]
+    pub header: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub question: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub multi_select: bool,
+    #[prost(message, repeated, tag = "4")]
+    pub options: ::prost::alloc::vec::Vec<QuestionOption>,
+    /// An "Other" answer is accepted.
+    #[prost(bool, tag = "5")]
+    pub allow_other: bool,
+    /// The answer is secret and is never shown back.
+    #[prost(bool, tag = "6")]
+    pub secret: bool,
+}
+impl ::prost::Name for Question {
+    const NAME: &'static str = "Question";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Question".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Question".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QuestionOption {
+    #[prost(string, tag = "1")]
+    pub label: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub preview: ::prost::alloc::string::String,
+    #[prost(bool, tag = "4")]
+    pub recommended: bool,
+}
+impl ::prost::Name for QuestionOption {
+    const NAME: &'static str = "QuestionOption";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.QuestionOption".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.QuestionOption".into()
+    }
+}
+/// A decision on a plan; the plan is the text of the item the ask points at.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PlanAsk {
+    /// What the provider takes, in its order.
+    #[prost(enumeration = "PlanChoice", repeated, tag = "1")]
+    pub choices: ::prost::alloc::vec::Vec<i32>,
+}
+impl ::prost::Name for PlanAsk {
+    const NAME: &'static str = "PlanAsk";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PlanAsk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PlanAsk".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PlanAnswer {
+    #[prost(enumeration = "PlanChoice", tag = "1")]
+    pub choice: i32,
+    /// With keep planning: what to change.
+    #[prost(string, optional, tag = "2")]
+    pub note: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for PlanAnswer {
+    const NAME: &'static str = "PlanAnswer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PlanAnswer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PlanAnswer".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FormAsk {
+    #[prost(string, tag = "1")]
+    pub server: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "3")]
+    pub schema_json: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for FormAsk {
+    const NAME: &'static str = "FormAsk";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.FormAsk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.FormAsk".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LinkAsk {
+    #[prost(string, tag = "1")]
+    pub server: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub url: ::prost::alloc::string::String,
+}
+impl ::prost::Name for LinkAsk {
+    const NAME: &'static str = "LinkAsk";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.LinkAsk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.LinkAsk".into()
+    }
+}
+/// A request for file or network access beyond the sandbox.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AccessGrant {
+    #[prost(string, tag = "1")]
+    pub reason: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub read: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "3")]
+    pub write: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(bool, tag = "4")]
+    pub network: bool,
+    #[prost(string, repeated, tag = "5")]
+    pub network_hosts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for AccessGrant {
+    const NAME: &'static str = "AccessGrant";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AccessGrant".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.AccessGrant".into()
+    }
+}
+/// An ask that is the work: a question, a tool server's form or link, an
+/// access grant, or something the provider shows that this build cannot read.
+/// It is its own item, written when the ask opens (the ask's
+/// item_key names it) and revised once with how it closed, so its decision
+/// row stays in the chat after the ask leaves the snapshot.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AskItem {
+    /// Absent while the ask is open.
+    #[prost(message, optional, tag = "6")]
+    pub closed: ::core::option::Option<AskClosed>,
+    #[prost(oneof = "ask_item::Ask", tags = "1, 2, 3, 4, 5")]
+    pub ask: ::core::option::Option<ask_item::Ask>,
+}
+/// Nested message and enum types in `AskItem`.
+pub mod ask_item {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Ask {
+        #[prost(message, tag = "1")]
+        Question(super::QuestionAsk),
+        #[prost(message, tag = "2")]
+        Form(super::FormAsk),
+        #[prost(message, tag = "3")]
+        Link(super::LinkAsk),
+        #[prost(message, tag = "4")]
+        Access(super::AccessGrant),
+        #[prost(message, tag = "5")]
+        Unanswerable(super::UnanswerableAsk),
+    }
+}
+impl ::prost::Name for AskItem {
+    const NAME: &'static str = "AskItem";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AskItem".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.AskItem".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AskClosed {
+    #[prost(enumeration = "AskOutcome", tag = "1")]
+    pub outcome: i32,
+    /// A question's answers, one per question in the ask's order; with reply
+    /// instead, the answers given before it.
+    #[prost(message, repeated, tag = "2")]
+    pub answers: ::prost::alloc::vec::Vec<AnsweredQuestion>,
+    /// The person's own words, when they replied instead of answering.
+    #[prost(string, tag = "3")]
+    pub reply: ::prost::alloc::string::String,
+    /// The names of the form fields sent; the values went to the server only.
+    #[prost(string, repeated, tag = "4")]
+    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// What an access grant granted.
+    #[prost(message, optional, tag = "5")]
+    pub grant: ::core::option::Option<GrantAnswer>,
+}
+impl ::prost::Name for AskClosed {
+    const NAME: &'static str = "AskClosed";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AskClosed".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.AskClosed".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnsweredQuestion {
+    /// The chosen options' labels.
+    #[prost(string, repeated, tag = "1")]
+    pub picked: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// A typed answer.
+    #[prost(string, optional, tag = "2")]
+    pub other: ::core::option::Option<::prost::alloc::string::String>,
+    /// A secret answer: what was typed is never recorded.
+    #[prost(bool, tag = "3")]
+    pub hidden: bool,
+    /// The person's note on this question. Nothing picked, typed or hidden
+    /// means the question was skipped.
+    #[prost(string, optional, tag = "4")]
+    pub note: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for AnsweredQuestion {
+    const NAME: &'static str = "AnsweredQuestion";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AnsweredQuestion".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.AnsweredQuestion".into()
+    }
+}
+/// The provider is asking something this build cannot read; the only way out
+/// here is to stop the agent or attach a terminal.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UnanswerableAsk {
+    #[prost(string, tag = "1")]
+    pub reason: ::prost::alloc::string::String,
+}
+impl ::prost::Name for UnanswerableAsk {
+    const NAME: &'static str = "UnanswerableAsk";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.UnanswerableAsk".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.UnanswerableAsk".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TaskList {
+    #[prost(bool, tag = "1")]
+    pub known: bool,
+    #[prost(message, repeated, tag = "2")]
+    pub entries: ::prost::alloc::vec::Vec<TaskListEntry>,
+}
+impl ::prost::Name for TaskList {
+    const NAME: &'static str = "TaskList";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.TaskList".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.TaskList".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TaskListEntry {
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub subject: ::prost::alloc::string::String,
+    #[prost(enumeration = "TaskListStatus", tag = "3")]
+    pub status: i32,
+    #[prost(string, tag = "4")]
+    pub active_form: ::prost::alloc::string::String,
+}
+impl ::prost::Name for TaskListEntry {
+    const NAME: &'static str = "TaskListEntry";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.TaskListEntry".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.TaskListEntry".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextMeter {
+    #[prost(bool, tag = "1")]
+    pub known: bool,
+    #[prost(uint64, tag = "2")]
+    pub used_tokens: u64,
+    #[prost(uint64, optional, tag = "3")]
+    pub window_tokens: ::core::option::Option<u64>,
+    #[prost(message, repeated, tag = "4")]
+    pub breakdown: ::prost::alloc::vec::Vec<ContextShare>,
+}
+impl ::prost::Name for ContextMeter {
+    const NAME: &'static str = "ContextMeter";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ContextMeter".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ContextMeter".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ContextShare {
+    #[prost(string, tag = "1")]
+    pub category: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub tokens: u64,
+}
+impl ::prost::Name for ContextShare {
+    const NAME: &'static str = "ContextShare";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ContextShare".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ContextShare".into()
+    }
+}
+/// How full one usage window is; the same for every provider.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct UsageMeter {
+    /// 0..100.
+    #[prost(double, tag = "1")]
+    pub used_percent: f64,
+    #[prost(int64, optional, tag = "2")]
+    pub resets_at_ms: ::core::option::Option<i64>,
+    /// This window's own state: a person can reach the weekly limit before
+    /// the five-hour one.
+    #[prost(enumeration = "UsageState", tag = "3")]
+    pub state: i32,
+}
+impl ::prost::Name for UsageMeter {
+    const NAME: &'static str = "UsageMeter";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.UsageMeter".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.UsageMeter".into()
+    }
+}
+/// Session strip: tool-server health, shown only when one fails.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ToolServerHealth {
+    #[prost(enumeration = "HealthState", tag = "1")]
+    pub state: i32,
+    #[prost(message, repeated, tag = "2")]
+    pub servers: ::prost::alloc::vec::Vec<ToolServer>,
+}
+impl ::prost::Name for ToolServerHealth {
+    const NAME: &'static str = "ToolServerHealth";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ToolServerHealth".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ToolServerHealth".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ToolServer {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(enumeration = "ToolServerStatus", tag = "2")]
+    pub status: i32,
+    #[prost(string, tag = "3")]
+    pub error: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ToolServer {
+    const NAME: &'static str = "ToolServer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ToolServer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ToolServer".into()
+    }
+}
+/// Session strip: sign-in state; a problem replaces the composer with a foot
+/// card.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SignIn {
+    #[prost(enumeration = "SignInState", tag = "1")]
+    pub state: i32,
+    #[prost(string, tag = "2")]
+    pub account: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub message: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SignIn {
+    const NAME: &'static str = "SignIn";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SignIn".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SignIn".into()
+    }
+}
+/// What the provider runs in the background: commands and tasks that
+/// outlive the call that started them. `known` false is the explicit
+/// unknown; the list empties when the provider exits, and a new incarnation
+/// starts with none.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BackgroundJobs {
+    #[prost(bool, tag = "1")]
+    pub known: bool,
+    #[prost(message, repeated, tag = "2")]
+    pub jobs: ::prost::alloc::vec::Vec<BackgroundJob>,
+}
+impl ::prost::Name for BackgroundJobs {
+    const NAME: &'static str = "BackgroundJobs";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.BackgroundJobs".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.BackgroundJobs".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BackgroundJob {
+    /// The key of the item whose call started the job; empty when the
+    /// provider has not said which call it was.
+    #[prost(string, tag = "1")]
+    pub item_key: ::prost::alloc::string::String,
+    /// The command, or what the provider calls the task.
+    #[prost(string, tag = "2")]
+    pub command: ::prost::alloc::string::String,
+    #[prost(int64, tag = "3")]
+    pub started_at_ms: i64,
+}
+impl ::prost::Name for BackgroundJob {
+    const NAME: &'static str = "BackgroundJob";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.BackgroundJob".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.BackgroundJob".into()
+    }
+}
+/// U+FFFC per attachment.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PromptInput {
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+    /// Prompts always queue; steering is SendQueuedNow on a queued entry.
+    #[prost(message, repeated, tag = "2")]
+    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
+}
+impl ::prost::Name for PromptInput {
+    const NAME: &'static str = "PromptInput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.PromptInput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.PromptInput".into()
+    }
+}
+/// Rejected REFUSAL_NOT_QUEUED if the target is not queued.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WithdrawQueued {
+    #[prost(bytes = "vec", tag = "1")]
+    pub queued_input_id: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for WithdrawQueued {
+    const NAME: &'static str = "WithdrawQueued";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.WithdrawQueued".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.WithdrawQueued".into()
+    }
+}
+/// Delivers one queued prompt into the running turn through the provider's
+/// own steering path; the entry reads steered until its reflection lands.
+/// Rejected REFUSAL_NOT_QUEUED if the target is not waiting in the queue,
+/// and REFUSAL_UNSUPPORTED if no turn is running.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SendQueuedNow {
+    #[prost(bytes = "vec", tag = "1")]
+    pub queued_input_id: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for SendQueuedNow {
+    const NAME: &'static str = "SendQueuedNow";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SendQueuedNow".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SendQueuedNow".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Interrupt {}
+impl ::prost::Name for Interrupt {
+    const NAME: &'static str = "Interrupt";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Interrupt".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Interrupt".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Clear {}
+impl ::prost::Name for Clear {
+    const NAME: &'static str = "Clear";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Clear".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Clear".into()
+    }
+}
+/// How much the agent may do without asking, by a value its catalogue
+/// offers; the interpreter turns it into the provider's own settings.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetPermission {
+    #[prost(string, tag = "1")]
+    pub value: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SetPermission {
+    const NAME: &'static str = "SetPermission";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SetPermission".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SetPermission".into()
+    }
+}
+/// How the agent works (Codex: default or plan), by a value its catalogue
+/// offers.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetMode {
+    #[prost(string, tag = "1")]
+    pub value: ::prost::alloc::string::String,
+}
+impl ::prost::Name for SetMode {
+    const NAME: &'static str = "SetMode";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SetMode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SetMode".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetModel {
+    /// Absent restores the launch model.
+    #[prost(string, optional, tag = "1")]
+    pub model: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for SetModel {
+    const NAME: &'static str = "SetModel";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SetModel".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SetModel".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetEffort {
+    /// Absent clears the session override.
+    #[prost(string, optional, tag = "1")]
+    pub effort: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for SetEffort {
+    const NAME: &'static str = "SetEffort";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SetEffort".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SetEffort".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QuestionAnswer {
+    /// One per question, in the ask's order.
+    #[prost(message, repeated, tag = "1")]
+    pub answers: ::prost::alloc::vec::Vec<QuestionResponse>,
+}
+impl ::prost::Name for QuestionAnswer {
+    const NAME: &'static str = "QuestionAnswer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.QuestionAnswer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.QuestionAnswer".into()
+    }
+}
+/// Nothing selected and no text: the question is skipped.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QuestionResponse {
+    #[prost(uint32, repeated, tag = "1")]
+    pub selected: ::prost::alloc::vec::Vec<u32>,
+    #[prost(string, optional, tag = "2")]
+    pub other: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "3")]
+    pub note: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for QuestionResponse {
+    const NAME: &'static str = "QuestionResponse";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.QuestionResponse".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.QuestionResponse".into()
+    }
+}
+/// The person's own words instead of answering a question.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplyInstead {
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+    /// One per question, in the ask's order: what was answered before
+    /// replying; nothing selected and no text where nothing was.
+    #[prost(message, repeated, tag = "2")]
+    pub answers_so_far: ::prost::alloc::vec::Vec<QuestionResponse>,
+}
+impl ::prost::Name for ReplyInstead {
+    const NAME: &'static str = "ReplyInstead";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ReplyInstead".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ReplyInstead".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FormAnswer {
+    #[prost(enumeration = "FormAction", tag = "1")]
+    pub action: i32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub content_json: ::prost::alloc::vec::Vec<u8>,
+}
+impl ::prost::Name for FormAnswer {
+    const NAME: &'static str = "FormAnswer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.FormAnswer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.FormAnswer".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LinkAnswer {
+    #[prost(enumeration = "FormAction", tag = "1")]
+    pub action: i32,
+}
+impl ::prost::Name for LinkAnswer {
+    const NAME: &'static str = "LinkAnswer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.LinkAnswer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.LinkAnswer".into()
+    }
+}
+/// A subset of what was asked; nothing granted is a deny.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GrantAnswer {
+    #[prost(string, repeated, tag = "1")]
+    pub read: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "2")]
+    pub write: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(bool, tag = "3")]
+    pub network: bool,
+    #[prost(bool, tag = "4")]
+    pub for_session: bool,
+}
+impl ::prost::Name for GrantAnswer {
+    const NAME: &'static str = "GrantAnswer";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.GrantAnswer".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.GrantAnswer".into()
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PlanVerdict {
+    Undecided = 0,
+    Approved = 1,
+    ApprovedAcceptingEdits = 2,
+    SentBack = 3,
+    /// Closed without a decision: a new prompt, an interruption, the turn or
+    /// the provider ending.
+    Dismissed = 4,
+}
+impl PlanVerdict {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Undecided => "PLAN_VERDICT_UNDECIDED",
+            Self::Approved => "PLAN_VERDICT_APPROVED",
+            Self::ApprovedAcceptingEdits => "PLAN_VERDICT_APPROVED_ACCEPTING_EDITS",
+            Self::SentBack => "PLAN_VERDICT_SENT_BACK",
+            Self::Dismissed => "PLAN_VERDICT_DISMISSED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PLAN_VERDICT_UNDECIDED" => Some(Self::Undecided),
+            "PLAN_VERDICT_APPROVED" => Some(Self::Approved),
+            "PLAN_VERDICT_APPROVED_ACCEPTING_EDITS" => Some(Self::ApprovedAcceptingEdits),
+            "PLAN_VERDICT_SENT_BACK" => Some(Self::SentBack),
+            "PLAN_VERDICT_DISMISSED" => Some(Self::Dismissed),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ToolState {
+    Unspecified = 0,
+    Pending = 1,
+    Running = 2,
+    Succeeded = 3,
+    Failed = 4,
+    Denied = 5,
+    Cancelled = 6,
+}
+impl ToolState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TOOL_STATE_UNSPECIFIED",
+            Self::Pending => "TOOL_STATE_PENDING",
+            Self::Running => "TOOL_STATE_RUNNING",
+            Self::Succeeded => "TOOL_STATE_SUCCEEDED",
+            Self::Failed => "TOOL_STATE_FAILED",
+            Self::Denied => "TOOL_STATE_DENIED",
+            Self::Cancelled => "TOOL_STATE_CANCELLED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TOOL_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "TOOL_STATE_PENDING" => Some(Self::Pending),
+            "TOOL_STATE_RUNNING" => Some(Self::Running),
+            "TOOL_STATE_SUCCEEDED" => Some(Self::Succeeded),
+            "TOOL_STATE_FAILED" => Some(Self::Failed),
+            "TOOL_STATE_DENIED" => Some(Self::Denied),
+            "TOOL_STATE_CANCELLED" => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+}
+/// What a call does to the world, set by the interpreter from native tool
+/// kinds, never from text. Every class but CONSEQUENTIAL only looks: the views
+/// fold runs of those together and name each by its verb. LOOK is a look with
+/// no verb of its own, drawn its own way: a read-only tool-server call, an
+/// image viewed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ToolClass {
+    Unspecified = 0,
+    Consequential = 1,
+    Read = 2,
+    Search = 3,
+    List = 4,
+    Fetch = 5,
+    WebSearch = 6,
+    Look = 7,
+}
+impl ToolClass {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TOOL_CLASS_UNSPECIFIED",
+            Self::Consequential => "TOOL_CLASS_CONSEQUENTIAL",
+            Self::Read => "TOOL_CLASS_READ",
+            Self::Search => "TOOL_CLASS_SEARCH",
+            Self::List => "TOOL_CLASS_LIST",
+            Self::Fetch => "TOOL_CLASS_FETCH",
+            Self::WebSearch => "TOOL_CLASS_WEB_SEARCH",
+            Self::Look => "TOOL_CLASS_LOOK",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TOOL_CLASS_UNSPECIFIED" => Some(Self::Unspecified),
+            "TOOL_CLASS_CONSEQUENTIAL" => Some(Self::Consequential),
+            "TOOL_CLASS_READ" => Some(Self::Read),
+            "TOOL_CLASS_SEARCH" => Some(Self::Search),
+            "TOOL_CLASS_LIST" => Some(Self::List),
+            "TOOL_CLASS_FETCH" => Some(Self::Fetch),
+            "TOOL_CLASS_WEB_SEARCH" => Some(Self::WebSearch),
+            "TOOL_CLASS_LOOK" => Some(Self::Look),
+            _ => None,
+        }
+    }
+}
+/// Where Claude saves a standing permission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ScopeDestination {
+    Unspecified = 0,
+    Session = 1,
+    LocalSettings = 2,
+    ProjectSettings = 3,
+    UserSettings = 4,
+}
+impl ScopeDestination {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SCOPE_DESTINATION_UNSPECIFIED",
+            Self::Session => "SCOPE_DESTINATION_SESSION",
+            Self::LocalSettings => "SCOPE_DESTINATION_LOCAL_SETTINGS",
+            Self::ProjectSettings => "SCOPE_DESTINATION_PROJECT_SETTINGS",
+            Self::UserSettings => "SCOPE_DESTINATION_USER_SETTINGS",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SCOPE_DESTINATION_UNSPECIFIED" => Some(Self::Unspecified),
+            "SCOPE_DESTINATION_SESSION" => Some(Self::Session),
+            "SCOPE_DESTINATION_LOCAL_SETTINGS" => Some(Self::LocalSettings),
+            "SCOPE_DESTINATION_PROJECT_SETTINGS" => Some(Self::ProjectSettings),
+            "SCOPE_DESTINATION_USER_SETTINGS" => Some(Self::UserSettings),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum DecisionOutcome {
+    None = 0,
+    Allowed = 1,
+    Denied = 2,
+    AutoApproved = 3,
+    /// Closed by a later fact that did not carry the outcome; drawn dismissed.
+    Unknown = 4,
+}
+impl DecisionOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::None => "DECISION_OUTCOME_NONE",
+            Self::Allowed => "DECISION_OUTCOME_ALLOWED",
+            Self::Denied => "DECISION_OUTCOME_DENIED",
+            Self::AutoApproved => "DECISION_OUTCOME_AUTO_APPROVED",
+            Self::Unknown => "DECISION_OUTCOME_UNKNOWN",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "DECISION_OUTCOME_NONE" => Some(Self::None),
+            "DECISION_OUTCOME_ALLOWED" => Some(Self::Allowed),
+            "DECISION_OUTCOME_DENIED" => Some(Self::Denied),
+            "DECISION_OUTCOME_AUTO_APPROVED" => Some(Self::AutoApproved),
+            "DECISION_OUTCOME_UNKNOWN" => Some(Self::Unknown),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum BoundaryKind {
+    Unspecified = 0,
+    Started = 1,
+    Cleared = 2,
+    Compacted = 3,
+    Resumed = 4,
+    Forked = 5,
+    Restarted = 6,
+    Exited = 7,
+    DaemonLost = 8,
+}
+impl BoundaryKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "BOUNDARY_KIND_UNSPECIFIED",
+            Self::Started => "BOUNDARY_KIND_STARTED",
+            Self::Cleared => "BOUNDARY_KIND_CLEARED",
+            Self::Compacted => "BOUNDARY_KIND_COMPACTED",
+            Self::Resumed => "BOUNDARY_KIND_RESUMED",
+            Self::Forked => "BOUNDARY_KIND_FORKED",
+            Self::Restarted => "BOUNDARY_KIND_RESTARTED",
+            Self::Exited => "BOUNDARY_KIND_EXITED",
+            Self::DaemonLost => "BOUNDARY_KIND_DAEMON_LOST",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "BOUNDARY_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "BOUNDARY_KIND_STARTED" => Some(Self::Started),
+            "BOUNDARY_KIND_CLEARED" => Some(Self::Cleared),
+            "BOUNDARY_KIND_COMPACTED" => Some(Self::Compacted),
+            "BOUNDARY_KIND_RESUMED" => Some(Self::Resumed),
+            "BOUNDARY_KIND_FORKED" => Some(Self::Forked),
+            "BOUNDARY_KIND_RESTARTED" => Some(Self::Restarted),
+            "BOUNDARY_KIND_EXITED" => Some(Self::Exited),
+            "BOUNDARY_KIND_DAEMON_LOST" => Some(Self::DaemonLost),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SendState {
+    Unspecified = 0,
+    /// The send is in flight; envelope_id is still empty.
+    Sending = 1,
+    /// The recipient's provider has it.
+    Sent = 2,
+    Rejected = 3,
+}
+impl SendState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SEND_STATE_UNSPECIFIED",
+            Self::Sending => "SEND_STATE_SENDING",
+            Self::Sent => "SEND_STATE_SENT",
+            Self::Rejected => "SEND_STATE_REJECTED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SEND_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SEND_STATE_SENDING" => Some(Self::Sending),
+            "SEND_STATE_SENT" => Some(Self::Sent),
+            "SEND_STATE_REJECTED" => Some(Self::Rejected),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TurnOutcome {
+    Unspecified = 0,
+    Completed = 1,
+    Interrupted = 2,
+    Failed = 3,
+}
+impl TurnOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TURN_OUTCOME_UNSPECIFIED",
+            Self::Completed => "TURN_OUTCOME_COMPLETED",
+            Self::Interrupted => "TURN_OUTCOME_INTERRUPTED",
+            Self::Failed => "TURN_OUTCOME_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TURN_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
+            "TURN_OUTCOME_COMPLETED" => Some(Self::Completed),
+            "TURN_OUTCOME_INTERRUPTED" => Some(Self::Interrupted),
+            "TURN_OUTCOME_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PlanChoice {
+    Unspecified = 0,
+    /// Start building (Claude) or implement the plan (Codex).
+    Start = 1,
+    /// Start, accepting edits without asking (Claude).
+    StartAcceptingEdits = 2,
+    /// Keep planning; the note, if any, goes to the agent.
+    KeepPlanning = 3,
+}
+impl PlanChoice {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PLAN_CHOICE_UNSPECIFIED",
+            Self::Start => "PLAN_CHOICE_START",
+            Self::StartAcceptingEdits => "PLAN_CHOICE_START_ACCEPTING_EDITS",
+            Self::KeepPlanning => "PLAN_CHOICE_KEEP_PLANNING",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PLAN_CHOICE_UNSPECIFIED" => Some(Self::Unspecified),
+            "PLAN_CHOICE_START" => Some(Self::Start),
+            "PLAN_CHOICE_START_ACCEPTING_EDITS" => Some(Self::StartAcceptingEdits),
+            "PLAN_CHOICE_KEEP_PLANNING" => Some(Self::KeepPlanning),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AskOutcome {
+    Unspecified = 0,
+    /// Answered, sent, opened or granted.
+    Answered = 1,
+    /// Declined, or an access grant that granted nothing.
+    Declined = 2,
+    Cancelled = 3,
+    /// Closed by a later fact that did not say how.
+    Dismissed = 4,
+    /// The person replied in their own words instead of answering.
+    Replied = 5,
+}
+impl AskOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ASK_OUTCOME_UNSPECIFIED",
+            Self::Answered => "ASK_OUTCOME_ANSWERED",
+            Self::Declined => "ASK_OUTCOME_DECLINED",
+            Self::Cancelled => "ASK_OUTCOME_CANCELLED",
+            Self::Dismissed => "ASK_OUTCOME_DISMISSED",
+            Self::Replied => "ASK_OUTCOME_REPLIED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ASK_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
+            "ASK_OUTCOME_ANSWERED" => Some(Self::Answered),
+            "ASK_OUTCOME_DECLINED" => Some(Self::Declined),
+            "ASK_OUTCOME_CANCELLED" => Some(Self::Cancelled),
+            "ASK_OUTCOME_DISMISSED" => Some(Self::Dismissed),
+            "ASK_OUTCOME_REPLIED" => Some(Self::Replied),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TaskListStatus {
+    Unspecified = 0,
+    Pending = 1,
+    InProgress = 2,
+    Completed = 3,
+}
+impl TaskListStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TASK_LIST_STATUS_UNSPECIFIED",
+            Self::Pending => "TASK_LIST_STATUS_PENDING",
+            Self::InProgress => "TASK_LIST_STATUS_IN_PROGRESS",
+            Self::Completed => "TASK_LIST_STATUS_COMPLETED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TASK_LIST_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "TASK_LIST_STATUS_PENDING" => Some(Self::Pending),
+            "TASK_LIST_STATUS_IN_PROGRESS" => Some(Self::InProgress),
+            "TASK_LIST_STATUS_COMPLETED" => Some(Self::Completed),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum UsageState {
+    Unknown = 0,
+    Ok = 1,
+    NearLimit = 2,
+    Blocked = 3,
+}
+impl UsageState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "USAGE_STATE_UNKNOWN",
+            Self::Ok => "USAGE_STATE_OK",
+            Self::NearLimit => "USAGE_STATE_NEAR_LIMIT",
+            Self::Blocked => "USAGE_STATE_BLOCKED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "USAGE_STATE_UNKNOWN" => Some(Self::Unknown),
+            "USAGE_STATE_OK" => Some(Self::Ok),
+            "USAGE_STATE_NEAR_LIMIT" => Some(Self::NearLimit),
+            "USAGE_STATE_BLOCKED" => Some(Self::Blocked),
+            _ => None,
+        }
+    }
+}
+/// A usage window's length, the same for every provider.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Limit {
+    Unspecified = 0,
+    FiveHour = 1,
+    Weekly = 2,
+}
+impl Limit {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "LIMIT_UNSPECIFIED",
+            Self::FiveHour => "LIMIT_FIVE_HOUR",
+            Self::Weekly => "LIMIT_WEEKLY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "LIMIT_UNSPECIFIED" => Some(Self::Unspecified),
+            "LIMIT_FIVE_HOUR" => Some(Self::FiveHour),
+            "LIMIT_WEEKLY" => Some(Self::Weekly),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum HealthState {
+    Unknown = 0,
+    Healthy = 1,
+    Degraded = 2,
+}
+impl HealthState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "HEALTH_STATE_UNKNOWN",
+            Self::Healthy => "HEALTH_STATE_HEALTHY",
+            Self::Degraded => "HEALTH_STATE_DEGRADED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "HEALTH_STATE_UNKNOWN" => Some(Self::Unknown),
+            "HEALTH_STATE_HEALTHY" => Some(Self::Healthy),
+            "HEALTH_STATE_DEGRADED" => Some(Self::Degraded),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ToolServerStatus {
+    Unspecified = 0,
+    Starting = 1,
+    Ready = 2,
+    Failed = 3,
+    NeedsAuth = 4,
+}
+impl ToolServerStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TOOL_SERVER_STATUS_UNSPECIFIED",
+            Self::Starting => "TOOL_SERVER_STATUS_STARTING",
+            Self::Ready => "TOOL_SERVER_STATUS_READY",
+            Self::Failed => "TOOL_SERVER_STATUS_FAILED",
+            Self::NeedsAuth => "TOOL_SERVER_STATUS_NEEDS_AUTH",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TOOL_SERVER_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "TOOL_SERVER_STATUS_STARTING" => Some(Self::Starting),
+            "TOOL_SERVER_STATUS_READY" => Some(Self::Ready),
+            "TOOL_SERVER_STATUS_FAILED" => Some(Self::Failed),
+            "TOOL_SERVER_STATUS_NEEDS_AUTH" => Some(Self::NeedsAuth),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SignInState {
+    Unknown = 0,
+    SignedIn = 1,
+    SignedOut = 2,
+    Expired = 3,
+    Failed = 4,
+}
+impl SignInState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "SIGN_IN_STATE_UNKNOWN",
+            Self::SignedIn => "SIGN_IN_STATE_SIGNED_IN",
+            Self::SignedOut => "SIGN_IN_STATE_SIGNED_OUT",
+            Self::Expired => "SIGN_IN_STATE_EXPIRED",
+            Self::Failed => "SIGN_IN_STATE_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SIGN_IN_STATE_UNKNOWN" => Some(Self::Unknown),
+            "SIGN_IN_STATE_SIGNED_IN" => Some(Self::SignedIn),
+            "SIGN_IN_STATE_SIGNED_OUT" => Some(Self::SignedOut),
+            "SIGN_IN_STATE_EXPIRED" => Some(Self::Expired),
+            "SIGN_IN_STATE_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum FormAction {
+    Unspecified = 0,
+    Accept = 1,
+    Decline = 2,
+    Cancel = 3,
+}
+impl FormAction {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "FORM_ACTION_UNSPECIFIED",
+            Self::Accept => "FORM_ACTION_ACCEPT",
+            Self::Decline => "FORM_ACTION_DECLINE",
+            Self::Cancel => "FORM_ACTION_CANCEL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "FORM_ACTION_UNSPECIFIED" => Some(Self::Unspecified),
+            "FORM_ACTION_ACCEPT" => Some(Self::Accept),
+            "FORM_ACTION_DECLINE" => Some(Self::Decline),
+            "FORM_ACTION_CANCEL" => Some(Self::Cancel),
+            _ => None,
+        }
     }
 }
 /// Hosts and agent rows: the current set, CaughtUp, then deltas. A listing is
@@ -2598,150 +4713,6 @@ impl ::prost::Name for PromptSubmission {
         "/amux.v1.PromptSubmission".into()
     }
 }
-/// U+FFFC per attachment.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PromptInput {
-    #[prost(string, tag = "1")]
-    pub text: ::prost::alloc::string::String,
-    /// Prompts always queue; steering is SendQueuedNow on a queued entry.
-    #[prost(message, repeated, tag = "2")]
-    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
-}
-impl ::prost::Name for PromptInput {
-    const NAME: &'static str = "PromptInput";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PromptInput".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.PromptInput".into()
-    }
-}
-/// Rejected REFUSAL_NOT_QUEUED if the target is not queued.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct WithdrawQueued {
-    #[prost(bytes = "vec", tag = "1")]
-    pub queued_input_id: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for WithdrawQueued {
-    const NAME: &'static str = "WithdrawQueued";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.WithdrawQueued".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.WithdrawQueued".into()
-    }
-}
-/// Delivers one queued prompt into the running turn through the provider's
-/// own steering path; the entry reads steered until its reflection lands.
-/// Rejected REFUSAL_NOT_QUEUED if the target is not waiting in the queue,
-/// and REFUSAL_UNSUPPORTED if no turn is running.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SendQueuedNow {
-    #[prost(bytes = "vec", tag = "1")]
-    pub queued_input_id: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for SendQueuedNow {
-    const NAME: &'static str = "SendQueuedNow";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SendQueuedNow".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SendQueuedNow".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Interrupt {}
-impl ::prost::Name for Interrupt {
-    const NAME: &'static str = "Interrupt";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Interrupt".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Interrupt".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Clear {}
-impl ::prost::Name for Clear {
-    const NAME: &'static str = "Clear";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Clear".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Clear".into()
-    }
-}
-/// How much the agent may do without asking, by a value its catalogue
-/// offers; the interpreter turns it into the provider's own settings.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SetPermission {
-    #[prost(string, tag = "1")]
-    pub value: ::prost::alloc::string::String,
-}
-impl ::prost::Name for SetPermission {
-    const NAME: &'static str = "SetPermission";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SetPermission".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SetPermission".into()
-    }
-}
-/// How the agent works (Codex: default or plan), by a value its catalogue
-/// offers.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SetMode {
-    #[prost(string, tag = "1")]
-    pub value: ::prost::alloc::string::String,
-}
-impl ::prost::Name for SetMode {
-    const NAME: &'static str = "SetMode";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SetMode".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SetMode".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SetModel {
-    /// Absent restores the launch model.
-    #[prost(string, optional, tag = "1")]
-    pub model: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for SetModel {
-    const NAME: &'static str = "SetModel";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SetModel".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SetModel".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SetEffort {
-    /// Absent clears the session override.
-    #[prost(string, optional, tag = "1")]
-    pub effort: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for SetEffort {
-    const NAME: &'static str = "SetEffort";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SetEffort".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SetEffort".into()
-    }
-}
 /// The interpreter's verdict.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SendInputResponse {
@@ -2924,75 +4895,6 @@ impl Lifecycle {
             "LIFECYCLE_UNSPECIFIED" => Some(Self::Unspecified),
             "LIFECYCLE_LIVE" => Some(Self::Live),
             "LIFECYCLE_EXITED" => Some(Self::Exited),
-            _ => None,
-        }
-    }
-}
-/// Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a
-/// cause this build does not know: unknown is not failure.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum ExitCause {
-    Unspecified = 0,
-    /// A child's turn ended with nothing queued: the one-shot rule.
-    Finished = 1,
-    Stopped = 2,
-    Aborted = 3,
-    Killed = 4,
-    /// The provider process ended on its own; the detail is its exit code
-    /// or signal.
-    ProviderExited = 5,
-    /// The agent drained after its daemon was gone past the grace period.
-    DaemonLost = 6,
-    /// An ask was open with nobody to answer it when the daemon was lost.
-    Orphaned = 7,
-    /// The agent process or its provider could not start; the detail says
-    /// which and why.
-    CouldNotStart = 8,
-    /// Its directory is gone, or a write to it failed; the detail says which.
-    DirectoryFailed = 9,
-    /// The process was found dead when a daemon returned, with no record of
-    /// why.
-    EndedWhileAway = 10,
-    /// The provider loop ended without any of the above.
-    EndedUnexpectedly = 11,
-}
-impl ExitCause {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "EXIT_CAUSE_UNSPECIFIED",
-            Self::Finished => "EXIT_CAUSE_FINISHED",
-            Self::Stopped => "EXIT_CAUSE_STOPPED",
-            Self::Aborted => "EXIT_CAUSE_ABORTED",
-            Self::Killed => "EXIT_CAUSE_KILLED",
-            Self::ProviderExited => "EXIT_CAUSE_PROVIDER_EXITED",
-            Self::DaemonLost => "EXIT_CAUSE_DAEMON_LOST",
-            Self::Orphaned => "EXIT_CAUSE_ORPHANED",
-            Self::CouldNotStart => "EXIT_CAUSE_COULD_NOT_START",
-            Self::DirectoryFailed => "EXIT_CAUSE_DIRECTORY_FAILED",
-            Self::EndedWhileAway => "EXIT_CAUSE_ENDED_WHILE_AWAY",
-            Self::EndedUnexpectedly => "EXIT_CAUSE_ENDED_UNEXPECTEDLY",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "EXIT_CAUSE_UNSPECIFIED" => Some(Self::Unspecified),
-            "EXIT_CAUSE_FINISHED" => Some(Self::Finished),
-            "EXIT_CAUSE_STOPPED" => Some(Self::Stopped),
-            "EXIT_CAUSE_ABORTED" => Some(Self::Aborted),
-            "EXIT_CAUSE_KILLED" => Some(Self::Killed),
-            "EXIT_CAUSE_PROVIDER_EXITED" => Some(Self::ProviderExited),
-            "EXIT_CAUSE_DAEMON_LOST" => Some(Self::DaemonLost),
-            "EXIT_CAUSE_ORPHANED" => Some(Self::Orphaned),
-            "EXIT_CAUSE_COULD_NOT_START" => Some(Self::CouldNotStart),
-            "EXIT_CAUSE_DIRECTORY_FAILED" => Some(Self::DirectoryFailed),
-            "EXIT_CAUSE_ENDED_WHILE_AWAY" => Some(Self::EndedWhileAway),
-            "EXIT_CAUSE_ENDED_UNEXPECTEDLY" => Some(Self::EndedUnexpectedly),
             _ => None,
         }
     }
@@ -8794,1908 +10696,6 @@ pub mod installation_service_server {
     pub const SERVICE_NAME: &str = "amux.v1.InstallationService";
     impl<T> tonic::server::NamedService for InstallationServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
-    }
-}
-/// A person's prompt as the provider reflected it. Text and attachments are
-/// in the envelope.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Prompt {}
-impl ::prost::Name for Prompt {
-    const NAME: &'static str = "Prompt";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Prompt".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Prompt".into()
-    }
-}
-/// A prompt delivered into the running turn; the text is the envelope's.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Steer {}
-impl ::prost::Name for Steer {
-    const NAME: &'static str = "Steer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Steer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Steer".into()
-    }
-}
-/// A plan the agent put to the person. The plan is the envelope text.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Plan {
-    #[prost(enumeration = "PlanVerdict", tag = "1")]
-    pub verdict: i32,
-    /// What the person said when sending it back.
-    #[prost(string, optional, tag = "2")]
-    pub note: ::core::option::Option<::prost::alloc::string::String>,
-    /// The whole plan is in: Claude declares it whole; Codex streams it.
-    #[prost(bool, tag = "3")]
-    pub complete: bool,
-}
-impl ::prost::Name for Plan {
-    const NAME: &'static str = "Plan";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Plan".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Plan".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Text {
-    #[prost(bool, tag = "1")]
-    pub complete: bool,
-}
-impl ::prost::Name for Text {
-    const NAME: &'static str = "Text";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Text".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Text".into()
-    }
-}
-/// "Thought for 8s" is the difference of two item timestamps; the thinking
-/// text, when the provider records it, is the envelope text.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Thinking {
-    #[prost(bool, tag = "1")]
-    pub complete: bool,
-}
-impl ::prost::Name for Thinking {
-    const NAME: &'static str = "Thinking";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Thinking".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Thinking".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ToolCall {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub input_json: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "ToolState", tag = "3")]
-    pub state: i32,
-    #[prost(string, tag = "4")]
-    pub outcome_text: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "5")]
-    pub outcome_json: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, repeated, tag = "6")]
-    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
-    #[prost(enumeration = "ToolClass", tag = "7")]
-    pub class: i32,
-    /// A permission decision is meta on the tool call's own row.
-    #[prost(message, optional, tag = "8")]
-    pub decision: ::core::option::Option<ToolDecision>,
-    /// Started in the background: a shell or task that outlives the call.
-    #[prost(bool, tag = "9")]
-    pub background: bool,
-    /// The key of the subagent call this step belongs to, for nested steps.
-    #[prost(string, tag = "10")]
-    pub parent_key: ::prost::alloc::string::String,
-    /// Live progress of a subagent call.
-    #[prost(message, optional, tag = "11")]
-    pub subagent: ::core::option::Option<SubagentProgress>,
-    /// The tool server, for a tool-server call.
-    #[prost(string, tag = "12")]
-    pub server: ::prost::alloc::string::String,
-    #[prost(int32, optional, tag = "13")]
-    pub exit_code: ::core::option::Option<i32>,
-    /// When the call finished, the provider's timestamp where it has one.
-    #[prost(int64, optional, tag = "14")]
-    pub ended_at_ms: ::core::option::Option<i64>,
-    /// A file write that finished: whether it made the file (else it
-    /// replaced one). Claude says which only once the write is done.
-    #[prost(bool, optional, tag = "15")]
-    pub created: ::core::option::Option<bool>,
-    /// A file edit that finished: the line its first change landed on.
-    #[prost(uint32, optional, tag = "16")]
-    pub line: ::core::option::Option<u32>,
-}
-impl ::prost::Name for ToolCall {
-    const NAME: &'static str = "ToolCall";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ToolCall".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ToolCall".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ToolDecision {
-    #[prost(enumeration = "DecisionOutcome", tag = "1")]
-    pub outcome: i32,
-    #[prost(string, tag = "2")]
-    pub note: ::prost::alloc::string::String,
-    /// Answered in the provider's own interface rather than through amux.
-    #[prost(bool, tag = "3")]
-    pub elsewhere: bool,
-    /// What an allowance granted beyond this one call. Absent when it allowed
-    /// the call alone, and when the provider did not say which choice was
-    /// made: Claude's own terminal does not report it.
-    #[prost(oneof = "tool_decision::Granted", tags = "4, 5")]
-    pub granted: ::core::option::Option<tool_decision::Granted>,
-}
-/// Nested message and enum types in `ToolDecision`.
-pub mod tool_decision {
-    /// What an allowance granted beyond this one call. Absent when it allowed
-    /// the call alone, and when the provider did not say which choice was
-    /// made: Claude's own terminal does not report it.
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Granted {
-        #[prost(message, tag = "4")]
-        Claude(super::ClaudeGrant),
-        #[prost(message, tag = "5")]
-        Codex(super::CodexGrant),
-    }
-}
-impl ::prost::Name for ToolDecision {
-    const NAME: &'static str = "ToolDecision";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ToolDecision".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ToolDecision".into()
-    }
-}
-/// A standing permission Claude offers or added when a call was allowed.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ClaudeGrant {
-    /// The rules, as Claude writes them: "Bash(npm test:\*)".
-    #[prost(string, repeated, tag = "1")]
-    pub rules: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Folders added to those Claude may work in.
-    #[prost(string, repeated, tag = "2")]
-    pub directories: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// A permission mode Claude switched to.
-    #[prost(string, optional, tag = "3")]
-    pub mode: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(enumeration = "ScopeDestination", tag = "4")]
-    pub destination: i32,
-    /// Claude's own word for the destination, always carried: what a client
-    /// shows for a destination it does not know.
-    #[prost(string, tag = "5")]
-    pub destination_word: ::prost::alloc::string::String,
-}
-impl ::prost::Name for ClaudeGrant {
-    const NAME: &'static str = "ClaudeGrant";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ClaudeGrant".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ClaudeGrant".into()
-    }
-}
-/// What Codex allows from now on.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CodexGrant {
-    #[prost(oneof = "codex_grant::Of", tags = "1, 2, 3")]
-    pub of: ::core::option::Option<codex_grant::Of>,
-}
-/// Nested message and enum types in `CodexGrant`.
-pub mod codex_grant {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Of {
-        /// Approvals like this one, for the rest of the session.
-        #[prost(message, tag = "1")]
-        Session(super::Empty),
-        /// Commands starting with these words.
-        #[prost(message, tag = "2")]
-        CommandPrefix(super::CommandPrefix),
-        /// Network access to these hosts.
-        #[prost(message, tag = "3")]
-        NetworkHosts(super::NetworkHosts),
-    }
-}
-impl ::prost::Name for CodexGrant {
-    const NAME: &'static str = "CodexGrant";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CodexGrant".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.CodexGrant".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct CommandPrefix {
-    #[prost(string, repeated, tag = "1")]
-    pub words: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-impl ::prost::Name for CommandPrefix {
-    const NAME: &'static str = "CommandPrefix";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.CommandPrefix".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.CommandPrefix".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct NetworkHosts {
-    #[prost(string, repeated, tag = "1")]
-    pub hosts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-impl ::prost::Name for NetworkHosts {
-    const NAME: &'static str = "NetworkHosts";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.NetworkHosts".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.NetworkHosts".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SubagentProgress {
-    #[prost(uint32, tag = "1")]
-    pub tool_count: u32,
-    #[prost(string, tag = "2")]
-    pub last_tool: ::prost::alloc::string::String,
-    #[prost(bool, tag = "3")]
-    pub finished: bool,
-}
-impl ::prost::Name for SubagentProgress {
-    const NAME: &'static str = "SubagentProgress";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SubagentProgress".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SubagentProgress".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Boundary {
-    #[prost(enumeration = "BoundaryKind", tag = "1")]
-    pub kind: i32,
-    #[prost(string, tag = "2")]
-    pub provider_session: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub provider_version: ::prost::alloc::string::String,
-    /// For EXITED: why, and the cause's own words.
-    #[prost(enumeration = "ExitCause", tag = "4")]
-    pub cause: i32,
-    #[prost(string, optional, tag = "5")]
-    pub cause_detail: ::core::option::Option<::prost::alloc::string::String>,
-    /// The keymap the agent process resolved for the observed provider version.
-    #[prost(string, tag = "6")]
-    pub keymap: ::prost::alloc::string::String,
-}
-impl ::prost::Name for Boundary {
-    const NAME: &'static str = "Boundary";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Boundary".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Boundary".into()
-    }
-}
-/// A message between agents; the text is in the envelope.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AgentMessage {
-    #[prost(bytes = "vec", tag = "1")]
-    pub envelope_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "EnvelopeKind", tag = "2")]
-    pub kind: i32,
-    #[prost(message, optional, tag = "3")]
-    pub from: ::core::option::Option<Sender>,
-    #[prost(bytes = "vec", tag = "4")]
-    pub context: ::prost::alloc::vec::Vec<u8>,
-    /// Set on a message this agent sent with amux's send tool: the recipient as
-    /// the model named it. Empty on a message this agent received.
-    #[prost(string, tag = "5")]
-    pub to: ::prost::alloc::string::String,
-    /// How a sent message's send went; unspecified on a received message.
-    #[prost(enumeration = "SendState", tag = "6")]
-    pub send_state: i32,
-    /// For SEND_STATE_REJECTED: why, as the send reported it.
-    #[prost(string, tag = "7")]
-    pub rejection: ::prost::alloc::string::String,
-}
-impl ::prost::Name for AgentMessage {
-    const NAME: &'static str = "AgentMessage";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AgentMessage".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.AgentMessage".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct Turn {
-    #[prost(uint64, tag = "1")]
-    pub turn_id: u64,
-    #[prost(enumeration = "TurnOutcome", tag = "2")]
-    pub outcome: i32,
-    /// When the turn started; "Worked 1m 42s" is at_ms minus this.
-    #[prost(int64, tag = "3")]
-    pub started_at_ms: i64,
-    #[prost(double, optional, tag = "4")]
-    pub cost_usd: ::core::option::Option<f64>,
-}
-impl ::prost::Name for Turn {
-    const NAME: &'static str = "Turn";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Turn".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Turn".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Compaction {
-    #[prost(uint64, optional, tag = "1")]
-    pub tokens_before: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "2")]
-    pub tokens_after: ::core::option::Option<u64>,
-    #[prost(bool, tag = "3")]
-    pub automatic: bool,
-}
-impl ::prost::Name for Compaction {
-    const NAME: &'static str = "Compaction";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Compaction".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Compaction".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ApiError {
-    /// The provider's typed error kind, where it has one.
-    #[prost(string, tag = "1")]
-    pub error_kind: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub message: ::prost::alloc::string::String,
-    #[prost(bool, tag = "3")]
-    pub will_retry: bool,
-    #[prost(uint32, tag = "4")]
-    pub attempt: u32,
-    #[prost(uint32, tag = "5")]
-    pub max_attempts: u32,
-    #[prost(int64, optional, tag = "6")]
-    pub retry_at_ms: ::core::option::Option<i64>,
-}
-impl ::prost::Name for ApiError {
-    const NAME: &'static str = "ApiError";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ApiError".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ApiError".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ModelSwitch {
-    #[prost(string, tag = "1")]
-    pub from: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub to: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub reason: ::prost::alloc::string::String,
-}
-impl ::prost::Name for ModelSwitch {
-    const NAME: &'static str = "ModelSwitch";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ModelSwitch".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ModelSwitch".into()
-    }
-}
-/// Output of a slash command; the output is the envelope text.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SlashOutput {
-    #[prost(string, tag = "1")]
-    pub command: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub args: ::prost::alloc::string::String,
-}
-impl ::prost::Name for SlashOutput {
-    const NAME: &'static str = "SlashOutput";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SlashOutput".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SlashOutput".into()
-    }
-}
-/// A provider fact the interpreter could not place, made visible. Never raw
-/// bytes: the fact itself is in the facts ring.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Unrecognized {
-    #[prost(string, tag = "1")]
-    pub fact_type: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub summary: ::prost::alloc::string::String,
-}
-impl ::prost::Name for Unrecognized {
-    const NAME: &'static str = "Unrecognized";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Unrecognized".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Unrecognized".into()
-    }
-}
-/// What an agent offers to pick from, not what is picked: that stays in the
-/// snapshot. An agent writes it as a blob of its directory and names the
-/// blob's hash in its snapshot; identical catalogues share one. Fetched by
-/// GetBlob, so a catalogue passes through a daemon of any version intact.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Catalogue {
-    #[prost(message, repeated, tag = "1")]
-    pub models: ::prost::alloc::vec::Vec<OfferedModel>,
-    #[prost(message, repeated, tag = "2")]
-    pub commands: ::prost::alloc::vec::Vec<OfferedCommand>,
-    /// How much the agent may do without asking.
-    #[prost(message, repeated, tag = "3")]
-    pub permissions: ::prost::alloc::vec::Vec<OfferedPermission>,
-    /// How it works; empty for Claude.
-    #[prost(message, repeated, tag = "4")]
-    pub modes: ::prost::alloc::vec::Vec<OfferedMode>,
-}
-impl ::prost::Name for Catalogue {
-    const NAME: &'static str = "Catalogue";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Catalogue".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Catalogue".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct OfferedPermission {
-    /// What SetPermission names and the snapshot reports.
-    #[prost(string, tag = "1")]
-    pub value: ::prost::alloc::string::String,
-    /// Written by the interpreter; no provider supplies one.
-    #[prost(string, tag = "2")]
-    pub display_name: ::prost::alloc::string::String,
-    /// The provider's ordinary one; a client may leave it unsaid.
-    #[prost(bool, tag = "3")]
-    pub normal: bool,
-    /// Acts without asking; clients warn.
-    #[prost(bool, tag = "4")]
-    pub never_asks: bool,
-    /// False: only reachable in the provider's own interface.
-    #[prost(bool, tag = "5")]
-    pub settable: bool,
-    /// Empty: every model. Otherwise only these.
-    #[prost(string, repeated, tag = "6")]
-    pub models: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-impl ::prost::Name for OfferedPermission {
-    const NAME: &'static str = "OfferedPermission";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.OfferedPermission".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.OfferedPermission".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct OfferedMode {
-    #[prost(string, tag = "1")]
-    pub value: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub display_name: ::prost::alloc::string::String,
-    #[prost(bool, tag = "3")]
-    pub normal: bool,
-    #[prost(bool, tag = "4")]
-    pub settable: bool,
-}
-impl ::prost::Name for OfferedMode {
-    const NAME: &'static str = "OfferedMode";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.OfferedMode".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.OfferedMode".into()
-    }
-}
-/// A model the provider offers this session, as the provider lists it.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct OfferedModel {
-    /// What a model input names.
-    #[prost(string, tag = "1")]
-    pub value: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub display_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub description: ::prost::alloc::string::String,
-    /// The effort levels the model takes, in the provider's order; empty when
-    /// it takes none.
-    #[prost(string, repeated, tag = "4")]
-    pub efforts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// The effort the model runs at when none is chosen, when the provider
-    /// says.
-    #[prost(string, optional, tag = "5")]
-    pub default_effort: ::core::option::Option<::prost::alloc::string::String>,
-    /// The model id an alias stands for, as the agent reports its model;
-    /// empty when the provider does not say.
-    #[prost(string, tag = "6")]
-    pub resolved_model: ::prost::alloc::string::String,
-}
-impl ::prost::Name for OfferedModel {
-    const NAME: &'static str = "OfferedModel";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.OfferedModel".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.OfferedModel".into()
-    }
-}
-/// A command or skill the provider offers this session, typed as a prompt
-/// that starts with a slash.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct OfferedCommand {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub description: ::prost::alloc::string::String,
-    /// What the command takes after its name, in the provider's words.
-    #[prost(string, tag = "3")]
-    pub argument_hint: ::prost::alloc::string::String,
-    /// Where it comes from: a plugin's namespace, or the provider's scope word
-    /// (user, repo, system). Empty when the provider does not say.
-    #[prost(string, tag = "4")]
-    pub source: ::prost::alloc::string::String,
-}
-impl ::prost::Name for OfferedCommand {
-    const NAME: &'static str = "OfferedCommand";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.OfferedCommand".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.OfferedCommand".into()
-    }
-}
-/// An open ask. Opened and closed only by provider facts.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Ask {
-    /// What an answer names.
-    #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
-    /// The item this ask points at: the tool call it would let run, or, for
-    /// an ask that is the work, its own AskItem.
-    #[prost(string, tag = "2")]
-    pub item_key: ::prost::alloc::string::String,
-    #[prost(int64, tag = "9")]
-    pub opened_at_ms: i64,
-    #[prost(oneof = "ask::Body", tags = "3, 4, 5, 6, 7, 8")]
-    pub body: ::core::option::Option<ask::Body>,
-}
-/// Nested message and enum types in `Ask`.
-pub mod ask {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Body {
-        #[prost(message, tag = "3")]
-        Permission(super::PermissionAsk),
-        #[prost(message, tag = "4")]
-        Question(super::QuestionAsk),
-        #[prost(message, tag = "5")]
-        Plan(super::PlanAsk),
-        #[prost(message, tag = "6")]
-        Form(super::FormAsk),
-        #[prost(message, tag = "7")]
-        Link(super::LinkAsk),
-        #[prost(message, tag = "8")]
-        Unanswerable(super::UnanswerableAsk),
-    }
-}
-impl ::prost::Name for Ask {
-    const NAME: &'static str = "Ask";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Ask".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Ask".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PermissionAsk {
-    #[prost(string, tag = "1")]
-    pub tool_name: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub input_json: ::prost::alloc::vec::Vec<u8>,
-    /// Every scope the provider offered, in order.
-    #[prost(message, repeated, tag = "3")]
-    pub scopes: ::prost::alloc::vec::Vec<ScopeChoice>,
-    #[prost(string, tag = "4")]
-    pub reason: ::prost::alloc::string::String,
-    #[prost(string, tag = "5")]
-    pub description: ::prost::alloc::string::String,
-    /// Denying always ends the turn (terminal Claude).
-    #[prost(bool, tag = "6")]
-    pub deny_stops: bool,
-    /// Deny can be sent with or without stopping the turn.
-    #[prost(bool, tag = "7")]
-    pub deny_can_stop: bool,
-    #[prost(string, tag = "8")]
-    pub server: ::prost::alloc::string::String,
-}
-impl ::prost::Name for PermissionAsk {
-    const NAME: &'static str = "PermissionAsk";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PermissionAsk".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.PermissionAsk".into()
-    }
-}
-/// One scope the provider offered; answers name its index.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ScopeChoice {
-    #[prost(uint32, tag = "1")]
-    pub index: u32,
-    #[prost(message, optional, tag = "2")]
-    pub grant: ::core::option::Option<ClaudeGrant>,
-}
-impl ::prost::Name for ScopeChoice {
-    const NAME: &'static str = "ScopeChoice";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ScopeChoice".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ScopeChoice".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QuestionAsk {
-    #[prost(message, repeated, tag = "1")]
-    pub questions: ::prost::alloc::vec::Vec<Question>,
-    /// The provider's own dialog rather than a question the agent asked in a
-    /// turn (Claude's folder trust): there is no turn to reply into instead.
-    #[prost(bool, tag = "2")]
-    pub provider_dialog: bool,
-}
-impl ::prost::Name for QuestionAsk {
-    const NAME: &'static str = "QuestionAsk";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.QuestionAsk".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.QuestionAsk".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Question {
-    #[prost(string, tag = "1")]
-    pub header: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub question: ::prost::alloc::string::String,
-    #[prost(bool, tag = "3")]
-    pub multi_select: bool,
-    #[prost(message, repeated, tag = "4")]
-    pub options: ::prost::alloc::vec::Vec<QuestionOption>,
-    /// An "Other" answer is accepted.
-    #[prost(bool, tag = "5")]
-    pub allow_other: bool,
-    /// The answer is secret and is never shown back.
-    #[prost(bool, tag = "6")]
-    pub secret: bool,
-}
-impl ::prost::Name for Question {
-    const NAME: &'static str = "Question";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Question".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Question".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct QuestionOption {
-    #[prost(string, tag = "1")]
-    pub label: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub description: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub preview: ::prost::alloc::string::String,
-    #[prost(bool, tag = "4")]
-    pub recommended: bool,
-}
-impl ::prost::Name for QuestionOption {
-    const NAME: &'static str = "QuestionOption";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.QuestionOption".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.QuestionOption".into()
-    }
-}
-/// A decision on a plan; the plan is the text of the item the ask points at.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PlanAsk {
-    /// What the provider takes, in its order.
-    #[prost(enumeration = "PlanChoice", repeated, tag = "1")]
-    pub choices: ::prost::alloc::vec::Vec<i32>,
-}
-impl ::prost::Name for PlanAsk {
-    const NAME: &'static str = "PlanAsk";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PlanAsk".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.PlanAsk".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PlanAnswer {
-    #[prost(enumeration = "PlanChoice", tag = "1")]
-    pub choice: i32,
-    /// With keep planning: what to change.
-    #[prost(string, optional, tag = "2")]
-    pub note: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for PlanAnswer {
-    const NAME: &'static str = "PlanAnswer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.PlanAnswer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.PlanAnswer".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct FormAsk {
-    #[prost(string, tag = "1")]
-    pub server: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub message: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "3")]
-    pub schema_json: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for FormAsk {
-    const NAME: &'static str = "FormAsk";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.FormAsk".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.FormAsk".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct LinkAsk {
-    #[prost(string, tag = "1")]
-    pub server: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub message: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub url: ::prost::alloc::string::String,
-}
-impl ::prost::Name for LinkAsk {
-    const NAME: &'static str = "LinkAsk";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.LinkAsk".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.LinkAsk".into()
-    }
-}
-/// A request for file or network access beyond the sandbox.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AccessGrant {
-    #[prost(string, tag = "1")]
-    pub reason: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag = "2")]
-    pub read: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, repeated, tag = "3")]
-    pub write: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(bool, tag = "4")]
-    pub network: bool,
-    #[prost(string, repeated, tag = "5")]
-    pub network_hosts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-impl ::prost::Name for AccessGrant {
-    const NAME: &'static str = "AccessGrant";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AccessGrant".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.AccessGrant".into()
-    }
-}
-/// An ask that is the work: a question, a tool server's form or link, an
-/// access grant, or something the provider shows that this build cannot read.
-/// It is its own item, written when the ask opens (the ask's
-/// item_key names it) and revised once with how it closed, so its decision
-/// row stays in the chat after the ask leaves the snapshot.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AskItem {
-    /// Absent while the ask is open.
-    #[prost(message, optional, tag = "6")]
-    pub closed: ::core::option::Option<AskClosed>,
-    #[prost(oneof = "ask_item::Ask", tags = "1, 2, 3, 4, 5")]
-    pub ask: ::core::option::Option<ask_item::Ask>,
-}
-/// Nested message and enum types in `AskItem`.
-pub mod ask_item {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Ask {
-        #[prost(message, tag = "1")]
-        Question(super::QuestionAsk),
-        #[prost(message, tag = "2")]
-        Form(super::FormAsk),
-        #[prost(message, tag = "3")]
-        Link(super::LinkAsk),
-        #[prost(message, tag = "4")]
-        Access(super::AccessGrant),
-        #[prost(message, tag = "5")]
-        Unanswerable(super::UnanswerableAsk),
-    }
-}
-impl ::prost::Name for AskItem {
-    const NAME: &'static str = "AskItem";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AskItem".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.AskItem".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AskClosed {
-    #[prost(enumeration = "AskOutcome", tag = "1")]
-    pub outcome: i32,
-    /// A question's answers, one per question in the ask's order; with reply
-    /// instead, the answers given before it.
-    #[prost(message, repeated, tag = "2")]
-    pub answers: ::prost::alloc::vec::Vec<AnsweredQuestion>,
-    /// The person's own words, when they replied instead of answering.
-    #[prost(string, tag = "3")]
-    pub reply: ::prost::alloc::string::String,
-    /// The names of the form fields sent; the values went to the server only.
-    #[prost(string, repeated, tag = "4")]
-    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// What an access grant granted.
-    #[prost(message, optional, tag = "5")]
-    pub grant: ::core::option::Option<GrantAnswer>,
-}
-impl ::prost::Name for AskClosed {
-    const NAME: &'static str = "AskClosed";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AskClosed".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.AskClosed".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AnsweredQuestion {
-    /// The chosen options' labels.
-    #[prost(string, repeated, tag = "1")]
-    pub picked: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// A typed answer.
-    #[prost(string, optional, tag = "2")]
-    pub other: ::core::option::Option<::prost::alloc::string::String>,
-    /// A secret answer: what was typed is never recorded.
-    #[prost(bool, tag = "3")]
-    pub hidden: bool,
-    /// The person's note on this question. Nothing picked, typed or hidden
-    /// means the question was skipped.
-    #[prost(string, optional, tag = "4")]
-    pub note: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for AnsweredQuestion {
-    const NAME: &'static str = "AnsweredQuestion";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AnsweredQuestion".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.AnsweredQuestion".into()
-    }
-}
-/// The provider is asking something this build cannot read; the only way out
-/// here is to stop the agent or attach a terminal.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct UnanswerableAsk {
-    #[prost(string, tag = "1")]
-    pub reason: ::prost::alloc::string::String,
-}
-impl ::prost::Name for UnanswerableAsk {
-    const NAME: &'static str = "UnanswerableAsk";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.UnanswerableAsk".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.UnanswerableAsk".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct TaskList {
-    #[prost(bool, tag = "1")]
-    pub known: bool,
-    #[prost(message, repeated, tag = "2")]
-    pub entries: ::prost::alloc::vec::Vec<TaskListEntry>,
-}
-impl ::prost::Name for TaskList {
-    const NAME: &'static str = "TaskList";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.TaskList".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.TaskList".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct TaskListEntry {
-    #[prost(string, tag = "1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub subject: ::prost::alloc::string::String,
-    #[prost(enumeration = "TaskListStatus", tag = "3")]
-    pub status: i32,
-    #[prost(string, tag = "4")]
-    pub active_form: ::prost::alloc::string::String,
-}
-impl ::prost::Name for TaskListEntry {
-    const NAME: &'static str = "TaskListEntry";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.TaskListEntry".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.TaskListEntry".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ContextMeter {
-    #[prost(bool, tag = "1")]
-    pub known: bool,
-    #[prost(uint64, tag = "2")]
-    pub used_tokens: u64,
-    #[prost(uint64, optional, tag = "3")]
-    pub window_tokens: ::core::option::Option<u64>,
-    #[prost(message, repeated, tag = "4")]
-    pub breakdown: ::prost::alloc::vec::Vec<ContextShare>,
-}
-impl ::prost::Name for ContextMeter {
-    const NAME: &'static str = "ContextMeter";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ContextMeter".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ContextMeter".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ContextShare {
-    #[prost(string, tag = "1")]
-    pub category: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "2")]
-    pub tokens: u64,
-}
-impl ::prost::Name for ContextShare {
-    const NAME: &'static str = "ContextShare";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ContextShare".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ContextShare".into()
-    }
-}
-/// How full one usage window is; the same for every provider.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct UsageMeter {
-    /// 0..100.
-    #[prost(double, tag = "1")]
-    pub used_percent: f64,
-    #[prost(int64, optional, tag = "2")]
-    pub resets_at_ms: ::core::option::Option<i64>,
-    /// This window's own state: a person can reach the weekly limit before
-    /// the five-hour one.
-    #[prost(enumeration = "UsageState", tag = "3")]
-    pub state: i32,
-}
-impl ::prost::Name for UsageMeter {
-    const NAME: &'static str = "UsageMeter";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.UsageMeter".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.UsageMeter".into()
-    }
-}
-/// Session strip: tool-server health, shown only when one fails.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ToolServerHealth {
-    #[prost(enumeration = "HealthState", tag = "1")]
-    pub state: i32,
-    #[prost(message, repeated, tag = "2")]
-    pub servers: ::prost::alloc::vec::Vec<ToolServer>,
-}
-impl ::prost::Name for ToolServerHealth {
-    const NAME: &'static str = "ToolServerHealth";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ToolServerHealth".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ToolServerHealth".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ToolServer {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(enumeration = "ToolServerStatus", tag = "2")]
-    pub status: i32,
-    #[prost(string, tag = "3")]
-    pub error: ::prost::alloc::string::String,
-}
-impl ::prost::Name for ToolServer {
-    const NAME: &'static str = "ToolServer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ToolServer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ToolServer".into()
-    }
-}
-/// Session strip: sign-in state; a problem replaces the composer with a foot
-/// card.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SignIn {
-    #[prost(enumeration = "SignInState", tag = "1")]
-    pub state: i32,
-    #[prost(string, tag = "2")]
-    pub account: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub message: ::prost::alloc::string::String,
-}
-impl ::prost::Name for SignIn {
-    const NAME: &'static str = "SignIn";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SignIn".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SignIn".into()
-    }
-}
-/// What the provider runs in the background: commands and tasks that
-/// outlive the call that started them. `known` false is the explicit
-/// unknown; the list empties when the provider exits, and a new incarnation
-/// starts with none.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BackgroundJobs {
-    #[prost(bool, tag = "1")]
-    pub known: bool,
-    #[prost(message, repeated, tag = "2")]
-    pub jobs: ::prost::alloc::vec::Vec<BackgroundJob>,
-}
-impl ::prost::Name for BackgroundJobs {
-    const NAME: &'static str = "BackgroundJobs";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.BackgroundJobs".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.BackgroundJobs".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct BackgroundJob {
-    /// The key of the item whose call started the job; empty when the
-    /// provider has not said which call it was.
-    #[prost(string, tag = "1")]
-    pub item_key: ::prost::alloc::string::String,
-    /// The command, or what the provider calls the task.
-    #[prost(string, tag = "2")]
-    pub command: ::prost::alloc::string::String,
-    #[prost(int64, tag = "3")]
-    pub started_at_ms: i64,
-}
-impl ::prost::Name for BackgroundJob {
-    const NAME: &'static str = "BackgroundJob";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.BackgroundJob".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.BackgroundJob".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QuestionAnswer {
-    /// One per question, in the ask's order.
-    #[prost(message, repeated, tag = "1")]
-    pub answers: ::prost::alloc::vec::Vec<QuestionResponse>,
-}
-impl ::prost::Name for QuestionAnswer {
-    const NAME: &'static str = "QuestionAnswer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.QuestionAnswer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.QuestionAnswer".into()
-    }
-}
-/// Nothing selected and no text: the question is skipped.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct QuestionResponse {
-    #[prost(uint32, repeated, tag = "1")]
-    pub selected: ::prost::alloc::vec::Vec<u32>,
-    #[prost(string, optional, tag = "2")]
-    pub other: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "3")]
-    pub note: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for QuestionResponse {
-    const NAME: &'static str = "QuestionResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.QuestionResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.QuestionResponse".into()
-    }
-}
-/// The person's own words instead of answering a question.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ReplyInstead {
-    #[prost(string, tag = "1")]
-    pub text: ::prost::alloc::string::String,
-    /// One per question, in the ask's order: what was answered before
-    /// replying; nothing selected and no text where nothing was.
-    #[prost(message, repeated, tag = "2")]
-    pub answers_so_far: ::prost::alloc::vec::Vec<QuestionResponse>,
-}
-impl ::prost::Name for ReplyInstead {
-    const NAME: &'static str = "ReplyInstead";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ReplyInstead".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ReplyInstead".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct FormAnswer {
-    #[prost(enumeration = "FormAction", tag = "1")]
-    pub action: i32,
-    #[prost(bytes = "vec", tag = "2")]
-    pub content_json: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for FormAnswer {
-    const NAME: &'static str = "FormAnswer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.FormAnswer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.FormAnswer".into()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct LinkAnswer {
-    #[prost(enumeration = "FormAction", tag = "1")]
-    pub action: i32,
-}
-impl ::prost::Name for LinkAnswer {
-    const NAME: &'static str = "LinkAnswer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.LinkAnswer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.LinkAnswer".into()
-    }
-}
-/// A subset of what was asked; nothing granted is a deny.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GrantAnswer {
-    #[prost(string, repeated, tag = "1")]
-    pub read: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(string, repeated, tag = "2")]
-    pub write: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(bool, tag = "3")]
-    pub network: bool,
-    #[prost(bool, tag = "4")]
-    pub for_session: bool,
-}
-impl ::prost::Name for GrantAnswer {
-    const NAME: &'static str = "GrantAnswer";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GrantAnswer".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.GrantAnswer".into()
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum PlanVerdict {
-    Undecided = 0,
-    Approved = 1,
-    ApprovedAcceptingEdits = 2,
-    SentBack = 3,
-    /// Closed without a decision: a new prompt, an interruption, the turn or
-    /// the provider ending.
-    Dismissed = 4,
-}
-impl PlanVerdict {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Undecided => "PLAN_VERDICT_UNDECIDED",
-            Self::Approved => "PLAN_VERDICT_APPROVED",
-            Self::ApprovedAcceptingEdits => "PLAN_VERDICT_APPROVED_ACCEPTING_EDITS",
-            Self::SentBack => "PLAN_VERDICT_SENT_BACK",
-            Self::Dismissed => "PLAN_VERDICT_DISMISSED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "PLAN_VERDICT_UNDECIDED" => Some(Self::Undecided),
-            "PLAN_VERDICT_APPROVED" => Some(Self::Approved),
-            "PLAN_VERDICT_APPROVED_ACCEPTING_EDITS" => Some(Self::ApprovedAcceptingEdits),
-            "PLAN_VERDICT_SENT_BACK" => Some(Self::SentBack),
-            "PLAN_VERDICT_DISMISSED" => Some(Self::Dismissed),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum ToolState {
-    Unspecified = 0,
-    Pending = 1,
-    Running = 2,
-    Succeeded = 3,
-    Failed = 4,
-    Denied = 5,
-    Cancelled = 6,
-}
-impl ToolState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "TOOL_STATE_UNSPECIFIED",
-            Self::Pending => "TOOL_STATE_PENDING",
-            Self::Running => "TOOL_STATE_RUNNING",
-            Self::Succeeded => "TOOL_STATE_SUCCEEDED",
-            Self::Failed => "TOOL_STATE_FAILED",
-            Self::Denied => "TOOL_STATE_DENIED",
-            Self::Cancelled => "TOOL_STATE_CANCELLED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "TOOL_STATE_UNSPECIFIED" => Some(Self::Unspecified),
-            "TOOL_STATE_PENDING" => Some(Self::Pending),
-            "TOOL_STATE_RUNNING" => Some(Self::Running),
-            "TOOL_STATE_SUCCEEDED" => Some(Self::Succeeded),
-            "TOOL_STATE_FAILED" => Some(Self::Failed),
-            "TOOL_STATE_DENIED" => Some(Self::Denied),
-            "TOOL_STATE_CANCELLED" => Some(Self::Cancelled),
-            _ => None,
-        }
-    }
-}
-/// What a call does to the world, set by the interpreter from native tool
-/// kinds, never from text. Every class but CONSEQUENTIAL only looks: the views
-/// fold runs of those together and name each by its verb. LOOK is a look with
-/// no verb of its own, drawn its own way: a read-only tool-server call, an
-/// image viewed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum ToolClass {
-    Unspecified = 0,
-    Consequential = 1,
-    Read = 2,
-    Search = 3,
-    List = 4,
-    Fetch = 5,
-    WebSearch = 6,
-    Look = 7,
-}
-impl ToolClass {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "TOOL_CLASS_UNSPECIFIED",
-            Self::Consequential => "TOOL_CLASS_CONSEQUENTIAL",
-            Self::Read => "TOOL_CLASS_READ",
-            Self::Search => "TOOL_CLASS_SEARCH",
-            Self::List => "TOOL_CLASS_LIST",
-            Self::Fetch => "TOOL_CLASS_FETCH",
-            Self::WebSearch => "TOOL_CLASS_WEB_SEARCH",
-            Self::Look => "TOOL_CLASS_LOOK",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "TOOL_CLASS_UNSPECIFIED" => Some(Self::Unspecified),
-            "TOOL_CLASS_CONSEQUENTIAL" => Some(Self::Consequential),
-            "TOOL_CLASS_READ" => Some(Self::Read),
-            "TOOL_CLASS_SEARCH" => Some(Self::Search),
-            "TOOL_CLASS_LIST" => Some(Self::List),
-            "TOOL_CLASS_FETCH" => Some(Self::Fetch),
-            "TOOL_CLASS_WEB_SEARCH" => Some(Self::WebSearch),
-            "TOOL_CLASS_LOOK" => Some(Self::Look),
-            _ => None,
-        }
-    }
-}
-/// Where Claude saves a standing permission.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum ScopeDestination {
-    Unspecified = 0,
-    Session = 1,
-    LocalSettings = 2,
-    ProjectSettings = 3,
-    UserSettings = 4,
-}
-impl ScopeDestination {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "SCOPE_DESTINATION_UNSPECIFIED",
-            Self::Session => "SCOPE_DESTINATION_SESSION",
-            Self::LocalSettings => "SCOPE_DESTINATION_LOCAL_SETTINGS",
-            Self::ProjectSettings => "SCOPE_DESTINATION_PROJECT_SETTINGS",
-            Self::UserSettings => "SCOPE_DESTINATION_USER_SETTINGS",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "SCOPE_DESTINATION_UNSPECIFIED" => Some(Self::Unspecified),
-            "SCOPE_DESTINATION_SESSION" => Some(Self::Session),
-            "SCOPE_DESTINATION_LOCAL_SETTINGS" => Some(Self::LocalSettings),
-            "SCOPE_DESTINATION_PROJECT_SETTINGS" => Some(Self::ProjectSettings),
-            "SCOPE_DESTINATION_USER_SETTINGS" => Some(Self::UserSettings),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum DecisionOutcome {
-    None = 0,
-    Allowed = 1,
-    Denied = 2,
-    AutoApproved = 3,
-    /// Closed by a later fact that did not carry the outcome; drawn dismissed.
-    Unknown = 4,
-}
-impl DecisionOutcome {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::None => "DECISION_OUTCOME_NONE",
-            Self::Allowed => "DECISION_OUTCOME_ALLOWED",
-            Self::Denied => "DECISION_OUTCOME_DENIED",
-            Self::AutoApproved => "DECISION_OUTCOME_AUTO_APPROVED",
-            Self::Unknown => "DECISION_OUTCOME_UNKNOWN",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "DECISION_OUTCOME_NONE" => Some(Self::None),
-            "DECISION_OUTCOME_ALLOWED" => Some(Self::Allowed),
-            "DECISION_OUTCOME_DENIED" => Some(Self::Denied),
-            "DECISION_OUTCOME_AUTO_APPROVED" => Some(Self::AutoApproved),
-            "DECISION_OUTCOME_UNKNOWN" => Some(Self::Unknown),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum BoundaryKind {
-    Unspecified = 0,
-    Started = 1,
-    Cleared = 2,
-    Compacted = 3,
-    Resumed = 4,
-    Forked = 5,
-    Restarted = 6,
-    Exited = 7,
-    DaemonLost = 8,
-}
-impl BoundaryKind {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "BOUNDARY_KIND_UNSPECIFIED",
-            Self::Started => "BOUNDARY_KIND_STARTED",
-            Self::Cleared => "BOUNDARY_KIND_CLEARED",
-            Self::Compacted => "BOUNDARY_KIND_COMPACTED",
-            Self::Resumed => "BOUNDARY_KIND_RESUMED",
-            Self::Forked => "BOUNDARY_KIND_FORKED",
-            Self::Restarted => "BOUNDARY_KIND_RESTARTED",
-            Self::Exited => "BOUNDARY_KIND_EXITED",
-            Self::DaemonLost => "BOUNDARY_KIND_DAEMON_LOST",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "BOUNDARY_KIND_UNSPECIFIED" => Some(Self::Unspecified),
-            "BOUNDARY_KIND_STARTED" => Some(Self::Started),
-            "BOUNDARY_KIND_CLEARED" => Some(Self::Cleared),
-            "BOUNDARY_KIND_COMPACTED" => Some(Self::Compacted),
-            "BOUNDARY_KIND_RESUMED" => Some(Self::Resumed),
-            "BOUNDARY_KIND_FORKED" => Some(Self::Forked),
-            "BOUNDARY_KIND_RESTARTED" => Some(Self::Restarted),
-            "BOUNDARY_KIND_EXITED" => Some(Self::Exited),
-            "BOUNDARY_KIND_DAEMON_LOST" => Some(Self::DaemonLost),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum SendState {
-    Unspecified = 0,
-    /// The send is in flight; envelope_id is still empty.
-    Sending = 1,
-    /// The recipient's provider has it.
-    Sent = 2,
-    Rejected = 3,
-}
-impl SendState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "SEND_STATE_UNSPECIFIED",
-            Self::Sending => "SEND_STATE_SENDING",
-            Self::Sent => "SEND_STATE_SENT",
-            Self::Rejected => "SEND_STATE_REJECTED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "SEND_STATE_UNSPECIFIED" => Some(Self::Unspecified),
-            "SEND_STATE_SENDING" => Some(Self::Sending),
-            "SEND_STATE_SENT" => Some(Self::Sent),
-            "SEND_STATE_REJECTED" => Some(Self::Rejected),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum TurnOutcome {
-    Unspecified = 0,
-    Completed = 1,
-    Interrupted = 2,
-    Failed = 3,
-}
-impl TurnOutcome {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "TURN_OUTCOME_UNSPECIFIED",
-            Self::Completed => "TURN_OUTCOME_COMPLETED",
-            Self::Interrupted => "TURN_OUTCOME_INTERRUPTED",
-            Self::Failed => "TURN_OUTCOME_FAILED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "TURN_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
-            "TURN_OUTCOME_COMPLETED" => Some(Self::Completed),
-            "TURN_OUTCOME_INTERRUPTED" => Some(Self::Interrupted),
-            "TURN_OUTCOME_FAILED" => Some(Self::Failed),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum PlanChoice {
-    Unspecified = 0,
-    /// Start building (Claude) or implement the plan (Codex).
-    Start = 1,
-    /// Start, accepting edits without asking (Claude).
-    StartAcceptingEdits = 2,
-    /// Keep planning; the note, if any, goes to the agent.
-    KeepPlanning = 3,
-}
-impl PlanChoice {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "PLAN_CHOICE_UNSPECIFIED",
-            Self::Start => "PLAN_CHOICE_START",
-            Self::StartAcceptingEdits => "PLAN_CHOICE_START_ACCEPTING_EDITS",
-            Self::KeepPlanning => "PLAN_CHOICE_KEEP_PLANNING",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "PLAN_CHOICE_UNSPECIFIED" => Some(Self::Unspecified),
-            "PLAN_CHOICE_START" => Some(Self::Start),
-            "PLAN_CHOICE_START_ACCEPTING_EDITS" => Some(Self::StartAcceptingEdits),
-            "PLAN_CHOICE_KEEP_PLANNING" => Some(Self::KeepPlanning),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum AskOutcome {
-    Unspecified = 0,
-    /// Answered, sent, opened or granted.
-    Answered = 1,
-    /// Declined, or an access grant that granted nothing.
-    Declined = 2,
-    Cancelled = 3,
-    /// Closed by a later fact that did not say how.
-    Dismissed = 4,
-    /// The person replied in their own words instead of answering.
-    Replied = 5,
-}
-impl AskOutcome {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "ASK_OUTCOME_UNSPECIFIED",
-            Self::Answered => "ASK_OUTCOME_ANSWERED",
-            Self::Declined => "ASK_OUTCOME_DECLINED",
-            Self::Cancelled => "ASK_OUTCOME_CANCELLED",
-            Self::Dismissed => "ASK_OUTCOME_DISMISSED",
-            Self::Replied => "ASK_OUTCOME_REPLIED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "ASK_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
-            "ASK_OUTCOME_ANSWERED" => Some(Self::Answered),
-            "ASK_OUTCOME_DECLINED" => Some(Self::Declined),
-            "ASK_OUTCOME_CANCELLED" => Some(Self::Cancelled),
-            "ASK_OUTCOME_DISMISSED" => Some(Self::Dismissed),
-            "ASK_OUTCOME_REPLIED" => Some(Self::Replied),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum TaskListStatus {
-    Unspecified = 0,
-    Pending = 1,
-    InProgress = 2,
-    Completed = 3,
-}
-impl TaskListStatus {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "TASK_LIST_STATUS_UNSPECIFIED",
-            Self::Pending => "TASK_LIST_STATUS_PENDING",
-            Self::InProgress => "TASK_LIST_STATUS_IN_PROGRESS",
-            Self::Completed => "TASK_LIST_STATUS_COMPLETED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "TASK_LIST_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
-            "TASK_LIST_STATUS_PENDING" => Some(Self::Pending),
-            "TASK_LIST_STATUS_IN_PROGRESS" => Some(Self::InProgress),
-            "TASK_LIST_STATUS_COMPLETED" => Some(Self::Completed),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum UsageState {
-    Unknown = 0,
-    Ok = 1,
-    NearLimit = 2,
-    Blocked = 3,
-}
-impl UsageState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unknown => "USAGE_STATE_UNKNOWN",
-            Self::Ok => "USAGE_STATE_OK",
-            Self::NearLimit => "USAGE_STATE_NEAR_LIMIT",
-            Self::Blocked => "USAGE_STATE_BLOCKED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "USAGE_STATE_UNKNOWN" => Some(Self::Unknown),
-            "USAGE_STATE_OK" => Some(Self::Ok),
-            "USAGE_STATE_NEAR_LIMIT" => Some(Self::NearLimit),
-            "USAGE_STATE_BLOCKED" => Some(Self::Blocked),
-            _ => None,
-        }
-    }
-}
-/// A usage window's length, the same for every provider.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Limit {
-    Unspecified = 0,
-    FiveHour = 1,
-    Weekly = 2,
-}
-impl Limit {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "LIMIT_UNSPECIFIED",
-            Self::FiveHour => "LIMIT_FIVE_HOUR",
-            Self::Weekly => "LIMIT_WEEKLY",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "LIMIT_UNSPECIFIED" => Some(Self::Unspecified),
-            "LIMIT_FIVE_HOUR" => Some(Self::FiveHour),
-            "LIMIT_WEEKLY" => Some(Self::Weekly),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum HealthState {
-    Unknown = 0,
-    Healthy = 1,
-    Degraded = 2,
-}
-impl HealthState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unknown => "HEALTH_STATE_UNKNOWN",
-            Self::Healthy => "HEALTH_STATE_HEALTHY",
-            Self::Degraded => "HEALTH_STATE_DEGRADED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "HEALTH_STATE_UNKNOWN" => Some(Self::Unknown),
-            "HEALTH_STATE_HEALTHY" => Some(Self::Healthy),
-            "HEALTH_STATE_DEGRADED" => Some(Self::Degraded),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum ToolServerStatus {
-    Unspecified = 0,
-    Starting = 1,
-    Ready = 2,
-    Failed = 3,
-    NeedsAuth = 4,
-}
-impl ToolServerStatus {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "TOOL_SERVER_STATUS_UNSPECIFIED",
-            Self::Starting => "TOOL_SERVER_STATUS_STARTING",
-            Self::Ready => "TOOL_SERVER_STATUS_READY",
-            Self::Failed => "TOOL_SERVER_STATUS_FAILED",
-            Self::NeedsAuth => "TOOL_SERVER_STATUS_NEEDS_AUTH",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "TOOL_SERVER_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
-            "TOOL_SERVER_STATUS_STARTING" => Some(Self::Starting),
-            "TOOL_SERVER_STATUS_READY" => Some(Self::Ready),
-            "TOOL_SERVER_STATUS_FAILED" => Some(Self::Failed),
-            "TOOL_SERVER_STATUS_NEEDS_AUTH" => Some(Self::NeedsAuth),
-            _ => None,
-        }
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum SignInState {
-    Unknown = 0,
-    SignedIn = 1,
-    SignedOut = 2,
-    Expired = 3,
-    Failed = 4,
-}
-impl SignInState {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unknown => "SIGN_IN_STATE_UNKNOWN",
-            Self::SignedIn => "SIGN_IN_STATE_SIGNED_IN",
-            Self::SignedOut => "SIGN_IN_STATE_SIGNED_OUT",
-            Self::Expired => "SIGN_IN_STATE_EXPIRED",
-            Self::Failed => "SIGN_IN_STATE_FAILED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "SIGN_IN_STATE_UNKNOWN" => Some(Self::Unknown),
-            "SIGN_IN_STATE_SIGNED_IN" => Some(Self::SignedIn),
-            "SIGN_IN_STATE_SIGNED_OUT" => Some(Self::SignedOut),
-            "SIGN_IN_STATE_EXPIRED" => Some(Self::Expired),
-            "SIGN_IN_STATE_FAILED" => Some(Self::Failed),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum FormAction {
-    Unspecified = 0,
-    Accept = 1,
-    Decline = 2,
-    Cancel = 3,
-}
-impl FormAction {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "FORM_ACTION_UNSPECIFIED",
-            Self::Accept => "FORM_ACTION_ACCEPT",
-            Self::Decline => "FORM_ACTION_DECLINE",
-            Self::Cancel => "FORM_ACTION_CANCEL",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "FORM_ACTION_UNSPECIFIED" => Some(Self::Unspecified),
-            "FORM_ACTION_ACCEPT" => Some(Self::Accept),
-            "FORM_ACTION_DECLINE" => Some(Self::Decline),
-            "FORM_ACTION_CANCEL" => Some(Self::Cancel),
-            _ => None,
-        }
     }
 }
 /// One immutable file per incarnation, spec.<n> in the agent directory. The

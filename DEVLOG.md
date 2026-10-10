@@ -1,3 +1,12 @@
+2026-10-10 — **Exit causes sit with the records, and the shared input pieces with the chat vocabulary.**
+`ExitCause` moves to `records.proto` beside `Kind`, and the input pieces every
+kind shares (`PromptInput`, `WithdrawQueued`, `SendQueuedNow`, `Interrupt`,
+`Clear`, `SetPermission`, `SetMode`, `SetModel`, `SetEffort`) move back to
+`chat.proto` beside the answer pieces. They had been held in `service.proto`
+only because `chat.proto` imported it for `ExitCause`; with that gone,
+`chat.proto`, `claude.proto` and `codex.proto` no longer import the service
+file at all. Nothing on the wire changes.
+
 2026-10-10 — **An ask's records no longer carry when it opened and closed.**
 The times added to an ask's close, a call's permission decision, a plan's
 decision and a Codex ask in the snapshot had no reader, so they are gone,

@@ -1,3 +1,17 @@
+2026-10-11 — **A dump bundle prints as text.**
+A dump's row, store slice and journal are binary protobuf that a person or
+an agent triaging a bug cannot read. `dump-show BUNDLE [--agent A]`, a new
+binary in `replay-support`, prints the manifest and, per agent, its row, its
+journal in the interpreter's emission-golden format, the facts replayed
+through the same renderer (or a line saying they match), its store rows with
+order and revision, and its facts lines and checkpoints exactly as written,
+so a line the redactor replaced hides nothing after it. Every other file in
+the bundle is printed or named. The golden renderer gained a step-level
+entry point that the fixtures' goldens share, so no golden moved. The
+committed bundle's journal and its facts replay differ only in the
+catalogue hash of the first frame, which the bundle predates; its test
+leaves that line out and says why.
+
 2026-10-10 — **The phone's auto-review row baseline shows the worded verdict.**
 The phone words a Codex reviewer's verdict from its status ("Auto-approved")
 with the risk beside it, where it used to show the reviewer's free text. The

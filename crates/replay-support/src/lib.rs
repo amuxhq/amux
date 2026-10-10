@@ -4,6 +4,7 @@ mod observation;
 mod probe;
 mod registry;
 mod sanitize;
+pub mod show;
 pub mod transport;
 pub mod wire_size;
 

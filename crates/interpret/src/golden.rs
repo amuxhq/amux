@@ -1446,12 +1446,11 @@ fn check_expectations<I: Interpreter>(frames: &[Frame], script: &[Scripted]) -> 
             );
         }
         if let Some(silent) = expect.silent {
-            let step = &frame.step;
-            let is_silent = step.items.is_empty()
-                && step.appends.is_empty()
-                && step.snapshot.is_none()
-                && step.turn_end.is_none();
-            fail("silent", silent.to_string(), is_silent.to_string());
+            fail(
+                "silent",
+                silent.to_string(),
+                is_silent(&frame.step).to_string(),
+            );
         }
     }
     failures
@@ -1459,126 +1458,179 @@ fn check_expectations<I: Interpreter>(frames: &[Frame], script: &[Scripted]) -> 
 
 fn render<I: Interpreter>(frames: &[Frame]) -> String {
     let mut out = String::new();
+    let mut carried = Carried::default();
     let mut pending: &[Vec<u8>] = &[];
-    // Repository facts are printed when a snapshot changes them, not on
-    // every snapshot that carries them on.
-    let mut git: Option<&wire::Git> = None;
-    let mut catalogue: Option<&Vec<u8>> = None;
     for (index, frame) in frames.iter().enumerate() {
-        let step = &frame.step;
         let pending_changed = frame.pending != pending;
         pending = &frame.pending;
-        let silent = frame.effects.is_empty()
-            && step.items.is_empty()
-            && step.appends.is_empty()
-            && step.snapshot.is_none()
-            && step.turn_end.is_none()
-            && !pending_changed;
+        let silent = frame.effects.is_empty() && is_silent(&frame.step) && !pending_changed;
         if silent && frame.label.starts_with(RECORDED) {
             continue;
         }
-        let _ = writeln!(out, "## {index} {}", frame.label);
-        for effect in &frame.effects {
-            let _ = writeln!(
-                out,
-                "effect {}",
-                render_effect(effect, named_catalogue(step))
-            );
-        }
-        for item in &frame.step.items {
-            let view = I::describe_item(&item.body);
-            let _ = writeln!(
-                out,
-                "item {} {} {}{} at={} text={}{}{}",
-                item.key,
-                view.arm,
-                if view.complete { "final" } else { "open" },
-                if item.input_id.is_empty() {
-                    String::new()
-                } else {
-                    format!(" input={}", display_id(&item.input_id))
-                },
-                item.at_ms,
-                Value::String(item.text.clone()),
-                if item.attachments.is_empty() {
-                    String::new()
-                } else {
-                    format!(" attachments={}", item.attachments.len())
-                },
-                if view.text.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {}", view.text)
-                }
-            );
-        }
-        for append in &frame.step.appends {
-            let _ = writeln!(
-                out,
-                "append {} {}",
-                append.key,
-                Value::String(append.text.clone())
-            );
-        }
-        if let Some(snapshot) = &frame.step.snapshot {
-            if snapshot.git.as_ref() != git {
-                git = snapshot.git.as_ref();
-                let label = git.map_or("git none".to_owned(), git_label);
-                let _ = writeln!(out, "snapshot {label}");
-            }
-            if snapshot.catalogue.as_ref() != catalogue {
-                catalogue = snapshot.catalogue.as_ref();
-                let label = catalogue.map_or("-".to_owned(), |hash| short_hash(hash));
-                let _ = writeln!(out, "snapshot catalogue {label}");
-            }
-            let _ = writeln!(
-                out,
-                "snapshot {} queue=[{}] working_on={} at={} {}",
-                phase_name(snapshot.phase),
-                snapshot
-                    .queue
-                    .iter()
-                    .map(queue_label)
-                    .collect::<Vec<_>>()
-                    .join(","),
-                snapshot
-                    .working_on
-                    .as_ref()
-                    .map_or("-".to_owned(), |text| Value::String(text.clone())
-                        .to_string()),
-                snapshot.at_ms,
-                I::describe_snapshot(&snapshot.body).text
-            );
-        }
-        if pending_changed {
-            let _ = writeln!(
-                out,
-                "pending [{}]",
-                frame
-                    .pending
-                    .iter()
-                    .map(|id| display_id(id))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
-        }
-        if let Some(end) = &frame.step.turn_end {
-            let _ = writeln!(
-                out,
-                "turn_end {} last={}",
-                end.turn_id,
-                if end.last_message_key.is_empty() {
-                    "-"
-                } else {
-                    &end.last_message_key
-                }
-            );
-        }
-        if let Some(end) = &frame.step.incarnation_end {
-            let _ = writeln!(out, "incarnation_end {}", incarnation_end(end));
-        }
+        render_frame::<I>(
+            &mut out,
+            &mut carried,
+            (index, &frame.label),
+            &frame.step,
+            &frame.effects,
+            pending_changed.then_some(&frame.pending),
+        );
     }
     out
+}
+
+/// Journaled steps in the emission goldens' format, one `## <index> <label>`
+/// frame per step numbered from `first`, so a journal reads beside a replay
+/// of the facts behind it. A journal records neither effects nor the
+/// pending agent-message set, so neither is printed.
+pub fn render_steps<'a, I: Interpreter>(
+    first: usize,
+    steps: impl IntoIterator<Item = (&'a str, &'a Step)>,
+) -> String {
+    let mut out = String::new();
+    let mut carried = Carried::default();
+    for (index, (label, step)) in steps.into_iter().enumerate() {
+        render_frame::<I>(
+            &mut out,
+            &mut carried,
+            (first + index, label),
+            step,
+            &[],
+            None,
+        );
+    }
+    out
+}
+
+/// One item as an emission golden prints it, from `item <key>` on.
+pub fn render_item<I: Interpreter>(item: &Item) -> String {
+    let view = I::describe_item(&item.body);
+    format!(
+        "item {} {} {}{} at={} text={}{}{}",
+        item.key,
+        view.arm,
+        if view.complete { "final" } else { "open" },
+        if item.input_id.is_empty() {
+            String::new()
+        } else {
+            format!(" input={}", display_id(&item.input_id))
+        },
+        item.at_ms,
+        Value::String(item.text.clone()),
+        if item.attachments.is_empty() {
+            String::new()
+        } else {
+            format!(" attachments={}", item.attachments.len())
+        },
+        if view.text.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", view.text)
+        }
+    )
+}
+
+fn is_silent(step: &Step) -> bool {
+    step.items.is_empty()
+        && step.appends.is_empty()
+        && step.snapshot.is_none()
+        && step.turn_end.is_none()
+}
+
+/// What a rendering carries from frame to frame: repository facts and the
+/// catalogue are printed when a snapshot changes them, not on every
+/// snapshot that carries them on.
+#[derive(Default)]
+struct Carried<'a> {
+    git: Option<&'a wire::Git>,
+    catalogue: Option<&'a Vec<u8>>,
+}
+
+fn render_frame<'a, I: Interpreter>(
+    out: &mut String,
+    carried: &mut Carried<'a>,
+    (index, label): (usize, &str),
+    step: &'a Step,
+    effects: &[Effect],
+    pending: Option<&Vec<Vec<u8>>>,
+) {
+    let _ = writeln!(out, "## {index} {label}");
+    for effect in effects {
+        let _ = writeln!(
+            out,
+            "effect {}",
+            render_effect(effect, named_catalogue(step))
+        );
+    }
+    for item in &step.items {
+        let _ = writeln!(out, "{}", render_item::<I>(item));
+    }
+    for append in &step.appends {
+        let _ = writeln!(
+            out,
+            "append {} {}",
+            append.key,
+            Value::String(append.text.clone())
+        );
+    }
+    if let Some(snapshot) = &step.snapshot {
+        if snapshot.git.as_ref() != carried.git {
+            carried.git = snapshot.git.as_ref();
+            let label = carried.git.map_or("git none".to_owned(), git_label);
+            let _ = writeln!(out, "snapshot {label}");
+        }
+        if snapshot.catalogue.as_ref() != carried.catalogue {
+            carried.catalogue = snapshot.catalogue.as_ref();
+            let label = carried
+                .catalogue
+                .map_or("-".to_owned(), |hash| short_hash(hash));
+            let _ = writeln!(out, "snapshot catalogue {label}");
+        }
+        let _ = writeln!(
+            out,
+            "snapshot {} queue=[{}] working_on={} at={} {}",
+            phase_name(snapshot.phase),
+            snapshot
+                .queue
+                .iter()
+                .map(queue_label)
+                .collect::<Vec<_>>()
+                .join(","),
+            snapshot
+                .working_on
+                .as_ref()
+                .map_or("-".to_owned(), |text| Value::String(text.clone())
+                    .to_string()),
+            snapshot.at_ms,
+            I::describe_snapshot(&snapshot.body).text
+        );
+    }
+    if let Some(pending) = pending {
+        let _ = writeln!(
+            out,
+            "pending [{}]",
+            pending
+                .iter()
+                .map(|id| display_id(id))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+    }
+    if let Some(end) = &step.turn_end {
+        let _ = writeln!(
+            out,
+            "turn_end {} last={}",
+            end.turn_id,
+            if end.last_message_key.is_empty() {
+                "-"
+            } else {
+                &end.last_message_key
+            }
+        );
+    }
+    if let Some(end) = &step.incarnation_end {
+        let _ = writeln!(out, "incarnation_end {}", incarnation_end(end));
+    }
 }
 
 /// A cause by its name without the prefix, then its own words quoted.

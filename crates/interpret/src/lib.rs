@@ -28,8 +28,8 @@ mod testkind;
 
 pub use golden::{
     EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
-    check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, replay,
-    run_golden, run_until,
+    check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
+    render_steps, replay, run_golden, run_until,
 };
 pub use redact::{redact, redact_text};
 use serde::Serialize;

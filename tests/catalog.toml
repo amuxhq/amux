@@ -436,6 +436,25 @@ cargo = [
 ]
 
 [[suite]]
+name = "dump-show"
+contract = "The dump printer prints a bundle's manifest, each agent's row, its journal in the interpreter's emission-golden format beside the facts replayed through the same renderer, its store slice with orders and revisions, its facts lines and checkpoints as written, and names or prints every other file; it refuses a directory that is not a bundle."
+paths = ["crates/replay-support/src/show.rs", "crates/replay-support/src/bin/dump-show.rs", "crates/replay-support/tests/dump_show.rs", "crates/replay-support/tests/fixtures/bundle"]
+recipe = "just test-crate replay-support -- --test dump_show"
+boundary = "Interpreter"
+oracle = "The printed sections of the committed bundle, the journal's rendering against the facts replay's, and the binary's output and exit status."
+real = ["a recorded dump bundle", "built dump-show binary", "temporary files"]
+substituted = ["daemon", "provider", "network"]
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "tool"
+evidence = "`dump-show BUNDLE [--agent A]` prints the bundle"
+update = ""
+cargo = [
+  { package = "replay-support", kind = "bin", targets = ["dump-show"], features = [] },
+  { package = "replay-support", targets = ["dump_show"], features = [] },
+]
+
+[[suite]]
 name = "journal-segments"
 contract = "The journal appends steps into segments named by offset, rotates, lets readers start at any frame and follow a live writer, never returns a partial frame wherever it is cut, and reclaims only below a durable cursor."
 paths = ["crates/journal/tests", "crates/journal/src"]

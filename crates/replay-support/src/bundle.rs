@@ -76,14 +76,17 @@ pub struct Bundle {
     pub agents: Vec<AgentDump>,
 }
 
-fn read(path: &Path) -> Result<Vec<u8>, BundleError> {
+pub(crate) fn read(path: &Path) -> Result<Vec<u8>, BundleError> {
     std::fs::read(path).map_err(|error| BundleError::Read {
         path: path.to_owned(),
         error,
     })
 }
 
-fn decode<M: prost::Message + Default>(path: &Path, what: &'static str) -> Result<M, BundleError> {
+pub(crate) fn decode<M: prost::Message + Default>(
+    path: &Path,
+    what: &'static str,
+) -> Result<M, BundleError> {
     M::decode(read(path)?.as_slice()).map_err(|error| BundleError::Decode {
         path: path.to_owned(),
         what,
@@ -92,7 +95,7 @@ fn decode<M: prost::Message + Default>(path: &Path, what: &'static str) -> Resul
 }
 
 /// Segment files in a directory, by the offset their name spells.
-fn segments(dir: &Path) -> Result<Vec<(u64, PathBuf)>, BundleError> {
+pub(crate) fn segments(dir: &Path) -> Result<Vec<(u64, PathBuf)>, BundleError> {
     let mut found = BTreeMap::new();
     let listing = match std::fs::read_dir(dir) {
         Ok(listing) => listing,

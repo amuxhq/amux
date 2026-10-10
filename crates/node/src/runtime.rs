@@ -208,10 +208,8 @@ pub enum RegistryError {
     Live(AgentId),
     #[error("an agent id is 16 bytes, not {0}")]
     BadId(usize),
-    #[error("agents of kind {0} are unknown")]
-    UnknownKind(i32),
-    #[error(transparent)]
-    Config(#[from] spec::ConfigError),
+    #[error("a new agent names its kind")]
+    NoKind,
     #[error("the working directory {0} is not a directory on this host")]
     BadCwd(String),
     #[error("{}", name_words(*.0))]
@@ -258,11 +256,9 @@ impl RegistryError {
             Self::NotFound(_) | Self::NoSpec(_) => ErrorCode::NotFound,
             Self::AlreadyExists(_) => ErrorCode::AlreadyExists,
             Self::Live(_) | Self::StillLocked(_) => ErrorCode::FailedPrecondition,
-            Self::BadId(_)
-            | Self::UnknownKind(_)
-            | Self::Config(_)
-            | Self::BadCwd(_)
-            | Self::BadName(_) => ErrorCode::InvalidArgument,
+            Self::BadId(_) | Self::NoKind | Self::BadCwd(_) | Self::BadName(_) => {
+                ErrorCode::InvalidArgument
+            }
             Self::OtherHost => ErrorCode::Unimplemented,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
@@ -770,13 +766,11 @@ impl ProfileRuntime {
         if self.target_host(&request)? != self.host {
             return Err(RegistryError::OtherHost);
         }
-        let kind = match Kind::try_from(request.kind) {
-            Ok(Kind::Unspecified) | Err(_) => {
-                return Err(RegistryError::UnknownKind(request.kind));
-            }
-            Ok(kind) => kind,
+        let Some(agent) = &request.agent else {
+            return Err(RegistryError::NoKind);
         };
-        let resolved = spec::resolve(kind, &request.config)?;
+        let kind = agent.kind();
+        let resolved = spec::resolve(agent);
         let mut request = request;
         let bootstrap = request.initial_prompt.take().map(spec::prompt_bootstrap);
         if request.cwd.is_empty()
@@ -943,11 +937,17 @@ impl ProfileRuntime {
         request: CreateAgentRequest,
         caller: Option<AgentId>,
     ) -> Result<Agent, RegistryError> {
-        let parent = caller.map(|caller| AgentRef {
-            host_id: self.host.as_bytes().to_vec(),
-            agent_id: caller.as_bytes().to_vec(),
-        });
-        let request = crate::forward::forwarded_create(request, host, parent);
+        let mut request = request;
+        if let Some(caller) = caller {
+            request.parent = Some(AgentRef {
+                host_id: self.host.as_bytes().to_vec(),
+                agent_id: caller.as_bytes().to_vec(),
+            });
+        }
+        request.host = Some(wire::HostRef::id(host.as_bytes().to_vec()));
+        if request.agent_id.is_empty() {
+            request.agent_id = Uuid::new_v4().as_bytes().to_vec();
+        }
         Ok(self
             .on_peer(host, |mut client| async move {
                 client.create_agent(request).await

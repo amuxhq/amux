@@ -113,10 +113,13 @@ message CreateAgentRequest {
   optional string name = 3;
   optional AgentRef parent = 4;
   string cwd = 5;
-  Kind kind = 6;
-  bytes config = 7;                           // the kind's creation settings, encoded
-  optional PromptSubmission initial_prompt = 8;
-  bool new_worktree = 9;
+  oneof agent {                               // the kind, with its settings
+    ClaudeCreateConfig claude_pty = 6;
+    ClaudeCreateConfig claude_sdk = 7;
+    CodexCreateConfig codex = 8;
+  }
+  optional PromptSubmission initial_prompt = 9;
+  bool new_worktree = 10;
 }
 
 message HostRef { oneof of { bytes host_id = 1; string name = 2; } }
@@ -127,14 +130,10 @@ message ResumeAgentRequest { bytes agent_id = 1; optional PromptSubmission initi
 `host` names the host that runs the agent, by id or by the name a person
 knows it by, resolved against this host and the trusted ones: exact first,
 then ignoring case. A name more than one host answers to is refused with the
-candidates (`AmbiguousHostName`). `config` is `ClaudeCreateConfig` for both
-Claude kinds and `CodexCreateConfig` for Codex, encoded. `kind` alone decides
-how the host that spawns the agent decodes `config`: bytes that do not decode
-as that kind's config fail the call with `INVALID_ARGUMENT`, but the bytes
-carry no kind of their own, so a well-formed config of the other kind is not
-detected and is read as this kind's. A daemon forwarding the create to another
-host passes the bytes on untouched, so a setting it does not know arrives
-intact. `initial_prompt` is a prompt with its attachments and the client's
+candidates (`AmbiguousHostName`). The `agent` arm is the kind: both Claude
+kinds take `ClaudeCreateConfig` and Codex takes `CodexCreateConfig`, so the
+settings are always the kind's own. A create with no arm set names no
+interpreter and fails with `INVALID_ARGUMENT`. `initial_prompt` is a prompt with its attachments and the client's
 input id; it is queued before the agent starts. A resume takes the same: the
 exited chat's composer sends its draft that way.
 

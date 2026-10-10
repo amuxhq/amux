@@ -32,7 +32,7 @@ use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Input, PromptInput, StopMode,
-    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input,
+    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input, create_agent_request,
 };
 
 use crate::binaries::Binaries;
@@ -559,8 +559,7 @@ impl Net {
             name: Some(decl.name.clone()),
             parent,
             cwd,
-            kind: decl.kind.wire() as i32,
-            config: create_config(&decl),
+            agent: Some(create_config(&decl)),
             initial_prompt: decl
                 .prompt
                 .as_deref()
@@ -816,8 +815,7 @@ impl Net {
                 .cwd
                 .clone()
                 .unwrap_or_else(|| host.work.to_string_lossy().into_owned()),
-            kind: decl.kind.wire() as i32,
-            config: create_config(&decl),
+            agent: Some(create_config(&decl)),
             ..CreateAgentRequest::default()
         };
         let tools = self.tools(parent)?;
@@ -2049,28 +2047,28 @@ fn on_branch(host: &str, dir: &Path, branch: &str) -> Result<(), NetError> {
     Ok(())
 }
 
-/// The directory an agent starts in: its host's work directory, a folder
-/// below it named relatively (made when missing), or an absolute path as
-/// it is.
-/// The provider settings an agent is created with, encoded for its kind:
-/// its declared permission, nothing else.
-fn create_config(decl: &AgentDecl) -> Vec<u8> {
-    use prost::Message as _;
+/// The kind an agent is created as, with its provider settings: its
+/// declared permission, nothing else.
+fn create_config(decl: &AgentDecl) -> create_agent_request::Agent {
+    use create_agent_request::Agent;
     let permission = decl.permission.clone();
+    let claude = ClaudeCreateConfig {
+        permission: permission.clone(),
+        ..ClaudeCreateConfig::default()
+    };
     match decl.kind {
-        FakeKind::Codex => CodexCreateConfig {
+        FakeKind::Codex => Agent::Codex(CodexCreateConfig {
             permission,
             ..CodexCreateConfig::default()
-        }
-        .encode_to_vec(),
-        _ => ClaudeCreateConfig {
-            permission,
-            ..ClaudeCreateConfig::default()
-        }
-        .encode_to_vec(),
+        }),
+        FakeKind::ClaudePty => Agent::ClaudePty(claude),
+        FakeKind::ClaudeSdk => Agent::ClaudeSdk(claude),
     }
 }
 
+/// The directory an agent starts in: its host's work directory, a folder
+/// below it named relatively (made when missing), or an absolute path as
+/// it is.
 fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
     let Some(cwd) = cwd else {
         return Ok(work.to_string_lossy().into_owned());

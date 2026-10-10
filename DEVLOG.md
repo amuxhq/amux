@@ -1,3 +1,16 @@
+2026-10-10 — **A create names its kind by the arm that carries the kind's settings.**
+`CreateAgentRequest` carried a `Kind` beside the kind's settings as opaque
+bytes, which the spawning host decoded by kind and refused when they did not
+decode; a well-formed config of the other provider could not be told apart.
+The request now has one `agent` oneof whose arm is the kind: `claude_pty` and
+`claude_sdk` take `ClaudeCreateConfig`, `codex` takes `CodexCreateConfig`, so
+settings and kind cannot disagree. A create with no arm is refused as invalid
+and makes no agent. The decode-by-kind, its refusal, the forwarding helper
+that existed to pass the bytes through, and their two tests are gone; every
+client (the TUI, `amux create`, the app runtime, the spawn tool, testnet and
+qualification) builds the arm directly, and `amux` no longer needs `prost`
+outside its tests.
+
 2026-10-10 — **Exit causes sit with the records, and the shared input pieces with the chat vocabulary.**
 `ExitCause` moves to `records.proto` beside `Kind`, and the input pieces every
 kind shares (`PromptInput`, `WithdrawQueued`, `SendQueuedNow`, `Interrupt`,

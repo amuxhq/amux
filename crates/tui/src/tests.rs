@@ -2759,9 +2759,9 @@ fn a_new_agent_offers_what_its_host_offers() {
         .open_setup(&HOME_PLACE)
         .unwrap()
         .request(b"id".to_vec(), None);
-    assert_eq!(request.kind, wire::Kind::Codex as i32, "{request:?}");
-    let config =
-        <wire::CodexCreateConfig as prost::Message>::decode(request.config.as_slice()).unwrap();
+    let Some(wire::create_agent_request::Agent::Codex(config)) = request.agent else {
+        panic!("a Codex agent: {request:?}");
+    };
     assert_eq!(
         (config.model.as_deref(), config.effort.as_deref()),
         (Some("gpt-6-mini"), Some("low"))

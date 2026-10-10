@@ -163,9 +163,7 @@ pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> CreateAgentReques
         name: Some(name.to_owned()),
         parent: None,
         cwd: cwd.to_string_lossy().into_owned(),
-        kind: Kind::ClaudeSdk as i32,
-        // Claude's default settings encode as no bytes.
-        config: Vec::new(),
+        agent: wire::create_agent_request::Agent::defaults(Kind::ClaudeSdk),
         initial_prompt: prompt.map(|text| submission(b"p0", text)),
         new_worktree: false,
     }

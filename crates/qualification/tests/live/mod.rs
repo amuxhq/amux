@@ -729,8 +729,7 @@ impl Install {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some(scenario.name().to_owned()),
                 cwd: self.project(scenario)?.to_string_lossy().into_owned(),
-                kind: Kind::Codex as i32,
-                config: prost::Message::encode_to_vec(&config),
+                agent: Some(wire::create_agent_request::Agent::Codex(config)),
                 ..CreateAgentRequest::default()
             })
             .await

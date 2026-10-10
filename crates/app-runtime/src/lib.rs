@@ -209,22 +209,23 @@ impl AppRuntime {
 
     /// Starts an agent on a host and returns it as the fleet names it.
     pub async fn create_agent(&self, agent: &NewAgent) -> Result<AgentKey, RpcError> {
+        use wire::create_agent_request::Agent;
+        let claude = || wire::ClaudeCreateConfig {
+            model: agent.model.clone(),
+            effort: agent.effort.clone(),
+            permission: agent.permission.clone(),
+            ..Default::default()
+        };
         let config = match agent.kind {
-            Kind::Codex => wire::CodexCreateConfig {
+            Kind::Codex => Some(Agent::Codex(wire::CodexCreateConfig {
                 model: agent.model.clone(),
                 effort: agent.effort.clone(),
                 permission: agent.permission.clone(),
                 mode: agent.mode.clone(),
-            }
-            .encode_to_vec(),
-            Kind::ClaudeSdk | Kind::ClaudePty => wire::ClaudeCreateConfig {
-                model: agent.model.clone(),
-                effort: agent.effort.clone(),
-                permission: agent.permission.clone(),
-                ..Default::default()
-            }
-            .encode_to_vec(),
-            Kind::Unspecified => Vec::new(),
+            })),
+            Kind::ClaudeSdk => Some(Agent::ClaudeSdk(claude())),
+            Kind::ClaudePty => Some(Agent::ClaudePty(claude())),
+            Kind::Unspecified => None,
         };
         let created = self
             .client
@@ -233,8 +234,7 @@ impl AppRuntime {
                 host: Some(wire::HostRef::id(agent.host_id.clone())),
                 name: Some(agent.name.clone()).filter(|name| !name.is_empty()),
                 cwd: agent.cwd.clone(),
-                kind: agent.kind as i32,
-                config,
+                agent: config,
                 new_worktree: agent.new_worktree,
                 ..Default::default()
             })

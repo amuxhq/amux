@@ -416,7 +416,10 @@ impl ClientService for ClientApi {
         let host = runtime
             .target_host(&request)
             .map_err(|error| status(error.to_wire()))?;
-        let kind = telemetry::kind(request.kind());
+        let kind = request
+            .agent
+            .as_ref()
+            .and_then(|agent| telemetry::kind(agent.kind()));
         let first = kind
             .filter(|_| request.initial_prompt.is_some())
             .map(InputShape::Prompt);

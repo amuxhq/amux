@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
-use prost::Message as _;
 use tonic::transport::Channel;
 use uuid::Uuid;
 use wire::client_service_client::ClientServiceClient;
@@ -14,7 +13,7 @@ use wire::{
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Empty, HostEntry, Input, Kind, Lifecycle,
     Phase, PromptInput, PromptSubmission, RenameAgentRequest, ResolveAgentRequest,
     ResumeAgentRequest, SendInputRequest, StopAgentRequest, StopMode, claude_pty_input,
-    claude_sdk_input, codex_input, inventory_event, send_input_response,
+    claude_sdk_input, codex_input, create_agent_request, inventory_event, send_input_response,
 };
 
 type Client = ClientServiceClient<Channel>;
@@ -255,28 +254,23 @@ pub async fn create(client: &mut Client, create: Create) -> Result<()> {
         Some(cwd) => std::path::absolute(cwd)?,
         None => std::env::current_dir()?,
     };
-    let kind = match create.kind {
-        CliKind::ClaudePty => Kind::ClaudePty,
-        CliKind::ClaudeSdk => Kind::ClaudeSdk,
-        CliKind::Codex => Kind::Codex,
+    let claude = || ClaudeCreateConfig {
+        args: create.args.clone(),
+        model: create.model.clone(),
+        ..ClaudeCreateConfig::default()
     };
-    let config = match kind {
-        Kind::Codex => {
+    let config = match create.kind {
+        CliKind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
+        CliKind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude()),
+        CliKind::Codex => {
             if !create.args.is_empty() {
                 bail!("codex agents take no extra provider arguments");
             }
-            CodexCreateConfig {
-                model: create.model,
+            create_agent_request::Agent::Codex(CodexCreateConfig {
+                model: create.model.clone(),
                 ..CodexCreateConfig::default()
-            }
-            .encode_to_vec()
+            })
         }
-        _ => ClaudeCreateConfig {
-            args: create.args,
-            model: create.model,
-            ..ClaudeCreateConfig::default()
-        }
-        .encode_to_vec(),
     };
     let agent = client
         .create_agent(CreateAgentRequest {
@@ -284,8 +278,7 @@ pub async fn create(client: &mut Client, create: Create) -> Result<()> {
             name: create.name,
             initial_prompt: create.prompt.as_deref().map(submission),
             cwd: cwd.to_string_lossy().into_owned(),
-            kind: kind as i32,
-            config,
+            agent: Some(config),
             ..CreateAgentRequest::default()
         })
         .await

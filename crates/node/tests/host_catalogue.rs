@@ -396,7 +396,7 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some("terminal".into()),
                 cwd: host.install.work.to_string_lossy().into_owned(),
-                kind: Kind::ClaudePty as i32,
+                agent: wire::create_agent_request::Agent::defaults(Kind::ClaudePty),
                 ..CreateAgentRequest::default()
             },
             None,

@@ -131,6 +131,27 @@ impl Input {
     }
 }
 
+impl create_agent_request::Agent {
+    /// The kind with its default settings; None for no kind.
+    pub fn defaults(kind: Kind) -> Option<Self> {
+        match kind {
+            Kind::ClaudePty => Some(Self::ClaudePty(ClaudeCreateConfig::default())),
+            Kind::ClaudeSdk => Some(Self::ClaudeSdk(ClaudeCreateConfig::default())),
+            Kind::Codex => Some(Self::Codex(CodexCreateConfig::default())),
+            Kind::Unspecified => None,
+        }
+    }
+
+    /// The interpreter this arm creates.
+    pub fn kind(&self) -> Kind {
+        match self {
+            Self::ClaudePty(_) => Kind::ClaudePty,
+            Self::ClaudeSdk(_) => Kind::ClaudeSdk,
+            Self::Codex(_) => Kind::Codex,
+        }
+    }
+}
+
 impl HostRef {
     /// A host by its id.
     pub fn id(host_id: impl Into<Vec<u8>>) -> Self {

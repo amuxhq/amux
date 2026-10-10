@@ -453,10 +453,9 @@ tests = [
 id = "create-settings-by-kind"
 source = "invariant"
 section = "Runtime"
-claim = "A create's settings are read as its kind's own, never as another provider's, and settings that are not the kind's refuse the create; a daemon forwarding a create passes them on as the bytes they came as."
+claim = "A create names its kind by the arm that carries that kind's settings, so settings and kind cannot disagree; a create with no arm is refused as invalid and makes no agent."
 tests = [
-  "node/lib::spec::tests::config_must_match_kind",
-  "node/lib::forward::tests::unknown_config_field_survives_forwarding",
+  "node/registry::a_create_without_a_kind_is_invalid",
 ]
 
 # --- Invariants: session state ----------------------------------------------

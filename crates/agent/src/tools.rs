@@ -26,8 +26,8 @@ use wire::client_service_client::ClientServiceClient;
 use wire::{
     Agent, AgentRef, AmbiguousAgentName, Attachment, BlobRef, CreateAgentRequest, Empty, HostEntry,
     HostRef, Input, Interrupt, Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest,
-    SendInputRequest, SendMessageRequest, Trust, attachment, host_ref, inventory_event,
-    send_input_response,
+    SendInputRequest, SendMessageRequest, Trust, attachment, create_agent_request, host_ref,
+    inventory_event, send_input_response,
 };
 
 use crate::dir;
@@ -362,9 +362,7 @@ impl Server {
             name,
             parent: None,
             cwd,
-            kind: kind as i32,
-            // The kind's default settings, which encode as no bytes.
-            config: Vec::new(),
+            agent: create_agent_request::Agent::defaults(kind),
             initial_prompt: Some(PromptSubmission {
                 input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 prompt: Some(prompt),

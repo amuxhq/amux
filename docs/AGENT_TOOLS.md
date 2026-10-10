@@ -103,7 +103,7 @@ tool's description tells it to reply with `send` to that agent's name.
 
 Starts a child agent of `kind` with `prompt` as its first input: the create
 carries it as a prompt submission, which can hold nothing but a prompt, and
-the kind's default settings. `name` names it. `host` is a trusted host's name, as a person would say it; the daemon
+names the kind by its arm with that kind's default settings. `name` names it. `host` is a trusted host's name, as a person would say it; the daemon
 resolves it, and omitted it means the caller's own host. `cwd` is a path on
 the host the child runs on: omitted on the caller's host (named or not, by
 any of its names) it is the caller's own working directory, and omitted on

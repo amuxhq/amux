@@ -281,7 +281,7 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
     let tools = net.tools("lead").unwrap();
     let request = |host: &str| CreateAgentRequest {
         host: Some(wire::HostRef::named(host)),
-        kind: Kind::ClaudeSdk as i32,
+        agent: wire::create_agent_request::Agent::defaults(Kind::ClaudeSdk),
         ..CreateAgentRequest::default()
     };
 

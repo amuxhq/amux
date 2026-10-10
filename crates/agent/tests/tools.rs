@@ -22,7 +22,8 @@ use wire::client_service_server::ClientService;
 use wire::{
     Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
     InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest, SendInputResponse,
-    SendMessageRequest, SendMessageResponse, StopMode, Trust, inventory_event, send_input_response,
+    SendMessageRequest, SendMessageResponse, StopMode, Trust, create_agent_request,
+    inventory_event, send_input_response,
 };
 
 const ME: [u8; 16] = [0xa1; 16];
@@ -683,11 +684,16 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         "the daemon sets the parent from the caller"
     );
     assert_eq!(here.cwd, mcp.cwd.display().to_string());
-    assert_eq!(here.kind(), Kind::Codex);
+    assert_eq!(
+        here.agent,
+        Some(create_agent_request::Agent::Codex(
+            wire::CodexCreateConfig::default()
+        )),
+        "Codex with its default settings"
+    );
     let prompt = here.initial_prompt.clone().unwrap();
     assert_eq!(prompt.prompt.unwrap().text, "Write the tests.");
     assert!(!prompt.input_id.is_empty());
-    assert!(here.config.is_empty(), "Codex's default settings");
 
     mcp.ok(
         "spawn",
@@ -704,7 +710,10 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         "the daemon resolves the name"
     );
     assert_eq!(there.cwd, "", "a path here means nothing there");
-    assert_eq!(there.kind(), Kind::ClaudeSdk);
+    assert_eq!(
+        there.agent.as_ref().map(create_agent_request::Agent::kind),
+        Some(Kind::ClaudeSdk)
+    );
 
     assert_eq!(
         mcp.refused(

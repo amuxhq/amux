@@ -13,13 +13,15 @@
 //! interface on the same thread.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use prost::Message as _;
 use ratatui::Frame as Paint;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span};
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
-use wire::{ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, Kind, PromptSubmission};
+use wire::{
+    ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, Kind, PromptSubmission,
+    create_agent_request,
+};
 
 use crate::editor::Editor;
 use crate::text::{self, push};
@@ -278,10 +280,6 @@ impl Setup {
         self.agent.kind(self.chat_in)
     }
 
-    fn claude(&self) -> bool {
-        self.agent == Agent::Claude
-    }
-
     /// The composer's edge, in groups: its name, what runs it, where, and
     /// on which machine. Without a name the first item invites one; "new
     /// worktree" shows only when it is on.
@@ -459,31 +457,29 @@ impl Setup {
         let model = if own { None } else { self.model.clone() };
         let effort = if own { None } else { self.effort.clone() };
         let mode = if own { None } else { self.mode.clone() };
-        let config = if self.claude() {
-            ClaudeCreateConfig {
-                args: Vec::new(),
-                model: model.clone(),
-                permission,
-                effort: effort.clone(),
-            }
-            .encode_to_vec()
-        } else {
-            CodexCreateConfig {
+        let claude = ClaudeCreateConfig {
+            args: Vec::new(),
+            model: model.clone(),
+            permission: permission.clone(),
+            effort: effort.clone(),
+        };
+        let config = match self.kind() {
+            Kind::ClaudePty => create_agent_request::Agent::ClaudePty(claude),
+            Kind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude),
+            _ => create_agent_request::Agent::Codex(CodexCreateConfig {
                 model,
                 permission,
                 mode,
                 effort,
-            }
-            .encode_to_vec()
+            }),
         };
         CreateAgentRequest {
             agent_id,
             host: Some(wire::HostRef::id(self.host.clone())),
             name: self.name.clone(),
             cwd: self.folder.clone(),
-            kind: self.kind() as i32,
             initial_prompt: prompt,
-            config,
+            agent: Some(config),
             new_worktree: self.worktree,
             ..CreateAgentRequest::default()
         }

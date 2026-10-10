@@ -676,6 +676,38 @@ fn thread_names(log: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
+/// The arm that carries a create's settings is its kind, so a create with
+/// no arm names no interpreter and is refused before anything is made.
+#[tokio::test]
+async fn a_create_without_a_kind_is_invalid() {
+    let install = Install::new();
+    let daemon = install
+        .start("boot-1", install.launch("idle", vec![]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let refused = runtime
+        .spawn(
+            wire::CreateAgentRequest {
+                agent: None,
+                ..create(&install.work, "kindless", None)
+            },
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(refused, RegistryError::NoKind), "{refused:?}");
+    assert_eq!(
+        refused.to_wire().code,
+        wire::ErrorCode::InvalidArgument as i32
+    );
+    assert!(
+        runtime.store().await.agents().unwrap().is_empty(),
+        "no agent was made"
+    );
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn renaming_a_live_codex_agent_renames_its_thread() {
     let install = Install::new();
@@ -691,7 +723,7 @@ async fn renaming_a_live_codex_agent_renames_its_thread() {
         &runtime
             .spawn(
                 wire::CreateAgentRequest {
-                    kind: wire::Kind::Codex as i32,
+                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
                     ..create(&install.work, "before", None)
                 },
                 None,

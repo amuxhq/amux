@@ -18,7 +18,7 @@ const CLOCK: CommitClock = CommitClock {
 /// The hash of every migration shipped. From the first release on a
 /// shipped migration is never edited; append a new one and pin its hash
 /// here instead.
-const SHIPPED: &[&str] = &["ecfce9d245060565ffe4e3efd23cecc13d898b451f9c5f45fe8b6d6959beea1a"];
+const SHIPPED: &[&str] = &["4317dafaaa7e258383b14a67e3448938d01c59af0b4bbe5db98216eefdda06ab"];
 
 /// What stores written before the release schema recorded: seven
 /// migrations, whose first differs from this build's.

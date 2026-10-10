@@ -882,9 +882,28 @@ async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
         heard,
         vec![
             (EnvelopeKind::Finished, "done".to_owned()),
-            (EnvelopeKind::Failed, "ended unexpectedly".to_owned()),
+            (EnvelopeKind::Failed, String::new()),
         ],
         "one thing per event: finished once, failed only for the child that never finished"
+    );
+    // The failed report carries the cause as data, for the parent's
+    // interpreter to word.
+    let ended = parent
+        .inputs()
+        .into_iter()
+        .filter_map(|handed| match handed {
+            Handed::Message(envelope) if envelope.kind == EnvelopeKind::Failed as i32 => {
+                Some(envelope.ended)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ended,
+        vec![Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::EndedUnexpectedly as i32,
+            detail: None,
+        })]
     );
     // The row says which one finished its work.
     assert_eq!(
@@ -894,7 +913,7 @@ async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
     assert_eq!(
         runtime.agent(crashed.id).await.unwrap().exit_cause(),
         wire::ExitCause::EndedUnexpectedly,
-        "a process gone without its last frame said nothing of why"
+        "a process gone without writing its incarnation's end said nothing of why"
     );
     crash(daemon, runtime).await;
 }

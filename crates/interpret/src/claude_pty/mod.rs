@@ -1078,7 +1078,7 @@ impl State {
         }
     }
 
-    fn boundary(&mut self, emit: &mut Emit, kind: BoundaryKind, exit: wire::Exiting) {
+    fn boundary(&mut self, emit: &mut Emit, kind: BoundaryKind, exit: wire::IncarnationEnd) {
         self.next_boundary += 1;
         let key = format!("boundary:{}", self.next_boundary);
         self.shared.item(
@@ -1136,6 +1136,7 @@ impl State {
     /// An agent message goes to Claude's messaging socket and is accepted
     /// at once; its item is the record that it arrived.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        let envelope = crate::shared::worded(envelope);
         self.shared.message_accepted(&envelope.id);
         self.messages.push(PendingMessage {
             id: envelope.id.clone(),
@@ -1509,7 +1510,7 @@ impl Interpreter for ClaudePty {
             Event::DaemonLost => state.boundary(
                 &mut emit,
                 wire::BoundaryKind::DaemonLost,
-                wire::Exiting::default(),
+                wire::IncarnationEnd::default(),
             ),
             Event::StopRequested(wire::StopMode::Abort) => state.interrupt(&mut emit),
             Event::StopRequested(_) => {}

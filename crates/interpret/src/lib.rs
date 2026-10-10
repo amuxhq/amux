@@ -139,7 +139,7 @@ pub enum Event {
     /// The agent process is ending this incarnation for `cause` (a drain,
     /// a stop, the one-shot rule): the final boundary, open asks closed.
     /// The provider's own exit that follows is not reported.
-    Exiting(wire::Exiting),
+    Exiting(wire::IncarnationEnd),
     /// What the agent's folder says about its repository, read by the agent
     /// process at start and at each turn end; None outside a repository.
     Git(Option<wire::Git>),
@@ -147,8 +147,8 @@ pub enum Event {
 
 /// The cause the final boundary gives for a provider's own exit, with its
 /// exit code or signal as the detail.
-pub fn provider_exit(code: Option<i32>) -> wire::Exiting {
-    wire::Exiting {
+pub fn provider_exit(code: Option<i32>) -> wire::IncarnationEnd {
+    wire::IncarnationEnd {
         cause: wire::ExitCause::ProviderExited as i32,
         detail: Some(match code {
             Some(code) => format!("exit code {code}"),

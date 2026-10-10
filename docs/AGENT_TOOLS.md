@@ -77,8 +77,9 @@ Every agent in the fleet, own and replicated from paired hosts. Each row has
 `name` (the id in hex when the agent has no name), `id`, `kind` (`claude_pty`,
 `claude_sdk` or `codex`), `host` (the host's name), `live`, and `phase`
 (`starting`, `idle`, `working` or `needs_you`); and, when they apply,
-`working_on`, `exit_cause` (how an exited agent ended, in the words the fleet
-shows: `finished`, `stopped`, `the provider exited: exit code 1`), `parent`
+`working_on`, `exit_cause` (how an exited agent ended: the cause's name, then
+its own words when it has any, as `finished`, `stopped` or
+`provider_exited: exit code 1`), `parent`
 (the parent's name), and `you: true` on the caller's own row. Both read-only tools are marked with MCP's
 `readOnlyHint`.
 
@@ -310,8 +311,10 @@ wait it retries every 30 seconds. For each row it:
   parent has been deleted;
 - keeps it while the parent has exited (a later resume makes it stale) or
   its host is away;
-- otherwise sends it as an `Envelope` from the child, of kind `finished` or
-  `failed`, carrying the parent's incarnation, with an id derived from the
+- otherwise sends it as an `Envelope` from the child, of kind `finished` (the
+  child's last message as its text) or `failed` (how the incarnation ended as
+  data, which the parent's interpreter words for its model, as "the provider
+  exited: exit code 1"), carrying the parent's incarnation, with an id derived from the
   child, incarnation, kind and turn, so every re-send of one row has the same
   id. A local parent gets it through its lane; a remote parent through
   `SendMessage` to its daemon. The row is deleted once the parent has

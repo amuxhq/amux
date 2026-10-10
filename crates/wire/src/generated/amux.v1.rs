@@ -151,12 +151,18 @@ pub struct Envelope {
     pub to: ::core::option::Option<AgentRef>,
     #[prost(enumeration = "EnvelopeKind", tag = "5")]
     pub kind: i32,
+    /// A message's text, or a finished child's last message; empty on a
+    /// failed report.
     #[prost(string, tag = "6")]
     pub text: ::prost::alloc::string::String,
+    /// Set only on a failed report: how the child's incarnation ended. The
+    /// recipient's interpreter words it for the parent's provider.
+    #[prost(message, optional, tag = "7")]
+    pub ended: ::core::option::Option<IncarnationEnd>,
     /// The recipient's incarnation the message is for, when only that one
     /// may have it: a child's finished or failed message to its parent. The
     /// recipient's daemon drops it for any other incarnation.
-    #[prost(uint32, optional, tag = "7")]
+    #[prost(uint32, optional, tag = "8")]
     pub incarnation: ::core::option::Option<u32>,
 }
 impl ::prost::Name for Envelope {
@@ -240,6 +246,12 @@ pub struct Step {
     /// Set when this step ended a turn.
     #[prost(message, optional, tag = "4")]
     pub turn_end: ::core::option::Option<TurnEnd>,
+    /// Set on the last step of an incarnation: why it ended, in the agent's
+    /// own terms. The daemon copies it onto the row. A journal that stops
+    /// without one (the process was killed or crashed) gets the daemon's own
+    /// cause.
+    #[prost(message, optional, tag = "5")]
+    pub incarnation_end: ::core::option::Option<IncarnationEnd>,
 }
 impl ::prost::Name for Step {
     const NAME: &'static str = "Step";
@@ -249,6 +261,24 @@ impl ::prost::Name for Step {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.Step".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IncarnationEnd {
+    #[prost(enumeration = "ExitCause", tag = "1")]
+    pub cause: i32,
+    /// The cause's own words, when it has any: "exit code 1".
+    #[prost(string, optional, tag = "2")]
+    pub detail: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for IncarnationEnd {
+    const NAME: &'static str = "IncarnationEnd";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.IncarnationEnd".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.IncarnationEnd".into()
     }
 }
 /// Full state per revision. Keys and at_ms come from the interpreter; order
@@ -675,7 +705,7 @@ pub enum EnvelopeKind {
     Message = 1,
     /// A child's turn ended; the text is its last message.
     Finished = 2,
-    /// A child's incarnation ended without a turn end; the text is the cause.
+    /// A child's incarnation ended without a turn end; `ended` says how.
     Failed = 3,
 }
 impl EnvelopeKind {
@@ -759,10 +789,11 @@ pub enum ExitCause {
     CouldNotStart = 8,
     /// Its directory is gone, or a write to it failed; the detail says which.
     DirectoryFailed = 9,
-    /// The process was found dead when a daemon returned, with no record of
-    /// why.
+    /// The process was found dead when a daemon returned, and its journal
+    /// does not say why.
     EndedWhileAway = 10,
-    /// The provider loop ended without any of the above.
+    /// The process ended while a daemon watched, and its journal does not say
+    /// why.
     EndedUnexpectedly = 11,
 }
 impl ExitCause {
@@ -12249,7 +12280,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -12290,11 +12321,6 @@ pub mod ctl_frame {
         /// to settle its delivery.
         #[prost(message, tag = "9")]
         Reply(super::Verdict),
-        /// Agent to daemon, last frame: why this incarnation is ending. The
-        /// daemon records it on the row; when the socket closes without one,
-        /// the daemon records its own cause.
-        #[prost(message, tag = "10")]
-        Exiting(super::Exiting),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -12335,23 +12361,6 @@ impl ::prost::Name for Rename {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.Rename".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Exiting {
-    #[prost(enumeration = "ExitCause", tag = "1")]
-    pub cause: i32,
-    #[prost(string, optional, tag = "2")]
-    pub detail: ::core::option::Option<::prost::alloc::string::String>,
-}
-impl ::prost::Name for Exiting {
-    const NAME: &'static str = "Exiting";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Exiting".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.Exiting".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

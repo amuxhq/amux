@@ -382,7 +382,10 @@ A message to an agent, on this host or another. The daemon stamps who it is
 from: the person on a client socket, the agent whose tools socket made the
 call. The request has nowhere to name a sender, so no caller can speak for
 anyone else. Finished and failed messages are the daemon's own, sent when a
-child's turn ends, and cannot be submitted. The recipient's daemon dedupes by
+child's turn or incarnation ends, and cannot be submitted. A finished message's
+text is the child's last message; a failed one has no text and carries how the
+child's incarnation ended as `ended` (an `IncarnationEnd`: the `ExitCause` and
+its own words), which the parent's interpreter words for its provider. The recipient's daemon dedupes by
 `id` against the recipient's items, so a resend after a lost answer is one
 message. The answer comes once the recipient has accepted it. A paired host
 forwards the envelope its daemon stamped, and the receiving daemon takes an
@@ -590,14 +593,15 @@ library](CLIENT.md#the-fleet)), so the row stays small.
 
 `exit_cause` is an `ExitCause`, and `exit_detail` the cause's own words when it
 has any (a provider's exit code, why a provider could not start). Most causes
-are the agent's own, sent in its last control frame (see [the agent
-process](AGENT_PROCESS.md#lifecycle)): `FINISHED` (a child's one-shot
-exit), `STOPPED`, `ABORTED`, `KILLED`, `PROVIDER_EXITED`, `DAEMON_LOST`,
-`ORPHANED`, `COULD_NOT_START` and `DIRECTORY_FAILED`. The daemon records its
-own only where no frame can arrive: `COULD_NOT_START` when the agent process
-cannot be spawned, `DIRECTORY_FAILED` when the agent's directory is gone,
-`ENDED_WHILE_AWAY` for a process found dead when a daemon starts, a stop it
-asked for when the process ended without a word, and `ENDED_UNEXPECTEDLY`
+are the agent's own, written in its journal as the last step's
+`incarnation_end` (see [the agent process](AGENT_PROCESS.md#lifecycle)):
+`FINISHED` (a child's one-shot exit), `STOPPED`, `ABORTED`, `PROVIDER_EXITED`,
+`DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START` and `DIRECTORY_FAILED`. The
+daemon reads the journal to its end before it marks the agent exited, and
+records its own cause only where the journal has none: `COULD_NOT_START` when
+the agent process cannot be spawned, `DIRECTORY_FAILED` when the agent's
+directory is gone, `KILLED` when it killed the process, `ENDED_WHILE_AWAY` for
+a process found dead when a daemon starts, and `ENDED_UNEXPECTEDLY`
 otherwise. `UNSPECIFIED` is a live agent's, and a cause a client does not know
 reads as an ordinary end, not a failure: clients draw `FINISHED` as finished,
 the stops and unknown causes as ended, and every other cause as a failure in

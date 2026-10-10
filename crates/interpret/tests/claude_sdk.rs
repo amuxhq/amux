@@ -730,3 +730,43 @@ fn compacting_status_is_an_item() {
         ]
     );
 }
+
+/// A child's failed report as its daemon hands it over: no text, the cause
+/// as data.
+fn failed_report(id: &[u8]) -> Event {
+    Event::AgentMessage(wire::Envelope {
+        id: id.to_vec(),
+        from: Some(wire::Sender {
+            value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                name: "child".into(),
+                ..Default::default()
+            })),
+        }),
+        kind: wire::EnvelopeKind::Failed as i32,
+        ended: Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::ProviderExited as i32,
+            detail: Some("exit code 1".into()),
+        }),
+        ..Default::default()
+    })
+}
+
+/// A failed report carries its cause as data; the interpreter words it, and
+/// Claude is told in those words, which the transcript shows too.
+#[test]
+fn a_failed_report_is_worded_for_the_parents_provider() {
+    let mut state = started();
+    let stepped = ClaudeSdk::step(&mut state, failed_report(b"env-failed"));
+    let injected = stepped.effects.iter().find_map(|effect| match effect {
+        Effect::Inject { envelope, .. } => Some(envelope.text.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        injected.as_deref(),
+        Some("the provider exited: exit code 1")
+    );
+    assert_eq!(
+        stepped.step.items[0].text,
+        "the provider exited: exit code 1"
+    );
+}

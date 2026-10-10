@@ -91,12 +91,39 @@ fn kind_word(kind: i32) -> String {
     }
 }
 
+/// Why an exited agent ended, as `amux ls` says it after "exited", with
+/// the cause's own words; None when the cause is unknown and has none.
+fn exit_words(agent: &Agent) -> Option<String> {
+    use wire::ExitCause;
+    let words = match agent.exit_cause() {
+        ExitCause::Unspecified => "",
+        ExitCause::Finished => "finished",
+        ExitCause::Stopped => "stopped",
+        ExitCause::Aborted => "aborted",
+        ExitCause::Killed => "killed",
+        ExitCause::ProviderExited => "the provider exited",
+        ExitCause::DaemonLost | ExitCause::EndedWhileAway => "while the daemon was away",
+        ExitCause::Orphaned => "orphaned while waiting for you",
+        ExitCause::CouldNotStart => "could not start",
+        ExitCause::DirectoryFailed => "its directory failed",
+        ExitCause::EndedUnexpectedly => "ended unexpectedly",
+    };
+    match agent
+        .exit_detail
+        .as_deref()
+        .filter(|detail| !detail.is_empty())
+    {
+        Some(detail) if words.is_empty() => Some(detail.to_owned()),
+        Some(detail) => Some(format!("{words}: {detail}")),
+        None => (!words.is_empty()).then(|| words.to_owned()),
+    }
+}
+
 fn state(agent: &Agent) -> String {
     if Lifecycle::try_from(agent.lifecycle) == Ok(Lifecycle::Exited) {
-        let cause = wire::exit_words(agent.exit_cause, agent.exit_detail.as_deref());
-        return match cause.as_str() {
-            "" => "exited".to_owned(),
-            cause => format!("exited: {cause}"),
+        return match exit_words(agent) {
+            Some(cause) => format!("exited: {cause}"),
+            None => "exited".to_owned(),
         };
     }
     let phase = match Phase::try_from(agent.phase).unwrap_or(Phase::Starting) {

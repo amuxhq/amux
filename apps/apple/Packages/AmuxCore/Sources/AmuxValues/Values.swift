@@ -2335,7 +2335,7 @@ public enum EnvelopeKind: String, Codable, Hashable, Sendable, CaseIterable {
     case message = "Message"
     /// A child's turn ended; the text is its last message.
     case finished = "Finished"
-    /// A child's incarnation ended without a turn end; the text is the cause.
+    /// A child's incarnation ended without a turn end; `ended` says how.
     case failed = "Failed"
 }
 

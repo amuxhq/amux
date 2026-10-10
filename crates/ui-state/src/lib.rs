@@ -21,7 +21,7 @@ pub use body::{
 };
 pub use fleet::{
     AgentKey, Attention, ExitCause, Families, FleetMsg, FleetState, HostId, agent_key, attention,
-    exit_cause, parent_key,
+    exit_cause, exit_words, parent_key,
 };
 pub use inputs::{
     InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, RefusalReason, SentInput,

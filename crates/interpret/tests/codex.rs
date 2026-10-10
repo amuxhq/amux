@@ -967,3 +967,47 @@ fn a_mode_chosen_at_creation_is_set_by_the_first_turn() {
     let snapshot = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
     assert_eq!(snapshot.mode.as_deref(), Some("plan"));
 }
+
+/// A child's failed report as its daemon hands it over: no text, the cause
+/// as data.
+fn failed_report(id: &[u8]) -> Event {
+    Event::AgentMessage(wire::Envelope {
+        id: id.to_vec(),
+        from: Some(wire::Sender {
+            value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                name: "child".into(),
+                ..Default::default()
+            })),
+        }),
+        kind: wire::EnvelopeKind::Failed as i32,
+        ended: Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::ProviderExited as i32,
+            detail: Some("exit code 1".into()),
+        }),
+        ..Default::default()
+    })
+}
+
+/// A failed report carries its cause as data; the interpreter words it into
+/// the item it injects into the thread.
+#[test]
+fn a_failed_report_is_worded_for_the_parents_provider() {
+    let (mut state, _) = Codex::initial(&wire::AgentSpec::default(), "test");
+    Codex::step(
+        &mut state,
+        rpc(json!({"method": "thread/started", "params": {"thread": {"id": "t1"}}})),
+    );
+    let stepped = Codex::step(&mut state, failed_report(b"env-failed"));
+    let sent = writes(&stepped.effects);
+    assert_eq!(sent[0]["method"], "thread/inject_items");
+    assert!(
+        sent[0]
+            .to_string()
+            .contains("[agent child stopped: the provider exited: exit code 1]"),
+        "{sent:?}"
+    );
+    assert_eq!(
+        stepped.step.items[0].text,
+        "the provider exited: exit code 1"
+    );
+}

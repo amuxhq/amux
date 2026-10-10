@@ -95,3 +95,4 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000050000 asks=[ask:6->- unanswe
 item ask:ask:6 ask final at=1800000050000 text="" unanswerable "Claude is showing a link from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." ASK_OUTCOME_DISMISSED
 item boundary:2 boundary final at=1800000050000 text="" BOUNDARY_KIND_EXITED session=s1 version=2.1.283 keymap=claude-2.1 cause=PROVIDER_EXITED detail="exit code 1"
 snapshot STARTING queue=[] working_on=- at=1800000050000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=[]
+incarnation_end PROVIDER_EXITED "exit code 1"

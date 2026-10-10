@@ -267,8 +267,10 @@ pub struct Delivery {
     pub parent_incarnation: u32,
     /// `wire::EnvelopeKind` as an integer: finished or failed.
     pub kind: i32,
-    /// The child's last message, or the failure's cause.
+    /// A finished turn's last message; empty for a failed incarnation.
     pub body: String,
+    /// How a failed incarnation ended; None for a finished turn.
+    pub ended: Option<wire::IncarnationEnd>,
 }
 
 /// The push outbox row for one turn into needs_you, built from envelope

@@ -24,10 +24,10 @@ use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::client_service_client::ClientServiceClient;
 use wire::{
-    Agent, AgentRef, AmbiguousAgentName, Attachment, BlobRef, CreateAgentRequest, Empty, HostEntry,
-    HostRef, Input, Interrupt, Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest,
-    SendInputRequest, SendMessageRequest, Trust, attachment, create_agent_request, host_ref,
-    inventory_event, send_input_response,
+    Agent, AgentRef, AmbiguousAgentName, Attachment, BlobRef, CreateAgentRequest, Empty, ExitCause,
+    HostEntry, HostRef, Input, Interrupt, Kind, Lifecycle, PromptInput, PromptSubmission,
+    ResolveAgentRequest, SendInputRequest, SendMessageRequest, Trust, attachment,
+    create_agent_request, host_ref, inventory_event, send_input_response,
 };
 
 use crate::dir;
@@ -262,8 +262,7 @@ impl Server {
                 if let Some(working_on) = &agent.working_on {
                     row["working_on"] = json!(working_on);
                 }
-                let cause = wire::exit_words(agent.exit_cause, agent.exit_detail.as_deref());
-                if !cause.is_empty() {
+                if let Some(cause) = exit_words(agent) {
                     row["exit_cause"] = json!(cause);
                 }
                 if let Some(parent) = &agent.parent {
@@ -671,6 +670,25 @@ fn kind_word(kind: Kind) -> String {
     match kind {
         Kind::Unspecified => "unknown".to_owned(),
         known => word(known.as_str_name(), "KIND_"),
+    }
+}
+
+/// How an exited agent ended, as the tools say it: the cause's wire name,
+/// then its own words when it has any (`provider_exited: exit code 1`).
+/// None while it runs, and for a cause this build does not know with no
+/// words of its own.
+fn exit_words(agent: &Agent) -> Option<String> {
+    let cause = match agent.exit_cause() {
+        ExitCause::Unspecified => None,
+        known => Some(word(known.as_str_name(), "EXIT_CAUSE_")),
+    };
+    let detail = agent
+        .exit_detail
+        .clone()
+        .filter(|detail| !detail.is_empty());
+    match (cause, detail) {
+        (Some(cause), Some(detail)) => Some(format!("{cause}: {detail}")),
+        (cause, detail) => cause.or(detail),
     }
 }
 

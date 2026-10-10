@@ -319,7 +319,7 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
         .wait("the killed incarnation's final boundary", |log| {
             log.boundaries()
                 .iter()
-                .any(|boundary| boundary == "EXITED ended unexpectedly")
+                .any(|boundary| boundary == "EXITED ENDED_UNEXPECTEDLY")
         })
         .await;
     let mut daemon = agent.dial().await;
@@ -516,7 +516,7 @@ async fn a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(
         ),
         _ => assert_eq!(
             log.sequence(),
-            ["boundary STARTED", "turn end", "boundary EXITED finished"],
+            ["boundary STARTED", "turn end", "boundary EXITED FINISHED"],
             "the message was drained into the running turn"
         ),
     }
@@ -648,7 +648,7 @@ async fn headless_claude_replays_transport_loss_mid_turn() {
     let log = agent.log();
     assert_eq!(
         log.boundaries().last().map(String::as_str),
-        Some("EXITED the provider exited: exit code 1")
+        Some("EXITED PROVIDER_EXITED: exit code 1")
     );
     assert!(log.ask_keys().is_empty(), "the open ask is closed");
     assert_no_drift(&agent);
@@ -703,7 +703,7 @@ async fn codex_replays_transport_loss_mid_turn() {
     let log = agent.log();
     assert_eq!(
         log.boundaries().last().map(String::as_str),
-        Some("EXITED the provider exited: exit code 1")
+        Some("EXITED PROVIDER_EXITED: exit code 1")
     );
     assert!(log.ask_keys().is_empty(), "the open ask is closed");
     assert_no_drift(&agent);
@@ -1106,7 +1106,7 @@ fn terminal_claude_replays_transport_loss_mid_turn() {
         let log = agent.log();
         assert_eq!(
             log.boundaries().last().map(String::as_str),
-            Some("EXITED the provider exited: exit code 1")
+            Some("EXITED PROVIDER_EXITED: exit code 1")
         );
         assert!(log.ask_keys().is_empty(), "the open ask is closed");
         assert_no_drift(&agent);
@@ -1128,8 +1128,8 @@ async fn windows_refuses_terminal_claude_and_names_the_platform() {
         "terminal Claude is not hosted on Windows in this build; headless Claude and Codex are";
     assert_eq!(cause, ExitCause::Unstarted(why.to_owned()));
     assert_eq!(
-        cause.exiting(),
-        wire::Exiting {
+        cause.end(),
+        wire::IncarnationEnd {
             cause: wire::ExitCause::CouldNotStart as i32,
             detail: Some(format!("the provider: {why}")),
         }

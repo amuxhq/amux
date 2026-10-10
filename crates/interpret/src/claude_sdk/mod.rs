@@ -445,6 +445,7 @@ impl State {
     /// An immediate hand-off to Claude's own queue: a message sent while a
     /// turn runs folds into it.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        let envelope = crate::shared::worded(envelope);
         self.shared.message_accepted(&envelope.id);
         self.clients.insert(
             client_uuid(&envelope.id),
@@ -662,7 +663,7 @@ impl State {
         if self.early_boundary.is_none()
             && let Some(kind) = self.coming_boundary()
         {
-            self.early_boundary = Some(self.boundary(emit, kind, wire::Exiting::default()));
+            self.early_boundary = Some(self.boundary(emit, kind, wire::IncarnationEnd::default()));
         }
         let uuid = client_uuid(&entry.input_id);
         if entry.text.starts_with('/') {
@@ -985,7 +986,7 @@ impl State {
         &mut self,
         emit: &mut Emit,
         kind: wire::BoundaryKind,
-        exit: wire::Exiting,
+        exit: wire::IncarnationEnd,
     ) -> String {
         self.next_boundary += 1;
         let key = format!("boundary:{}", self.next_boundary);
@@ -998,7 +999,7 @@ impl State {
         emit: &mut Emit,
         key: String,
         kind: wire::BoundaryKind,
-        exit: wire::Exiting,
+        exit: wire::IncarnationEnd,
     ) {
         self.shared.item(
             emit,
@@ -1270,7 +1271,7 @@ impl Interpreter for ClaudeSdk {
                 state.boundary(
                     &mut emit,
                     wire::BoundaryKind::DaemonLost,
-                    wire::Exiting::default(),
+                    wire::IncarnationEnd::default(),
                 );
             }
             Event::StopRequested(wire::StopMode::Abort) => state.interrupt(&mut emit),

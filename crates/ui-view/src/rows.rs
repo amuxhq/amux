@@ -924,7 +924,7 @@ fn error(e: &wire::ApiError) -> (RowKind, Option<Decision>, bool) {
 fn boundary(b: &wire::Boundary) -> RowKind {
     RowKind::Boundary {
         kind: b.kind(),
-        cause: wire::exit_words(b.cause, b.cause_detail.as_deref()),
+        cause: ui_state::exit_words(b.cause, b.cause_detail.as_deref()),
     }
 }
 

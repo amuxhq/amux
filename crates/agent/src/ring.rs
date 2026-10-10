@@ -221,16 +221,16 @@ mod tests {
             Event::ProviderExit { code: Some(3) },
             Event::DaemonLost,
             Event::StopRequested(StopMode::Abort),
-            Event::Exiting(wire::Exiting {
+            Event::Exiting(wire::IncarnationEnd {
                 cause: wire::ExitCause::Stopped as i32,
                 detail: None,
             }),
-            Event::Exiting(wire::Exiting {
+            Event::Exiting(wire::IncarnationEnd {
                 cause: wire::ExitCause::ProviderExited as i32,
                 detail: Some("exit code 3".into()),
             }),
             // A cause a newer build wrote is kept as its value.
-            Event::Exiting(wire::Exiting {
+            Event::Exiting(wire::IncarnationEnd {
                 cause: 99,
                 detail: None,
             }),

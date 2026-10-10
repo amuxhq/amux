@@ -89,11 +89,11 @@ pub const FANOUT_CAPACITY: usize = 4 * INGEST_BATCH;
 /// several screens of scroll-back.
 pub const TAIL_ROWS: u32 = 200;
 
-/// An exit cause the daemon records itself, where the agent's own word
-/// cannot or did not arrive: the process could not be spawned, was found
-/// dead, its directory is gone, or it ended without its last frame.
-fn daemon_cause(cause: ExitCause, detail: Option<String>) -> wire::Exiting {
-    wire::Exiting {
+/// An exit cause the daemon records itself, where the agent's journal does
+/// not say why: the process could not be spawned, its directory is gone,
+/// the daemon killed it, or it ended without writing its incarnation's end.
+fn daemon_cause(cause: ExitCause, detail: Option<String>) -> wire::IncarnationEnd {
+    wire::IncarnationEnd {
         cause: cause as i32,
         detail,
     }
@@ -338,6 +338,9 @@ pub struct ProfileRuntime {
     /// Journal frames committed since start: what ingest has done, so its
     /// cost per frame can be measured from outside.
     ingested_frames: AtomicU64,
+    /// Each own agent's incarnation end as its journal wrote it, held from
+    /// ingest until the agent is marked exited with it.
+    ended: Mutex<HashMap<AgentId, wire::IncarnationEnd>>,
     /// Set once every own journal has been read to its end after start.
     pub(crate) journals_read: watch::Sender<bool>,
     pub(crate) deliveries_due: Arc<Notify>,
@@ -385,11 +388,9 @@ pub(crate) struct AgentHandle {
     /// connection ends.
     dumps: Mutex<HashMap<Vec<u8>, oneshot::Sender<DumpPart>>>,
     hello: watch::Sender<Option<AgentHello>>,
-    /// The stop the daemon asked for, which names the exit's cause when
-    /// the agent's own word does not arrive.
+    /// The stop the daemon asked for: a kill names the exit's cause, since
+    /// a killed process writes nothing more.
     stopping: Mutex<Option<StopMode>>,
-    /// The cause the agent's last frame gave: what the row records.
-    farewell: Mutex<Option<wire::Exiting>>,
     /// The agent refused an input as exiting: it is on its way out.
     exiting: AtomicBool,
     /// The process id, when this daemon started the process.
@@ -414,7 +415,6 @@ impl AgentHandle {
             dumps: Mutex::new(HashMap::new()),
             hello: watch::Sender::new(None),
             stopping: Mutex::new(None),
-            farewell: Mutex::new(None),
             exiting: AtomicBool::new(false),
             caught_up_due: AtomicBool::new(false),
             pid,
@@ -553,6 +553,7 @@ impl ProfileRuntime {
             lanes: Mutex::new(HashMap::new()),
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
+            ended: Mutex::new(HashMap::new()),
             journals_read: watch::Sender::new(false),
             deliveries_due: Arc::new(Notify::new()),
             notifications_due: Arc::new(Notify::new()),
@@ -1055,6 +1056,8 @@ impl ProfileRuntime {
         dir: &Path,
         launch: &Launch,
     ) -> Result<Agent, RegistryError> {
+        // A new incarnation ends on its own terms.
+        self.ended.lock().unwrap().remove(&id);
         let tools = self.bind_tools(id, dir)?;
         let child = match spawn_agent(&launch.install_path, dir) {
             Ok(child) => child,
@@ -1326,7 +1329,11 @@ impl ProfileRuntime {
                 }
                 Look::Exited => {
                     self.ingest(id).await?;
-                    let cause = daemon_cause(ExitCause::EndedWhileAway, None);
+                    // What its journal says, else it ended while no daemon
+                    // was there to see why.
+                    let ended = self.ended.lock().unwrap().remove(&id);
+                    let cause =
+                        ended.unwrap_or_else(|| daemon_cause(ExitCause::EndedWhileAway, None));
                     self.mark_exited_if_live(id, cause).await?;
                     report.exited.push(id);
                 }
@@ -1555,6 +1562,14 @@ impl ProfileRuntime {
             };
             let committed = store.commit(&key, &batch.frames, clock)?;
             self.wrote();
+            if let Some(end) = batch
+                .frames
+                .iter()
+                .rev()
+                .find_map(|(_, step)| step.incarnation_end.clone())
+            {
+                self.ended.lock().unwrap().insert(id, end);
+            }
             self.ingested_frames
                 .fetch_add(batch.frames.len() as u64, Ordering::Relaxed);
             let turns = batch
@@ -1697,11 +1712,6 @@ impl ProfileRuntime {
                             }
                         }
                         Ok(Some(CtlFrame {
-                            of: Some(ctl_frame::Of::Exiting(exiting)),
-                        })) => {
-                            *watched.farewell.lock().unwrap() = Some(exiting);
-                        }
-                        Ok(Some(CtlFrame {
                             of: Some(ctl_frame::Of::Dump(part)),
                         })) => {
                             let waiting = watched.dumps.lock().unwrap().remove(&part.dump_id);
@@ -1734,15 +1744,14 @@ impl ProfileRuntime {
         if let Err(error) = self.ingest(id).await {
             tracing::warn!(agent = %id, %error, "ingesting an exited agent's journal failed");
         }
-        // The agent's own word when it gave one; else what the daemon
-        // asked for; else the process ended without saying why.
-        let farewell = handle.farewell.lock().unwrap().take();
-        let cause = farewell.unwrap_or_else(|| {
+        // The cause the journal ended with, now that all of it is read;
+        // else a kill the daemon made; else the process ended without
+        // saying why.
+        let ended = self.ended.lock().unwrap().remove(&id);
+        let cause = ended.unwrap_or_else(|| {
             let cause = match *handle.stopping.lock().unwrap() {
-                Some(StopMode::Graceful) => ExitCause::Stopped,
-                Some(StopMode::Abort) => ExitCause::Aborted,
                 Some(StopMode::Kill) => ExitCause::Killed,
-                None => ExitCause::EndedUnexpectedly,
+                _ => ExitCause::EndedUnexpectedly,
             };
             daemon_cause(cause, None)
         });
@@ -1772,7 +1781,11 @@ impl ProfileRuntime {
         handle.exited.send_replace(true);
     }
 
-    async fn mark_exited(&self, id: AgentId, cause: wire::Exiting) -> Result<(), StoreError> {
+    async fn mark_exited(
+        &self,
+        id: AgentId,
+        cause: wire::IncarnationEnd,
+    ) -> Result<(), StoreError> {
         let key = self.key(id);
         let mut store = self.store.lock().await;
         let Some(row) = store.agent(&key)? else {
@@ -1786,7 +1799,7 @@ impl ProfileRuntime {
     async fn mark_exited_if_live(
         &self,
         id: AgentId,
-        cause: wire::Exiting,
+        cause: wire::IncarnationEnd,
     ) -> Result<(), StoreError> {
         let key = self.key(id);
         let mut store = self.store.lock().await;
@@ -1817,12 +1830,11 @@ impl ProfileRuntime {
         &self,
         store: &mut Sqlite,
         mut row: AgentRow,
-        cause: wire::Exiting,
+        cause: wire::IncarnationEnd,
     ) -> Result<(), StoreError> {
-        let words = wire::exit_words(cause.cause, cause.detail.as_deref());
         row.lifecycle = Lifecycle::Exited as i32;
         row.exit_cause = cause.cause;
-        row.exit_detail = cause.detail;
+        row.exit_detail = cause.detail.clone();
         self.put_row(store, &row)?;
         store.remove_notifications(&row.agent.agent)?;
         let Some(parent) = &row.parent else {
@@ -1843,7 +1855,8 @@ impl ProfileRuntime {
             parent: parent.clone(),
             parent_incarnation,
             kind: EnvelopeKind::Failed as i32,
-            body: words,
+            body: String::new(),
+            ended: Some(cause),
         })?;
         self.deliveries_due.notify_one();
         Ok(())

@@ -168,41 +168,6 @@ impl HostRef {
     }
 }
 
-impl ExitCause {
-    /// How a person reads the cause, after the word "exited", so none
-    /// repeats it. A cause this build does not know reads as nothing: an
-    /// unknown cause is not a failure.
-    pub fn words(self) -> &'static str {
-        match self {
-            ExitCause::Unspecified => "",
-            ExitCause::Finished => "finished",
-            ExitCause::Stopped => "stopped",
-            ExitCause::Aborted => "aborted",
-            ExitCause::Killed => "killed",
-            ExitCause::ProviderExited => "the provider exited",
-            // Both read as the person sees them: the agent ended while no
-            // daemon was there, whether it drained or was found dead.
-            ExitCause::DaemonLost | ExitCause::EndedWhileAway => "while the daemon was away",
-            ExitCause::Orphaned => "orphaned while waiting for you",
-            ExitCause::CouldNotStart => "could not start",
-            ExitCause::DirectoryFailed => "its directory failed",
-            ExitCause::EndedUnexpectedly => "ended unexpectedly",
-        }
-    }
-}
-
-/// A cause as one line: its words, then its own words when it has any
-/// ("the provider exited: exit code 1"). A value this build does not know
-/// shows only its own words.
-pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
-    let words = ExitCause::try_from(cause).map_or("", ExitCause::words);
-    match detail.filter(|detail| !detail.is_empty()) {
-        Some(detail) if words.is_empty() => detail.to_owned(),
-        Some(detail) => format!("{words}: {detail}"),
-        None => words.to_owned(),
-    }
-}
-
 /// The longest name an agent can have.
 pub const AGENT_NAME_MOST: usize = 64;
 

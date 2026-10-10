@@ -385,7 +385,7 @@ impl Home {
         let host = fleet.host(&agent.host_id).map(|host| host.name.as_str());
         let branch = agent.git.as_ref().and_then(|git| git.branch.as_deref());
         // The cause as the row words it, so the filter finds what it shows.
-        let cause = wire::exit_words(agent.exit_cause, agent.exit_detail.as_deref());
+        let cause = ui_state::exit_words(agent.exit_cause, agent.exit_detail.as_deref());
         [
             Some(agent.name.as_str()),
             branch,

@@ -46,8 +46,8 @@ pub use crate::tools::{
 /// The version this agent reports in its Hello and stamps on what it writes.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Why an agent process ended: the cause its final boundary records and
-/// its last ctl frame tells the daemon.
+/// Why an agent process ended: the cause its final step records, on the
+/// boundary and as the incarnation's end the daemon puts on the row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExitCause {
     /// The provider exited on its own, with its code when it had one.
@@ -76,7 +76,7 @@ pub enum ExitCause {
 
 impl ExitCause {
     /// The cause as the wire carries it, with its own words as the detail.
-    pub fn exiting(&self) -> wire::Exiting {
+    pub fn end(&self) -> wire::IncarnationEnd {
         let (cause, detail) = match self {
             ExitCause::ProviderExited(code) => return interpret::provider_exit(*code),
             ExitCause::DaemonLost => (wire::ExitCause::DaemonLost, None),
@@ -97,7 +97,7 @@ impl ExitCause {
                 Some(format!("could not write to it: {why}")),
             ),
         };
-        wire::Exiting {
+        wire::IncarnationEnd {
             cause: cause as i32,
             detail,
         }

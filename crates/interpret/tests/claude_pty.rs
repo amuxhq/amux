@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use interpret::claude_pty::ClaudePty;
-use interpret::{Event, Interpreter, claude_pty_input, run_golden};
+use interpret::{Effect, Event, Interpreter, claude_pty_input, run_golden};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/claude_pty")
@@ -321,5 +321,45 @@ fn the_job_list_empties_when_terminal_claude_exits() {
         (jobs(&exited.step), jobs(&step)),
         (Some((true, 0)), Some((true, 0))),
         "emptied on exit, and empty in a new incarnation"
+    );
+}
+
+/// A child's failed report as its daemon hands it over: no text, the cause
+/// as data.
+fn failed_report(id: &[u8]) -> Event {
+    Event::AgentMessage(wire::Envelope {
+        id: id.to_vec(),
+        from: Some(wire::Sender {
+            value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                name: "child".into(),
+                ..Default::default()
+            })),
+        }),
+        kind: wire::EnvelopeKind::Failed as i32,
+        ended: Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::ProviderExited as i32,
+            detail: Some("exit code 1".into()),
+        }),
+        ..Default::default()
+    })
+}
+
+/// A failed report carries its cause as data; the interpreter words it, and
+/// Claude is told in those words, which the transcript shows too.
+#[test]
+fn a_failed_report_is_worded_for_the_parents_provider() {
+    let (mut state, _) = ClaudePty::initial(&wire::AgentSpec::default(), "test");
+    let stepped = ClaudePty::step(&mut state, failed_report(b"env-failed"));
+    let injected = stepped.effects.iter().find_map(|effect| match effect {
+        Effect::Inject { envelope, .. } => Some(envelope.text.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        injected.as_deref(),
+        Some("the provider exited: exit code 1")
+    );
+    assert_eq!(
+        stepped.step.items[0].text,
+        "the provider exited: exit code 1"
     );
 }

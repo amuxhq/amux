@@ -608,6 +608,7 @@ fn commit(
                 parent_incarnation,
                 kind: wire::EnvelopeKind::Finished as i32,
                 body,
+                ended: None,
             })?;
         }
         // A step that ends one turn may start the next; the snapshot says

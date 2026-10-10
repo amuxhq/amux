@@ -724,7 +724,11 @@ impl State {
             // or on its own; a thread started anywhere else is a child's.
             if response.is_some() && *known == id {
                 self.shared.provider_started();
-                self.boundary(emit, wire::BoundaryKind::Resumed, wire::Exiting::default());
+                self.boundary(
+                    emit,
+                    wire::BoundaryKind::Resumed,
+                    wire::IncarnationEnd::default(),
+                );
                 self.release_held(emit);
             }
             return;
@@ -741,7 +745,7 @@ impl State {
         } else {
             wire::BoundaryKind::Started
         };
-        self.boundary(emit, kind, wire::Exiting::default());
+        self.boundary(emit, kind, wire::IncarnationEnd::default());
         self.release_held(emit);
     }
 
@@ -1543,7 +1547,7 @@ impl State {
                     self.boundary(
                         emit,
                         wire::BoundaryKind::Compacted,
-                        wire::Exiting::default(),
+                        wire::IncarnationEnd::default(),
                     );
                 }
             }
@@ -2188,7 +2192,8 @@ impl State {
         }
     }
 
-    pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::Exiting) {
+    pub(super) fn exited(&mut self, emit: &mut Emit, exit: wire::IncarnationEnd) {
+        emit.end_incarnation(exit.clone());
         self.offers_asked = false;
         // The next server is asked afresh; this one will answer nothing.
         self.skills_asked = 0;

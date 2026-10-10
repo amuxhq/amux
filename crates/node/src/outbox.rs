@@ -228,6 +228,7 @@ impl ProfileRuntime {
             }),
             kind: row.kind,
             text: row.body.clone(),
+            ended: row.ended.clone(),
             incarnation: Some(row.parent_incarnation),
         };
         let sent = if row.parent.host == self.host().as_bytes() {

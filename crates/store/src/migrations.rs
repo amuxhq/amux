@@ -60,7 +60,9 @@ CREATE TABLE deliveries (
   parent_id           BLOB    NOT NULL,
   parent_incarnation  INTEGER NOT NULL,  -- 0 until the parent's row is held, then stamped
   kind                INTEGER NOT NULL,  -- amux.v1.EnvelopeKind: finished or failed
-  body                TEXT,              -- the child's last message, or the failure's cause
+  body                TEXT,              -- finished: the child's last message
+  exit_cause          INTEGER,           -- failed: amux.v1.ExitCause, how the incarnation ended
+  exit_detail         TEXT,              -- failed: the cause's own words, when it has any
   PRIMARY KEY (child_id, incarnation, kind, turn_id)
 );
 

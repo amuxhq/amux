@@ -196,6 +196,8 @@ fn finish_item((mut item, attachments): (Item, Option<Vec<u8>>)) -> Result<Item,
 }
 
 fn delivery_row(row: &Row<'_>) -> rusqlite::Result<Delivery> {
+    let cause: Option<i32> = row.get(8)?;
+    let detail: Option<String> = row.get(9)?;
     Ok(Delivery {
         child_id: row.get(0)?,
         incarnation: row.get(1)?,
@@ -204,6 +206,7 @@ fn delivery_row(row: &Row<'_>) -> rusqlite::Result<Delivery> {
         parent_incarnation: row.get(5)?,
         kind: row.get(6)?,
         body: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+        ended: cause.map(|cause| wire::IncarnationEnd { cause, detail }),
     })
 }
 
@@ -560,7 +563,8 @@ impl Rows<'_> {
         self.conn
             .prepare(
                 "INSERT OR REPLACE INTO deliveries (child_id, incarnation, turn_id, parent_host, \
-                 parent_id, parent_incarnation, kind, body) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 parent_id, parent_incarnation, kind, body, exit_cause, exit_detail) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?
             .execute(params![
                 delivery.child_id,
@@ -571,6 +575,8 @@ impl Rows<'_> {
                 delivery.parent_incarnation,
                 delivery.kind,
                 delivery.body,
+                delivery.ended.as_ref().map(|end| end.cause),
+                delivery.ended.as_ref().and_then(|end| end.detail.clone()),
             ])?;
         Ok(())
     }
@@ -578,7 +584,8 @@ impl Rows<'_> {
     pub(crate) fn deliveries(&self) -> Result<Vec<Delivery>, StoreError> {
         let mut statement = self.conn.prepare(
             "SELECT child_id, incarnation, turn_id, parent_host, parent_id, parent_incarnation, \
-             kind, body FROM deliveries ORDER BY child_id, incarnation, kind, turn_id",
+             kind, body, exit_cause, exit_detail FROM deliveries \
+             ORDER BY child_id, incarnation, kind, turn_id",
         )?;
         let rows = statement
             .query_map([], delivery_row)?

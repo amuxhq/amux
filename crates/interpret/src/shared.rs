@@ -292,6 +292,12 @@ impl Emit {
     pub fn items(&self) -> &[Item] {
         &self.step.items
     }
+
+    /// Makes this step the incarnation's last, saying why it ended: the
+    /// daemon reads the cause from the journal and puts it on the row.
+    pub fn end_incarnation(&mut self, end: wire::IncarnationEnd) {
+        self.step.incarnation_end = Some(end);
+    }
 }
 
 /// How much of a running command's output an item keeps: the newest
@@ -1117,6 +1123,46 @@ pub fn agent_message_key(envelope_id: &[u8]) -> String {
     format!("agent-message:{}", serde_pb::to_hex(envelope_id))
 }
 
+/// An agent message with the text its recipient's provider reads. A failed
+/// report carries how the child's incarnation ended as data, so it is worded
+/// here, for a model; every other message is its own text.
+pub fn worded(mut envelope: Envelope) -> Envelope {
+    if envelope.kind == wire::EnvelopeKind::Failed as i32 {
+        envelope.text = ended_words(envelope.ended.as_ref());
+    }
+    envelope
+}
+
+/// How a child's incarnation ended, as its parent's model reads it: the
+/// cause, then its own words when it has any ("the provider exited: exit
+/// code 1"). A cause this build does not know reads as a plain end.
+fn ended_words(end: Option<&wire::IncarnationEnd>) -> String {
+    use wire::ExitCause;
+    let cause = end.map_or(Ok(ExitCause::Unspecified), |end| {
+        ExitCause::try_from(end.cause)
+    });
+    let words = match cause {
+        Ok(ExitCause::Finished) => "finished",
+        Ok(ExitCause::Stopped) => "stopped",
+        Ok(ExitCause::Aborted) => "aborted",
+        Ok(ExitCause::Killed) => "killed",
+        Ok(ExitCause::ProviderExited) => "the provider exited",
+        Ok(ExitCause::DaemonLost | ExitCause::EndedWhileAway) => "ended while its daemon was away",
+        Ok(ExitCause::Orphaned) => "ended while waiting for an answer nobody could give",
+        Ok(ExitCause::CouldNotStart) => "could not start",
+        Ok(ExitCause::DirectoryFailed) => "its directory failed",
+        Ok(ExitCause::EndedUnexpectedly) => "ended unexpectedly",
+        Ok(ExitCause::Unspecified) | Err(_) => "ended",
+    };
+    match end
+        .and_then(|end| end.detail.as_deref())
+        .filter(|detail| !detail.is_empty())
+    {
+        Some(detail) => format!("{words}: {detail}"),
+        None => words.to_owned(),
+    }
+}
+
 /// The body every kind's agent-message item carries.
 pub fn agent_message_body(envelope: &Envelope) -> AgentMessage {
     AgentMessage {
@@ -1133,7 +1179,7 @@ fn queued_from_bootstrap(bootstrap: &Bootstrap) -> Option<QueuedInput> {
     Some(match bootstrap.of.as_ref()? {
         bootstrap::Of::AgentMessage(envelope) => QueuedInput {
             input_id: envelope.id.clone(),
-            text: envelope.text.clone(),
+            text: worded(envelope.clone()).text,
             attachments: Vec::new(),
             steer: false,
             sender: envelope.from.clone(),

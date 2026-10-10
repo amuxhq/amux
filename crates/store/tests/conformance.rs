@@ -433,11 +433,29 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
             parent_incarnation: 3,
             kind: EnvelopeKind::Finished as i32,
             body: "the answer".into(),
+            ended: None,
         }]
     );
     let delivery = store.deliveries().unwrap().remove(0);
     store.remove_delivery(&delivery).unwrap();
     assert!(store.deliveries().unwrap().is_empty());
+
+    // A failed incarnation's row keeps its cause as data.
+    let failed = Delivery {
+        child_id: b"child".to_vec(),
+        incarnation: 2,
+        turn_id: 0,
+        parent: parent.clone(),
+        parent_incarnation: 3,
+        kind: EnvelopeKind::Failed as i32,
+        body: String::new(),
+        ended: Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::ProviderExited as i32,
+            detail: Some("exit code 1".into()),
+        }),
+    };
+    store.put_delivery(&failed).unwrap();
+    assert_eq!(store.deliveries().unwrap(), vec![failed]);
 }
 
 #[test]

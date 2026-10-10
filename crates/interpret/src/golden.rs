@@ -597,7 +597,7 @@ fn scripted<I: Interpreter>(value: &Value) -> Result<Scripted, String> {
                 word.to_ascii_uppercase().replace(' ', "_")
             ))
             .ok_or_else(|| format!("no exit cause is named {word}"))?;
-            Action::Event(Event::Exiting(wire::Exiting {
+            Action::Event(Event::Exiting(wire::IncarnationEnd {
                 cause: cause as i32,
                 detail: None,
             }))
@@ -740,6 +740,7 @@ fn agent_message(body: &Value) -> Result<Envelope, String> {
         to: None,
         kind: EnvelopeKind::Message as i32,
         text: message.text,
+        ended: None,
         incarnation: None,
     })
 }
@@ -1573,8 +1574,25 @@ fn render<I: Interpreter>(frames: &[Frame]) -> String {
                 }
             );
         }
+        if let Some(end) = &frame.step.incarnation_end {
+            let _ = writeln!(out, "incarnation_end {}", incarnation_end(end));
+        }
     }
     out
+}
+
+/// A cause by its name without the prefix, then its own words quoted.
+fn incarnation_end(end: &wire::IncarnationEnd) -> String {
+    format!(
+        "{}{}",
+        wire::ExitCause::try_from(end.cause).map_or("?", |cause| cause
+            .as_str_name()
+            .trim_start_matches("EXIT_CAUSE_")),
+        end.detail
+            .as_ref()
+            .map(|detail| format!(" {detail:?}"))
+            .unwrap_or_default()
+    )
 }
 
 /// The catalogue hash a step's snapshot names: the blob it wrote under that
@@ -1679,17 +1697,7 @@ fn event_label(event: &Event) -> String {
         Event::Tick { at_ms } => format!("tick {at_ms}"),
         Event::ProviderExit { code } => format!("provider_exit {code:?}"),
         Event::DaemonLost => "daemon_lost".into(),
-        Event::Exiting(exiting) => format!(
-            "exiting {}{}",
-            wire::ExitCause::try_from(exiting.cause).map_or("?", |cause| cause
-                .as_str_name()
-                .trim_start_matches("EXIT_CAUSE_")),
-            exiting
-                .detail
-                .as_ref()
-                .map(|detail| format!(" {detail:?}"))
-                .unwrap_or_default()
-        ),
+        Event::Exiting(exiting) => format!("exiting {}", incarnation_end(exiting)),
         Event::StopRequested(mode) => format!(
             "stop {}",
             mode.as_str_name().trim_start_matches("STOP_MODE_")

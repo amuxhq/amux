@@ -142,6 +142,20 @@ tests = [
 ]
 
 [[contract]]
+id = "exit-cause-in-the-journal"
+source = "invariant"
+section = "Agent lifecycle"
+claim = "Why an incarnation ended is the last step of its journal. The daemon reads the journal to its end before it marks the agent exited, so the row carries the agent's own cause even when no daemon saw it go, and uses its own cause only where the journal has none. A failed report to a parent carries the cause as data, and the parent's interpreter words it for its provider."
+tests = [
+  "node/registry::agent_cause_reaches_the_row",
+  "node/registry::a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones",
+  "node/messaging::a_child_gone_without_a_turn_end_tells_its_parent_it_failed",
+  "interpret/claude_pty::a_failed_report_is_worded_for_the_parents_provider",
+  "interpret/claude_sdk::a_failed_report_is_worded_for_the_parents_provider",
+  "interpret/codex::a_failed_report_is_worded_for_the_parents_provider",
+]
+
+[[contract]]
 id = "daemon-update-mid-turn-with-open-ask"
 source = "worked failure"
 section = "Supervisor and updates"

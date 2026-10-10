@@ -364,11 +364,20 @@ fn boundary(item: &wire::Item) -> Option<String> {
         .as_str_name()
         .trim_start_matches("BOUNDARY_KIND_")
         .to_owned();
-    let cause = wire::exit_words(boundary.cause, boundary.cause_detail.as_deref());
-    Some(if cause.is_empty() {
-        kind
-    } else {
-        format!("{kind} {cause}")
+    // The cause by its name, then its own words: what the agent wrote,
+    // not how any client words it.
+    let cause = match wire::ExitCause::try_from(boundary.cause) {
+        Ok(wire::ExitCause::Unspecified) => String::new(),
+        Ok(cause) => cause
+            .as_str_name()
+            .trim_start_matches("EXIT_CAUSE_")
+            .to_owned(),
+        Err(_) => boundary.cause.to_string(),
+    };
+    Some(match (cause.is_empty(), &boundary.cause_detail) {
+        (true, _) => kind,
+        (false, Some(detail)) => format!("{kind} {cause}: {detail}"),
+        (false, None) => format!("{kind} {cause}"),
     })
 }
 
@@ -511,7 +520,7 @@ async fn life_of_an_agent(kind: Kind) {
     assert_eq!(agent.provider_session(), session);
     assert_eq!(
         agent.log().boundaries(),
-        ["STARTED", "EXITED stopped", "RESUMED"],
+        ["STARTED", "EXITED STOPPED", "RESUMED"],
         "agent logs:\n{}",
         agent.agent_logs()
     );
@@ -558,9 +567,9 @@ async fn life_of_an_agent(kind: Kind) {
         agent.log().boundaries()[..4],
         [
             "STARTED",
-            "EXITED stopped",
+            "EXITED STOPPED",
             "RESUMED",
-            "EXITED ended unexpectedly",
+            "EXITED ENDED_UNEXPECTEDLY",
         ]
     );
     if kind == Kind::Codex {

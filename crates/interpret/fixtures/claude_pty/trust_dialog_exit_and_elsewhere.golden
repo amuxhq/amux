@@ -16,6 +16,7 @@ snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model
 ## 5 provider_exit {"code":1}
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=- version=2.1.283 keymap=claude-2.1 cause=PROVIDER_EXITED detail="exit code 1"
 snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=[]
+incarnation_end PROVIDER_EXITED "exit code 1"
 ## 6 fact {"channel":"agent","json":{"keymap":"claude-2.1","permission_menus":{"folded":[2],"per_suggestion":[1]},"type":"launch","version":"2.1.283"}}
 ## 7 fact {"channel":"agent","json":{"type":"trust_dialog"}}
 item ask:ask:2 ask final at=1800000000000 text="" question×1 open

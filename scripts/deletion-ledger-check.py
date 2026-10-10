@@ -337,9 +337,9 @@ ROWS = [
     ),
     Row(
         "loose create and resume requests",
-        "a create's separate host id and host name, its per-provider config oneof, and a whole input as the first prompt of a create or resume",
+        "a create's separate host id and host name, its config oneof beside a separate kind, and a whole input as the first prompt of a create or resume",
         [
-            r"create_agent_request::",
+            r"create_agent_request::Config",
             r"host_name: (Some|None)",
             r"NotAPrompt",
             r"PeerRef([^A-Za-z_]|$)",
@@ -530,6 +530,50 @@ ROWS = [
             r"CodexLimit([^A-Za-z_]|$)",
             r"CLAUDE_LIMIT_|CODEX_LIMIT_",
             r"_unix_ms",
+        ],
+    ),
+    Row(
+        "the opaque create config",
+        "a create's kind beside its settings as bytes decoded by kind, the refusal when they did not decode, and the forwarding helper that passed the bytes on",
+        [
+            r"forwarded_create",
+            r"config_must_match_kind",
+            r"unknown_config_field_survives_forwarding",
+            r"bytes config = [0-9]",
+        ],
+    ),
+    Row(
+        "the agent's farewell frame",
+        "the exit cause sent as a last control frame, with the wait for a daemon to take it; the cause travels in the journal",
+        [
+            r"FAREWELL_PATIENCE",
+            r"Of::Exiting",
+            r"message Exiting",
+            r"Exiting exiting = ",
+        ],
+    ),
+    Row(
+        "the wire's exit words",
+        "exit causes worded once in the wire crate for every client; each client words the enum itself",
+        [
+            r"wire::exit_words",
+        ],
+    ),
+    Row(
+        "ask open and close times",
+        "times on an ask's close, a permission decision, a plan's decision and a Codex ask that nothing read",
+        [
+            r"AskTimes",
+            r"an_answered_ask_records_when_it_opened_and_closed",
+            r"optional int64 (opened|closed|asked|decided)_at_ms",
+        ],
+    ),
+    Row(
+        "the interrupt-only tools socket",
+        "a check that refused any input but an interrupt from an agent to its child",
+        [
+            r"tools_socket_input_other_than_interrupt_is_refused",
+            r"the one input an agent sends is an interrupt",
         ],
     ),
 ]

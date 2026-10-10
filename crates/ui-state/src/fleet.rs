@@ -51,10 +51,34 @@ pub fn exit_cause(agent: &Agent) -> ExitCause {
             | wire::ExitCause::Unspecified,
         )
         | Err(_) => ExitCause::Ended,
-        Ok(_) => ExitCause::Failed(wire::exit_words(
-            agent.exit_cause,
-            agent.exit_detail.as_deref(),
-        )),
+        Ok(_) => ExitCause::Failed(exit_words(agent.exit_cause, agent.exit_detail.as_deref())),
+    }
+}
+
+/// A cause as a person reads it after the word "exited", then its own
+/// words when it has any ("the provider exited: exit code 1"). A cause this
+/// build does not know shows only its own words: unknown is not failure.
+pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
+    use wire::ExitCause;
+    let words = match ExitCause::try_from(cause) {
+        Ok(ExitCause::Unspecified) | Err(_) => "",
+        Ok(ExitCause::Finished) => "finished",
+        Ok(ExitCause::Stopped) => "stopped",
+        Ok(ExitCause::Aborted) => "aborted",
+        Ok(ExitCause::Killed) => "killed",
+        Ok(ExitCause::ProviderExited) => "the provider exited",
+        // Both read as the person sees them: the agent ended while no
+        // daemon was there, whether it drained or was found dead.
+        Ok(ExitCause::DaemonLost | ExitCause::EndedWhileAway) => "while the daemon was away",
+        Ok(ExitCause::Orphaned) => "orphaned while waiting for you",
+        Ok(ExitCause::CouldNotStart) => "could not start",
+        Ok(ExitCause::DirectoryFailed) => "its directory failed",
+        Ok(ExitCause::EndedUnexpectedly) => "ended unexpectedly",
+    };
+    match detail.filter(|detail| !detail.is_empty()) {
+        Some(detail) if words.is_empty() => detail.to_owned(),
+        Some(detail) => format!("{words}: {detail}"),
+        None => words.to_owned(),
     }
 }
 

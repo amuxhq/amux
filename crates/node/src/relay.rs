@@ -242,6 +242,7 @@ impl ProfileRuntime {
             to: request.to,
             kind: EnvelopeKind::Message as i32,
             text: request.text,
+            ended: None,
             incarnation: None,
         };
         self.send_message_from(envelope, caller.map_or(From::Person, From::Agent))

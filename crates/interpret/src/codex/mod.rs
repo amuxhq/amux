@@ -764,7 +764,7 @@ impl State {
         }
     }
 
-    fn boundary(&mut self, emit: &mut Emit, kind: wire::BoundaryKind, exit: wire::Exiting) {
+    fn boundary(&mut self, emit: &mut Emit, kind: wire::BoundaryKind, exit: wire::IncarnationEnd) {
         self.next_boundary += 1;
         self.emit_item(
             emit,
@@ -978,6 +978,7 @@ impl State {
     /// An agent message: its item now, since Codex reports nothing about an
     /// injected item, then the inject.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        let envelope = crate::shared::worded(envelope);
         let id = envelope.id.clone();
         self.shared.message_accepted(&id);
         self.emit_item(
@@ -1550,7 +1551,7 @@ impl<A: Arm> Interpreter for CodexWith<A> {
             Event::DaemonLost => state.boundary(
                 &mut emit,
                 wire::BoundaryKind::DaemonLost,
-                wire::Exiting::default(),
+                wire::IncarnationEnd::default(),
             ),
             Event::StopRequested(wire::StopMode::Abort) => state.interrupt(&mut emit),
             Event::StopRequested(_) => {}

@@ -814,7 +814,9 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
     let store = runtime.store().await;
     let row = store.agent(&key(&runtime, leaves)).unwrap().unwrap();
     assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
-    assert_eq!(row.exit_cause, ExitCause::EndedWhileAway as i32);
+    // Its journal says why it ended, though no daemon saw it go.
+    assert_eq!(row.exit_cause, ExitCause::ProviderExited as i32);
+    assert_eq!(row.exit_detail.as_deref(), Some("exit code 0"));
     assert_eq!(
         row.ingest_cursor,
         journal_end(&leaves_dir),
@@ -865,10 +867,11 @@ fn lost_its_daemon(dir: &std::path::Path) -> Result<(), String> {
         .ok_or_else(|| "no daemon-lost boundary yet".to_owned())
 }
 
-/// The agent's own account of its exit reaches its row: an agent that
-/// drains after losing its daemon, and one whose open ask is orphaned, end
-/// while a daemon that came back is connected, and their last frame says
-/// why. The daemon could not tell either from a plain exit.
+/// The agent's own account of its exit reaches its row through its
+/// journal: an agent that drains after losing its daemon, and one whose
+/// open ask is orphaned, both end while no daemon runs, and the next daemon
+/// reads why from what they wrote last. It could not tell either from a
+/// plain exit.
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_cause_reaches_the_row() {
     let install = Install::new();
@@ -951,39 +954,38 @@ async fn agent_cause_reaches_the_row() {
         .unwrap();
     }
 
-    // A daemon comes back before either has exited.
-    let daemon = install.start("boot-1", held).await;
-    let runtime = support::runtime(&daemon, &install);
-    let report = daemon.sweep(install.profile).unwrap().clone();
-    let mut live = report.live.clone();
-    live.sort();
-    let mut both = vec![drains, orphaned];
-    both.sort();
-    assert_eq!(live, both, "both agents answered the new daemon");
-
+    // With no daemon back, the held turn finishes and its agent drains;
+    // the other's ask has nobody to answer it. Both end and let go of
+    // their directories before any daemon returns.
     std::fs::write(&gate, "").unwrap();
     for id in [drains, orphaned] {
-        until("the agent to exit", || async {
-            let lifecycle = runtime.agent(id).await.unwrap().lifecycle;
-            (lifecycle == Lifecycle::Exited as i32)
-                .then_some(())
-                .ok_or("still live")
+        let dir = install.agent_dir(id);
+        until("the agent to exit with no daemon", || {
+            std::future::ready(
+                (!agent_dir::locked(&dir))
+                    .then_some(())
+                    .ok_or("its process still holds the directory"),
+            )
         })
         .await
         .unwrap();
     }
+
+    let daemon = install.start("boot-1", held).await;
+    let runtime = support::runtime(&daemon, &install);
+    let report = daemon.sweep(install.profile).unwrap().clone();
+    let mut exited = report.exited.clone();
+    exited.sort();
+    let mut both = vec![drains, orphaned];
+    both.sort();
+    assert_eq!(exited, both, "the sweep found both ended");
     let drained = runtime.agent(drains).await.unwrap();
+    assert_eq!(drained.lifecycle(), Lifecycle::Exited);
     assert_eq!(drained.exit_cause(), ExitCause::DaemonLost);
-    assert_eq!(
-        wire::exit_words(drained.exit_cause, drained.exit_detail.as_deref()),
-        "while the daemon was away"
-    );
+    assert_eq!(drained.exit_detail, None);
     let orphan = runtime.agent(orphaned).await.unwrap();
     assert_eq!(orphan.exit_cause(), ExitCause::Orphaned);
-    assert_eq!(
-        wire::exit_words(orphan.exit_cause, orphan.exit_detail.as_deref()),
-        "orphaned while waiting for you"
-    );
+    assert_eq!(orphan.exit_detail, None);
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }

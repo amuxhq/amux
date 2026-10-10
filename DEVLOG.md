@@ -1,3 +1,23 @@
+2026-10-10 — **An agent's exit cause travels in its journal, and each client words it.**
+The agent told its daemon why an incarnation ended in a last control frame,
+and waited a moment for a daemon to take it; an agent that ended while no
+daemon was connected lost its cause, and the next daemon wrote "ended while
+away" over a drain or an orphaned ask it could have named. The step that
+writes an incarnation's final boundary now also carries `incarnation_end`
+(the cause and its own words). The daemon reads the journal to its end before
+it marks an agent exited, on a live exit and on the startup sweep alike, and
+records that cause; its own causes remain only for a process it could not
+start, a directory that is gone, a process it killed, and a journal that says
+nothing (`ENDED_UNEXPECTEDLY`, or `ENDED_WHILE_AWAY` when found on return).
+An agent that cannot write its directory cannot write this either, so its row
+says it ended unexpectedly. The `exiting` frame, its message and the
+agent's farewell wait are gone. The wire crate no longer words causes: the
+fleet and chat views, the TUI's filter, `amux ls` and the agents tool each
+word the enum themselves. A child's failed report to its parent carries the
+cause as data (`Envelope.ended`, set only on a failed report), stored as
+the delivery's `exit_cause` and `exit_detail`, and each kind's interpreter
+words it for the parent's model.
+
 2026-10-10 — **The daemon no longer checks which input an agent sends its child.**
 On an agent's tools socket the daemon refused any input but an interrupt.
 The tool server only ever sends the stop tool's interrupt, so the check

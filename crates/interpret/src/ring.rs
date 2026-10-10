@@ -113,7 +113,9 @@ impl Entry {
             Entry::ProviderExit { code } => Event::ProviderExit { code },
             Entry::DaemonLost => Event::DaemonLost,
             Entry::Stop { mode } => Event::StopRequested(StopMode::try_from(mode).ok()?),
-            Entry::Exiting { cause, detail } => Event::Exiting(wire::Exiting { cause, detail }),
+            Entry::Exiting { cause, detail } => {
+                Event::Exiting(wire::IncarnationEnd { cause, detail })
+            }
             Entry::Git { hex: None } => Event::Git(None),
             Entry::Git { hex: Some(hex) } => Event::Git(Some(
                 wire::Git::decode(crate::from_hex(&hex).ok()?.as_slice()).ok()?,

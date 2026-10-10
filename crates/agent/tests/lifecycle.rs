@@ -50,7 +50,7 @@ async fn with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_gr
         vec![
             "STARTED".to_owned(),
             "DAEMON_LOST".to_owned(),
-            "EXITED while the daemon was away".to_owned()
+            "EXITED DAEMON_LOST".to_owned()
         ]
     );
     agent.assert_released();
@@ -149,7 +149,7 @@ async fn an_orphan_finishes_its_turn_before_it_exits() {
             "boundary STARTED".to_owned(),
             "boundary DAEMON_LOST".to_owned(),
             "turn end".to_owned(),
-            "boundary EXITED while the daemon was away".to_owned()
+            "boundary EXITED DAEMON_LOST".to_owned()
         ]
     );
     agent.assert_released();
@@ -214,7 +214,7 @@ async fn an_ask_nobody_can_answer_exits_at_the_drain_deadline() {
     let log = agent.log();
     assert_eq!(
         log.boundaries().last().map(String::as_str),
-        Some("EXITED orphaned while waiting for you")
+        Some("EXITED ORPHANED")
     );
     assert_eq!(log.open_asks(), 0, "the final snapshot closes the ask");
     assert!(!log.has_text("never"));
@@ -247,7 +247,7 @@ async fn abort_cancels_the_turn_under_an_open_ask_and_exits() {
     );
     assert_eq!(
         log.boundaries().last().map(String::as_str),
-        Some("EXITED aborted")
+        Some("EXITED ABORTED")
     );
     assert_eq!(log.open_asks(), 0);
     assert!(!log.has_text("never"));
@@ -317,7 +317,7 @@ async fn a_one_shot_child_runs_its_queued_follow_up_then_exits_and_refuses_late_
     agent.release();
     agent
         .wait("the one-shot exit", |log| {
-            log.boundaries().last().map(String::as_str) == Some("EXITED finished")
+            log.boundaries().last().map(String::as_str) == Some("EXITED FINISHED")
         })
         .await;
     let log = agent.log();
@@ -383,7 +383,7 @@ async fn a_journal_write_that_fails_ends_the_incarnation_and_the_next_writes_its
         .wait("the failed incarnation's final boundary", |log| {
             log.boundaries()
                 .iter()
-                .any(|boundary| boundary == "EXITED ended unexpectedly")
+                .any(|boundary| boundary == "EXITED ENDED_UNEXPECTEDLY")
         })
         .await;
     let mut daemon = agent.dial().await;
@@ -475,7 +475,7 @@ fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
     assert!(agent.terminal_bytes().contains("started"));
     assert_eq!(
         agent.log().boundaries().last().map(String::as_str),
-        Some("EXITED the provider exited: exit code 3")
+        Some("EXITED PROVIDER_EXITED: exit code 3")
     );
     agent.assert_released();
 }

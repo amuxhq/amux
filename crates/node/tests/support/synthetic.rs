@@ -341,14 +341,17 @@ impl SyntheticAgent {
         .unwrap();
     }
 
-    /// The process ends the way an agent does: its last frame says why,
-    /// then it dies.
+    /// The process ends the way an agent does: its last step says why, it
+    /// nudges, then it dies.
     pub async fn exit(&mut self, cause: wire::ExitCause, detail: Option<&str>) {
-        self.send(ctl_frame::Of::Exiting(wire::Exiting {
-            cause: cause as i32,
-            detail: detail.map(str::to_owned),
-        }))
-        .await;
+        self.append(&Step {
+            incarnation_end: Some(wire::IncarnationEnd {
+                cause: cause as i32,
+                detail: detail.map(str::to_owned),
+            }),
+            ..Step::default()
+        });
+        self.nudge().await;
         self.die().await;
     }
 

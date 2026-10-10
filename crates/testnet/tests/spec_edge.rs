@@ -310,32 +310,6 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     assert!(from_desk.contains(&laptop_id.as_bytes().to_vec()));
     println!("PeerService answered laptop -> desk and desk -> laptop");
 
-    // The desk knows who is calling: the laptop may send only as its own
-    // agents.
-    let impostor = wire::Envelope {
-        from: Some(wire::Sender {
-            value: Some(wire::sender::Value::Agent(wire::AgentSender {
-                agent_id: Uuid::new_v4().as_bytes().to_vec(),
-                host_id: stranger_id.as_bytes().to_vec(),
-                name: "someone".to_owned(),
-            })),
-        }),
-        to: Some(wire::AgentRef {
-            host_id: desk_id.as_bytes().to_vec(),
-            agent_id: Uuid::new_v4().as_bytes().to_vec(),
-        }),
-        text: "hello".to_owned(),
-        ..wire::Envelope::default()
-    };
-    let refused = edge(&net, "laptop")
-        .peer(desk_id)
-        .await
-        .unwrap()
-        .send_message(impostor)
-        .await
-        .expect_err("a host cannot speak for another host's agent");
-    assert_eq!(refused.code(), tonic::Code::PermissionDenied);
-
     // A stranger that trusts the desk but that the desk never paired with
     // is refused: its pinned dial never becomes a link, and on the desk's
     // listener, without a trusted key, there is no PeerService to reach.

@@ -1014,16 +1014,16 @@ async fn follow_once(
             return NOT_CAUGHT_UP;
         }
         match message.of {
-            Some(inventory_event::Of::Host(entry)) if entry.host_id == host_bytes => {
+            Some(inventory_event::Of::Host(entry)) => {
                 generation = Some(entry.generation);
                 if let Some(me) = runtime.upgrade() {
                     me.peer_providers_said(&host_bytes, entry.providers);
                 }
             }
-            Some(inventory_event::Of::Agent(agent)) if agent.host_id == host_bytes => {
+            Some(inventory_event::Of::Agent(agent)) => {
                 listed.insert(agent.agent_id.clone(), agent);
             }
-            Some(inventory_event::Of::AgentRemoved(removed)) if removed.host_id == host_bytes => {
+            Some(inventory_event::Of::AgentRemoved(removed)) => {
                 listed.remove(&removed.agent_id);
             }
             Some(inventory_event::Of::CaughtUp(_)) => {
@@ -1064,17 +1064,17 @@ async fn follow_once(
         };
         let changed = match message.of {
             // What its providers offer is said on its own entry.
-            Some(inventory_event::Of::Host(entry)) if entry.host_id == host_bytes => {
+            Some(inventory_event::Of::Host(entry)) => {
                 if me.peer_providers_said(&host_bytes, entry.providers) {
                     me.sync_hosts().await;
                 }
                 continue;
             }
-            Some(inventory_event::Of::Agent(agent)) if agent.host_id == host_bytes => {
+            Some(inventory_event::Of::Agent(agent)) => {
                 let mut store = me.store.lock().await;
                 me.put_replica_row(&mut store, &agent)
             }
-            Some(inventory_event::Of::AgentRemoved(removed)) if removed.host_id == host_bytes => {
+            Some(inventory_event::Of::AgentRemoved(removed)) => {
                 let mut store = me.store.lock().await;
                 let key = AgentKey::new(removed.host_id, removed.agent_id);
                 match store.agent(&key) {

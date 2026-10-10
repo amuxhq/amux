@@ -180,24 +180,13 @@ impl PeerService for PeerApi {
         self.client.send_input(request).await
     }
 
-    /// A host creates agents here for its own agents, or for the person:
-    /// the parent it names, if any, must be one of its own.
+    /// The calling daemon names the parent, one of its own agents or none
+    /// for the person, from its own tools-socket caller.
     async fn create_agent(
         &self,
         request: Request<CreateAgentRequest>,
     ) -> Result<Response<Agent>, Status> {
-        let host = caller(&request)?;
-        let foreign_parent = request
-            .get_ref()
-            .parent
-            .as_ref()
-            .is_some_and(|parent| parent.host_id != host.as_bytes());
-        if foreign_parent {
-            return Err(status(crate::grpc::wire_error(
-                wire::ErrorCode::PermissionDenied,
-                "a host creates children only for its own agents",
-            )));
-        }
+        caller(&request)?;
         self.client.create_agent(request).await
     }
 
@@ -241,9 +230,9 @@ impl PeerService for PeerApi {
         &self,
         request: Request<Envelope>,
     ) -> Result<Response<SendMessageResponse>, Status> {
-        let host = caller(&request)?;
+        caller(&request)?;
         self.runtime()?
-            .send_peer_message(request.into_inner(), host)
+            .send_peer_message(request.into_inner())
             .await
             .map(Response::new)
             .map_err(|error| status(error.to_wire()))

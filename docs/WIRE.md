@@ -387,8 +387,8 @@ child's incarnation ended as `ended` (an `IncarnationEnd`: the `ExitCause` and
 its own words), which the parent's interpreter words for its provider. The recipient's daemon dedupes by
 `id` against the recipient's items, so a resend after a lost answer is one
 message. The answer comes once the recipient has accepted it. A paired host
-forwards the envelope its daemon stamped, and the receiving daemon takes an
-agent sender only if that agent is the forwarding host's own.
+forwards the envelope its daemon stamped, and the receiving daemon takes that
+sender as given.
 
 ## Inputs
 

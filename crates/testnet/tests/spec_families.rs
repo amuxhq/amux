@@ -407,22 +407,6 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
     assert_eq!(named.cwd, lead_cwd);
     println!("spawn on \"desk\" or \"DESK\" naming no directory: the child starts in {lead_cwd}");
 
-    // A host creates children only for its own agents.
-    let desk = net.edge("desk").unwrap();
-    let mut peer = desk.peer(box_id).await.unwrap();
-    let forged = peer
-        .create_agent(CreateAgentRequest {
-            parent: Some(AgentRef {
-                host_id: net.host("BOX").unwrap().host_id.as_bytes().to_vec(),
-                agent_id: Uuid::new_v4().as_bytes().to_vec(),
-            }),
-            cwd: net.host("box").unwrap().work.to_string_lossy().into_owned(),
-            ..request("box")
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(forged.code(), Code::PermissionDenied);
-    println!("desk asking box for a child of BOX's agent: PERMISSION_DENIED");
     net.shutdown().await.unwrap();
 }
 

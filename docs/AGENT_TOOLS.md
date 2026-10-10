@@ -340,19 +340,17 @@ ordinary peer calls; nothing about them is specific to messaging.
 - **Send.** `ResolveAgent` finds a remote agent by its replica row. The local
   daemon stamps the envelope as from the calling agent, with this host's id,
   and makes the peer service's `SendMessage` call, which carries that
-  envelope, on the recipient's daemon over the peer link. That daemon
-  accepts an agent sender only if it belongs to the calling host, since a
-  host speaks only for its own agents, and then runs the recipient's lane as
-  for a local sender. A message that arrived from a peer for a third host is
-  not passed on. A parent's message resumes its exited child on another host
-  the same way it does locally, since the parent edge names the parent's host.
+  envelope, on the recipient's daemon over the peer link. That daemon takes
+  the sender as stamped and runs the recipient's lane as for a local sender.
+  A message that arrived from a peer for a third host is not passed on. A
+  parent's message resumes its exited child on another host the same way it
+  does locally, since the parent edge names the parent's host.
 - **Spawn.** `host` names a trusted host; the local daemon resolves the name
   (an exact match, then one ignoring case, and otherwise `NOT_FOUND` listing
   the known names or `AmbiguousHostName` with the candidates) and makes the
   create on that host with the parent set to the calling agent on this host.
-  The far daemon refuses a parent that is not one of the calling host's own
-  agents. The forwarded call waits up to 30 seconds, which covers the child's
-  start there.
+  The forwarded call waits up to 30 seconds, which covers the child's start
+  there.
 - **Stop.** The lineage check runs against the child's replica row, which
   carries the same parent edge, and the interrupt is then forwarded to the
   child's host.

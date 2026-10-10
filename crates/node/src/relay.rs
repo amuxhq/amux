@@ -50,8 +50,6 @@ pub enum RelayError {
     Resume(Box<RegistryError>),
     #[error(transparent)]
     Forwarded(#[from] crate::forward::ForwardError),
-    #[error("{0}")]
-    Forbidden(&'static str),
     #[error("the store: {0}")]
     Store(#[from] StoreError),
 }
@@ -71,7 +69,6 @@ impl RelayError {
             Self::Stale => ErrorCode::NotFound,
             Self::Forwarded(error) => return error.to_wire(),
             Self::Resume(_) | Self::Store(_) => ErrorCode::Internal,
-            Self::Forbidden(_) => ErrorCode::PermissionDenied,
         };
         wire::Error {
             code: code as i32,
@@ -250,23 +247,16 @@ impl ProfileRuntime {
     }
 
     /// A message a paired host sends on behalf of one of its agents, or of
-    /// the person. An agent sender it names must be that host's own agent:
-    /// a host speaks only for its own agents.
+    /// the person. The sending daemon stamped the sender from its own
+    /// caller, so it is taken as given; one that names no agent is the
+    /// person's.
     pub async fn send_peer_message(
         &self,
         envelope: Envelope,
-        host: crate::HostId,
     ) -> Result<SendMessageResponse, RelayError> {
         let from = match envelope.from.clone().and_then(|from| from.value) {
-            Some(sender::Value::Agent(sender)) if sender.host_id == host.as_bytes() => {
-                From::Peer(sender)
-            }
-            Some(sender::Value::Human(_)) => From::PeerPerson,
-            _ => {
-                return Err(RelayError::Forbidden(
-                    "a host sends messages only from its own agents",
-                ));
-            }
+            Some(sender::Value::Agent(sender)) => From::Peer(sender),
+            _ => From::PeerPerson,
         };
         self.send_message_from(envelope, from).await
     }

@@ -585,6 +585,17 @@ ROWS = [
             r"manages_no_other_agent",
         ],
     ),
+    Row(
+        "re-checking what a paired daemon stamped",
+        "the peer service's refusal of a create naming another host's agent as parent, the receiving daemon's refusal of a peer's envelope whose agent sender is not the calling host's, and replication dropping inventory rows a peer lists for another host",
+        [
+            r"foreign_parent",
+            r"children only for its own agents",
+            r"speaks only for its own agents|sends messages only from its own agents",
+            r"RelayError::Forbidden",
+            r"(entry|agent|removed)\.host_id == host_bytes",
+        ],
+    ),
 ]
 
 # Files that name removed things on purpose, to hold them gone.

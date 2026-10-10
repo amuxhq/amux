@@ -1,3 +1,16 @@
+2026-10-10 — **A daemon takes what a paired daemon stamped as given.**
+Only amux daemons call each other's peer service, and each stamps a
+message's sender and a create's parent from its own callers. Three checks
+re-verified that stamping on the receiving side and could only ever catch a
+call made by hand: the peer service refused a create naming another host's
+agent as parent, the receiving daemon refused an envelope whose agent sender
+was not the calling host's, and replication dropped inventory rows a peer
+listed for another host. All three are gone, with the forged-create and
+impostor-envelope assertions that held them, and the docs now describe the
+sending daemon's stamping instead. A peer's inventory still carries only its
+own host's entry and agents, and the peer service still answers `NOT_FOUND`
+for an agent its host only replicates rather than passing the call on.
+
 2026-10-10 — **A resumed agent's row ends with its own cause, and a live row's cause is not filtered on.**
 When an incarnation ends without writing its final boundary (killed, or
 crashed), the next incarnation writes it on start and leaves that step without

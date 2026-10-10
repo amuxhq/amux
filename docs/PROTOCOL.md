@@ -520,8 +520,10 @@ the folder, branch and base it gets back as given.
 `PeerService` (`crates/node/src/edge/peer.rs`) is the daemon-to-daemon
 service; replication is a daemon being a client of its peer. The caller is the
 host whose pinned key the stream's handshake presented, and a call without one
-is refused as `UNAUTHENTICATED`. It differs from `ClientService` in these
-ways:
+is refused as `UNAUTHENTICATED`. Only amux daemons call it, and each stamps
+what it says on behalf of its own callers, a message's sender and a create's
+parent, from those callers; the answering daemon takes them as given. It
+differs from `ClientService` in these ways:
 
 - It answers only for this host's own agents. Its inventory stream carries
   this host's entry and this host's agents, never what this host knows of
@@ -532,11 +534,8 @@ ways:
 - `Subscribe` takes a `PeerSubscribeRequest`, which may ask for what came
   `after` a revision: that is how a replica catches up from its cursor
   ([the wire](WIRE.md) describes it).
-- `CreateAgent` refuses a parent that is not one of the calling host's own
-  agents: a host creates children only for its own agents or for the person.
 - `SendMessage` takes the `Envelope` the calling host's daemon stamped, and
-  takes an agent sender from it only if that agent belongs to the calling
-  host; a host speaks only for its own agents.
+  takes its sender as given.
 - `ListRepositories` answers for this host only.
 - `Dump` answers with this host's part of the caller's report, a `DumpPart`,
   since the caller is on another machine.
@@ -558,15 +557,15 @@ no request carries an agent id or a token claiming one. On that socket:
 ### Agent messaging across hosts
 
 `SendMessage` carries a `SendMessageRequest` whose `to` is a host and an
-agent. The daemon makes the `Envelope`, its sender stamped from the caller (the
-person, or the calling agent with this host's id and its name). When the
+agent. The daemon makes the `Envelope`, its sender stamped from the caller
+(the person, or the calling agent with this host's id and its name). When the
 host is another one, it makes the call on the recipient's daemon with that
-envelope. That daemon accepts an agent sender only if it
-belongs to the calling host, then delivers through the recipient's lane
-exactly as it would for a local sender. A message that arrived from a peer
-for a third host is not passed on. A child's "finished" or "failed" report to
-a parent on another host travels the same way, carrying the parent's
-incarnation so the parent's own daemon can drop it for any other incarnation.
+envelope. That daemon takes the sender the calling daemon stamped and delivers
+through the recipient's lane exactly as it would for a local sender. A message
+that arrived from a peer for a third host is not passed on. A child's
+"finished" or "failed" report to a parent on another host travels the same
+way, carrying the parent's incarnation so the parent's own daemon can drop it
+for any other incarnation.
 [Agent tools](AGENT_TOOLS.md#across-hosts) describes the whole path.
 
 ### Errors

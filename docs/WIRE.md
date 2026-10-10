@@ -597,13 +597,16 @@ are the agent's own, written in its journal as the last step's
 `incarnation_end` (see [the agent process](AGENT_PROCESS.md#lifecycle)):
 `FINISHED` (a child's one-shot exit), `STOPPED`, `ABORTED`, `PROVIDER_EXITED`,
 `DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START` and `DIRECTORY_FAILED`. The
-daemon reads the journal to its end before it marks the agent exited, and
-records its own cause only where the journal has none: `COULD_NOT_START` when
-the agent process cannot be spawned, `DIRECTORY_FAILED` when the agent's
-directory is gone, `KILLED` when it killed the process, `ENDED_WHILE_AWAY` for
-a process found dead when a daemon starts, and `ENDED_UNEXPECTEDLY`
-otherwise. `UNSPECIFIED` is a live agent's, and a cause a client does not know
-reads as an ordinary end, not a failure: clients draw `FINISHED` as finished,
+daemon copies that onto the row when it ingests the step, reads the journal
+to its end before it marks the agent exited, and records its own cause only
+where the journal has none: `COULD_NOT_START` when the agent process cannot
+be spawned, `DIRECTORY_FAILED` when the agent's directory is gone, `KILLED`
+when it killed the process, `ENDED_WHILE_AWAY` for a process found dead when
+a daemon starts, and `ENDED_UNEXPECTEDLY` otherwise. `UNSPECIFIED` is a live
+agent's (a row still live can briefly hold the cause its journal ended with,
+until the daemon marks it exited, so a client reads the cause only on an
+exited row), and a cause a client does not know reads as an ordinary end,
+not a failure: clients draw `FINISHED` as finished,
 the stops and unknown causes as ended, and every other cause as a failure in
 its words followed by its own. The `Boundary` that ends an incarnation in the
 journal carries the same cause and detail.

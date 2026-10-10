@@ -316,6 +316,78 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
     ));
 }
 
+/// The cause an agent's journal ends with reaches its row in the commit
+/// that ingests that step, not when the daemon marks the agent exited: a
+/// daemon that ingested the final step and died before marking leaves the
+/// cause on the row, and the next daemon's sweep, with nothing left to
+/// ingest, keeps it rather than recording that the agent ended while away.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_ingested_cause_survives_a_daemon_that_died_before_marking() {
+    let install = Install::new();
+    let host = node::host_id(&install.profile_dir()).unwrap();
+    let id = uuid::Uuid::new_v4();
+    let key = AgentKey::new(host.as_bytes().to_vec(), id.as_bytes().to_vec());
+    let mut writer =
+        journal::Writer::open(install.agent_dir(id).join(agent_dir::JOURNAL), 1 << 20).unwrap();
+    let last = wire::Step {
+        snapshot: Some(wire::Snapshot {
+            phase: Phase::Idle as i32,
+            at_ms: 1_000,
+            ..Default::default()
+        }),
+        incarnation_end: Some(wire::IncarnationEnd {
+            cause: ExitCause::ProviderExited as i32,
+            detail: Some("exit code 3".into()),
+        }),
+        ..Default::default()
+    };
+    writer.append(&last).unwrap();
+    let written = writer.offset();
+    drop(writer);
+
+    // What the earlier daemon got done: the row, and the journal's last
+    // step committed. It died before it marked the agent exited.
+    {
+        let mut store = store::Sqlite::open(
+            &install.profile_dir().join(node::STORE),
+            host.as_bytes().to_vec(),
+        )
+        .unwrap();
+        store
+            .put_agent(&AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/tmp"))
+            .unwrap();
+        let clock = store::CommitClock {
+            now_ms: 1_000,
+            notify_delay_ms: 0,
+        };
+        store.commit(&key, &[(written, last)], clock).unwrap();
+        let row = store.agent(&key).unwrap().unwrap();
+        assert_eq!(row.lifecycle, Lifecycle::Live as i32, "not marked exited");
+        assert_eq!(
+            (row.exit_cause, row.exit_detail.as_deref()),
+            (ExitCause::ProviderExited as i32, Some("exit code 3")),
+            "the ingested step put its cause on the row"
+        );
+    }
+
+    let daemon = install
+        .start("boot-1", install.launch("idle", vec![]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let report = daemon.sweep(install.profile).unwrap().clone();
+    assert_eq!(report.exited, vec![id]);
+    let row = runtime.store().await.agent(&key).unwrap().unwrap();
+    assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
+    assert_eq!(row.ingest_cursor, written, "nothing was left to ingest");
+    assert_eq!(
+        (row.exit_cause, row.exit_detail.as_deref()),
+        (ExitCause::ProviderExited as i32, Some("exit code 3")),
+        "the sweep keeps the agent's own cause"
+    );
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn spawn_writes_spec_one_and_starts_the_agent_process() {
     let install = Install::new();

@@ -1,3 +1,15 @@
+2026-10-10 — **An agent's exit cause reaches its row when the daemon ingests it.**
+The daemon held the cause from an agent's last journal step in memory until
+it marked the agent exited, so a daemon that ingested that step and stopped
+before marking left the next daemon nothing to read, and its sweep recorded
+"ended while away". Commit now copies `incarnation_end` onto the row's
+`exit_cause` and `exit_detail` in the same transaction as the step, the way
+it copies a snapshot's phase. Marking an agent exited only flips the
+lifecycle, keeping a cause already on the row and recording the daemon's own
+only where the row has none; a resume still clears the cause for the new
+incarnation. The in-memory holding is gone. The agents tool, which words a
+cause for any row that has one, now says nothing for a row still live.
+
 2026-10-10 — **An agent's exit cause travels in its journal, and each client words it.**
 The agent told its daemon why an incarnation ended in a last control frame,
 and waited a moment for a daemon to take it; an agent that ended while no

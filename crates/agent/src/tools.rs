@@ -676,8 +676,12 @@ fn kind_word(kind: Kind) -> String {
 /// How an exited agent ended, as the tools say it: the cause's wire name,
 /// then its own words when it has any (`provider_exited: exit code 1`).
 /// None while it runs, and for a cause this build does not know with no
-/// words of its own.
+/// words of its own. A row still live can already hold the cause its
+/// journal ended with, until its daemon marks it exited.
 fn exit_words(agent: &Agent) -> Option<String> {
+    if agent.lifecycle() == Lifecycle::Live {
+        return None;
+    }
     let cause = match agent.exit_cause() {
         ExitCause::Unspecified => None,
         known => Some(word(known.as_str_name(), "EXIT_CAUSE_")),

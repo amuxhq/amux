@@ -82,7 +82,7 @@ produced:
 | `appends` | Text appended to an item already held |
 | `snapshot` | The agent's snapshot, when this step changed it |
 | `turn_end` | Set when the step ended a turn: the turn id and the key of the turn's last message |
-| `incarnation_end` | Set on the last step of an incarnation: why it ended (an `ExitCause`) and the cause's own words. The daemon puts it on the row when it marks the agent exited |
+| `incarnation_end` | Set on the last step of an incarnation: why it ended (an `ExitCause`) and the cause's own words. The daemon copies it onto the row when it commits the step |
 
 The snapshot rides in the same frame because it costs nothing, but nothing
 depends on it being there: after a restart the interpreter re-derives and
@@ -182,7 +182,7 @@ processes the frames in journal order, inside one transaction:
 | Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms`, `git` and `at_ms` (as `last_activity_ms`) from its envelope onto the row. |
 | Snapshot turning the phase to `PHASE_NEEDS_YOU` | Inserts a `notifications` row due after the push delay. Leaving `PHASE_NEEDS_YOU` deletes the agent's pending rows. |
 | `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message. |
-| `incarnation_end` | Nothing in the store; the daemon holds it until it marks the agent exited, after the rest of the journal is read, and writes it then as the row's `exit_cause` and `exit_detail`. |
+| `incarnation_end` | Copies the cause and its words onto the row as `exit_cause` and `exit_detail`. The row stays live until the daemon marks the agent exited, which keeps this cause, so a daemon that stops in between leaves it for the next one. |
 
 Then the row's `ingest_cursor` is set to the offset just past the last frame
 and the row is written, in the same transaction as the records it describes.
@@ -336,7 +336,7 @@ The schema is the migration in
 | `kind` | The agent's `Kind`, as its wire integer |
 | `name`, `cwd` | As the registry holds them; every agent has a name, given or chosen by the daemon |
 | `parent_host`, `parent_id` | A child records its parent as host and id, because families cross hosts |
-| `lifecycle`, `exit_cause`, `exit_detail` | Live or exited, and why: the `ExitCause` as its wire integer, so a cause from a newer host is kept and served as it came, and the cause's own words. Owned by the daemon, which records the agent's own cause from its journal's `incarnation_end`, else its own. |
+| `lifecycle`, `exit_cause`, `exit_detail` | Live or exited, and why: the `ExitCause` as its wire integer, so a cause from a newer host is kept and served as it came, and the cause's own words. Owned by the daemon: commit copies the agent's own cause from its journal's `incarnation_end`, and marking the agent exited records the daemon's own cause only where the row has none. A resume clears both. |
 | `phase`, `working_on`, `phase_since_ms`, `git`, `last_activity_ms` | Copied from the newest snapshot's envelope at commit, and on a replica row when absorb takes a snapshot from the origin; `last_activity_ms` is the snapshot's `at_ms`, never commit time, and orders own rows' retention. A replica row also takes `phase`, `working_on`, `phase_since_ms` and `git` from the origin's inventory row, which carries no last activity, so replica retention orders by `phase_since_ms`, which every replica row has |
 | `snapshot` | The newest snapshot, body opaque; it carries its own revision |
 | `ingest_cursor` | Own rows: the journal offset committed through |

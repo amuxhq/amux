@@ -165,10 +165,12 @@ provider's process group at once and writes nothing.
 
 Why the incarnation ended travels in the journal, not on `ctl.sock`: the
 step that writes the final boundary also carries `incarnation_end`, and the
-agent nudges its daemon after it as after any step. The daemon reads the
-journal to its end before it marks the agent exited, whether it watched the
-process end or finds it gone when it starts, so the row gets the agent's own
-cause even when no daemon was connected at the time. A journal that stops
+agent nudges its daemon after it as after any step. The daemon copies the
+cause onto the agent's row in the commit that ingests that step, and reads
+the journal to its end before it marks the agent exited, whether it watched
+the process end or finds it gone when it starts, so the row gets the agent's
+own cause even when no daemon was connected at the time, or when a daemon
+ingested the step and stopped before marking. A journal that stops
 without one (the process was killed, or crashed, or could not write its
 directory) gets the daemon's own cause. An incarnation that ended with no
 final boundary at all gets one with `ENDED_UNEXPECTEDLY` when the next

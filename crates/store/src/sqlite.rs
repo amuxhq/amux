@@ -616,6 +616,13 @@ fn commit(
         if step.turn_end.is_some() {
             row.turn_open = false;
         }
+        // Why the incarnation ended goes onto the row with the step that
+        // says so: a daemon that stops before it marks the agent exited
+        // leaves the cause where the next one finds it.
+        if let Some(end) = &step.incarnation_end {
+            row.exit_cause = end.cause;
+            row.exit_detail = end.detail.clone();
+        }
         if let Some(snapshot) = &step.snapshot
             && (snapshot.phase == wire::Phase::Working as i32
                 || snapshot.phase == wire::Phase::NeedsYou as i32)

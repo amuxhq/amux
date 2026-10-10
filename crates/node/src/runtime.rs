@@ -338,9 +338,6 @@ pub struct ProfileRuntime {
     /// Journal frames committed since start: what ingest has done, so its
     /// cost per frame can be measured from outside.
     ingested_frames: AtomicU64,
-    /// Each own agent's incarnation end as its journal wrote it, held from
-    /// ingest until the agent is marked exited with it.
-    ended: Mutex<HashMap<AgentId, wire::IncarnationEnd>>,
     /// Set once every own journal has been read to its end after start.
     pub(crate) journals_read: watch::Sender<bool>,
     pub(crate) deliveries_due: Arc<Notify>,
@@ -553,7 +550,6 @@ impl ProfileRuntime {
             lanes: Mutex::new(HashMap::new()),
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
-            ended: Mutex::new(HashMap::new()),
             journals_read: watch::Sender::new(false),
             deliveries_due: Arc::new(Notify::new()),
             notifications_due: Arc::new(Notify::new()),
@@ -1056,8 +1052,6 @@ impl ProfileRuntime {
         dir: &Path,
         launch: &Launch,
     ) -> Result<Agent, RegistryError> {
-        // A new incarnation ends on its own terms.
-        self.ended.lock().unwrap().remove(&id);
         let tools = self.bind_tools(id, dir)?;
         let child = match spawn_agent(&launch.install_path, dir) {
             Ok(child) => child,
@@ -1329,11 +1323,9 @@ impl ProfileRuntime {
                 }
                 Look::Exited => {
                     self.ingest(id).await?;
-                    // What its journal says, else it ended while no daemon
-                    // was there to see why.
-                    let ended = self.ended.lock().unwrap().remove(&id);
-                    let cause =
-                        ended.unwrap_or_else(|| daemon_cause(ExitCause::EndedWhileAway, None));
+                    // Unless its journal said why, it ended while no daemon
+                    // was there to see.
+                    let cause = daemon_cause(ExitCause::EndedWhileAway, None);
                     self.mark_exited_if_live(id, cause).await?;
                     report.exited.push(id);
                 }
@@ -1562,14 +1554,6 @@ impl ProfileRuntime {
             };
             let committed = store.commit(&key, &batch.frames, clock)?;
             self.wrote();
-            if let Some(end) = batch
-                .frames
-                .iter()
-                .rev()
-                .find_map(|(_, step)| step.incarnation_end.clone())
-            {
-                self.ended.lock().unwrap().insert(id, end);
-            }
             self.ingested_frames
                 .fetch_add(batch.frames.len() as u64, Ordering::Relaxed);
             let turns = batch
@@ -1744,17 +1728,13 @@ impl ProfileRuntime {
         if let Err(error) = self.ingest(id).await {
             tracing::warn!(agent = %id, %error, "ingesting an exited agent's journal failed");
         }
-        // The cause the journal ended with, now that all of it is read;
-        // else a kill the daemon made; else the process ended without
-        // saying why.
-        let ended = self.ended.lock().unwrap().remove(&id);
-        let cause = ended.unwrap_or_else(|| {
-            let cause = match *handle.stopping.lock().unwrap() {
-                Some(StopMode::Kill) => ExitCause::Killed,
-                _ => ExitCause::EndedUnexpectedly,
-            };
-            daemon_cause(cause, None)
-        });
+        // Unless the journal, now read to its end, said why: a kill the
+        // daemon made, else the process ended without saying.
+        let cause = match *handle.stopping.lock().unwrap() {
+            Some(StopMode::Kill) => ExitCause::Killed,
+            _ => ExitCause::EndedUnexpectedly,
+        };
+        let cause = daemon_cause(cause, None);
         if let Err(error) = self.mark_exited(id, cause).await {
             tracing::warn!(agent = %id, %error, "marking an agent exited failed");
         }
@@ -1784,14 +1764,14 @@ impl ProfileRuntime {
     async fn mark_exited(
         &self,
         id: AgentId,
-        cause: wire::IncarnationEnd,
+        fallback: wire::IncarnationEnd,
     ) -> Result<(), StoreError> {
         let key = self.key(id);
         let mut store = self.store.lock().await;
         let Some(row) = store.agent(&key)? else {
             return Ok(());
         };
-        self.record_exit(&mut store, row, cause)?;
+        self.record_exit(&mut store, row, fallback)?;
         // Everything the process wrote is committed: nothing more comes.
         self.caught_up(&mut store, &key)
     }
@@ -1799,7 +1779,7 @@ impl ProfileRuntime {
     async fn mark_exited_if_live(
         &self,
         id: AgentId,
-        cause: wire::IncarnationEnd,
+        fallback: wire::IncarnationEnd,
     ) -> Result<(), StoreError> {
         let key = self.key(id);
         let mut store = self.store.lock().await;
@@ -1807,7 +1787,7 @@ impl ProfileRuntime {
             return Ok(());
         };
         if row.lifecycle != Lifecycle::Exited as i32 {
-            self.record_exit(&mut store, row, cause)?;
+            self.record_exit(&mut store, row, fallback)?;
         }
         self.caught_up(&mut store, &key)
     }
@@ -1826,15 +1806,25 @@ impl ProfileRuntime {
     /// unsent notifications go, since no push may name an agent that is
     /// gone, and a child whose incarnation ended without finishing its turn
     /// tells its parent it failed. A finished turn already told it.
+    ///
+    /// The row keeps the cause its journal's last step put there at commit;
+    /// `fallback` is the daemon's own, for an incarnation whose journal
+    /// stops without saying why.
     fn record_exit(
         &self,
         store: &mut Sqlite,
         mut row: AgentRow,
-        cause: wire::IncarnationEnd,
+        fallback: wire::IncarnationEnd,
     ) -> Result<(), StoreError> {
         row.lifecycle = Lifecycle::Exited as i32;
-        row.exit_cause = cause.cause;
-        row.exit_detail = cause.detail.clone();
+        if row.exit_cause == ExitCause::Unspecified as i32 {
+            row.exit_cause = fallback.cause;
+            row.exit_detail = fallback.detail;
+        }
+        let cause = wire::IncarnationEnd {
+            cause: row.exit_cause,
+            detail: row.exit_detail.clone(),
+        };
         self.put_row(store, &row)?;
         store.remove_notifications(&row.agent.agent)?;
         let Some(parent) = &row.parent else {

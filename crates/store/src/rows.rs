@@ -49,9 +49,11 @@ const REGISTRY: &[&str] = &[
 /// last activity: the inventory row does not hold it.
 const INVENTORY_ENVELOPE: &[&str] = &["phase", "working_on", "phase_since_ms", "git"];
 
-/// What a commit writes: the newest snapshot's envelope and the own row's
-/// cursors.
+/// What a commit writes: the newest snapshot's envelope, the cause the
+/// journal ended its incarnation with, and the own row's cursors.
 pub(crate) const COMMITTED: &[&str] = &[
+    "exit_cause",
+    "exit_detail",
     "phase",
     "working_on",
     "phase_since_ms",

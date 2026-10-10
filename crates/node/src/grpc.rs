@@ -199,9 +199,9 @@ impl ClientApi {
         }
     }
 
-    /// On an agent's tools socket, the one input is an interrupt to the
-    /// caller's own direct child: the stop tool sends it, and nothing else
-    /// an agent does sends a person's input.
+    /// On an agent's tools socket, input goes only to the caller's own
+    /// direct children: an agent acts on the agents it started, and reaches
+    /// any other only by messaging it.
     async fn lineage(
         &self,
         runtime: &ProfileRuntime,
@@ -210,12 +210,6 @@ impl ClientApi {
         let Some(caller) = self.caller else {
             return Ok(());
         };
-        if !request.input.as_ref().is_some_and(is_interrupt) {
-            return Err(status(wire_error(
-                ErrorCode::PermissionDenied,
-                "the one input an agent sends is an interrupt",
-            )));
-        }
         let target = &request.agent_id;
         agent_id(target)?;
         // The child may live on another host: its replica row carries the
@@ -237,23 +231,6 @@ impl ClientApi {
             "an agent sends input only to its own children",
         )))
     }
-}
-
-/// Whether the input is an interrupt, of whichever kind.
-fn is_interrupt(input: &wire::Input) -> bool {
-    use wire::{KindInput, claude_pty_input, claude_sdk_input, codex_input};
-    matches!(
-        input.decode_body(),
-        Some(
-            KindInput::ClaudePty(wire::ClaudePtyInput {
-                of: Some(claude_pty_input::Of::Interrupt(_)),
-            }) | KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Interrupt(_)),
-            }) | KindInput::Codex(wire::CodexInput {
-                of: Some(codex_input::Of::Interrupt(_)),
-            })
-        )
-    )
 }
 
 // The verdict for an input to an agent whose host cannot be reached.

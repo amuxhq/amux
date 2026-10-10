@@ -270,53 +270,6 @@ async fn an_agent_interrupts_only_its_own_children_and_manages_no_other_agent() 
     crash(daemon, runtime).await;
 }
 
-/// An interrupt is the one input an agent sends: anything else on its
-/// tools socket is refused, even to its own child, and reaches no one.
-#[tokio::test(flavor = "multi_thread")]
-async fn tools_socket_input_other_than_interrupt_is_refused() {
-    let install = Install::new();
-    let caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
-    caller.register_offline(&install);
-    let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
-    child.parent = Some(caller.key(&install));
-    child.register_offline(&install);
-    child.go_live();
-    let (daemon, runtime) = start(&install, "boot-1").await;
-    let tools = ClientApi::new(&runtime, Some(caller.id));
-    let send = |input: Input| {
-        Request::new(SendInputRequest {
-            agent_id: child.id.as_bytes().to_vec(),
-            input: Some(input),
-        })
-    };
-    let answer = Input::new(
-        b"a1".to_vec(),
-        ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
-                ask_key: "ask-1".into(),
-                of: Some(wire::claude_answer::Of::Permission(
-                    wire::PermissionAnswer::default(),
-                )),
-            })),
-        },
-    );
-    let unreadable = Input {
-        input_id: b"u1".to_vec(),
-        kind: wire::Kind::ClaudeSdk as i32,
-        body: vec![0x0a],
-    };
-    for input in [prompt(b"p1", "do this instead"), answer, unreadable] {
-        let refused = tools.send_input(send(input)).await.unwrap_err();
-        assert_eq!(refused.code(), Code::PermissionDenied);
-    }
-    assert!(child.inputs().is_empty(), "nothing reached the child");
-
-    let answer = tools.send_input(send(interrupt(b"i1"))).await.unwrap();
-    assert_eq!(verdict(answer.get_ref()), "queued");
-    assert_eq!(child.inputs().len(), 1, "the interrupt was relayed");
-    crash(daemon, runtime).await;
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let install = Install::new();

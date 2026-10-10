@@ -1,3 +1,9 @@
+2026-10-10 — **The daemon no longer checks which input an agent sends its child.**
+On an agent's tools socket the daemon refused any input but an interrupt.
+The tool server only ever sends the stop tool's interrupt, so the check
+caught nothing but calls made by hand, and it is gone with its test. An agent
+still sends input only to its own direct children.
+
 2026-10-10 — **A create names its kind by the arm that carries the kind's settings.**
 `CreateAgentRequest` carried a `Kind` beside the kind's settings as opaque
 bytes, which the spawning host decoded by kind and refused when they did not

@@ -425,7 +425,8 @@ An `Input` is only ever a person's. What else reaches an agent comes from its
 own daemon over `ctl.sock`: an agent message with the envelope the daemon
 stamped, a dump request, and a Codex agent's new name (see
 [AGENT_PROCESS.md](AGENT_PROCESS.md#the-control-socket)). On an agent's tools
-socket the one input accepted is an interrupt to the caller's own child.
+socket input goes only to the caller's own children, and the input an agent
+sends is the stop tool's interrupt.
 
 ### The verdict
 

@@ -257,3 +257,40 @@ fn a_finding_may_name_the_earlier_one_it_duplicates() {
         "{read}"
     );
 }
+
+#[test]
+fn down_never_kills_a_process_that_took_a_crashed_nets_pid() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let folder = folder.path();
+    ctl(folder, &["up"]);
+    let down = Down(folder);
+    let record_path = folder.join(".testnet/net.json");
+    let mut record: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&record_path).expect("net.json"))
+            .expect("its record");
+    let serve = record["pid"].as_u64().expect("serve's pid").to_string();
+    // Serve crashes, and another process now has the pid net.json names.
+    assert!(
+        Command::new("kill")
+            .args(["-KILL", &serve])
+            .status()
+            .expect("kill runs")
+            .success()
+    );
+    let mut stranger = Command::new("sleep").arg("120").spawn().expect("sleep");
+    record["pid"] = stranger.id().into();
+    std::fs::write(&record_path, record.to_string()).expect("net.json rewritten");
+
+    let started = std::time::Instant::now();
+    ctl(folder, &["down"]);
+    assert!(
+        stranger.try_wait().expect("its status").is_none(),
+        "the process that took the pid is untouched"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(30),
+        "down does not wait on a process that is not the net's"
+    );
+    let _ = stranger.kill();
+    drop(down);
+}

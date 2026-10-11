@@ -340,11 +340,12 @@ pub(crate) fn down(folder: &Folder) -> Result<Outcome, String> {
         Err(error) => said.push(format!("the door did not shut the net down ({error})")),
     }
     // Wait for serve to exit; it removes the net's root on its way out.
+    let net_dir = folder.net_dir();
     let deadline = Instant::now() + Duration::from_secs(60);
-    while alive(record.pid) && Instant::now() < deadline {
+    while serving(record.pid, &net_dir) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(100));
     }
-    if alive(record.pid) {
+    if serving(record.pid, &net_dir) {
         let _ = std::process::Command::new("kill")
             .arg("-KILL")
             .arg(record.pid.to_string())
@@ -358,6 +359,19 @@ pub(crate) fn down(folder: &Folder) -> Result<Outcome, String> {
         .status();
     let _ = std::fs::remove_file(folder.net_dir().join("net.json"));
     Ok(Outcome::new(said.join("; "), json!({"down": true})))
+}
+
+/// Whether `pid` is still this folder's `testnet serve`. A serve that
+/// crashed leaves its pid in net.json, and the system may since have given
+/// that pid to any other process, which must never be killed for it.
+fn serving(pid: u32, net_dir: &Path) -> bool {
+    std::process::Command::new("ps")
+        .args(["-o", "command=", "-p", &pid.to_string()])
+        .output()
+        .is_ok_and(|output| {
+            let command = String::from_utf8_lossy(&output.stdout);
+            command.contains(" serve ") && command.contains(&*net_dir.to_string_lossy())
+        })
 }
 
 pub(crate) fn alive(pid: u32) -> bool {

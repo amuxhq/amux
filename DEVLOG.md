@@ -1,3 +1,8 @@
+2026-10-11 — **`ctl down` kills only its own net's serve.** If `testnet serve`
+had crashed and the system had given its pid to another process, `ctl down`
+waited a minute on that process and then SIGKILLed it. It now waits on and
+kills the pid only while its command line is this folder's `testnet serve`.
+
 2026-10-11 — **The QA summary reads a phone tester's result and an unfilled severity
 correctly.** A phone tester's transcript starts and ends with the lease's own
 lines, so the summary said it had no result. An unfilled finding's severity is

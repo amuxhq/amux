@@ -51,6 +51,7 @@ pub enum Command {
     /// providers/ here. Prints the hosts once the net is ready.
     Up {
         /// A topology JSON file (see the TestNet docs); none starts empty.
+        /// Not in a QA run, whose agents are real only.
         topology: Option<PathBuf>,
     },
     /// Shut the net down: every agent and daemon stopped, panes closed.
@@ -496,6 +497,11 @@ pub fn main(arguments: Vec<String>) -> std::process::ExitCode {
 
 fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
     match command {
+        // A topology file could declare fake hosts or scripted agents; a
+        // tester's net is built with `host add`, which checks.
+        Command::Up { topology: Some(_) } if in_qa_run() => Err(format!(
+            "{REAL_ONLY}; start an empty net with `ctl up` and add hosts with `ctl host add`"
+        )),
         Command::Up { topology } => session::up(folder, topology.as_deref()),
         Command::Down => session::down(folder),
         Command::Status => {

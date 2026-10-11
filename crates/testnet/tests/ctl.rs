@@ -310,6 +310,7 @@ fn a_qa_tester_is_refused_fake_agents() {
             "hello.json",
             "worker",
         ],
+        &["up", "topology.json"],
     ] {
         let refused = Command::new(env!("CARGO_BIN_EXE_testnet"))
             .arg("ctl")

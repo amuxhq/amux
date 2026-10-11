@@ -1,3 +1,10 @@
+2026-10-11 — **A QA run cannot start from a topology file, and stopping an
+ended tester touches nothing.** A topology file could declare fake hosts or
+scripted agents, getting round the real-only check on `ctl host add`; in a QA
+run `ctl up` now refuses one. Stopping a tester that had already ended walked
+the process tree of its old pid, which may since belong to anything else; it
+now does nothing.
+
 2026-10-11 — **Ctrl-C ends a phone tester, and each tester reports its own
 duration.** `wt exec` starts a phone tester's command in a process group of
 its own, so stopping the launcher's group left the tester's Claude running.

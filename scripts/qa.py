@@ -214,7 +214,8 @@ class Tester:
         it. A phone tester's Claude runs under `wt exec` and the simulator
         script, which start their own process groups, so its group alone
         would leave the session running."""
-        if self.process is None:
+        # An ended tester's pid may since belong to anything else.
+        if self.process is None or self.process.poll() is not None:
             return []
         tree = process_tree(self.process.pid)
         for sig, patience in ((signal.SIGTERM, 10.0), (signal.SIGKILL, 5.0)):

@@ -2003,6 +2003,12 @@ impl ProfileRuntime {
         let Some(pid) = handle.pid.or(*handle.peer.lock().unwrap()) else {
             return false;
         };
+        // An agent served from inside this process has no process of its
+        // own to end, and killing the one on the other end of its socket
+        // would end the daemon instead.
+        if pid == std::process::id() {
+            return false;
+        }
         kill_group(pid)
     }
 }

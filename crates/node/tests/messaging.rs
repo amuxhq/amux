@@ -958,7 +958,7 @@ async fn an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill()
         .expect("the kill returns within its deadlines");
     assert!(
         matches!(stopped, Err(RegistryError::StopTimeout(_))),
-        "this daemon did not start the process, so it has nothing to kill: {stopped:?}"
+        "the agent is served from this process, which a kill must not end: {stopped:?}"
     );
     let stuck = tokio::time::timeout(bound, stuck)
         .await

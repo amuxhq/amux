@@ -1,3 +1,10 @@
+2026-10-12 — **A daemon never kills its own process for an agent.** Past a
+stop's deadline the daemon kills the process on the other end of the
+agent's control socket. An agent served from inside the daemon's process,
+as the node tests' synthetic agents are, named the daemon itself, and the
+kill ended the whole test binary. That kill is now refused, and the stop
+fails as one with nothing to kill.
+
 2026-10-12 — **The C ABI's tests send drafts as parts.** The phone's
 drafts became an ordered list of words and attachments, and the app-ffi
 tests still sent the old `{ "text": … }` shape, which the ABI refuses; they

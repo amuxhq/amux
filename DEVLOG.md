@@ -1,3 +1,11 @@
+2026-10-11 — **The fake Codex keeps its writer locks out of the chat's
+folder.** Without `CODEX_HOME` it locked its threads under `.codex` in its
+working directory, so every fake Codex chat's review listed a
+`.codex/writers/<id>.lock` it never wrote; the phone's review journey caught
+it. Like real Codex, whose home is never the working directory, it now
+keeps them in a folder of the system's temporary directory, which every
+process on the machine still shares.
+
 2026-10-11 — **The phone's attachment chips, choice rows and two switches
 fit a thumb and a large text size.** At an accessibility text size a
 draft's chip cut its file name from the end, losing the extension, and its

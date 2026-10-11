@@ -29,8 +29,9 @@
 //!
 //! A server that starts or resumes a thread is that thread's writer for as
 //! long as it runs, across processes, as Codex is: it holds a lock on the
-//! thread under its Codex home (`CODEX_HOME`, or `.codex` in its working
-//! directory). Another server's resume of the thread while the writer lives
+//! thread under its Codex home (`CODEX_HOME`, or a folder in the system's
+//! temporary directory, never the working directory, whose changes a chat's
+//! review shows). Another server's resume of the thread while the writer lives
 //! is refused with Codex's own error, `thread <id> already has an active
 //! writer` (codex-cli 0.161.0, recorded in a QA run).
 
@@ -435,7 +436,7 @@ impl Engine {
     fn take_writer(&self, thread: &str) -> Result<std::fs::File, WriterError> {
         let home = std::env::var_os("CODEX_HOME")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::Path::new(&self.cwd).join(".codex"));
+            .unwrap_or_else(|| std::env::temp_dir().join("amux-fake-codex"));
         let dir = home.join("writers");
         std::fs::create_dir_all(&dir).map_err(WriterError::Io)?;
         let file = std::fs::OpenOptions::new()

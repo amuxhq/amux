@@ -474,7 +474,7 @@ readable text; `--json` prints the door's reply instead.
 | Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
 | Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the menu that is open), `phone type TEXT --into ID`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
-| Ledger | `ledger read`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME`, `ledger done SUMMARY` |
+| Ledger | `ledger read`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME [--duplicate-of TESTER/NAME]`, `ledger done SUMMARY` |
 
 Durations take `ms` or `s` (`200ms`, `1.5s`); a rate is bytes a second, with `k` or `m` (`64k`). `--wait` on
 `spawn` and `send`, and `wait`, allow 100 seconds for a fake agent and 240 for a real one unless `--timeout` says

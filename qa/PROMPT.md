@@ -23,7 +23,8 @@ who covers what and what has been found (`reference/qa/LEDGER.md`).
 3. `testnet ctl ledger claim <what you will cover>`.
 4. Read the ledger again whenever you change ground or are about to record a
    finding. If someone found your symptom first, they get the credit: move on to
-   thinner ground.
+   thinner ground. If your evidence still adds something, record it with
+   `--duplicate-of` (step 8); only new findings keep the run going.
 
 ## 3. Hypotheses before actions
 
@@ -74,7 +75,9 @@ every host, the agents' provider traffic, a fresh shot of every pane and the
 phone, and the logs, in `findings/NAME/` in your folder. Fill in its
 `finding.md` at once (`reference/qa/FINDING.md` is the format; put the title on
 the first line and the severity on its line first), then
-`testnet ctl ledger finding NAME`. A hunch you could not capture goes to the
+`testnet ctl ledger finding NAME`. When the ledger already holds the same
+symptom, add `--duplicate-of TESTER/NAME`, naming the earlier finding as
+`ledger read` shows it. Whether it is the same symptom is your call. A hunch you could not capture goes to the
 ledger as `testnet ctl ledger idea <text>`.
 
 ## 9. Try for a cheap repro
@@ -92,7 +95,21 @@ surprising, or it is undocumented.
 
 ## 11. When to stop
 
-When your ground is exhausted, run
+Stopping early is the commonest way a tester misses the bug that ships. The
+first pass finds the obvious; the bad bugs sit behind the second and third
+idea, after you have seen how the product really behaves. Your ground is
+exhausted only when all of these are true:
+
+- every hypothesis on your list has been tested, and its result written beside
+  it;
+- you have gone back to the list at least twice and added hypotheses from what
+  you saw, and tested those too;
+- you have looked at your screens in both themes, in a narrow and a wide
+  terminal, and, with a phone, at a large text size;
+- the ledger shows no thin ground you could take next. If it does, claim it
+  and keep going.
+
+You decide when each is true; be honest with yourself about it. Then run
 `testnet ctl ledger done <what you covered, and what you would try next>`,
 shut your net down with `testnet ctl down`, and end.
 

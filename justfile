@@ -243,7 +243,7 @@ live *ARGS:
 
 # Waves of Sonnet testers, each on a test network of its own with real
 # Claude and Codex agents, keeping evidence of what they find (docs/QA.md).
-# By hand only, never in CI: `just qa --testers 2 --phone 1`.
+# By hand only, never in CI: `just qa --testers 2 --phone 1 --waves 1`.
 # Run adversarial QA by hand: waves of testers on real agents (docs/QA.md).
 qa *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 86400 scripts/python -B scripts/qa.py "$@"

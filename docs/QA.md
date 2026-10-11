@@ -15,17 +15,17 @@ never runs in CI, and no test depends on it. Where it sits among the other suite
 ## Running it
 
 ```sh
-just qa                                   # one wave of the default size
-just qa --testers 2 --phone 1             # two testers, one of them with a phone
-just qa --persona commuter --persona families --waves 3
+just qa                                   # up to two waves of four testers, two of them with phones
+just qa --testers 2 --phone 1 --waves 1   # one wave of two testers, one of them with a phone
+just qa --persona commuter --persona families --waves 0
 ```
 
 | Option | Meaning |
 | --- | --- |
-| `--testers N` | Testers per wave. |
-| `--phone M` | How many of them also drive the phone app; at most the number of simulator leases (two). |
+| `--testers N` | Testers per wave; four unless given. |
+| `--phone M` | How many of them also drive the phone app; two unless given, and at most the number of simulator leases (two). |
 | `--persona P` | Personas to use, by name (the files in `qa/personas/`); repeat it. Otherwise each wave draws fresh ones. |
-| `--waves W` | Stop after this many waves. |
+| `--waves W` | Stop after this many waves; two unless given. `0` runs waves until one finds nothing new. |
 
 Before the first wave, the launcher:
 
@@ -39,8 +39,37 @@ Before the first wave, the launcher:
 Each wave starts its testers at once. A tester with a phone runs entirely inside its own simulator lease (the
 `iphone` pool), held for the tester's whole life, so two phone testers never share a device. When a wave ends the
 next starts with fresh personas; the run stops when a whole wave adds no new finding, when `--waves` is reached,
-or on Ctrl-C, which stops every tester and shuts every net down. At the end the launcher prints a summary: the
-testers, the findings by severity, peak memory per wave, and where the run folder is.
+or on Ctrl-C, which stops every tester and shuts every net down. A finding its tester recorded as a duplicate of
+an earlier one (`ctl ledger finding NAME --duplicate-of TESTER/NAME`) keeps its evidence but is not new, so a wave
+of duplicates ends the run.
+
+While a wave runs the launcher samples memory every five seconds, in two ways:
+
+- **the wave's rise:** how far the machine's memory in use (active, wired and compressed) climbs above its level
+  when the wave began, so other software on the machine does not count;
+- **each tester's peak:** the physical footprint of the tester's own processes, as Activity Monitor shows it,
+  split into its Claude session (with every command it runs), its net (`testnet serve`, any process or supervised
+  daemons and their supervisors, and the real agents and their providers) and, for a phone tester, its leased
+  simulator's own processes. The Simulator app and the CoreSimulator service are shared by every simulator and
+  counted for nobody. Footprint rather than resident size, because resident sizes count shared pages once per
+  process, which for a simulator's few hundred processes adds up to several times the machine's memory.
+
+At the end the launcher prints a summary, such as (the figures are illustrative):
+
+```text
+run 20261012-091500: 4 testers in 1 wave, 3 findings and 1 duplicate
+  broken flow: 1
+  wrong state: 2
+  t2: /…/t2/findings/child-stuck-after-box-kill — Child orphaned by a host daemon kill stays "working" forever
+  …
+  t4: /…/t4/findings/lost-row — duplicates t2/lost-row
+wave 1: 4 testers, 3 new findings, 1 duplicate; the machine's memory in use rose by up to 9.8 GiB over the 12.1 GiB in use when it began
+tester peaks are physical footprints in GiB: its Claude session, its net and agents, and a phone tester's simulator
+t1 (commuter, phone): success, 13 turns, $0.61, 6 min; peak 4.4 GiB (session 0.3, net 0.9, simulator 3.2)
+t2 (families): success, 45 turns, $0.41, 6 min; peak 1.2 GiB (session 0.3, net 0.9)
+…
+run folder: /Users/…/.local/state/amux-qa/20261012-091500
+```
 
 ## What a run leaves behind
 

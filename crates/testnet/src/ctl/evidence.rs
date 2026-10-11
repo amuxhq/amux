@@ -28,7 +28,14 @@ pub enum LedgerCommand {
     /// A hunch with no evidence yet, for whoever has time.
     Idea { text: Vec<String> },
     /// Record a finding you captured (findings/NAME in your folder).
-    Finding { name: String },
+    Finding {
+        name: String,
+        /// The earlier finding in the ledger whose symptom this is, as
+        /// `ledger read` names it (TESTER/NAME). A duplicate keeps its
+        /// evidence but does not count as new.
+        #[arg(long, value_name = "TESTER/NAME")]
+        duplicate_of: Option<String>,
+    },
     /// Your closing summary: what you covered, what you would try next.
     Done { summary: Vec<String> },
 }
@@ -330,6 +337,17 @@ fn ledger_file() -> Result<PathBuf, String> {
         .ok_or_else(|| format!("no QA run: {RUN_ENV} names none, so there is no ledger"))
 }
 
+/// How the ledger names a finding to people: its tester and its folder's
+/// name, which is where it lives in the run folder (`<run>/TESTER/findings/NAME`).
+fn finding_handle(entry: &Value) -> Option<String> {
+    let path = Path::new(entry["finding"].as_str()?);
+    Some(format!(
+        "{}/{}",
+        entry["tester"].as_str().unwrap_or("?"),
+        path.file_name()?.to_string_lossy()
+    ))
+}
+
 fn append(kind: &str, fields: Value) -> Result<Value, String> {
     let file = ledger_file()?;
     let mut entry = json!({
@@ -376,12 +394,16 @@ pub(crate) fn ledger(folder: &Folder, command: LedgerCommand) -> Result<Outcome,
                     .or_else(|| entry["summary"].as_str())
                     .map(str::to_owned)
                     .or_else(|| {
-                        entry["finding"].as_str().map(|path| {
+                        finding_handle(entry).map(|handle| {
                             format!(
-                                "{path}{}",
+                                "{handle}{}{}",
                                 entry["title"]
                                     .as_str()
                                     .map(|title| format!(" — {title}"))
+                                    .unwrap_or_default(),
+                                entry["duplicate_of"]
+                                    .as_str()
+                                    .map(|earlier| format!(" (duplicates {earlier})"))
                                     .unwrap_or_default()
                             )
                         })
@@ -412,7 +434,7 @@ pub(crate) fn ledger(folder: &Folder, command: LedgerCommand) -> Result<Outcome,
             let entry = append("idea", json!({"text": words(text)?}))?;
             Ok(Outcome::new("idea recorded", entry))
         }
-        LedgerCommand::Finding { name } => {
+        LedgerCommand::Finding { name, duplicate_of } => {
             let dir = folder.dir.join("findings").join(&name);
             if !dir.join("finding.md").is_file() {
                 return Err(format!(
@@ -433,10 +455,27 @@ pub(crate) fn ledger(folder: &Folder, command: LedgerCommand) -> Result<Outcome,
                 .map(str::trim)
                 .unwrap_or("")
                 .to_owned();
-            let entry = append(
-                "finding",
-                json!({"finding": dir, "title": title, "severity": severity}),
-            )?;
+            let mut fields = json!({"finding": dir, "title": title, "severity": severity});
+            if let Some(earlier) = duplicate_of {
+                let text = std::fs::read_to_string(ledger_file()?).unwrap_or_default();
+                let known: Vec<String> = text
+                    .lines()
+                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                    .filter_map(|entry| finding_handle(&entry))
+                    .collect();
+                if !known.contains(&earlier) {
+                    return Err(format!(
+                        "the ledger has no finding {earlier}; its findings are: {}",
+                        if known.is_empty() {
+                            "none yet".to_owned()
+                        } else {
+                            known.join(", ")
+                        }
+                    ));
+                }
+                fields["duplicate_of"] = Value::String(earlier);
+            }
+            let entry = append("finding", fields)?;
             Ok(Outcome::new(
                 format!("finding {} recorded", dir.display()),
                 entry,

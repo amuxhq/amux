@@ -183,3 +183,58 @@ fn a_session_grows_a_net_drives_it_and_keeps_the_evidence() {
     );
     assert!(finding.join("finding.md").is_file(), "the evidence stays");
 }
+
+#[test]
+fn a_finding_may_name_the_earlier_one_it_duplicates() {
+    let run = tempfile::tempdir().expect("a run folder");
+    std::fs::write(run.path().join("ledger.jsonl"), "").expect("a ledger");
+    let ledger = |tester: &str, args: &[&str]| {
+        let folder = run.path().join(tester);
+        std::fs::create_dir_all(folder.join("findings/lost-row")).expect("a finding folder");
+        std::fs::write(
+            folder.join("findings/lost-row/finding.md"),
+            "# A row goes missing\n\n- **Severity:** wrong state\n",
+        )
+        .expect("a finding");
+        Command::new(env!("CARGO_BIN_EXE_testnet"))
+            .args(["ctl", "ledger"])
+            .args(args)
+            .current_dir(&folder)
+            .env("AMUX_QA_RUN", run.path())
+            .env("AMUX_QA_TESTER", tester)
+            .env_remove("AMUX_QA_SCOPE")
+            .output()
+            .expect("testnet runs")
+    };
+
+    assert!(ledger("t1", &["finding", "lost-row"]).status.success());
+    let unknown = ledger(
+        "t2",
+        &["finding", "lost-row", "--duplicate-of", "t9/lost-row"],
+    );
+    assert!(
+        !unknown.status.success(),
+        "a duplicate of nothing is refused"
+    );
+    assert!(
+        String::from_utf8_lossy(&unknown.stderr).contains("t1/lost-row"),
+        "the refusal names the findings there are"
+    );
+    assert!(
+        ledger(
+            "t2",
+            &["finding", "lost-row", "--duplicate-of", "t1/lost-row"]
+        )
+        .status
+        .success()
+    );
+    let read = said(&ledger("t2", &["read"]));
+    assert!(
+        read.contains("t1/lost-row — A row goes missing\n"),
+        "{read}"
+    );
+    assert!(
+        read.contains("t2/lost-row — A row goes missing (duplicates t1/lost-row)"),
+        "{read}"
+    );
+}

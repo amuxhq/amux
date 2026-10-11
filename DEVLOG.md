@@ -1,3 +1,21 @@
+2026-10-11 — **`just qa` runs two waves of four, stops on new findings only,
+measures each tester's own memory, and asks testers to keep going.**
+The pilot's two testers stopped after about six minutes, and its one memory
+figure, 19.5 GiB, was mostly other software on the Mac. A run now defaults to
+four testers a wave, two with phones, and two waves. A tester recording a
+symptom the ledger already holds marks it with
+`ctl ledger finding NAME --duplicate-of TESTER/NAME`, naming the earlier
+finding as `ledger read` now shows it; a duplicate keeps its evidence but does
+not count as new, so a wave of only duplicates ends the run. Each wave reports
+how far the machine's memory in use rose over its level when the wave began,
+and each tester its peak physical footprint, split into its Claude session,
+its net with its agents, and its leased simulator: footprints rather than
+resident sizes, which count shared pages once per process and add up to
+32 GiB for one simulator. The prompt's last step now sets the bar for
+stopping: every hypothesis tested and written up, the list grown twice from
+what the tester saw, both themes, both terminal widths and a large text size
+looked at, and no thin ground left in the ledger.
+
 2026-10-11 — **Every real agent in a test net starts small and asking, a
 re-added host is a new machine, and ledger entries stay whole.**
 Only agents the net spawned itself started on Haiku or `gpt-5.6-luna` with

@@ -11,9 +11,12 @@ makes the run folder under ~/.local/state/amux-qa/<run>/, holding
 `reference/` (the docs and the QA guides), `ledger.jsonl` and a folder per
 tester, and starts the testers a wave at a time. A phone tester runs inside
 a simulator lease for its whole life. A wave ends when its testers do; the
-next starts with fresh personas, until a wave records no new finding,
-`--waves` is reached, or Ctrl-C, which stops every tester and shuts every
-net down. A summary is printed and kept in the run folder.
+next starts with fresh personas, until a wave records no new finding (one
+its tester marked a duplicate of an earlier one does not count), `--waves`
+is reached, or Ctrl-C, which stops every tester and shuts every net down.
+While a wave runs it samples memory: how far the machine's use rises over
+its level when the wave began, and each tester's own peak. A summary is
+printed and kept in the run folder.
 
 Real providers are used throughout; see docs/QA.md.
 """
@@ -24,6 +27,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -168,6 +172,9 @@ class Tester:
         self.tree = tree
         self.process: subprocess.Popen | None = None
         self.started = 0.0
+        self.udid: str | None = None
+        # The largest total seen, with its parts at that moment.
+        self.peak: dict[str, int] = {}
 
     def start(self, env: dict[str, str]) -> None:
         self.folder.mkdir()
@@ -221,7 +228,14 @@ class Tester:
         except (OSError, json.JSONDecodeError):
             pass
         minutes = (time.monotonic() - self.started) / 60
-        return f"{self.name} ({self.persona.stem}{', phone' if self.phone else ''}): {result}, {minutes:.0f} min"
+        memory = ""
+        if self.peak:
+            parts = ", ".join(f"{name} {gib(size)}" for name, size in self.peak.items() if name != "total")
+            memory = f"; peak {gib(self.peak['total'])} GiB ({parts})"
+            if self.phone and "simulator" not in self.peak:
+                memory += ", simulator not attributed: the phone never opened"
+        return (f"{self.name} ({self.persona.stem}{', phone' if self.phone else ''}): "
+                f"{result}, {minutes:.0f} min{memory}")
 
 
 def memory_in_use() -> int:
@@ -246,6 +260,84 @@ def memory_in_use() -> int:
     return used * page
 
 
+UNITS = {"B": 1, "K": 2**10, "M": 2**20, "G": 2**30}
+
+
+def processes() -> dict[int, tuple[int, int, str]]:
+    """Every process: its parent, its memory and its command line.
+
+    Memory is the physical footprint `top` reports (what Activity Monitor
+    shows), not the resident size: resident sizes count the pages processes
+    share once for each of them, which for a simulator's few hundred
+    processes adds up to several times the machine's memory."""
+    try:
+        listed = subprocess.run(["ps", "-axo", "pid=,ppid=,command="],
+                                capture_output=True, text=True, check=True).stdout
+        top = subprocess.run(["top", "-l", "1", "-stats", "pid,mem", "-n", "100000"],
+                             capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {}
+    footprint = {}
+    for line in top.splitlines():
+        match = re.match(r"\s*(\d+)\s+([\d.]+)([BKMG])[+-]?\s*$", line)
+        if match:
+            footprint[int(match[1])] = int(float(match[2]) * UNITS[match[3]])
+    table = {}
+    for line in listed.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) >= 2:
+            pid, parent = int(parts[0]), int(parts[1])
+            table[pid] = (parent, footprint.get(pid, 0), parts[2] if len(parts) > 2 else "")
+    return table
+
+
+def descendants(table: dict[int, tuple[int, int, str]], roots: set[int]) -> set[int]:
+    children: dict[int, list[int]] = {}
+    for pid, (parent, _, _) in table.items():
+        children.setdefault(parent, []).append(pid)
+    found, queue = set(), [pid for pid in roots if pid in table]
+    while queue:
+        pid = queue.pop()
+        if pid not in found:
+            found.add(pid)
+            queue.extend(children.get(pid, []))
+    return found
+
+
+def tester_memory(table: dict[int, tuple[int, int, str]], tester: Tester) -> dict[str, int]:
+    """What one tester's own processes hold, by part: its Claude session
+    (with every command it runs), its net (`testnet serve`, process and
+    supervised daemons, the agents and their providers: everything whose
+    command line lies in its folder, with their children) and, for a phone
+    tester, its leased simulator's own processes (the shared Simulator app
+    and CoreSimulator service are nobody's)."""
+    if tester.process is None:
+        return {}
+    session = descendants(table, {tester.process.pid})
+    # The folder as a whole path component: t1's must not match t10's.
+    mine = re.compile(re.escape(str(tester.folder)) + r"(?:/|\s|$)")
+    net = descendants(table, {pid for pid, (_, _, command) in table.items()
+                              if mine.search(command)}) - session
+    parts = {"session": session, "net": net}
+    if tester.phone:
+        try:
+            tester.udid = json.loads((tester.folder / ".testnet" / "phone.json").read_text())["udid"]
+        except (OSError, ValueError, KeyError):
+            pass
+        if tester.udid:
+            parts["simulator"] = descendants(table, {pid for pid, (_, _, command) in table.items()
+                                                     if tester.udid in command}) - session - net
+    return {name: sum(table[pid][1] for pid in pids) for name, pids in parts.items()}
+
+
+def count(number: int, noun: str) -> str:
+    return f"{number} {noun}{'' if number == 1 else 's'}"
+
+
+def gib(size: int) -> str:
+    return f"{size / 2**30:.1f}"
+
+
 def ledger(run: Path) -> list[dict]:
     entries = []
     for line in (run / "ledger.jsonl").read_text().splitlines():
@@ -254,6 +346,14 @@ def ledger(run: Path) -> list[dict]:
         except json.JSONDecodeError:
             pass
     return entries
+
+
+def findings(entries: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The findings among ledger entries: those new to the ledger, and those
+    their testers marked as duplicates of an earlier one."""
+    found = [entry for entry in entries if entry.get("kind") == "finding"]
+    return ([entry for entry in found if not entry.get("duplicate_of")],
+            [entry for entry in found if entry.get("duplicate_of")])
 
 
 def tree_name() -> str | None:
@@ -267,10 +367,11 @@ def tree_name() -> str | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--testers", type=int, default=8, help="testers in each wave")
-    parser.add_argument("--phone", type=int, default=2, help="how many of them hold a phone")
+    parser.add_argument("--testers", type=int, default=4, help="testers in each wave (default 4)")
+    parser.add_argument("--phone", type=int, default=2, help="how many of them hold a phone (default 2)")
     parser.add_argument("--persona", action="append", default=[], help="a persona to use (repeatable)")
-    parser.add_argument("--waves", type=int, default=0, help="stop after this many waves (0: until one finds nothing new)")
+    parser.add_argument("--waves", type=int, default=2,
+                        help="stop after this many waves (default 2; 0: until one finds nothing new)")
     args = parser.parse_args()
     if args.phone > args.testers:
         sys.exit("qa: --phone cannot exceed --testers")
@@ -306,7 +407,7 @@ def main() -> int:
     check_logins(run, env)
 
     testers: list[Tester] = []
-    peaks: list[int] = []
+    waves: list[str] = []
     stopping = threading.Event()
 
     def interrupt(_signum, _frame):
@@ -323,7 +424,8 @@ def main() -> int:
     next_persona = 0
     while not stopping.is_set():
         wave += 1
-        before = sum(1 for entry in ledger(run) if entry.get("kind") == "finding")
+        before = len(ledger(run))
+        baseline = memory_in_use()
         current = []
         for slot in range(args.testers):
             tester = Tester(run, len(testers) + 1, pool[next_persona % len(pool)], slot < args.phone, tree)
@@ -331,30 +433,44 @@ def main() -> int:
             testers.append(tester)
             current.append(tester)
             tester.start(env)
-        peak = 0
+        peak = baseline
         while any(t.process and t.process.poll() is None for t in current):
             peak = max(peak, memory_in_use())
+            table = processes()
+            for tester in current:
+                parts = tester_memory(table, tester)
+                total = sum(parts.values())
+                if total > tester.peak.get("total", 0):
+                    tester.peak = {"total": total, **parts}
             time.sleep(5)
-        peaks.append(peak)
         for tester in current:
             tester.shut_net(env)
             say(f"{tester.outcome()}")
-        found = sum(1 for entry in ledger(run) if entry.get("kind") == "finding") - before
-        say(f"wave {wave}: {found} new findings, peak memory {peak / 2**30:.1f} GiB")
-        if stopping.is_set() or found == 0 or (args.waves and wave >= args.waves):
+        new, duplicates = findings(ledger(run)[before:])
+        line = (f"wave {wave}: {count(len(current), 'tester')}, {count(len(new), 'new finding')}, "
+                f"{count(len(duplicates), 'duplicate')}; the machine's memory in use rose by up to "
+                f"{gib(max(peak - baseline, 0))} GiB over the {gib(baseline)} GiB in use when it began")
+        waves.append(line)
+        say(line)
+        if stopping.is_set() or not new or (args.waves and wave >= args.waves):
             break
 
-    findings = [entry for entry in ledger(run) if entry.get("kind") == "finding"]
+    new, duplicates = findings(ledger(run))
     by_severity: dict[str, int] = {}
-    for entry in findings:
+    for entry in new:
         severity = (entry.get("severity") or "").strip().lower()
         key = next((name for name in SEVERITIES if name in severity), "unlabelled")
         by_severity[key] = by_severity.get(key, 0) + 1
-    lines = [f"run {run.name}: {len(testers)} testers in {wave} waves, {len(findings)} findings"]
+    lines = [f"run {run.name}: {count(len(testers), 'tester')} in {count(wave, 'wave')}, "
+             f"{count(len(new), 'finding')} and {count(len(duplicates), 'duplicate')}"]
     lines += [f"  {name}: {by_severity[name]}" for name in [*SEVERITIES, "unlabelled"] if name in by_severity]
-    lines += [f"  {entry.get('tester')}: {entry.get('finding')} — {entry.get('title', '')}" for entry in findings]
+    lines += [f"  {entry.get('tester')}: {entry.get('finding')} — {entry.get('title', '')}" for entry in new]
+    lines += [f"  {entry.get('tester')}: {entry.get('finding')} — duplicates {entry['duplicate_of']}"
+              for entry in duplicates]
+    lines += waves
+    lines.append("tester peaks are physical footprints in GiB: its Claude session, its net and agents, "
+                 "and a phone tester's simulator")
     lines += [tester.outcome() for tester in testers]
-    lines += [f"wave {n + 1} peak memory in use: {peak / 2**30:.1f} GiB" for n, peak in enumerate(peaks)]
     lines.append(f"run folder: {run}")
     (run / "summary.txt").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))

@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use attachments::PLACEHOLDER;
 use schemars::JsonSchema;
 use serde::Serialize;
 pub use ui_state::ExitCause;
@@ -285,13 +286,26 @@ fn last_said(state: &SessionState) -> Option<String> {
             )
         })
         .find_map(|held| {
+            // An attachment's placeholder is not words: a reply that opens
+            // with one says its first line of prose, or failing that names
+            // what it attached.
             held.item
                 .text
                 .lines()
-                .map(str::trim)
+                .map(|line| line.replace(PLACEHOLDER, "").trim().to_owned())
                 .find(|line| !line.is_empty())
-                .map(str::to_owned)
+                .or_else(|| held.item.attachments.iter().find_map(attachment_name))
         })
+}
+
+fn attachment_name(attachment: &wire::Attachment) -> Option<String> {
+    use wire::attachment::Of;
+    let name = match attachment.of.as_ref()? {
+        Of::Image(blob) | Of::File(blob) => &blob.name,
+        Of::Text(text) => &text.name,
+        Of::Review(review) => &review.diff.as_ref()?.patch.as_ref()?.name,
+    };
+    (!name.is_empty()).then(|| name.clone())
 }
 
 /// The row's second line: the state comes from the inventory row, so it

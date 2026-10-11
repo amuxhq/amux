@@ -1,3 +1,13 @@
+2026-10-11 — **An edit ask names its file relative to the agent's folder,
+and a row's preview skips attachment placeholders.** The shared view hands
+both clients an edit ask's path relative to the agent's working folder when
+the file is inside it, so the common case is short everywhere; a file
+outside keeps its whole path. The phone's edit card cuts a long path in the
+middle rather than at the end, and says "Wants to create a file" when the
+ask creates it. A fleet row whose last reply opens with an attachment now
+shows its first line of words, or the attachment's name, instead of a bare
+placeholder character.
+
 2026-10-11 — **Attachments sent from the phone reach the model.** The phone
 sent its words with no placeholder for its attachments, and headless Claude
 reads an attachment only at its placeholder, so every file, photo and long

@@ -213,10 +213,13 @@ pub enum Answer {
 pub fn ask_card(state: &SessionState) -> Option<AskCard> {
     let asks = state.open_asks();
     let head = asks.first()?;
-    let (body, choices) = match head {
+    let (mut body, choices) = match head {
         OpenAsk::Claude(ask) => claude(state, ask, &state.agent_state().permissions),
         OpenAsk::Codex(ask) => codex(state, ask),
     };
+    if let AskBody::Edit { path, .. } = &mut body {
+        *path = within(&state.agent().cwd, path);
+    }
     let card_state = if state.asks_dismissed() {
         CardState::Dismissed
     } else {
@@ -247,6 +250,22 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
         ),
         state: card_state,
     })
+}
+
+/// `path` relative to the agent's folder `cwd` when the file is inside it,
+/// else whole. A file the agent edits is nearly always in its own folder,
+/// and the absolute path repeats that folder at the front, where a narrow
+/// screen has to cut it to show the file's name. Paths are the host's, so
+/// either separator ends the folder.
+fn within(cwd: &str, path: &str) -> String {
+    let folder = cwd.trim_end_matches(['/', '\\']);
+    if folder.is_empty() {
+        return path.to_owned();
+    }
+    match path.strip_prefix(folder) {
+        Some(rest) if rest.starts_with(['/', '\\']) && rest.len() > 1 => rest[1..].to_owned(),
+        _ => path.to_owned(),
+    }
 }
 
 /// Whether terminal Claude's form for the ask ends in its review screen: a

@@ -733,6 +733,7 @@ public enum ChatWords {
         case .command: return String(localized: "Wants to run a command")
         case .edit(_, let files, _, _, _, _, _, _) where files > 1:
             return String(localized: "Wants to edit \(files) files")
+        case .edit(_, _, _, _, _, _, true?, _): return String(localized: "Wants to create a file")
         case .edit: return String(localized: "Wants to edit a file")
         case .tool(let server, let tool, _):
             return server.isEmpty

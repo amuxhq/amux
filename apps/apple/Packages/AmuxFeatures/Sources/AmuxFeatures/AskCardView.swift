@@ -313,6 +313,9 @@ struct SubjectBox: View {
     var lines: Int? = 4
     /// An edit's added and removed line counts, at the end of its path.
     var counts: (added: UInt32, removed: UInt32)?
+    /// Where a subject too long for its lines is cut. A path is cut in the
+    /// middle, never at its end, so the file's name stays.
+    var truncation: Text.TruncationMode = .tail
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -320,6 +323,7 @@ struct SubjectBox: View {
                 .designFont(.mono, design)
                 .foregroundStyle(design.ink.color)
                 .lineLimit(lines)
+                .truncationMode(truncation)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             if let counts {
@@ -398,7 +402,7 @@ private struct AskBodyView: View {
                 .filter { !$0.isEmpty }.joined(separator: " · ")
             if !purpose.isEmpty { why(purpose) }
         case .edit(let path, _, let added, let removed, let lines, let reason, _, _):
-            SubjectBox(text: path, lines: 2, counts: (added, removed))
+            SubjectBox(text: path, lines: 2, counts: (added, removed), truncation: .middle)
             if !lines.isEmpty { DiffPreview(lines: lines, whole: wholeDiff) }
             if lines.count > DiffPreview.lines {
                 link(wholeDiff ? String(localized: "Show less") : String(localized: "Show the whole diff"),

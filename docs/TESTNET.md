@@ -4,9 +4,10 @@
 
 TestNet (`crates/testnet`) starts a declared network of amux hosts, breaks it in controlled ways and observes the
 consequences. The same network runs inside a Rust test, where the test holds a `Net` and calls its verbs, or in
-its own process as `testnet serve`, where a driver sends the same verbs over a control socket. Terminal and phone
-journeys, the phone's goldens and the flood performance workload all run on it. How it fits among the other
-suites is on [Testing](TESTING.md).
+its own process as `testnet serve`, where a driver sends the same verbs over a control socket. `testnet ctl`
+drives a served net one shell command at a time, for a person or an agent exploring by hand. Terminal and phone
+journeys, the phone's goldens, the flood performance workload and [QA](QA.md) all run on it. How it fits among
+the other suites is on [Testing](TESTING.md).
 
 ## What is real
 
@@ -17,21 +18,27 @@ agent` processes, running the scripted fake providers from `crates/provider-fake
 links over loopback. A declared relay is the production relay server on loopback, beside a stand-in for the
 account service that signs accounts in and mints relay credentials.
 
-What is replaced: the providers (by the fakes), the account service (by the stand-in), multicast discovery (by a
-scripted bus, unless a host asks for real mDNS), and, in a Rust test, policy time (by a driven clock).
+What is replaced: the providers (by the fakes, unless a host or agent asks for the real ones), the account service
+(by the stand-in), multicast discovery (by a scripted bus, unless a host asks for real mDNS), and, in a Rust test,
+policy time (by a driven clock).
 
 Because the daemons are runtimes inside one process, "kill a daemon" drops its runtime rather than killing a
-process; the agent processes do keep running, as they would. A claim that the `amux` binary itself survives or
-restarts belongs to the process tests in `crates/amux/tests`.
+process; the agent processes do keep running, as they would. A host can instead be a real `amux` daemon process,
+or one under `amux supervise` (see [process and supervised hosts](#process-and-supervised-hosts)), so a crash,
+a restart or an update is the shipped binary's own. Claims about the CLI and installation themselves still
+belong to the process tests in `crates/amux/tests`.
 
 On first use in a process, the harness builds `amux` and the fake providers with the same Cargo and profile that
-built the test, so agents always run the binary under test.
+built the test, so agents always run the binary under test. With `TESTNET_BINARIES` naming a directory that
+already holds `amux`, the fakes and the probes, it builds nothing and uses those: a driver that built them once,
+with the features it chose, keeps every net it starts on that one build.
 
 ## Topologies
 
 A `Topology` declares the hosts, the links between them, an optional relay with its accounts, and the agents to
-start. The Rust builder and the JSON loader produce the same value, and `Topology::validate` rejects unknown and
-duplicate names before anything starts.
+start. The Rust builder and the JSON loader produce the same value, and both reject unknown and duplicate names
+before anything starts. A topology may declare no hosts at all: a net can start empty and
+[grow while it runs](#growing-a-net-while-it-runs).
 
 ```rust
 let topology = Topology::new()
@@ -63,13 +70,16 @@ The same network as JSON, as `testnet serve` reads it:
 | `scope` | The discovery scope every host advertises and filters by, unless a host names its own. |
 | `hosts[].name` | Letters, digits, `-` or `_`; unique. |
 | `hosts[].lan` | Listen for direct links on a loopback QUIC listener. |
-| `hosts[].discovery` | Advertise and browse on the net's scripted discovery bus, and dial trusted hosts found there. |
+| `hosts[].discovery` | Advertise and browse on the net's scripted discovery bus, and dial trusted hosts found there. A process host cannot reach the bus: the net announces it there at its LAN listener (so it needs `lan`), and it does not browse. |
 | `hosts[].bonjour` | Advertise on the machine's real local network through the system's mDNS responder, for a client outside the net (a simulator) to find. Needs `lan` and not `discovery`. |
 | `hosts[].scope` | This host's discovery scope, where it differs from the net's. |
 | `hosts[].account` | The relay account this host's profile signs in to at start; needs a `relay`. |
 | `hosts[].script` | What agents a client creates on this host play; none plays nothing. |
 | `hosts[].repositories` | Git repositories made under the host's repository root, by path below it. |
 | `hosts[].files` | Files committed in those repositories when they are made, by path below the root (`amux/README.md`), so an agent's edits show as a working-tree diff. |
+| `hosts[].provider` | `fake` (the default) or `real`: what every agent created on this host runs, whichever client creates it. See [real providers](#real-providers). |
+| `hosts[].process` | Run the host as a real `amux` daemon process with its own installation config. |
+| `hosts[].supervised` | Run it under `amux supervise`, taking releases from the net's feed; implies `process`. |
 | `links[]` | `{"a", "b"}`: two hosts that trust each other and are linked at start. |
 | `relay.accounts[]` | `{"name", "tier"}`, tier `pro` (the default: relayed tunnels) or `free` (hosts are listed; the relay opens no tunnels). |
 | `settle` | Start each declared agent only once the one before it has settled (see `settle(name)` below), so agents that come to rest in the same standing are listed in declaration order, the last declared as most recently active. Every declared agent must come to rest. Without it the agents start together and which first turn ends last is a race. |
@@ -81,7 +91,10 @@ The same network as JSON, as `testnet serve` reads it:
 | `agents[].cwd` | Its working directory; none is the host's work directory, and a relative path a folder below it. |
 | `agents[].repository` | One of its host's repositories to work in, instead of `cwd`. |
 | `agents[].branch` | The branch its `cwd` folder is on: the net makes that folder a git repository on this branch, so its fleet row has a branch. Needs a relative `cwd`; agents sharing a folder share its branch. |
-| `agents[].permission` | The permission it is created with, as its catalogue names it (`plan` starts Claude planning); none leaves the provider's default. |
+| `agents[].permission` | The permission it is created with, as its catalogue names it (`plan` starts Claude planning); none leaves the provider's default, except that a real Claude starts with `default`. |
+| `agents[].mode` | The collaboration mode a Codex agent starts in (`plan` starts it planning). |
+| `agents[].model` | The model it is created on; a real agent with none starts on Haiku (Claude) or `gpt-5.6-luna` (Codex). |
+| `agents[].provider` | `fake` or `real`, where it differs from its host's. |
 
 JSON topologies live in `journeys/topologies`; scripts shared between them in `journeys/scripts`.
 
@@ -107,13 +120,130 @@ A script can also set the `model`, the `models` and `commands` a session offers,
 `offers_auto_mode` and `untrusted_folder`. A script that asks a provider for an ask kind it cannot raise fails to
 load.
 
+## Real providers
+
+A host's `provider` decides what agents created on it run, whoever creates them: `ctl spawn`, `amux create`, the
+terminal client, the phone, or another agent's `spawn` tool. With `real`, they are the real Claude and Codex
+under the operator's own logins; an agent's own `provider` overrides its host's for that one agent.
+
+Each host has its own `claude` and `codex` wrapper commands in its directory. An in-process host names them in its
+launch settings; a process host, which runs whatever `claude` and `codex` its PATH holds, is started with the
+wrappers first on its PATH, and so are its agents, their provider children and a daemon started after an update.
+A wrapper finds which agent started it, then runs either the fake that agent was given or the real provider:
+
+- the real provider runs behind its recording probe (`claude-probe`, `codex-probe` from `claude-specs` and
+  `codex-specs`, which must be built beside the other binaries), so every message amux wrote to it and read from
+  it is kept, by host and agent, under the recordings folder (`NetOptions::recordings`, `serve --recordings`;
+  under the net's root when none is given);
+- Claude runs with `--setting-sources project --strict-mcp-config`. Codex runs with a scratch Codex home
+  holding only the operator's login and a config that switches off the account's plugins and connected apps,
+  and with a scratch home directory, because Codex also reads skills from the user's own. The operator's own
+  settings, skills, plugins and tool servers stay out; an agent carries only amux's tool server, hooks and
+  built-in skills.
+
+A real host's installation config sets the person's defaults for a new agent to Haiku and `gpt-5.6-luna`, so an
+agent made from the terminal client starts on the small models unless someone picks another; the phone offers
+the host's default, which is the provider's own, so pick the small model there. An agent the net spawns on a
+real provider (`Net::spawn`, `ctl spawn`) starts on the small model and, for Claude, the `default` permission,
+unless its declaration names others: left unset, terminal Claude would take the operator's own default
+permission mode. Waits on a real agent
+(`settle`, `turn_ended`, `input_settled`) allow `REAL_PATIENCE`, 240 seconds, rather than `PATIENCE`. On a real
+host, refreshing what each provider offers (models, commands) runs the real provider.
+
+## Process and supervised hosts
+
+A process host is a real `amux` daemon in its own process, with its own installation config under the net's
+root (`keep_awake: off`, `telemetry: off`, `updates: manual`, the net's discovery scope and release feed). The
+net starts it with `amux server start` and stops it with `amux server stop`, as a person's CLI would, and kills
+it with SIGKILL on the process that holds its installation lock. Its agents keep running through a kill, in their
+grace, and the next daemon adopts them. The net reaches it as a client does, over its front door and profile
+socket: the waits that listen inside an in-process runtime (`fence`, `turn_ended`, `input_settled`) use the
+profile's Subscribe stream instead, back-filling with Fetch past the 200 rows a subscription opens with.
+Subscribing on a host that only replicates an agent can start replication there, which the in-process wait does
+not.
+
+A supervised host runs under `amux supervise`, from a copy of the build under test stamped as version `0.0.1`
+(`SUPERVISED_VERSION`), so any ordinary version is newer. Its supervisor takes releases from the net's
+[release feed](#the-release-feed), and starts the daemon again by itself after a kill.
+
+What a process host refuses, because it reaches into a runtime the net does not hold: `checkpoint_host`,
+`rewind_host`, `assert_block_invariant` and `refuse_calls`. `set_tier` changes the account, but a process host's
+daemon learns of it on its own schedule rather than at once.
+
+A process host keeps the machine's time, so a net with one runs on wall time (`ClockMode::Wall`); on a driven
+clock adding one is refused. Two hosts of which one is a process pair for real, over the LAN, so both need `lan`.
+A direct link only redials a peer that discovery still finds: after a process host crashes and restarts, a
+peer in the net's process with `discovery` dials it again once its old connection times out (QUIC's idle timeout,
+up to about two minutes); a process host does not browse, so it does not dial back itself.
+
+### The release feed
+
+The first supervised host starts a release feed: a plain `http://127.0.0.1` server the supervised hosts'
+`releases_url` names, which debug builds accept, serving manifests signed with the test release key (the
+`release` crate's `test-key` feature). `publish_release(version, channel, rollout, broken)`, the door's
+`Release` and `ctl release publish` re-stamp the build under test as that version, sign and list it on the
+channel (to `rollout` percent of hosts by host id, or all), launch it once (a fresh binary's first launch can
+stall on macOS), and ask every supervised host's supervisor to check now rather than at its hourly check. With
+`broken`, the listed build is a script that exits at once, so it never prepares and the supervisor rolls back
+after its failed starts.
+
+## Bad networks
+
+The net puts UDP gates in the paths it can steer. A gate forwards datagrams both ways and can drop them all
+(a cut) or treat them as a poor network does. `Faults` sets what a gate does to each datagram it lets through:
+
+| Field | Effect |
+| --- | --- |
+| `loss_percent` | Drops this many datagrams in a hundred. |
+| `delay` | Holds each datagram this long. |
+| `jitter` | Adds up to this much more delay, drawn for each datagram; order is kept. |
+| `reorder_percent` | Holds this many in a hundred back once more, out of the queue, so the ones behind overtake them. |
+| `rate_bytes_per_sec` | Passes at most this many bytes a second, queueing up to a second's worth and dropping beyond it. |
+
+The draws are seeded, so runs differ only by timing.
+
+Every host with a relay reaches it through a gate of its own. On a **gated LAN** (`NetOptions::gated_lan`,
+`serve --gated-lan`), the LAN is gated too: one gate for each ordered pair of hosts, which the dialling host is
+told to use in its peer's place (the net rewrites the discovery bus's advertisements for each browser, and a
+pairing by address through `pair_gate`), and one gate in front of each host for a client outside the net, which a
+Bonjour advertisement names. So any pair of hosts can be cut however they came to trust each other, and any
+host's network degraded, including the phone's way in. A cut on a pairing is silent, as a dead network is: each
+side notices when its connection times out. Cutting a pairing needs a gated LAN; on an ungated one a host that
+found its peer by discovery dials the peer's own listener, which no gate stands in front of. Links made in the
+net's process (declared, or by `add_link` between two in-process hosts) carry no datagrams; `sever_link` cuts
+them directly.
+
+| Verb | Effect |
+| --- | --- |
+| `set_net_faults(target, faults)` | Make a host's network bad (every gate its datagrams cross: its way to the relay, its LAN pairings, its front gate) or the relay's (`"relay"`: every way to it). `Faults::default()` makes it clean again. |
+| `set_lan_faults(host, faults)`, `lan_gate(host)` | The front gate alone: its faults, and its address for a client to dial in the host's place. |
+| `set_relay_faults(faults)`, `relay_gate()` | A gate in front of the relay's QUIC carrier for a client outside the net. |
+| `pair_gate(from, to)` | The gate `from` dials to reach `to`'s LAN listener: give it to a pairing in place of `to`'s address. |
+| `block_udp(host, blocked)` | Drop every datagram on the host's way to the relay, so it falls back to TCP. |
+
+## Growing a net while it runs
+
+A net may start with no hosts and grow, and every growth verb is on the door:
+
+| Verb | Effect |
+| --- | --- |
+| `add_host(decl)` | Create and start a host declared as in a topology, signing it in to its account if it names one. |
+| `remove_host(name)` | Kill its agents and take its daemon down; its gates and links go. Its peers still trust it, as they would a machine switched off for good. |
+| `add_link(a, b)` | Trust and link two hosts, returning once the link is up: in process when both run in the net's process, otherwise by real pairing over the LAN through the pair's gate. |
+| `remove_link(a, b)` | Make both forget each other, as unpairing does. |
+| `add_account(account)` | Add an account to the relay's cloud, starting the relay if none runs. A host that was up before the relay started has no way to it until it restarts. |
+
+`topology()` answers the net as it stands, hosts and links added at run time included.
+
 ## The net in a Rust test
 
 `Net::start(topology)` starts the relay and every host, signs hosts in to their accounts, trusts and links the
 declared pairs, waits until each link carries traffic both ways, and spawns the declared agents, each returning
 once its process has said hello (or, when the topology sets `settle`, once it has settled). When it returns the net is ready. `Net::start_with(topology, NetOptions)` takes a clock
 mode, a shared `DrivenClock`, hooks that adjust each host's edge or launch parameters (the tail size, a
-retention budget), and a fixed root directory.
+retention budget), a fixed root directory, each agent's facts ring size (`facts_ring_mib`, large enough that a
+ring holds an agent's whole life), where real providers' traffic is recorded (`recordings`), and whether the LAN
+is gated (`gated_lan`).
 
 The harness owns resources, verbs and observations, never scenarios. Scenarios live in the tests.
 
@@ -130,7 +260,7 @@ The harness owns resources, verbs and observations, never scenarios. Scenarios l
 | `rewind_host(host, cuts)` | Power loss: daemon and agents die at once, the store goes back to the checkpoint without its write-ahead log, each named journal is cut at a byte, and the host returns under a new boot id. |
 | `advance(by)` | Move policy time on every host (driven nets only). |
 | `spawn(decl)`, `resume(name, text)` | Start an agent; start an exited agent's next incarnation. |
-| `settle(name)` | Wait until the agent rests on its host: idle or needing the person, nothing queued, so a creation prompt's turn has run. The fleet lists agents of one standing most recently active first; settling each before starting the next fixes that order. |
+| `settle(name)` | Wait until the agent rests on its host: idle or needing the person, nothing queued, so a creation prompt's turn has run. The fleet lists agents of one standing most recently active first; settling each before starting the next fixes that order. `settle_within` and `input_settled_within` take their own deadline; `patience_of(name)` is the agent's usual one. |
 | `turn_ended(name, k)` | Wait until the agent's `k`th turn has ended on its own host; returns the order of the row that ended it. |
 | `input_settled(name, input_id)` | Wait until the input the agent accepted under that id has its reflecting row; returns its order. A rejected input never settles: rejection is the answer `send` and `input` return. |
 | `fence(host, name, order)` | Wait until the host holds the agent's row at that order, on the origin or a replica. After it, what the host holds through that order is what its store reports. |
@@ -144,6 +274,10 @@ The harness owns resources, verbs and observations, never scenarios. Scenarios l
 | `sign_in(host, account)`, `set_tier(account, tier)` | Sign a host in through its front door; change what an account has bought. |
 | `block_udp(host, blocked)` | Drop every datagram on the host's way to the relay, or stop dropping them. |
 | `open_gate(name)` | Create a gate file, releasing every `wait_for` step waiting on it. |
+| `publish_release(version, channel, rollout, broken)` | List a release on the net's feed and have supervised hosts check now (see [the release feed](#the-release-feed)). |
+
+The verbs that shape the network and grow the net are under [bad networks](#bad-networks) and
+[growing a net](#growing-a-net-while-it-runs).
 
 **Fences** wait on a host's own cursors. A test asserts about a host only after the step it triggered has landed
 there by the host's account: a turn's end, an input's reflecting row, a row at an order, the replica's catch-up.
@@ -203,13 +337,16 @@ around real IO. `testnet serve` and the flood run on wall time, where `advance` 
 cargo build -p testnet --bins          # or `just ios tools`, which builds it with the phone's tools
 target/debug/testnet serve journeys/topologies/terminal-stories.json
 target/debug/testnet serve TOPOLOGY --control 127.0.0.1:7000 --root-in /tmp/fixed
+target/debug/testnet serve TOPOLOGY --gated-lan --facts-ring-mib 64 --recordings /tmp/providers
 ```
 
 `serve` loads and validates the topology, starts it on wall time and, only once the net is ready, prints one
 readiness line of JSON on standard output. `--control` fixes the control socket's address (an ephemeral loopback
 port by default). `--root-in DIR` puts the net's root at `DIR/net` instead of a fresh temporary directory, so every
-path a client draws is the same each run; the directory must not already hold a `net`. With `RUST_LOG` set, the
-daemons' tracing goes to standard error.
+path a client draws is the same each run; the directory must not already hold a `net`. `--gated-lan` routes the
+LAN through the net's gates ([bad networks](#bad-networks)), `--facts-ring-mib` sets each agent's facts ring size,
+and `--recordings DIR` is where real providers' traffic is recorded. A topology file with no hosts starts an
+empty net. With `RUST_LOG` set, the daemons' tracing goes to standard error.
 
 ### Readiness
 
@@ -221,9 +358,11 @@ daemons' tracing goes to standard error.
   "hosts": [
     {"name": "desk", "host_id": "…", "profile": "…",
      "front_door": "/tmp/testnetAbc123/desk/door.sock",
-     "config": "/tmp/testnetAbc123/desk/installation.yaml"}
+     "config": "/tmp/testnetAbc123/desk/installation.yaml",
+     "dir": "/tmp/testnetAbc123/desk", "process": false, "supervised": false,
+     "provider": "fake", "up": true, "lan_port": 53990}
   ],
-  "agents": [{"name": "worker", "host": "desk", "id": "…", "kind": "claude_sdk"}],
+  "agents": [{"name": "worker", "host": "desk", "id": "…", "kind": "claude_sdk", "provider": "fake"}],
   "cloud_url": "http://127.0.0.1:53212",
   "relay_tcp": "127.0.0.1:53213"
 }
@@ -233,7 +372,8 @@ Each host lives under `<root>/<name>/`: its installation in `data/`, its agents'
 and `door.sock` and `installation.yaml` beside them. A host's `config` is that installation config, so the real terminal client runs against it
 with `amux --config <config>`. `cloud_url` and `relay_tcp` appear only when the topology declares a relay:
 `cloud_url` is the account-service stand-in, where `refresh-<account>` is the login for a declared account, and
-`relay_tcp` is the relay's plain TCP carrier for a client outside the net.
+`relay_tcp` is the relay's plain TCP carrier for a client outside the net. `lan_port` appears for a host with a LAN
+listener; `up` says whether its daemon is running.
 
 ### The control door
 
@@ -243,7 +383,7 @@ verb without fields is a bare string (`"Shutdown"`).
 
 | Request | Effect and reply |
 | --- | --- |
-| `{"Sever": {"a", "b"}}`, `{"Restore": {"a", "b"}}` | Cut or restore a declared link. |
+| `{"Sever": {"a", "b"}}`, `{"Restore": {"a", "b"}}` | Cut or restore a link: a declared or added one, or on a gated LAN any pairing between the two. |
 | `{"Link": {"a", "b"}}` | Whether both ends route to each other directly: `{"up": true}`. |
 | `{"Trust": {"a", "b"}}`, `{"Untrust": {"a", "b"}}` | Trust as pairing does; forget as unpairing does. |
 | `{"RefuseCalls": {"a", "b", "refuse"}}` | While `refuse` is true, `a` fails every call to `b` before it goes out, as when no channel for it opens; the link and the chats it carries stay up. |
@@ -255,11 +395,23 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"Advance": {"ms"}}` | Refused: a served net runs on wall time. |
 | `{"Spawn": {"agent": {…}}}` | Start an agent declared as in a topology: `{"id": "…"}`. |
 | `{"Resume": {"agent", "text"}}` | Start an exited agent again, optionally with a prompt: `{"incarnation": n}`. |
-| `{"Send": {"agent", "text"}}` | Send a prompt through the agent's host: `{"verdict": "…"}`. |
+| `{"Send": {"agent", "text"}}` | Send a prompt through the agent's host: `{"verdict": "…", "input_id": "<hex>"}`. |
+| `{"Settle": {"agent", "input", "timeout_ms"}}` | Wait until the agent rests, after the input named by its hex id when `input` is given; `timeout_ms` defaults to the agent's usual patience. |
 | `{"Stop": {"agent"}}` | Stop the agent on its host, as a person does; it can be resumed. |
 | `{"Freeze": {"agent"}}`, `{"Thaw": {"agent"}}` | Stop the agent's process where it stands, answering nothing, and let it run again. |
 | `{"OpenGate": {"name"}}` | Release `wait_for` steps waiting on that file. |
-| `{"Inventory": {"host"}}` | The host's fleet once its inventory has caught up: `{"agents": [{"name", "id", "host_id", "lifecycle", "phase", "cwd", "branch"}]}`; `branch` is null outside a repository. |
+| `{"AddHost": {"host": {…}}}`, `{"RemoveHost": {"host"}}` | Add a host declared as in a topology and start it; take one out. |
+| `{"AddLink": {"a", "b"}}`, `{"RemoveLink": {"a", "b"}}` | Trust and link two hosts, returning once the link is up; make them forget each other. |
+| `{"AddAccount": {"account": {"name", "tier"}}}` | Add an account to the relay, starting the relay if none runs. |
+| `{"NetFaults": {"target", "delay_ms", "loss_percent", "jitter_ms", "reorder_percent", "rate_bytes_per_sec"}}` | Make a host's network, or the relay's (`"relay"`), bad; all zero makes it clean. Every field but `target` may be left out. |
+| `{"LanGate": {"host"}}`, `{"LanFaults": {"host", …}}` | A host's front gate for a client outside the net: `{"addr": "…"}`; its faults, with the fields `NetFaults` takes. |
+| `{"RelayGate": {}}`, `{"RelayFaults": {…}}` | A gate in front of the relay's QUIC carrier: `{"addr": "…"}`; its faults. |
+| `{"PairGate": {"from", "to"}}` | The gate `from` dials to reach `to`'s LAN listener: `{"addr": "…"}`. |
+| `{"BlockUdp": {"host", "blocked"}}` | Drop every datagram on the host's way to the relay, or stop. |
+| `{"Flap": {"a", "b", "down_ms", "up_ms"}}`, `{"FlapStop": {}}` | Sever and restore a link on a period, until stopped; stop every flap, leaving each link restored. |
+| `{"Release": {"version", "channel", "rollout", "broken"}}` | Publish the build under test on the release feed (channel `stable` by default) and have supervised hosts check now. |
+| `{"Status": {}}` | The readiness record as it stands now, with `topology`: the declaration that would start this net again, run-time additions included. |
+| `{"Inventory": {"host"}}` | The host's fleet once its inventory has caught up: `{"agents": [{"name", "id", "host_id", "lifecycle", "phase", "cwd", "branch", "kind", "lifecycle_name", "phase_name", "working_on", "incarnation", "exit_cause", "exit_detail"}]}`; `branch` is null outside a repository, `exit_cause` null unless the agent has exited. |
 | `{"Chat": {"host", "agent"}}` | Everything the host holds of a chat, read to its first CaughtUp: `{"items": [{"key", "order", "text", "input_id", "attachments"}], "phase", "model"}`, `model` as the newest snapshot names it. `agent` is a declared name or, for an agent a client created, its id. |
 | `{"Block": {"host", "agent"}}` | Check the replica block invariant: `"holds"`. |
 | `{"ProviderInput": {"agent"}}` | Every line the agent's provider read: `{"lines": […]}`. |
@@ -286,10 +438,75 @@ Every door verb is a net capability or a declared composition of two. The map is
 documentation in `crates/testnet/src/lib.rs` lists the same table, and a test holds the two to each other. Adding a
 verb means adding the capability to `Net` first.
 
+## `testnet ctl`
+
+`testnet ctl` drives a served net from a shell, one command at a time. It is the only tool a QA tester has, and
+its `--help` and each group's `--help` describe every command fully; this is the overview.
+
+Run every command from the same folder. `ctl up [TOPOLOGY]` starts a net there, from a topology file or empty,
+and later commands find it through the folder:
+
+| In the folder | What it is |
+| --- | --- |
+| `.testnet/` | The net: its topology, its root (`.testnet/net`, removed by `ctl down`), `testnet.log`, and the panes' and the phone's state. |
+| `session.jsonl` | Every `ctl` command run here: its time, arguments, whether it succeeded, its reply, and any files it wrote. |
+| `shots/` | Every picture `tui shot` and `phone shot` took. |
+| `findings/<name>/` | What `ctl capture` kept. |
+| `providers/` | Real agents' recorded provider traffic, by host and agent. |
+
+A net `ctl up` starts is served with a gated LAN, facts rings large enough to hold each agent's whole life, its
+recordings under `providers/`, a relay with no accounts yet, and a discovery scope of its own (the folder's, or
+`AMUX_QA_SCOPE`'s), so two folders' nets never see each other. `ctl down` stops every agent, daemon, pane and the
+phone app, and removes the net's root; the session log, shots, findings and recordings stay. Every command prints
+readable text; `--json` prints the door's reply instead.
+
+| Group | Commands |
+| --- | --- |
+| The net | `up [TOPOLOGY]`, `down`, `status` |
+| Topology | `host add NAME [--lan] [--discovery] [--bonjour] [--account A] [--process] [--supervised] [--provider real\|fake] [--script FILE]`, `host remove NAME`, `link A B`, `unlink A B`, `account add NAME [--tier pro\|free]` |
+| Faults | `sever A B`, `restore A B`, `flap A B --down D --up U`, `flap stop`, `net HOST\|relay [--loss P] [--delay D] [--jitter D] [--reorder P] [--rate R]`, `block-udp HOST on\|off`, `refuse-calls A B on\|off`, `kill HOST`, `stop HOST`, `restart HOST`, `freeze AGENT`, `thaw AGENT` |
+| Accounts and releases | `sign-in HOST ACCOUNT`, `tier ACCOUNT pro\|free`, `release publish VERSION [--channel C] [--rollout P] [--broken]` |
+| Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
+| A host's own record | `fleet HOST`, `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
+| The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
+| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
+| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the menu that is open), `phone type TEXT --into ID`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone settle` |
+| Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
+| Ledger | `ledger read`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME`, `ledger done SUMMARY` |
+
+Durations take `ms` or `s` (`200ms`, `1.5s`); a rate is bytes a second, with `k` or `m` (`64k`). `--wait` on
+`spawn` and `send`, and `wait`, allow 100 seconds for a fake agent and 240 for a real one unless `--timeout` says
+otherwise.
+
+**The terminal client** runs as the real `amux` binary against a host's installation config in a tmux pane of
+the folder's own tmux server, at 24-bit colour in the chosen theme. `tui keys` presses each key separately, as
+tmux names them. `tui shot` captures the pane with its styles, turns it into the frame format the terminal's own
+report writes (`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`).
+Background colour a program paints by clearing to the end of a line is not kept, and the font has no CJK or emoji
+glyphs. `tui attach` opens `amux attach` for an agent in a second pane: Claude's own interface for terminal
+Claude, Codex's own for Codex.
+
+**The phone** is the debug app on the simulator the session holds a lease on (`WT_LEASE_IPHONE`); `ctl` never
+takes a lease itself, so a session that drives the phone runs entirely under one
+(`wt exec <tree> -- scripts/with iphone -- …`). `phone open` installs and launches the app from
+`AMUX_QA_APP`, or the tree's debug build under `target/ios`, browsing the net's discovery scope; later commands
+talk to the app's door. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`;
+`phone open --relay` and `phone connect ACCOUNT` reach accounts through the net's relay instead.
+
+**Evidence.** `capture NAME` copies, never moves, everything about the moment into `findings/NAME/`: a
+`finding.md` to fill in (from `qa/FINDING.md`), the topology as it stands, the session log, an `amux dump` of
+every running host with the note as its reason (`dumps/<host>/`), the phone app's own dump when it is open
+(`dumps/phone/`), each real agent's provider traffic (`providers/<agent>/`), a fresh shot and screen of every
+pane and of the phone plus every earlier shot (`screens/`), and the net's and each process host's logs (`logs/`).
+Anything it could not take is named in `errors.txt`. `dump show` prints a captured dump bundle as text with the
+`dump-show` binary from `crates/replay-support`, which must be built beside `testnet`. The ledger commands are
+for a [QA](QA.md) run and need its `AMUX_QA_RUN`.
+
 ## The harness's own tests
 
 ```sh
-just test -- --test harness                  # topology validation, clock, waits, faults, the door
+just test -- --test harness                  # topology validation, clock, waits, faults, growth, process hosts, the door
+just test -- --test ctl                      # testnet ctl end to end: up, hosts, a link, a fake agent, a shot, a capture, down
 just test -- --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication
 ```
 

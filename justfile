@@ -241,6 +241,13 @@ ci: no-update-flags check lint fmt-check codegen-check dependency-policy typed-p
 live *ARGS:
     set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex" >&2; exit 2 ;; esac; {{bounded}} 3600 cargo test --locked -p qualification --features bundled,live --test "${kind}_live" -- "$@"
 
+# Waves of Sonnet testers, each on a test network of its own with real
+# Claude and Codex agents, keeping evidence of what they find (docs/QA.md).
+# By hand only, never in CI: `just qa --testers 2 --phone 1`.
+# Run adversarial QA by hand: waves of testers on real agents (docs/QA.md).
+qa *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 86400 scripts/python -B scripts/qa.py "$@"
+
 # Qualify desktop performance on an enrolled machine. Pass --baseline to
 # record the current release medians after every absolute budget passes.
 perf *ARGS:

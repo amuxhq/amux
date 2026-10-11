@@ -1,3 +1,19 @@
+2026-10-11 — **Adversarial QA runs by hand with `just qa`.**
+`just qa [--testers N] [--phone M] [--persona P...] [--waves W]` builds every
+binary once, checks the operator's Claude and Codex logins with one real agent
+each, and starts waves of Sonnet testers in a run folder under
+`~/.local/state/amux-qa/`. Each tester plays a persona on a test network of its
+own through `testnet ctl`, confined to its folder and to `testnet` and
+read-only tools, reads only a snapshot of the docs and the QA guides, and keeps
+its evidence in captures and a shared ledger. A phone tester runs inside a
+simulator lease for its whole life. The committed `qa/` folder holds the base
+prompt, seven personas, attack moves with the screenshot checklist, the
+finding and ledger formats, a triage guide from finding to test, and a guide
+to talking to agents whose every phrasing was tried on Haiku and
+`gpt-5.6-luna`. `docs/QA.md` describes it; TESTNET.md documents `testnet ctl`,
+growing a net, real providers, process and supervised hosts, the release feed
+and the new faults; TESTING.md places QA beside the lanes, never in CI.
+
 2026-10-11 — **Real agents on a test net start small, ask, and carry nothing of the operator's.**
 Trying real Claude and Codex agents through every way a person creates one
 showed four gaps in the test net's real providers. A spawned agent ignored the

@@ -4,8 +4,9 @@
 
 This page is an index. The suites themselves are listed in `tests/catalog.toml`; the promises they hold are
 listed in `tests/contracts.toml`; `just --list` is the command surface. The multi-host harness has its own page,
-[TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), and the phone's snapshots,
-goldens and journeys are described in [the iPhone app](IOS.md).
+[TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's snapshots,
+goldens and journeys are described in [the iPhone app](IOS.md), and adversarial testing by agents has
+[QA](QA.md).
 
 ## The rule
 
@@ -183,6 +184,15 @@ together: the action really happened through the UI; the hosts independently rec
 deliberately wrong expectation shown to fail the same check); and the screens reached compare with reviewed
 goldens.
 
+## QA
+
+QA sits outside the lanes. Agents playing people (testers) explore the product on their own test networks, with
+real providers, the real terminal client and the phone, and report what would make a person unhappy, with
+evidence. It is not a suite: it asserts nothing, nothing in the catalogue depends on it, and it never runs in CI.
+It runs by hand, with `just qa`, on a machine with the operator's Claude and Codex logins and, for phone testers,
+simulators. What it produces is findings; each becomes a failing test at the boundary that owns it, in the suites
+above. [QA](QA.md) describes running it and turning findings into tests.
+
 ## Where results land
 
 | Run | Output |
@@ -195,3 +205,4 @@ goldens.
 | TUI evidence bundle | `just tui-evidence`; rendered PNGs from `just shot` (see [amux-shot](../crates/shot/README.md)) |
 | Desktop performance | printed report; `--baseline` writes `perf/baselines/desktop/<model>.json` |
 | Phone performance | `target/ios/perf/report.md`; `--baseline` writes `perf/baselines/phone/<machine>.json` |
+| QA run | `~/.local/state/amux-qa/<run>/`: the ledger, the summary, and each tester's transcript, session log, shots and findings |

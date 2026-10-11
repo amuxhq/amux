@@ -48,7 +48,9 @@
 
 - [Testing](TESTING.md) — boundaries, lanes, the suite catalogue and contracts, how to run, where fixtures and
   evidence live.
-- [TestNet](TESTNET.md) — the multi-host harness and `testnet serve`.
+- [TestNet](TESTNET.md) — the multi-host harness, `testnet serve` and `testnet ctl`.
+- [QA](QA.md) — adversarial testing by agents: running `just qa`, what a run leaves behind, and turning findings
+  into tests.
 - [Performance](PERFORMANCE.md) — the perf lane, the flood, budgets and baselines.
 - [Debugging](DEBUGGING.md) — dumps, the facts ring and checkpoints, `amux dump`, the reports directory,
   redaction and replay.

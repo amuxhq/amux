@@ -2527,3 +2527,48 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_held_transfer_and_a_
 
     net.shutdown().await.unwrap();
 }
+
+/// A crashed daemon takes all of its work down with it. A host that listens
+/// on the LAN and is signed in to a relay account is killed and started
+/// again: nothing of the dead run keeps its relay link dialling or its LAN
+/// socket bound, so the next run listens on the same port and comes back.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_killed_host_signed_in_to_the_relay_starts_again_on_its_port() {
+    let mut net = Net::start(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(testnet::HostDecl {
+                lan: true,
+                ..relay_host("desk", "ada")
+            }),
+    )
+    .await
+    .unwrap();
+    let desk = host_id(&net, "desk");
+    until("the desk's relay link", || async {
+        carrier(&net, "desk").map(|_| ()).ok_or("no carrier")
+    })
+    .await
+    .unwrap();
+    assert_eq!(net.relay().unwrap().links("ada").await, vec![(desk, 1)]);
+
+    net.kill_daemon("desk").await.unwrap();
+    println!("desk killed while signed in to the relay");
+
+    net.restart_daemon("desk")
+        .await
+        .expect("the killed desk starts again: nothing of its dead run holds its LAN port");
+    until("the restarted desk's relay link", || async {
+        carrier(&net, "desk").map(|_| ()).ok_or("no carrier")
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        net.relay().unwrap().links("ada").await,
+        vec![(desk, 1)],
+        "one relay link for the desk: the new run's, none left over from the dead one"
+    );
+    println!("desk restarted on its port with one relay link");
+
+    net.shutdown().await.unwrap();
+}

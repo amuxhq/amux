@@ -1173,3 +1173,51 @@ async fn cross_host_family_journey() {
     assert_eq!(story.len(), 7);
     net.shutdown().await.unwrap();
 }
+
+/// A headless Claude parent is told who a report comes from and what it
+/// is, as a Codex parent is (`[agent <name> finished its turn]`). The
+/// envelope carries the sender and the kind; the line Claude reads on its
+/// stdin must carry them too, or the model takes the child's last words
+/// for its person's and cannot tell its child has finished.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_headless_claude_parent_reads_which_child_finished() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("server")
+            .link("desk", "server")
+            .agent(lead()),
+    )
+    .await
+    .unwrap();
+    net.settle("lead").await.unwrap();
+    net.spawn_child("lead", child("helper", "server", says("Suite green.")))
+        .await
+        .unwrap();
+    until("helper's finished message to reach lead", || {
+        let net = &net;
+        async move {
+            let got = received(net, "lead").await;
+            (got.len() == 1)
+                .then_some(())
+                .ok_or_else(|| format!("lead received {got:?}"))
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(taken(&net, "lead", "Suite green.").await, 1);
+    let lines: Vec<String> = net
+        .provider_input("lead")
+        .unwrap()
+        .into_iter()
+        .filter(|line| line.contains("Suite green."))
+        .collect();
+    println!("what lead's Claude read: {lines:?}");
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("helper") && line.contains("finished")),
+        "the report reached Claude without its sender or kind: {lines:?}"
+    );
+    net.shutdown().await.unwrap();
+}

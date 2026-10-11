@@ -1,3 +1,14 @@
+2026-10-11 — **Failing tests for a host that cannot restart after a crash and
+a Claude parent that cannot tell who reported.** Triage of the first
+adversarial QA run. A daemon dropped in process (a crash in the test net, or
+the phone's embedded runtime) leaves its relay link's task running: the
+crash path drops the link's stop handle without stopping it, and the task,
+which holds the profile's QUIC endpoint, keeps redialling the relay and keeps
+the LAN port bound, so the host never starts again on its port. A child's
+finished report reaches a headless Claude parent as a bare user message,
+though the envelope names the sender and the kind and a Codex parent is told
+`[agent <name> finished its turn]`. Both tests fail until the bugs are fixed.
+
 2026-10-11 — **The QA tooling's tests pass on every CI runner.** testnet's
 `ctl` test drives the terminal client in tmux, which the macOS test runner
 lacked, so the test job now installs it there as the journeys job does. The

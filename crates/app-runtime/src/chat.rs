@@ -223,8 +223,8 @@ impl Chat {
     }
 
     pub async fn send(&self, draft: &Draft) -> SendOutcome {
-        let attachments = draft.attachments.iter().map(|a| a.to_wire()).collect();
-        let sent = self.session.send_prompt(&draft.text, attachments).await;
+        let (text, attachments) = draft.to_prompt();
+        let sent = self.session.send_prompt(&text, attachments).await;
         let state = self
             .session
             .state()
@@ -381,8 +381,8 @@ impl Chat {
     /// The exited composer's one tap: the draft is the new incarnation's
     /// first prompt.
     pub async fn resume_with(&self, draft: &Draft) -> ActOutcome {
-        let attachments = draft.attachments.iter().map(|a| a.to_wire()).collect();
-        let prompt = ui_runtime::inputs::submission(&draft.text, attachments);
+        let (text, attachments) = draft.to_prompt();
+        let prompt = ui_runtime::inputs::submission(&text, attachments);
         match self.session.resume_with(prompt).await {
             Ok(_) => ActOutcome::Done,
             Err(error) if error.is_transport() => ActOutcome::NotConfirmed,

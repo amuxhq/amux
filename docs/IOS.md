@@ -672,6 +672,10 @@ not as tokens inside its text. The field is SwiftUI's own
 `TextField(_:text:axis:)`, and nothing in it needs a run of text to be one
 object to the caret. `ChatModel` holds the draft and its attachments; the
 chips are the same `AttachmentChip` view wherever an attachment is drawn.
+What it sends is a `Draft`: the words followed by the attachments, as
+ordered parts, which is where a sent message draws them. The parts become
+text with one placeholder per attachment only in Rust, so the phone cannot
+send an attachment without its place.
 
 What would reopen it: putting attachment tokens inline in the text. SwiftUI's
 text editors bind a `String` or an `AttributedString`, and neither has an

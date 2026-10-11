@@ -125,11 +125,7 @@ async fn converse(app: &AppRuntime, net: &Net) {
         chat.frame().caught_up && says("turn one")
     })
     .await;
-    chat.send(&Draft {
-        text: "hello from the phone".into(),
-        attachments: Vec::new(),
-    })
-    .await;
+    chat.send(&Draft::words("hello from the phone")).await;
     eventually(app, "the desk's answer", || says("answered from the phone")).await;
 }
 
@@ -263,11 +259,7 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         frame.connection == Connection::Live && frame.caught_up
     })
     .await;
-    chat.send(&Draft {
-        text: "still there?".into(),
-        attachments: Vec::new(),
-    })
-    .await;
+    chat.send(&Draft::words("still there?")).await;
     eventually(&app, "the desk's answer after the return", || {
         let keys = chat.keys();
         chat.rows_for(&keys, &Default::default())

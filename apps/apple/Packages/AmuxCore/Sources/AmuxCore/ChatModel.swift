@@ -596,8 +596,11 @@ public final class ChatModel {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
+    /// The draft as it is sent. The chips sit apart from the field, and a
+    /// sent message draws attachments after its words, so that is where
+    /// they go.
     private var composed: Draft {
-        Draft(text: draft, attachments: attachments.isEmpty ? nil : attachments)
+        Draft(words: draft, attachments: attachments)
     }
 
     public func send() {
@@ -760,10 +763,11 @@ public final class ChatModel {
     }
 
     private func restore(_ sent: Draft) {
+        let words = sent.words
         if draft.isEmpty {
-            draft = sent.text
-        } else if !sent.text.isEmpty {
-            draft = sent.text + "\n" + draft
+            draft = words
+        } else if !words.isEmpty {
+            draft = words + "\n" + draft
         }
         attachments = (sent.attachments ?? []) + attachments
     }
@@ -992,5 +996,36 @@ public struct QuestionDraft: Equatable, Sendable {
     public func fits(_ count: Int) -> Bool {
         [picks.count, others.count, highlighted.count, skipped.count, notes.count, noting.count]
             .allSatisfy { $0 == count }
+    }
+}
+
+extension Draft {
+    /// Words followed by attachments: the composer's shape, whose chips sit
+    /// beside the field rather than among the words.
+    public init(words: String, attachments: [DraftAttachment]) {
+        self.init(parts: (words.isEmpty ? [] : [.text(words)]) + attachments.map(DraftPart.attachment))
+    }
+
+    /// The prompt's text as its host receives it: each attachment's place
+    /// marked with U+FFFC.
+    public var text: String {
+        parts.map { part in
+            if case .text(let words) = part { words } else { "\u{FFFC}" }
+        }.joined()
+    }
+
+    /// The words alone, as they go back into the field.
+    public var words: String {
+        parts.compactMap { part in
+            if case .text(let words) = part { words } else { nil }
+        }.joined()
+    }
+
+    /// The attachments in order, nil when there are none.
+    public var attachments: [DraftAttachment]? {
+        let attached = parts.compactMap { part in
+            if case .attachment(let attachment) = part { attachment } else { nil }
+        }
+        return attached.isEmpty ? nil : attached
     }
 }

@@ -217,12 +217,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     assert_eq!(chat.keys_above(&newest), Some(Vec::new()));
     assert_eq!(chat.keys_above("no such key"), None);
 
-    let sent = chat
-        .send(&Draft {
-            text: "please run it".into(),
-            attachments: Vec::new(),
-        })
-        .await;
+    let sent = chat.send(&Draft::words("please run it")).await;
     assert!(
         matches!(sent.state, InputState::Settled | InputState::Sent),
         "{sent:?}"
@@ -283,11 +278,7 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     assert_eq!(decided.id, card.item_key);
 
     // Questions: one pick per question, in order.
-    chat.send(&Draft {
-        text: "ask me".into(),
-        attachments: Vec::new(),
-    })
-    .await;
+    chat.send(&Draft::words("ask me")).await;
     let card = tokio::time::timeout(PATIENCE, async {
         loop {
             if let Some(card) = chat.ask_card() {
@@ -440,11 +431,7 @@ async fn the_fleet_wakes_the_host_when_an_agent_moves() {
     let (runtime, mut host) = open(&net).await;
     runtime.take_fleet_changes();
     let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
-    chat.send(&Draft {
-        text: "please run it".into(),
-        attachments: Vec::new(),
-    })
-    .await;
+    chat.send(&Draft::words("please run it")).await;
     tokio::time::timeout(PATIENCE, async {
         loop {
             host.next(Wake::Fleet).await;
@@ -589,11 +576,7 @@ async fn a_chat_catches_up_after_the_app_returns_to_the_foreground() {
     .await;
     runtime.set_foreground(false);
     runtime.set_foreground(true);
-    chat.send(&Draft {
-        text: "please run it".into(),
-        attachments: Vec::new(),
-    })
-    .await;
+    chat.send(&Draft::words("please run it")).await;
     until(&mut host, &chat, "the ask after the return", |chat| {
         chat.ask_card().is_some()
     })

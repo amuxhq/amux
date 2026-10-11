@@ -7,6 +7,7 @@ description = "The phone's chats and fleet over the local runtime: session and f
 publish = false
 
 [dependencies]
+attachments = { workspace = true }
 client = { workspace = true }
 model = { workspace = true }
 prost = { workspace = true }

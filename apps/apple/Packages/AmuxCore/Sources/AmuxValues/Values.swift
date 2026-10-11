@@ -2158,20 +2158,23 @@ public struct Directory: Codable, Hashable, Sendable {
     }
 }
 
-/// A prompt as the composer holds it.
+/// A prompt as the composer holds it: runs of words and attachments in
+/// reading order.
+///
+/// A prompt on the wire is text with one placeholder per attachment, and
+/// an attachment whose placeholder is missing never reaches the model. A
+/// draft holds its attachments in place among its words instead, so it
+/// cannot be built with the two out of step; the placeholders are written
+/// only when it is sent.
 public struct Draft: Codable, Hashable, Sendable {
-    public var text: String
-    /// In the order their placeholders appear in the text.
-    public var attachments: [DraftAttachment]?
+    public var parts: [DraftPart]
 
-    public init(text: String, attachments: [DraftAttachment]?) {
-        self.text = text
-        self.attachments = attachments
+    public init(parts: [DraftPart]) {
+        self.parts = parts
     }
 
     private enum CodingKeys: String, CodingKey {
-        case text
-        case attachments
+        case parts
     }
 }
 
@@ -2246,6 +2249,44 @@ public enum DraftAttachment: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: ReviewKeys.self, forKey: .review)
             try _fields.encode(diff, forKey: .diff)
             try _fields.encode(comments, forKey: .comments)
+        }
+    }
+}
+
+/// One run of a draft's words, or one attachment.
+public enum DraftPart: Codable, Hashable, Sendable {
+    case text(String)
+    case attachment(DraftAttachment)
+
+    private enum Tag: String, CodingKey {
+        case text = "Text"
+        case attachment = "Attachment"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a DraftPart names exactly one variant"))
+        }
+        switch _tag {
+        case .text:
+            self = .text(try _container.decode(String.self, forKey: .text))
+        case .attachment:
+            self = .attachment(try _container.decode(DraftAttachment.self, forKey: .attachment))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .text(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .text)
+        case .attachment(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .attachment)
         }
     }
 }

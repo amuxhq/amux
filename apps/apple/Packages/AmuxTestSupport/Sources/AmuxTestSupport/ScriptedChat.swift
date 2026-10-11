@@ -279,14 +279,14 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     /// scripted chat holds no attachments behind its rows.
     public func draft(of input: [UInt8]) -> Draft? {
         let frame = lock.withLock { current }
-        if let words = refusedWords[input] { return Draft(text: words, attachments: nil) }
+        if let words = refusedWords[input] { return Draft(words: words, attachments: []) }
         let text = frame.queue.first { $0.inputId == input }?.text
             ?? frame.underway.first { $0.inputId == input }?.text
         return text.map { segments in
             let words = segments.compactMap { segment -> String? in
                 if case .text(let text) = segment { text } else { nil }
             }
-            return Draft(text: words.joined(), attachments: nil)
+            return Draft(words: words.joined(), attachments: [])
         }
     }
     public func interrupt() async -> ActOutcome? { .done }

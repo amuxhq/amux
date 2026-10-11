@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use attachments::PLACEHOLDER;
 use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal, Waiting};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -180,13 +181,24 @@ impl RowOptions {
     }
 }
 
-/// A prompt as the composer holds it.
+/// A prompt as the composer holds it: runs of words and attachments in
+/// reading order.
+///
+/// A prompt on the wire is text with one placeholder per attachment, and
+/// an attachment whose placeholder is missing never reaches the model. A
+/// draft holds its attachments in place among its words instead, so it
+/// cannot be built with the two out of step; the placeholders are written
+/// only when it is sent.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Draft {
-    pub text: String,
-    /// In the order their placeholders appear in the text.
-    #[serde(default)]
-    pub attachments: Vec<DraftAttachment>,
+    pub parts: Vec<DraftPart>,
+}
+
+/// One run of a draft's words, or one attachment.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum DraftPart {
+    Text(String),
+    Attachment(DraftAttachment),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -243,14 +255,48 @@ impl DraftAttachment {
 }
 
 impl Draft {
-    fn of(text: &str, attachments: &[wire::Attachment]) -> Draft {
+    /// A draft of words alone.
+    pub fn words(text: impl Into<String>) -> Draft {
         Draft {
-            text: text.to_owned(),
-            attachments: attachments
-                .iter()
-                .filter_map(DraftAttachment::from_wire)
-                .collect(),
+            parts: vec![DraftPart::Text(text.into())],
         }
+    }
+
+    /// The prompt as it is sent: the words with a placeholder at each
+    /// attachment's place, and the attachments in that order.
+    pub fn to_prompt(&self) -> (String, Vec<wire::Attachment>) {
+        let mut text = String::new();
+        let mut attachments = Vec::new();
+        for part in &self.parts {
+            match part {
+                DraftPart::Text(words) => text.push_str(words),
+                DraftPart::Attachment(attachment) => {
+                    text.push(PLACEHOLDER);
+                    attachments.push(attachment.to_wire());
+                }
+            }
+        }
+        (text, attachments)
+    }
+
+    /// A prompt read back into a draft. Each placeholder is the next
+    /// attachment, as a row draws it: one with no attachment left is
+    /// dropped, and attachments with no placeholder follow the words.
+    fn of(text: &str, attachments: &[wire::Attachment]) -> Draft {
+        let mut parts = Vec::new();
+        let mut attachments = attachments.iter().filter_map(DraftAttachment::from_wire);
+        for (index, words) in text.split(PLACEHOLDER).enumerate() {
+            if index > 0
+                && let Some(attachment) = attachments.next()
+            {
+                parts.push(DraftPart::Attachment(attachment));
+            }
+            if !words.is_empty() {
+                parts.push(DraftPart::Text(words.to_owned()));
+            }
+        }
+        parts.extend(attachments.map(DraftPart::Attachment));
+        Draft { parts }
     }
 
     /// A queued prompt as a draft: its words and every attachment.
@@ -589,8 +635,12 @@ mod tests {
         ];
         let wire: Vec<wire::Attachment> = sent.iter().map(DraftAttachment::to_wire).collect();
         let back = Draft::of("look", &wire);
-        assert_eq!(back.text, "look");
-        assert_eq!(back.attachments, sent);
+        let mut parts = vec![DraftPart::Text("look".into())];
+        parts.extend(sent.iter().cloned().map(DraftPart::Attachment));
+        assert_eq!(
+            back.parts, parts,
+            "attachments with no placeholder follow the words"
+        );
         assert_eq!(
             DraftAttachment::from_wire(&wire::Attachment { of: None }),
             None

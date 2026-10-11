@@ -644,7 +644,7 @@ final class ChatModelTests: XCTestCase {
 
     func testAWithdrawnPromptComesBackToTheDraft() async {
         let source = FakeChat(rows: [], frame: frame(phase: .working))
-        source.drafts[[7]] = Draft(text: "Then run the Windows check.", attachments: nil)
+        source.drafts[[7]] = Draft(words: "Then run the Windows check.", attachments: [])
         let model = ChatModel(source: source)
         let queued = QueuedRow(
             inputId: [7], text: [.text("Then run the Windows check.")], steered: false,
@@ -665,7 +665,7 @@ final class ChatModelTests: XCTestCase {
         let review = DraftAttachment.review(
             diff: Diff(head: "abc123", files: [], base: nil, mergeBase: nil, patch: patch),
             comments: [ReviewComment(path: "src/lib.rs", line: 12, oldLine: 0, text: "Name this.")])
-        source.drafts[[7]] = Draft(text: "Look at these.", attachments: [pasted, review])
+        source.drafts[[7]] = Draft(words: "Look at these.", attachments: [pasted, review])
         let model = ChatModel(source: source)
         model.draft = "half written"
         let queued = QueuedRow(
@@ -689,7 +689,7 @@ final class ChatModelTests: XCTestCase {
         refusing.refused = [RefusedPrompt(inputId: [8], reason: Refusal(reason: .hostUnreachable, detail: nil))]
         let source = FakeChat(rows: [], frame: refusing)
         let photo = BlobRef(hash: [5], name: "screen.png", mime: "image/png", size: 2048)
-        source.drafts[[8]] = Draft(text: "What is this?", attachments: [.image(photo)])
+        source.drafts[[8]] = Draft(words: "What is this?", attachments: [.image(photo)])
         let model = ChatModel(source: source)
         await settle()
         XCTAssertEqual(model.draft, "What is this?")
@@ -826,7 +826,9 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.attachments.count, 2, "one very long line is a paste too")
         model.send()
         await settle()
-        XCTAssertEqual(source.sent.first?.text, "Look at this: two\nlines")
+        XCTAssertEqual(
+            source.sent.first?.text, "Look at this: two\nlines\u{FFFC}\u{FFFC}",
+            "each paste's place follows the words, where the sent message draws it")
         XCTAssertEqual(source.sent.first?.attachments?.first, .text(name: "Pasted text", text: text))
     }
 

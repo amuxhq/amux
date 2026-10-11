@@ -245,6 +245,7 @@ dependencies = [
 name = "app-runtime"
 version = "0.2.0"
 dependencies = [
+ "attachments",
  "client",
  "model",
  "prost",

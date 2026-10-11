@@ -432,9 +432,11 @@ answers never carry a provider's answer body across the bridge: the phone names 
 ### Attachments
 
 To attach bytes, the client calls `put_blob(name, mime, bytes)`, which stores them in the agent's directory on
-its host and returns a `BlobRef` (hash, name, mime, size). The draft is text with one placeholder character
-(U+FFFC, `attachments::PLACEHOLDER`) per attachment and the attachments in order, which is the wire's own shape
-for a prompt; `composer_tokens` and `segments` split it into text runs and chips.
+its host and returns a `BlobRef` (hash, name, mime, size). A prompt on the wire is text with one placeholder
+character (U+FFFC, `attachments::PLACEHOLDER`) per attachment and the attachments in order; `composer_tokens` and
+`segments` split it into text runs and chips. The phone's bridge takes a `Draft` instead, an ordered list of
+word runs and attachments, and writes the placeholders itself, so a draft cannot carry an attachment without
+its place.
 
 Rows that show an attachment draw a placeholder from the reference's name, type and size. The first
 `Session::blob(hash)` for a missing hash starts a `GetBlob`; when the bytes land (or fail), `Msg::Blob` marks

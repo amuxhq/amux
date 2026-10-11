@@ -1,3 +1,12 @@
+2026-10-11 — **Attachments sent from the phone reach the model.** The phone
+sent its words with no placeholder for its attachments, and headless Claude
+reads an attachment only at its placeholder, so every file, photo and long
+paste sent from the phone to Claude was dropped. The bridge's `Draft` is now
+an ordered list of word runs and attachments, and Rust writes the
+placeholders when it sends, so a draft cannot carry an attachment without
+its place. The phone puts its attachments after the words, where a sent
+message draws them.
+
 2026-10-11 — **The phone's markdown parser consumes every line, and keeps
 an agent's single line breaks.** A line that starts with `#` but is not a
 heading (`#42`, a shebang) or with `|` but is not a table row was refused by

@@ -1108,9 +1108,16 @@ async fn an_empty_net_grows_hosts_links_and_accounts_and_sheds_them_while_it_run
     .await
     .unwrap();
 
+    let removed = net.host("laptop").unwrap().clone();
     net.remove_host("laptop").await.unwrap();
     assert_eq!(net.host_names(), vec!["desk", "phone-less"]);
     assert!(matches!(net.host("laptop"), Err(NetError::NoHost(..))));
+    // A host added under a removed one's name is a new machine, not the
+    // removed one coming back with its profile and agents.
+    net.add_host(lan_host("laptop")).await.unwrap();
+    let added = net.host("laptop").unwrap();
+    assert_ne!(added.dir, removed.dir);
+    assert_ne!(added.host_id, removed.host_id);
     net.shutdown().await.unwrap();
 }
 

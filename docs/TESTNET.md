@@ -142,11 +142,13 @@ A wrapper finds which agent started it, then runs either the fake that agent was
   built-in skills.
 
 A real host's installation config sets the person's defaults for a new agent to Haiku and `gpt-5.6-luna`, so an
-agent made from the terminal client starts on the small models unless someone picks another; the phone offers
-the host's default, which is the provider's own, so pick the small model there. An agent the net spawns on a
-real provider (`Net::spawn`, `ctl spawn`) starts on the small model and, for Claude, the `default` permission,
-unless its declaration names others: left unset, terminal Claude would take the operator's own default
-permission mode. Waits on a real agent
+agent made from the terminal client starts on the small models unless someone picks another. An agent the net
+spawns on a real provider (`Net::spawn`, `ctl spawn`) starts on the small model and, for Claude, the `default`
+permission, unless its declaration names others. Any other agent amux starts with no model or permission named,
+such as one left at the phone's "Host default" or a child made by amux's spawn tool, gets the same from the
+host's provider commands: the Claude command adds `--model haiku` and `--permission-mode default` when amux
+passed neither, and Codex's scratch config names `gpt-5.6-luna` as its model. Left unset, Claude would take a
+large model and the operator's own default permission mode, which may act without asking. Waits on a real agent
 (`settle`, `turn_ended`, `input_settled`) allow `REAL_PATIENCE`, 240 seconds, rather than `PATIENCE`. On a real
 host, refreshing what each provider offers (models, commands) runs the real provider.
 

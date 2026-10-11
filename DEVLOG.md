@@ -1,3 +1,17 @@
+2026-10-11 — **Every real agent in a test net starts small and asking, a
+re-added host is a new machine, and ledger entries stay whole.**
+Only agents the net spawned itself started on Haiku or `gpt-5.6-luna` with
+Claude asking; a child made by amux's spawn tool, or an agent left at the
+phone's "Host default", ran on a large model, and terminal Claude took the
+operator's own default mode, which acts without asking. The host's provider
+commands now fill these in whenever amux names none: the Claude command adds
+the small model and `--permission-mode default`, and Codex's scratch config
+names the small model. A host added under the name of a removed one reused
+its directory, so its daemon served the removed host's profile and agents
+again; each host now gets a directory nothing has used. A ledger entry is now
+written in one write, so testers recording at the same moment cannot
+interleave their lines.
+
 2026-10-11 — **A host with the phone connected can be killed or removed at once.**
 The pilot QA run found that `ctl host remove` on a host the phone had been
 talking to failed after thirty seconds and left the host half-declared: the

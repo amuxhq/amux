@@ -43,7 +43,7 @@ use crate::invariant::{self, BlockViolation};
 use crate::lan::{FrontAdvert, Gated, Lan};
 use crate::observe::{self, InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck};
 use crate::process::ProcessHost;
-use crate::providers::{self, Commands, RealTools};
+use crate::providers::{self, Commands, RealTools, SMALL_CLAUDE, SMALL_CODEX};
 use crate::relay::Relay;
 use crate::topology::{
     AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,
@@ -1465,17 +1465,16 @@ impl Net {
         if decl.supervised && self.feed.is_none() {
             self.feed = Some(Feed::start(self.root.path().join("releases"))?);
         }
-        // Names that differ only in case share a directory on a
-        // case-insensitive filesystem.
-        let twins = self
-            .hosts
-            .keys()
-            .filter(|name| name.eq_ignore_ascii_case(&decl.name))
-            .count();
-        let dir = match twins {
-            0 => self.root.path().join(&decl.name),
-            n => self.root.path().join(format!("{}-{n}", decl.name)),
-        };
+        // A host gets a directory nothing has used: a removed host's stays
+        // behind with its profile, which a daemon would serve again as the
+        // new host's, and names that differ only in case share a directory
+        // on a case-insensitive filesystem.
+        let mut dir = self.root.path().join(&decl.name);
+        let mut n = 1;
+        while dir.exists() {
+            dir = self.root.path().join(format!("{}-{n}", decl.name));
+            n += 1;
+        }
         let data_dir = dir.join("data");
         let work = dir.join("work");
         std::fs::create_dir_all(&work)?;
@@ -3247,10 +3246,6 @@ fn create_config(decl: &AgentDecl, provider: Provider) -> create_agent_request::
         FakeKind::ClaudeSdk => Agent::ClaudeSdk(claude),
     }
 }
-
-/// The small models a real host's agents start on.
-const SMALL_CLAUDE: &str = "haiku";
-const SMALL_CODEX: &str = "gpt-5.6-luna";
 
 /// The directory an agent starts in: its host's work directory, a folder
 /// below it named relatively (made when missing), or an absolute path as

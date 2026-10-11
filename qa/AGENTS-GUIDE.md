@@ -20,14 +20,14 @@ word for word, and change only the names, files and texts in them.
     settings edge shows the model once the agent runs);
   - on the phone, pick them in the new agent screen's Model menu
     (`phone tap new-agent.model`, then `phone choose "Haiku 5.5"` or
-    `phone choose "GPT-5.6-Luna"`). Left at "Host default", the agent runs on
-    the provider's own default, a large model.
-- **Choose the permission too.** Left at the host's default, terminal Claude
-  takes the operator's own default mode, which may run commands without
-  asking. To see Claude ask, start it with the permission `default`
-  (`ctl spawn --permission default`, which `ctl spawn` uses for real Claude
-  unless told otherwise; the Permission menu on the phone; Shift+Tab in the
-  terminal client).
+    `phone choose "GPT-5.6-Luna"`). Left at "Host default", it starts on
+    the small model too: a test net's providers fill in the small model
+    whenever amux names none.
+- **Choose the permission too.** Claude left at the host's default starts
+  with the permission `default`, which asks before running commands. To
+  see it ask, keep that (`ctl spawn` uses it for real Claude unless told
+  otherwise; the Permission menu on the phone; Shift+Tab in the terminal
+  client).
 - **Waits on real agents take minutes.** `ctl spawn --wait`, `ctl send --wait`
   and `ctl wait` give a real agent up to four minutes.
 - **See what is waiting on you** with `ctl chat HOST AGENT`: its phase, every
@@ -59,7 +59,7 @@ Every agent carries amux's tool server (`reference/docs/AGENT_TOOLS.md`).
 | Behaviour | Prompt |
 | --- | --- |
 | A message to another agent | "Use amux's send tool to send worker-2 the message 'hello from desk'. Then reply with only the word done." Works from Claude and Codex; `ctl chat HOST worker-2` shows the message arriving. |
-| A child agent | "Use amux's spawn tool to start a codex child on host laptop whose prompt is: Reply with only the word pong. Then reply with only the word done." Name the kind (claude or codex), the host and the child's prompt. A child runs on its provider's default model, a large one, and ends when its task is done. |
+| A child agent | "Use amux's spawn tool to start a codex child on host laptop whose prompt is: Reply with only the word pong. Then reply with only the word done." Name the kind (claude or codex), the host and the child's prompt. A child starts on the small model and, for Claude, asking, and ends when its task is done. |
 | A status line | "Use amux's status tool to set your status to 'reviewing the README'. Then reply with only the word done." The fleet's "working on" then reads that text. |
 | What it can see | "Use amux's agents tool and reply with only the names of the agents it lists, comma-separated." |
 

@@ -142,7 +142,11 @@ pub(crate) fn seed_codex_home(dir: &Path) -> Result<PathBuf, String> {
     for (file, text) in [
         (
             "config.toml",
-            "[features]\nplugins = false\nremote_plugin = false\napps = false\n".to_owned(),
+            // The model is what an agent gets when nobody chose one, such
+            // as a child made by amux's spawn tool.
+            format!(
+                "model = \"{SMALL_CODEX}\"\n\n[features]\nplugins = false\nremote_plugin = false\napps = false\n"
+            ),
         ),
         (".personality_migration", "v1\n".to_owned()),
         (".sandbox_migration", "v1\n".to_owned()),
@@ -157,6 +161,32 @@ pub(crate) fn seed_codex_home(dir: &Path) -> Result<PathBuf, String> {
             .map_err(|error| error.to_string())?;
     }
     Ok(home)
+}
+
+/// The small models a real host's agents start on, whoever creates them.
+pub(crate) const SMALL_CLAUDE: &str = "haiku";
+pub(crate) const SMALL_CODEX: &str = "gpt-5.6-luna";
+
+/// The real Claude's start, where `{probe}` is the recording probe. amux
+/// leaves the model and permission off the command line when nobody chose
+/// them, as for a child made by amux's spawn tool; Claude would then take
+/// a large model and the operator's own default mode, which may act
+/// without asking. A test net's agents start small and asking instead.
+fn claude_setup() -> String {
+    format!(
+        "    model=1 permission=1\n\
+         \x20   for argument in \"$@\"; do\n\
+         \x20       case \"$argument\" in\n\
+         \x20           --model|--model=*) model= ;;\n\
+         \x20           --permission-mode|--permission-mode=*|--dangerously-skip-permissions) permission= ;;\n\
+         \x20       esac\n\
+         \x20   done\n\
+         \x20   if [ -n \"$permission\" ]; then set -- --permission-mode default \"$@\"; fi\n\
+         \x20   if [ -n \"$model\" ]; then set -- --model {SMALL_CLAUDE} \"$@\"; fi\n\
+         \x20   unset CLAUDE_CONFIG_DIR\n\
+         \x20   export DISABLE_AUTOUPDATER=1 DISABLE_UPDATES=1 DISABLE_INSTALLATION_CHECKS=1\n\
+         \x20   exec {{probe}} --setting-sources project --strict-mcp-config \"$@\"\n"
+    )
 }
 
 /// Finds the agent this command runs for: the `amux agent <dir>` process
@@ -247,9 +277,7 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
             wrappers
                 .real
                 .map(|real| (real.claude_probe.as_path(), real.claude.as_path())),
-            "    unset CLAUDE_CONFIG_DIR\n\
-             \x20   export DISABLE_AUTOUPDATER=1 DISABLE_UPDATES=1 DISABLE_INSTALLATION_CHECKS=1\n\
-             \x20   exec {probe} --setting-sources project --strict-mcp-config \"$@\"\n",
+            &claude_setup(),
         ),
         fake_tail(&format!(
             "case \"$kind\" in claude_pty) fake={} ;; *) fake={} ;; esac\n\
@@ -303,4 +331,52 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
 /// A path as one shell word.
 fn quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', r"'\''"))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// What the real Claude is started with, through a probe that prints
+    /// its arguments.
+    fn started_with(arguments: &[&str]) -> Vec<String> {
+        let script = claude_setup().replace("{probe}", "printf '%s\\n'");
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .arg("claude")
+            .args(arguments)
+            .output()
+            .expect("sh runs");
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn claude_left_unset_starts_small_and_asking() {
+        assert_eq!(
+            started_with(&["-p", "hi"]),
+            [
+                "--setting-sources",
+                "project",
+                "--strict-mcp-config",
+                "--model",
+                SMALL_CLAUDE,
+                "--permission-mode",
+                "default",
+                "-p",
+                "hi"
+            ]
+        );
+    }
+
+    #[test]
+    fn claude_keeps_what_amux_chose() {
+        let chosen = ["--dangerously-skip-permissions", "--model", "sonnet"];
+        assert_eq!(started_with(&chosen)[3..], chosen);
+        let chosen = ["--permission-mode", "plan", "--model=opus"];
+        assert_eq!(started_with(&chosen)[3..], chosen);
+    }
 }

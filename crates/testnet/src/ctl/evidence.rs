@@ -345,7 +345,11 @@ fn append(kind: &str, fields: Value) -> Result<Value, String> {
         .append(true)
         .open(&file)
         .map_err(|error| format!("opening {}: {error}", file.display()))?;
-    writeln!(ledger, "{entry}").map_err(|error| error.to_string())?;
+    // One write per entry: every tester in a run appends to this file, and
+    // an entry written piecemeal could interleave with another's.
+    ledger
+        .write_all(format!("{entry}\n").as_bytes())
+        .map_err(|error| error.to_string())?;
     Ok(entry)
 }
 

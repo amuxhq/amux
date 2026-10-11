@@ -491,18 +491,29 @@ impl Net {
         for (a, b) in &links {
             self.links.remove(&(a.clone(), b.clone()));
         }
+        let process = self.hosts[name].process.clone();
+        let mut said = format!("host {name} removed");
         if self.is_up(name) {
-            match self.hosts[name].process.clone() {
+            match &process {
                 Some(process) => {
-                    let _ = process.stop().await;
+                    self.withdraw_process(name);
+                    if let Err(why) = process.stop().await {
+                        said = format!("{said}; it would not stop ({why}), so it was killed");
+                    }
                 }
                 None => self.take_down(name, false).await?,
             }
         }
         let dir = self.hosts[name].dir.clone();
         kill_agents_under(&dir).await?;
+        if process.is_some() {
+            // A daemon or supervisor that outlived its stop dies here with
+            // the agents: its command line names the host's folder. Nothing
+            // of the host's may run on once the net has forgotten it.
+            kill_all_under(name, &dir).await?;
+        }
         self.forget_host(name);
-        Ok(self.ack(format!("host {name} removed")))
+        Ok(self.ack(said))
     }
 
     fn forget_host(&mut self, name: &str) {
@@ -2192,6 +2203,21 @@ impl Net {
         }
     }
 
+    /// The host ids the net's discovery bus advertises right now, as a
+    /// browser starting now would learn them.
+    pub fn advertised(&self) -> Vec<Uuid> {
+        use node::discovery::{Discovery as _, DiscoveryEvent};
+        let mut events = self.bus.browse();
+        self.bus.requery();
+        let mut ids = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if let DiscoveryEvent::Found(advert) = event {
+                ids.push(advert.host_id);
+            }
+        }
+        ids
+    }
+
     /// The gate `from` dials to reach `to`'s LAN listener, made the first
     /// time it is asked for: give it to a pairing in place of `to`'s own
     /// address, and the pair can be cut and degraded there.
@@ -3198,6 +3224,44 @@ pub fn withdraw(kind: FakeKind, id: &[u8], queued: &[u8]) -> Input {
             }),
         },
     )
+}
+
+/// Kills every process whose command line names `dir` until none is left:
+/// a supervisor killed a moment after its daemon may have started another.
+async fn kill_all_under(host: &str, dir: &Path) -> Result<(), NetError> {
+    #[cfg(unix)]
+    {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let _ = tokio::process::Command::new("pkill")
+                .args(["-KILL", "-f"])
+                .arg(dir)
+                .status()
+                .await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let left = tokio::process::Command::new("pgrep")
+                .arg("-f")
+                .arg(dir)
+                .output()
+                .await
+                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+                .unwrap_or_default();
+            if left.is_empty() {
+                return Ok(());
+            }
+            if tokio::time::Instant::now() > deadline {
+                return Err(NetError::Process {
+                    host: host.to_owned(),
+                    why: format!("processes of the host would not die: {left}"),
+                });
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (host, dir);
+        Err(NetError::Unsupported("killing a host's processes"))
+    }
 }
 
 /// SIGKILLs every agent process whose directory lies under `dir`, and

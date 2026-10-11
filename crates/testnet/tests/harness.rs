@@ -1282,6 +1282,27 @@ async fn a_process_host_pairs_for_real_through_gates_that_cut_it_and_survives_a_
     );
     net.stop_daemon("box").await.unwrap();
     assert!(!net.is_up("box"));
+
+    // Removed, it is gone for good: no daemon left running, and no longer
+    // advertised to browsers.
+    net.restart_daemon("box").await.unwrap();
+    let removed = net.host("box").unwrap().clone();
+    assert!(net.advertised().contains(&removed.host_id));
+    net.remove_host("box").await.unwrap();
+    assert!(
+        !net.advertised().contains(&removed.host_id),
+        "a removed host is not advertised"
+    );
+    let left = Command::new("pgrep")
+        .arg("-f")
+        .arg(&removed.dir)
+        .output()
+        .unwrap();
+    assert!(
+        left.stdout.is_empty(),
+        "nothing of the removed host runs on: {}",
+        String::from_utf8_lossy(&left.stdout)
+    );
     net.shutdown().await.unwrap();
 }
 
@@ -1353,5 +1374,14 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
     .await
     .unwrap();
     net.turn_ended("worker", 1).await.unwrap();
+    // Removing it takes the supervisor with the daemon.
+    let dir = net.host("box").unwrap().dir.clone();
+    net.remove_host("box").await.unwrap();
+    let left = Command::new("pgrep").arg("-f").arg(&dir).output().unwrap();
+    assert!(
+        left.stdout.is_empty(),
+        "nothing of the removed host runs on: {}",
+        String::from_utf8_lossy(&left.stdout)
+    );
     net.shutdown().await.unwrap();
 }

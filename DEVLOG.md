@@ -1,3 +1,9 @@
+2026-10-11 — **A removed process host is gone for good.** Removing one ignored a
+failed `amux server stop` and never withdrew the net's discovery announcement
+for it, so browsers kept seeing the removed host. Removal now withdraws the
+announcement, and kills whatever of the host's still runs until nothing does
+(refusing to forget it otherwise), saying so when the stop failed.
+
 2026-10-11 — **A flap keeps its period while a request holds the net.** The door
 holds the net for the whole of each request, and a wait on a real agent takes
 minutes; the flap's task took the same lock to flip the link, so a two-second

@@ -1,3 +1,14 @@
+2026-10-11 — **The phone's markdown parser consumes every line, and keeps
+an agent's single line breaks.** A line that starts with `#` but is not a
+heading (`#42`, a shebang) or with `|` but is not a table row was refused by
+the paragraph loop and appended as an empty paragraph forever, which froze
+the chat on its main thread; a paragraph now always takes the line that
+opened it and stops only where another block would start, by the same tests
+the block parser uses. `##` alone is an empty heading, as a streaming plan
+draws it before its title arrives. A single newline in agent prose now stays
+a line break, as on the terminal and in Claude's and Codex's own interfaces;
+a blank line still parts paragraphs.
+
 2026-10-11 — **Failing specs: paired hosts redial each other without
 discovery.** A decision from the QA triage: a host keeps redialling a paired
 peer's last working direct address, with backoff, while the peer is away,

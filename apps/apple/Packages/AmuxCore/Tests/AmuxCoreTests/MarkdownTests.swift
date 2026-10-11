@@ -76,11 +76,11 @@ final class MarkdownTests: XCTestCase {
         XCTAssertEqual(lines.map { String($0.characters) }, ["first", "second"])
     }
 
-    func testWrappedProseIsOneParagraph() {
+    func testLinesWithNoBlankLineBetweenThemAreOneParagraph() {
         let parsed = blocks("one line\nand its continuation\n\na second paragraph")
         XCTAssertEqual(parsed.count, 2)
         guard case .paragraph(let first) = parsed[0] else { return XCTFail("expected prose") }
-        XCTAssertEqual(String(first.characters), "one line and its continuation")
+        XCTAssertEqual(String(first.characters), "one line\nand its continuation")
     }
 
     func testEmphasisAndCodeSpansResolveRatherThanShowingTheirPunctuation() {

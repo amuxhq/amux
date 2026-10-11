@@ -147,16 +147,22 @@ public struct MarkdownDocument: Equatable, Sendable {
                 continue
             }
 
-            var paragraph: [String] = []
-            while let line = lines.first {
-                let text = line.trimmingCharacters(in: .whitespaces)
-                guard !text.isEmpty, !text.hasPrefix("#"), !text.hasPrefix(">"),
-                      !text.hasPrefix("|"), Self.fence(text) == nil,
-                      Self.listMarker(line) == nil else { break }
-                paragraph.append(text)
+            // A paragraph always takes the line that opened it: every branch
+            // above declined it, so nothing else would, and a line left
+            // unconsumed here would loop forever. Later lines join it until
+            // one would open a block of its own.
+            var paragraph: [String] = [trimmed]
+            lines = lines.dropFirst()
+            while let line = lines.first, !Self.opensBlock(line) {
+                paragraph.append(line.trimmingCharacters(in: .whitespaces))
                 lines = lines.dropFirst()
             }
-            blocks.append(.paragraph(Self.inline(paragraph.joined(separator: " "))))
+            // A single newline stays a line break. Agents write lists, logs
+            // and "one per line" answers as lines, and Claude's and Codex's
+            // own interfaces draw them that way; joining them as standard
+            // markdown does runs them together. A blank line still parts two
+            // paragraphs.
+            blocks.append(.paragraph(Self.inline(paragraph.joined(separator: "\n"))))
         }
 
         return MarkdownDocument(blocks: blocks)
@@ -185,14 +191,32 @@ public struct MarkdownDocument: Equatable, Sendable {
         return parsed
     }
 
+    /// Whether `line` would open a block other than a paragraph, by exactly
+    /// the tests ``parse(_:)`` applies, so a paragraph stops where, and only
+    /// where, something else takes over.
+    private nonisolated static func opensBlock(_ line: String) -> Bool {
+        let text = line.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty
+            || fence(text) != nil
+            || headingLevel(text) != nil
+            || (text.count >= 3 && text.allSatisfy { $0 == "-" || $0 == "*" || $0 == "_" })
+            || isTableRow(text)
+            || text.hasPrefix(">")
+            || listMarker(line) != nil
+    }
+
     private nonisolated static func fence(_ line: String) -> String? {
         guard line.hasPrefix("```") || line.hasPrefix("~~~") else { return nil }
         return String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
     }
 
     private nonisolated static func headingLevel(_ line: String) -> Int? {
+        // The marks are followed by a space or end the line: `#42` and a
+        // shebang are prose, and `##` alone is a heading whose title has not
+        // been written yet, as it is while a reply streams in.
         let hashes = line.prefix { $0 == "#" }.count
-        guard hashes >= 1, hashes <= 6, line.dropFirst(hashes).hasPrefix(" ") else { return nil }
+        let after = line.dropFirst(hashes)
+        guard hashes >= 1, hashes <= 6, after.isEmpty || after.hasPrefix(" ") else { return nil }
         return hashes
     }
 

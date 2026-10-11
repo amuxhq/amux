@@ -23,6 +23,8 @@ pub use ask::{
     Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, Pick, QuestionResponse,
     QuestionView, Scope, answer_input, ask_card, question_answer, reply_answer,
 };
+/// The character that marks an attachment's place in text.
+pub use attachments::PLACEHOLDER;
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, ComposerView, ContextView, Lands, QueuedRow, RefusedPrompt,
     SentPrompt, SignInView, Underway, composer, composer_tokens, context, prompts_underway,

@@ -6,13 +6,12 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use attachments::PLACEHOLDER;
 use model::{AgentKey, Connection, InputState, Key, PhaseView, Refusal, Waiting};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ui_view::{
-    ChangeTotals, ComposerView, ContextView, ControlsSummary, QueuedRow, Reach, RefusedPrompt,
-    SentPrompt, SignInView, ToolRows,
+    ChangeTotals, ComposerView, ContextView, ControlsSummary, PLACEHOLDER, QueuedRow, Reach,
+    RefusedPrompt, SentPrompt, SignInView, ToolRows,
 };
 use wire::{BlobRef, Kind, RouteKind};
 

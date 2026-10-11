@@ -254,6 +254,42 @@ async fn abort_cancels_the_turn_under_an_open_ask_and_exits() {
     agent.assert_released();
 }
 
+/// A person who stops an agent that is waiting on them has decided not to
+/// answer: a graceful stop cannot wait for the turn to end, because only
+/// the person stopping it could end it. Every client's stop is graceful,
+/// so if the agent waits, the daemon kills it at its stop deadline and the
+/// person's stop is recorded as a kill, the ask left open on the row, and
+/// the next incarnation's repair boundary calls it "ended unexpectedly".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_graceful_stop_under_an_open_ask_closes_it_and_exits_stopped() {
+    let agent = Agent::start(Setup {
+        steps: vec![permission(), text("never"), Step::TurnEnd],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "clean up").await, Verdict::Accepted);
+    agent
+        .wait("the ask is open", |log| {
+            log.phase() == Some(Phase::NeedsYou)
+        })
+        .await;
+
+    daemon.stop(StopMode::Graceful).await;
+    agent
+        .wait(
+            "a graceful stop under an open ask ends the incarnation as stopped",
+            |log| log.boundaries().last().map(String::as_str) == Some("EXITED STOPPED"),
+        )
+        .await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+    let log = agent.log();
+    assert_eq!(log.open_asks(), 0, "the final snapshot closes the ask");
+    assert!(!log.has_text("never"));
+    agent.assert_released();
+}
+
 // Process groups and the tools that observe them are POSIX.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]

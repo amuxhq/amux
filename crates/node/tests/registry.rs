@@ -1000,6 +1000,54 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
     daemon.shutdown().await.unwrap();
 }
 
+/// A stop that overruns the stop deadline kills the agent's process group,
+/// whichever daemon started it. An agent adopted from an earlier daemon is
+/// known only by its directory and its Hello, so the daemon that adopted it
+/// must still be able to end it, or the person is told the stop failed and
+/// the live process refuses every resume as still holding the directory.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_stop_deadline_kills_an_agent_adopted_from_an_earlier_daemon() {
+    let install = Install::new();
+    let never = install.path("never");
+    let mut launch = install.launch("held", vec![wait_for(&never)]);
+    launch.stop_deadline_ms = 2_000;
+    let daemon = install.start("boot-1", launch.clone()).await;
+    let runtime = runtime(&daemon, &install);
+    let id = id_of(
+        &runtime
+            .spawn(
+                create(&install.work, "held", Some("work until stopped")),
+                None,
+            )
+            .await
+            .unwrap(),
+    );
+    until("the turn to start", || working(&runtime, id))
+        .await
+        .unwrap();
+
+    // A clean daemon stop leaves the agent running for the next daemon.
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = support::runtime(&daemon, &install);
+    assert_eq!(daemon.sweep(install.profile).unwrap().live, vec![id]);
+
+    // The turn never ends, so the graceful stop overruns its deadline.
+    let stopped = runtime.stop(id, StopMode::Graceful).await;
+    // Let a process the kill missed finish its turn and go.
+    std::fs::write(&never, "").unwrap();
+    let stopped = stopped.expect("the deadline's kill ends the adopted agent");
+    assert_eq!(stopped.lifecycle, Lifecycle::Exited as i32);
+    assert_eq!(stopped.exit_cause(), ExitCause::Killed);
+    assert!(
+        !node::locked(&install.agent_dir(id)),
+        "the lock is released"
+    );
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 /// Whether the agent's journal holds a daemon-lost boundary: the agent
 /// gave up on its daemon and is draining.
 fn lost_its_daemon(dir: &std::path::Path) -> Result<(), String> {

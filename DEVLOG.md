@@ -1,3 +1,15 @@
+2026-10-11 — **Failing tests for stopping and resuming an agent with an open
+ask.** From the first QA run. A graceful stop waits for the turn to end, and
+an open ask is a turn that waits on the very person who stopped it, so the
+agent never exits on its own: the daemon kills it at the deadline, the next
+incarnation records the stop as an unexpected end, and until then every
+input, the interrupt included, is refused. A daemon that adopted an agent
+from an earlier run has no pid for it, so that deadline's kill does nothing
+and the agent can neither be stopped nor resumed. A Codex resume that Codex
+refuses ("already has an active writer", the old server still running)
+leaves the agent starting forever, because the interpreter drops an error
+answer to its own startup request.
+
 2026-10-11 — **Failing tests for phone attachments and previews from the
 first QA run.** The phone sends a prompt's attachments with no placeholder
 in its text, and the agent process builds Claude's prompt only at

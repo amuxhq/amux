@@ -1011,3 +1011,46 @@ fn a_failed_report_is_worded_for_the_parents_provider() {
         "the provider exited: exit code 1"
     );
 }
+
+/// The agent process resumes a thread with `thread/resume` under its own
+/// request id. When Codex refuses it (here, as recorded, because the
+/// previous incarnation's server still held the thread), the incarnation
+/// cannot go on: the interpreter must end it with Codex's words rather
+/// than wait at "starting" for a thread that will never come, swallowing
+/// every prompt sent to it.
+#[test]
+fn a_refused_thread_resume_ends_the_incarnation_with_codexs_words() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 2,
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": "agent-initialize", "result": {"userAgent": "amux/0.161.0", "codexHome": "/codex-home"}}),
+        ),
+    );
+    let refused = Codex::step(
+        &mut state,
+        rpc(json!({"id": "agent-thread", "error": {"code": -32600,
+            "message": "thread 01a12b90-5d40-72a1-8510-d20d631e1c4d already has an active writer"}})),
+    );
+    let exits: Vec<&String> = refused
+        .effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Exit { cause } => Some(cause),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        exits
+            .iter()
+            .any(|cause| cause.contains("already has an active writer")),
+        "a refused thread/resume ends the incarnation with Codex's words; effects: {:?}, step: {:?}",
+        refused.effects,
+        refused.step,
+    );
+}

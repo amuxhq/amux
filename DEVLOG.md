@@ -1,3 +1,15 @@
+2026-10-12 — **The out-of-sight resume spec follows the stop cascade.** The
+spec stops a parent while its child on another host is mid-turn, resumes
+the parent, and expects the child's row for the old incarnation to be
+refused where the parent lives. It waited for the child to finish its turn,
+but stopping the parent now stops the child too, and on a slow runner the
+stop reached the child before its first turn began, so it ended stopped
+with its turn still owed and never finished it. The spec now waits for the
+child to exit, however the cascade ends it, and still requires its row,
+Finished or Failed, to be refused and dropped unsent. A turn left owed by
+an exit is the store's record that the parent is told the child failed,
+not a turn clients see open.
+
 2026-10-12 — **Words after a chip that fills its row start on the next
 line.** The terminal client wraps a sent message's words at the room a chip
 left on its line, and a chip that filled the line left none; the wrapper

@@ -776,6 +776,11 @@ async fn an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped() {
 /// child's host has not seen it yet still shows the incarnation the row
 /// is for there, so the child's host sends it; the parent's host, which
 /// knows better, answers NOT_FOUND, and the row is dropped unsent.
+///
+/// Stopping the parent stops the child too, mid-turn: its graceful drain
+/// finishes the turn once the gate opens, or its deadline kills it first.
+/// Either way the child's last word is a row for the parent's stopped
+/// incarnation, Finished or Failed, and that row is the one refused.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_lives() {
     let mut net = Net::start(
@@ -841,24 +846,30 @@ async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_liv
 
     net.open_gate("finish").unwrap();
     let helper = net.agent("helper").unwrap().key();
-    let end = net.journal_end("helper").unwrap();
-    until("helper's turn end to be ingested", || {
-        let net = &net;
-        let helper = helper.clone();
-        async move {
-            let store = net.runtime("server").unwrap();
-            let store = store.store().await;
-            let row = store.agent(&helper).unwrap().unwrap();
-            (!row.turn_open && row.ingest_cursor >= end)
-                .then_some(())
-                .ok_or_else(|| {
-                    format!(
-                        "turn open {}, cursor {} of {end}",
-                        row.turn_open, row.ingest_cursor
-                    )
-                })
-        }
-    })
+    until(
+        "helper, stopped with lead, to have exited and been ingested",
+        || {
+            let net = &net;
+            let helper = helper.clone();
+            async move {
+                let end = net
+                    .journal_end("helper")
+                    .map_err(|error| error.to_string())?;
+                let store = net.runtime("server").unwrap();
+                let store = store.store().await;
+                let row = store.agent(&helper).unwrap().unwrap();
+                (row.lifecycle == Lifecycle::Exited as i32 && row.ingest_cursor >= end)
+                    .then_some(())
+                    .ok_or_else(|| {
+                        format!(
+                            "lifecycle {:?}, cursor {} of {end}",
+                            Lifecycle::try_from(row.lifecycle),
+                            row.ingest_cursor
+                        )
+                    })
+            }
+        },
+    )
     .await
     .unwrap();
     until("the row to be settled", || {
@@ -875,7 +886,7 @@ async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_liv
     assert!(received(&net, "lead").await.is_empty());
     assert_eq!(taken(&net, "lead", "Suite green.").await, 0);
     println!(
-        "helper finishes; server sends its row for incarnation 1; desk refuses it and it is dropped"
+        "helper stops with lead; server sends its row for incarnation 1; desk refuses it and it is dropped"
     );
     release.send_replace(true);
     net.shutdown().await.unwrap();

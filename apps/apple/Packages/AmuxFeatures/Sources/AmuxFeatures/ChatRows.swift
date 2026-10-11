@@ -743,6 +743,9 @@ struct SegmentsView: View {
 /// and a photo's thumbnail once its bytes are here.
 public struct AttachmentChip: View {
     @Environment(\.design) private var design
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// The remove mark grows with the chip's words.
+    @ScaledMetric(relativeTo: .caption) private var removeGlyph: CGFloat = 10
     let view: AttachmentView
     let bytes: (BlobRef) -> Data?
     var remove: (() -> Void)?
@@ -767,22 +770,22 @@ public struct AttachmentChip: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(design.inkMuted.color)
             }
-            Text(ChatWords.chip(view))
-                .designFont(.caption, design)
-                .foregroundStyle(design.inkMuted.color)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            words
             if let remove {
+                // The mark is drawn small, but a thumb finds it: its target
+                // is grown to 44 points around it, whatever the text size.
+                let reach = max(0, (44 - removeGlyph) / 2).rounded(.up)
                 Button(action: remove) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: removeGlyph, weight: .semibold))
                         .foregroundStyle(design.inkFaint.color)
-                        .thumbTarget(x: 10, y: 10)
+                        .frame(width: removeGlyph, height: removeGlyph)
+                        .thumbTarget(x: reach, y: reach)
                 }
                 .buttonStyle(.amuxControl)
                 .accessibilityLabel("Remove")
                 .identified("chat.attachment.remove", label: "Remove")
-                .reclaimingThumbTarget(x: 10, y: 10)
+                .reclaimingThumbTarget(x: reach, y: reach)
             }
         }
         .padding(.horizontal, 9)
@@ -792,6 +795,44 @@ public struct AttachmentChip: View {
                 .overlay(Capsule().strokeBorder(design.hairline.color, lineWidth: 1))
         }
         .identified("chat.attachment", label: ChatWords.chip(view))
+    }
+}
+
+extension AttachmentChip {
+    /// The name, cut in its middle so its extension stays, and what it
+    /// measures, never cut. At an accessibility size the name may take two
+    /// lines and the size goes under it.
+    @ViewBuilder
+    private var words: some View {
+        let (name, detail) = ChatWords.chipParts(view)
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: name)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                if !detail.isEmpty {
+                    Text(verbatim: detail)
+                        .foregroundStyle(design.inkFaint.color)
+                        .lineLimit(1)
+                }
+            }
+            .designFont(.caption, design)
+            .foregroundStyle(design.inkMuted.color)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            HStack(spacing: 0) {
+                Text(verbatim: name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if !detail.isEmpty {
+                    Text(verbatim: " · " + detail)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .designFont(.caption, design)
+            .foregroundStyle(design.inkMuted.color)
+        }
     }
 }
 

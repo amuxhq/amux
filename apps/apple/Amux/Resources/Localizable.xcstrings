@@ -5413,6 +5413,18 @@
         }
       }
     },
+    "Share Usage, Counts and choices, never what you type": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share Usage, Counts and choices, never what you type"
+          }
+        }
+      }
+    },
     "Show %@ started by %@": {
       "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState": "manual",

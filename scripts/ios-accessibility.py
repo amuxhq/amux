@@ -143,6 +143,7 @@ def main() -> int:
         audit.chat_turn()
         audit.question()
         audit.escape()
+        audit.composer_chips()
         audit.you()
         audit.new_agent()
         (directory / "end").touch()

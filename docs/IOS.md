@@ -672,6 +672,11 @@ not as tokens inside its text. The field is SwiftUI's own
 `TextField(_:text:axis:)`, and nothing in it needs a run of text to be one
 object to the caret. `ChatModel` holds the draft and its attachments; the
 chips are the same `AttachmentChip` view wherever an attachment is drawn.
+A chip names the file cut in its middle, so the extension stays, and its
+size apart, never cut; at an accessibility text size the name may take two
+lines and the size goes under it, and the remove mark grows with the text
+inside a target of at least 44 points, which the `composer-chips` golden
+screen puts in front of the accessibility audit.
 What it sends is a `Draft`: the words followed by the attachments, as
 ordered parts, which is where a sent message draws them. The parts become
 text with one placeholder per attachment only in Rust, so the phone cannot

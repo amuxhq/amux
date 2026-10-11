@@ -1,0 +1,46 @@
+shell |  | agents | 0,62,402,778
+chat |  | planner | 0,62,402,778
+chat.row.boundary | Started |  | 18,47,366,58
+chat.row.prompt | Why do the pairing errors disagree? |  | 18,105,366,148
+chat.row.prose | Reading the pairing code first. | final | 18,266,366,90
+chat.prose.render |  | rendered | 18,266,366,90
+chat.row.explore | Read, crates/wire/src/codes.rs |  | 18,367,366,40
+chat.row.prose | The pairing errors all come from one table in the wire crate, so they can share one string. | final | 18,421,366,230
+chat.prose.render |  | rendered | 18,421,366,230
+chat.row.turn-end | <volatile>
+chat.header | /t/a/n/d/work · desk | live | 18,64,298,98
+chat.back | Back |  | 16,90,42,46
+chat.title | planner | planner | 51,72,252,82
+chat.more | More |  | 344,91,44,44
+chat.attachment | pairing-errors-before-and-after.md · 17 B |  | 28,487,330,132
+chat.attachment.remove | Remove |  | 315,531,44,44
+chat.attachment | relay.log · 9 B |  | 28,625,237,92
+chat.attachment.remove | Remove |  | 222,649,44,44
+chat.field | Message planner |  | 28,727,318,47
+chat.clear | Clear |  | 342,715,44,44
+chat.attach | Attach | closed | 23,779,44,44
+chat.model | claude-fake-1 · medium |  | 71,779,199,44
+chat.dictate | Dictate | idle | 287,779,44,44
+chat.send | Send |  | 335,779,44,44
+ | Back |  | 16,90,42,46
+ | planner, /t/a/n/d/work · desk |  | 51,72,252,82
+ | More |  | 344,91,44,44
+ | Document |  | 38,547,10,13
+ | pairing-errors-before-and-after.md |  | 57,492,261,81
+ | Remove |  | 315,531,44,44
+ | 17 B |  | 57,574,75,40
+ | relay.log |  | 57,630,168,40
+ | Document |  | 38,665,10,13
+ | 9 B |  | 57,672,56,40
+ | Remove |  | 222,649,44,44
+ | Clear |  | 342,715,44,44
+ | Attach |  | 23,779,44,44
+ | claude-fake-1 |  | 71,779,199,44
+ | Dictate |  | 287,779,44,44
+ | Send |  | 335,779,44,44
+ | Started |  | 18,55,366,58
+ | Why do the pairing errors disagree? |  | 18,105,366,148
+ | Reading the pairing code first. |  | 18,266,366,90
+ | Read, crates/wire/src/codes.rs |  | 18,367,366,40
+ | The pairing errors all come from one table in the wire crate, so they can share one string. |  | 18,421,366,230
+ | Worked <t> · $0.00 |  | 48,659,335,40

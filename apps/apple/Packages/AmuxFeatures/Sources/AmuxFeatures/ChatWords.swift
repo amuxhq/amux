@@ -276,16 +276,21 @@ public enum ChatWords {
 
     /// An attachment as its chip names it, from the reference alone.
     public static func chip(_ view: AttachmentView) -> String {
+        let (name, detail) = chipParts(view)
+        return detail.isEmpty ? name : name + " · " + detail
+    }
+
+    /// A chip's name and what it measures, apart: at a large text size the
+    /// name wraps and the size goes under it, and neither cuts the other.
+    public static func chipParts(_ view: AttachmentView) -> (name: String, detail: String) {
         switch view {
-        case .image(let blob): "\(blob.name) · \(bytes(blob.size))"
-        case .file(let blob): "\(blob.name) · \(bytes(blob.size))"
+        case .image(let blob), .file(let blob): (blob.name, bytes(blob.size))
         case .text(let name, let lines, _):
-            lines == 1 ? String(localized: "\(name) · 1 line") : String(localized: "\(name) · \(lines) lines")
+            (name, lines == 1 ? String(localized: "1 line") : String(localized: "\(lines) lines"))
         case .review(let comments, _):
-            comments == 1
-                ? String(localized: "Review · 1 comment")
-                : String(localized: "Review · \(comments) comments")
-        case .empty: String(localized: "Attachment")
+            (String(localized: "Review"),
+             comments == 1 ? String(localized: "1 comment") : String(localized: "\(comments) comments"))
+        case .empty: (String(localized: "Attachment"), "")
         }
     }
 

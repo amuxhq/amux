@@ -258,8 +258,9 @@ struct ButtonPair<Content: View>: View {
     }
 }
 
-/// One offered choice as a row: a check, what happens, and under it how far
-/// it reaches. A tap answers with it.
+/// One offered choice as a row: a repeat mark, what happens, and under it how
+/// far it reaches. A tap answers with it. The mark says the choice lasts
+/// beyond this ask; a tick there read as a choice already made.
 struct ChoiceRow: View {
     @Environment(\.design) private var design
     let title: String
@@ -270,7 +271,7 @@ struct ChoiceRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: "checkmark")
+                Image(systemName: "repeat")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(design.inkMuted.color)
                     .frame(width: 18)

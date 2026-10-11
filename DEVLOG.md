@@ -1,3 +1,18 @@
+2026-10-11 — **The phone's attachment chips, choice rows and two switches
+fit a thumb and a large text size.** At an accessibility text size a
+draft's chip cut its file name from the end, losing the extension, and its
+remove mark stayed a fixed glyph in a target under 44 points. A chip now
+cuts the name in its middle, keeps the size apart and uncut, puts the size
+under the name at accessibility sizes, and grows the remove mark with the
+text inside a target of at least 44 points. A new `composer-chips` golden
+screen draws that state and puts it in front of the accessibility audit,
+which then found the composer's clear button a point short of 44 and the
+You page's Share Usage switch without a name VoiceOver could read; both are
+fixed. A choice that lasts beyond one ask (allow always, accept edits for
+the session) leads with a repeat mark rather than a tick, which read as a
+choice already made. The component catalogue gains a permission to create
+a file with a path longer than the card.
+
 2026-10-11 — **testnet ctl and the QA launcher fixed where the first run
 tripped on them.** `host add --lan` brings discovery with it unless
 `--bonjour` is asked for, and a process host with a LAN listener is announced

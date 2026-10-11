@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from pathlib import Path
+import base64
 import json
 import re
 import signal
@@ -208,6 +209,36 @@ class Goldens:
         self.photograph("ask-escape")
         self.back()
 
+    def composer_chips(self) -> None:
+        """A draft holding two files at an accessibility text size: each
+        name wraps rather than losing its extension, its size sits under it,
+        and each remove mark is a thumb's target. The accessibility audit
+        takes this screen too, and holds those marks to 44 points."""
+        journey = self.journey
+        self.open("planner", lambda drawn: labelled(drawn, "share one string"), "the answered chat")
+        journey.app({"kind": "dynamicType", "size": "accessibility3"})
+        for name, text in (
+            ("pairing-errors-before-and-after.md", "# Pairing errors\n"),
+            ("relay.log", "relay up\n"),
+        ):
+            journey.app({
+                "kind": "attach", "agent": "planner", "attachment": "file", "name": name,
+                "mime": "text/plain", "base64": base64.b64encode(text.encode()).decode(),
+            })
+        journey.wait(
+            lambda drawn: "chat.attachment#2" in drawn and "chat.attachment.remove#2" in drawn,
+            "both chips in the draft",
+        )
+        self.photograph("composer-chips", volatile=TURN)
+        # The draft goes back as it was, and the text size with it, so the
+        # screens after this one are drawn as they always were.
+        for _ in range(2):
+            journey.tap("chat.attachment.remove")
+            journey.app({"kind": "settle"})
+        journey.wait(lambda drawn: "chat.attachment" not in drawn, "the chips removed")
+        journey.app({"kind": "dynamicType", "size": "large"})
+        self.back()
+
     def origin_rewind(self) -> None:
         """The desk checkpoints, moves on a turn the phone sees, then loses
         power back to the checkpoint: the phone's replica is Reset and the
@@ -261,6 +292,7 @@ WAY = {
     "chat-turn": Goldens.chat_turn,
     "claude-sdk-ask-question": Goldens.question,
     "ask-escape": Goldens.escape,
+    "composer-chips": Goldens.composer_chips,
     "origin-rewind": Goldens.origin_rewind,
 }
 

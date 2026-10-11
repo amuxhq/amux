@@ -57,9 +57,12 @@ struct ComposerBox: View {
                     .identified("chat.field", label: placeholder, value: model.draft)
                 if !model.draft.isEmpty || !model.attachments.isEmpty {
                     Button { model.clearDraft() } label: {
+                        // The glyph's own box can be a point short of 20 at
+                        // some text sizes; fixed, the target is 44 square.
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 17))
                             .foregroundStyle(design.inkFaint.color)
+                            .frame(width: 20, height: 20)
                             .thumbTarget(x: 12, y: 12)
                     }
                     .buttonStyle(.amuxControl)

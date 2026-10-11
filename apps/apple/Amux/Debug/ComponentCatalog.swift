@@ -256,6 +256,13 @@ enum ComponentCatalog {
                     Choice(outcome: .allowAlways(subjects: [], directories: [], mode: "acceptEdits", modeName: "Accept edits", scope: .session), primary: false, takesNote: false),
                     Choice(outcome: .deny(stops: false), primary: false, takesNote: true),
                 ])),
+            ask("permission-create", height: 420, F.card(.claudeSdk, .edit(
+                path: "crates/amux-ui/src/pairing/refusals/every_reason_a_pairing_is_refused.rs",
+                files: 1, added: 2, removed: 0, lines: F.created,
+                reason: "", created: true, line: 1), [
+                    Choice(outcome: .allowOnce, primary: true, takesNote: false),
+                    Choice(outcome: .deny(stops: false), primary: false, takesNote: true),
+                ])),
             ask("permission-tool", height: 360, F.card(.claudeSdk, .tool(
                 server: "github", tool: "create_issue",
                 arguments: "{\n  \"repo\": \"jlw/amux\",\n  \"title\": \"Pairing copy\"\n}"), [
@@ -926,6 +933,13 @@ enum CatalogFixtures {
         .line(PatchLine(kind: .removed, text: "      Code::InvalidPin => \"wrong PIN\",", number: 14)),
         .line(PatchLine(kind: .added, text: "      _ => \"could not pair, check the code\",", number: 13)),
         .line(PatchLine(kind: .context, text: "  }", number: 14)),
+    ]
+
+    /// A new file's whole body, every line added.
+    static let created: [EditLine] = [
+        .hunk(oldStart: 0, newStart: 1),
+        .line(PatchLine(kind: .added, text: "//! Every reason a pairing is refused.", number: 1)),
+        .line(PatchLine(kind: .added, text: "pub use super::Code;", number: 2)),
     ]
 
     /// As the shared view reads a schema with a defaulted repository, a

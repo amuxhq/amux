@@ -1135,7 +1135,11 @@
       {"literal": "\"/model\"", "context": "model: .byTyping(\"/model\"), effort: .byTyping(\"/effort\"), permission: .cycle, mode: .notOffered),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"/effort\"", "context": "model: .byTyping(\"/model\"), effort: .byTyping(\"/effort\"), permission: .cycle, mode: .notOffered),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"ask-plan-accepting-edits\"", "context": "row(\"ask-plan-accepting-edits\", r(\"l4\", 42, .ask(.plan(body: F.planBody, verdict: .approvedSwitching, mode: \"acceptEdits\", modeName: \"Accept edits\", writing: false, note: nil, title: F.planTitle)))),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"l4\"", "context": "row(\"ask-plan-accepting-edits\", r(\"l4\", 42, .ask(.plan(body: F.planBody, verdict: .approvedSwitching, mode: \"acceptEdits\", modeName: \"Accept edits\", writing: false, note: nil, title: F.planTitle)))),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"l4\"", "context": "row(\"ask-plan-accepting-edits\", r(\"l4\", 42, .ask(.plan(body: F.planBody, verdict: .approvedSwitching, mode: \"acceptEdits\", modeName: \"Accept edits\", writing: false, note: nil, title: F.planTitle)))),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"permission-create\"", "context": "ask(\"permission-create\", height: 420, F.card(.claudeSdk, .edit(", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"crates/amux-ui/src/pairing/refusals/every_reason_a_pairing_is_refused.rs\"", "context": "path: \"crates/amux-ui/src/pairing/refusals/every_reason_a_pairing_is_refused.rs\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"//! Every reason a pairing is refused.\"", "context": ".line(PatchLine(kind: .added, text: \"//! Every reason a pairing is refused.\", number: 1)),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"pub use super::Code;\"", "context": ".line(PatchLine(kind: .added, text: \"pub use super::Code;\", number: 2)),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift": [
       {"literal": "\"arrow.up.circle\"", "context": "Image(systemName: \"arrow.up.circle\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
@@ -1204,7 +1208,8 @@
       {"literal": "\"ask.reply\"", "context": "textLink(String(localized: \"Reply instead\"), id: \"ask.reply\") { replying = true }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.reply.back\"", "context": ".identified(\"ask.reply.back\", label: String(localized: \"Back\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.reply.text\"", "context": ".identified(\"ask.reply.text\", value: replyText)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ask.reply.send\"", "context": "String(localized: \"Send reply\"), kind: .primary, id: \"ask.reply.send\", enabled: !blank", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"ask.reply.send\"", "context": "String(localized: \"Send reply\"), kind: .primary, id: \"ask.reply.send\", enabled: !blank", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"repeat\"", "context": "Image(systemName: \"repeat\")", "reason": "SF Symbol name, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatComposer.swift": [
       {"literal": "\"chat.field\"", "context": ".identified(\"chat.field\", label: placeholder, value: model.draft)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

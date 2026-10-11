@@ -396,7 +396,8 @@ public struct YouScreen: View {
     /// A switch, not a page: what it sends is described on amux.sh, and the
     /// caption says what it is in a line.
     private var shareUsageRow: some View {
-        Toggle(isOn: Binding(get: { shareUsage }, set: { actions(.shareUsage($0)) })) {
+        let isOn = Binding(get: { shareUsage }, set: { actions(.shareUsage($0)) })
+        return Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Share Usage")
                     .designFont(.body, design)
@@ -407,6 +408,7 @@ public struct YouScreen: View {
             }
         }
         .tint(design.ink.color)
+        .oneSwitch(String(localized: "Share Usage, Counts and choices, never what you type"), isOn: isOn)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .identified("you.shareUsage", value: shareUsage ? "on" : "off")

@@ -198,7 +198,7 @@
     },
     {
       "id": "row.ask-plan-accepting-edits",
-      "shows": "A plan approved with edits accepted from then on, folded to its heading."
+      "shows": "A plan approved switching to accept edits from then on, folded to its heading."
     },
     {
       "id": "row.ask-questions-replied",
@@ -235,6 +235,10 @@
     {
       "id": "ask.permission-edit",
       "shows": "Permission to edit a file, with the change's diff and the choice to accept edits for the session."
+    },
+    {
+      "id": "ask.permission-create",
+      "shows": "Permission to create a file whose path is longer than the card: it reads \"Wants to create\", and the path is cut in its middle so the file's name stays."
     },
     {
       "id": "ask.permission-tool",
@@ -294,7 +298,7 @@
     },
     {
       "id": "ask.plan",
-      "shows": "A plan's decision where the composer was, with the choice to accept edits automatically afterwards."
+      "shows": "A plan's decision where the composer was, with the choice to switch to the permission the agent offers as the work starts."
     },
     {
       "id": "ask.plan-codex",
@@ -577,6 +581,10 @@
     {
       "id": "ask-escape",
       "shows": "A terminal Claude chat whose tool server opened a dialog the phone cannot answer, with the way out of it."
+    },
+    {
+      "id": "composer-chips",
+      "shows": "A chat's draft holding two files at an accessibility text size: each name wraps rather than losing its extension, its size under it, each remove mark a thumb's target."
     },
     {
       "id": "origin-rewind",

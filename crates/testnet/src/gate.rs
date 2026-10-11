@@ -206,12 +206,26 @@ impl UdpGate {
                                         }
                                     });
                                     let mut buf = vec![0; 65_536];
-                                    while let Ok(n) = back.recv(&mut buf).await {
-                                        replies.hold(
-                                            buf[..n].to_vec(),
-                                            shared.pass(),
-                                            shared.rate(),
-                                        );
+                                    loop {
+                                        match back.recv(&mut buf).await {
+                                            Ok(n) => replies.hold(
+                                                buf[..n].to_vec(),
+                                                shared.pass(),
+                                                shared.rate(),
+                                            ),
+                                            // Sending while the listener
+                                            // is down is refused; once it
+                                            // is back, what it sends,
+                                            // dialling out as much as
+                                            // answering, must still pass.
+                                            Err(error)
+                                                if matches!(
+                                                    error.kind(),
+                                                    std::io::ErrorKind::ConnectionRefused
+                                                        | std::io::ErrorKind::ConnectionReset
+                                                ) => {}
+                                            Err(_) => break,
+                                        }
                                     }
                                 }
                             });

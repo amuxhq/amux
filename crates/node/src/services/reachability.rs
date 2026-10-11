@@ -32,12 +32,14 @@ const DIRECT_QUIC_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 /// a redial straight away is refused the same way — often enough, in a loop,
 /// to trip the peer's handshake rate limit.
 const SHORT_LINK_REDIAL_PAUSE: Duration = Duration::from_secs(1);
-/// How long a failed direct dial to a peer discovery still lists waits
-/// before the next, doubling each time up to [`FOUND_REDIAL_MAX`]. A
-/// machine that restarts may be advertised again before it answers, and a
-/// browser that saw its advertisement come and go says nothing more.
-const FOUND_REDIAL_FIRST: Duration = Duration::from_secs(1);
-const FOUND_REDIAL_MAX: Duration = Duration::from_secs(30);
+/// How long a failed direct dial to a paired peer waits before the next,
+/// doubling each time up to [`REDIAL_MAX`]. A machine that restarts may be
+/// advertised again before it answers, a browser that saw its advertisement
+/// come and go says nothing more, and a peer paired by address across a
+/// network discovery cannot see (a VPN, another subnet) is never advertised
+/// at all: only dialling its last working address again finds it.
+const REDIAL_FIRST: Duration = Duration::from_secs(1);
+const REDIAL_MAX: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct ReachabilityLinkConnector {
@@ -389,15 +391,17 @@ impl ReachabilityLinkConnector {
                 if direct {
                     dialing.lock().unwrap().remove(&peer);
                     if let Some(established) = established_direct {
-                        // Asking the network again is what finds the peer
-                        // and dials it; after a link that was refused as it
-                        // came up, that would be refused the same way.
-                        pause_after_short_link(established, pause_shutdown_rx).await;
+                        // Asking the network again finds the peer where it
+                        // is advertised, and dialling its addresses again
+                        // where it is not; after a link that was refused as
+                        // it came up, either would be refused the same way.
+                        pause_after_short_link(established, pause_shutdown_rx.clone()).await;
                         if let Some(runtime) = context.runtime.lock().unwrap().clone() {
                             runtime.discovery.requery();
                         }
+                        redial_while_away(connector, context, peer, 0, pause_shutdown_rx).await;
                     } else {
-                        redial_while_found(connector, context, peer, redials, pause_shutdown_rx)
+                        redial_while_away(connector, context, peer, redials, pause_shutdown_rx)
                             .await;
                     }
                 }
@@ -699,32 +703,28 @@ async fn await_connector(
     }
 }
 
-/// Holds the next dial back after a link that closed almost as soon as it came
-/// up, unless the connector is shutting down.
-/// Dials a peer again after a failed direct dial, once the pause for this
-/// many failures is over, if discovery still lists it and nothing else has
-/// linked to it meanwhile.
-async fn redial_while_found(
+/// Dials a paired peer again, once the pause for this many failed dials is
+/// over, at what discovery lists for it and the address that last worked,
+/// unless nothing is known to dial, it is no longer paired, or something
+/// else has linked to it directly meanwhile.
+async fn redial_while_away(
     connector: std::sync::Weak<ReachabilityLinkConnectorInner>,
     context: ReachabilityLinkContext,
     peer: HostId,
     redials: u32,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
-    let pause = FOUND_REDIAL_FIRST
+    let pause = REDIAL_FIRST
         .saturating_mul(1 << redials.min(5))
-        .min(FOUND_REDIAL_MAX);
+        .min(REDIAL_MAX);
     tokio::select! {
         () = tokio::time::sleep(pause) => {}
         _ = shutdown_rx.wait_for(|shutting_down| *shutting_down) => return,
     }
-    let found = context
-        .runtime
-        .lock()
-        .unwrap()
-        .as_ref()
-        .is_some_and(|runtime| !runtime.found_hosts.addrs_for(peer).is_empty());
-    if !found || !is_trusted(&context.trust_store, peer) || has_direct_route(&context, peer).await {
+    if direct_candidates(&context, peer).is_empty()
+        || !is_trusted(&context.trust_store, peer)
+        || has_direct_route(&context, peer).await
+    {
         return;
     }
     let Some(inner) = connector.upgrade() else {
@@ -745,6 +745,8 @@ async fn redial_while_found(
     }
 }
 
+/// Holds the next dial back after a link that closed almost as soon as it came
+/// up, unless the connector is shutting down.
 async fn pause_after_short_link(
     established: tokio::time::Instant,
     mut shutdown_rx: watch::Receiver<bool>,

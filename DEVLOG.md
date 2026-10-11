@@ -1,3 +1,17 @@
+2026-10-11 — **Paired hosts dial each other again without discovery.** A host
+redialled a peer only while discovery listed it, after a link ended asked
+discovery again and nothing else, and dialled a stored address only when its
+daemon started; the side that answered a pairing stored no address for the
+dialler at all. Peers paired by address across a network discovery cannot
+see (a VPN, another subnet), and every QA net built without discovery, stayed
+apart after a restart or an outage. A host now keeps dialling a paired peer
+with no direct link, at what discovery lists and the last address that
+worked, backing off from one second to thirty; the answering side stores the
+address the dialler was seen at, which is its listener since one QUIC
+endpoint serves both. The test net's gates keep passing a host's datagrams
+after its listener refused some while it was down, so a host that answered a
+pairing through a gate can dial back through it.
+
 2026-10-11 — **A lapsed account stops at once; a crashed relay host starts
 again.** The relay checked the free tier only as a stream opened, so a
 channel opened while an account was Pro kept carrying calls after it lapsed,

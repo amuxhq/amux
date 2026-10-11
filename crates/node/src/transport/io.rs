@@ -30,6 +30,10 @@ pub(crate) enum BoxedGrpcAuth {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreTrustPairingReachability {
     Cloud,
+    /// Dialled directly from this address. A host dials from the same QUIC
+    /// endpoint it listens on, so the address it was seen at is where it
+    /// can be dialled back.
+    Direct(std::net::SocketAddr),
     NoReusableReachability,
 }
 

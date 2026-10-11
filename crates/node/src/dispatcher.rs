@@ -353,7 +353,7 @@ impl TunnelDispatcher {
                 self.pairing_tx
                     .send(BoxedGrpcIo::pre_trust_pairing(
                         accepted_quic_bidi_stream(send, recv),
-                        PreTrustPairingReachability::NoReusableReachability,
+                        PreTrustPairingReachability::Direct(connection.remote_address()),
                     ))
                     .await
                     .map_err(|_| DispatchError::ChannelClosed)

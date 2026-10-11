@@ -238,9 +238,16 @@ which stays:
   link dialled by the lower host id and refuse the other. A second link in the
   same direction is refused too.
 
-A dialler whose direct link closes within a second of coming up waits out that
-second before asking the local network for the peer again, so a refused link is
-not rediscovered and redialled in a loop.
+While a paired peer has no direct link, a host keeps dialling it: at the
+addresses discovery lists for it and at the last direct address that worked,
+waiting a second after a failed dial and doubling the wait each time up to
+thirty seconds, whether or not discovery finds it, so peers paired by address
+across a network discovery cannot see come back on their own. Each side has an
+address to dial: the dialler stores the one it reached, and the side that
+answered a pairing stores the address the dialler was seen at, since a host
+dials from the same QUIC endpoint it listens on. A dialler whose direct link
+closes within a second of coming up waits out that second before dialling
+again, so a refused link is not redialled in a loop.
 
 Versioning is equality, not feature negotiation: both peers must select
 `PROTOCOL_VERSION` (`crates/wire/src/lib.rs`, currently 1). A peer offering

@@ -854,8 +854,10 @@ impl Edge {
         self.trust_gate.close();
         self.quic_endpoint
             .close(quinn::VarInt::from_u32(0), b"profile stopping");
-        if let Ok(mut cloud) = self.cloud.try_lock() {
-            cloud.take();
+        if let Ok(mut cloud) = self.cloud.try_lock()
+            && let Some(link) = cloud.take()
+        {
+            link.abort();
         }
         for task in std::mem::take(&mut *self.tasks.lock().unwrap()) {
             task.abort();

@@ -1,3 +1,15 @@
+2026-10-11 — **A lapsed account stops at once; a crashed relay host starts
+again.** The relay checked the free tier only as a stream opened, so a
+channel opened while an account was Pro kept carrying calls after it lapsed,
+to a host the client already showed as away. A link that renews as free now
+ends every pipe through it; the pipes of one account's links are kept
+together so whichever link lapses first ends them. A daemon killed while
+signed in to a relay account never came back: the crash path dropped its
+relay link without stopping it, and the link's task, which took a lost stop
+handle as "never stop", kept dialling and held the profile's endpoint and
+so its LAN port. The crash path now aborts the link, and a link whose owner
+is gone stops.
+
 2026-10-11 — **Plan approval offers the switch the agent's own menu makes.**
 A plan's choices were Yes, Yes and accept edits, and Keep planning, but
 Claude 2.1.296 offering auto mode draws "Yes, and use auto mode" as its

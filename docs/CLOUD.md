@@ -156,8 +156,10 @@ The tier decides what the relay carries:
   them.
 - **Free.** The relay still lists the account's machines, so a phone can show
   them as away, but refuses to carry any stream to or from a free link, with
-  `payment_required`. Machines on the same local network reach each other
-  directly either way.
+  `payment_required`. A link that renews as free also ends the streams it
+  was already carrying, so a lapsed account's calls stop at once rather than
+  riding a connection opened while it was Pro. Machines on the same local
+  network reach each other directly either way.
 
 A profile renews its credential shortly before it expires, and a free one
 renews every three minutes so that a purchase reaches the link promptly. After

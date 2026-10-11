@@ -209,6 +209,12 @@ impl CloudLink {
         let _ = self.task.await;
     }
 
+    /// Ends the link at once, as a crash would: no goodbye to the relay.
+    pub(crate) fn abort(self) {
+        self.request_stop();
+        self.task.abort();
+    }
+
     /// What refreshes this link's entitlement, to be held across the wait
     /// instead of the link itself.
     pub(crate) fn refresher(&self) -> Option<Refresher> {
@@ -623,11 +629,10 @@ async fn wait_for_stop(stop_rx: &mut watch::Receiver<bool>) {
         }
         match stop_rx.changed().await {
             Ok(()) => {}
-            Err(_) => {
-                // Losing the stop handle means this task can no longer be
-                // stopped cooperatively; it is not itself a stop request.
-                std::future::pending::<()>().await;
-            }
+            // The handle went with the link that owned it: nothing is left
+            // to stop this task, and a link that dialled on with no owner
+            // would hold the profile's endpoint, and so its port, for good.
+            Err(_) => return,
         }
     }
 }

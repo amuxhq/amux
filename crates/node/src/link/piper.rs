@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 use wire::pb;
 
 use super::{ByteStream, OpenError};
@@ -19,7 +19,14 @@ pub(crate) struct Piper {
     local_host: HostId,
     links: Arc<LinkRegistry>,
     limiter: Arc<Mutex<SlidingWindowRateLimiter<HostId>>>,
+    /// Each running pipe, by the two links it joins, so a link whose
+    /// account lapses to free stops carrying the streams it already had.
+    pipes: Pipes,
 }
+
+/// The running pipes of every link that shares them: a relay's links for
+/// one account, whichever of them a pipe was opened on.
+pub(crate) type Pipes = Arc<std::sync::Mutex<Vec<([LinkId; 2], AbortHandle)>>>;
 
 impl Piper {
     pub(crate) fn new(local_host: HostId, links: Arc<LinkRegistry>) -> Self {
@@ -30,7 +37,32 @@ impl Piper {
                 CLOUD_INBOUND_TUNNEL_RATE_LIMIT,
                 CLOUD_INBOUND_TUNNEL_RATE_WINDOW,
             ))),
+            pipes: Arc::default(),
         }
+    }
+
+    /// Keeps its running pipes in `pipes`, shared with other links' pipers.
+    pub(crate) fn sharing(mut self, pipes: Pipes) -> Self {
+        self.pipes = pipes;
+        self
+    }
+
+    /// Ends every pipe through `link`. The free tier is checked as a
+    /// stream opens; a link that lapses to free afterwards must not keep
+    /// carrying what it opened while it was paid for.
+    pub(crate) fn close_link(&self, link: &LinkId) {
+        let mut pipes = self
+            .pipes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        pipes.retain(|(joined, pipe)| {
+            if joined.contains(link) {
+                pipe.abort();
+                false
+            } else {
+                !pipe.is_finished()
+            }
+        });
     }
 
     pub(crate) async fn pipe(
@@ -54,7 +86,7 @@ impl Piper {
             return refuse(&mut incoming, pb::StreamRefusal::RateLimited).await;
         }
 
-        let Some((_, outgoing, destination_admission)) =
+        let Some((destination_link, outgoing, destination_admission)) =
             self.links.native_route_to_peer(destination).await
         else {
             return refuse(&mut incoming, pb::StreamRefusal::NoRoute).await;
@@ -85,7 +117,7 @@ impl Piper {
         if incoming.flush().await.is_err() {
             return Err(pb::StreamRefusal::NoRoute);
         }
-        Ok(tokio::spawn(async move {
+        let pipe = tokio::spawn(async move {
             let (mut incoming_read, mut incoming_write) = tokio::io::split(incoming);
             let (mut outgoing_read, mut outgoing_write) = tokio::io::split(outgoing);
             // Each direction runs to its own end, whatever becomes of the
@@ -97,7 +129,14 @@ impl Piper {
                 forward(&mut incoming_read, &mut outgoing_write),
                 forward(&mut outgoing_read, &mut incoming_write),
             );
-        }))
+        });
+        let mut pipes = self
+            .pipes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        pipes.retain(|(_, pipe)| !pipe.is_finished());
+        pipes.push(([origin, destination_link], pipe.abort_handle()));
+        Ok(pipe)
     }
 }
 

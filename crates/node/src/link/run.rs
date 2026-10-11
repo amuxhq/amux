@@ -319,6 +319,13 @@ impl LinkCtx {
         self
     }
 
+    /// Keeps the pipes this link forwards with those of the links that share
+    /// `pipes`, so a lapse on any of them ends the pipes through it.
+    pub(crate) fn with_shared_pipes(mut self, pipes: super::piper::Pipes) -> Self {
+        self.piper = self.piper.sharing(pipes);
+        self
+    }
+
     pub(crate) fn with_shutdown(mut self, shutdown_rx: watch::Receiver<bool>) -> Self {
         self.shutdown_rx = Some(shutdown_rx);
         self
@@ -895,6 +902,9 @@ async fn handle_control_body(
                 Ok(user) => match auth.apply_reauth(user) {
                     Ok(()) => {
                         ctx.links.update_cloud_tier(&link, auth.tier()).await;
+                        if auth.tier() == crate::Tier::Free {
+                            ctx.piper.close_link(&link);
+                        }
                         ControlAction::Continue
                     }
                     Err(error) => {

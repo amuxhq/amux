@@ -108,6 +108,8 @@ struct RelayUser {
     routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     incoming_streams_tx: mpsc::Sender<crate::link::InboundStream>,
+    /// The pipes between this account's links, whichever link opened them.
+    pipes: crate::link::piper::Pipes,
     drain: JoinHandle<()>,
 }
 
@@ -128,6 +130,7 @@ impl RelayUser {
             routing: Arc::new(RoutingCore::new()),
             channels: Arc::new(ChannelPool::new(links)),
             incoming_streams_tx,
+            pipes: Default::default(),
             drain,
         }
     }
@@ -139,6 +142,7 @@ impl RelayUser {
             self.channels.link_registry(),
         )
         .with_incoming_streams(self.incoming_streams_tx.clone())
+        .with_shared_pipes(self.pipes.clone())
         .with_clock(clock.clone())
     }
 }

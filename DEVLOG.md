@@ -1,3 +1,10 @@
+2026-10-11 — **The QA tooling's tests pass on every CI runner.** testnet's
+`ctl` test drives the terminal client in tmux, which the macOS test runner
+lacked, so the test job now installs it there as the journeys job does. The
+dump printer named a bundle's other files with the platform's separator, so
+on Windows `client/fleet/state.txt` printed as `client\fleet\state.txt`;
+it now uses `/` everywhere.
+
 2026-10-11 — **QA testers run in Claude Code's auto mode.** A tester's shell
 was a growing allow list of utilities in `dontAsk` mode, refusing loops and
 `$(...)`, and it still could not hold a tool's arguments to the tester's

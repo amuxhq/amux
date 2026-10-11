@@ -83,6 +83,11 @@ jobs:
         with:
           shared-key: test
       - uses: extractions/setup-just@v2
+      # testnet's ctl test drives the terminal client in tmux; Linux runners
+      # have it already.
+      - name: Install tmux on macOS
+        if: runner.os == 'macOS'
+        run: brew install tmux
       - name: Run workspace tests
         # Report every failing test binary, not only the first: a platform
         # that stops early hides the failures behind it until the next run.

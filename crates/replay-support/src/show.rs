@@ -102,11 +102,13 @@ pub fn show(dir: &Path, agent: Option<&str>) -> Result<String, ShowError> {
     });
     let _ = writeln!(out, "\n== other files ({}) ==", rest.len());
     for path in rest {
+        // Named with `/` on every platform, so a printout reads the same
+        // from a dump taken on Windows.
         let name = path
             .strip_prefix(dir)
             .unwrap_or(&path)
-            .display()
-            .to_string();
+            .to_string_lossy()
+            .replace('\\', "/");
         file(&mut out, &name, &path)?;
     }
     Ok(out)
@@ -248,8 +250,8 @@ fn agent_section(
         let name = path
             .strip_prefix(at.join("part"))
             .unwrap_or(&path)
-            .display()
-            .to_string();
+            .to_string_lossy()
+            .replace('\\', "/");
         if name.starts_with("spec.")
             && let Ok(spec) = decode::<AgentSpec>(&path, "wire.AgentSpec")
         {

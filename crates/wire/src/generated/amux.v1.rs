@@ -1744,6 +1744,10 @@ pub struct Plan {
     /// The whole plan is in: Claude declares it whole; Codex streams it.
     #[prost(bool, tag = "3")]
     pub complete: bool,
+    /// Approved switching: the permission the agent switched to, as the
+    /// catalogue names it ("auto", "acceptEdits").
+    #[prost(string, tag = "4")]
+    pub permission: ::prost::alloc::string::String,
 }
 impl ::prost::Name for Plan {
     const NAME: &'static str = "Plan";
@@ -2479,6 +2483,12 @@ pub struct PlanAsk {
     /// What the provider takes, in its order.
     #[prost(enumeration = "PlanChoice", repeated, tag = "1")]
     pub choices: ::prost::alloc::vec::Vec<i32>,
+    /// The permission START_SWITCHING moves the agent to, as the catalogue
+    /// names it: the one the provider's own plan approval switches to ("auto"
+    /// where Claude offers auto mode, "acceptEdits" otherwise). Empty when no
+    /// choice switches.
+    #[prost(string, tag = "2")]
+    pub switch_permission: ::prost::alloc::string::String,
 }
 impl ::prost::Name for PlanAsk {
     const NAME: &'static str = "PlanAsk";
@@ -2497,6 +2507,11 @@ pub struct PlanAnswer {
     /// With keep planning: what to change.
     #[prost(string, optional, tag = "2")]
     pub note: ::core::option::Option<::prost::alloc::string::String>,
+    /// With START_SWITCHING: the permission the person was shown and agreed
+    /// to switch to, the ask's switch_permission. An answer naming another is
+    /// refused, so nobody is switched to a permission they were not shown.
+    #[prost(string, tag = "3")]
+    pub permission: ::prost::alloc::string::String,
 }
 impl ::prost::Name for PlanAnswer {
     const NAME: &'static str = "PlanAnswer";
@@ -3139,7 +3154,8 @@ impl ::prost::Name for GrantAnswer {
 pub enum PlanVerdict {
     Undecided = 0,
     Approved = 1,
-    ApprovedAcceptingEdits = 2,
+    /// Approved, the agent switching from plan to the plan's `permission`.
+    ApprovedSwitching = 2,
     SentBack = 3,
     /// Closed without a decision: a new prompt, an interruption, the turn or
     /// the provider ending.
@@ -3154,7 +3170,7 @@ impl PlanVerdict {
         match self {
             Self::Undecided => "PLAN_VERDICT_UNDECIDED",
             Self::Approved => "PLAN_VERDICT_APPROVED",
-            Self::ApprovedAcceptingEdits => "PLAN_VERDICT_APPROVED_ACCEPTING_EDITS",
+            Self::ApprovedSwitching => "PLAN_VERDICT_APPROVED_SWITCHING",
             Self::SentBack => "PLAN_VERDICT_SENT_BACK",
             Self::Dismissed => "PLAN_VERDICT_DISMISSED",
         }
@@ -3164,7 +3180,7 @@ impl PlanVerdict {
         match value {
             "PLAN_VERDICT_UNDECIDED" => Some(Self::Undecided),
             "PLAN_VERDICT_APPROVED" => Some(Self::Approved),
-            "PLAN_VERDICT_APPROVED_ACCEPTING_EDITS" => Some(Self::ApprovedAcceptingEdits),
+            "PLAN_VERDICT_APPROVED_SWITCHING" => Some(Self::ApprovedSwitching),
             "PLAN_VERDICT_SENT_BACK" => Some(Self::SentBack),
             "PLAN_VERDICT_DISMISSED" => Some(Self::Dismissed),
             _ => None,
@@ -3452,10 +3468,11 @@ impl TurnOutcome {
 #[repr(i32)]
 pub enum PlanChoice {
     Unspecified = 0,
-    /// Start building (Claude) or implement the plan (Codex).
+    /// Start building (Claude) or implement the plan (Codex), the permission
+    /// left as it was before planning.
     Start = 1,
-    /// Start, accepting edits without asking (Claude).
-    StartAcceptingEdits = 2,
+    /// Start, switching to the ask's switch_permission (Claude).
+    StartSwitching = 2,
     /// Keep planning; the note, if any, goes to the agent.
     KeepPlanning = 3,
 }
@@ -3468,7 +3485,7 @@ impl PlanChoice {
         match self {
             Self::Unspecified => "PLAN_CHOICE_UNSPECIFIED",
             Self::Start => "PLAN_CHOICE_START",
-            Self::StartAcceptingEdits => "PLAN_CHOICE_START_ACCEPTING_EDITS",
+            Self::StartSwitching => "PLAN_CHOICE_START_SWITCHING",
             Self::KeepPlanning => "PLAN_CHOICE_KEEP_PLANNING",
         }
     }
@@ -3477,7 +3494,7 @@ impl PlanChoice {
         match value {
             "PLAN_CHOICE_UNSPECIFIED" => Some(Self::Unspecified),
             "PLAN_CHOICE_START" => Some(Self::Start),
-            "PLAN_CHOICE_START_ACCEPTING_EDITS" => Some(Self::StartAcceptingEdits),
+            "PLAN_CHOICE_START_SWITCHING" => Some(Self::StartSwitching),
             "PLAN_CHOICE_KEEP_PLANNING" => Some(Self::KeepPlanning),
             _ => None,
         }

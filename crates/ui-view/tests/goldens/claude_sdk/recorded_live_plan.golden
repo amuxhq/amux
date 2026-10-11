@@ -20,14 +20,14 @@
   row    5 a47a4da3-a559-4ded-9cdd-14c59d3d8755 Hidden collapsed
 ## 101 recorded 100: fact Stream type=assistant uuid=a4c9e3b8-1b87-4826-ac1b-14feff5d972b
   row    4 toolu_01FQVocCu5r4uTMaVSifk7QA Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_01FQVocCu5r4uTMaVSifk7QA..toolu_01FQVocCu5r4uTMaVSifk7QA x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row    6 toolu_01GroRUTKoaxaeTEwXAL2VUJ Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n", verdict: Open, note: None, writing: false })
+  row    6 toolu_01GroRUTKoaxaeTEwXAL2VUJ Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n", verdict: Open, mode: "", mode_name: "", note: No…
 ## 103 recorded 102: fact Stream type=control_request
   ask 340eadf8-d6aa-4147-85c7-b8d162f14f4d -> "toolu_01GroRUTKoaxaeTEwXAL2VUJ" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "auto", mode_name: "Auto" }, SendBack+note
     body Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 109 recorded 108: input stdin-4
-  row    6 toolu_01GroRUTKoaxaeTEwXAL2VUJ Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n", verdict: Approved, note: None, writing: false })
+  row    6 toolu_01GroRUTKoaxaeTEwXAL2VUJ Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n", verdict: Approved, mode: "", mode_name: "", note…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 116 recorded 115: fact Stream type=system subtype=status uuid=273d4871-3947-425d-aeaa-605dda23da84
@@ -152,7 +152,7 @@
      3 52646844-f0bc-4e9b-9488-204897e68a44 Hidden collapsed
      4 toolu_01FQVocCu5r4uTMaVSifk7QA Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_01FQVocCu5r4uTMaVSifk7QA..toolu_01FQVocCu5r4uTMaVSifk7QA x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
      5 a47a4da3-a559-4ded-9cdd-14c59d3d8755 Hidden collapsed
-     6 toolu_01GroRUTKoaxaeTEwXAL2VUJ Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n", verdict: Approved, note: None, writing: false })
+     6 toolu_01GroRUTKoaxaeTEwXAL2VUJ Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\n1. In `<MACHINE_PATH>, replace the only line `CURRENT` with `UPDATED` (Edit tool).\n\n## Verification\nRead README.md and confirm it contains only `UPDATED`.\n", verdict: Approved, mode: "", mode_name: "", note…
      7 273d4871-3947-425d-aeaa-605dda23da84 Hidden collapsed
      8 msg_011CfnB7bQLJPHU6fyND8sr6:0 Thinking { text: "", open: false, duration_ms: Some(699) }
      9 toolu_019k6RAsffJVpjZWTqpENCCx Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_019k6RAsffJVpjZWTqpENCCx..toolu_01Qe1UJ5XuQHWBggq8kvp37P x3 recent=2] collapsed

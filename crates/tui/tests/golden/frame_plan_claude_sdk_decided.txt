@@ -19,7 +19,7 @@
     never mind, just fix the typo                                                          08:00
 
 
-  ▸ Plan · approved · accepting edits ────────────────────────────────────────────────────────────
+  ▸ Plan · approved · switched to acceptEdits ────────────────────────────────────────────────────
 
     Working · 0ms
 

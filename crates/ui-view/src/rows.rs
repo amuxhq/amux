@@ -208,6 +208,10 @@ pub enum AskRow {
         title: Option<String>,
         body: String,
         verdict: PlanVerdict,
+        /// Approved switching: the permission switched to, and its name as
+        /// the agent's catalogue gives it. Empty otherwise.
+        mode: String,
+        mode_name: String,
         /// Why it was sent back, when the person said.
         note: Option<String>,
         /// Still being written: it grows as it streams.
@@ -301,8 +305,8 @@ pub struct Granted {
 pub enum PlanVerdict {
     Open,
     Approved,
-    /// Approved, with edits accepted without asking from then on.
-    ApprovedAcceptingEdits,
+    /// Approved, switching to another permission from then on.
+    ApprovedSwitching,
     SentBack,
     Dismissed,
 }
@@ -633,7 +637,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Pty::Slash(s) => plain(slash(held, s)),
             Pty::Unrecognized(u) => plain(unrecognized(u)),
             Pty::Ask(ask) => plain(ask_row(ask)),
-            Pty::Plan(plan) => plain(plan_row(held, plan)),
+            Pty::Plan(plan) => plain(plan_row(state, held, plan)),
         },
         ItemBody::ClaudeSdk(kind) => match kind {
             Sdk::Prompt(_) => plain(RowKind::Prompt {
@@ -662,7 +666,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Sdk::ApiError(e) => error(e),
             Sdk::Slash(s) => plain(slash(held, s)),
             Sdk::Unrecognized(u) => plain(unrecognized(u)),
-            Sdk::Plan(plan) => plain(plan_row(held, plan)),
+            Sdk::Plan(plan) => plain(plan_row(state, held, plan)),
             Sdk::ModelSwitch(m) => plain(model_switch(m)),
             Sdk::Compaction(c) => plain(compaction(c)),
             Sdk::Ask(ask) => plain(ask_row(ask)),
@@ -678,7 +682,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }),
             Codex::Message(m) => plain(prose(held, m.complete, false)),
             Codex::WorkingNote(m) => plain(prose(held, m.complete, true)),
-            Codex::Plan(plan) => plain(plan_row(held, plan)),
+            Codex::Plan(plan) => plain(plan_row(state, held, plan)),
             Codex::Reasoning(r) => {
                 let text = if item.text.is_empty() {
                     r.summary.join("\n")
@@ -798,11 +802,11 @@ fn ask_row(item: &wire::AskItem) -> RowKind {
 }
 
 /// A plan item: the plan is the item's text.
-fn plan_row(held: &Held, plan: &wire::Plan) -> RowKind {
+fn plan_row(state: &SessionState, held: &Held, plan: &wire::Plan) -> RowKind {
     let verdict = match plan.verdict() {
         wire::PlanVerdict::Undecided => PlanVerdict::Open,
         wire::PlanVerdict::Approved => PlanVerdict::Approved,
-        wire::PlanVerdict::ApprovedAcceptingEdits => PlanVerdict::ApprovedAcceptingEdits,
+        wire::PlanVerdict::ApprovedSwitching => PlanVerdict::ApprovedSwitching,
         wire::PlanVerdict::SentBack => PlanVerdict::SentBack,
         wire::PlanVerdict::Dismissed => PlanVerdict::Dismissed,
     };
@@ -811,9 +815,21 @@ fn plan_row(held: &Held, plan: &wire::Plan) -> RowKind {
         title,
         body,
         verdict,
+        mode_name: permission_name(&state.agent_state().permissions, &plan.permission),
+        mode: plan.permission.clone(),
         note: plan.note.clone(),
         writing: !plan.complete,
     })
+}
+
+/// A permission's name as the agent's catalogue gives it; empty where the
+/// catalogue does not name it, so a client words the value itself.
+pub(crate) fn permission_name(offered: &[wire::OfferedPermission], mode: &str) -> String {
+    offered
+        .iter()
+        .find(|permission| !mode.is_empty() && permission.value == mode)
+        .map(|permission| permission.display_name.clone())
+        .unwrap_or_default()
 }
 
 /// A plan's title and body. An opening heading of any level is lifted out

@@ -339,8 +339,8 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `patch_head(state, key, max)` | The first lines of an edit's patch. |
 
 A few facts exist so that a client can say what happened without reading further: an edit's ask says whether it
-`created` the file (so it reads "Wants to create"); a plan's row carries its `verdict` (approved, approved accepting edits
-from then on, sent back) and `writing` (the plan still streaming in); pasted text's chip carries the `text` itself, so
+`created` the file (so it reads "Wants to create"); a plan's row carries its `verdict` (approved, approved switching to
+the permission it names from then on, sent back) and `writing` (the plan still streaming in); pasted text's chip carries the `text` itself, so
 a sent message can show what was pasted in place of the chip; a command's row keeps its `output_tail` beside its
 head, for a step opened to show how it ended; and a background command's row its `duration_ms` once it has ended.
 

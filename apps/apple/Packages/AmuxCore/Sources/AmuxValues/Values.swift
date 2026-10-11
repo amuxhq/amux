@@ -630,7 +630,7 @@ public enum AskRow: Codable, Hashable, Sendable {
     /// lifted from an opening heading that names it, and the rest as its
     /// body. While its first line is still being written there is no title
     /// yet and nothing of that line in the body.
-    case plan(body: String, verdict: PlanVerdict, writing: Bool, note: String?, title: String?)
+    case plan(body: String, verdict: PlanVerdict, mode: String, modeName: String, writing: Bool, note: String?, title: String?)
     /// Questions asked as the work, then the answers sent: "answered 2 of
     /// 3", or the person's own words when they replied instead.
     case questions(questions: [QuestionView], answers: [AnswerView], skipped: UInt32, resolution: Resolution, reply: String?)
@@ -657,6 +657,8 @@ public enum AskRow: Codable, Hashable, Sendable {
     private enum PlanKeys: String, CodingKey {
         case body
         case verdict
+        case mode
+        case modeName = "mode_name"
         case writing
         case note
         case title
@@ -714,6 +716,8 @@ public enum AskRow: Codable, Hashable, Sendable {
             self = .plan(
                 body: try _fields.decode(String.self, forKey: .body),
                 verdict: try _fields.decode(PlanVerdict.self, forKey: .verdict),
+                mode: try _fields.decode(String.self, forKey: .mode),
+                modeName: try _fields.decode(String.self, forKey: .modeName),
                 writing: try _fields.decode(Bool.self, forKey: .writing),
                 note: try _fields.decodeIfPresent(String.self, forKey: .note),
                 title: try _fields.decodeIfPresent(String.self, forKey: .title))
@@ -764,11 +768,13 @@ public enum AskRow: Codable, Hashable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
-        case .plan(let body, let verdict, let writing, let note, let title):
+        case .plan(let body, let verdict, let mode, let modeName, let writing, let note, let title):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: PlanKeys.self, forKey: .plan)
             try _fields.encode(body, forKey: .body)
             try _fields.encode(verdict, forKey: .verdict)
+            try _fields.encode(mode, forKey: .mode)
+            try _fields.encode(modeName, forKey: .modeName)
             try _fields.encode(writing, forKey: .writing)
             try _fields.encodeIfPresent(note, forKey: .note)
             try _fields.encodeIfPresent(title, forKey: .title)
@@ -1684,7 +1690,9 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
     case allowNetwork(hosts: [String])
     /// Deny and let it carry on; `stops` when denying always ends the turn.
     case deny(stops: Bool)
-    case approvePlan(autoAcceptEdits: Bool)
+    /// Approve the plan; with a `mode`, switching to that permission, which
+    /// `mode_name` names as the agent's catalogue does.
+    case approvePlan(mode: String, modeName: String)
 
     private enum Tag: String, CodingKey {
         case allowAlways = "AllowAlways"
@@ -1715,7 +1723,8 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
     }
 
     private enum ApprovePlanKeys: String, CodingKey {
-        case autoAcceptEdits = "auto_accept_edits"
+        case mode
+        case modeName = "mode_name"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1774,7 +1783,8 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
             let _fields = try _container.nestedContainer(
                 keyedBy: ApprovePlanKeys.self, forKey: .approvePlan)
             self = .approvePlan(
-                autoAcceptEdits: try _fields.decode(Bool.self, forKey: .autoAcceptEdits))
+                mode: try _fields.decode(String.self, forKey: .mode),
+                modeName: try _fields.decode(String.self, forKey: .modeName))
         }
     }
 
@@ -1827,10 +1837,11 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: DenyKeys.self, forKey: .deny)
             try _fields.encode(stops, forKey: .stops)
-        case .approvePlan(let autoAcceptEdits):
+        case .approvePlan(let mode, let modeName):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: ApprovePlanKeys.self, forKey: .approvePlan)
-            try _fields.encode(autoAcceptEdits, forKey: .autoAcceptEdits)
+            try _fields.encode(mode, forKey: .mode)
+            try _fields.encode(modeName, forKey: .modeName)
         }
     }
 }
@@ -4229,8 +4240,8 @@ public enum PlanVerdict: String, Codable, Hashable, Sendable, CaseIterable {
     case approved = "Approved"
     case sentBack = "SentBack"
     case dismissed = "Dismissed"
-    /// Approved, with edits accepted without asking from then on.
-    case approvedAcceptingEdits = "ApprovedAcceptingEdits"
+    /// Approved, switching to another permission from then on.
+    case approvedSwitching = "ApprovedSwitching"
 }
 
 /// One of this device's profiles, one per account it signed in to, and the

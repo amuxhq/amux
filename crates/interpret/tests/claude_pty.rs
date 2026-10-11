@@ -445,7 +445,8 @@ fn a_plan_ask_where_claude_offers_auto_mode_switches_to_auto() {
     let plan = plan_ask_on("2.1.296", Some(offers_auto()));
     println!("plan ask: {plan:?} {:?}", choices(&plan));
     assert!(
-        !choices(&plan).contains(&wire::PlanChoice::StartAcceptingEdits),
+        !(choices(&plan).contains(&wire::PlanChoice::StartSwitching)
+            && plan.switch_permission == "acceptEdits"),
         "the ask offers to start accepting edits, which this Claude's plan menu does not have; \
          its switch moves to auto mode: {:?}",
         choices(&plan)

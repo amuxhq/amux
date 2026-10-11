@@ -23,6 +23,7 @@ mod host;
 mod provider;
 mod ready;
 mod ring;
+mod screen;
 mod terminal;
 mod tools;
 

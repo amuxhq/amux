@@ -126,7 +126,7 @@ impl Keys {
                     is_plan: true,
                 };
                 let answer = AskAnswer::Plan(match choice {
-                    PlanChoice::ApproveAutoAcceptEdits => PlanAnswer::ApproveAuto,
+                    PlanChoice::ApproveSwitching => PlanAnswer::ApproveAuto,
                     PlanChoice::Approve => PlanAnswer::ApproveManual,
                     PlanChoice::SendBack { note } => PlanAnswer::RequestChanges {
                         feedback: note.clone(),

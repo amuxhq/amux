@@ -1,3 +1,21 @@
+2026-10-11 — **Plan approval offers the switch the agent's own menu makes.**
+A plan's choices were Yes, Yes and accept edits, and Keep planning, but
+Claude 2.1.296 offering auto mode draws "Yes, and use auto mode" as its
+first entry and has no accept-edits entry at all: approving "accepting
+edits" typed that entry and put Claude in auto mode, a looser permission
+than the words said. The choices are now Yes, Yes and switch, and Keep
+planning; the plan ask names the permission the switch moves to (auto
+where Claude offers it for the running model, accept edits otherwise), an
+answer names the permission it agrees to and is refused when that is not
+the ask's, and an approved plan records the permission it switched to.
+Terminal Claude's agent now keeps Claude's screen and reads two things off
+it: the plan menu's first entry, so the ask offers what Claude actually
+drew, and the footer's permission, which Shift+Tab changes on screen at
+once while Claude records it only with the next prompt. Both clients word
+the switch from the permission's name; Codex offers Yes and Keep planning
+only. Headless Claude's recorded plan approvals now say they switched to
+auto where they did.
+
 2026-10-11 — **Stopping a parent stops its whole family.** A stop, from the
 front door or from a peer, now stops every descendant in the same mode, as a
 delete deletes them: local children through the registry, children on other

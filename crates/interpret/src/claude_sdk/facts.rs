@@ -1163,7 +1163,13 @@ impl State {
                     AskShape::Question(questions),
                 )
             }
-            PLAN_TOOL if server.is_empty() => (wire::ask::Body::Plan(plan_ask()), AskShape::Plan),
+            PLAN_TOOL if server.is_empty() => {
+                let switch = crate::claude_common::plan_switch(self.offers_auto()).to_owned();
+                (
+                    wire::ask::Body::Plan(plan_ask(&switch)),
+                    AskShape::Plan { switch },
+                )
+            }
             _ => {
                 let reason = match &asked.decision_reason {
                     Some(reason) => reason.clone(),

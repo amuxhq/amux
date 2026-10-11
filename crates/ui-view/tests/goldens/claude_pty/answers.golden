@@ -49,27 +49,27 @@
 ## 18 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t3"}}
   row    3 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2) } run[t1..t2 x2 recent=1] decision=Decision { outcome: Allowed, granted: Some(Claude { subjects: ["cargo test"], directories: [], mode: "", mode_name: "", destination: Project }), note: None, elsewhere: false } collapsed
   row    4 t2 Command { command: "rm -rf build", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false, output_tail: ["The user doesn't want to pro…
-  row    5 t3 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, note: None, writing: false })
+  row    5 t3 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
   composer Send activity=Some(Running { key: "t3" }) queue=[] underway=[] refused=[]
 ## 19 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
   ask ask:3 -> "t3" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: None, body: "\n- Edit README.md" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 20 input {"answer":{"answer":{"approve_plan":{"auto_accept_edits":true}},"ask":"ask:3"},"id":"a5"}
-  row    5 t3 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedAcceptingEdits, note: None, writing: false })
+  row    5 t3 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedSwitching, mode: "acceptEdits", mode_name: "Accept edits", note: None, writing: false })
   ask none
   composer Send activity=Some(Running { key: "t3" }) queue=[] underway=[] refused=[]
 ## 22 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t4"}}
-  row    6 t4 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, note: None, writing: false })
+  row    6 t4 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
   composer Send activity=Some(Running { key: "t4" }) queue=[] underway=[] refused=[]
 ## 23 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
   ask ask:4 -> "t4" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: None, body: "\n- Edit README.md" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 24 input {"answer":{"answer":{"send_back":{"note":"explain why"}},"ask":"ask:4"},"id":"a6"}
-  row    6 t4 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: SentBack, note: Some("explain why"), writing: false })
+  row    6 t4 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: SentBack, mode: "", mode_name: "", note: Some("explain why"), writing: false })
   ask none
   composer Send activity=Some(Running { key: "t4" }) queue=[] underway=[] refused=[]
 ## 26 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue","preview":"#00f"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"},{"description":"","label"…
@@ -100,8 +100,8 @@
      2 u1 Prompt { text: [Text("test it")], steered: false }
      3 t1 Command { command: "cargo test", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(2) } run[t1..t2 x2 recent=1] decision=Decision { outcome: Allowed, granted: Some(Claude { subjects: ["cargo test"], directories: [], mode: "", mode_name: "", destination: Project }), note: None, elsewhere: false } collapsed
      4 t2 Command { command: "rm -rf build", state: Denied, exit_code: None, output_head: ["The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."], more_lines: 0, output_trimmed: false, output_tail: ["The user doesn't want to pro…
-     5 t3 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedAcceptingEdits, note: None, writing: false })
-     6 t4 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: SentBack, note: Some("explain why"), writing: false })
+     5 t3 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedSwitching, mode: "acceptEdits", mode_name: "Accept edits", note: None, writing: false })
+     6 t4 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: SentBack, mode: "", mode_name: "", note: Some("explain why"), writing: false })
      7 t5 [Answered: Color = Blue; Tools = Hammer, Drill skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "#00f", recommended: false }], allow_other: false, secret: false }, Question…
      8 turn:1 TurnEnd { duration_ms: Some(50), cost_usd: None, failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

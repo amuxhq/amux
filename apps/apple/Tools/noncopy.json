@@ -280,9 +280,6 @@
       {"literal": "\"|\"", "context": "if trimmed.hasPrefix(\"|\"), Self.isTableRow(trimmed) {", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\">\"", "context": "if trimmed.hasPrefix(\">\") {", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\">\"", "context": "line.trimmingCharacters(in: .whitespaces).hasPrefix(\">\") {", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
-      {"literal": "\"#\"", "context": "guard !text.isEmpty, !text.hasPrefix(\"#\"), !text.hasPrefix(\">\"),", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
-      {"literal": "\">\"", "context": "guard !text.isEmpty, !text.hasPrefix(\"#\"), !text.hasPrefix(\">\"),", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
-      {"literal": "\"|\"", "context": "!text.hasPrefix(\"|\"), Self.fence(text) == nil,", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\"```\"", "context": "guard line.hasPrefix(\"```\") || line.hasPrefix(\"~~~\") else { return nil }", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\"~~~\"", "context": "guard line.hasPrefix(\"```\") || line.hasPrefix(\"~~~\") else { return nil }", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\"#\"", "context": "let hashes = line.prefix { $0 == \"#\" }.count", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
@@ -297,7 +294,11 @@
       {"literal": "\"+\"", "context": "if let first = body.first, first == \"-\" || first == \"*\" || first == \"+\",", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\"\\u{2022}\"", "context": "return (false, depth, \"\\u{2022}\",", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
       {"literal": "\". \"", "context": "if !digits.isEmpty, body.dropFirst(digits.count).hasPrefix(\". \") {", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
-      {"literal": "\"\\(digits).\"", "context": "return (true, depth, \"\\(digits).\",", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1}
+      {"literal": "\"\\(digits).\"", "context": "return (true, depth, \"\\(digits).\",", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
+      {"literal": "\"-\"", "context": "|| (text.count >= 3 && text.allSatisfy { $0 == \"-\" || $0 == \"*\" || $0 == \"_\" })", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
+      {"literal": "\"*\"", "context": "|| (text.count >= 3 && text.allSatisfy { $0 == \"-\" || $0 == \"*\" || $0 == \"_\" })", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
+      {"literal": "\"_\"", "context": "|| (text.count >= 3 && text.allSatisfy { $0 == \"-\" || $0 == \"*\" || $0 == \"_\" })", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1},
+      {"literal": "\">\"", "context": "|| text.hasPrefix(\">\")", "reason": "Markdown parsing syntax, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/NewAgentStore.swift": [
       {"literal": "\"/\"", "context": "let trimmed = directory.hasSuffix(\"/\") ? String(directory.dropLast()) : directory", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
@@ -1098,8 +1099,6 @@
       {"literal": "\"command-allowed-always\"", "context": "row(\"command-allowed-always\", r(\"x8\", 14, .command(", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"x8\"", "context": "row(\"command-allowed-always\", r(\"x8\", 14, .command(", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"command-allowed-prefix\"", "context": "row(\"command-allowed-prefix\", r(\"x9\", 14, .command(", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"ask-plan-accepting-edits\"", "context": "row(\"ask-plan-accepting-edits\", r(\"l4\", 42, .ask(.plan(body: F.planBody, verdict: .approvedAcceptingEdits, writing: false, note: nil, title: F.planTitle)))),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"l4\"", "context": "row(\"ask-plan-accepting-edits\", r(\"l4\", 42, .ask(.plan(body: F.planBody, verdict: .approvedAcceptingEdits, writing: false, note: nil, title: F.planTitle)))),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"ask-questions-replied\"", "context": "row(\"ask-questions-replied\", height: 280, r(\"q4\", 39, .ask(.questions(", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"q4\"", "context": "row(\"ask-questions-replied\", height: 280, r(\"q4\", 39, .ask(.questions(", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"Linux comes later\"", "context": "answers: [AnswerView(picked: [\"macOS\"], hidden: false, skipped: false, note: \"Linux comes later\", other: nil),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -1134,7 +1133,9 @@
       {"literal": "\"OAuth token has expired.\"", "context": "signIn: SignInView(state: .expired, account: \"ada@example.com\", message: \"OAuth token has expired.\"))),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"Sonnet 5\"", "context": "models: [ModelChoice(value: \"claude-sonnet-5\", displayName: \"Sonnet 5\", description: \"\", efforts: [], current: true, unlisted: true, defaultEffort: nil)],", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"/model\"", "context": "model: .byTyping(\"/model\"), effort: .byTyping(\"/effort\"), permission: .cycle, mode: .notOffered),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"/effort\"", "context": "model: .byTyping(\"/model\"), effort: .byTyping(\"/effort\"), permission: .cycle, mode: .notOffered),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
+      {"literal": "\"/effort\"", "context": "model: .byTyping(\"/model\"), effort: .byTyping(\"/effort\"), permission: .cycle, mode: .notOffered),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"ask-plan-accepting-edits\"", "context": "row(\"ask-plan-accepting-edits\", r(\"l4\", 42, .ask(.plan(body: F.planBody, verdict: .approvedSwitching, mode: \"acceptEdits\", modeName: \"Accept edits\", writing: false, note: nil, title: F.planTitle)))),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"l4\"", "context": "row(\"ask-plan-accepting-edits\", r(\"l4\", 42, .ask(.plan(body: F.planBody, verdict: .approvedSwitching, mode: \"acceptEdits\", modeName: \"Accept edits\", writing: false, note: nil, title: F.planTitle)))),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift": [
       {"literal": "\"arrow.up.circle\"", "context": "Image(systemName: \"arrow.up.circle\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
@@ -1378,7 +1379,8 @@
       {"literal": "\"/\"", "context": "guard !word.contains(where: { $0.isWhitespace || $0 == \"/\" }) else { return nil }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\":\"", "context": "guard let colon = name.firstIndex(of: \":\") else { return false }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"$\"", "context": "let sigil = frame?.kind == .codex ? \"$\" : \"/\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"/\"", "context": "let sigil = frame?.kind == .codex ? \"$\" : \"/\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
+      {"literal": "\"/\"", "context": "let sigil = frame?.kind == .codex ? \"$\" : \"/\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"\\u{FFFC}\"", "context": "if case .text(let words) = part { words } else { \"\\u{FFFC}\" }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift": [
       {"literal": "\"plusminus\"", "context": "(\"plusminus\", \"\", file.path, .change(added: file.added, removed: file.removed))", "reason": "SF Symbol name, not interface copy.", "count": 1},

@@ -26,12 +26,16 @@ message Plan {
   optional string note = 2;
   // The whole plan is in: Claude declares it whole; Codex streams it.
   bool complete = 3;
+  // Approved switching: the permission the agent switched to, as the
+  // catalogue names it ("auto", "acceptEdits").
+  string permission = 4;
 }
 
 enum PlanVerdict {
   PLAN_VERDICT_UNDECIDED = 0;
   PLAN_VERDICT_APPROVED = 1;
-  PLAN_VERDICT_APPROVED_ACCEPTING_EDITS = 2;
+  // Approved, the agent switching from plan to the plan's `permission`.
+  PLAN_VERDICT_APPROVED_SWITCHING = 2;
   PLAN_VERDICT_SENT_BACK = 3;
   // Closed without a decision: a new prompt, an interruption, the turn or
   // the provider ending.
@@ -406,14 +410,20 @@ message QuestionOption {
 message PlanAsk {
   // What the provider takes, in its order.
   repeated PlanChoice choices = 1;
+  // The permission START_SWITCHING moves the agent to, as the catalogue
+  // names it: the one the provider's own plan approval switches to ("auto"
+  // where Claude offers auto mode, "acceptEdits" otherwise). Empty when no
+  // choice switches.
+  string switch_permission = 2;
 }
 
 enum PlanChoice {
   PLAN_CHOICE_UNSPECIFIED = 0;
-  // Start building (Claude) or implement the plan (Codex).
+  // Start building (Claude) or implement the plan (Codex), the permission
+  // left as it was before planning.
   PLAN_CHOICE_START = 1;
-  // Start, accepting edits without asking (Claude).
-  PLAN_CHOICE_START_ACCEPTING_EDITS = 2;
+  // Start, switching to the ask's switch_permission (Claude).
+  PLAN_CHOICE_START_SWITCHING = 2;
   // Keep planning; the note, if any, goes to the agent.
   PLAN_CHOICE_KEEP_PLANNING = 3;
 }
@@ -422,6 +432,10 @@ message PlanAnswer {
   PlanChoice choice = 1;
   // With keep planning: what to change.
   optional string note = 2;
+  // With START_SWITCHING: the permission the person was shown and agreed
+  // to switch to, the ask's switch_permission. An answer naming another is
+  // refused, so nobody is switched to a permission they were not shown.
+  string permission = 3;
 }
 
 message FormAsk {

@@ -214,14 +214,21 @@ the kind's interpreter ("claude-opus-4-1-20250805" reads "Opus 4.1",
 
 A plan the agent puts to the person is an item of its own, kind `plan`: the
 item's text is the plan and its body says how it was decided (undecided,
-approved, approved accepting edits, sent back with the person's note, or
-dismissed). Its ask, `PlanAsk`, lists the choices the provider takes; the
-answer names one, with a note when it keeps the agent planning. Clients
+approved, approved switching to the permission it names, sent back with
+the person's note, or dismissed). Its ask, `PlanAsk`, lists the choices the
+provider takes and, where one switches permission, which permission; the
+answer names one, with a note when it keeps the agent planning, and a
+switch names the permission it agrees to, so an answer that agreed to
+something other than what the provider would do is refused. Clients
 draw both from these facts alone.
 
 - **Claude, both kinds.** `ExitPlanMode` is drawn as its plan, keyed by the
   call, once its input carries the plan. The choices are start building,
-  start and accept edits, and keep planning. While Claude is in plan mode,
+  start switching permission, and keep planning. The switch is the one
+  Claude's own plan menu makes: auto mode where Claude offers it for the
+  running model, accept edits otherwise. Terminal Claude's agent reads the
+  menu Claude actually draws off its screen and says which it offers;
+  until it has, the host's catalogue decides. While Claude is in plan mode,
   its `Write`, `Edit`, `MultiEdit` and `NotebookEdit` calls draw nothing:
   plan mode lets Claude write only its plan file, and the declaration
   carries the whole plan. The ask closes on the person's answer, when the
@@ -312,7 +319,8 @@ changes nothing.
 `claude_pty` reads four kinds of fact: rows of Claude's transcript file
 (decoded as `claude_protocol::transcript::Row`), hook payloads
 (`claude_protocol::hooks::Payload`), the agent process's own facts (the launch
-with Claude's version and keymap, the folder-trust dialog, and "ready"), and
+with Claude's version and keymap, the folder-trust dialog, "ready", the
+permission Claude's footer names, and the switch its plan menu offers), and
 the terminal's exit.
 Transcript rows arrive whole, so nothing here streams: every item is emitted
 complete and revised by re-emission.

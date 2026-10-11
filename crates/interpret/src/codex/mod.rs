@@ -1198,6 +1198,7 @@ impl State {
                     verdict: proposed.verdict,
                     note: proposed.note,
                     complete: proposed.complete,
+                    permission: String::new(),
                 })),
                 at_ms: Some(proposed.at_ms),
                 complete: proposed.complete,
@@ -1227,6 +1228,7 @@ impl State {
                     wire::PlanChoice::Start as i32,
                     wire::PlanChoice::KeepPlanning as i32,
                 ],
+                switch_permission: String::new(),
             })),
             decisions: Vec::new(),
         });

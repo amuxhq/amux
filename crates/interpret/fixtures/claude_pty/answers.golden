@@ -49,18 +49,18 @@ snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model
 item t3 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_UNDECIDED
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 ExitPlanMode since=1800000000000
 ## 19 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:3->t3 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_ACCEPTING_EDITS,PLAN_CHOICE_KEEP_PLANNING]] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 ExitPlanMode since=1800000000000
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:3->t3 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 ExitPlanMode since=1800000000000
 ## 20 input {"answer":{"answer":{"approve_plan":{"auto_accept_edits":true}},"ask":"ask:3"},"id":"a5"}
-effect terminal plan ApproveAutoAcceptEdits
+effect terminal plan ApproveSwitching
 effect reply a5 accepted
-item t3 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_APPROVED_ACCEPTING_EDITS
+item t3 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_APPROVED_SWITCHING to=acceptEdits
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 ExitPlanMode since=1800000000000
 ## 21 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t3","input":{"plan":"# Plan\n\n- Edit README.md"},"name":"ExitPlanMode","type":"tool_use"}],"id":"m3","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.030Z","type":"assistant","uuid":"a3"}}
 ## 22 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t4"}}
 item t4 plan final at=1800000000000 text="# Plan\n\n- Edit README.md" PLAN_VERDICT_UNDECIDED
 snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 ExitPlanMode since=1800000000000 running=t4 ExitPlanMode since=1800000000000
 ## 23 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:4->t4 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_ACCEPTING_EDITS,PLAN_CHOICE_KEEP_PLANNING]] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 ExitPlanMode since=1800000000000 running=t4 ExitPlanMode since=1800000000000
+snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:4->t4 plan:[PLAN_CHOICE_START,PLAN_CHOICE_START_SWITCHING,PLAN_CHOICE_KEEP_PLANNING] switch=acceptEdits] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 ExitPlanMode since=1800000000000 running=t4 ExitPlanMode since=1800000000000
 ## 24 input {"answer":{"answer":{"send_back":{"note":"explain why"}},"ask":"ask:4"},"id":"a6"}
 effect terminal plan SendBack { note: "explain why" }
 effect reply a6 accepted

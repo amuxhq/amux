@@ -1081,17 +1081,24 @@ pub(crate) fn describe_jobs(jobs: Option<&wire::BackgroundJobs>) -> String {
 }
 
 pub(crate) fn describe_plan_ask(plan: &wire::PlanAsk) -> String {
-    format!(
+    let mut out = format!(
         "plan:[{}]",
         plan.choices()
             .map(|choice| choice.as_str_name())
             .collect::<Vec<_>>()
             .join(",")
-    )
+    );
+    if !plan.switch_permission.is_empty() {
+        out.push_str(&format!(" switch={}", plan.switch_permission));
+    }
+    out
 }
 
 pub(crate) fn describe_plan(plan: &wire::Plan) -> String {
     let mut out = plan.verdict().as_str_name().to_owned();
+    if !plan.permission.is_empty() {
+        out.push_str(&format!(" to={}", plan.permission));
+    }
     if let Some(note) = &plan.note {
         out.push_str(&format!(" note={note:?}"));
     }

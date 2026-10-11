@@ -206,9 +206,9 @@ enum ComponentCatalog {
             row("ask-secret", height: 130, r("q3", 40, .ask(.questions(
                 questions: [F.secretQuestion], answers: [AnswerView(picked: [], hidden: true, skipped: false, note: nil, other: nil)],
                 skipped: 0, resolution: .answered, reply: nil)))),
-            row("ask-plan-approved", r("l1", 41, .ask(.plan(body: F.planBody, verdict: .approved, writing: false, note: nil, title: F.planTitle)))),
-            row("ask-plan-sent-back", r("l2", 42, .ask(.plan(body: F.planBody, verdict: .sentBack, writing: false, note: "Don’t touch the wire codes yet", title: F.planTitle)))),
-            row("ask-plan-accepting-edits", r("l4", 42, .ask(.plan(body: F.planBody, verdict: .approvedAcceptingEdits, writing: false, note: nil, title: F.planTitle)))),
+            row("ask-plan-approved", r("l1", 41, .ask(.plan(body: F.planBody, verdict: .approved, mode: "", modeName: "", writing: false, note: nil, title: F.planTitle)))),
+            row("ask-plan-sent-back", r("l2", 42, .ask(.plan(body: F.planBody, verdict: .sentBack, mode: "", modeName: "", writing: false, note: "Don’t touch the wire codes yet", title: F.planTitle)))),
+            row("ask-plan-accepting-edits", r("l4", 42, .ask(.plan(body: F.planBody, verdict: .approvedSwitching, mode: "acceptEdits", modeName: "Accept edits", writing: false, note: nil, title: F.planTitle)))),
             row("ask-questions-replied", height: 280, r("q4", 39, .ask(.questions(
                 questions: F.threeQuestions,
                 answers: [AnswerView(picked: ["macOS"], hidden: false, skipped: false, note: "Linux comes later", other: nil),
@@ -216,7 +216,7 @@ enum ComponentCatalog {
                           AnswerView(picked: [], hidden: false, skipped: true, note: nil, other: nil)],
                 skipped: 2, resolution: .replied, reply: "Hold off on the rollout; ask me again after the release.")))),
             row("ask-plan-open", height: 330, expanded: true, readiness: true,
-                r("l3", 43, .ask(.plan(body: F.planBody, verdict: .open, writing: false, note: nil, title: F.planTitle)))),
+                r("l3", 43, .ask(.plan(body: F.planBody, verdict: .open, mode: "", modeName: "", writing: false, note: nil, title: F.planTitle)))),
             row("ask-form", r("g1", 44, .ask(.form(server: "github", message: "Create the issue", fields: ["repository", "labels", "assignee"], resolution: .answered)))),
             row("ask-link", r("g2", 45, .ask(.link(server: "linear", message: "Sign in to Linear", url: "https://linear.app/login", resolution: .answered)))),
             row("ask-grant", r("g3", 46, .ask(.grant(
@@ -295,8 +295,8 @@ enum ComponentCatalog {
                 F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
             ask("question-secret", height: 360, preset: .other("hunter2"), F.card(.codex, .question([F.secretQuestion]), [])),
             ask("plan", height: 260, preset: .autoAccept, F.card(.claudeSdk, .plan(body: F.planBody, title: F.planTitle), [
-                Choice(outcome: .approvePlan(autoAcceptEdits: true), primary: true, takesNote: false),
-                Choice(outcome: .approvePlan(autoAcceptEdits: false), primary: false, takesNote: false),
+                Choice(outcome: .approvePlan(mode: "auto", modeName: "Auto"), primary: true, takesNote: false),
+                Choice(outcome: .approvePlan(mode: "", modeName: ""), primary: false, takesNote: false),
                 Choice(outcome: .sendBack, primary: false, takesNote: true),
             ])),
             ask("plan-codex", height: 220, F.card(.codex, .plan(body: F.planBody, title: F.planTitle), F.codexPlanChoices)),
@@ -1001,7 +1001,7 @@ enum CatalogFixtures {
     ]
 
     static let codexPlanChoices = [
-        Choice(outcome: .approvePlan(autoAcceptEdits: false), primary: true, takesNote: false),
+        Choice(outcome: .approvePlan(mode: "", modeName: ""), primary: true, takesNote: false),
         Choice(outcome: .sendBack, primary: false, takesNote: true),
     ]
 
@@ -1010,7 +1010,7 @@ enum CatalogFixtures {
         ScriptedChat.row("p1", 1, .prompt(text: [.text("Plan how to collapse the pairing errors.")], steered: false)),
         ScriptedChat.row("e1", 2, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded)),
         ScriptedChat.row("e2", 3, .explore(verb: .read, subject: "wire/src/codes.rs", state: .succeeded)),
-        ScriptedChat.row("l1", 4, .ask(.plan(body: planBody, verdict: .open, writing: false, note: nil, title: planTitle))),
+        ScriptedChat.row("l1", 4, .ask(.plan(body: planBody, verdict: .open, mode: "", modeName: "", writing: false, note: nil, title: planTitle))),
     ]
 
     static func card(

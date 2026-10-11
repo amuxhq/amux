@@ -195,7 +195,7 @@ question: `Options(indices)` or `Other(text)`.
 
 | Body | Choices |
 |---|---|
-| `Plan { title, body }` | `ApprovePlan { auto_accept_edits: false }`, `ApprovePlan { auto_accept_edits: true }` where the provider offers it, and `SendBack`, whose note says what should change. Codex proposes plans in plan mode with no approval step; its plan is a prose row and you reply in the composer. |
+| `Plan { title, body }` | `ApprovePlan` with no `mode`, `ApprovePlan { mode, mode_name }` where the provider offers to switch permission as the work starts (Claude's own plan approval moves to auto mode where Claude offers it, to accept edits otherwise; the ask names which, and each client words the choice from that name, "Yes, and switch to auto"), and `SendBack`, whose note says what should change. Codex proposes plans in plan mode with no approval step; its plan is a prose row and you reply in the composer. |
 | `Form { server, message, fields }` | `Submit` and `Decline`. The view reads the tool server's schema once into fields in the order it writes them, each text, a number, a toggle, one choice or several picks, with its title, whether it is required, the limits the schema sets and what it starts holding: the schema's default, else nothing entered or chosen and a toggle off. The client draws native controls and holds what is entered as a `FormValue` per field; `form_problems` says what keeps each field back and `form_answer` builds the Submit. An untouched toggle is sent off, and a required one is answered by it; text is sent without its surrounding spaces, and a whole number as a whole number. |
 | `Link { server, message, url }` | `OpenLink` and `Decline`. |
 | `Access { reason, read, write, network, hosts }` | `GrantForTurn`, `GrantForSession` and `Deny` (Codex). A grant covers everything the agent asked for; the row records what was granted and for how long. |
@@ -206,7 +206,7 @@ says "plan"; the body is the rest. While the first line is still arriving there 
 never shows half-written as prose. The view splits the plan once, for the card and for the row it becomes, and
 both clients draw the title and body they are handed.
 
-![A plan's decision in the composer's box, the plan itself in the feed above: start building, start and accept edits without asking, or keep planning with a note.](figures/vocabulary/ask_plan.light.png)
+![A plan's decision in the composer's box, the plan itself in the feed above: start building, start and switch to the permission the agent offers, or keep planning with a note.](figures/vocabulary/ask_plan.light.png)
 
 ![A form from a tool server, a step per field in the server's order, the first a required text field, with decline as the way out.](figures/vocabulary/ask_form.light.png)
 
@@ -223,7 +223,7 @@ Once settled, an ask leaves one of two things behind, because rows are one per i
   rather than guessed.
 - **An ask that is the work is its own row**, `RowKind::Ask(AskRow)`, which resolves in place: `Question`
   (Claude's question tool: its questions, then each `AnswerView` with the picks, what was typed and whether it was
-  hidden, whether it was skipped, and the note), `Questions` (Codex), `Plan` with its title, body, `PlanVerdict` and send-back note, `Form` with the
+  hidden, whether it was skipped, and the note), `Questions` (Codex), `Plan` with its title, body, `PlanVerdict`, the permission an approval switched to (`mode`, `mode_name`) and send-back note, `Form` with the
   fields sent, `Link`, `Grant` with what was `Granted` and for how long, and `Unanswerable`. Each carries a
   `Resolution`: `Open`, `Answered`, `Declined`, `Cancelled` or `Dismissed`.
 
@@ -289,8 +289,8 @@ errors with retry; context, model, effort, usage limits and tool-server health (
 permission once, for longer, or deny; structured questions with an "Other" answer; forms from tool servers
 (headless Claude and Codex).
 
-**Claude only:** question previews and multi-select, up to four questions; plan approval with an auto-accept
-choice; scope choices tied to saved rules and directories; cost per turn (headless); the compaction summary text
+**Claude only:** question previews and multi-select, up to four questions; plan approval that switches
+permission as the work starts; scope choices tied to saved rules and directories; cost per turn (headless); the compaction summary text
 (terminal, recorded but not drawn).
 
 **Codex only:** exit codes and durations on commands; a whole-turn diff item (recorded but not drawn); "allow similar commands" and

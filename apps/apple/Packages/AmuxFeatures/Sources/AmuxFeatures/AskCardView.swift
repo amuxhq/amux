@@ -556,33 +556,35 @@ private struct AskBodyView: View {
         }
     }
 
-    /// Approve with a switch for accepting edits, and Send back.
+    /// Approve, with a switch to the permission the agent offers to move
+    /// to as the work starts, and Send back.
     @ViewBuilder
     private var planChoices: some View {
         let approve = card.choices.indices.filter {
             if case .approvePlan = card.choices[$0].outcome { true } else { false }
         }
         let switched = approve.first {
-            card.choices[$0].outcome == .approvePlan(autoAcceptEdits: true)
+            if case .approvePlan(let mode, _) = card.choices[$0].outcome { !mode.isEmpty } else { false }
         }
         let plain = approve.first {
-            card.choices[$0].outcome == .approvePlan(autoAcceptEdits: false)
+            if case .approvePlan(let mode, _) = card.choices[$0].outcome { mode.isEmpty } else { false }
         }
         VStack(alignment: .leading, spacing: 12) {
-            if switched != nil, plain != nil {
+            if let switched, plain != nil {
+                let title = ChatWords.planSwitch(card.choices[switched])
                 Toggle(isOn: $autoAccept) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Accept edits without asking")
+                        Text(title)
                             .designFont(.body, design)
                             .foregroundStyle(design.ink.color)
-                        Text("Until the plan is done")
+                        Text("As the work starts")
                             .designFont(.monoSmall, design)
                             .foregroundStyle(design.inkMuted.color)
                     }
                 }
                 .tint(design.ink.color)
                 .oneSwitch(
-                    String(localized: "Accept edits without asking, Until the plan is done"),
+                    String(localized: "\(title), As the work starts"),
                     isOn: $autoAccept)
                 .identified("ask.plan.auto", value: autoAccept ? "on" : "off")
             }

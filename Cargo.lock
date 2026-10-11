@@ -38,6 +38,7 @@ dependencies = [
  "tonic",
  "tower",
  "uuid",
+ "vt100",
  "wire",
 ]
 

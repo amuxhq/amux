@@ -58,6 +58,8 @@ pub(crate) fn plan_mode_write(permission: Option<&str>, server: &str, tool: &str
 pub(crate) struct Verdict {
     verdict: i32,
     note: Option<String>,
+    /// Approved switching: the permission switched to.
+    permission: String,
 }
 
 impl Verdict {
@@ -65,23 +67,34 @@ impl Verdict {
         Self {
             verdict: verdict as i32,
             note: None,
+            permission: String::new(),
         }
     }
 
     pub(crate) fn sent_back(note: &str) -> Self {
         Self {
-            verdict: wire::PlanVerdict::SentBack as i32,
             note: (!note.is_empty()).then(|| note.to_owned()),
+            ..Self::of(wire::PlanVerdict::SentBack)
         }
     }
 
-    /// Approved, by the permission Claude left plan for.
+    /// Approved, switching to `permission`.
+    pub(crate) fn switching(permission: &str) -> Self {
+        Self {
+            permission: permission.to_owned(),
+            ..Self::of(wire::PlanVerdict::ApprovedSwitching)
+        }
+    }
+
+    /// Approved, by the permission Claude left plan for: one that acts
+    /// without asking first is a switch to it.
     pub(crate) fn approved_for(permission: Option<&str>) -> Self {
-        Self::of(if permission == Some("acceptEdits") {
-            wire::PlanVerdict::ApprovedAcceptingEdits
-        } else {
-            wire::PlanVerdict::Approved
-        })
+        match permission {
+            Some(permission) if !matches!(permission, "default" | "plan") => {
+                Self::switching(permission)
+            }
+            _ => Self::of(wire::PlanVerdict::Approved),
+        }
     }
 
     pub(crate) fn undecided(&self) -> bool {
@@ -100,6 +113,7 @@ pub(crate) fn plan_item(input: &str, verdict: &Verdict) -> Option<(String, wire:
                 verdict: verdict.verdict,
                 note: verdict.note.clone(),
                 complete: true,
+                permission: verdict.permission.clone(),
             },
         )
     })
@@ -146,16 +160,24 @@ pub(crate) struct AnswerNote {
     pub notes: String,
 }
 
-/// The decision Claude's plan asks offer, in the order Claude's own
-/// terminal lists them.
-pub(crate) fn plan_ask() -> wire::PlanAsk {
-    wire::PlanAsk {
-        choices: vec![
-            wire::PlanChoice::Start as i32,
-            wire::PlanChoice::StartAcceptingEdits as i32,
-            wire::PlanChoice::KeepPlanning as i32,
-        ],
+/// The decision Claude's plan asks offer: start as before planning, start
+/// switching to `switch` (none when empty), or keep planning.
+pub(crate) fn plan_ask(switch: &str) -> wire::PlanAsk {
+    let mut choices = vec![wire::PlanChoice::Start as i32];
+    if !switch.is_empty() {
+        choices.push(wire::PlanChoice::StartSwitching as i32);
     }
+    choices.push(wire::PlanChoice::KeepPlanning as i32);
+    wire::PlanAsk {
+        choices,
+        switch_permission: switch.to_owned(),
+    }
+}
+
+/// The permission Claude's own plan approval switches to: auto mode where
+/// Claude offers it, accept edits otherwise.
+pub(crate) fn plan_switch(offers_auto: bool) -> &'static str {
+    if offers_auto { "auto" } else { "acceptEdits" }
 }
 
 /// An RFC 3339 timestamp, as Claude writes them, in milliseconds.

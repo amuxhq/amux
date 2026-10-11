@@ -159,7 +159,10 @@ struct AskMeta {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum AskShape {
     Permission,
-    Plan,
+    /// The permission the ask's switch choice moves to.
+    Plan {
+        switch: String,
+    },
     /// The question texts, and each question's option labels.
     Question(Vec<(String, Vec<String>, bool)>),
     Form,
@@ -370,6 +373,25 @@ impl State {
             slash: None,
             interrupted: false,
         }
+    }
+
+    /// Whether Claude takes auto mode on this session's model. Claude lists
+    /// its models by alias (`sonnet`, `opus[1m]`) and names the running one
+    /// by id (`claude-sonnet-5`), so an alias names every id that holds it;
+    /// before any model is named, the default one is running.
+    fn offers_auto(&self) -> bool {
+        let Some(models) = &self.auto_models else {
+            return false;
+        };
+        let running = self.chosen_model.as_deref().or(self.model.as_deref());
+        models.iter().any(|value| match running {
+            None => value == "default",
+            Some(running) => {
+                let alias = value.trim_end_matches("[1m]");
+                running.trim_end_matches("[1m]") == alias
+                    || (alias != "default" && running.contains(alias))
+            }
+        })
     }
 
     /// The permissions Claude offers this session.
@@ -588,7 +610,7 @@ impl State {
     fn plan_ask(&self) -> Option<(String, String)> {
         self.asks
             .iter()
-            .find(|(_, meta)| meta.shape == AskShape::Plan)
+            .find(|(_, meta)| matches!(meta.shape, AskShape::Plan { .. }))
             .map(|(key, meta)| (key.clone(), meta.tool_use_id.clone()))
     }
 
@@ -1100,25 +1122,29 @@ fn sdk_answer(
                 decided(DecisionOutcome::Denied, None, &no.note),
             )),
         },
-        (AskShape::Plan, claude_answer::Of::Plan(plan)) => {
-            let start = |mode: PermissionMode, verdict: wire::PlanVerdict| {
+        (AskShape::Plan { switch }, claude_answer::Of::Plan(plan)) => {
+            let start = |mode: PermissionMode, verdict: Verdict| {
                 let update = PermissionUpdate::SetMode {
                     mode,
                     destination: PermissionUpdateDestination::Session,
                 };
                 Some((
                     allow(input.clone(), Some(vec![update])),
-                    Some(Decided::Plan(Verdict::of(verdict))),
+                    Some(Decided::Plan(verdict)),
                 ))
             };
             match wire::PlanChoice::try_from(plan.choice).ok()? {
-                wire::PlanChoice::Start => {
-                    start(PermissionMode::Default, wire::PlanVerdict::Approved)
-                }
-                wire::PlanChoice::StartAcceptingEdits => start(
-                    PermissionMode::AcceptEdits,
-                    wire::PlanVerdict::ApprovedAcceptingEdits,
+                wire::PlanChoice::Start => start(
+                    PermissionMode::Default,
+                    Verdict::of(wire::PlanVerdict::Approved),
                 ),
+                // The switch the ask offered, and only that one.
+                wire::PlanChoice::StartSwitching
+                    if !switch.is_empty() && plan.permission == *switch =>
+                {
+                    start(PermissionMode::parse(switch), Verdict::switching(switch))
+                }
+                wire::PlanChoice::StartSwitching => None,
                 wire::PlanChoice::KeepPlanning => {
                     let note = plan.note.unwrap_or_default();
                     Some((

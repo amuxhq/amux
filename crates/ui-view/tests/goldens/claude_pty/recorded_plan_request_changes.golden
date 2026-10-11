@@ -23,7 +23,7 @@
   composer Send activity=Some(Running { key: "toolu_012mL17q3UZCtEJ343VAWHka" }) queue=[] underway=[] refused=[]
 ## 51 recorded 49: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "toolu_012mL17q3UZCtEJ343VAWHka" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: Some("Context"), body: "\nThe user asked to change README.md's only line from `CURRENT` to `UPDATED`. This is a trivial, explicitly-specified text change.\n\n# Plan\n\n- Edit `README.md`, replacing its sole line's content `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read README.md after the edit to confirm it contains `UPDATED` and not `CURRENT`.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 54 recorded 52: fact Transcript type=user uuid=8c2b6404-2e89-4148-a63b-7a535ea2e414

@@ -45,56 +45,56 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 75 recorded 74: fact Rpc method=item/started
   row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 77 recorded 76: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 79 recorded 78: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 81 recorded 80: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 83 recorded 82: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 85 recorded 84: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 87 recorded 86: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 89 recorded 88: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line,", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 91 recorded 90: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 93 recorded 92: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 95 recorded 94: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`,", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 97 recorded 96: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 98 recorded 97: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 100 recorded 99: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 102 recorded 101: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`,", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`,", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 104 recorded 103: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 106 recorded 105: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 108 recorded 107: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 110 recorded 109: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 111 recorded 110: fact Rpc method=item/plan/delta
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, note: None, writing: true })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 113 recorded 112: fact Rpc method=item/completed
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, note: None, writing: false })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 119 recorded 118: fact Rpc method=turn/completed
   row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   row    6 turn:1 TurnEnd { duration_ms: Some(5631), cost_usd: None, failed: false }
   ask plan:01a11479-9d93-7370-983a-6db72e75ab63-plan -> "01a11479-9d93-7370-983a-6db72e75ab63-plan" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
     body Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 121 recorded 120: input 0x089f0b3764f54cb0b1856c9c12b19fff
-  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, note: None, writing: false })
+  row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
   row    7 prompt:089f0b3764f54cb0b1856c9c12b19fff Prompt { text: [Text("Implement the plan.")], steered: false }
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
@@ -202,7 +202,7 @@
      2 prompt:202d91dee4c248dcbd7377bbaa80e7ed Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval.")], steered: false }
      3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: false, working_note: true }
      4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
-     5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, note: None, writing: false })
+     5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
      6 turn:1 TurnEnd { duration_ms: Some(5631), cost_usd: None, failed: false }
      7 prompt:089f0b3764f54cb0b1856c9c12b19fff Prompt { text: [Text("Implement the plan.")], steered: false }
      8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents.")], streaming: false, working_note: true }

@@ -418,7 +418,7 @@
       "expect": {
         "reply": "accepted",
         "effects": [
-          "terminal plan ApproveAutoAcceptEdits",
+          "terminal plan ApproveSwitching",
           "reply a5 accepted"
         ]
       }

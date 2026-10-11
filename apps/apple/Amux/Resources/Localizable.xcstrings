@@ -829,6 +829,18 @@
         }
       }
     },
+    "%@, As the work starts": {
+      "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, As the work starts"
+          }
+        }
+      }
+    },
     "%@, from %@": {
       "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState": "manual",
@@ -1173,30 +1185,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Accept edits"
-          }
-        }
-      }
-    },
-    "Accept edits without asking": {
-      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Accept edits without asking"
-          }
-        }
-      }
-    },
-    "Accept edits without asking, Until the plan is done": {
-      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Accept edits without asking, Until the plan is done"
           }
         }
       }
@@ -1617,6 +1605,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "Approve"
+          }
+        }
+      }
+    },
+    "Approve and switch to %@": {
+      "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve and switch to %@"
+          }
+        }
+      }
+    },
+    "As the work starts": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As the work starts"
           }
         }
       }
@@ -6565,18 +6577,6 @@
         }
       }
     },
-    "Until the plan is done": {
-      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Until the plan is done"
-          }
-        }
-      }
-    },
     "Update amux to reach your hosts through the relay": {
       "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
       "extractionState": "manual",
@@ -6741,6 +6741,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wants to create %@"
+          }
+        }
+      }
+    },
+    "Wants to create a file": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wants to create a file"
           }
         }
       }
@@ -7209,18 +7221,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "a year"
-          }
-        }
-      }
-    },
-    "accepting edits": {
-      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "accepting edits"
           }
         }
       }

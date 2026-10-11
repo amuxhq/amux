@@ -1077,7 +1077,7 @@ private struct AskRowView: View {
         switch ask {
         case .questions(let questions, let answers, let skipped, let resolution, let reply):
             questionsRow(questions, answers, skipped: Int(skipped), resolution, reply)
-        case .plan(let body, let verdict, _, let note, let title):
+        case .plan(let body, let verdict, let mode, let modeName, _, let note, let title):
             // An open plan reads whole under its heading while the decision
             // stands in the composer's place; once decided it folds to its
             // heading and opens on a tap.
@@ -1087,7 +1087,8 @@ private struct AskRowView: View {
                 kind: "plan", glyph: "list.bullet.rectangle", accented: open,
                 rail: rail, verb: planVerb(verdict), subject: sentBack ? "" : title ?? "",
                 subjectFace: .text,
-                meta: RowMeta(verdict == .approvedAcceptingEdits ? String(localized: "accepting edits") : ""),
+                meta: RowMeta(verdict == .approvedSwitching
+                    ? String(localized: "switched to \(modeName.isEmpty ? mode : modeName)") : ""),
                 quote: sentBack ? ChatWords.firstLine(note ?? "") : nil,
                 below: open || expanded ? AnyView(planBody(title, body)) : nil,
                 opens: !open, open: expanded, toggle: toggle)
@@ -1271,7 +1272,7 @@ private struct AskRowView: View {
     private func planVerb(_ verdict: PlanVerdict) -> String {
         switch verdict {
         case .open: String(localized: "Plan proposed")
-        case .approved, .approvedAcceptingEdits: String(localized: "Plan approved")
+        case .approved, .approvedSwitching: String(localized: "Plan approved")
         case .sentBack: String(localized: "Plan sent back")
         case .dismissed: String(localized: "Plan dismissed")
         }

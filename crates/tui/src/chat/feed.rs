@@ -189,6 +189,8 @@ pub fn row_lines(
                 title,
                 body,
                 verdict,
+                mode,
+                mode_name,
                 note,
                 writing,
             }) => plan_lines(
@@ -198,6 +200,8 @@ pub fn row_lines(
                     title: title.as_deref(),
                     body,
                     verdict: *verdict,
+                    mode,
+                    mode_name,
                     note: note.as_deref(),
                     writing: *writing,
                 },
@@ -690,6 +694,9 @@ struct Plan<'a> {
     title: Option<&'a str>,
     body: &'a str,
     verdict: PlanVerdict,
+    /// Approved switching: the permission switched to, and its name.
+    mode: &'a str,
+    mode_name: &'a str,
     note: Option<&'a str>,
     writing: bool,
 }
@@ -714,10 +721,13 @@ fn plan_lines(
     }
     let outcome = match plan.verdict {
         PlanVerdict::Open => None,
-        PlanVerdict::ApprovedAcceptingEdits => Some("approved · accepting edits"),
-        PlanVerdict::Approved => Some("approved"),
-        PlanVerdict::SentBack => Some("sent back"),
-        PlanVerdict::Dismissed => Some("dismissed"),
+        PlanVerdict::ApprovedSwitching => Some(format!(
+            "approved · switched to {}",
+            crate::words::named(plan.mode_name, plan.mode)
+        )),
+        PlanVerdict::Approved => Some("approved".to_owned()),
+        PlanVerdict::SentBack => Some("sent back".to_owned()),
+        PlanVerdict::Dismissed => Some("dismissed".to_owned()),
     };
     let folded = outcome.is_some() != toggled;
 
@@ -734,9 +744,12 @@ fn plan_lines(
     push(&mut head, "Plan", theme.faint(), end);
     if let Some(title) = plan.title {
         push(&mut head, " · ", theme.faint(), end);
-        let room = end
-            .saturating_sub(text::line_width(&head))
-            .saturating_sub(outcome.map_or(0, |words| text::str_width(words) + 3) + 4);
+        let room = end.saturating_sub(text::line_width(&head)).saturating_sub(
+            outcome
+                .as_deref()
+                .map_or(0, |words| text::str_width(words) + 3)
+                + 4,
+        );
         push(&mut head, text::ellipsize(title, room), theme.bright(), end);
     }
     if let Some(words) = outcome {

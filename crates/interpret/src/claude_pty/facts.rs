@@ -190,6 +190,10 @@ impl State {
             AgentFact::Ready if self.trust_ask().is_some() => return,
             AgentFact::Ready => return self.shared.provider_started(),
             AgentFact::TrustDialog => return self.trust_dialog(emit),
+            AgentFact::Permission { permission } => {
+                return self.permission_seen(emit, &permission);
+            }
+            AgentFact::PlanMenu { switch } => return self.plan_menu(switch),
         };
         let provider = &mut self.provider;
         provider.version = (!version.is_empty()).then_some(version);
@@ -199,6 +203,43 @@ impl State {
         provider.relaunched = provider.launches > 0;
         provider.launches += 1;
         self.publish_catalogue(emit);
+    }
+
+    /// The permission a plan ask's switch moves to: what Claude's plan
+    /// menu last switched to, or, before Claude has drawn one, auto mode
+    /// where the host's Claude offers it for this model and accept edits
+    /// otherwise.
+    fn plan_switch(&self) -> String {
+        if let Some(switch) = &self.provider.plan_switch {
+            return switch.clone();
+        }
+        let model = self.provider.model.as_deref().unwrap_or_default();
+        let offers_auto = self.provider.offered.as_ref().is_some_and(|offered| {
+            offered.permissions.iter().any(|permission| {
+                permission.value == "auto"
+                    && (permission.models.is_empty()
+                        || permission.models.iter().any(|named| named == model))
+            })
+        });
+        crate::claude_common::plan_switch(offers_auto).to_owned()
+    }
+
+    /// Claude drew its plan menu: an open plan ask offers the switch that
+    /// menu's first entry makes.
+    fn plan_menu(&mut self, switch: String) {
+        self.provider.plan_switch = Some(switch.clone());
+        let Some(key) = self.plan_ask() else {
+            return;
+        };
+        if let Some(meta) = self.asks.get_mut(&key) {
+            meta.shape = AskShape::Plan {
+                switch: switch.clone(),
+            };
+        }
+        if let Some(mut ask) = self.shared.asks().get(&key).cloned() {
+            ask.body = Some(wire::ask::Body::Plan(plan_ask(&switch)));
+            self.shared.open_ask(ask);
+        }
     }
 
     /// A terminal offers nothing a program can read: its models and
@@ -450,7 +491,13 @@ impl State {
                     AskShape::Question { questions },
                 )
             }
-            PLAN_TOOL if server.is_empty() => (wire::ask::Body::Plan(plan_ask()), AskShape::Plan),
+            PLAN_TOOL if server.is_empty() => {
+                let switch = self.plan_switch();
+                (
+                    wire::ask::Body::Plan(plan_ask(&switch)),
+                    AskShape::Plan { switch },
+                )
+            }
             _ => permission_ask(
                 &server,
                 &tool,

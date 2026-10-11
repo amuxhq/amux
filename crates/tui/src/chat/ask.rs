@@ -200,12 +200,13 @@ pub fn choice_label(choice: &Choice) -> String {
         ChoiceOutcome::Deny { stops: true } => "Deny and stop".to_owned(),
         ChoiceOutcome::Deny { stops: false } => "Deny".to_owned(),
         ChoiceOutcome::DenyAndStop => "Deny and stop".to_owned(),
-        ChoiceOutcome::ApprovePlan {
-            auto_accept_edits: true,
-        } => "Approve and accept edits without asking".to_owned(),
-        ChoiceOutcome::ApprovePlan {
-            auto_accept_edits: false,
-        } => "Approve".to_owned(),
+        ChoiceOutcome::ApprovePlan { mode, mode_name } if !mode.is_empty() => {
+            format!(
+                "Approve and switch to {}",
+                crate::words::named(mode_name, mode)
+            )
+        }
+        ChoiceOutcome::ApprovePlan { .. } => "Approve".to_owned(),
         ChoiceOutcome::SendBack => "Send back".to_owned(),
         ChoiceOutcome::Submit => "Submit".to_owned(),
         ChoiceOutcome::Decline => "Decline".to_owned(),
@@ -282,6 +283,16 @@ pub struct BoxLines {
     pub spots: Vec<Spot>,
 }
 
+/// A typed field in the box: its words and their ink, where a click on it
+/// lands, whether the cursor sits after the words, and what follows them.
+struct Typed<'a> {
+    typed: &'a str,
+    ink: Style,
+    spot: Option<BoxSpot>,
+    cursor: bool,
+    after: Option<(String, Style)>,
+}
+
 /// How many of a typed field's last lines the box shows.
 const FIELD_LINES: usize = 4;
 
@@ -293,16 +304,14 @@ impl BoxLines {
     /// marked "…" when earlier ones are cut. A click on any of its rows
     /// reaches `spot`; with `cursor` the cursor sits after the words, and
     /// `after` follows them.
-    fn push_field(
-        &mut self,
-        mut row: Line<'static>,
-        typed: &str,
-        ink: Style,
-        width: usize,
-        spot: Option<BoxSpot>,
-        cursor: bool,
-        after: Option<(String, Style)>,
-    ) {
+    fn push_field(&mut self, mut row: Line<'static>, width: usize, field: Typed<'_>) {
+        let Typed {
+            typed,
+            ink,
+            spot,
+            cursor,
+            after,
+        } = field;
         let col = text::line_width(&row);
         let room = width.saturating_sub(col + 1);
         let lines: Vec<&str> = typed.split('\n').collect();
@@ -373,9 +382,9 @@ fn box_choices(card: &AskCard) -> Vec<usize> {
 /// allow cargo test in this project", "No, and stop".
 fn box_label(choice: &Choice, kind: wire::Kind) -> String {
     match &choice.outcome {
-        ChoiceOutcome::ApprovePlan {
-            auto_accept_edits: false,
-        } if kind == wire::Kind::Codex => "Yes, implement this plan".to_owned(),
+        ChoiceOutcome::ApprovePlan { mode, .. } if mode.is_empty() && kind == wire::Kind::Codex => {
+            "Yes, implement this plan".to_owned()
+        }
         ChoiceOutcome::AllowOnce => "Yes".to_owned(),
         ChoiceOutcome::AllowForSession => "Yes, and don't ask again this session".to_owned(),
         ChoiceOutcome::AllowAlways {
@@ -390,12 +399,13 @@ fn box_label(choice: &Choice, kind: wire::Kind) -> String {
             "No, and stop".to_owned()
         }
         ChoiceOutcome::Deny { stops: false } => "No".to_owned(),
-        ChoiceOutcome::ApprovePlan {
-            auto_accept_edits: false,
-        } => "Yes, start building".to_owned(),
-        ChoiceOutcome::ApprovePlan {
-            auto_accept_edits: true,
-        } => "Yes, and accept edits without asking".to_owned(),
+        ChoiceOutcome::ApprovePlan { mode, mode_name } if !mode.is_empty() => {
+            format!(
+                "Yes, and switch to {}",
+                crate::words::named(mode_name, mode)
+            )
+        }
+        ChoiceOutcome::ApprovePlan { .. } => "Yes, start building".to_owned(),
         ChoiceOutcome::SendBack => "No, keep planning".to_owned(),
         ChoiceOutcome::GrantForTurn => "Allow for this turn".to_owned(),
         ChoiceOutcome::GrantForSession => "Allow for this session".to_owned(),
@@ -974,12 +984,14 @@ impl AskUi {
                 let cursor = lit && self.noting;
                 out.push_field(
                     row,
-                    typed,
-                    ink,
                     width,
-                    Some(BoxSpot::Choice(at)),
-                    cursor,
-                    None,
+                    Typed {
+                        typed,
+                        ink,
+                        spot: Some(BoxSpot::Choice(at)),
+                        cursor,
+                        after: None,
+                    },
                 );
                 continue;
             } else {
@@ -2241,12 +2253,14 @@ impl AskUi {
                     .map(|problem| (format!(" · {}", problem_words(problem)), theme.faint()));
                 out.push_field(
                     row,
-                    &typed,
-                    theme.bright(),
                     width,
-                    Some(BoxSpot::Choice(at)),
-                    open,
-                    problem,
+                    Typed {
+                        typed: &typed,
+                        ink: theme.bright(),
+                        spot: Some(BoxSpot::Choice(at)),
+                        cursor: open,
+                        after: problem,
+                    },
                 );
             }
         } else if let Some(at) = rows.other {
@@ -2269,12 +2283,14 @@ impl AskUi {
                     .map(|problem| (format!(" · {}", problem_words(problem)), theme.faint()));
                 out.push_field(
                     row,
-                    &typed,
-                    ink,
                     width,
-                    Some(BoxSpot::Choice(at)),
-                    open,
-                    problem,
+                    Typed {
+                        typed: &typed,
+                        ink,
+                        spot: Some(BoxSpot::Choice(at)),
+                        cursor: open,
+                        after: problem,
+                    },
                 );
             } else {
                 push(&mut row, name, ink, width);
@@ -2291,7 +2307,17 @@ impl AskUi {
         if self.annotating || !note.is_empty() {
             let mut row = Line::default();
             push(&mut row, "  Note: ", theme.faint(), width);
-            out.push_field(row, note, theme.text(), width, None, self.annotating, None);
+            out.push_field(
+                row,
+                width,
+                Typed {
+                    typed: note,
+                    ink: theme.text(),
+                    spot: None,
+                    cursor: self.annotating,
+                    after: None,
+                },
+            );
         }
         // Skip and the way out are a footer, not answers: apart,
         // unnumbered, faint until highlighted.
@@ -2337,12 +2363,14 @@ impl AskUi {
             let replying = self.replying;
             out.push_field(
                 row,
-                typed,
-                theme.bright(),
                 width,
-                Some(BoxSpot::Choice(at)),
-                replying,
-                None,
+                Typed {
+                    typed,
+                    ink: theme.bright(),
+                    spot: Some(BoxSpot::Choice(at)),
+                    cursor: replying,
+                    after: None,
+                },
             );
             return out;
         }

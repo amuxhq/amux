@@ -783,7 +783,10 @@ public enum ChatWords {
                 : String(localized: "Allow network access to \(hosts.joined(separator: ", "))")
         case .deny(let stops): stops ? String(localized: "Deny and stop") : String(localized: "Deny")
         case .denyAndStop: String(localized: "Deny and stop")
-        case .approvePlan: String(localized: "Approve")
+        case .approvePlan(let mode, let modeName):
+            mode.isEmpty
+                ? String(localized: "Approve")
+                : String(localized: "Approve and switch to \(modeName.isEmpty ? mode : modeName)")
         case .sendBack: String(localized: "Send back")
         case .submit: String(localized: "Submit")
         case .decline: String(localized: "Decline")
@@ -792,6 +795,13 @@ public enum ChatWords {
         case .grantForSession: String(localized: "Grant")
         }
         return choice.takesNote ? label + "…" : label
+    }
+
+    /// A plan approval's switch as the plan card's toggle names it, "Switch
+    /// to Auto": the permission by the agent's own name for it.
+    public static func planSwitch(_ choice: Choice) -> String {
+        guard case .approvePlan(let mode, let modeName) = choice.outcome else { return "" }
+        return String(localized: "Switch to \(modeName.isEmpty ? mode : modeName)")
     }
 
     /// A choice on a button: the likely allow reads "Allow" beside Deny,

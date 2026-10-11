@@ -175,8 +175,11 @@ pub enum ChoiceOutcome {
         stops: bool,
     },
     DenyAndStop,
+    /// Approve the plan; with a `mode`, switching to that permission, which
+    /// `mode_name` names as the agent's catalogue does.
     ApprovePlan {
-        auto_accept_edits: bool,
+        mode: String,
+        mode_name: String,
     },
     SendBack,
     Submit,
@@ -599,19 +602,34 @@ fn plan_card(
     let choices = plan
         .choices()
         .filter_map(|offered| {
-            let outcome = match offered {
-                wire::PlanChoice::Start => ChoiceOutcome::ApprovePlan {
-                    auto_accept_edits: false,
-                },
-                wire::PlanChoice::StartAcceptingEdits => ChoiceOutcome::ApprovePlan {
-                    auto_accept_edits: true,
-                },
-                wire::PlanChoice::KeepPlanning => ChoiceOutcome::SendBack,
-                wire::PlanChoice::Unspecified => return None,
+            let (outcome, permission) = match offered {
+                wire::PlanChoice::Start => (
+                    ChoiceOutcome::ApprovePlan {
+                        mode: String::new(),
+                        mode_name: String::new(),
+                    },
+                    String::new(),
+                ),
+                wire::PlanChoice::StartSwitching if !plan.switch_permission.is_empty() => {
+                    let mode = plan.switch_permission.clone();
+                    (
+                        ChoiceOutcome::ApprovePlan {
+                            mode_name: crate::rows::permission_name(
+                                &state.agent_state().permissions,
+                                &mode,
+                            ),
+                            mode: mode.clone(),
+                        },
+                        mode,
+                    )
+                }
+                wire::PlanChoice::KeepPlanning => (ChoiceOutcome::SendBack, String::new()),
+                wire::PlanChoice::StartSwitching | wire::PlanChoice::Unspecified => return None,
             };
             let answer = answer(wire::PlanAnswer {
                 choice: offered as i32,
                 note: None,
+                permission,
             });
             Some(choice(outcome, answer))
         })

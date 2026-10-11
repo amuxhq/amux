@@ -229,24 +229,30 @@ fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<cl
             };
             match asked.tool_name.as_str() {
                 PLAN_TOOL => Some(claude_answer::Of::Plan(if allow {
-                    PlanAnswer {
-                        choice: if matches!(
-                            chosen,
-                            Some(PermissionUpdate::SetMode {
-                                mode: stream::PermissionMode::AcceptEdits,
-                                ..
-                            })
-                        ) {
-                            PlanChoice::StartAcceptingEdits
-                        } else {
-                            PlanChoice::Start
-                        } as i32,
-                        note: None,
+                    match chosen {
+                        Some(PermissionUpdate::SetMode { mode, .. })
+                            if !matches!(
+                                mode,
+                                stream::PermissionMode::Default | stream::PermissionMode::Plan
+                            ) =>
+                        {
+                            PlanAnswer {
+                                choice: PlanChoice::StartSwitching as i32,
+                                note: None,
+                                permission: mode.as_str().to_owned(),
+                            }
+                        }
+                        _ => PlanAnswer {
+                            choice: PlanChoice::Start as i32,
+                            note: None,
+                            permission: String::new(),
+                        },
                     }
                 } else {
                     PlanAnswer {
                         choice: PlanChoice::KeepPlanning as i32,
                         note: Some(message).filter(|note| !note.is_empty()),
+                        permission: String::new(),
                     }
                 })),
                 QUESTION_TOOL if allow => {

@@ -22,7 +22,7 @@
   │ How should the migration roll out?
   │   → All at once
 
-  ▸ Plan · approved ──────────────────────────────────────────────────────────────────────────────
+  ▸ Plan · approved · switched to auto ───────────────────────────────────────────────────────────
 
   ▸ Plan · sent back ─────────────────────────────────────────────────────────────────────────────
     “Don't touch the wire codes yet”

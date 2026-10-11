@@ -39,7 +39,7 @@
   composer Send activity=Some(Running { key: "toolu_01KRCAuhBR8hvUPHSRDAiB9p" }) queue=[] underway=[] refused=[]
 ## 59 recorded 57: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "toolu_01KRCAuhBR8hvUPHSRDAiB9p" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content changed from `CURRENT` to `UPDATED`. This is a trivial, isolated one-line edit.\n\n# Plan\n\n- Edit `README.md`, replacing its only line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read `README.md` to confirm it now contains `UPDATED` and nothing else.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 61 recorded 59: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01KRCAuhBR8hvUPHSRDAiB9p

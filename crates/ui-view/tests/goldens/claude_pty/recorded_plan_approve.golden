@@ -35,15 +35,15 @@
   row    4 toolu_018z16j3TQCJ8fzgqkdEHMNe Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_018z16j3TQCJ8fzgqkdEHMNe..toolu_01J6jMc34jQ5JM5xxerVNd4F x2 recent=1] collapsed
   row    5 aba91105-bdda-4b87-b5be-b121b1db2435 Thinking { text: "", open: false, duration_ms: Some(1363) } run[toolu_018z16j3TQCJ8fzgqkdEHMNe..toolu_01J6jMc34jQ5JM5xxerVNd4F x2] collapsed
   row    6 toolu_01J6jMc34jQ5JM5xxerVNd4F Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_018z16j3TQCJ8fzgqkdEHMNe..toolu_01J6jMc34jQ5JM5xxerVNd4F x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 1, subagents: 0, other: 0 }]
-  row    7 toolu_01LvpGfZokaV3i8KmxY16Ywt Ask(Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content updated from the literal text `CURRENT` to `UPDATED`.\n\n# Plan\n\n- Edit `README.md`, replacing the line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read `README.md` and confirm its content is now `UPDATED`.\n", verdict: Open, note: None, writing: false })
+  row    7 toolu_01LvpGfZokaV3i8KmxY16Ywt Ask(Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content updated from the literal text `CURRENT` to `UPDATED`.\n\n# Plan\n\n- Edit `README.md`, replacing the line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read `README.md` and confirm its content is now `UPDATED`.\n", verdict: Open, mode: "", mode_name: "", note: None, …
   composer Send activity=Some(Running { key: "toolu_01LvpGfZokaV3i8KmxY16Ywt" }) queue=[] underway=[] refused=[]
 ## 58 recorded 56: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "toolu_01LvpGfZokaV3i8KmxY16Ywt" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content updated from the literal text `CURRENT` to `UPDATED`.\n\n# Plan\n\n- Edit `README.md`, replacing the line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read `README.md` and confirm its content is now `UPDATED`.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 62 recorded 60: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01LvpGfZokaV3i8KmxY16Ywt
-  row    7 toolu_01LvpGfZokaV3i8KmxY16Ywt Ask(Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content updated from the literal text `CURRENT` to `UPDATED`.\n\n# Plan\n\n- Edit `README.md`, replacing the line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read `README.md` and confirm its content is now `UPDATED`.\n", verdict: Approved, note: None, writing: false })
+  row    7 toolu_01LvpGfZokaV3i8KmxY16Ywt Ask(Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content updated from the literal text `CURRENT` to `UPDATED`.\n\n# Plan\n\n- Edit `README.md`, replacing the line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read `README.md` and confirm its content is now `UPDATED`.\n", verdict: Approved, mode: "", mode_name: "", note: No…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
@@ -53,7 +53,7 @@
      4 toolu_018z16j3TQCJ8fzgqkdEHMNe Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_018z16j3TQCJ8fzgqkdEHMNe..toolu_01J6jMc34jQ5JM5xxerVNd4F x2 recent=1] collapsed
      5 aba91105-bdda-4b87-b5be-b121b1db2435 Thinking { text: "", open: false, duration_ms: Some(1363) } run[toolu_018z16j3TQCJ8fzgqkdEHMNe..toolu_01J6jMc34jQ5JM5xxerVNd4F x2] collapsed
      6 toolu_01J6jMc34jQ5JM5xxerVNd4F Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_018z16j3TQCJ8fzgqkdEHMNe..toolu_01J6jMc34jQ5JM5xxerVNd4F x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 1, subagents: 0, other: 0 }]
-     7 toolu_01LvpGfZokaV3i8KmxY16Ywt Ask(Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content updated from the literal text `CURRENT` to `UPDATED`.\n\n# Plan\n\n- Edit `README.md`, replacing the line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read `README.md` and confirm its content is now `UPDATED`.\n", verdict: Approved, note: None, writing: false })
+     7 toolu_01LvpGfZokaV3i8KmxY16Ywt Ask(Plan { title: Some("Context"), body: "\nThe user wants README.md's single line of content updated from the literal text `CURRENT` to `UPDATED`.\n\n# Plan\n\n- Edit `README.md`, replacing the line `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read `README.md` and confirm its content is now `UPDATED`.\n", verdict: Approved, mode: "", mode_name: "", note: No…
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 51334, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings

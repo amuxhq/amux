@@ -256,6 +256,7 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                             of: Some(codex_answer::Of::Plan(wire::PlanAnswer {
                                 choice: wire::PlanChoice::Start as i32,
                                 note: None,
+                                permission: String::new(),
                             })),
                         })
                     } else {
@@ -719,6 +720,7 @@ mod tests {
             Some(codex_answer::Of::Plan(wire::PlanAnswer {
                 choice: wire::PlanChoice::Start as i32,
                 note: None,
+                permission: String::new(),
             }))
         );
 

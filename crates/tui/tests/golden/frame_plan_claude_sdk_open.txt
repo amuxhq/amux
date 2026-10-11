@@ -23,7 +23,7 @@
   │ ● Plan ready                                                                                 │
   │                                                                                              │
   │ › 1. Yes, start building                                                                     │
-  │   2. Yes, and accept edits without asking                                                    │
+  │   2. Yes, and switch to acceptEdits                                                          │
   │   3. No, keep planning  esc · tab to add a note                                              │
   ╰─────────────────────────────────────────────────────────────────────────────────── Opus 5.5 ─╯
 

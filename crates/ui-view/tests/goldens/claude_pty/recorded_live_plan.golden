@@ -14,15 +14,15 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 60 recorded 58: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01LkSLcBohBhq6sDPFQSQtt3
   row    3 toolu_01UmgANBkXiZaY2NxR8e7EMU Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_01UmgANBkXiZaY2NxR8e7EMU..toolu_01UmgANBkXiZaY2NxR8e7EMU x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-  row    4 toolu_01LkSLcBohBhq6sDPFQSQtt3 Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\nReplace the sole line of `<MACHINE_PATH> (`CURRENT`) with `UPDATED` using the Edit tool.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n", verdict: Open, note: None, writing: false …
+  row    4 toolu_01LkSLcBohBhq6sDPFQSQtt3 Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\nReplace the sole line of `<MACHINE_PATH> (`CURRENT`) with `UPDATED` using the Edit tool.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n", verdict: Open, mode: "", mode_name: "", no…
   composer Send activity=Some(Running { key: "toolu_01LkSLcBohBhq6sDPFQSQtt3" }) queue=[] underway=[] refused=[]
 ## 62 recorded 60: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "toolu_01LkSLcBohBhq6sDPFQSQtt3" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\nReplace the sole line of `<MACHINE_PATH> (`CURRENT`) with `UPDATED` using the Edit tool.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 68 recorded 66: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01LkSLcBohBhq6sDPFQSQtt3
-  row    4 toolu_01LkSLcBohBhq6sDPFQSQtt3 Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\nReplace the sole line of `<MACHINE_PATH> (`CURRENT`) with `UPDATED` using the Edit tool.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n", verdict: Approved, note: None, writing: fa…
+  row    4 toolu_01LkSLcBohBhq6sDPFQSQtt3 Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\nReplace the sole line of `<MACHINE_PATH> (`CURRENT`) with `UPDATED` using the Edit tool.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n", verdict: Approved, mode: "", mode_name: ""…
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 83 recorded 81: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01DREqFCCGvj7gfXeDNovDVt
@@ -90,7 +90,7 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 b3763c3b-f2bb-4ab5-b1a5-3aa6515c9a1f Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval.")], steered: false }
      3 toolu_01UmgANBkXiZaY2NxR8e7EMU Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_01UmgANBkXiZaY2NxR8e7EMU..toolu_01UmgANBkXiZaY2NxR8e7EMU x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
-     4 toolu_01LkSLcBohBhq6sDPFQSQtt3 Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\nReplace the sole line of `<MACHINE_PATH> (`CURRENT`) with `UPDATED` using the Edit tool.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n", verdict: Approved, note: None, writing: fa…
+     4 toolu_01LkSLcBohBhq6sDPFQSQtt3 Ask(Plan { title: Some("Plan: Update README.md"), body: "\n## Context\nREADME.md contains a single line, `CURRENT`. It should read `UPDATED`.\n\n## Step\nReplace the sole line of `<MACHINE_PATH> (`CURRENT`) with `UPDATED` using the Edit tool.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n", verdict: Approved, mode: "", mode_name: ""…
      5 1d5db776-8be1-444a-a014-a44d1a822904 Thinking { text: "", open: false, duration_ms: Some(2752) }
      6 toolu_01DREqFCCGvj7gfXeDNovDVt Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_01DREqFCCGvj7gfXeDNovDVt..toolu_01SqjhP72QyjDbsj1HxaUjBU x2 recent=1] collapsed
      7 1bac1ac0-a3f5-41b8-8ba0-cea0336cf888 Thinking { text: "", open: false, duration_ms: Some(1118) } run[toolu_01DREqFCCGvj7gfXeDNovDVt..toolu_01SqjhP72QyjDbsj1HxaUjBU x2] collapsed

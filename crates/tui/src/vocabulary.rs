@@ -1252,7 +1252,9 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::Ask(AskRow::Plan {
                         title: None,
                         body: "Collapse the pairing failures into one error.".into(),
-                        verdict: PlanVerdict::Approved,
+                        verdict: PlanVerdict::ApprovedSwitching,
+                        mode: "auto".into(),
+                        mode_name: "Auto".into(),
                         writing: false,
                         note: None,
                     })),
@@ -1263,6 +1265,8 @@ fn row_sets() -> Vec<RowSet> {
                         title: None,
                         body: "Rename every wire code.".into(),
                         verdict: PlanVerdict::SentBack,
+                        mode: String::new(),
+                        mode_name: String::new(),
                         writing: false,
                         note: Some("Don't touch the wire codes yet".into()),
                     })),
@@ -1797,7 +1801,7 @@ fn cards() -> Vec<CardSet> {
         ),
         (
             "ask_plan",
-            "A plan to approve, approve with edits accepted automatically, or send back with a note.",
+            "A plan to approve, approve switching to the permission the agent offers, or send back with a note.",
             card(
                 AskBody::Plan {
                     title: None,
@@ -1805,10 +1809,12 @@ fn cards() -> Vec<CardSet> {
                 },
                 vec![
                     choice(ChoiceOutcome::ApprovePlan {
-                        auto_accept_edits: false,
+                        mode: String::new(),
+                        mode_name: String::new(),
                     }),
                     choice(ChoiceOutcome::ApprovePlan {
-                        auto_accept_edits: true,
+                        mode: "auto".into(),
+                        mode_name: "Auto".into(),
                     }),
                     Choice {
                         takes_note: true,
@@ -1875,7 +1881,8 @@ fn cards() -> Vec<CardSet> {
                     },
                     vec![
                         choice(ChoiceOutcome::ApprovePlan {
-                            auto_accept_edits: false,
+                            mode: String::new(),
+                            mode_name: String::new(),
                         }),
                         Choice {
                             takes_note: true,

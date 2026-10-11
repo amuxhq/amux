@@ -209,8 +209,8 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   (`No`). Where the agent takes a reason with a refusal, Claude's, Tab on `No` adds a note that goes back with it;
   Codex's refusal carries no reason, so its `No` offers no note. A long diff or command is cut,
   with `[Full Diff]` or `[Show All]` (or `f`) opening the whole of it inside the box.
-- **A plan** (`● Plan ready`): `Yes, start building`, `Yes, and accept edits without asking` where the agent
-  offers it, and `No, keep planning`, which takes a note.
+- **A plan** (`● Plan ready`): `Yes, start building`, `Yes, and switch to <permission>` where the agent
+  offers it (Claude's moves to auto mode where Claude offers it, to accept edits otherwise; Codex offers no switch), and `No, keep planning`, which takes a note.
 - **Questions**: one at a time; several get a row of tabs (`‹ Layout   Entry   Review ›`), answered ones ticked,
   and end on a review that lists each answer and sends them all. Options read `label · recommended ·
   description`; several picks are `[ ]` boxes under `Select all that apply`; options with previews show the

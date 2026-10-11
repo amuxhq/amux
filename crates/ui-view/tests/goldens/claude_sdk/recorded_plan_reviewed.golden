@@ -68,7 +68,7 @@
   row   16 toolu_01DCjanY6a1x2v98zG1JDjR9 Ask(Plan { title: Some("Plan: Change README.md line from CURRENT to AUTO"), body: "\n## Context\nREADME.md currently contains a single line with the text \"CURRENT\" that needs to be updated to \"AUTO\".\n\n## Approach\nReplace the only line in README.md from \"CURRENT\" to \"AUTO\".\n\n## Files to modify\n- README.md\n\n## Verification\nAfter the change, README…
 ## 71 recorded 70: fact Stream type=control_request
   ask b2a2422f-2900-421f-9c9a-fb70996fa66a -> "toolu_01DCjanY6a1x2v98zG1JDjR9" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: Some("Plan: Change README.md line from CURRENT to AUTO"), body: "\n## Context\nREADME.md currently contains a single line with the text \"CURRENT\" that needs to be updated to \"AUTO\".\n\n## Approach\nReplace the only line in README.md from \"CURRENT\" to \"AUTO\".\n\n## Files to modify\n- README.md\n\n## Verification\nAfter the change, README.md will contain exactly one line with t…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 72 recorded 71: input stdin-4
@@ -97,7 +97,7 @@
   row   23 toolu_013F4mueVBPPP7wHrHLWsPXk Ask(Plan { title: Some("Plan: Change README.md line from CURRENT to MANUAL"), body: "\n## Context\nREADME.md currently contains a single line with the text \"CURRENT\" that needs to be updated to \"MANUAL\".\n\n## Approach\nReplace the only line in README.md from \"CURRENT\" to \"MANUAL\".\n\n## Files to modify\n- README.md\n\n## Verification\nAfter the change, …
 ## 107 recorded 106: fact Stream type=control_request
   ask 65e11891-9ab8-47e8-8dfb-c6fb4e0c93d4 -> "toolu_013F4mueVBPPP7wHrHLWsPXk" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: Some("Plan: Change README.md line from CURRENT to MANUAL"), body: "\n## Context\nREADME.md currently contains a single line with the text \"CURRENT\" that needs to be updated to \"MANUAL\".\n\n## Approach\nReplace the only line in README.md from \"CURRENT\" to \"MANUAL\".\n\n## Files to modify\n- README.md\n\n## Verification\nAfter the change, README.md will contain exactly one line …
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 109 recorded 108: input stdin-7
@@ -122,7 +122,7 @@
   row   30 toolu_01NCPPUi4hicfkdA8tj6k9wX Ask(Plan { title: Some("Plan: Change README.md line from CURRENT to REVISED"), body: "\n## Context\nREADME.md currently contains a single line with the text \"CURRENT\" that needs to be updated to \"REVISED\".\n\n## Approach\nReplace the only line in README.md from \"CURRENT\" to \"REVISED\".\n\n## Files to modify\n- README.md\n\n## Verification\nAfter the chang…
 ## 145 recorded 144: fact Stream type=control_request
   ask 13c57a10-a040-4199-b868-fb5a22e1c178 -> "toolu_01NCPPUi4hicfkdA8tj6k9wX" 1/1 Open
-    choices ApprovePlan { auto_accept_edits: false }*, ApprovePlan { auto_accept_edits: true }, SendBack+note
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
     body Plan { title: Some("Plan: Change README.md line from CURRENT to REVISED"), body: "\n## Context\nREADME.md currently contains a single line with the text \"CURRENT\" that needs to be updated to \"REVISED\".\n\n## Approach\nReplace the only line in README.md from \"CURRENT\" to \"REVISED\".\n\n## Files to modify\n- README.md\n\n## Verification\nAfter the change, README.md will contain exactly one li…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 146 recorded 145: input stdin-10

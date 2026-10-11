@@ -49,6 +49,15 @@
 //!   agent process reports it before Claude counts as ready. It opens a
 //!   question with its own item, answered through amux or closed by the
 //!   session starting (trusted in the terminal) or Claude exiting.
+//! - A plan ask's switch is the permission the first entry of Claude's own
+//!   plan menu moves to. The agent process reads that menu off the screen
+//!   and reports it, and an open plan ask takes it; before any menu has
+//!   been seen, auto mode where the host's Claude offers it for the
+//!   running model, accept edits otherwise. A switch answered for any other
+//!   permission is refused: the menu's first entry would not do it.
+//! - The permission Claude's footer names, as the agent process reads it
+//!   off the screen, is the permission now: Shift+Tab changes it on screen
+//!   at once, while Claude records it only with the next prompt.
 //!
 //! Terminal Claude offers no list of models, efforts or commands a program
 //! could read, so its snapshot offers none and it takes no model or effort
@@ -142,9 +151,13 @@ pub enum PermissionChoice {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlanChoice {
-    ApproveAutoAcceptEdits,
+    /// The menu's first entry: approve, switching to the permission it
+    /// names.
+    ApproveSwitching,
     Approve,
-    SendBack { note: String },
+    SendBack {
+        note: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -258,6 +271,12 @@ pub(crate) enum AgentFact {
     /// Claude's first screen is its folder-trust dialog; sent before
     /// [`AgentFact::Ready`].
     TrustDialog,
+    /// Claude's footer names this permission. Claude changes it on screen
+    /// at once but records it only with the next prompt.
+    Permission { permission: String },
+    /// Claude drew its plan approval menu, whose first entry starts the
+    /// work switching to this permission.
+    PlanMenu { switch: String },
 }
 
 impl AgentFact {
@@ -292,6 +311,22 @@ pub fn trust_dialog_fact() -> Vec<u8> {
     AgentFact::TrustDialog.encode()
 }
 
+/// The fact that Claude's footer names `permission`.
+pub fn permission_fact(permission: &str) -> Vec<u8> {
+    AgentFact::Permission {
+        permission: permission.to_owned(),
+    }
+    .encode()
+}
+
+/// The fact that Claude's plan menu switches to `switch`.
+pub fn plan_menu_fact(switch: &str) -> Vec<u8> {
+    AgentFact::PlanMenu {
+        switch: switch.to_owned(),
+    }
+    .encode()
+}
+
 /// What the interpreter knows about the Claude process and its session.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 struct Provider {
@@ -310,6 +345,8 @@ struct Provider {
     permission_mode: Option<String>,
     /// Launched allowing the never-ask permission.
     never_ask: bool,
+    /// What the plan menu Claude last drew switches to.
+    plan_switch: Option<String>,
     /// What the host's Claude offers, from the spec: a terminal offers
     /// nothing a program can read.
     #[serde(with = "serde_pb::opt_msg")]
@@ -468,7 +505,10 @@ enum AskShape {
         /// the terminal's menu by.
         suggestions: u32,
     },
-    Plan,
+    /// The permission the ask's switch choice moves to.
+    Plan {
+        switch: String,
+    },
     Question {
         questions: Vec<QuestionShape>,
     },
@@ -830,7 +870,7 @@ impl State {
                 return self.close_ask_item(emit, ask_key, ask_item::dismissed());
             }
             // Read now: the permission Claude is in when the plan closes.
-            Some(AskShape::Plan) => {
+            Some(AskShape::Plan { .. }) => {
                 let permission = self.provider.permission_mode.as_deref();
                 decision.verdict = Some(decision.plan_verdict(permission));
             }
@@ -866,7 +906,7 @@ impl State {
         self.open_ask_keys().into_iter().find(|key| {
             self.asks
                 .get(key)
-                .is_some_and(|meta| meta.shape == AskShape::Plan)
+                .is_some_and(|meta| matches!(meta.shape, AskShape::Plan { .. }))
         })
     }
 
@@ -1413,16 +1453,20 @@ fn terminal_answer(
                 )),
             }
         }
-        (AskShape::Plan, claude_answer::Of::Plan(plan)) => {
+        (AskShape::Plan { switch }, claude_answer::Of::Plan(plan)) => {
             let (choice, verdict) = match wire::PlanChoice::try_from(plan.choice) {
                 Ok(wire::PlanChoice::Start) => (
                     PlanChoice::Approve,
                     Verdict::of(wire::PlanVerdict::Approved),
                 ),
-                Ok(wire::PlanChoice::StartAcceptingEdits) => (
-                    PlanChoice::ApproveAutoAcceptEdits,
-                    Verdict::of(wire::PlanVerdict::ApprovedAcceptingEdits),
-                ),
+                // The menu's first entry switches to what Claude drew it
+                // with; an answer agreeing to another permission is not
+                // what that key would do.
+                Ok(wire::PlanChoice::StartSwitching)
+                    if !switch.is_empty() && plan.permission == *switch =>
+                {
+                    (PlanChoice::ApproveSwitching, Verdict::switching(switch))
+                }
                 Ok(wire::PlanChoice::KeepPlanning) => {
                     let note = plan.note.unwrap_or_default();
                     let verdict = Verdict::sent_back(&note);

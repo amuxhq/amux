@@ -1,3 +1,9 @@
+2026-10-12 — **The C ABI's tests send drafts as parts.** The phone's
+drafts became an ordered list of words and attachments, and the app-ffi
+tests still sent the old `{ "text": … }` shape, which the ABI refuses; they
+send `{ "parts": [{ "Text": … }] }`. The golden manifest test owes the new
+`composer-chips` screen.
+
 2026-10-12 — **The terminal journeys read an ask before answering it.** Since
 keys sent in an ask's first half second go to the draft, the journeys that
 answered an ask the moment it appeared timed out with their answer in the

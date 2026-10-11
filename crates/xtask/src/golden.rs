@@ -1014,6 +1014,7 @@ mod tests {
                 "chat-turn",
                 "claude-sdk-ask-question",
                 "ask-escape",
+                "composer-chips",
                 "origin-rewind"
             ]
         );

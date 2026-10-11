@@ -469,7 +469,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     let keys = take(unsafe { amux_session_keys(chat) });
     let newest = c(keys.as_array().unwrap().last().unwrap().as_str().unwrap());
 
-    let draft = c(&json!({"text": "please run it"}).to_string());
+    let draft = c(&json!({"parts": [{"Text": "please run it"}]}).to_string());
     // SAFETY: the chat is open; the string lives for the call.
     unsafe { amux_session_send(chat, draft.as_ptr(), on_result, phone.context()) };
     let sent = phone.result();
@@ -511,7 +511,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     assert!(take(unsafe { amux_session_new_keys_above(chat, unknown.as_ptr()) }).is_null());
 
     // A question, answered with picks.
-    let draft = c(&json!({"text": "ask me"}).to_string());
+    let draft = c(&json!({"parts": [{"Text": "ask me"}]}).to_string());
     // SAFETY: the chat is open; the string lives for the call.
     unsafe { amux_session_send(chat, draft.as_ptr(), on_result, phone.context()) };
     phone.result();
@@ -633,7 +633,7 @@ fn no_wake_reaches_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
     // With the agent frozen, a send waits on it for seconds, holding the
     // chat past its close.
     net.freeze("worker").unwrap();
-    let draft = c(&json!({"text": "are you there"}).to_string());
+    let draft = c(&json!({"parts": [{"Text": "are you there"}]}).to_string());
     // SAFETY: the chat is open; the string lives for the call.
     unsafe { amux_session_send(chat, draft.as_ptr(), on_result, phone.context()) };
     settle(&closing_woken, closing, chat);

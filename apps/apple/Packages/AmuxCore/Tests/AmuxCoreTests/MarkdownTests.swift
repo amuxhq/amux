@@ -119,4 +119,62 @@ final class MarkdownTests: XCTestCase {
         XCTAssertTrue(MarkdownDocument.parse("just a sentence").isPlainParagraph)
         XCTAssertFalse(MarkdownDocument.parse("# heading\n\ntext").isPlainParagraph)
     }
+
+    // Every line the parser meets must be consumed by some block. A line
+    // that starts like a heading or a table but is neither is still prose;
+    // the chat measures rows on the main thread, so a parse that never
+    // returns freezes the phone.
+
+    /// A plan streams in a few characters at a time, so its next heading is
+    /// at first only its marks: `##` with no title yet.
+    func testAPlanStreamingInIsParsedWhileItsNextHeadingIsHalfWritten() {
+        let parsed = blocksWithin("## Summary\n\nCreate `README.md` with `UPDATED`.\n\n##")
+        guard case .heading(let level, let title) = parsed.first else {
+            return XCTFail("expected the finished heading first, got \(parsed)")
+        }
+        XCTAssertEqual(level, 2)
+        XCTAssertEqual(String(title.characters), "Summary")
+        XCTAssertTrue(parsed.contains {
+            if case .paragraph(let text) = $0 {
+                String(text.characters) == "Create README.md with UPDATED."
+            } else { false }
+        })
+    }
+
+    /// `#42` or `#!/bin/sh` at the start of a line is not a heading: a
+    /// heading's marks are followed by a space.
+    func testAHashWithNoSpaceAfterItStartsAParagraphNotAHeading() {
+        guard case .paragraph(let text) = blocksWithin("#42 is fixed").first else {
+            return XCTFail("expected prose")
+        }
+        XCTAssertEqual(String(text.characters), "#42 is fixed")
+    }
+
+    /// A pipe with no second pipe after it is not a table row.
+    func testAPipeLineThatIsNotATableIsAParagraph() {
+        guard case .paragraph(let text) = blocksWithin("| one cell").first else {
+            return XCTFail("expected prose")
+        }
+        XCTAssertEqual(String(text.characters), "| one cell")
+    }
+
+    /// Parses on a thread of its own and gives it two seconds. A parse that
+    /// does not return cannot be stopped from outside and allocates without
+    /// bound, so rather than let it take the machine's memory while the
+    /// remaining tests run, the process ends here; xcodebuild reports the
+    /// test as crashed with this message and runs the rest in a new process.
+    private func blocksWithin(_ source: String) -> [MarkdownBlock] {
+        final class Parsed: @unchecked Sendable { var blocks: [MarkdownBlock] = [] }
+        let parsed = Parsed()
+        let done = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            parsed.blocks = MarkdownDocument.parse(source).blocks
+            done.signal()
+        }
+        if done.wait(timeout: .now() + 2) == .timedOut {
+            fatalError(
+                "MarkdownDocument.parse(\(source.debugDescription)) did not return within 2 seconds")
+        }
+        return parsed.blocks
+    }
 }

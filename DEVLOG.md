@@ -1,3 +1,12 @@
+2026-10-11 — **Failing tests for the phone freezing on a half-written
+heading.** From the first QA run, where the phone froze while a Codex plan
+streamed in and the simulator's memory passed 20 GiB. The phone's markdown
+parser never consumes a line that starts with `#` but is not a heading
+(`##` before its title arrives, `#42`, a shebang) or that starts with `|`
+but is not a table row; it appends empty paragraphs forever, and the chat
+measures rows on the main thread, so the app hangs. Each test parses on its
+own thread and fails at a two-second deadline.
+
 2026-10-11 — **Failing tests for a lapsed account's relay and for terminal
 Claude's keys and modes.** From the first QA run. A relay link that
 reauthenticates as Free keeps carrying the streams it piped while Pro, so a

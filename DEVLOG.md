@@ -1,3 +1,15 @@
+2026-10-11 — **A QA tester signs amux off for its persona, and uses real agents.**
+In a one-wave run every tester stopped after about 19 minutes while saying it
+had not met its stopping bar, and closed with a list of what it would try
+next. The prompt now has the tester signing amux off as ready to ship for its
+persona, and ground that person would reach but the tester has not tried is a
+risk it chooses to ship. Before ending it lists what it has not covered; what
+it can do is its next task, and it ends only when everything left is
+something it cannot do, each with why. Its closing `ledger done` gives what it
+covered, its verdict for the persona and what it could not do; never what it
+would try next. A new last step has it use at least one real Claude and one
+real Codex agent, which two of four pilot testers had left uncovered.
+
 2026-10-11 — **`ctl tui clip` takes any file name and always puts the
 clipboard back.** An image's path went into the AppleScript that copies it,
 so a name with a quote failed and a crafted one could run a shell command

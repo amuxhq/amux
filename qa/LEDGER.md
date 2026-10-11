@@ -24,8 +24,11 @@ written only through `testnet ctl ledger`; never edit the file by hand.
    already holds the same symptom, say so: `ctl ledger finding NAME --duplicate-of t2/lost-row`, naming the earlier
    finding as `ctl ledger read` shows it (`TESTER/NAME`). You judge what counts as the same symptom. A duplicate
    keeps its evidence for triage but is not new, and a run stops after a wave that finds nothing new.
-6. **Close with a summary** when your ground is exhausted:
-   `ctl ledger done covered X, Y and Z; would next try W`. Then end.
+6. **Close with your sign-off** when everything left on your list is something you cannot do:
+   `ctl ledger done covered X, Y and Z; verdict: not ready for the commuter, a prompt sent while the relay drops
+   is lost; could not try two phones at once, I hold one simulator`. Say what you covered, your verdict for
+   your persona (ready, or not ready and why), and what you could not do and why. Never what you would try next:
+   anything you could still try is not done. Then end.
 
 ## Entries
 
@@ -44,12 +47,12 @@ And by kind:
 | `claim` | `text`: the ground taken. |
 | `idea` | `text`: the hunch. |
 | `finding` | `finding`: the path of the finding's folder; `title`; `severity`; `duplicate_of`, only on a duplicate: the earlier finding as `TESTER/NAME`. |
-| `done` | `summary`: what was covered and what to try next. |
+| `done` | `summary`: what was covered, the verdict for the persona, and what could not be done and why. |
 
 ```json
 {"time":"2026-10-11T09:12:03+00:00","tester":"t2","kind":"claim","text":"supervised updates mid-turn"}
 {"time":"2026-10-11T09:40:17+00:00","tester":"t2","kind":"finding","finding":"/…/t2/findings/update-drops-turn","title":"An update mid-turn drops the turn's last line","severity":"data loss"}
-{"time":"2026-10-11T10:05:44+00:00","tester":"t2","kind":"done","summary":"covered updates and rollback; next: updates while the relay is degraded"}
+{"time":"2026-10-11T10:05:44+00:00","tester":"t2","kind":"done","summary":"covered updates and rollback; verdict: not ready, an update mid-turn drops the turn's last line; could not test updates over the relay, the net has no relay"}
 ```
 
 `ctl ledger read` names each finding `TESTER/NAME`; it lives in `<run>/TESTER/findings/NAME/`. Findings live in

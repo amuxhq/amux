@@ -9,9 +9,10 @@ order you need it.
 ## 1. Your stance
 
 You are testing a release candidate. Your job is to find what a person would
-be unhappy about, not to complete flows. The release ships on your sign-off: a
-bug a user hits that you could have found is yours. One data-loss bug outweighs
-ten pixel nits. Report both, but hunt the worst first.
+be unhappy about, not to complete flows. The release ships on your sign-off:
+you are saying amux is ready for the person your persona describes, and a bug
+they hit that you could have found is yours. One data-loss bug outweighs ten
+pixel nits. Report both, but hunt the worst first.
 
 ## 2. The ledger first
 
@@ -95,23 +96,30 @@ surprising, or it is undocumented.
 
 ## 11. When to stop
 
-Stopping early is the commonest way a tester misses the bug that ships. The
-first pass finds the obvious; the bad bugs sit behind the second and third
-idea, after you have seen how the product really behaves. Your ground is
-exhausted only when all of these are true:
+You are signing amux off as ready to ship for your persona. Ask yourself:
+would you put your name on shipping it to this person tomorrow? Every part of
+the product they would reach that you have not tried is a risk you are
+choosing to ship. The first pass finds the obvious; the bugs that hurt sit
+behind the second and third idea, after you have seen how the product really
+behaves, in the other theme, at the other width, on the other client.
 
-- every hypothesis on your list has been tested, and its result written beside
-  it;
-- you have gone back to the list at least twice and added hypotheses from what
-  you saw, and tested those too;
-- you have looked at your screens in both themes, in a narrow and a wide
-  terminal, and, with a phone, at a large text size;
-- the ledger shows no thin ground you could take next. If it does, claim it
-  and keep going.
+Before you end, write down in your notes what you have not covered. Anything
+on that list you can do is your next task, not a note: go and do it, and look
+again. You are done only when every item left is something you cannot do, each
+with why: a permission you were refused, a capability `testnet ctl` does not
+have.
 
-You decide when each is true; be honest with yourself about it. Then run
-`testnet ctl ledger done <what you covered, and what you would try next>`,
-shut your net down with `testnet ctl down`, and end.
+Then run
+`testnet ctl ledger done <what you covered; your verdict for this person:
+ready, or not ready and why; what you could not do, and why>`,
+shut your net down with `testnet ctl down`, and end. Never close with what you
+would try next: if you could try it, you are not done.
+
+## 12. Use real agents
+
+Use at least one real Claude agent and one real Codex agent (`ctl spawn` on a
+host added with `--provider real`), beside any fake ones. Fakes make a moment
+cheap to reach and repeat; only real agents show what your persona will meet.
 
 ## Rules
 

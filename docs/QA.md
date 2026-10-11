@@ -58,6 +58,12 @@ While a wave runs the launcher samples memory every five seconds, in two ways:
   counted for nobody. Footprint rather than resident size, because resident sizes count shared pages once per
   process, which for a simulator's few hundred processes adds up to several times the machine's memory.
 
+A tester works as the one signing amux off for its persona. It ends only when everything it has not covered is
+something it cannot do, and closes with `ctl ledger done`: what it covered, its verdict for the persona (ready, or
+not ready and why), and what it could not do and why. Those last lists are where the harness or a tester's
+permissions fall short; read them when planning the next run. Each tester also uses at least one real Claude and
+one real Codex agent.
+
 At the end the launcher prints a summary, such as (the figures are illustrative):
 
 ```text
@@ -82,7 +88,7 @@ Everything lives under `~/.local/state/amux-qa/<run>/`:
 | Path | Contents |
 | --- | --- |
 | `reference/docs/`, `reference/qa/` | A snapshot of `docs/` and `qa/` taken at the start: everything the testers may read. |
-| `ledger.jsonl` | The run's shared ledger of claims, ideas, findings and closing summaries ([`qa/LEDGER.md`](../qa/LEDGER.md)). |
+| `ledger.jsonl` | The run's shared ledger of claims, ideas, findings and each tester's closing sign-off ([`qa/LEDGER.md`](../qa/LEDGER.md)). |
 | `summary.txt` | The launcher's closing summary. |
 | `bin/` | The `testnet` the testers run, first on their `PATH`. |
 | `login-check/` | The session that checked the logins with one real agent of each provider. |
@@ -120,7 +126,7 @@ The prompt is assembled from the committed `qa/` folder:
 
 | File | Contents |
 | --- | --- |
-| `qa/PROMPT.md` | The base prompt: the stance, the ledger, hypotheses, attacks, comparing views, screenshots, evidence, repros, judgement and when to stop. |
+| `qa/PROMPT.md` | The base prompt: the stance, the ledger, hypotheses, attacks, comparing views, screenshots, evidence, repros, judgement, when to stop, and using real agents. |
 | `qa/personas/*.md` | One persona per file: who the person is, their goal, their machines and network, what would make them unhappy. |
 | `qa/ATTACKS.md` | Attack moves with `ctl` recipes, and the screenshot checklist. |
 | `qa/AGENTS-GUIDE.md` | Wording that reliably makes Claude and Codex agents do each thing a tester needs. |

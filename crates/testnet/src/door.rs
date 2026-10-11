@@ -963,6 +963,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             let mut items: Vec<Value> = Vec::new();
             let mut phase = Value::Null;
             let mut model = Value::Null;
+            let mut asks = Value::Array(Vec::new());
             for event in events {
                 match &event.of {
                     Some(wire::session_event::Of::Item(item)) => {
@@ -973,18 +974,20 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                             "text": item.text,
                             "input_id": hex(&item.input_id),
                             "attachments": item.attachments.iter().map(attachment).collect::<Vec<_>>(),
+                            "body": item_body(item),
                         }));
                     }
                     Some(wire::session_event::Of::Snapshot(snapshot)) => {
                         phase = json!(snapshot.phase().as_str_name().trim_start_matches("PHASE_"));
 
                         model = json!(running_model(snapshot));
+                        asks = json!(pending_asks(snapshot));
                     }
                     _ => {}
                 }
             }
             items.sort_by_key(|item| item["order"].as_u64());
-            json!({ "items": items, "phase": phase, "model": model })
+            json!({ "items": items, "phase": phase, "model": model, "asks": asks })
         }
         Control::ProviderInput { agent } => json!({ "lines": net.provider_input(&agent)? }),
         Control::Shutdown => unreachable!("the connection handles shutdown"),
@@ -1001,6 +1004,59 @@ fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
         wire::Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.model,
         wire::Kind::Unspecified => None,
     }
+}
+
+/// What an item is, as its per-kind body decodes, shortened: enough to
+/// tell a tool call from an ask's record from a plan when comparing the
+/// host's record with what a client draws.
+fn item_body(item: &wire::Item) -> String {
+    use prost::Message;
+    let body = item.body.as_slice();
+    let text = match wire::Kind::try_from(item.kind) {
+        Ok(wire::Kind::ClaudeSdk) => {
+            wire::ClaudeSdkItem::decode(body).map(|item| format!("{:?}", item.kind))
+        }
+        Ok(wire::Kind::ClaudePty) => {
+            wire::ClaudePtyItem::decode(body).map(|item| format!("{:?}", item.kind))
+        }
+        Ok(wire::Kind::Codex) => {
+            wire::CodexItem::decode(body).map(|item| format!("{:?}", item.kind))
+        }
+        _ => return String::new(),
+    }
+    .unwrap_or_else(|error| format!("undecodable: {error}"));
+    shorten(text, 600)
+}
+
+/// The asks waiting on a person, each as its body decodes.
+fn pending_asks(snapshot: &wire::Snapshot) -> Vec<String> {
+    use prost::Message;
+    let body = snapshot.body.as_slice();
+    let asks: Vec<String> = match wire::Kind::try_from(snapshot.kind) {
+        Ok(wire::Kind::ClaudeSdk) => wire::ClaudeSdkSnapshot::decode(body)
+            .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
+            .unwrap_or_default(),
+        Ok(wire::Kind::ClaudePty) => wire::ClaudePtySnapshot::decode(body)
+            .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
+            .unwrap_or_default(),
+        Ok(wire::Kind::Codex) => wire::CodexSnapshot::decode(body)
+            .map(|snapshot| snapshot.asks.iter().map(|ask| format!("{ask:?}")).collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    asks.into_iter().map(|ask| shorten(ask, 1_200)).collect()
+}
+
+fn shorten(mut text: String, most: usize) -> String {
+    if text.len() > most {
+        let mut cut = most;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        text.truncate(cut);
+        text.push_str(" …");
+    }
+    text
 }
 
 fn hex(bytes: &[u8]) -> String {

@@ -357,6 +357,10 @@ pub struct SpawnArgs {
     /// (`plan` starts Claude planning).
     #[arg(long)]
     pub permission: Option<String>,
+    /// Codex's collaboration mode to start in (`plan` starts Codex
+    /// planning).
+    #[arg(long)]
+    pub mode: Option<String>,
     /// A parent agent, for a family.
     #[arg(long)]
     pub parent: Option<String>,
@@ -660,6 +664,7 @@ fn spawn_agent(folder: &Folder, spawn: SpawnArgs) -> Result<Outcome, String> {
         ("prompt", spawn.prompt),
         ("model", spawn.model),
         ("permission", spawn.permission),
+        ("mode", spawn.mode),
         ("parent", spawn.parent),
         ("cwd", spawn.cwd),
     ] {
@@ -919,6 +924,21 @@ fn describe_chat(chat: &Value) -> String {
                 .unwrap_or_default(),
             text.replace('\n', "\n    ")
         ));
+        if let Some(body) = item["body"].as_str().filter(|body| !body.is_empty()) {
+            out.push_str(&format!("    = {body}\n"));
+        }
+    }
+    let asks: Vec<&str> = chat["asks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if !asks.is_empty() {
+        out.push_str("waiting on you:\n");
+        for ask in asks {
+            out.push_str(&format!("  {ask}\n"));
+        }
     }
     out
 }

@@ -183,6 +183,10 @@ pub struct AgentDecl {
     /// own default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission: Option<String>,
+    /// The collaboration mode a Codex agent starts in ("plan" to start it
+    /// planning); none leaves Codex's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     /// The model it is created on, as a person picks one; none leaves the
     /// provider's own default.
     #[serde(default, skip_serializing_if = "Option::is_none")]

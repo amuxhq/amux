@@ -37,6 +37,10 @@ pub enum PhoneCommand {
     },
     /// Tap the element with this identifier (see `phone query`).
     Tap { id: String },
+    /// Choose the item with this label in the menu that is open: a menu's
+    /// items are drawn by the system and carry no identifier (`phone shot`
+    /// shows them).
+    Choose { label: String },
     /// Type text into the element with this identifier.
     Type {
         text: String,
@@ -181,6 +185,10 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
         }
         PhoneCommand::Tap { id } => request(folder, json!({"kind": "tap", "identifier": id}))
             .map(|reply| Outcome::new(format!("tapped {id}"), reply)),
+        PhoneCommand::Choose { label } => {
+            request(folder, json!({"kind": "choose", "label": label}))
+                .map(|reply| Outcome::new(format!("chose {label}"), reply))
+        }
         PhoneCommand::Type { text, into } => request(
             folder,
             json!({"kind": "type", "identifier": into, "text": text}),

@@ -869,7 +869,7 @@ impl Net {
             name: Some(decl.name.clone()),
             parent,
             cwd,
-            agent: Some(create_config(&decl)),
+            agent: Some(create_config(&decl, provider)),
             initial_prompt: decl
                 .prompt
                 .as_deref()
@@ -1251,6 +1251,7 @@ impl Net {
         let host = self.host(&decl.host)?.clone();
         let script = self.write_script(&decl.name, decl.script.clone().unwrap_or_default())?;
         let id = Uuid::new_v4();
+        let provider = self.provider_of(&decl)?;
         let request = CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
             host: Some(wire::HostRef::named(decl.host.clone())),
@@ -1263,10 +1264,9 @@ impl Net {
                 .cwd
                 .clone()
                 .unwrap_or_else(|| host.work.to_string_lossy().into_owned()),
-            agent: Some(create_config(&decl)),
+            agent: Some(create_config(&decl, provider)),
             ..CreateAgentRequest::default()
         };
-        let provider = self.provider_of(&decl)?;
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
         let tools = self.tools(parent)?;
         let target = self.runtime(&decl.host)?;
@@ -1596,8 +1596,10 @@ impl Net {
             // terminal client starts on the small models; any client may
             // still choose another.
             yaml.push_str(
-                "new_agent:\n  claude: {model: haiku, effort: medium, permission: default}\n  \
-                 codex: {model: gpt-5.6-luna, effort: medium, permission: default}\n",
+                &format!(
+                    "new_agent:\n  claude: {{model: {SMALL_CLAUDE}, effort: medium, permission: default}}\n  \
+                     codex: {{model: {SMALL_CODEX}, effort: medium, permission: default}}\n",
+                ),
             );
         }
         if decl.runs_as_process() {
@@ -3193,22 +3195,44 @@ fn on_branch(host: &str, dir: &Path, branch: &str) -> Result<(), NetError> {
 
 /// The kind an agent is created as, with its provider settings: its
 /// declared permission, nothing else.
-fn create_config(decl: &AgentDecl) -> create_agent_request::Agent {
+fn create_config(decl: &AgentDecl, provider: Provider) -> create_agent_request::Agent {
     use create_agent_request::Agent;
-    let permission = decl.permission.clone();
+    // A real Claude starts asking, as a person's own default on a real
+    // host has it: left unset, Claude would take the operator's own
+    // default permission mode from outside the agent's settings.
+    let permission = decl.permission.clone().or_else(|| {
+        (provider == Provider::Real && decl.kind != FakeKind::Codex).then(|| "default".to_owned())
+    });
+    // A real provider starts on its small model unless told otherwise, as
+    // a person's own defaults on a real host do: the provider's own default
+    // is a large model, and every agent a test makes would run on it. A
+    // fake plays its script's model and ignores this.
+    let model = decl.model.clone().or_else(|| {
+        (provider == Provider::Real).then(|| match decl.kind {
+            FakeKind::Codex => SMALL_CODEX.to_owned(),
+            FakeKind::ClaudePty | FakeKind::ClaudeSdk => SMALL_CLAUDE.to_owned(),
+        })
+    });
     let claude = ClaudeCreateConfig {
         permission: permission.clone(),
+        model: model.clone(),
         ..ClaudeCreateConfig::default()
     };
     match decl.kind {
         FakeKind::Codex => Agent::Codex(CodexCreateConfig {
             permission,
+            model,
+            mode: decl.mode.clone(),
             ..CodexCreateConfig::default()
         }),
         FakeKind::ClaudePty => Agent::ClaudePty(claude),
         FakeKind::ClaudeSdk => Agent::ClaudeSdk(claude),
     }
 }
+
+/// The small models a real host's agents start on.
+const SMALL_CLAUDE: &str = "haiku";
+const SMALL_CODEX: &str = "gpt-5.6-luna";
 
 /// The directory an agent starts in: its host's work directory, a folder
 /// below it named relatively (made when missing), or an absolute path as

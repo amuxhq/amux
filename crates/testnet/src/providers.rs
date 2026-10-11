@@ -134,9 +134,16 @@ pub(crate) fn seed_codex_home(dir: &Path) -> Result<PathBuf, String> {
     let home = dir.join("codex-home");
     std::fs::create_dir_all(&home).map_err(|error| error.to_string())?;
     std::fs::copy(&auth, home.join("auth.json")).map_err(|error| error.to_string())?;
-    // Codex refuses a pristine home before it starts its app server; these
-    // are its local setup markers, nothing of the operator's.
+    // Codex refuses a pristine home before it starts its app server; the
+    // markers are its local setup, nothing of the operator's. The
+    // operator's plugins and connected apps come with the account, not the
+    // home, so the config switches them off: the agent then carries only
+    // amux's tool server and Codex's own built-in skills.
     for (file, text) in [
+        (
+            "config.toml",
+            "[features]\nplugins = false\nremote_plugin = false\napps = false\n".to_owned(),
+        ),
         (".personality_migration", "v1\n".to_owned()),
         (".sandbox_migration", "v1\n".to_owned()),
         ("installation_id", format!("{}\n", uuid::Uuid::new_v4())),
@@ -255,9 +262,13 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
     let codex_setup = codex_home
         .as_deref()
         .map(|home| {
+            // Codex also reads skills from the user's home, outside its
+            // own: a home of its own keeps the operator's out.
+            let user = home.with_file_name("codex-user-home");
             format!(
-                "    export CODEX_HOME={}\n    exec {{probe}} \"$@\"\n",
-                quote(home)
+                "    export CODEX_HOME={}\n    mkdir -p {user}\n    export HOME={user}\n    exec {{probe}} \"$@\"\n",
+                quote(home),
+                user = quote(&user),
             )
         })
         .unwrap_or_default();

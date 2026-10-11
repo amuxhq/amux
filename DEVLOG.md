@@ -1,3 +1,18 @@
+2026-10-11 — **Real agents on a test net start small, ask, and carry nothing of the operator's.**
+Trying real Claude and Codex agents through every way a person creates one
+showed four gaps in the test net's real providers. A spawned agent ignored the
+model it was given and ran on the provider's large default; it now gets the
+model named, or Haiku or `gpt-5.6-luna`. Terminal Claude with no permission
+named took the operator's own default mode, which ran commands without
+asking; a real Claude the net spawns now starts with `default`. Codex read
+the operator's skills from the home directory and the account's plugins and
+connected apps; it now runs with a home of its own and a config switching
+those off, so every agent carries only amux's tool server and built-in
+skills. A Codex agent can be spawned in plan mode (`--mode plan`). The
+host's chat record that `ctl chat` prints now says what each item decodes as
+and which asks wait on a person, and `ctl phone choose` picks an item of an
+open menu, which the phone's model chooser needs.
+
 2026-10-11 — **VoiceOver can choose Claude or Codex on the phone's new agent screen.**
 The two agent cards on the phone's new agent screen were containers of
 their texts with a tap gesture, which is not an action VoiceOver can take:

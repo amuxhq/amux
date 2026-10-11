@@ -95,8 +95,10 @@ pub(super) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let status = match listen {
         Some(at) => {
             let asked = PathBuf::from(&args[at]["unix://".len()..]);
-            // Socket paths are short; the capture directory is.
-            let own = dir.join(format!("{}.sock", std::process::id()));
+            // A Unix socket's path has a short limit (104 bytes on macOS),
+            // which a capture directory deep in a run's folders overruns,
+            // so the server's own socket goes in the temporary directory.
+            let own = std::env::temp_dir().join(format!("codex-probe-{}.sock", std::process::id()));
             args[at] = format!("unix://{}", own.display());
             socket(real, args, &asked, own, recorder).await?
         }

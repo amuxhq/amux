@@ -1,3 +1,10 @@
+2026-10-11 — **The Codex probe's own socket is short wherever it records.**
+The capture proxy in `codex-probe` had Codex's app server listen on a socket
+inside the capture directory. A capture directory deep in a QA run's folders
+makes that path longer than a Unix socket's path may be, so the app server
+never listened and the agent stayed starting. The socket now goes in the
+temporary directory; the recordings stay where they were asked for.
+
 2026-10-11 — **The test release key lives in the release crate.**
 The private half of the release key debug builds trust was copied into two
 test files, and the test network now needs it too, to sign the releases it

@@ -153,6 +153,7 @@ provider's process group at once and writes nothing.
 |---|---|---|
 | `Running`, no daemon connected | The grace timer runs out | The interpreter writes a daemon-lost boundary; `Draining` (daemon lost) |
 | `Running` | `Stop(Graceful)` arrives | `Draining` (graceful) |
+| `Draining` (graceful) | An ask is open (phase needs you): the person who would answer it is the one who stopped the agent, and a draining agent takes no answers | The interpreter cancels the turn the provider's own way, so the ask closes as dismissed and its call as cancelled; still `STOPPED` once the turn ends |
 | `Running` | `Stop(Abort)` arrives | The interpreter cancels the turn the provider's own way; `Draining` (abort) |
 | `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST`, `STOPPED` or `ABORTED` |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
@@ -187,8 +188,13 @@ Process stops come from the daemon: `amux stop <agent> --mode
 graceful|abort|kill` sends the matching frame (graceful by default), and a
 delete sends `Abort`, because a turn allowed to finish into a directory about
 to be removed is work thrown away. If a stopped agent overruns the daemon's
-stop deadline (30 seconds), the daemon falls back to killing the agent
-process's own process group.
+stop deadline (30 seconds), the stop becomes a kill: the daemon sends
+`Stop(Kill)` on the control socket, and if the agent has not exited two
+seconds later, kills the agent process's own process group from outside.
+The process it kills is the one on the other end of the control socket, as
+the operating system names it (`SO_PEERCRED` on Linux, `LOCAL_PEEREPID` on
+macOS, the pipe's server process on Windows), so an agent adopted from an
+earlier daemon is killed as surely as one this daemon started.
 
 The one-shot rule is what having a parent means: there is no flag. An input
 that arrives while such an agent is exiting is answered `REFUSAL_EXITING`,
@@ -341,7 +347,12 @@ stdout instead. It performs the handshake itself, every
 message a `codex_protocol` value: `initialize` (client `amux`, experimental
 API on), `initialized`, then `thread/start`, or `thread/resume` with the
 thread id from `private/provider-session` for a later incarnation, with the
-spec's working directory and model. The thread id the server answers with is written to
+spec's working directory and model. A killed agent's server, told to finish
+by its tether, can take seconds to exit and holds the thread until it does,
+refusing anyone else's resume ("thread … already has an active writer"); the
+agent asks again every quarter of a second for up to 30 seconds before it
+hands the refusal on, and a refusal handed on ends the incarnation with
+Codex's words rather than leave it starting. The thread id the server answers with is written to
 `private/provider-session`. Straight after, the interpreter names the thread
 with the agent's name (`thread/name/set`), and names it again when the agent
 is renamed: the daemon tells a running Codex agent with a `rename` frame, and a

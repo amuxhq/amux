@@ -48,6 +48,12 @@ const CODEX_INITIALIZE: &str = "agent-initialize";
 const CODEX_THREAD: &str = "agent-thread";
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
+/// How long a resume keeps asking for a thread another Codex server still
+/// writes. A killed agent's server is told to finish by its tether, but
+/// Codex can take seconds to exit and holds the thread until it does.
+const CODEX_WRITER_WAIT: Duration = Duration::from_secs(30);
+/// The pause before asking again for a thread another server holds.
+const CODEX_WRITER_RETRY: Duration = Duration::from_millis(250);
 /// How often a followed transcript is read for new rows.
 const TRANSCRIPT_POLL: Duration = Duration::from_millis(25);
 /// The hook events terminal Claude reports to the agent, when the spec's
@@ -336,14 +342,32 @@ impl Provider {
 
         let (initialized, on_initialized) = oneshot::channel();
         let (ended, on_ended) = oneshot::channel::<()>();
+        let (held, mut on_held) = mpsc::unbounded_channel::<()>();
         let lines = events.clone();
+        let writer_wait = tokio::time::Instant::now() + CODEX_WRITER_WAIT;
         let reader = tokio::spawn(async move {
             let mut initialized = Some(initialized);
             while let Some(Some(Ok(line))) = match &mut receiver {
                 Some(receiver) => Some(receiver.next().await),
                 None => None,
             } {
-                let answer = match codex_protocol::decode(&line) {
+                let decoded = codex_protocol::decode(&line);
+                // The previous incarnation's server still writes the thread:
+                // ask again until it lets go, rather than hand the refusal
+                // on, which ends the incarnation.
+                if let Ok(ServerMessage::Response {
+                    id: RequestId::String(id),
+                    result: Err(error),
+                    ..
+                }) = &decoded
+                    && id == CODEX_THREAD
+                    && error.message.contains("active writer")
+                    && tokio::time::Instant::now() < writer_wait
+                    && held.send(()).is_ok()
+                {
+                    continue;
+                }
+                let answer = match decoded {
                     Ok(ServerMessage::Response { id, result, .. }) => Some((id, result.ok())),
                     Ok(ServerMessage::Unknown(unknown)) => unknown.id.map(|id| (id, None)),
                     _ => None,
@@ -454,7 +478,14 @@ impl Provider {
             let start = ClientMessage::request(RequestId::String(CODEX_THREAD.into()), start);
             let initialized = ClientMessage::notification(ClientNotification::Initialized(()));
             let _ = send_codex(&handshake, &codex_protocol::encode(&initialized)).await;
-            let _ = send_codex(&handshake, &codex_protocol::encode(&start)).await;
+            let start = codex_protocol::encode(&start);
+            let _ = send_codex(&handshake, &start).await;
+            while on_held.recv().await.is_some() {
+                tokio::time::sleep(CODEX_WRITER_RETRY).await;
+                if send_codex(&handshake, &start).await.is_err() {
+                    break;
+                }
+            }
         });
 
         Ok(Self {

@@ -64,6 +64,9 @@ const HELLO_PATIENCE: Duration = Duration::from_secs(5);
 /// How long a stop waits after killing the process group before it gives
 /// up on seeing the lock released.
 const KILL_PATIENCE: Duration = Duration::from_secs(5);
+/// How long an agent past its stop deadline has to act on a kill stop sent
+/// over its control socket before its process is killed from outside.
+const KILL_ASK_PATIENCE: Duration = Duration::from_secs(2);
 /// Fully ingested journal segments kept below the cursor, for dumps.
 pub const KEPT_SEGMENTS: usize = 2;
 /// The most journal frames one ingest transaction commits. This is a bound
@@ -310,6 +313,8 @@ struct Connected {
     reader: ReadHalf<LocalStream>,
     writer: WriteHalf<LocalStream>,
     hello: AgentHello,
+    /// The agent process's id, from the socket: whoever started it.
+    peer: Option<u32>,
 }
 
 pub struct ProfileRuntime {
@@ -392,6 +397,10 @@ pub(crate) struct AgentHandle {
     exiting: AtomicBool,
     /// The process id, when this daemon started the process.
     pid: Option<u32>,
+    /// The process id on the other end of the control socket, as the
+    /// operating system names it: known for an agent an earlier daemon
+    /// started too.
+    peer: Mutex<Option<u32>>,
     /// Set at each Hello and cleared when ingest next reaches the end of
     /// the journal, which is when CaughtUp is broadcast: once per Hello.
     caught_up_due: AtomicBool,
@@ -415,6 +424,7 @@ impl AgentHandle {
             exiting: AtomicBool::new(false),
             caught_up_due: AtomicBool::new(false),
             pid,
+            peer: Mutex::new(None),
             running: watch::Sender::new(pid.is_some()),
             exited: watch::Sender::new(false),
             tasks: Mutex::new(Vec::new()),
@@ -1128,13 +1138,29 @@ impl ProfileRuntime {
         let _ = handle.write_ctl(&frame, ms(launch.ctl_write_ms)).await;
         let deadline = launch.stop_deadline_ms;
         if self.wait_exit(&handle, deadline).await.is_err() {
+            // Past the deadline the stop becomes a kill: asked of the agent
+            // first, which kills its provider's group and exits, and only
+            // if it does not, done to its process from outside, as the
+            // process on the other end of its control socket.
             *handle.stopping.lock().unwrap() = Some(StopMode::Kill);
-            if !self.kill(&handle) {
-                return Err(RegistryError::StopTimeout(id));
-            }
-            self.wait_exit(&handle, KILL_PATIENCE.as_millis() as i64)
+            let kill = CtlFrame {
+                of: Some(ctl_frame::Of::Stop(Stop {
+                    mode: StopMode::Kill as i32,
+                })),
+            };
+            let _ = handle.write_ctl(&kill, ms(launch.ctl_write_ms)).await;
+            if self
+                .wait_exit(&handle, KILL_ASK_PATIENCE.as_millis() as i64)
                 .await
-                .map_err(|_| RegistryError::StopTimeout(id))?;
+                .is_err()
+            {
+                if !self.kill(&handle) {
+                    return Err(RegistryError::StopTimeout(id));
+                }
+                self.wait_exit(&handle, KILL_PATIENCE.as_millis() as i64)
+                    .await
+                    .map_err(|_| RegistryError::StopTimeout(id))?;
+            }
         }
         self.agent(id).await
     }
@@ -1649,7 +1675,9 @@ impl ProfileRuntime {
             reader,
             writer,
             hello,
+            peer,
         } = connected;
+        *handle.peer.lock().unwrap() = peer;
         *handle.ctl.lock().await = Some(writer);
         handle.hello.send_replace(Some(hello));
         handle.caught_up_due.store(true, Ordering::SeqCst);
@@ -1910,10 +1938,13 @@ impl ProfileRuntime {
         }
     }
 
-    /// Kills the agent's process group, when this daemon started it and so
-    /// knows it. Returns whether it could.
+    /// Kills the agent's process group: the process this daemon started,
+    /// or the one on the other end of its control socket. Returns whether
+    /// it could.
     fn kill(&self, handle: &AgentHandle) -> bool {
-        let Some(pid) = handle.pid else { return false };
+        let Some(pid) = handle.pid.or(*handle.peer.lock().unwrap()) else {
+            return false;
+        };
         kill_group(pid)
     }
 }
@@ -1966,7 +1997,7 @@ async fn connect(dir: &Path, running: &watch::Sender<bool>) -> Option<Connected>
 }
 
 async fn dial(dir: &Path) -> Option<Connected> {
-    let stream = local_socket::connect(&dir.join(agent_dir::CTL_SOCK))
+    let (stream, peer) = local_socket::connect_to_process(&dir.join(agent_dir::CTL_SOCK))
         .await
         .ok()?;
     let (mut reader, writer) = tokio::io::split(stream);
@@ -1979,6 +2010,7 @@ async fn dial(dir: &Path) -> Option<Connected> {
             reader,
             writer,
             hello,
+            peer,
         }),
         _ => None,
     }
@@ -2032,8 +2064,9 @@ pub(crate) fn kill_group(pid: u32) -> bool {
     let Ok(pid) = libc::pid_t::try_from(pid) else {
         return false;
     };
-    // SAFETY: a plain signal to the process group the agent leads.
-    unsafe { libc::killpg(pid, libc::SIGKILL) == 0 }
+    // SAFETY: plain signals to the process group the agent leads, or to
+    // the process alone when it leads none.
+    unsafe { libc::killpg(pid, libc::SIGKILL) == 0 || libc::kill(pid, libc::SIGKILL) == 0 }
 }
 
 #[cfg(not(unix))]

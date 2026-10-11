@@ -68,6 +68,9 @@ enum Mode {
 enum Drain {
     DaemonLost,
     Graceful,
+    /// A graceful stop whose turn waited on the person: the turn was
+    /// cancelled the provider's own way, and the agent still ends stopped.
+    GracefulCancelled,
     Abort,
 }
 
@@ -75,7 +78,7 @@ impl Drain {
     fn cause(self) -> ExitCause {
         match self {
             Drain::DaemonLost => ExitCause::DaemonLost,
-            Drain::Graceful => ExitCause::Stopped,
+            Drain::Graceful | Drain::GracefulCancelled => ExitCause::Stopped,
             Drain::Abort => ExitCause::Aborted,
         }
     }
@@ -603,6 +606,19 @@ impl<I: Interpreter> Host<I> {
         };
         if let Some(cause) = cause {
             self.exit(cause).await?;
+        } else if phase == Phase::NeedsYou
+            && let Mode::Draining { why, .. } = &mut self.mode
+            && *why == Drain::Graceful
+        {
+            // A graceful stop waits for the turn to end, but a turn waiting
+            // on the person cannot: the person who would answer is the one
+            // who stopped it, and a draining agent takes no answers. Their
+            // stop is their decision not to answer, so the turn is
+            // cancelled the provider's own way (the ask closes as
+            // dismissed, the call as cancelled) and the agent still ends
+            // stopped once it has.
+            *why = Drain::GracefulCancelled;
+            self.feed(Event::StopRequested(StopMode::Abort)).await?;
         }
         Ok(())
     }

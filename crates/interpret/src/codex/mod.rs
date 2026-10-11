@@ -48,10 +48,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
     AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
-    CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, EnvelopeKind,
-    FormAction, Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission,
-    QueuedInput, Refusal, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work,
-    codex_answer, codex_ask, codex_grant, codex_input, codex_item, sender, tool_decision, work,
+    CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction,
+    Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, QueuedInput,
+    Refusal, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work, codex_answer,
+    codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};

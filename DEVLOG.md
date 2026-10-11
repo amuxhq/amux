@@ -1,3 +1,13 @@
+2026-10-11 — **A stop always ends the agent.** A graceful stop under an open
+ask cancels the turn the provider's own way (the ask closes as dismissed, the
+call as cancelled) and ends the incarnation as stopped, where it used to wait
+out the stop deadline and be killed. Past the deadline, the daemon now asks
+the agent to kill itself over its control socket, and only then kills the
+process on the other end of that socket from outside, named by the
+operating system, so an agent adopted from an earlier daemon can be stopped
+and resumed. A Codex resume that finds the old server still holding its
+thread asks again until it lets go, for up to 30 seconds.
+
 2026-10-11 — **Every agent's model reads who a message came from, and a
 refused Codex resume ends the incarnation.** The label Codex already put on
 an agent message (`[agent <name> finished its turn]`, `[agent <name>

@@ -60,6 +60,16 @@ pub async fn connect(path: &Path) -> io::Result<LocalStream> {
     imp::connect(&std::path::absolute(path)?).await
 }
 
+/// Connects to the socket named by `path`, with the id of the process
+/// that answered, as the operating system names it, when it can.
+///
+/// The process on the other end is the one serving the socket, whoever
+/// started it, so a daemon that adopted an agent from an earlier daemon
+/// still knows which process to end when the agent does not answer.
+pub async fn connect_to_process(path: &Path) -> io::Result<(LocalStream, Option<u32>)> {
+    imp::connect_to_process(&std::path::absolute(path)?).await
+}
+
 /// The path a Unix socket named `path` is bound and dialled at: the path
 /// itself, or one through a short link when it is too long.
 #[cfg(unix)]
@@ -121,6 +131,18 @@ mod imp {
 
     pub async fn connect(path: &Path) -> io::Result<LocalStream> {
         Ok(Box::new(UnixStream::connect(address(path)?).await?))
+    }
+
+    /// The peer's pid comes from the socket itself: `SO_PEERCRED` on Linux,
+    /// `LOCAL_PEEREPID` on macOS.
+    pub async fn connect_to_process(path: &Path) -> io::Result<(LocalStream, Option<u32>)> {
+        let stream = UnixStream::connect(address(path)?).await?;
+        let pid = stream
+            .peer_cred()
+            .ok()
+            .and_then(|cred| cred.pid())
+            .and_then(|pid| u32::try_from(pid).ok());
+        Ok((Box::new(stream), pid))
     }
 
     /// The path to bind or dial for the socket named `path`.
@@ -232,7 +254,9 @@ mod imp {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
-    use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};
+    use tokio::net::windows::named_pipe::{
+        ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
+    };
 
     use super::{LocalStream, fnv};
 
@@ -285,13 +309,35 @@ mod imp {
     }
 
     pub async fn connect(path: &Path) -> io::Result<LocalStream> {
+        Ok(Box::new(open(path).await?))
+    }
+
+    /// The peer's pid comes from the pipe: the process that created the
+    /// server end this client opened.
+    pub async fn connect_to_process(path: &Path) -> io::Result<(LocalStream, Option<u32>)> {
+        use std::os::windows::io::AsRawHandle;
+
+        let client = open(path).await?;
+        let mut pid = 0u32;
+        // SAFETY: the handle is the open pipe client's, and `pid` outlives
+        // the call.
+        let known = unsafe {
+            windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId(
+                client.as_raw_handle() as _,
+                &mut pid,
+            )
+        } != 0;
+        Ok((Box::new(client), known.then_some(pid)))
+    }
+
+    async fn open(path: &Path) -> io::Result<NamedPipeClient> {
         let name = match direct(path) {
             Some(name) => name,
             None => std::fs::read_to_string(path)?,
         };
         loop {
             match ClientOptions::new().open(&name) {
-                Ok(client) => return Ok(Box::new(client)),
+                Ok(client) => return Ok(client),
                 Err(error) if error.raw_os_error() == Some(PIPE_BUSY) => {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }

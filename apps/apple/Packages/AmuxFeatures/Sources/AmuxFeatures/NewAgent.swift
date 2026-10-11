@@ -528,8 +528,12 @@ private struct LayerCard: View {
         .contentShape(RoundedRectangle(
             cornerRadius: design.metrics.cardRadius, style: .continuous))
         .onTapGesture(perform: choose)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(chosen ? [.isSelected] : [])
+        // One element that VoiceOver activates: as a container of its
+        // texts, double-tapping the card did nothing, since a tap gesture
+        // is not an action VoiceOver can take.
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { choose() }
         .identified(
             "new-agent.provider.\(provider.rawValue)",
             label: signedOut ? "\(provider.title), not signed in" : provider.title,

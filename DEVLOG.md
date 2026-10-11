@@ -1,3 +1,12 @@
+2026-10-11 — **VoiceOver can choose Claude or Codex on the phone's new agent screen.**
+The two agent cards on the phone's new agent screen were containers of
+their texts with a tap gesture, which is not an action VoiceOver can take:
+double-tapping a card did nothing, so a VoiceOver user could not switch the
+new agent to Codex, and neither could anything driving the app through its
+accessibility, such as the debug door. Each card is now one element with the
+button trait and an activation that chooses it; its label and value are
+unchanged.
+
 2026-10-11 — **A test net can be grown, broken and driven from the shell.**
 `testnet ctl` drives a served net one command at a time from a folder, for a
 person or an agent exploring by hand: `ctl up` starts an empty net there, and

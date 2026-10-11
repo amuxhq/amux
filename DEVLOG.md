@@ -1,3 +1,11 @@
+2026-10-11 — **The QA summary reads a phone tester's result and an unfilled severity
+correctly.** A phone tester's transcript starts and ends with the lease's own
+lines, so the summary said it had no result. An unfilled finding's severity is
+the template comment listing every severity, which counted as data loss. Lines
+that are not JSON are now skipped one by one, the ledger records an unfilled
+severity as empty, and the summary counts only a severity the field starts
+with, otherwise unlabelled.
+
 2026-10-11 — **A tester makes large files with `ctl make-file`.**
 The attachments tester could not make a large file: its shell may only read.
 A permission for `dd` or `mkfile` into its folder cannot be confined, since a

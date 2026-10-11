@@ -228,6 +228,25 @@ fn a_finding_may_name_the_earlier_one_it_duplicates() {
         .status
         .success()
     );
+    // A finding whose severity was never filled in has none, not the
+    // template comment that lists every severity.
+    let unfilled = run.path().join("t3/findings/vague");
+    std::fs::create_dir_all(&unfilled).expect("a finding folder");
+    std::fs::write(
+        unfilled.join("finding.md"),
+        "# Vague\n\n- **Severity:** <!-- one of: data loss, broken flow, wrong state, visual, wording -->\n",
+    )
+    .expect("a finding");
+    let recorded = Command::new(env!("CARGO_BIN_EXE_testnet"))
+        .args(["ctl", "--json", "ledger", "finding", "vague"])
+        .current_dir(run.path().join("t3"))
+        .env("AMUX_QA_RUN", run.path())
+        .env("AMUX_QA_TESTER", "t3")
+        .output()
+        .expect("testnet runs");
+    let entry: serde_json::Value =
+        serde_json::from_slice(&recorded.stdout).expect("the entry as JSON");
+    assert_eq!(entry["severity"], "", "{entry}");
     let read = said(&ledger("t2", &["read"]));
     assert!(
         read.contains("t1/lost-row — A row goes missing\n"),

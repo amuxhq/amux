@@ -220,13 +220,19 @@ class Tester:
     def outcome(self) -> str:
         result = "no result line"
         try:
-            for line in (self.folder / "transcript.jsonl").read_text().splitlines():
+            lines = (self.folder / "transcript.jsonl").read_text().splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            # A phone tester's stream also carries the lease's own lines
+            # (wt and the simulator script), which are not JSON.
+            try:
                 event = json.loads(line)
-                if event.get("type") == "result":
-                    result = (f"{event.get('subtype', '?')}, {event.get('num_turns', '?')} turns, "
-                              f"${event.get('total_cost_usd', 0):.2f}")
-        except (OSError, json.JSONDecodeError):
-            pass
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and event.get("type") == "result":
+                result = (f"{event.get('subtype', '?')}, {event.get('num_turns', '?')} turns, "
+                          f"${event.get('total_cost_usd', 0):.2f}")
         minutes = (time.monotonic() - self.started) / 60
         memory = ""
         if self.peak:
@@ -336,6 +342,15 @@ def count(number: int, noun: str) -> str:
 
 def gib(size: int) -> str:
     return f"{size / 2**30:.1f}"
+
+
+def severity(text: str) -> str:
+    """The severity a finding names, or "unlabelled". An unfilled template
+    still holds its comment listing every severity, so comments are dropped
+    and the field must start with one of them."""
+    text = re.sub(r"<!--.*?(-->|$)", "", text, flags=re.S).strip().lower()
+    return next((name for name in SEVERITIES
+                 if text == name or re.match(rf"{re.escape(name)}\b", text)), "unlabelled")
 
 
 def ledger(run: Path) -> list[dict]:
@@ -461,8 +476,7 @@ def main() -> int:
     new, duplicates = findings(ledger(run))
     by_severity: dict[str, int] = {}
     for entry in new:
-        severity = (entry.get("severity") or "").strip().lower()
-        key = next((name for name in SEVERITIES if name in severity), "unlabelled")
+        key = severity(entry.get("severity") or "")
         by_severity[key] = by_severity.get(key, 0) + 1
     lines = [f"run {run.name}: {count(len(testers), 'tester')} in {count(wave, 'wave')}, "
              f"{count(len(new), 'finding')} and {count(len(duplicates), 'duplicate')}"]

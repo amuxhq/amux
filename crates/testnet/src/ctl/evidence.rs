@@ -449,12 +449,22 @@ pub(crate) fn ledger(folder: &Folder, command: LedgerCommand) -> Result<Outcome,
                 .map(str::trim)
                 .unwrap_or("")
                 .to_owned();
+            // An unfilled template still holds its comment, which lists every
+            // severity; that is no severity at all.
             let severity = finding
                 .lines()
                 .find_map(|line| line.strip_prefix("- **Severity:**"))
-                .map(str::trim)
-                .unwrap_or("")
-                .to_owned();
+                .map(|text| match text.find("<!--") {
+                    Some(start) => {
+                        let end = text[start..]
+                            .find("-->")
+                            .map_or(text.len(), |end| start + end + 3);
+                        format!("{}{}", &text[..start], &text[end..])
+                    }
+                    None => text.to_owned(),
+                })
+                .map(|text| text.trim().to_owned())
+                .unwrap_or_default();
             let mut fields = json!({"finding": dir, "title": title, "severity": severity});
             if let Some(earlier) = duplicate_of {
                 let text = std::fs::read_to_string(ledger_file()?).unwrap_or_default();

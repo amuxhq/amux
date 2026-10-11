@@ -463,6 +463,14 @@ recordings under `providers/`, a relay with no accounts yet, and a discovery sco
 phone app, and removes the net's root; the session log, shots, findings and recordings stay. Every command prints
 readable text; `--json` prints the door's reply instead.
 
+A net's agents outlive a stopped daemon by 20 seconds, where a real installation waits five minutes: long enough to
+ride out a restart, short enough that a failed run's agents go away on their own. A host kept down for longer ends
+every agent on it, and a finished child then reads as having exited while the daemon was away, correctly; `ctl
+status` says so. `host add --lan` brings discovery with it, as a daemon on a real LAN has, unless `--bonjour` puts
+the host on the machine's real mDNS instead; a process host with a LAN listener is announced on the net's
+discovery bus. `restart` waits longer than the net's own wait for the host's LAN port, so a restart that fails says
+what holds the port.
+
 | Group | Commands |
 | --- | --- |
 | The net | `up [TOPOLOGY]`, `down`, `status` |
@@ -483,7 +491,10 @@ Durations take `ms` or `s` (`200ms`, `1.5s`); a rate is bytes a second, with `k`
 otherwise.
 
 **The terminal client** runs as the real `amux` binary against a host's installation config in a tmux pane of the
-folder's own tmux server, at 24-bit colour in the chosen theme. `tui keys` presses each key separately, as tmux names
+folder's own tmux server, at 24-bit colour in the chosen theme. That server reads only the net's own tmux
+configuration (`crates/testnet/src/ctl/tmux.conf`), never the operator's, so keys reach the client the same way on
+every machine: legacy bytes by default and xterm's modifyOtherKeys form to a program that asks for it, as Claude
+Code does in `tui attach`. `tui keys` presses each key separately, as tmux names
 them. `tui shot` captures the pane with its styles, turns it into the frame format the terminal's own report writes
 (`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`). Background colour a
 program paints by clearing to the end of a line is not kept, and the font has no CJK or emoji glyphs. `tui attach`
@@ -497,9 +508,11 @@ pickers are the system's own screens, which nothing outside them drives.
 
 **The phone** is the debug app on the simulator the session holds a lease on (`WT_LEASE_IPHONE`); `ctl` never
 takes a lease itself, so a session that drives the phone runs entirely under one
-(`wt exec <tree> -- scripts/with iphone -- …`). `phone open` installs and launches the app from
-`AMUX_QA_APP`, or the tree's debug build under `target/ios`, browsing the net's discovery scope; later commands
-talk to the app's door. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`;
+(`wt exec <tree> -- scripts/with iphone -- …`). `phone open` copies the app from
+`AMUX_QA_APP`, or the tree's debug build under `target/ios`, into the net's folder, so another session rebuilding
+it cannot break the install, then installs and launches that copy browsing the net's discovery scope; later
+commands talk to the app's door. `phone tap` waits for the app to settle before it answers, so the screen a tap
+opens is there for the next command. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`;
 `phone open --relay` and `phone connect ACCOUNT` reach accounts through the net's relay instead.
 
 **Evidence.** `capture NAME` copies, never moves, everything about the moment into `findings/NAME/`: a

@@ -149,12 +149,25 @@ fn save_panes(folder: &Folder, panes: &BTreeMap<String, Pane>) -> Result<(), Str
     .map_err(|error| error.to_string())
 }
 
+/// The configuration every tmux server ctl starts reads, and only it.
+const TMUX_CONF: &str = include_str!("tmux.conf");
+
 /// tmux on the session's own server, so its panes are apart from anyone's.
 fn tmux(folder: &Folder, args: &[&str]) -> Result<String, String> {
+    // The server reads the net's own configuration rather than the
+    // operator's: keys must reach the client the same way on every machine.
+    let conf = folder.net_dir().join("tmux.conf");
+    if std::fs::read_to_string(&conf).ok().as_deref() != Some(TMUX_CONF) {
+        std::fs::create_dir_all(folder.net_dir()).map_err(|error| error.to_string())?;
+        std::fs::write(&conf, TMUX_CONF)
+            .map_err(|error| format!("writing {}: {error}", conf.display()))?;
+    }
     // A tmux server of this folder's own, named rather than placed: a
     // socket path under a deep folder overruns the length a Unix socket's
     // path may have.
     let output = std::process::Command::new("tmux")
+        .arg("-f")
+        .arg(&conf)
         .arg("-L")
         .arg(format!(
             "testnet-{}",

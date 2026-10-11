@@ -60,6 +60,11 @@ fn a_session_grows_a_net_drives_it_and_keeps_the_evidence() {
     let down = Down(folder);
     ctl(folder, &["host", "add", "desk"]);
     ctl(folder, &["host", "add", "laptop"]);
+    let status = said(&ctl(folder, &["status"]));
+    assert!(
+        status.contains("agents outlive a stopped daemon by 20s"),
+        "the status names the net's agent grace: {status}"
+    );
     assert!(said(&ctl(folder, &["link", "desk", "laptop"])).contains("up"));
     let spawned = said(&ctl(
         folder,
@@ -80,8 +85,12 @@ fn a_session_grows_a_net_drives_it_and_keeps_the_evidence() {
     assert!(chat.contains("hello from the fake"), "{chat}");
 
     // The laptop's terminal client shows the desk's agent once the link
-    // has carried it over.
+    // has carried it over. Its tmux reads the net's own configuration,
+    // whatever the operator's says.
     ctl(folder, &["tui", "open", "laptop"]);
+    let conf = std::fs::read_to_string(folder.join(".testnet/tmux.conf"))
+        .expect("the net's tmux configuration");
+    assert!(conf.contains("extended-keys on"), "{conf}");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
         let screen = said(&ctl(folder, &["tui", "screen", "laptop"]));
@@ -247,6 +256,29 @@ fn a_finding_may_name_the_earlier_one_it_duplicates() {
     let entry: serde_json::Value =
         serde_json::from_slice(&recorded.stdout).expect("the entry as JSON");
     assert_eq!(entry["severity"], "", "{entry}");
+    // One written past the template, with no title or severity line, is
+    // refused rather than listed blank.
+    let shapeless = run.path().join("t4/findings/notes");
+    std::fs::create_dir_all(&shapeless).expect("a finding folder");
+    std::fs::write(
+        shapeless.join("finding.md"),
+        "The row went missing.
+",
+    )
+    .expect("a finding");
+    let refused = Command::new(env!("CARGO_BIN_EXE_testnet"))
+        .args(["ctl", "ledger", "finding", "notes"])
+        .current_dir(run.path().join("t4"))
+        .env("AMUX_QA_RUN", run.path())
+        .env("AMUX_QA_TESTER", "t4")
+        .output()
+        .expect("testnet runs");
+    assert!(!refused.status.success(), "a shapeless finding is refused");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("`# title` line"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
     let read = said(&ledger("t2", &["read"]));
     assert!(
         read.contains("t1/lost-row — A row goes missing\n"),

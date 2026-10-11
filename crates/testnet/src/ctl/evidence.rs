@@ -449,6 +449,20 @@ pub(crate) fn ledger(folder: &Folder, command: LedgerCommand) -> Result<Outcome,
                 .map(str::trim)
                 .unwrap_or("")
                 .to_owned();
+            // The ledger lists a finding by its title and counts it by its
+            // severity; one written past the template's shape would be
+            // listed blank and counted as unlabelled.
+            if title.is_empty()
+                || !finding
+                    .lines()
+                    .any(|line| line.starts_with("- **Severity:**"))
+            {
+                return Err(format!(
+                    "{} must keep the template's shape: a `# title` line and a \
+                     `- **Severity:**` line",
+                    dir.join("finding.md").display()
+                ));
+            }
             // An unfilled template still holds its comment, which lists every
             // severity; that is no severity at all.
             let severity = finding

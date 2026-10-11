@@ -59,6 +59,10 @@ pub enum Command {
     /// recordings stay.
     Down,
     /// The hosts, agents and links as they stand.
+    ///
+    /// A net's agents outlive a stopped daemon by 20 seconds (a real
+    /// installation waits five minutes): a host down for longer ends every
+    /// agent on it.
     Status,
     /// Add or remove a host.
     #[command(subcommand)]
@@ -107,7 +111,8 @@ pub enum Command {
     /// Its agents keep running.
     Stop { host: String },
     /// Start a stopped or killed daemon again (killing it first when it is
-    /// up, on a host in the net's process).
+    /// up, on a host in the net's process). Waits as long as the net does
+    /// for the host's LAN port, so a failure says what holds it.
     Restart { host: String },
     /// Stop an agent's process where it stands, as an overloaded machine
     /// would: it holds its lock and connection and answers nothing.
@@ -215,10 +220,10 @@ pub enum Command {
 pub enum HostCommand {
     /// Add a host and start it.
     ///
-    /// --lan gives it a LAN listener (needed to pair, and for the phone);
-    /// --discovery lets it find and be found by the net's other hosts by
-    /// name; --bonjour advertises it on the machine's real mDNS so the
-    /// phone finds it (needs --lan, not --discovery). --process runs it as
+    /// --lan gives it a LAN listener (needed to pair, and for the phone)
+    /// and, as on a real LAN, lets it find and be found by the net's other
+    /// hosts by name; --discovery asks for that alone; --bonjour advertises
+    /// it on the machine's real mDNS instead, so the phone finds it. --process runs it as
     /// a real `amux daemon` process; --supervised under `amux supervise`,
     /// taking updates from `release publish`. --provider real makes every
     /// agent created on it, from any client, the real Claude or Codex.
@@ -231,7 +236,9 @@ pub enum HostCommand {
 pub struct HostArgs {
     /// The host's name: letters, digits and '-'.
     pub name: String,
-    /// A LAN listener, which pairing, real links and the phone need.
+    /// A LAN listener, which pairing, real links and the phone need. It
+    /// brings discovery with it, as a daemon on a real LAN has, unless
+    /// --bonjour puts it on the machine's real mDNS instead.
     #[arg(long)]
     pub lan: bool,
     /// Find and be found by the net's other hosts by name. A process host
@@ -519,7 +526,7 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
             let mut decl = json!({
                 "name": host.name,
                 "lan": host.lan,
-                "discovery": host.discovery,
+                "discovery": host.discovery || (host.lan && !host.bonjour),
                 "bonjour": host.bonjour,
                 "process": host.process,
                 "supervised": host.supervised,
@@ -570,7 +577,10 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
         )?),
         Command::Kill { host } => ack(folder.call(json!({"KillDaemon": {"host": host}}))?),
         Command::Stop { host } => ack(folder.call(json!({"StopDaemon": {"host": host}}))?),
-        Command::Restart { host } => ack(folder.call(json!({"RestartDaemon": {"host": host}}))?),
+        Command::Restart { host } => ack(folder.call_within(
+            json!({"RestartDaemon": {"host": host}}),
+            RESTART_PATIENCE,
+        )?),
         Command::Freeze { agent } => ack(folder.call(json!({"Freeze": {"agent": agent}}))?),
         Command::Thaw { agent } => ack(folder.call(json!({"Thaw": {"agent": agent}}))?),
         Command::SignIn { host, account } => {
@@ -803,6 +813,11 @@ fn describe_status(status: &Value) -> String {
     if let Some(scope) = status["topology"]["scope"].as_str() {
         out.push_str(&format!("discovery scope {scope:?}\n"));
     }
+    out.push_str(&format!(
+        "agents outlive a stopped daemon by {}s (a real installation: 5 min); a host down \
+         longer ends every agent on it\n",
+        crate::net::AGENT_GRACE_SECS
+    ));
     out.push_str("hosts:\n");
     for host in status["hosts"].as_array().into_iter().flatten() {
         let mut traits = Vec::new();
@@ -985,3 +1000,9 @@ fn describe_chat(chat: &Value) -> String {
 /// How long a command waits for the door by default; the long ones (a
 /// spawn on a real provider, a wait) give their own.
 pub(crate) const DOOR_PATIENCE: Duration = Duration::from_secs(120);
+
+/// How long `ctl restart` waits: longer than the net's own wait for the
+/// host's LAN port, so a restart that fails is told in the net's words
+/// (what holds the port) rather than as a silent door.
+const RESTART_PATIENCE: Duration =
+    Duration::from_secs(crate::net::LAN_PORT_PATIENCE.as_secs() + DOOR_PATIENCE.as_secs());

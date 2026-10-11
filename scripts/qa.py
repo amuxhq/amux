@@ -245,22 +245,15 @@ class Tester:
             ctl(self.folder, dict(env, AMUX_QA_TESTER=self.name), "down", timeout=180)
 
     def outcome(self) -> str:
-        result = "no result line"
         try:
             lines = (self.folder / "transcript.jsonl").read_text().splitlines()
         except OSError:
             lines = []
-        for line in lines:
-            # A phone tester's stream also carries the lease's own lines
-            # (wt and the simulator script), which are not JSON.
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict) and event.get("type") == "result":
-                result = (f"{event.get('subtype', '?')}, {event.get('num_turns', '?')} turns, "
-                          f"${event.get('total_cost_usd', 0):.2f}")
-        minutes = ((self.ended or time.monotonic()) - self.started) / 60
+        result, session_ms = results(lines)
+        if session_ms is not None:
+            minutes = session_ms / 60_000
+        else:
+            minutes = ((self.ended or time.monotonic()) - self.started) / 60
         memory = ""
         if self.peak:
             parts = ", ".join(f"{name} {gib(size)}" for name, size in self.peak.items() if name != "total")
@@ -269,6 +262,34 @@ class Tester:
                 memory += ", simulator not attributed: the phone never opened"
         return (f"{self.name} ({self.persona.stem}{', phone' if self.phone else ''}): "
                 f"{result}, {minutes:.0f} min{memory}")
+
+
+def results(lines: list[str]) -> tuple[str, float | None]:
+    """A tester's result in words, and how long its session ran until its
+    closing summary, from its transcript.
+
+    A tester can be woken again after its closing summary, by a background
+    task's notification, and each wake ends in a result of its own: the
+    turns and cost are the sum of every result, and the session's length is
+    the first's, so time spent idle after the summary is not counted."""
+    found = []
+    for line in lines:
+        # A phone tester's stream also carries the lease's own lines (wt and
+        # the simulator script), which are not JSON.
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            found.append(event)
+    if not found:
+        return "no result line", None
+    turns = sum(event.get("num_turns") or 0 for event in found)
+    cost = sum(event.get("total_cost_usd") or 0 for event in found)
+    wakes = f" over {len(found)} wakes" if len(found) > 1 else ""
+    duration = found[0].get("duration_ms")
+    return (f"{found[0].get('subtype', '?')}, {turns} turns, ${cost:.2f}{wakes}",
+            float(duration) if isinstance(duration, (int, float)) else None)
 
 
 def memory_in_use() -> int:

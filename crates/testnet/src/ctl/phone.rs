@@ -35,7 +35,8 @@ pub enum PhoneCommand {
         #[arg(long)]
         relay: bool,
     },
-    /// Tap the element with this identifier (see `phone query`).
+    /// Tap the element with this identifier (see `phone query`), and wait
+    /// for the app to settle.
     Tap { id: String },
     /// Choose the item with this label in the menu that is open: a menu's
     /// items are drawn by the system and carry no identifier (`phone shot`
@@ -232,8 +233,13 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
             }
             Ok(outcome)
         }
-        PhoneCommand::Tap { id } => request(folder, json!({"kind": "tap", "identifier": id}))
-            .map(|reply| Outcome::new(format!("tapped {id}"), reply)),
+        // A tap answers once the app took it, which can be before the
+        // screen it opens is there: settle, so the next command finds it.
+        PhoneCommand::Tap { id } => {
+            let reply = request(folder, json!({"kind": "tap", "identifier": id}))?;
+            request(folder, json!({"kind": "settle"}))?;
+            Ok(Outcome::new(format!("tapped {id}"), reply))
+        }
         PhoneCommand::Choose { label } => {
             request(folder, json!({"kind": "choose", "label": label}))
                 .map(|reply| Outcome::new(format!("chose {label}"), reply))
@@ -323,6 +329,9 @@ fn open(folder: &Folder, relay: bool) -> Result<Outcome, String> {
     let _ = simctl(&["boot", &udid]);
     simctl(&["bootstatus", &udid, "-b"])?;
     let _ = simctl(&["terminate", &udid, BUNDLE_ID]);
+    // Installed from the net's own copy: the build folder is shared, and
+    // another session rebuilding the app there mid-install breaks it.
+    let app = own_copy(folder, &app)?;
     simctl(&["install", &udid, app.to_string_lossy().as_ref()])?;
     let container = PathBuf::from(
         simctl(&["get_app_container", &udid, BUNDLE_ID, "data"])?
@@ -542,6 +551,29 @@ fn dumps_in(dir: &Path) -> Vec<PathBuf> {
                 .is_some_and(|name| name.to_string_lossy().starts_with("dump-"))
         })
         .collect()
+}
+
+/// A copy of the app in the net's folder, made afresh at each open.
+fn own_copy(folder: &Folder, app: &Path) -> Result<PathBuf, String> {
+    let copy = folder.net_dir().join("app").join("Amux.app");
+    if copy.exists() {
+        std::fs::remove_dir_all(&copy)
+            .map_err(|error| format!("clearing {}: {error}", copy.display()))?;
+    }
+    std::fs::create_dir_all(folder.net_dir().join("app")).map_err(|error| error.to_string())?;
+    // ditto keeps the bundle whole: its links, modes and signature.
+    let status = std::process::Command::new("ditto")
+        .arg(app)
+        .arg(&copy)
+        .status()
+        .map_err(|error| format!("running ditto: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "copying {} into the net's folder failed",
+            app.display()
+        ));
+    }
+    Ok(copy)
 }
 
 pub(crate) fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {

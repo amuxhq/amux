@@ -112,7 +112,13 @@ pub const REAL_PATIENCE: Duration = Duration::from_secs(240);
 
 /// How long a restart waits for its host's LAN port: past the two minutes
 /// a client's idle connection to the dead listener may last.
-const LAN_PORT_PATIENCE: Duration = Duration::from_secs(150);
+pub(crate) const LAN_PORT_PATIENCE: Duration = Duration::from_secs(150);
+
+/// How long a net's agents outlive their daemon: long enough to ride out a
+/// daemon restart, short enough that an agent a failed run leaves behind
+/// goes away on its own. A host down for longer ends every agent on it,
+/// where a real installation waits five minutes.
+pub(crate) const AGENT_GRACE_SECS: u64 = 20;
 
 /// A verb's acknowledgement: what was installed, at what policy time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1507,9 +1513,7 @@ impl Net {
                 );
             }
         }
-        // Long enough to ride out a daemon restart, short enough that an
-        // agent a failed run leaves behind goes away on its own.
-        launch.agent.grace_secs = 20;
+        launch.agent.grace_secs = AGENT_GRACE_SECS;
         launch.agent.drain_secs = 5;
         if let Some(mib) = self.facts_ring_mib {
             launch.agent.facts_ring_mib = mib;
@@ -1686,7 +1690,7 @@ impl Net {
                 .unwrap_or_else(|| self.topology.scope.clone());
             yaml.push_str(&format!(
                 "keep_awake: off\ntelemetry: off\nsupervisor: {}\nupdates: manual\n\
-                 releases_url: {}\ndiscovery:\n  scope: {scope:?}\nagent:\n  grace_secs: 20\n  drain_secs: 5\n",
+                 releases_url: {}\ndiscovery:\n  scope: {scope:?}\nagent:\n  grace_secs: {AGENT_GRACE_SECS}\n  drain_secs: 5\n",
                 if decl.supervised { "on" } else { "off" },
                 self.feed_url(),
             ));
@@ -2164,24 +2168,22 @@ impl Net {
         }))
     }
 
-    /// Announces a process host with discovery on the net's discovery bus,
-    /// as its own daemon would if it could reach the bus: the bus lives in
-    /// the net's process, and the daemon in its own. The hosts in the net's
-    /// process that browse the bus then find it, pair with it by name, and
-    /// dial it again after it restarts, which a direct link only does to a
-    /// peer discovery still finds.
+    /// Announces a process host with a LAN listener on the net's discovery
+    /// bus, as its own daemon would if it could reach the bus: the bus lives
+    /// in the net's process, and the daemon in its own. A daemon on a real
+    /// LAN advertises whenever it listens, so this does not wait for the
+    /// host to be declared with discovery; the hosts in the net's process
+    /// that browse the bus then find it, pair with it by name, and dial it
+    /// again after it restarts.
     fn advertise_process(&self, name: &str) {
         let Some(host) = self.hosts.get(name) else {
             return;
         };
-        if host.process.is_none() || !host.decl.discovery || !host.decl.lan {
+        if host.process.is_none() || !host.decl.lan {
             return;
         }
         let Ok(port) = self.lan_port(name) else {
-            tracing::warn!(
-                host = name,
-                "a process host with discovery has no LAN port to announce"
-            );
+            tracing::warn!(host = name, "a process host has no LAN port to announce");
             return;
         };
         self.bus.announce(node::discovery::Advertisement {
@@ -2202,7 +2204,7 @@ impl Net {
     fn withdraw_process(&self, name: &str) {
         if let Some(host) = self.hosts.get(name)
             && host.process.is_some()
-            && host.decl.discovery
+            && host.decl.lan
         {
             self.bus.withdraw_host(host.info.host_id);
         }

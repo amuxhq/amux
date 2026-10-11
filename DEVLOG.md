@@ -1,3 +1,17 @@
+2026-10-11 — **testnet ctl and the QA launcher fixed where the first run
+tripped on them.** `host add --lan` brings discovery with it unless
+`--bonjour` is asked for, and a process host with a LAN listener is announced
+on the net's discovery bus, so QA nets relink after a restart as a real LAN
+does. `ctl restart` waits longer than the net's own wait for the LAN port, so
+a failed restart says what holds the port. The terminal client's tmux reads
+only a committed configuration, with extended keys on, so key encoding no
+longer depends on the operator's tmux.conf. `phone tap` settles before it
+answers, and `phone open` installs from a copy of the app in the net's folder.
+`ctl status` and docs/TESTNET.md name the net's 20-second agent grace. The
+launcher sums every result a tester's session reported and ends its minutes
+at the closing summary, and `ledger finding` refuses a finding.md without a
+title or severity line.
+
 2026-10-11 — **Paired hosts dial each other again without discovery.** A host
 redialled a peer only while discovery listed it, after a link ended asked
 discovery again and nothing else, and dialled a stored address only when its

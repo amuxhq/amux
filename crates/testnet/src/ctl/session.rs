@@ -81,6 +81,11 @@ impl Folder {
         door::call(self.record()?.control, &request, super::DOOR_PATIENCE)
     }
 
+    /// One door request with the patience it needs.
+    pub(crate) fn call_within(&self, request: Value, patience: Duration) -> Result<Value, String> {
+        door::call(self.record()?.control, &request, patience)
+    }
+
     /// One door request that may take as long as a real provider does.
     pub(crate) fn call_long(&self, request: Value) -> Result<Value, String> {
         door::call(self.record()?.control, &request, Duration::from_secs(600))

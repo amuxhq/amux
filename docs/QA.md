@@ -45,7 +45,8 @@ Each wave starts its testers at once. A tester with a phone runs entirely inside
 next starts with fresh personas; the run stops when a whole wave adds no new finding, when `--waves` is reached,
 or on Ctrl-C, which stops every tester and shuts every net down. A finding its tester recorded as a duplicate of
 an earlier one (`ctl ledger finding NAME --duplicate-of TESTER/NAME`) keeps its evidence but is not new, so a wave
-of duplicates ends the run.
+of duplicates ends the run. `ledger finding` refuses a `finding.md` that has lost the template's `# title` line or
+its `- **Severity:**` line, which the summary lists and counts it by.
 
 While a wave runs the launcher samples memory every five seconds, in two ways:
 
@@ -85,6 +86,10 @@ t2 (families): success, 45 turns, $0.41, 6 min; peak 1.2 GiB (session 0.3, net 0
 …
 run folder: /Users/…/.local/state/amux-qa/20261012-091500
 ```
+
+A tester's turns and cost add up every result its session reported, since a background task's notification can wake
+it again after its closing summary ("over 2 wakes"); its minutes run to that closing summary, not to when the
+launcher noticed it had ended.
 
 ## What a run leaves behind
 

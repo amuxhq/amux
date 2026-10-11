@@ -174,6 +174,7 @@ class Tester:
         self.tree = tree
         self.process: subprocess.Popen | None = None
         self.started = 0.0
+        self.ended: float | None = None
         self.udid: str | None = None
         # The largest total seen, with its parts at that moment.
         self.peak: dict[str, int] = {}
@@ -208,12 +209,36 @@ class Tester:
         self.process.stdin.close()
         say(f"{self.name} started as {self.persona.stem}{' with a phone' if self.phone else ''}")
 
-    def stop(self) -> None:
-        if self.process and self.process.poll() is None:
-            try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
+    def stop(self) -> list[int]:
+        """Ends the tester's whole process tree and returns what is left of
+        it. A phone tester's Claude runs under `wt exec` and the simulator
+        script, which start their own process groups, so its group alone
+        would leave the session running."""
+        if self.process is None:
+            return []
+        tree = process_tree(self.process.pid)
+        for sig, patience in ((signal.SIGTERM, 10.0), (signal.SIGKILL, 5.0)):
+            for pid in tree:
+                try:
+                    os.kill(pid, sig)
+                except ProcessLookupError:
+                    pass
+            deadline = time.monotonic() + patience
+            while time.monotonic() < deadline:
+                self.process.poll()
+                tree = [pid for pid in tree if alive(pid)]
+                if not tree:
+                    return []
+                time.sleep(0.2)
+        return tree
+
+    def finished(self) -> bool:
+        """Whether the tester has ended, noting when it first did."""
+        if self.process is None or self.process.poll() is None:
+            return False
+        if self.ended is None:
+            self.ended = time.monotonic()
+        return True
 
     def shut_net(self, env: dict[str, str]) -> None:
         if (self.folder / ".testnet" / "net.json").exists():
@@ -235,7 +260,7 @@ class Tester:
             if isinstance(event, dict) and event.get("type") == "result":
                 result = (f"{event.get('subtype', '?')}, {event.get('num_turns', '?')} turns, "
                           f"${event.get('total_cost_usd', 0):.2f}")
-        minutes = (time.monotonic() - self.started) / 60
+        minutes = ((self.ended or time.monotonic()) - self.started) / 60
         memory = ""
         if self.peak:
             parts = ", ".join(f"{name} {gib(size)}" for name, size in self.peak.items() if name != "total")
@@ -297,6 +322,43 @@ def processes() -> dict[int, tuple[int, int, str]]:
             pid, parent = int(parts[0]), int(parts[1])
             table[pid] = (parent, footprint.get(pid, 0), parts[2] if len(parts) > 2 else "")
     return table
+
+
+def process_tree(root: int) -> list[int]:
+    """`root` and every process below it, by parent links."""
+    try:
+        listed = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True,
+                                check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return [root]
+    children: dict[int, list[int]] = {}
+    for line in listed.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    tree, queue = [], [root]
+    while queue:
+        pid = queue.pop()
+        if pid not in tree:
+            tree.append(pid)
+            queue.extend(children.get(pid, []))
+    return tree
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    # A child that has exited but not been reaped still answers; it is gone.
+    try:
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True,
+                               text=True).stdout.strip()
+    except OSError:
+        return True
+    return bool(state) and not state.startswith("Z")
 
 
 def descendants(table: dict[int, tuple[int, int, str]], roots: set[int]) -> set[int]:
@@ -436,7 +498,9 @@ def main() -> int:
         stopping.set()
         say("stopping every tester")
         for tester in testers:
-            tester.stop()
+            left = tester.stop()
+            if left:
+                say(f"{tester.name}: processes {left} would not end; kill them by hand")
 
     signal.signal(signal.SIGINT, interrupt)
     signal.signal(signal.SIGTERM, interrupt)
@@ -454,7 +518,7 @@ def main() -> int:
             current.append(tester)
             tester.start(env)
         peak = baseline
-        while any(t.process and t.process.poll() is None for t in current):
+        while not all([t.finished() for t in current]):  # every one, to note each end
             peak = max(peak, memory_in_use())
             table = processes()
             for tester in current:

@@ -1,3 +1,10 @@
+2026-10-11 — **Ctrl-C ends a phone tester, and each tester reports its own
+duration.** `wt exec` starts a phone tester's command in a process group of
+its own, so stopping the launcher's group left the tester's Claude running.
+Stopping now ends the tester's whole process tree and reports anything that
+survives. The summary gave every tester the wave's length; each now reports
+how long it ran.
+
 2026-10-11 — **QA testers use real agents only and keep going past a refused
 command.** A tester stands in for a person, who only meets real agents: in a
 QA run `ctl host add` starts real providers and `ctl` refuses fakes, the

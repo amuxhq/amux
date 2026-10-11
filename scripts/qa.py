@@ -183,7 +183,10 @@ class Tester:
         if self.phone:
             # The lease is held for the tester's whole life, so every
             # `ctl phone` it runs uses the one simulator it was given.
-            command = ["wt", "exec", self.tree, "--", str(ROOT / "scripts" / "with"), "iphone", "--", *command]
+            # `wt exec` runs in the tree's root; the tester goes back to its
+            # own folder, outside the repository, before it starts.
+            command = ["wt", "exec", self.tree, "--", str(ROOT / "scripts" / "with"), "iphone", "--",
+                       "sh", "-c", 'cd "$0" && exec "$@"', str(self.folder), *command]
         self.started = time.monotonic()
         self.process = subprocess.Popen(
             command, cwd=self.folder, env=env, stdin=subprocess.PIPE,

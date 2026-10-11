@@ -611,7 +611,7 @@ mod tests {
     /// sent.
     #[test]
     fn every_attachment_comes_back_from_the_wire_as_it_was_sent() {
-        let sent = vec![
+        let sent = [
             DraftAttachment::Image(blob("photo")),
             DraftAttachment::File(blob("notes")),
             DraftAttachment::Text {

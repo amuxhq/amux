@@ -1,3 +1,11 @@
+2026-10-12 — **The terminal journeys read an ask before answering it.** Since
+keys sent in an ask's first half second go to the draft, the journeys that
+answered an ask the moment it appeared timed out with their answer in the
+draft. The driver now waits out that window after an ask first shows, as a
+person reading it does. The terminal goldens are re-recorded for the home
+focus marker, the plan's "switch to" choice and the new-agent edge that
+shortens its folder before dropping settings.
+
 2026-10-12 — **An attachment chip reads out as one phrase.** Drawing a
 chip's name and size as separate texts, so the size never cuts the name,
 had VoiceOver read a sent message's chips in pieces ("Pasted text, · 12

@@ -33,6 +33,8 @@ OUTPUT = ROOT / "target/journeys"
 GOLDENS = ROOT / "journeys/goldens/terminal"
 COLS = 110
 ROWS = 34
+# The terminal client's ask arming window, ASK_ARMS_MS, with a margin.
+ASK_ARMS = 0.6
 
 
 class DoorError(RuntimeError):
@@ -521,6 +523,16 @@ class TerminalJourney:
 
     def wait_terms(self, pane: str, *terms: str, timeout: float = 60.0) -> str:
         return self.wait(pane, lambda frame: all(t in frame for t in terms), repr(terms), timeout)
+
+    def read_ask(self, pane: str, *terms: str, timeout: float = 60.0) -> str:
+        """Waits for an ask showing `terms`, then for as long as a person
+        takes to read it: for half a second after an ask is first drawn the
+        terminal client sends keys to the draft (ASK_ARMS_MS in
+        crates/tui/src/chat/mod.rs), so a key sent at once would not answer."""
+        frame = self.wait_terms(pane, *terms, timeout=timeout)
+        time.sleep(ASK_ARMS)
+        self.actions.append(f"{pane}: read the ask")
+        return frame
 
     def keys(self, pane: str, *keys: str) -> None:
         for key in keys:

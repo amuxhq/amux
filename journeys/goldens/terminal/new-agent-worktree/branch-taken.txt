@@ -29,6 +29,6 @@
 
   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ › Redesign it again.                                                                                   │
-  ╰─── site-redesign │ Claude │ /tmp/journey/aj-xxxxxxxx/net/desk/repositories/site · new worktree │ desk ─╯
+  ╰─── site-redesign │ Claude · Fable 5 · ask │ /tmp/journey/aj-x…xxxxxxxxxxxx/site · new worktree │ desk ─╯
 
   enter start   ctrl+s settings   shift+tab permission   esc back

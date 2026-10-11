@@ -1,0 +1,52 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
+  row    1 boundary:1 Boundary { kind: Started, cause: "" }
+## 4 input {"id":"p1","prompt":{"text":"plan the README change"}}
+  composer Send activity=Some(Working) queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("plan the README change")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+## 5 fact {"channel":"transcript","json":{"message":{"content":"plan the README change","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
+  row    2 u1 Prompt { text: [Text("plan the README change")], steered: false }
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 6 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t1"}}
+  row    3 t1 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
+  composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
+## 7 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
+  ask ask:1 -> "t1" 1/1 Open
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "Accept edits" }, SendBack+note
+    body Plan { title: None, body: "\n- Edit README.md" }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 8 input {"answer":{"answer":{"approve_plan":{"switch_to":"acceptEdits"}},"ask":"ask:1"},"id":"a0"}
+  row    3 t1 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
+  ask none
+  composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
+## 9 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode","tool_use_id":"t2"}}
+  row    4 t2 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
+  composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
+## 11 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_mode":"plan","session_id":"s1","tool_input":{"plan":"# Plan\n\n- Edit README.md"},"tool_name":"ExitPlanMode"}}
+  ask ask:2 -> "t2" 1/1 Open
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "auto", mode_name: "Auto" }, SendBack+note
+    body Plan { title: None, body: "\n- Edit README.md" }
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 12 input {"answer":{"answer":{"approve_plan":{"switch_to":"acceptEdits"}},"ask":"ask:2"},"id":"a1"}
+  ask ask:2 -> "t2" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
+    choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "auto", mode_name: "Auto" }, SendBack+note
+    body Plan { title: None, body: "\n- Edit README.md" }
+## 13 input {"answer":{"answer":{"approve_plan":{"switch_to":"auto"}},"ask":"ask:2"},"id":"a2"}
+  row    4 t2 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedSwitching, mode: "auto", mode_name: "Auto", note: None, writing: false })
+  ask none
+  composer Send activity=Some(Running { key: "t2" }) queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Boundary { kind: Started, cause: "" }
+     2 u1 Prompt { text: [Text("plan the README change")], steered: false }
+     3 t1 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
+     4 t2 Ask(Plan { title: None, body: "\n- Edit README.md", verdict: ApprovedSwitching, mode: "auto", mode_name: "Auto", note: None, writing: false })
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context None sign-in None
+== settings
+  model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]
+  permission  "default" "Ask" normal unsettable
+  permission  "acceptEdits" "Accept edits" unsettable
+  permission* "plan" "Plan" unsettable
+  permission  "auto" "Auto" unsettable
+  changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  controls: model=Some("Opus 5.5") effort=None permission=Some("plan") mode=None

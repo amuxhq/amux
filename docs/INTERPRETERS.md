@@ -228,7 +228,11 @@ draw both from these facts alone.
   Claude's own plan menu makes: auto mode where Claude offers it for the
   running model, accept edits otherwise. Terminal Claude's agent reads the
   menu Claude actually draws off its screen and says which it offers;
-  until it has, the host's catalogue decides. While Claude is in plan mode,
+  until it has, the host's catalogue decides, and since the menu's first
+  entry may then move somewhere else, a switch answered before the menu is
+  drawn starts the work without switching and is recorded as a plain
+  approval. Once drawn, a switch naming another permission is refused.
+  While Claude is in plan mode,
   its `Write`, `Edit`, `MultiEdit` and `NotebookEdit` calls draw nothing:
   plan mode lets Claude write only its plan file, and the declaration
   carries the whole plan. The ask closes on the person's answer, when the

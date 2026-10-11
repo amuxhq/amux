@@ -347,6 +347,10 @@ struct Provider {
     never_ask: bool,
     /// What the plan menu Claude last drew switches to.
     plan_switch: Option<String>,
+    /// A plan menu read off the screen before the hook that opens its ask
+    /// arrived: the ask, when it opens, has been drawn with this switch.
+    #[serde(default)]
+    unclaimed_menu: Option<String>,
     /// What the host's Claude offers, from the spec: a terminal offers
     /// nothing a program can read.
     #[serde(with = "serde_pb::opt_msg")]
@@ -505,9 +509,13 @@ enum AskShape {
         /// the terminal's menu by.
         suggestions: u32,
     },
-    /// The permission the ask's switch choice moves to.
+    /// The permission the ask's switch choice moves to, and whether
+    /// Claude has drawn this ask's menu. Until it has, the switch is
+    /// inferred, and the menu's first entry may move somewhere else.
     Plan {
         switch: String,
+        #[serde(default)]
+        drawn: bool,
     },
     Question {
         questions: Vec<QuestionShape>,
@@ -1453,7 +1461,7 @@ fn terminal_answer(
                 )),
             }
         }
-        (AskShape::Plan { switch }, claude_answer::Of::Plan(plan)) => {
+        (AskShape::Plan { switch, drawn }, claude_answer::Of::Plan(plan)) => {
             let (choice, verdict) = match wire::PlanChoice::try_from(plan.choice) {
                 Ok(wire::PlanChoice::Start) => (
                     PlanChoice::Approve,
@@ -1461,11 +1469,21 @@ fn terminal_answer(
                 ),
                 // The menu's first entry switches to what Claude drew it
                 // with; an answer agreeing to another permission is not
-                // what that key would do.
+                // what that key would do. Before the menu is drawn the
+                // switch is inferred, and the first entry may move
+                // somewhere else, so the work starts without switching:
+                // never to a permission the person did not choose.
                 Ok(wire::PlanChoice::StartSwitching)
                     if !switch.is_empty() && plan.permission == *switch =>
                 {
-                    (PlanChoice::ApproveSwitching, Verdict::switching(switch))
+                    if *drawn {
+                        (PlanChoice::ApproveSwitching, Verdict::switching(switch))
+                    } else {
+                        (
+                            PlanChoice::Approve,
+                            Verdict::of(wire::PlanVerdict::Approved),
+                        )
+                    }
                 }
                 Ok(wire::PlanChoice::KeepPlanning) => {
                     let note = plan.note.unwrap_or_default();

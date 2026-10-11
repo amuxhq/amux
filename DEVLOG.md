@@ -1,3 +1,13 @@
+2026-10-12 — **A plan switch answered before Claude draws its menu never
+switches somewhere else.** Terminal Claude's plan ask opens from its hook,
+before the agent reads the menu off the screen, so its switch was inferred;
+an answer in that window typed the menu's first entry, which could switch
+to auto mode where the person had agreed to accept edits. Until the menu is
+drawn, a switch answer now starts the work without switching and records
+a plain approval; once drawn, the switch is the menu's own and an answer
+naming another is refused. A menu read before its hook arrives is kept for
+the ask it belongs to.
+
 2026-10-12 — **A daemon never kills its own process for an agent.** Past a
 stop's deadline the daemon kills the process on the other end of the
 agent's control socket. An agent served from inside the daemon's process,

@@ -229,11 +229,14 @@ impl State {
     fn plan_menu(&mut self, switch: String) {
         self.provider.plan_switch = Some(switch.clone());
         let Some(key) = self.plan_ask() else {
+            // The screen and the hook race: the ask opens drawn.
+            self.provider.unclaimed_menu = Some(switch);
             return;
         };
         if let Some(meta) = self.asks.get_mut(&key) {
             meta.shape = AskShape::Plan {
                 switch: switch.clone(),
+                drawn: true,
             };
         }
         if let Some(mut ask) = self.shared.asks().get(&key).cloned() {
@@ -492,10 +495,13 @@ impl State {
                 )
             }
             PLAN_TOOL if server.is_empty() => {
-                let switch = self.plan_switch();
+                let (switch, drawn) = match self.provider.unclaimed_menu.take() {
+                    Some(switch) => (switch, true),
+                    None => (self.plan_switch(), false),
+                };
                 (
                     wire::ask::Body::Plan(plan_ask(&switch)),
-                    AskShape::Plan { switch },
+                    AskShape::Plan { switch, drawn },
                 )
             }
             _ => permission_ask(

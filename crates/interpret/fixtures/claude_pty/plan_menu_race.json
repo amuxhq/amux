@@ -1,0 +1,204 @@
+{
+  "about": "Claude's plan menu and the hook that opens its ask race. Until the menu is drawn its switch is inferred, so a switch answer then starts the work without switching. A menu read off the screen before the hook is the ask's when it opens, and a switch answer naming any other permission than it was drawn with is refused.",
+  "spec": {
+    "created_at_ms": 1800000000000
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "launch",
+          "version": "2.1.282",
+          "keymap": "claude-2.1",
+          "permission_menus": {
+            "per_suggestion": [
+              1
+            ],
+            "folded": [
+              2
+            ]
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "hook_event_name": "SessionStart",
+          "source": "startup",
+          "session_id": "s1",
+          "transcript_path": "/t/s1.jsonl",
+          "model": "claude-opus-5-5"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "permission-mode",
+          "permissionMode": "plan",
+          "sessionId": "s1"
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p1",
+        "prompt": {
+          "text": "plan the README change"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "transcript",
+        "json": {
+          "type": "user",
+          "uuid": "u1",
+          "timestamp": "2027-01-15T08:00:00.010Z",
+          "sessionId": "s1",
+          "origin": {
+            "kind": "human"
+          },
+          "promptSource": "typed",
+          "message": {
+            "role": "user",
+            "content": "plan the README change"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "s1",
+          "permission_mode": "plan",
+          "tool_use_id": "t1",
+          "tool_name": "ExitPlanMode",
+          "tool_input": {
+            "plan": "# Plan\n\n- Edit README.md"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "s1",
+          "permission_mode": "plan",
+          "tool_name": "ExitPlanMode",
+          "tool_input": {
+            "plan": "# Plan\n\n- Edit README.md"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "a0",
+        "answer": {
+          "ask": "ask:1",
+          "answer": {
+            "approve_plan": {
+              "switch_to": "acceptEdits"
+            }
+          }
+        }
+      },
+      "expect": {
+        "reply": "accepted",
+        "effects": [
+          "terminal plan Approve",
+          "reply a0 accepted"
+        ]
+      },
+      "note": "no menu drawn yet: the switch to accept edits is inferred, and the work starts without switching"
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "s1",
+          "permission_mode": "plan",
+          "tool_use_id": "t2",
+          "tool_name": "ExitPlanMode",
+          "tool_input": {
+            "plan": "# Plan\n\n- Edit README.md"
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "agent",
+        "json": {
+          "type": "plan_menu",
+          "switch": "auto"
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "hook",
+        "json": {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "s1",
+          "permission_mode": "plan",
+          "tool_name": "ExitPlanMode",
+          "tool_input": {
+            "plan": "# Plan\n\n- Edit README.md"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "a1",
+        "answer": {
+          "ask": "ask:2",
+          "answer": {
+            "approve_plan": {
+              "switch_to": "acceptEdits"
+            }
+          }
+        }
+      },
+      "expect": {
+        "reply": "rejected:UNSUPPORTED",
+        "asks": [
+          "ask:2"
+        ],
+        "silent": true
+      },
+      "note": "the menu was drawn switching to auto mode"
+    },
+    {
+      "input": {
+        "id": "a2",
+        "answer": {
+          "ask": "ask:2",
+          "answer": {
+            "approve_plan": {
+              "switch_to": "auto"
+            }
+          }
+        }
+      },
+      "expect": {
+        "reply": "accepted",
+        "effects": [
+          "terminal plan ApproveSwitching",
+          "reply a2 accepted"
+        ]
+      }
+    }
+  ]
+}

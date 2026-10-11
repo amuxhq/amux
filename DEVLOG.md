@@ -1,3 +1,16 @@
+2026-10-11 — **Two more QA personas, and testers can attach files.**
+A Codex-first developer works mostly with Codex on `gpt-5.6-luna`: approvals,
+plan mode, and Codex's own view compared with amux's chat. An attacher puts
+images and files into chats from the phone and the terminal client, many at
+once, across hosts and through a bad network, held to what ATTACHMENTS.md
+promises. The pool is now nine personas. To make attaching reachable,
+`ctl tui clip PANE FILE [--image]` copies a file (or a PNG as picture data)
+and presses Ctrl+V in the pane, holding the Mac's shared clipboard under a
+lock across sessions and putting its text back after. `ctl phone attach AGENT
+FILE [--image]` hands the chat's draft what the system's photo or file picker
+would, through the debug door's existing attach request, since nothing outside
+those pickers drives them.
+
 2026-10-11 — **`just qa` runs two waves of four, stops on new findings only,
 measures each tester's own memory, and asks testers to keep going.**
 The pilot's two testers stopped after about six minutes, and its one memory

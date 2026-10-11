@@ -54,6 +54,19 @@ pub enum TuiCommand {
     Type { pane: String, text: String },
     /// Paste text as a terminal paste (bracketed), the way a person pastes.
     Paste { pane: String, text: String },
+    /// Copy FILE and press Ctrl+V in the pane, the way a person attaches
+    /// a file they copied (or, with --image, an image: a PNG put on the
+    /// clipboard as picture data, as a screenshot tool does).
+    ///
+    /// The clipboard is the Mac's own, shared by every pane and session:
+    /// the command holds it only while the client reads it, then puts back
+    /// the text it held before.
+    Clip {
+        pane: String,
+        file: PathBuf,
+        #[arg(long)]
+        image: bool,
+    },
     /// The pane's screen as text, with the cursor's place.
     Screen { pane: String },
     /// A picture of the pane, written to shots/ and its path printed.
@@ -220,6 +233,7 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
                 json!({"pasted": text}),
             ))
         }
+        TuiCommand::Clip { pane, file, image } => clip(folder, &pane, &file, image),
         TuiCommand::Screen { pane } => {
             known(folder, &pane)?;
             let text = tmux(folder, &["capture-pane", "-p", "-t", &pane])?;
@@ -492,6 +506,82 @@ fn attach(folder: &Folder, pane: &str, agent: &str) -> Result<Outcome, String> {
         ),
         json!({"pane": name}),
     ))
+}
+
+fn clip(folder: &Folder, pane: &str, file: &Path, image: bool) -> Result<Outcome, String> {
+    known(folder, pane)?;
+    let file = folder.dir.join(file);
+    if !file.is_file() {
+        return Err(format!("no file at {}", file.display()));
+    }
+    let is_png = file
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"));
+    if image && !is_png {
+        return Err(
+            "--image puts a PNG on the clipboard; attach other files without it".to_owned(),
+        );
+    }
+    // Every session on this Mac shares the clipboard; one paste at a time.
+    let lock = std::fs::File::create(std::env::temp_dir().join("testnet-clipboard.lock"))
+        .map_err(|error| error.to_string())?;
+    lock.lock().map_err(|error| error.to_string())?;
+    let before_text = std::process::Command::new("pbpaste")
+        .output()
+        .map(|output| output.stdout)
+        .unwrap_or_default();
+    let set = if image {
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(format!(
+                "set the clipboard to (read (POSIX file \"{}\") as «class PNGf»)",
+                file.display()
+            ))
+            .output()
+    } else {
+        pb_copy(file.to_string_lossy().as_bytes())
+    };
+    match set {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => {
+            return Err(format!(
+                "putting {} on the clipboard: {}",
+                file.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Err(error) => return Err(format!("putting it on the clipboard: {error}")),
+    }
+    let before = tmux(folder, &["capture-pane", "-p", "-t", pane])?;
+    tmux(folder, &["send-keys", "-t", pane, "C-v"])?;
+    // The client reads the clipboard as it handles the key; once the screen
+    // has changed it has read it.
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while std::time::Instant::now() < deadline
+        && tmux(folder, &["capture-pane", "-p", "-t", pane])? == before
+    {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    let _ = pb_copy(&before_text);
+    drop(lock);
+    Ok(Outcome::new(
+        format!("copied {} and pressed Ctrl+V in {pane}", file.display()),
+        json!({"file": file, "image": image}),
+    ))
+}
+
+fn pb_copy(bytes: &[u8]) -> std::io::Result<std::process::Output> {
+    use std::io::Write as _;
+    let mut child = std::process::Command::new("pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(bytes)?;
+    }
+    child.wait_with_output()
 }
 
 fn cursor(folder: &Folder, pane: &str) -> Result<(u16, u16, bool), String> {

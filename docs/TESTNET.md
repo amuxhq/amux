@@ -471,8 +471,8 @@ readable text; `--json` prints the door's reply instead.
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
 | A host's own record | `fleet HOST`, `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
 | The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
-| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
-| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the menu that is open), `phone type TEXT --into ID`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone settle` |
+| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
+| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the menu that is open), `phone type TEXT --into ID`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
 | Ledger | `ledger read`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME [--duplicate-of TESTER/NAME]`, `ledger done SUMMARY` |
 
@@ -480,13 +480,17 @@ Durations take `ms` or `s` (`200ms`, `1.5s`); a rate is bytes a second, with `k`
 `spawn` and `send`, and `wait`, allow 100 seconds for a fake agent and 240 for a real one unless `--timeout` says
 otherwise.
 
-**The terminal client** runs as the real `amux` binary against a host's installation config in a tmux pane of
-the folder's own tmux server, at 24-bit colour in the chosen theme. `tui keys` presses each key separately, as
-tmux names them. `tui shot` captures the pane with its styles, turns it into the frame format the terminal's own
-report writes (`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`).
-Background colour a program paints by clearing to the end of a line is not kept, and the font has no CJK or emoji
-glyphs. `tui attach` opens `amux attach` for an agent in a second pane: Claude's own interface for terminal
-Claude, Codex's own for Codex.
+**The terminal client** runs as the real `amux` binary against a host's installation config in a tmux pane of the
+folder's own tmux server, at 24-bit colour in the chosen theme. `tui keys` presses each key separately, as tmux names
+them. `tui shot` captures the pane with its styles, turns it into the frame format the terminal's own report writes
+(`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`). Background colour a
+program paints by clearing to the end of a line is not kept, and the font has no CJK or emoji glyphs. `tui attach`
+opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.
+`tui clip` attaches as a person does in the terminal client: it puts a file's path (or, with `--image`, a PNG as
+picture data) on the Mac's clipboard and presses Ctrl+V in the pane. The clipboard is the machine's own, so `clip`
+holds a lock across every session for the moment the client reads it and then puts back the text the clipboard held.
+`phone attach` hands the open chat's draft a file or photo as the system's photo library or file browser would; those
+pickers are the system's own screens, which nothing outside them drives.
 
 **The phone** is the debug app on the simulator the session holds a lease on (`WT_LEASE_IPHONE`); `ctl` never
 takes a lease itself, so a session that drives the phone runs entirely under one

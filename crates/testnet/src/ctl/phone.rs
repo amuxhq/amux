@@ -75,6 +75,16 @@ pub enum PhoneCommand {
     },
     /// Wait until the app has nothing in flight, then answer.
     Settle,
+    /// Attach FILE to AGENT's draft as the photo library or file browser
+    /// hands a pick back to the app (the pickers are the system's own
+    /// screens, which nothing outside them drives). With --image it is a
+    /// photo, otherwise a file. Open the agent's chat first.
+    Attach {
+        agent: String,
+        file: PathBuf,
+        #[arg(long)]
+        image: bool,
+    },
 }
 
 /// What the session knows of the running app.
@@ -144,6 +154,45 @@ fn udid(name: &str) -> Result<String, String> {
         [] => Err(format!("no simulator named {name}")),
         _ => Err(format!("more than one simulator is named {name}")),
     }
+}
+
+/// The type a picker would name for a file, by its extension.
+fn mime(path: &Path) -> &'static str {
+    let extension = path
+        .extension()
+        .map(|extension| extension.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "heic" => "image/heic",
+        "webp" => "image/webp",
+        "pdf" => "application/pdf",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "txt" | "md" | "log" => "text/plain",
+        "csv" => "text/csv",
+        _ => "application/octet-stream",
+    }
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let word = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        for (index, shift) in [18, 12, 6, 0].into_iter().enumerate() {
+            if index <= chunk.len() {
+                out.push(char::from(ALPHABET[(word >> shift) as usize & 63]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 /// The debug app the session installs: the one `just qa` built, or the
@@ -239,6 +288,27 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
                 }),
             )
             .map(|reply| Outcome::new(format!("the phone signed in as {account}"), reply))
+        }
+        PhoneCommand::Attach { agent, file, image } => {
+            let path = folder.dir.join(&file);
+            let bytes = std::fs::read(&path)
+                .map_err(|error| format!("reading {}: {error}", path.display()))?;
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            request(
+                folder,
+                json!({
+                    "kind": "attach",
+                    "agent": agent,
+                    "attachment": if image { "image" } else { "file" },
+                    "name": name,
+                    "mime": mime(&path),
+                    "base64": base64(&bytes),
+                }),
+            )
+            .map(|reply| Outcome::new(format!("attached {name} to {agent}'s draft"), reply))
         }
         PhoneCommand::Settle => request(folder, json!({"kind": "settle"}))
             .map(|reply| Outcome::new("the app has settled", reply)),
@@ -531,4 +601,21 @@ pub(crate) fn close(folder: &Folder) {
         let _ = simctl(&["terminate", &app.udid, BUNDLE_ID]);
     }
     let _ = std::fs::remove_file(state_file(folder));
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn base64_matches_the_standard_alphabet_and_padding() {
+        for (bytes, encoded) in [
+            (&b""[..], ""),
+            (b"f", "Zg=="),
+            (b"fo", "Zm8="),
+            (b"foo", "Zm9v"),
+            (b"foobar", "Zm9vYmFy"),
+            (&[0xff, 0xfe, 0x00], "//4A"),
+        ] {
+            assert_eq!(super::base64(bytes), encoded);
+        }
+    }
 }

@@ -1,3 +1,9 @@
+2026-10-11 — **Failing phone test: an agent's single line breaks stay line
+breaks.** Decided in the QA triage for both clients; the terminal's test
+already stands. The phone's markdown parser joins a paragraph's lines with
+a space. The existing test that wrapped prose is one paragraph asserts the
+opposite and changes with the fix.
+
 2026-10-11 — **Failing tests for plan approval choices.** A decision from the
 QA triage: a plan ask offers Yes, Yes-and-switch and Keep planning, and
 names the permission the switch moves to: auto where Claude's menu offers

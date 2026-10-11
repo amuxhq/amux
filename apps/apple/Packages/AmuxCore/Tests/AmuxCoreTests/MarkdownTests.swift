@@ -158,6 +158,23 @@ final class MarkdownTests: XCTestCase {
         XCTAssertEqual(String(text.characters), "| one cell")
     }
 
+    /// An agent's single newline is a line break, as Claude's and Codex's
+    /// own interfaces draw it: "one per line" answers, lists written as
+    /// lines and log excerpts keep their lines. A blank line still parts
+    /// two paragraphs.
+    func testAnAgentsSingleLineBreaksStayLineBreaks() {
+        let parsed = blocksWithin("alpha\nbeta\ngamma")
+        XCTAssertEqual(parsed.count, 1, "three lines with no blank line are one paragraph")
+        guard case .paragraph(let text) = parsed.first else { return XCTFail("expected prose") }
+        XCTAssertEqual(
+            String(text.characters).split(separator: "\n").map(String.init),
+            ["alpha", "beta", "gamma"],
+            "the lines run together: \(String(text.characters).debugDescription)")
+
+        let paragraphs = blocksWithin("alpha\n\nbeta")
+        XCTAssertEqual(paragraphs.count, 2, "a blank line parts two paragraphs")
+    }
+
     /// Parses on a thread of its own and gives it two seconds. A parse that
     /// does not return cannot be stopped from outside and allocates without
     /// bound, so rather than let it take the machine's memory while the

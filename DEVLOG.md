@@ -1,3 +1,9 @@
+2026-10-11 — **A flap keeps its period while a request holds the net.** The door
+holds the net for the whole of each request, and a wait on a real agent takes
+minutes; the flap's task took the same lock to flip the link, so a two-second
+cut could last that long. A flap now cuts the link and takes a handle that
+flips it, in process or at the LAN's gates, without the net.
+
 2026-10-11 — **`ctl down` kills only its own net's serve.** If `testnet serve`
 had crashed and the system had given its pid to another process, `ctl down`
 waited a minute on that process and then SIGKILLed it. It now waits on and

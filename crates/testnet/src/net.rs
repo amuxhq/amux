@@ -260,6 +260,64 @@ struct Link {
     live: Option<std::sync::Mutex<LoopbackLink>>,
 }
 
+/// One link a flap cuts and restores on its own, holding no lock of the
+/// net's.
+pub(crate) enum LinkFlip {
+    InProcess {
+        a: Arc<Edge>,
+        b: Arc<Edge>,
+        id_a: Uuid,
+        id_b: Uuid,
+        live: Option<LoopbackLink>,
+    },
+    Lan {
+        lan: Arc<Lan>,
+        a: String,
+        b: String,
+    },
+}
+
+impl LinkFlip {
+    pub(crate) fn cut(&mut self) {
+        match self {
+            // Dropping the link severs it.
+            Self::InProcess { live, .. } => *live = None,
+            Self::Lan { lan, a, b } => {
+                lan.cut(a, b, true);
+            }
+        }
+    }
+
+    /// Lets traffic through again. An in-process link is dialled anew
+    /// once both ends have seen the old one go, as a restore does; if they
+    /// have not within a few seconds, it stays cut until the next period.
+    pub(crate) async fn restore(&mut self) {
+        match self {
+            Self::InProcess {
+                a,
+                b,
+                id_a,
+                id_b,
+                live,
+            } => {
+                let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                while a.via(*id_b).await == LiveRoute::Direct
+                    || b.via(*id_a).await == LiveRoute::Direct
+                {
+                    if tokio::time::Instant::now() > deadline {
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                *live = a.link_in_process(b).ok();
+            }
+            Self::Lan { lan, a, b } => {
+                lan.cut(a, b, false);
+            }
+        }
+    }
+}
+
 pub struct Net {
     root: tempfile::TempDir,
     topology: Topology,
@@ -2006,6 +2064,37 @@ impl Net {
                 .sever();
         }
         Ok(self.ack(format!("link {a} - {b} severed")))
+    }
+
+    /// Cuts a link and hands back what flips it from then on, without the
+    /// net: a flap's period must not wait on a request that holds the net
+    /// for minutes. Until [`Net::restore_link`] the net leaves the link to
+    /// the flap. A flap holds the hosts as they were when it began: one
+    /// restarted while it runs stays cut from the other until the flap
+    /// stops and the link is restored.
+    pub(crate) fn flap_link(&mut self, a: &str, b: &str) -> Result<LinkFlip, NetError> {
+        if !self.links.contains_key(&link_key(a, b)) {
+            self.cut_lan(a, b, true)?;
+            return Ok(LinkFlip::Lan {
+                lan: self.lan.clone(),
+                a: a.to_owned(),
+                b: b.to_owned(),
+            });
+        }
+        let ends = (
+            self.edge(a)?,
+            self.edge(b)?,
+            self.host(a)?.host_id,
+            self.host(b)?.host_id,
+        );
+        self.sever_link(a, b)?;
+        Ok(LinkFlip::InProcess {
+            a: ends.0,
+            b: ends.1,
+            id_a: ends.2,
+            id_b: ends.3,
+            live: None,
+        })
     }
 
     /// Links the two hosts again, if both are up, once both ends have seen

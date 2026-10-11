@@ -666,32 +666,25 @@ async fn flap(
             message: "a flap needs a down and an up period".to_owned(),
         };
     }
-    {
+    // The net is held only to cut the link and take what flips it: a
+    // request holding the net for minutes (a wait on a real agent) must not
+    // hold a two-second cut for as long.
+    let mut flip = {
         let mut guard = net.lock().await;
         let Some(held) = guard.as_mut() else {
             return closed();
         };
-        if let Err(error) = held.sever_link(&a, &b) {
-            return refusal(&error);
+        match held.flap_link(&a, &b) {
+            Ok(flip) => flip,
+            Err(error) => return refusal(&error),
         }
-    }
-    let task = tokio::spawn({
-        let (net, a, b) = (net.clone(), a.clone(), b.clone());
-        async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(down_ms)).await;
-                if let Some(held) = net.lock().await.as_mut() {
-                    let _ = held.restore_link(&a, &b).await;
-                } else {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(up_ms)).await;
-                if let Some(held) = net.lock().await.as_mut() {
-                    let _ = held.sever_link(&a, &b);
-                } else {
-                    return;
-                }
-            }
+    };
+    let task = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(down_ms)).await;
+            flip.restore().await;
+            tokio::time::sleep(Duration::from_millis(up_ms)).await;
+            flip.cut();
         }
     });
     if let Some(earlier) = flaps
@@ -1122,5 +1115,52 @@ fn attachment(attachment: &wire::Attachment) -> Value {
             })
         }
         None => json!({ "kind": "none" }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::topology::{HostDecl, Topology};
+
+    /// A request can hold the net for minutes (a wait on a real agent); the
+    /// flap's periods go on regardless.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_flap_flips_while_a_request_holds_the_net() {
+        let mut started = Net::start_with(Topology::new(), crate::NetOptions::default())
+            .await
+            .unwrap();
+        for name in ["desk", "laptop"] {
+            started
+                .add_host(HostDecl {
+                    name: name.to_owned(),
+                    ..HostDecl::default()
+                })
+                .await
+                .unwrap();
+        }
+        started.add_link("desk", "laptop").await.unwrap();
+        let net = Arc::new(Mutex::new(Some(started)));
+        let flaps = Flaps::default();
+        let reply = flap(&net, &flaps, "desk".into(), "laptop".into(), 300, 300).await;
+        assert!(matches!(reply, Reply::Ok(_)));
+
+        // Held as a long request holds it, and read only through that hold.
+        let held = net.lock().await;
+        let held = held.as_ref().unwrap();
+        let mut seen = std::collections::BTreeSet::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        while seen.len() < 2 && tokio::time::Instant::now() < deadline {
+            seen.insert(held.link_up("desk", "laptop").await);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(
+            seen.len(),
+            2,
+            "the link went both down and up while the net was held"
+        );
+        for (_, task) in std::mem::take(&mut *flaps.lock().unwrap()) {
+            task.abort();
+        }
     }
 }

@@ -131,6 +131,12 @@ fn response_text(response: &ClientResponse) -> String {
     serde_json::to_string(response).expect("protocol types serialize")
 }
 
+/// Whether `id` is one of the agent process's own requests, which it
+/// names with an `agent-` prefix: its handshake with Codex.
+fn is_agent_request(id: &RequestId) -> bool {
+    matches!(id, RequestId::String(id) if id.starts_with("agent-"))
+}
+
 /// The empty form content an approval accepts with.
 fn no_content() -> Option<Value> {
     Some(Value::Object(Default::default()))
@@ -336,8 +342,20 @@ impl State {
         };
         let Some((id, request)) = tracked else {
             // The agent process's own handshake.
-            let Ok(result) = result else {
-                return;
+            let result = match result {
+                Ok(result) => result,
+                // Refused, it never brings a thread: Codex holding the
+                // thread for another server ("already has an active
+                // writer"), a thread it cannot find. Waiting would leave the
+                // agent starting for good and swallow every prompt, so the
+                // incarnation ends with Codex's own words.
+                Err(error) if is_agent_request(id) => {
+                    emit.effect(Effect::Exit {
+                        cause: format!("Codex refused to start: {}", error.message),
+                    });
+                    return;
+                }
+                Err(_) => return,
             };
             if let Ok(response) = codex_protocol::result::<ThreadResponse>(&result) {
                 self.thread_started(emit, &response.thread, Some(&response));

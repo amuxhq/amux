@@ -501,7 +501,10 @@ fn unsupported() -> wire::Rejected {
 struct PendingMessage {
     #[serde(with = "serde_pb::bytes")]
     id: Vec<u8>,
+    /// The text Claude was handed, its sender's label included.
     text: String,
+    /// The message's own words, without the label.
+    words: String,
 }
 
 /// The newest slash command's item, which its output row fills in.
@@ -1126,6 +1129,7 @@ impl State {
         self.submitted.push(PendingMessage {
             id: entry.input_id,
             text: entry.text.clone(),
+            words: String::new(),
         });
         emit.effect(Effect::Terminal(TerminalInput::Prompt {
             text: entry.text,
@@ -1138,12 +1142,19 @@ impl State {
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
         let envelope = crate::shared::worded(envelope);
         self.shared.message_accepted(&envelope.id);
+        // Claude shows the model the text as carried, label and all, and
+        // that is what its transcript reflects.
+        let carried = crate::shared::carried(&envelope);
         self.messages.push(PendingMessage {
             id: envelope.id.clone(),
-            text: envelope.text.clone(),
+            text: carried.clone(),
+            words: envelope.text.clone(),
         });
         emit.effect(Effect::Inject {
-            envelope: envelope.clone(),
+            envelope: Envelope {
+                text: carried,
+                ..envelope.clone()
+            },
             via: Carrier::MessagingSocket,
         });
         self.shared.item(

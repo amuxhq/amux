@@ -210,13 +210,16 @@ A send goes from the model to the recipient's provider like this:
    `{"id": …}`.
 
 The carrier is the provider's own injection channel wherever one exists, so
-the provider queues the message and amux's queue for people never sees it:
+the provider queues the message and amux's queue for people never sees it.
+Every carrier hands over the same text, labelled with its sender
+(`[message from agent <name>]` before the message's words), worded by the
+interpreters' shared code:
 
 | Kind | Carrier | Consumed when |
 | --- | --- | --- |
 | `claude_pty` | Claude's messaging socket, whose path and token Claude reports through its hooks. When the socket is not known yet or refuses the message, the agent process pastes it into the terminal wrapped in `<cross-session-message from="amux">`. | Claude shows the message to the model, which the interpreter reads in its transcript. |
 | `claude_sdk` | A user message on Claude's stream-JSON stdin, carrying a uuid derived from the envelope id. Claude takes it into its own queue, joining a running turn. | Claude reports taking the message with that uuid. |
-| `codex` | `thread/inject_items` on the agent's thread, labelled with its sender (`[message from agent <name>]`). Before the thread is running the message is held and injected once it is; when a prompt is waiting for the thread too (a spawn's task), the held messages ride that prompt's turn. Into an idle thread the interpreter otherwise starts an empty turn so the message is answered. | The inject's acknowledgement for a running turn, which drains injected items before it ends; the acknowledgement of the turn that carries it (the empty turn, or the waiting prompt's) for an idle thread. |
+| `codex` | `thread/inject_items` on the agent's thread. Before the thread is running the message is held and injected once it is; when a prompt is waiting for the thread too (a spawn's task), the held messages ride that prompt's turn. Into an idle thread the interpreter otherwise starts an empty turn so the message is answered. | The inject's acknowledgement for a running turn, which drains injected items before it ends; the acknowledgement of the turn that carries it (the empty turn, or the waiting prompt's) for an idle thread. |
 
 Codex reports nothing about an injected item, which is why every interpreter
 writes the agent-message item itself at acceptance rather than waiting for a
@@ -329,8 +332,10 @@ was away when the child finished and that was resumed before the row reached
 it.
 
 The parent receives the report like any agent message, through its own
-carrier. Codex labels it `[agent <name> finished its turn]` or
-`[agent <name> stopped: <cause>]`.
+carrier, labelled `[agent <name> finished its turn]` or
+`[agent <name> stopped: <cause>]` for every kind of agent, so its model can
+tell a child's words from its person's. The item in the parent's transcript
+keeps the words alone; its sender is on the item.
 
 ## Across hosts
 

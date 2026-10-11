@@ -752,7 +752,8 @@ fn failed_report(id: &[u8]) -> Event {
 }
 
 /// A failed report carries its cause as data; the interpreter words it, and
-/// Claude is told in those words, which the transcript shows too.
+/// Claude is told in those words under its sender's label, while the
+/// transcript shows the words alone.
 #[test]
 fn a_failed_report_is_worded_for_the_parents_provider() {
     let mut state = started();
@@ -763,7 +764,7 @@ fn a_failed_report_is_worded_for_the_parents_provider() {
     });
     assert_eq!(
         injected.as_deref(),
-        Some("the provider exited: exit code 1")
+        Some("[agent child stopped: the provider exited: exit code 1]")
     );
     assert_eq!(
         stepped.step.items[0].text,

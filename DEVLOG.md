@@ -1,3 +1,13 @@
+2026-10-11 — **Every agent's model reads who a message came from, and a
+refused Codex resume ends the incarnation.** The label Codex already put on
+an agent message (`[agent <name> finished its turn]`, `[agent <name>
+stopped: …]`, `[message from agent <name>]`) is now worded once in the
+interpreters' shared code and carried to headless and terminal Claude too,
+so a Claude parent no longer takes its child's report for its person's
+words. When Codex refuses the agent's own thread start or resume (a previous
+server still holding the thread), the incarnation ends with Codex's words
+instead of sitting at "starting" and swallowing prompts.
+
 2026-10-11 — **Terminal client fixes from the first QA run.** A draft left in
 a chat waits in its composer until the chat opens again. For half a second
 after an ask is first drawn, keys go to the draft and Enter does nothing, so

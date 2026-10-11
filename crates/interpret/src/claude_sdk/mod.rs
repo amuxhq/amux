@@ -455,7 +455,10 @@ impl State {
             },
         );
         emit.effect(Effect::Inject {
-            envelope: envelope.clone(),
+            envelope: Envelope {
+                text: crate::shared::carried(&envelope),
+                ..envelope.clone()
+            },
             via: Carrier::Stdin,
         });
         self.shared.item(

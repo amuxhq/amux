@@ -1128,10 +1128,17 @@ impl State {
         // Claude answers a message from its socket in a turn of its own.
         self.shared.turn_started();
         for body in peer_message_bodies(text) {
+            // Claude shows the text it was handed; a body of the words
+            // alone, without amux's label, is the same message.
             if let Some(at) = self
                 .messages
                 .iter()
                 .position(|message| message.text.trim() == body)
+                .or_else(|| {
+                    self.messages
+                        .iter()
+                        .position(|message| message.words.trim() == body)
+                })
             {
                 let PendingMessage { id, .. } = self.messages.remove(at);
                 self.shared.message_consumed(&id);

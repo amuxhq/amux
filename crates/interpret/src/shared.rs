@@ -1133,6 +1133,29 @@ pub fn worded(mut envelope: Envelope) -> Envelope {
     envelope
 }
 
+/// A worded agent message as its recipient's model reads it, labelled with
+/// its sender and what it is: `[agent <name> finished its turn]` before a
+/// child's report, `[agent <name> stopped: <cause>]` for a failed one, and
+/// `[message from agent <name>]` before anything else an agent sends. The
+/// provider's own channel carries only text, so without the label a model
+/// takes another agent's words for its person's. A message from no agent
+/// is its own text.
+pub(crate) fn carried(envelope: &Envelope) -> String {
+    use wire::{EnvelopeKind, sender};
+    let from = match envelope.from.as_ref().and_then(|from| from.value.as_ref()) {
+        Some(sender::Value::Agent(agent)) if !agent.name.is_empty() => {
+            format!("agent {}", agent.name)
+        }
+        Some(sender::Value::Agent(_)) => "another agent".to_owned(),
+        _ => return envelope.text.clone(),
+    };
+    match EnvelopeKind::try_from(envelope.kind).unwrap_or_default() {
+        EnvelopeKind::Finished => format!("[{from} finished its turn]\n{}", envelope.text),
+        EnvelopeKind::Failed => format!("[{from} stopped: {}]", envelope.text),
+        _ => format!("[message from {from}]\n{}", envelope.text),
+    }
+}
+
 /// How a child's incarnation ended, as its parent's model reads it: the
 /// cause, then its own words when it has any ("the provider exited: exit
 /// code 1"). A cause this build does not know reads as a plain end.

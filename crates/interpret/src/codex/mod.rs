@@ -1020,7 +1020,7 @@ impl State {
         let message = InjectedMessage {
             role: "user".into(),
             content: vec![InjectedContent::InputText(TextContent {
-                text: injected_text(envelope),
+                text: crate::shared::carried(envelope),
                 extra: Default::default(),
             })],
             extra: Default::default(),
@@ -1328,21 +1328,6 @@ impl State {
 }
 
 /// The text the model sees for an agent message.
-fn injected_text(envelope: &Envelope) -> String {
-    let from = match envelope.from.as_ref().and_then(|from| from.value.as_ref()) {
-        Some(sender::Value::Agent(agent)) if !agent.name.is_empty() => {
-            format!("agent {}", agent.name)
-        }
-        Some(sender::Value::Agent(_)) => "another agent".to_owned(),
-        _ => return envelope.text.clone(),
-    };
-    match EnvelopeKind::try_from(envelope.kind).unwrap_or_default() {
-        EnvelopeKind::Finished => format!("[{from} finished its turn]\n{}", envelope.text),
-        EnvelopeKind::Failed => format!("[{from} stopped: {}]", envelope.text),
-        _ => format!("[message from {from}]\n{}", envelope.text),
-    }
-}
-
 /// The client message id a prompt or steer goes to Codex with: its input
 /// id, which Codex echoes on the user message it reports, so the echo is
 /// told from another client's prompt by id rather than by order.

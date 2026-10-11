@@ -1,3 +1,9 @@
+2026-10-12 — **Words after a chip that fills its row start on the next
+line.** The terminal client wraps a sent message's words at the room a chip
+left on its line, and a chip that filled the line left none; the wrapper
+treated no room as one cell, so a cell of the words stayed on the full line
+and ran past the edge. No room now means the words start on the next line.
+
 2026-10-12 — **A parent's message that resumes its child keeps its sender's
 label.** A message to an exited child resumes it with the message as its
 first prompt, and that prompt reached the provider as the bare words, so the

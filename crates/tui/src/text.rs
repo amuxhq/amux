@@ -223,10 +223,11 @@ pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
 /// Word-wraps as [`wrap`] does, with only `first` cells left on the first
 /// line (it continues one already holding something) and `width` on every
 /// line after. A first word that fits a whole line but not the room left
-/// starts on the next line, leaving the first piece empty.
+/// starts on the next line, leaving the first piece empty, as does all of
+/// it when no room is left at all.
 pub(crate) fn wrap_after(text: &str, first: usize, width: usize) -> Vec<String> {
     let width = width.max(1);
-    let first = first.clamp(1, width);
+    let first = first.min(width);
     let mut out: Vec<String> = Vec::new();
     for paragraph in text.split('\n') {
         let mut line = String::new();
@@ -252,6 +253,12 @@ pub(crate) fn wrap_after(text: &str, first: usize, width: usize) -> Vec<String> 
                 let limit = if out.is_empty() { first } else { width };
                 if str_width(rest) <= limit {
                     break;
+                }
+                if limit == 0 {
+                    // A full first line takes nothing; the word starts on
+                    // the next.
+                    out.push(std::mem::take(&mut line).trim_end().to_owned());
+                    continue;
                 }
                 let head = clip_to_width(rest, limit);
                 let head = if head.is_empty() {

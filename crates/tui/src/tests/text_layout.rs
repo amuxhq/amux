@@ -140,6 +140,46 @@ fn segment_lines_wraps_later_lines_at_the_full_width() {
     );
 }
 
+/// A chip that fills its row leaves the words after it no room there:
+/// they start on the next line, and no line is wider than the message.
+#[test]
+fn words_after_a_chip_that_fills_its_row_start_on_the_next_line() {
+    let chip = || {
+        Segment::Attachment(ui_view::AttachmentView::File(wire::BlobRef {
+            name: "a-rather-long-attachment-name.txt".into(),
+            size: 1024,
+            ..Default::default()
+        }))
+    };
+    let style = ratatui::style::Style::default();
+    let alone = crate::chat::rows::segment_lines(&[chip()], 200, style, theme());
+    let full = crate::text::line_width(&alone[0]);
+    let lines = crate::chat::rows::segment_lines(
+        &[chip(), Segment::Text("x and more".into())],
+        full,
+        style,
+        theme(),
+    );
+    let widths: Vec<usize> = lines.iter().map(crate::text::line_width).collect();
+    assert!(
+        widths.iter().all(|width| *width <= full),
+        "a line overflows the {full} columns: {widths:?}"
+    );
+    assert!(
+        lines.len() >= 2,
+        "the words start on the next line: {widths:?}"
+    );
+
+    assert_eq!(
+        crate::text::wrap_after("x and more", 0, 20),
+        ["", "x and more"]
+    );
+    assert_eq!(
+        crate::text::wrap_after("abcdefghijkl", 0, 5),
+        ["", "abcde", "fghij", "kl"]
+    );
+}
+
 /// An agent's reply written as lines, one item per line with single line
 /// breaks, reads as those lines, as the agent's own interface shows it.
 ///

@@ -1,3 +1,10 @@
+2026-10-11 — **Removing a host kills only that host's processes.** Removal killed
+every process whose command line contained the host's folder as text, so
+removing `desk` also killed `desk2`'s agents and the net's tmux server, with
+every terminal pane in it. It now matches the folder as a whole path and
+leaves the tmux server alone. A flap now holds its hosts' edges weakly, so a
+host killed or removed mid-flap still drops its edge and leaves discovery.
+
 2026-10-11 — **A removed process host is gone for good.** Removing one ignored a
 failed `amux server stop` and never withdrew the net's discovery announcement
 for it, so browsers kept seeing the removed host. Removal now withdraws the

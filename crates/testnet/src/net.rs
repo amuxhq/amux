@@ -263,9 +263,11 @@ struct Link {
 /// One link a flap cuts and restores on its own, holding no lock of the
 /// net's.
 pub(crate) enum LinkFlip {
+    // Weak, so a host killed or removed mid-flap still drops its edge,
+    // which withdraws it from discovery.
     InProcess {
-        a: Arc<Edge>,
-        b: Arc<Edge>,
+        a: Weak<Edge>,
+        b: Weak<Edge>,
         id_a: Uuid,
         id_b: Uuid,
         live: Option<LoopbackLink>,
@@ -300,6 +302,9 @@ impl LinkFlip {
                 id_b,
                 live,
             } => {
+                let (Some(a), Some(b)) = (a.upgrade(), b.upgrade()) else {
+                    return;
+                };
                 let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
                 while a.via(*id_b).await == LiveRoute::Direct
                     || b.via(*id_a).await == LiveRoute::Direct
@@ -309,7 +314,7 @@ impl LinkFlip {
                     }
                     tokio::time::sleep(Duration::from_millis(20)).await;
                 }
-                *live = a.link_in_process(b).ok();
+                *live = a.link_in_process(&b).ok();
             }
             Self::Lan { lan, a, b } => {
                 lan.cut(a, b, false);
@@ -2100,8 +2105,8 @@ impl Net {
         );
         self.sever_link(a, b)?;
         Ok(LinkFlip::InProcess {
-            a: ends.0,
-            b: ends.1,
+            a: Arc::downgrade(&ends.0),
+            b: Arc::downgrade(&ends.1),
             id_a: ends.2,
             id_b: ends.3,
             live: None,
@@ -3233,26 +3238,16 @@ async fn kill_all_under(host: &str, dir: &Path) -> Result<(), NetError> {
     {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         loop {
-            let _ = tokio::process::Command::new("pkill")
-                .args(["-KILL", "-f"])
-                .arg(dir)
-                .status()
-                .await;
+            kill_pids(&processes_under(dir));
             tokio::time::sleep(Duration::from_millis(200)).await;
-            let left = tokio::process::Command::new("pgrep")
-                .arg("-f")
-                .arg(dir)
-                .output()
-                .await
-                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-                .unwrap_or_default();
+            let left = processes_under(dir);
             if left.is_empty() {
                 return Ok(());
             }
             if tokio::time::Instant::now() > deadline {
                 return Err(NetError::Process {
                     host: host.to_owned(),
-                    why: format!("processes of the host would not die: {left}"),
+                    why: format!("processes of the host would not die: {left:?}"),
                 });
             }
         }
@@ -3264,6 +3259,49 @@ async fn kill_all_under(host: &str, dir: &Path) -> Result<(), NetError> {
     }
 }
 
+/// The processes whose command line names `dir` or a path below it, as a
+/// whole path: `desk` must not catch `desk2`. The net's tmux server is left
+/// out, though its command line names the folder its first pane started
+/// in: it serves every host's panes.
+#[cfg(unix)]
+fn processes_under(dir: &Path) -> Vec<u32> {
+    let dir = dir.to_string_lossy().into_owned();
+    let listed = std::process::Command::new("ps")
+        .args(["-axo", "pid=,command="])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .unwrap_or_default();
+    let me = std::process::id();
+    listed
+        .lines()
+        .filter_map(|line| {
+            let (pid, command) = line.trim_start().split_once(' ')?;
+            let pid: u32 = pid.parse().ok()?;
+            let program = command.split_whitespace().next().unwrap_or_default();
+            let names_dir = command.match_indices(&dir).any(|(at, _)| {
+                matches!(
+                    command[at + dir.len()..].chars().next(),
+                    None | Some('/') | Some(' ')
+                )
+            });
+            (names_dir
+                && pid != me
+                && !program
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|name| name == "tmux"))
+            .then_some(pid)
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn kill_pids(pids: &[u32]) {
+    for pid in pids {
+        let _ = crate::process::signal(*pid, "-KILL");
+    }
+}
+
 /// SIGKILLs every agent process whose directory lies under `dir`, and
 /// waits until each has released its directory's lock.
 async fn kill_agents_under(dir: &Path) -> Result<(), NetError> {
@@ -3271,11 +3309,7 @@ async fn kill_agents_under(dir: &Path) -> Result<(), NetError> {
     {
         // `amux agent <dir>`: the agent's own directory is on its command
         // line, and every agent of the net lives under its root.
-        let _ = tokio::process::Command::new("pkill")
-            .args(["-KILL", "-f"])
-            .arg(dir)
-            .status()
-            .await;
+        kill_pids(&processes_under(dir));
         let locked: Vec<PathBuf> = agent_dirs(dir);
         observe::until("the killed agents to release their locks", || {
             let held: Vec<&PathBuf> = locked.iter().filter(|dir| agent_dir::locked(dir)).collect();

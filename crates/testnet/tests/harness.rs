@@ -1385,3 +1385,23 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
     );
     net.shutdown().await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn removing_a_host_leaves_a_host_whose_name_it_starts_alone() {
+    let mut net = Net::start_with(Topology::new(), testnet::NetOptions::default())
+        .await
+        .unwrap();
+    net.add_host(lan_host("desk")).await.unwrap();
+    net.add_host(lan_host("desk2")).await.unwrap();
+    net.spawn(
+        AgentDecl::new("held", "desk2")
+            .steps(vec![gate("go"), text("still here"), Step::TurnEnd])
+            .prompt("wait"),
+    )
+    .await
+    .unwrap();
+    net.remove_host("desk").await.unwrap();
+    net.open_gate("go").unwrap();
+    net.turn_ended("held", 1).await.unwrap();
+    net.shutdown().await.unwrap();
+}

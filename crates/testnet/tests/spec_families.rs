@@ -1221,3 +1221,81 @@ async fn a_headless_claude_parent_reads_which_child_finished() {
     );
     net.shutdown().await.unwrap();
 }
+
+/// Stopping a parent stops its whole family, as deleting it does: every
+/// descendant, on its own host or another, is asked to stop, and a child
+/// on a host the stop cannot reach is left as it is. Each child here is
+/// mid-turn when its parent stops; a graceful stop lets that turn finish
+/// and then ends the incarnation as stopped, where a child left running
+/// would end it as finished by the one-shot rule.
+#[tokio::test(flavor = "multi_thread")]
+async fn stopping_a_parent_stops_every_descendant_on_every_host() {
+    let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
+    net.settle("lead").await.unwrap();
+    let busy = || vec![waits("release"), text("Survey part done."), Step::TurnEnd];
+    net.spawn_child("lead", child("notes", "desk", busy()))
+        .await
+        .unwrap();
+    net.spawn_child("lead", child("helper", "server", busy()))
+        .await
+        .unwrap();
+    net.spawn_child("helper", child("scout", "phone", busy()))
+        .await
+        .unwrap();
+    let family = [("notes", "desk"), ("helper", "server"), ("scout", "phone")];
+    until("every descendant to be live on its host", || {
+        let net = &net;
+        async move {
+            let mut held = Vec::new();
+            for (name, host) in family {
+                held.push((name, lifecycle(net, host, name).await));
+            }
+            held.iter()
+                .all(|(_, lifecycle)| *lifecycle == Some(Lifecycle::Live))
+                .then_some(())
+                .ok_or_else(|| format!("{held:?}"))
+        }
+    })
+    .await
+    .unwrap();
+
+    net.stop("lead").await.unwrap();
+    until("lead to exit", || {
+        let net = &net;
+        async move {
+            let now = lifecycle(net, "desk", "lead").await;
+            (now == Some(Lifecycle::Exited))
+                .then_some(())
+                .ok_or_else(|| format!("lead {now:?}"))
+        }
+    })
+    .await
+    .unwrap();
+    println!("lead stopped; releasing its descendants' turns");
+
+    net.open_gate("release").unwrap();
+    let mut causes = Vec::new();
+    for (name, host) in family {
+        until(&format!("{name} to exit on {host}"), || {
+            let net = &net;
+            async move {
+                let now = lifecycle(net, host, name).await;
+                (now == Some(Lifecycle::Exited))
+                    .then_some(())
+                    .ok_or_else(|| format!("{name} {now:?}"))
+            }
+        })
+        .await
+        .unwrap();
+        let row = row(&net, host, name).await.unwrap();
+        causes.push((name, wire::ExitCause::try_from(row.exit_cause).ok()));
+    }
+    println!("how each descendant ended: {causes:?}");
+    assert!(
+        causes
+            .iter()
+            .all(|(_, cause)| *cause == Some(wire::ExitCause::Stopped)),
+        "stopping lead stopped none of its descendants; they ran on to the end of their turns: {causes:?}"
+    );
+    net.shutdown().await.unwrap();
+}

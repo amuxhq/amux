@@ -1,3 +1,9 @@
+2026-10-11 — **Failing spec: stopping a parent stops its whole family.** A
+decision from the QA triage: a stop cascades to every descendant, children
+on other hosts on a best-effort basis, as a delete does. Today the daemon's
+stop reaches only the parent, so its children and grandchildren run on to
+the end of their turns and end as finished.
+
 2026-10-11 — **Failing tests for the phone freezing on a half-written
 heading.** From the first QA run, where the phone froze while a Codex plan
 streamed in and the simulator's memory passed 20 GiB. The phone's markdown

@@ -26,7 +26,16 @@ pub(crate) struct Piper {
 
 /// The running pipes of every link that shares them: a relay's links for
 /// one account, whichever of them a pipe was opened on.
-pub(crate) type Pipes = Arc<std::sync::Mutex<Vec<([LinkId; 2], AbortHandle)>>>;
+pub(crate) type Pipes = Arc<std::sync::Mutex<PipeSet>>;
+
+#[derive(Default)]
+pub(crate) struct PipeSet {
+    running: Vec<([LinkId; 2], AbortHandle)>,
+    /// How many times a link sharing these pipes lapsed to free. A pipe
+    /// admitted before a lapse it registers after would miss its close, so
+    /// it is not started.
+    closes: u64,
+}
 
 impl Piper {
     pub(crate) fn new(local_host: HostId, links: Arc<LinkRegistry>) -> Self {
@@ -51,11 +60,9 @@ impl Piper {
     /// stream opens; a link that lapses to free afterwards must not keep
     /// carrying what it opened while it was paid for.
     pub(crate) fn close_link(&self, link: &LinkId) {
-        let mut pipes = self
-            .pipes
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        pipes.retain(|(joined, pipe)| {
+        let mut pipes = self.pipes();
+        pipes.closes += 1;
+        pipes.running.retain(|(joined, pipe)| {
             if joined.contains(link) {
                 pipe.abort();
                 false
@@ -65,12 +72,22 @@ impl Piper {
         });
     }
 
+    fn pipes(&self) -> std::sync::MutexGuard<'_, PipeSet> {
+        self.pipes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     pub(crate) async fn pipe(
         &self,
         origin: LinkId,
         preface: pb::StreamPreface,
         mut incoming: ByteStream,
     ) -> Result<JoinHandle<()>, pb::StreamRefusal> {
+        // Read before the tiers are: a lapse after this either shows in
+        // the tiers read below or is counted by the time the pipe would
+        // register.
+        let closes = self.pipes().closes;
         let destination = match HostId::from_slice(&preface.dst) {
             Ok(destination) if destination != self.local_host => destination,
             _ => return refuse(&mut incoming, pb::StreamRefusal::NotAdjacent).await,
@@ -117,7 +134,11 @@ impl Piper {
         if incoming.flush().await.is_err() {
             return Err(pb::StreamRefusal::NoRoute);
         }
+        let (start, started) = tokio::sync::oneshot::channel::<()>();
         let pipe = tokio::spawn(async move {
+            if started.await.is_err() {
+                return;
+            }
             let (mut incoming_read, mut incoming_write) = tokio::io::split(incoming);
             let (mut outgoing_read, mut outgoing_write) = tokio::io::split(outgoing);
             // Each direction runs to its own end, whatever becomes of the
@@ -130,12 +151,21 @@ impl Piper {
                 forward(&mut outgoing_read, &mut incoming_write),
             );
         });
-        let mut pipes = self
-            .pipes
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        pipes.retain(|(_, pipe)| !pipe.is_finished());
-        pipes.push(([origin, destination_link], pipe.abort_handle()));
+        {
+            // Admitted and registered under the lock a lapse closes pipes
+            // under: a link that lapsed while this stream was being opened
+            // has its pipe dropped before it carries a byte.
+            let mut pipes = self.pipes();
+            if pipes.closes != closes {
+                pipe.abort();
+                return Err(pb::StreamRefusal::PaymentRequired);
+            }
+            pipes.running.retain(|(_, pipe)| !pipe.is_finished());
+            pipes
+                .running
+                .push(([origin, destination_link], pipe.abort_handle()));
+        }
+        let _ = start.send(());
         Ok(pipe)
     }
 }
@@ -435,6 +465,54 @@ mod tests {
             destination_stream,
             (origin_pair, destination_pair),
         )
+    }
+
+    /// A link that lapses to free while a stream through it waits on the
+    /// far end's acceptance closes its pipes before that pipe registers;
+    /// the pipe must not start then, or it carries on unpaid.
+    #[tokio::test]
+    async fn a_link_lapsing_while_its_stream_opens_ends_that_stream_too() {
+        let local = HostId::from_u128(1);
+        let links = Arc::new(LinkRegistry::default());
+        let origin_link = register_link(&links, 2, LinkAdmission::PinnedKey, None).await;
+        let destination_pair = carriers().await;
+        register_link(
+            &links,
+            3,
+            LinkAdmission::PinnedKey,
+            Some(destination_pair.connector.clone()),
+        )
+        .await;
+        let piper = Piper::new(local, links);
+        let origin_pair = carriers().await;
+        let (_opening, preface, incoming) = incoming(
+            origin_pair.connector.clone(),
+            origin_pair.acceptor.clone(),
+            HostId::from_u128(3),
+        )
+        .await;
+        let piping = tokio::spawn({
+            let piper = piper.clone();
+            async move { piper.pipe(origin_link, preface, incoming).await }
+        });
+        let (_, mut destination_stream) = tokio::time::timeout(
+            Duration::from_secs(1),
+            destination_pair.acceptor.accept_stream(),
+        )
+        .await
+        .expect("timed out waiting for the destination stream")
+        .unwrap();
+        // The pipe is waiting for this acceptance when the link lapses.
+        piper.close_link(&origin_link);
+        destination_stream.flush().await.unwrap();
+        let piped = tokio::time::timeout(Duration::from_secs(1), piping)
+            .await
+            .expect("timed out piping")
+            .unwrap();
+        assert!(
+            matches!(piped, Err(pb::StreamRefusal::PaymentRequired)),
+            "a pipe admitted before its link lapsed does not start"
+        );
     }
 
     #[tokio::test]

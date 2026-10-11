@@ -1,3 +1,11 @@
+2026-10-12 — **A relay stream opened as its account lapses does not start.**
+A link renewing as free ends every pipe through it, but a pipe still
+waiting for the far end to accept its stream registered only afterwards,
+missed that close and carried on. The relay's shared pipes now count
+lapses; a pipe that sees one between its tier check and its registration,
+which happen under the same lock the close takes, is dropped before it
+carries a byte.
+
 2026-10-12 — **A plan switch answered before Claude draws its menu never
 switches somewhere else.** Terminal Claude's plan ask opens from its hook,
 before the agent reads the menu off the screen, so its switch was inferred;

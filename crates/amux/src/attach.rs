@@ -454,6 +454,64 @@ mod tests {
         );
     }
 
+    /// Terminal Claude (2.1.296, recorded in a QA run) switches on xterm's
+    /// modifyOtherKeys at level 2 (`CSI > 4 ; 2 m`) beside the kitty
+    /// protocol. A terminal that honours it, such as xterm or tmux with
+    /// `extended-keys on`, then sends Ctrl+A as `CSI 27 ; 5 ; 97 ~`: the
+    /// recorded attach passed exactly those bytes on to Claude, and the
+    /// person could not leave.
+    #[test]
+    fn the_modify_other_keys_form_of_the_leader_is_a_leader_too() {
+        let mut scan = chords();
+        assert_eq!(scan.feed(b"\x1b[27;5;97~d"), vec![Scanned::Detach]);
+        let mut scan = chords();
+        assert_eq!(scan.feed(b"\x1b[27;5;97~s"), vec![Scanned::Fleet]);
+    }
+
+    /// The modes terminal Claude switches on as it draws, from the same
+    /// recording: bracketed paste, the kitty flags replaced by its own,
+    /// and modifyOtherKeys at level 2.
+    const CLAUDE_KEYBOARD_MODES: &[u8] = b"\x1b[?2004h\x1b[<u\x1b[>5u\x1b[>4;2m";
+
+    /// The modifyOtherKeys level a terminal is left at by `bytes`: the
+    /// last `CSI > 4 ; n m` sets it, `CSI > 4 m` resets it to 0.
+    fn modify_other_keys_level(bytes: &[u8]) -> u8 {
+        let mut level = 0;
+        let mut at = 0;
+        while let Some(found) = bytes[at..].windows(4).position(|w| w == b"\x1b[>4") {
+            let start = at + found + 4;
+            let end = start
+                + bytes[start..]
+                    .iter()
+                    .position(|&b| b == b'm')
+                    .expect("a terminated sequence");
+            level = match &bytes[start..end] {
+                [] => 0,
+                [b';', digits @ ..] => std::str::from_utf8(digits).unwrap().parse().unwrap(),
+                _ => level,
+            };
+            at = end;
+        }
+        level
+    }
+
+    /// Leaving raw attach must leave the terminal as amux's own client
+    /// reads it. With modifyOtherKeys still at 2, every Ctrl chord arrives
+    /// as `CSI 27 ; 5 ; <key> ~`, which the client's key reader drops, so
+    /// Ctrl+U, Ctrl+C and the leader do nothing after a visit to Claude.
+    #[test]
+    fn leaving_raw_attach_switches_off_modify_other_keys() {
+        let mut terminal = CLAUDE_KEYBOARD_MODES.to_vec();
+        assert_eq!(modify_other_keys_level(&terminal), 2);
+        terminal.extend_from_slice(tui::RESTORE_BYTES);
+        assert_eq!(
+            modify_other_keys_level(&terminal),
+            0,
+            "the bytes written on leaving attach leave modifyOtherKeys on: {:?}",
+            String::from_utf8_lossy(tui::RESTORE_BYTES)
+        );
+    }
+
     fn profile() -> ProfileInfo {
         ProfileInfo {
             socket_path: "/data/profiles/p/client.sock".into(),

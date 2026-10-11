@@ -17,6 +17,7 @@ from the recording host:
 | `codex_lost` | `codex_approval` | cut after the approval request, then an exit |
 | `pty_deny` | `claude-specs/fixtures/pty/permission_deny_feedback` | nothing |
 | `pty_lost` | `pty_deny` as recorded on 2.1.251, before the deny became Escape | cut after the permission request, then an exit |
+| `pty_mode_cycle` | `claude-specs/fixtures/pty/mode_cycle` | the prompt the recording typed after Shift+Tab left out, cut after the screen that shows `accept edits on`, then an exit |
 
 Placeholders filled per run: `{{cwd}}`, `{{version}}` (the agent's), and
 `{{uuid:<input id>}}` (the uuid headless Claude's message for that input

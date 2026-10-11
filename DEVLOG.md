@@ -1,3 +1,16 @@
+2026-10-11 — **Failing tests for a lapsed account's relay and for terminal
+Claude's keys and modes.** From the first QA run. A relay link that
+reauthenticates as Free keeps carrying the streams it piped while Pro, so a
+host shows its peer away while calls still reach it. Terminal Claude
+switches on xterm's modifyOtherKeys as well as the kitty protocol: raw
+attach does not know the leader in that form, and leaving attach resets
+the kitty flags but not modifyOtherKeys, so the client's Ctrl chords die
+afterwards. A permission cycled with Shift+Tab while terminal Claude is idle
+shows only on Claude's footer, which amux does not read. Where Claude offers
+auto mode, its plan menu has no accept-edits entry and its first entry starts
+auto mode, which amux's "accept edits" choice picks; the fake terminal
+Claude now draws that menu when its script offers auto mode.
+
 2026-10-11 — **Failing tests for stopping and resuming an agent with an open
 ask.** From the first QA run. A graceful stop waits for the turn to end, and
 an open ask is a turn that waits on the very person who stopped it, so the

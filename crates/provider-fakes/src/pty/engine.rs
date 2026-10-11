@@ -1193,7 +1193,22 @@ impl Engine {
                     "tool_input": input,
                     "tool_name": name,
                 }));
-                self.screen(&format!("{markdown}\n1. Yes, auto-accept edits\n2. Yes, manually approve edits\n3. No, keep planning"));
+                // Where Claude offers auto mode (2.1.296 on Haiku 5.5, as a
+                // QA run recorded it), its plan menu's first entry starts
+                // in auto mode and no entry accepts edits.
+                let first = if self.offers_auto_mode {
+                    "Yes, and use auto mode"
+                } else {
+                    "Yes, auto-accept edits"
+                };
+                let back = if self.offers_auto_mode {
+                    "Tell Claude what to change"
+                } else {
+                    "No, keep planning"
+                };
+                self.screen(&format!(
+                    "{markdown}\n1. {first}\n2. Yes, manually approve edits\n3. {back}"
+                ));
                 let choice = loop {
                     match self.key().await {
                         None => {
@@ -1217,7 +1232,9 @@ impl Engine {
                     return;
                 }
                 self.call_row(request, message, &id, &name, &input);
-                self.mode = if choice == '1' {
+                self.mode = if choice == '1' && self.offers_auto_mode {
+                    "auto"
+                } else if choice == '1' {
                     "acceptEdits"
                 } else {
                     "default"

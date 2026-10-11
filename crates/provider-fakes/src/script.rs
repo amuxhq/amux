@@ -61,9 +61,11 @@ pub struct Script {
     /// Codex's skills.
     #[serde(default)]
     pub commands: Vec<OfferedCommand>,
-    /// Terminal Claude's permission menu offers to switch to auto mode, as
-    /// 2.1.283 does in manual mode: "Yes, and switch to auto mode" sits
-    /// third and No fourth.
+    /// Terminal Claude offers auto mode. Its permission menu offers to
+    /// switch to it, as 2.1.283 does in manual mode: "Yes, and switch to
+    /// auto mode" sits third and No fourth. Its plan menu starts in it, as
+    /// 2.1.296 does: "Yes, and use auto mode" first, "Yes, manually approve
+    /// edits" second, and no entry that accepts edits.
     #[serde(default)]
     pub offers_auto_mode: bool,
     /// Terminal Claude has not been told to trust its working directory:

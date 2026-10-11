@@ -1135,3 +1135,104 @@ async fn windows_refuses_terminal_claude_and_names_the_platform() {
         }
     );
 }
+
+/// Terminal Claude's Shift+Tab, typed while it is idle, changes its
+/// permission at once on its own screen (the footer reads `accept edits
+/// on`), but Claude records the change in its transcript and hooks only
+/// with the next prompt. Cut from the `mode_cycle` recording (Claude Code
+/// 2.1.251) before that prompt: the snapshot must name the new permission
+/// from the screen alone, as the composer's edge shows it.
+// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// docs/ARCHITECTURE.md, "Windows, as a stated cost").
+#[cfg(unix)]
+#[test]
+fn terminal_claude_reports_a_permission_cycled_while_idle_before_the_next_prompt() {
+    terminal_test(async {
+        let agent = Agent::start(Setup {
+            kind: Kind::ClaudePty,
+            replay: Some("pty_mode_cycle"),
+            ..Setup::sdk()
+        })
+        .await;
+        let mut daemon = agent.dial().await;
+        agent.ready().await;
+        let cycle = interpret::claude_pty_input(
+            b"m1".to_vec(),
+            &interpret::FixtureInput::CyclePermissionMode {},
+        )
+        .expect("a cycle input");
+        assert_eq!(daemon.input(cycle).await, Verdict::Accepted);
+        assert_eq!(agent.exit().await, ExitCause::ProviderExited(Some(1)));
+        assert_no_drift(&agent);
+        assert_eq!(
+            agent.log().permission().as_deref(),
+            Some("acceptEdits"),
+            "the footer said accept edits on before the provider ended"
+        );
+    });
+}
+
+/// Terminal Claude 2.1.296, where it offers auto mode, lists its plan menu
+/// as "Yes, and use auto mode", "Yes, manually approve edits", "Tell
+/// Claude what to change": no entry accepts edits. A plan approval that
+/// the person was told accepts edits must not start Claude in auto mode,
+/// a looser permission than the words say; an honest ask either offers
+/// what Claude's menu offers or refuses an answer the menu cannot take.
+// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// docs/ARCHITECTURE.md, "Windows, as a stated cost").
+#[cfg(unix)]
+#[test]
+fn terminal_claude_never_starts_auto_mode_for_a_plan_approved_accepting_edits() {
+    use provider_fakes::Ask;
+    terminal_test(async {
+        let agent = Agent::start(Setup {
+            kind: Kind::ClaudePty,
+            offers_auto_mode: true,
+            steps: vec![
+                Step::Ask(Ask::Plan {
+                    markdown: "# Plan\n\n- Change README.md".into(),
+                }),
+                Step::Text {
+                    chunks: vec!["Built.".into()],
+                },
+                Step::TurnEnd,
+            ],
+            ..Setup::sdk()
+        })
+        .await;
+        let mut daemon = agent.dial().await;
+        agent.ready().await;
+        assert_eq!(
+            daemon.prompt(b"p1", "Change README.md").await,
+            Verdict::Accepted
+        );
+        agent
+            .wait("the plan ask opens", |log| {
+                log.phase() == Some(wire::Phase::NeedsYou)
+            })
+            .await;
+        let ask = agent.log().ask_keys().remove(0);
+        let input = interpret::claude_pty_input(
+            b"a1".to_vec(),
+            &interpret::FixtureInput::Answer {
+                ask,
+                answer: serde_json::json!({"approve_plan": {"auto_accept_edits": true}}),
+            },
+        )
+        .expect("an answer input");
+        if daemon.input(input).await != Verdict::Accepted {
+            // Refusing a choice Claude's menu does not have is honest.
+            return;
+        }
+        agent
+            .wait("the turn ends", |log| log.turn_ends() == 1)
+            .await;
+        assert_ne!(
+            agent.log().permission().as_deref(),
+            Some("auto"),
+            "approving the plan \"accepting edits\" put Claude in auto mode"
+        );
+        daemon.stop(StopMode::Graceful).await;
+        assert_eq!(agent.exit().await, ExitCause::Stopped);
+    });
+}

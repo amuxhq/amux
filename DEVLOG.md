@@ -1,3 +1,10 @@
+2026-10-11 — **Stopping a parent stops its whole family.** A stop, from the
+front door or from a peer, now stops every descendant in the same mode, as a
+delete deletes them: local children through the registry, children on other
+hosts through their host's daemon, which carries on down. The children's
+stops run beside the parent's and nothing waits on them; a child whose host
+cannot be reached is left as it is.
+
 2026-10-11 — **A stop always ends the agent.** A graceful stop under an open
 ask cancels the turn the provider's own way (the ask closes as dismissed, the
 call as cancelled) and ends the incarnation as stopped, where it used to wait

@@ -1118,10 +1118,68 @@ impl ProfileRuntime {
     /// Stops a live agent's process: graceful finishes the turn, abort
     /// cancels it, kill ends the process group at once. A stop that
     /// overruns the stop deadline kills. An exited agent is left as it is.
+    ///
+    /// Stopping an agent stops its whole family, as deleting it does: each
+    /// child is stopped the same way, on this host or forwarded to its own,
+    /// which stops that child's children in turn. The children's stops run
+    /// beside this one and nothing waits for them, so a child whose host
+    /// cannot be reached, or whose stop fails, is left as it is.
     pub async fn stop(&self, id: AgentId, mode: StopMode) -> Result<Agent, RegistryError> {
+        self.stop_children(id, mode).await;
         let operation = self.operation(id);
         let _operation = operation.lock().await;
         self.stop_locked(id, mode).await
+    }
+
+    /// [`Self::stop`] behind a named future type, so a stop can start its
+    /// children's stops on tasks of their own.
+    fn stop_boxed(
+        self: Arc<Self>,
+        id: AgentId,
+        mode: StopMode,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Agent, RegistryError>> + Send>> {
+        Box::pin(async move { self.stop(id, mode).await })
+    }
+
+    async fn stop_children(&self, id: AgentId, mode: StopMode) {
+        let key = self.key(id);
+        let children = match self.store.lock().await.agents_of_parent(&key) {
+            Ok(children) => children,
+            Err(error) => {
+                tracing::warn!(agent = %id, %error, "a stop could not list the agent's children");
+                return;
+            }
+        };
+        for child in children {
+            let me = self.me.clone();
+            tokio::spawn(async move {
+                let Some(runtime) = me.upgrade() else { return };
+                let Ok(child_id) = Uuid::from_slice(&child.agent.agent) else {
+                    return;
+                };
+                if child.agent.host == runtime.host.as_bytes() {
+                    if let Err(error) = runtime.clone().stop_boxed(child_id, mode).await {
+                        tracing::warn!(child = %child_id, %error, "a cascaded stop failed");
+                    }
+                    return;
+                }
+                let Ok(host) = Uuid::from_slice(&child.agent.host) else {
+                    return;
+                };
+                let request = wire::StopAgentRequest {
+                    agent_id: child.agent.agent.clone(),
+                    mode: mode as i32,
+                };
+                if let Err(error) = runtime
+                    .on_peer(host, |mut client| async move {
+                        client.stop_agent(request).await
+                    })
+                    .await
+                {
+                    tracing::warn!(%host, %error, "a cascaded stop could not reach the child's host");
+                }
+            });
+        }
     }
 
     async fn stop_locked(&self, id: AgentId, mode: StopMode) -> Result<Agent, RegistryError> {

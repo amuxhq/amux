@@ -271,7 +271,12 @@ as for a live child. Any other sender is told the child has exited. A person
 resuming the child from the fleet or with `amux resume` starts the same next
 incarnation.
 
-**Stop and delete.** `stop` reaches direct children only. Deleting an agent
+**Stop and delete.** The `stop` tool reaches direct children only. Stopping
+an agent, by the tool or by a person, stops its whole family the same way:
+each child is stopped in the same mode, on its own host through that host's
+daemon, and stops its own children in turn. The children's stops run beside
+the parent's and nothing waits for them; a child whose host cannot be reached
+is left running. A resumed parent hears nothing extra about them. Deleting an agent
 deletes its children too, best effort: a child on another host is deleted
 through that host's daemon, and one whose host cannot be reached is reported
 in `unreachable_children` and stays on its host as an orphan a person can

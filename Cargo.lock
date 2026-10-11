@@ -97,6 +97,7 @@ dependencies = [
  "qrcode",
  "quinn",
  "rcgen",
+ "release",
  "serde",
  "serde_json",
  "serde_yaml",

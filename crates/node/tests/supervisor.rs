@@ -12,17 +12,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
+use ::release::TEST_SEED;
 use node::release::{self, Choice, Manifest, Release, Skip, VerifyError};
 use node::supervisor::SUPERVISOR_LOCK;
 use semver::Version;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use uuid::Uuid;
-
-/// The private half of node's test release key.
-const TEST_SEED: [u8; 32] = [
-    0xfe, 0x91, 0xb0, 0xb9, 0x1e, 0xa7, 0x94, 0x55, 0xea, 0x7c, 0xb1, 0xa7, 0x83, 0xec, 0x33, 0x47,
-    0x28, 0x61, 0x70, 0x17, 0x17, 0xc9, 0x9b, 0x2a, 0xaa, 0x45, 0xe9, 0x43, 0xbb, 0xd6, 0x48, 0x12,
-];
 const OTHER_SEED: [u8; 32] = [7; 32];
 use patience::until;
 

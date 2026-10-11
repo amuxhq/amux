@@ -1,3 +1,10 @@
+2026-10-11 — **The test release key lives in the release crate.**
+The private half of the release key debug builds trust was copied into two
+test files, and the test network now needs it too, to sign the releases it
+publishes to its supervised hosts. It moves into the `release` crate behind
+a `test-key` feature that only test code turns on, and both test files use
+it from there.
+
 2026-10-11 — **A dump bundle prints as text.**
 A dump's row, store slice and journal are binary protobuf that a person or
 an agent triaging a bug cannot read. `dump-show BUNDLE [--agent A]`, a new

@@ -70,6 +70,7 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [dev-dependencies]
+release = { workspace = true, features = ["test-key"] }
 journal = { workspace = true, features = ["synthetic"] }
 patience = { workspace = true }
 provider-fakes = { workspace = true }

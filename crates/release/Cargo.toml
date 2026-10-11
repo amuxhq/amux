@@ -6,6 +6,11 @@ license.workspace = true
 description = "A release channel's signed manifest: signing, verification and the build a host installs"
 publish = false
 
+[features]
+# The private half of the key debug builds trust, for the tests and test
+# harnesses that publish releases; never on in a shipped build.
+test-key = []
+
 [dependencies]
 base64 = "0.22"
 ring = { workspace = true }

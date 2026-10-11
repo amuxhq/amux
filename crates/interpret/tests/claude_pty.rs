@@ -363,3 +363,121 @@ fn a_failed_report_is_worded_for_the_parents_provider() {
         "the provider exited: exit code 1"
     );
 }
+
+// --- plan approval choices: Yes, Yes and switch to a named permission, Keep
+// planning. The switch's permission is the one Claude's own plan menu moves
+// to: auto mode where that menu offers it, accept edits where it does not.
+
+/// The plan ask the interpreter opens on a recorded plan approval, with the
+/// launch's Claude version and what the host's Claude offers changed.
+fn plan_ask_on(version: &str, offered: Option<wire::Catalogue>) -> wire::PlanAsk {
+    use prost::Message as _;
+    let mut script =
+        interpret::fixture_script::<ClaudePty>(&fixtures().join("recorded_plan_auto.json"))
+            .unwrap();
+    script.spec.offered = offered;
+    let (mut state, _) = ClaudePty::initial(&script.spec, &script.producer);
+    for (_, event) in script.events {
+        let Some(mut event) = event else { continue };
+        if let Event::Fact(fact) = &mut event
+            && fact.channel == interpret::Channel::Agent
+        {
+            let text = String::from_utf8(fact.payload.clone()).unwrap();
+            fact.payload = text.replace("2.1.251", version).into_bytes();
+        }
+        let stepped = ClaudePty::step(&mut state, event);
+        let plan = stepped.step.snapshot.and_then(|snapshot| {
+            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice())
+                .unwrap()
+                .asks
+                .into_iter()
+                .find_map(|ask| match ask.body {
+                    Some(wire::ask::Body::Plan(plan)) => Some(plan),
+                    _ => None,
+                })
+        });
+        if let Some(plan) = plan {
+            return plan;
+        }
+    }
+    panic!("the recording opens no plan ask");
+}
+
+fn choices(plan: &wire::PlanAsk) -> Vec<wire::PlanChoice> {
+    plan.choices
+        .iter()
+        .map(|choice| wire::PlanChoice::try_from(*choice).unwrap())
+        .collect()
+}
+
+/// The host's Claude offers auto mode, as Claude 2.1.296 on Haiku 5.5 does.
+fn offers_auto() -> wire::Catalogue {
+    wire::Catalogue {
+        permissions: vec![
+            wire::OfferedPermission {
+                value: "default".into(),
+                normal: true,
+                settable: true,
+                ..Default::default()
+            },
+            wire::OfferedPermission {
+                value: "acceptEdits".into(),
+                settable: true,
+                ..Default::default()
+            },
+            wire::OfferedPermission {
+                value: "auto".into(),
+                settable: true,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
+
+/// Claude 2.1.296, offering auto mode, draws its plan menu as "Yes, and
+/// use auto mode / Yes, manually approve edits / Tell Claude what to
+/// change": no entry accepts edits. The ask offers Yes, Yes and switch to
+/// auto mode, and Keep planning, and names auto as the switch's permission.
+#[test]
+fn a_plan_ask_where_claude_offers_auto_mode_switches_to_auto() {
+    let plan = plan_ask_on("2.1.296", Some(offers_auto()));
+    println!("plan ask: {plan:?} {:?}", choices(&plan));
+    assert!(
+        !choices(&plan).contains(&wire::PlanChoice::StartAcceptingEdits),
+        "the ask offers to start accepting edits, which this Claude's plan menu does not have; \
+         its switch moves to auto mode: {:?}",
+        choices(&plan)
+    );
+    assert_eq!(
+        choices(&plan).len(),
+        3,
+        "Yes, Yes and switch, Keep planning"
+    );
+    assert!(
+        format!("{plan:?}").contains("\"auto\""),
+        "the ask names auto as the permission its switch moves to: {plan:?}"
+    );
+}
+
+/// Claude 2.1.251, with no auto mode, draws "Yes, auto-accept edits / Yes,
+/// manually approve edits / No, keep planning". The ask offers Yes, Yes and
+/// switch to accept edits, and Keep planning, and names acceptEdits as the
+/// switch's permission, so a client words it from the permission rather
+/// than from a fixed choice.
+#[test]
+fn a_plan_ask_where_claude_offers_no_auto_mode_switches_to_accept_edits() {
+    let plan = plan_ask_on("2.1.251", None);
+    println!("plan ask: {plan:?} {:?}", choices(&plan));
+    assert_eq!(
+        choices(&plan).len(),
+        3,
+        "Yes, Yes and switch, Keep planning"
+    );
+    assert_eq!(choices(&plan)[0], wire::PlanChoice::Start);
+    assert_eq!(choices(&plan)[2], wire::PlanChoice::KeepPlanning);
+    assert!(
+        format!("{plan:?}").contains("\"acceptEdits\""),
+        "the ask names acceptEdits as the permission its switch moves to: {plan:?}"
+    );
+}

@@ -1,3 +1,10 @@
+2026-10-11 — **Failing tests for plan approval choices.** A decision from the
+QA triage: a plan ask offers Yes, Yes-and-switch and Keep planning, and
+names the permission the switch moves to: auto where Claude's menu offers
+auto mode, accept edits otherwise. Today terminal Claude's ask is a fixed
+list with "start accepting edits" whatever Claude draws. Codex already offers
+Yes and Keep planning only, which its goldens hold.
+
 2026-10-11 — **Failing tests for three decisions on asks and home.** From the
 QA triage. An ask names a file inside the agent's folder relative to it,
 in the shared view, so neither client has to cut a long path; today both

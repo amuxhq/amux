@@ -117,7 +117,9 @@ anything not allowed is refused at once:
 - it may run `testnet` (all of `testnet ctl`) and read-only utilities (`ls`, `cat`, `head`, `tail`, `grep`, `jq`,
   `wc`, `diff`, `file`); `git` is denied;
 - it may read anywhere in the run folder, `reference/` included;
-- it may write and edit only inside its own folder: notes, fake scripts, findings.
+- it may write and edit only inside its own folder: notes, fake scripts, findings. Large files for attachments and
+  pastes come from `testnet ctl make-file`, which makes them only below the folder; a shell command that writes
+  files (`dd`, `mkfile`) cannot be confined that way, because a permission rule matches only how a command starts.
 
 Its prompt tells it to read only `reference/docs` and `reference/qa`, and never to look for or read source code,
 tests or history. Testers judge what a person would expect, not what the code does.

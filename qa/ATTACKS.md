@@ -61,7 +61,8 @@ The script language is in `reference/docs/TESTNET.md`.
 ## Empty, huge and strange input
 
 - An empty prompt; only spaces; only newlines.
-- A huge prompt (`ctl tui paste PANE "$(cat bigfile)"`), a very long single line, thousands of short lines.
+- A huge prompt (`ctl tui paste PANE "$(cat bigfile)"`, the file made with `ctl make-file bigfile 2m --fill text`), a
+  very long single line, thousands of short lines.
 - Unicode: accents, right-to-left text, combining marks, emoji, CJK, zero-width characters, a name made of them.
 - Long names for agents, hosts and folders; names with spaces, slashes, quotes.
 - A fake script that streams a very long answer, or a very long command (`tool` steps), to see wrapping and

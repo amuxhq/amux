@@ -11,6 +11,7 @@
 
 mod door;
 mod evidence;
+mod files;
 mod phone;
 mod session;
 mod tui;
@@ -184,6 +185,16 @@ pub enum Command {
         /// What the capture is for; also the dumps' reason.
         #[arg(long)]
         note: Option<String>,
+    },
+    /// Make a file in your folder to test with: a large attachment, a long
+    /// paste. NAME is below your folder (no '..'); SIZE is 50m, 1.5g, 300k
+    /// or a count of bytes, up to 2g.
+    MakeFile {
+        name: PathBuf,
+        size: String,
+        /// What it holds.
+        #[arg(long, value_enum, default_value = "zero")]
+        fill: files::Fill,
     },
     /// This session's log, readably.
     Log {
@@ -646,6 +657,7 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
         Command::Tui(command) => tui::run(folder, command),
         Command::Phone(command) => phone::run(folder, command),
         Command::Capture { name, note } => evidence::capture(folder, &name, note.as_deref()),
+        Command::MakeFile { name, size, fill } => files::make(folder, &name, &size, fill),
         Command::Log { tail } => evidence::log(folder, tail),
         Command::Dump(DumpCommand::Show { bundle, agent }) => {
             evidence::dump_show(folder, &bundle, agent.as_deref())

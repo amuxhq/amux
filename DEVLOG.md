@@ -1,3 +1,11 @@
+2026-10-11 — **A tester makes large files with `ctl make-file`.**
+The attachments tester could not make a large file: its shell may only read.
+A permission for `dd` or `mkfile` into its folder cannot be confined, since a
+rule matches only how a command starts: `of=<folder>/../x` and a second
+`mkfile` path both wrote outside in a trial. `testnet ctl make-file NAME SIZE
+[--fill zero|random|text]` makes the file instead, refusing any name that
+leads out of the folder, up to 2g.
+
 2026-10-11 — **A QA tester signs amux off for its persona, and uses real agents.**
 In a one-wave run every tester stopped after about 19 minutes while saying it
 had not met its stopping bar, and closed with a list of what it would try

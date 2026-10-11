@@ -830,6 +830,31 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(source.sent.first?.attachments?.first, .text(name: "Pasted text", text: text))
     }
 
+    /// A prompt's text marks each attachment's place with U+FFFC, one per
+    /// attachment in order (`Draft`'s contract, and docs/ATTACHMENTS.md):
+    /// headless Claude reads an attachment only where its placeholder is,
+    /// so a file, photo or long paste sent without one never reaches the
+    /// model. The chips sit above the field, so the words carry none of
+    /// their own; the sent draft must still place them.
+    func testEveryAttachmentSentHasItsPlaceholderInTheText() async {
+        let source = FakeChat(rows: [], frame: frame())
+        let model = ChatModel(source: source)
+        model.attach(Data("2048 bytes".utf8), name: "noext", mime: "application/octet-stream", image: false)
+        model.attach(Data("png".utf8), name: "red.png", mime: "image/png", image: true)
+        await settle()
+        XCTAssertEqual(model.attachments.count, 2)
+        model.type("What is in these?")
+        model.send()
+        await settle()
+        let sent = source.sent.first
+        let placeholders = sent?.text.unicodeScalars.filter { $0 == "\u{FFFC}" }.count
+        XCTAssertEqual(sent?.attachments?.count, 2)
+        XCTAssertEqual(
+            placeholders, 2,
+            "the sent text \(String(reflecting: sent?.text)) has no place for its attachments"
+        )
+    }
+
     func testAnEmptyChatSaysItIsLoadingOnlyAfterAMoment() async throws {
         let source = FakeChat(rows: [], frame: frame(caughtUp: false))
         let model = ChatModel(source: source)

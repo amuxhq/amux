@@ -358,4 +358,23 @@ final class ChatWordsTests: XCTestCase {
         XCTAssertEqual(ChatWords.lines(1), "1 line")
         XCTAssertEqual(ChatWords.lines(3), "3 lines")
     }
+
+    /// An edit's ask says whether it creates the file (docs/CLIENT.md: the
+    /// ask's `created` is there "so it reads 'Wants to create'"); the
+    /// terminal's card and the phone's own row both say it, the card does not.
+    func testAnEditCardThatCreatesItsFileSaysSo() {
+        let card = { (created: Bool?) in
+            AskCard(
+                kind: .codex, key: "ask:1", itemKey: "", position: 1, count: 1,
+                body: .edit(
+                    path: "/work/notes.txt", files: 1, added: 1, removed: 0, lines: [], reason: "",
+                    created: created, line: 1),
+                choices: [], questionNote: false, questionSkip: false, questionReply: false,
+                stopsTurn: false, state: .open)
+        }
+        XCTAssertEqual(ChatWords.headline(card(false)), "Wants to edit a file")
+        XCTAssertTrue(
+            ChatWords.headline(card(true)).contains("create"),
+            "a new file's card reads \(ChatWords.headline(card(true)))")
+    }
 }

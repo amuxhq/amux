@@ -2021,6 +2021,38 @@ fn second_lines(view: &FleetView) -> HashMap<String, SecondLine> {
         .collect()
 }
 
+/// A reply that opens with an attachment (a model's `attach` tool puts the
+/// element first, and the interpreter leaves its placeholder there) still
+/// gives its row words to read: never the bare object-replacement character,
+/// which the phone draws as an empty line and reads aloud as "￼".
+#[test]
+fn a_reply_opening_with_an_attachment_still_says_something_on_its_row() {
+    let file = wire::Attachment {
+        of: Some(wire::attachment::Of::File(wire::BlobRef {
+            hash: vec![7; 32],
+            name: "out.txt".into(),
+            mime: "text/plain".into(),
+            size: 16,
+        })),
+    };
+    let reply = Item {
+        attachments: vec![file],
+        ..said(1, 1, "\u{FFFC}\n\nattached", true)
+    };
+    let state = session_on(
+        &fleet_entry("a", "h1", Phase::Idle, None, 1),
+        wire::ClaudeSdkSnapshot::default(),
+        vec![reply],
+    );
+    let said = session_line(&state, 5_000)
+        .last_said
+        .expect("an idle agent that replied has a last line");
+    assert!(
+        !said.contains('\u{FFFC}') && !said.trim().is_empty(),
+        "the row's line is the bare placeholder: {said:?}"
+    );
+}
+
 #[test]
 fn each_row_says_what_its_state_calls_for() {
     let mut fleet = FleetState::new();

@@ -1,3 +1,12 @@
+2026-10-11 — **Failing tests for phone attachments and previews from the
+first QA run.** The phone sends a prompt's attachments with no placeholder
+in its text, and the agent process builds Claude's prompt only at
+placeholders, so every file and photo sent from the phone to Claude is
+dropped (Codex appends them and survives). An agent row's preview is the
+bare placeholder character when the reply opens with an attachment, on both
+clients, because the fleet view takes the raw first line. The phone's
+file-edit card says "Wants to edit a file" for a file it creates.
+
 2026-10-11 — **Failing terminal-client tests from the first QA run.** The
 words after a row of attachment chips wrap at the room the chips left on
 their line, every line after; a multi-line answer in a question's own field

@@ -21,6 +21,8 @@ use crate::theme::Theme;
 const W: u16 = 100;
 const H: u16 = 30;
 
+mod text_layout;
+
 fn theme() -> Theme {
     Theme::default()
 }
@@ -624,6 +626,27 @@ fn a_denial_takes_a_note_that_goes_back_to_the_agent() {
         panic!("{decoded:?}");
     };
     assert_eq!(deny.note, "use cargo clean");
+}
+
+/// docs/TERMINAL.md: when the agent waits on you "the ask takes over the
+/// composer's box ... the draft waits behind it and comes back after".
+#[test]
+fn a_draft_typed_before_an_ask_waits_behind_it_and_comes_back_after() {
+    let idle = chat(vec![]);
+    let (asking, at) = fixtures::Named::ClaudePermissionAsk.state();
+    let mut view = ChatView::new(b"agent".to_vec(), at, false);
+    typed(&mut view, &idle, "I have ");
+    // The ask opens; its first choice is answered by number.
+    let effects = view.key(&asking, key(KeyCode::Char('1')), theme());
+    assert!(
+        matches!(effects.as_slice(), [ChatEffect::Answer(_)]),
+        "{effects:?}"
+    );
+    assert_eq!(
+        view.editor.text(),
+        "I have ",
+        "the draft waited behind the ask"
+    );
 }
 
 #[test]
@@ -2570,6 +2593,51 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     assert_eq!(home.draft.editor.text(), "fix it");
     home.started();
     assert!(home.draft.editor.is_empty());
+}
+
+/// docs/TERMINAL.md: "A new agent always shows the values it will start
+/// with" on the composer's bottom edge. At 80 columns in a deep folder the
+/// edge dropped the model and the permission (even one that never asks)
+/// and kept the folder, so the picks were invisible until the agent ran.
+/// The folder is what can be shortened; the model and permission are what
+/// the person is about to start.
+#[test]
+fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_columns() {
+    let fleet = home_fleet();
+    let place = crate::home::Place {
+        working_dir: "~/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work",
+        ..*HOME_PLACE
+    };
+    let mut home = crate::home::Home::default();
+    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let setup = home.open_setup(&place).unwrap();
+    setup.offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
+    setup.pick(crate::setup::Item::Permission, "bypassPermissions");
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, H)).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.area();
+            home.draw(
+                frame,
+                area,
+                &fleet,
+                &HashMap::new(),
+                None,
+                now(),
+                theme(),
+                &place,
+            );
+        })
+        .unwrap();
+    let screen = text(terminal.backend().buffer());
+    let edge = screen
+        .lines()
+        .find(|line| line.contains("╰") && line.contains("Claude"))
+        .unwrap_or_else(|| panic!("no edge on\n{screen}"));
+    assert!(
+        edge.contains("Opus (high)") && edge.contains("never ask"),
+        "the edge names the model and the permission it will start with: {edge}"
+    );
 }
 
 /// What a host offers for Claude, as headless Claude says.

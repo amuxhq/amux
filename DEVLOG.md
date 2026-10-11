@@ -1,3 +1,16 @@
+2026-10-11 — **Failing terminal-client tests from the first QA run.** The
+words after a row of attachment chips wrap at the room the chips left on
+their line, every line after; a multi-line answer in a question's own field
+is drawn on one line; a file-edit approval cuts its path from the right, so
+the file's name is the part lost; a long command's approval pushes its
+choices and key line off a short screen; a refused rename at 80 columns
+loses its way out; a new agent's settings edge drops the model and
+permission before it shortens a deep folder; and a draft is dropped when
+its chat closes. One test states a choice not yet made: an agent's single
+line breaks stay line breaks, where the terminal now reads them as markdown
+soft breaks. A passing test pins the documented promise that a draft typed
+before an ask waits behind it.
+
 2026-10-11 — **Failing tests for a host that cannot restart after a crash and
 a Claude parent that cannot tell who reported.** Triage of the first
 adversarial QA run. A daemon dropped in process (a crash in the test net, or

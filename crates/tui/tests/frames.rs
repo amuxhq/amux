@@ -740,3 +740,107 @@ async fn a_fleet_of_every_standing_matches_its_golden() {
         .expect("the net shuts down")
         .unwrap();
 }
+
+// --- a draft across leaving the chat -----------------------------------------
+
+/// The client's next event from a task it spawned (a chat opening), applied.
+async fn next_app_event(app: &mut tui::App) {
+    let event = tokio::time::timeout(PATIENCE, app.receiver.recv())
+        .await
+        .expect("the client's task answers")
+        .expect("the client's event channel is open");
+    app.event(event);
+}
+
+/// Opens `id`'s chat the way Enter on its home row does, and waits for it.
+async fn open_chat(app: &mut tui::App, id: &[u8]) {
+    app.config.initial_chat = Some(id.to_vec());
+    app.fleet_changed();
+    next_app_event(app).await;
+    assert!(
+        app.chat
+            .as_ref()
+            .is_some_and(|chat| chat.view.agent_id == id),
+        "the chat opened"
+    );
+}
+
+/// docs/TERMINAL.md: the client owns the drafts, and "the composer takes a
+/// draft at any time". A half-written prompt is the person's work: going
+/// home with the leader then `s` and coming back to the same chat must find
+/// it in the composer, as the phone keeps it (docs/IOS.md: leaving the page
+/// loses none of the draft).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
+    let net = Net::start(
+        Topology::new().host("desk").agent(
+            AgentDecl::new("worker", "desk")
+                .kind(FakeKind::ClaudeSdk)
+                .steps(vec![text("Ready."), Step::TurnEnd])
+                .prompt("go"),
+        ),
+    )
+    .await
+    .unwrap();
+    net.settle("worker").await.unwrap();
+    let worker = net.agent("worker").unwrap().id;
+    let client: std::sync::Arc<dyn client::Client> =
+        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
+        .await
+        .unwrap();
+    let config = tui::TuiConfig {
+        working_dir: "/".into(),
+        leader: 'a',
+        theme: theme(),
+        initial_chat: None,
+        attach: false,
+        version: String::new(),
+        local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
+        layout: None,
+        reports: None,
+        chat_in: tui::setup::ChatIn::Amux,
+        defaults: tui::setup::Defaults::default(),
+    };
+    let mut app = tui::App::new(client, fleet, config);
+    let mut changed = app.fleet.changed();
+    while app.fleet.state().find(worker.as_bytes()).is_none() {
+        tokio::time::timeout(PATIENCE, changed.changed())
+            .await
+            .expect("the fleet lists the worker")
+            .unwrap();
+    }
+
+    open_chat(&mut app, worker.as_bytes()).await;
+    for c in "important unsent draft".chars() {
+        app.key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::Char(c),
+        ));
+    }
+    assert_eq!(
+        app.chat.as_ref().unwrap().view.editor.text(),
+        "important unsent draft"
+    );
+    // The leader, then `s`: home.
+    app.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('a'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    app.key(crossterm::event::KeyEvent::from(
+        crossterm::event::KeyCode::Char('s'),
+    ));
+    assert!(app.chat.is_none(), "home");
+
+    open_chat(&mut app, worker.as_bytes()).await;
+    assert_eq!(
+        app.chat.as_ref().unwrap().view.editor.text(),
+        "important unsent draft",
+        "the draft waits in the chat's composer"
+    );
+
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}

@@ -2803,3 +2803,83 @@ fn a_codex_command_that_dropped_output_is_marked_trimmed() {
         .collect();
     assert_eq!(trimmed, vec![true, false]);
 }
+
+// --- an edit ask's path, relative to the agent's folder ---------------------
+
+/// The path an open edit ask's card carries, for an agent working in `cwd`.
+fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
+    let mut state = SessionState::new(
+        wire::Agent {
+            cwd: cwd.into(),
+            ..agent(kind)
+        },
+        CAP,
+    );
+    let claude = wire::Ask {
+        key: "edit-1".into(),
+        item_key: "t1".into(),
+        body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
+            tool_name: "Edit".into(),
+            input_json: serde_json::to_vec(&serde_json::json!({
+                "file_path": file,
+                "old_string": "CURRENT",
+                "new_string": "UPDATED",
+            }))
+            .unwrap(),
+            ..Default::default()
+        })),
+        ..Default::default()
+    };
+    let codex = wire::CodexAsk {
+        key: "edit-1".into(),
+        item_key: "t1".into(),
+        body: Some(wire::codex_ask::Body::FileChange(
+            wire::FileChangeApproval {
+                changes: vec![wire::FileChange {
+                    path: file.into(),
+                    kind: wire::FileChangeKind::Add as i32,
+                    patch: "@@ -0,0 +1 @@\n+hello\n".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )),
+        ..Default::default()
+    };
+    state.update(snapshot(
+        kind,
+        Phase::NeedsYou,
+        full_snapshot(kind, vec![claude], vec![codex]),
+        vec![],
+    ));
+    state.update(caught_up());
+    match ask_card(&state).expect("the edit ask is open").body {
+        AskBody::Edit { path, .. } => path,
+        other => panic!("not an edit card: {other:?}"),
+    }
+}
+
+/// A file inside the agent's working folder is named relative to it, so
+/// every client shows the file's name however narrow it is; a file outside
+/// the folder keeps its whole path.
+#[test]
+fn an_edit_asks_path_is_relative_to_the_agents_folder_when_the_file_is_inside_it() {
+    let cwd = "/Users/jlw/.local/state/amux-qa/20261011-171536/t6/.testnet/net/desk/work";
+    for kind in [Kind::ClaudeSdk, Kind::Codex] {
+        assert_eq!(
+            edit_ask_path(kind, cwd, &format!("{cwd}/notes.txt")),
+            "notes.txt",
+            "{kind:?}: a file in the agent's folder is named relative to it"
+        );
+        assert_eq!(
+            edit_ask_path(kind, cwd, &format!("{cwd}/src/lib.rs")),
+            "src/lib.rs",
+            "{kind:?}: a file below the agent's folder is named relative to it"
+        );
+        assert_eq!(
+            edit_ask_path(kind, cwd, "/etc/hosts"),
+            "/etc/hosts",
+            "{kind:?}: a file outside the agent's folder keeps its whole path"
+        );
+    }
+}

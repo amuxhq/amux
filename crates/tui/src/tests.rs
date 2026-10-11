@@ -3940,3 +3940,77 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
         }
     }
 }
+
+// --- keys pressed just as an ask appears --------------------------------------
+
+/// For about half a second after an ask appears, keys still go to the draft:
+/// a person typing as it opens has not read it, so a digit among their words
+/// is part of the draft, not an answer. After the window a digit answers.
+///
+/// The view's only clock today is the time each frame is drawn at; the ask
+/// is first drawn at `at` and the first digit is pressed in that frame, the
+/// second in a frame 600 ms later. A fix that gives `ChatView::key` the time
+/// of the key changes how this test passes the time, not what it asserts.
+#[test]
+fn keys_typed_as_an_ask_appears_go_to_the_draft_for_half_a_second() {
+    let idle = chat(vec![]);
+    let (asking, at) = fixtures::Named::ClaudePermissionAsk.state();
+    let mut view = ChatView::new(b"agent".to_vec(), at, false);
+    typed(&mut view, &idle, "I have ");
+    draw(&mut view, &asking, at, W, H, theme());
+    let effects = view.key(&asking, key(KeyCode::Char('1')), theme());
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, ChatEffect::Answer(_))),
+        "a digit typed as the ask appeared answered it: {effects:?}"
+    );
+    assert_eq!(
+        view.editor.text(),
+        "I have 1",
+        "a key typed as the ask appeared lands in the draft"
+    );
+    draw(&mut view, &asking, at + 600, W, H, theme());
+    let effects = view.key(&asking, key(KeyCode::Char('1')), theme());
+    assert!(
+        matches!(effects.as_slice(), [ChatEffect::Answer(_)]),
+        "after the window a digit answers: {effects:?}"
+    );
+}
+
+// --- focus on home's controls --------------------------------------------------
+
+/// Focus on "+ New Agent" or a section heading carries the same › marker as
+/// a focused agent row, so a keyboard user can see where Enter will land:
+/// on a control it starts an agent or folds a section.
+#[test]
+fn a_focused_control_on_home_carries_the_agent_rows_marker() {
+    let fleet = home_fleet();
+    let mut home = crate::home::Home::default();
+    home_screen(&mut home, &fleet, theme());
+    let focused = |screen: &str, words: &str| -> String {
+        screen
+            .lines()
+            .find(|line| line.contains(words))
+            .unwrap_or_else(|| panic!("no {words} on\n{screen}"))
+            .to_owned()
+    };
+    home.key(&fleet, key(KeyCode::Home), false);
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(
+        screen.contains("enter start"),
+        "Home puts the keys on + New Agent: {screen}"
+    );
+    let new_agent = focused(&screen, "New Agent");
+    home.key(&fleet, key(KeyCode::Down), false);
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(
+        screen.contains("enter hide"),
+        "Down from + New Agent lands on the first heading: {screen}"
+    );
+    let heading = focused(&screen, "Needs you");
+    assert!(
+        new_agent.contains('›') && heading.contains('›'),
+        "a focused control has no marker: {new_agent:?} and {heading:?}"
+    );
+}

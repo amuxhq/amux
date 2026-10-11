@@ -1,3 +1,12 @@
+2026-10-11 — **Failing tests for three decisions on asks and home.** From the
+QA triage. An ask names a file inside the agent's folder relative to it,
+in the shared view, so neither client has to cut a long path; today both
+get the absolute path. For about half a second after an ask appears, keys
+keep going to the composer's draft, so a digit typed as it opens does not
+approve something unseen; today it answers. A focused control on home
+("+ New Agent", a section heading) carries the agent rows' marker; today
+only its words brighten.
+
 2026-10-11 — **Failing spec: stopping a parent stops its whole family.** A
 decision from the QA triage: a stop cascades to every descendant, children
 on other hosts on a best-effort basis, as a delete does. Today the daemon's

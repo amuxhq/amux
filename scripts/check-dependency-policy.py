@@ -108,7 +108,12 @@ SUPPORT_ALLOWED_LOCAL = {
     # The one wait and its failure, shared by every test crate; the harness
     # builds its stream and cursor waits on it.
     "patience": set(),
-    "testnet": {"agent-dir", "journal", "node", "patience", "provider-fakes", "store", "wire"},
+    # The harness also signs release manifests with the test key for its
+    # supervised hosts, and draws the terminal client's screens through shot.
+    "testnet": {
+        "agent-dir", "journal", "node", "patience", "provider-fakes", "release", "shot",
+        "store", "tui", "wire",
+    },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it.
     "qualification": {"node", "provider-fakes", "store", "testnet", "wire"},

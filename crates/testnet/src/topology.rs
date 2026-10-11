@@ -96,10 +96,44 @@ pub struct HostDecl {
     /// working-tree diff.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub files: BTreeMap<String, String>,
+    /// What the agents created on this host run, whoever creates them: the
+    /// scripted fakes, or the real Claude and Codex under the operator's
+    /// login.
+    #[serde(default, skip_serializing_if = "Provider::is_fake")]
+    pub provider: Provider,
+    /// Run the host as a real `amux daemon` process with its own
+    /// installation config, instead of a runtime inside the net's process.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub process: bool,
+    /// Run the host's daemon under `amux supervise`, taking updates from
+    /// the net's release feed; a supervised host is a process host.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub supervised: bool,
+}
+
+/// What an agent's provider is.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Provider {
+    /// The scripted fake of the agent's kind.
+    #[default]
+    Fake,
+    /// The real `claude` or `codex` on this machine's PATH, under the
+    /// operator's login, with their own settings, hooks and tool servers
+    /// kept out.
+    Real,
+}
+
+impl Provider {
+    pub fn is_fake(&self) -> bool {
+        *self == Self::Fake
+    }
 }
 
 /// Two hosts that trust each other, linked in process over a loopback
-/// carrier: the link the fault verbs sever and restore.
+/// carrier: the link the fault verbs sever and restore. A link with a
+/// process host at either end is paired for real instead, over the LAN
+/// through gates the net holds, which the fault verbs cut.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkDecl {
@@ -149,6 +183,13 @@ pub struct AgentDecl {
     /// own default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission: Option<String>,
+    /// The model it is created on, as a person picks one; none leaves the
+    /// provider's own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Its provider, where it differs from its host's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<Provider>,
 }
 
 /// Which fake provider an agent runs, and so which interpreter reads it.
@@ -162,6 +203,11 @@ pub enum FakeKind {
 }
 
 impl HostDecl {
+    /// A supervised host's daemon is a process too.
+    pub fn runs_as_process(&self) -> bool {
+        self.process || self.supervised
+    }
+
     /// The declared repository a committed file's path lies in.
     pub fn repository_of(&self, path: &str) -> Option<&str> {
         self.repositories
@@ -259,6 +305,12 @@ pub enum TopologyError {
     FileOutsideRepositories { host: String, path: String },
     #[error("agent {0:?} names a branch without a relative cwd to put it in")]
     BranchWithoutFolder(String),
+    #[error(
+        "host {0:?} runs as a process; the net announces it on the discovery bus at its LAN listener, so discovery needs lan"
+    )]
+    ProcessDiscovery(String),
+    #[error("hosts {a:?} and {b:?} pair for real, as a process host must, which needs lan on both")]
+    ProcessLink { a: String, b: String },
     #[error("agent {0:?} has both an inline script and a script file")]
     TwoScripts(String),
     #[error("agent {agent:?}'s script {path}: {error}")]
@@ -275,7 +327,8 @@ impl Topology {
     }
 
     /// Reads a topology from a JSON file, loading each agent's script file
-    /// into it, and validates it.
+    /// into it, and checks it. A file may declare no hosts: a served net
+    /// can start empty and grow.
     pub fn load(path: &Path) -> Result<Self, TopologyError> {
         let text = std::fs::read_to_string(path).map_err(|error| TopologyError::Read {
             path: path.to_owned(),
@@ -301,7 +354,7 @@ impl Topology {
                 agent.script = Some(script);
             }
         }
-        topology.validate()?;
+        topology.check()?;
         Ok(topology)
     }
 
@@ -350,10 +403,17 @@ impl Topology {
         self
     }
 
+    /// Checks every rule, and that there is a host to start.
     pub fn validate(&self) -> Result<(), TopologyError> {
         if self.hosts.is_empty() {
             return Err(TopologyError::NoHosts);
         }
+        self.check()
+    }
+
+    /// Checks every rule but the one asking for a host: a net that grows
+    /// while it runs may start with none.
+    pub fn check(&self) -> Result<(), TopologyError> {
         let mut hosts = BTreeSet::new();
         for host in &self.hosts {
             let word = !host.name.is_empty()
@@ -369,6 +429,9 @@ impl Topology {
             }
             if host.bonjour && (!host.lan || host.discovery) {
                 return Err(TopologyError::BonjourNeedsLan(host.name.clone()));
+            }
+            if host.runs_as_process() && host.discovery && !host.lan {
+                return Err(TopologyError::ProcessDiscovery(host.name.clone()));
             }
             for path in host.files.keys() {
                 if host.repository_of(path).is_none() {
@@ -414,6 +477,18 @@ impl Topology {
             }
             if link.a == link.b {
                 return Err(TopologyError::SelfLink(link.a.clone()));
+            }
+            let lan = |name: &str| self.hosts.iter().any(|host| host.name == name && host.lan);
+            let process = |name: &str| {
+                self.hosts
+                    .iter()
+                    .any(|host| host.name == name && host.runs_as_process())
+            };
+            if (process(&link.a) || process(&link.b)) && !(lan(&link.a) && lan(&link.b)) {
+                return Err(TopologyError::ProcessLink {
+                    a: link.a.clone(),
+                    b: link.b.clone(),
+                });
             }
             if !links.insert(link_key(&link.a, &link.b)) {
                 return Err(TopologyError::DuplicateLink {

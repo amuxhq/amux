@@ -2516,6 +2516,7 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_held_transfer_and_a_
     gate.set_faults(testnet::Faults {
         loss_percent: 5,
         delay: Duration::from_millis(100),
+        ..testnet::Faults::default()
     });
     net.open_gate("three").unwrap();
     until_item(&mut session, "through a poor network").await;

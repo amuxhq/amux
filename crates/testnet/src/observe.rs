@@ -229,6 +229,11 @@ pub fn inventory_hosts(events: &[InventoryEvent]) -> Vec<wire::HostEntry> {
     hosts
 }
 
+/// Whether a host's inventory entry says it is trusted and online now.
+pub fn host_online(host: &wire::HostEntry) -> bool {
+    host.trust() == wire::Trust::Trusted && host.presence() == wire::Presence::Online
+}
+
 impl Describe for SessionEvent {
     fn describe(&self) -> String {
         match &self.of {

@@ -24,9 +24,10 @@ use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
+use crate::gate::Faults;
 use crate::net::{ClockMode, JournalCut, Net, NetError, NetOptions};
 use crate::observe;
-use crate::topology::{AgentDecl, FakeKind, TierDecl, Topology};
+use crate::topology::{AccountDecl, AgentDecl, FakeKind, HostDecl, Provider, TierDecl, Topology};
 
 /// A request to the door.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -121,6 +122,12 @@ pub enum Control {
         delay_ms: u64,
         #[serde(default)]
         loss_percent: u32,
+        #[serde(default)]
+        jitter_ms: u64,
+        #[serde(default)]
+        reorder_percent: u32,
+        #[serde(default)]
+        rate_bytes_per_sec: u64,
     },
     /// A gate in front of the relay's QUIC carrier, for a client outside
     /// the net to dial in the relay's place; answers its address.
@@ -131,7 +138,92 @@ pub enum Control {
         delay_ms: u64,
         #[serde(default)]
         loss_percent: u32,
+        #[serde(default)]
+        jitter_ms: u64,
+        #[serde(default)]
+        reorder_percent: u32,
+        #[serde(default)]
+        rate_bytes_per_sec: u64,
     },
+    /// Makes a host's network, or the relay's, bad: every gate its
+    /// datagrams cross.
+    NetFaults {
+        target: String,
+        #[serde(default)]
+        delay_ms: u64,
+        #[serde(default)]
+        loss_percent: u32,
+        #[serde(default)]
+        jitter_ms: u64,
+        #[serde(default)]
+        reorder_percent: u32,
+        #[serde(default)]
+        rate_bytes_per_sec: u64,
+    },
+    /// Drops every datagram on the host's way to the relay, or stops.
+    BlockUdp {
+        host: String,
+        blocked: bool,
+    },
+    /// Severs a link and restores it on a period until stopped.
+    Flap {
+        a: String,
+        b: String,
+        down_ms: u64,
+        up_ms: u64,
+    },
+    /// Stops every flapping link, leaving each restored.
+    FlapStop {},
+    /// The gate `from` dials to reach `to`'s LAN listener: give it to a
+    /// pairing in place of `to`'s address; answers its address.
+    PairGate {
+        from: String,
+        to: String,
+    },
+    /// Adds a host to the running net.
+    AddHost {
+        host: Box<HostDecl>,
+    },
+    RemoveHost {
+        host: String,
+    },
+    /// Two hosts trust each other and link, as a declared link.
+    AddLink {
+        a: String,
+        b: String,
+    },
+    /// Two hosts forget each other.
+    RemoveLink {
+        a: String,
+        b: String,
+    },
+    /// An account the relay's cloud knows, starting the relay if none runs.
+    AddAccount {
+        account: AccountDecl,
+    },
+    /// Waits until an agent rests: idle or needing the person, nothing
+    /// queued; after the input named, when one is.
+    Settle {
+        agent: String,
+        #[serde(default)]
+        input: Option<String>,
+        #[serde(default)]
+        timeout_ms: Option<u64>,
+    },
+    /// Publishes the build under test on the release feed and has every
+    /// supervised host check for it.
+    Release {
+        version: String,
+        #[serde(default)]
+        channel: Option<String>,
+        #[serde(default)]
+        rollout: Option<u8>,
+        #[serde(default)]
+        broken: bool,
+    },
+    /// The net as it stands: hosts, agents, links, and the topology that
+    /// would start it again.
+    Status {},
     Inventory {
         host: String,
     },
@@ -180,6 +272,22 @@ pub const CAPABILITIES: &[(&str, &str)] = &[
     ("LanFaults", "Net::set_lan_faults"),
     ("RelayGate", "Net::relay_gate"),
     ("RelayFaults", "Net::set_relay_faults"),
+    ("NetFaults", "Net::set_net_faults"),
+    ("BlockUdp", "Net::block_udp"),
+    ("Flap", "Net::sever_link + Net::restore_link on a period"),
+    ("FlapStop", "Net::restore_link for each flapping link"),
+    ("PairGate", "Net::pair_gate"),
+    ("AddHost", "Net::add_host"),
+    ("RemoveHost", "Net::remove_host"),
+    ("AddLink", "Net::add_link"),
+    ("RemoveLink", "Net::remove_link"),
+    ("AddAccount", "Net::add_account"),
+    (
+        "Settle",
+        "Net::input_settled when an input is named + Net::settle_within",
+    ),
+    ("Release", "Net::publish_release"),
+    ("Status", "Net::topology + Net::host"),
     (
         "Inventory",
         "Net::observe_inventory + observe_until(CaughtUp)",
@@ -222,6 +330,19 @@ impl Control {
             Self::LanFaults { .. } => "LanFaults",
             Self::RelayGate {} => "RelayGate",
             Self::RelayFaults { .. } => "RelayFaults",
+            Self::NetFaults { .. } => "NetFaults",
+            Self::BlockUdp { .. } => "BlockUdp",
+            Self::Flap { .. } => "Flap",
+            Self::FlapStop {} => "FlapStop",
+            Self::PairGate { .. } => "PairGate",
+            Self::AddHost { .. } => "AddHost",
+            Self::RemoveHost { .. } => "RemoveHost",
+            Self::AddLink { .. } => "AddLink",
+            Self::RemoveLink { .. } => "RemoveLink",
+            Self::AddAccount { .. } => "AddAccount",
+            Self::Settle { .. } => "Settle",
+            Self::Release { .. } => "Release",
+            Self::Status {} => "Status",
             Self::Inventory { .. } => "Inventory",
             Self::Block { .. } => "Block",
             Self::Chat { .. } => "Chat",
@@ -287,6 +408,21 @@ pub struct ReadyHost {
     pub profile: Uuid,
     pub front_door: PathBuf,
     pub config: PathBuf,
+    /// The host's own directory: its installation, provider commands and,
+    /// for a process host, its logs.
+    #[serde(default)]
+    pub dir: PathBuf,
+    #[serde(default)]
+    pub process: bool,
+    #[serde(default)]
+    pub supervised: bool,
+    #[serde(default)]
+    pub provider: Provider,
+    #[serde(default)]
+    pub up: bool,
+    /// The port its LAN listener answers on, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lan_port: Option<u16>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -295,6 +431,8 @@ pub struct ReadyAgent {
     pub host: String,
     pub id: Uuid,
     pub kind: FakeKind,
+    #[serde(default)]
+    pub provider: Provider,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -309,9 +447,13 @@ pub enum ServeError {
 pub struct Served {
     pub readiness: Readiness,
     net: Arc<Mutex<Option<Net>>>,
+    flaps: Flaps,
     closed: watch::Receiver<bool>,
     accept: JoinHandle<()>,
 }
+
+/// The links being cut and restored on a period, by their ends.
+type Flaps = Arc<std::sync::Mutex<std::collections::BTreeMap<(String, String), JoinHandle<()>>>>;
 
 /// Starts `topology` on wall time and serves its door on `door`.
 pub async fn serve(topology: Topology, door: SocketAddr) -> Result<Served, ServeError> {
@@ -336,17 +478,18 @@ pub async fn serve_with(
     let net = Net::start_with(topology, options).await?;
     let readiness = readiness(&net, control)?;
     let net = Arc::new(Mutex::new(Some(net)));
+    let flaps = Flaps::default();
     let (close, closed) = watch::channel(false);
     let close = Arc::new(close);
     let accept = tokio::spawn({
-        let net = net.clone();
+        let (net, flaps) = (net.clone(), flaps.clone());
         async move {
             let mut closing = close.subscribe();
             loop {
                 tokio::select! {
                     accepted = listener.accept() => {
                         let Ok((stream, _)) = accepted else { return };
-                        tokio::spawn(connection(stream, net.clone(), close.clone()));
+                        tokio::spawn(connection(stream, net.clone(), flaps.clone(), close.clone()));
                     }
                     _ = closing.wait_for(|closed| *closed) => return,
                 }
@@ -356,6 +499,7 @@ pub async fn serve_with(
     Ok(Served {
         readiness,
         net,
+        flaps,
         closed,
         accept,
     })
@@ -371,6 +515,9 @@ impl Served {
     pub async fn shutdown(self) -> Result<(), NetError> {
         self.accept.abort();
         let _ = self.accept.await;
+        for (_, flap) in std::mem::take(&mut *self.flaps.lock().unwrap()) {
+            flap.abort();
+        }
         let net = self.net.lock().await.take();
         match net {
             Some(net) => net.shutdown().await,
@@ -383,12 +530,29 @@ fn readiness(net: &Net, control: SocketAddr) -> Result<Readiness, NetError> {
     let mut hosts = Vec::new();
     for name in net.host_names() {
         let info = net.host(&name)?;
+        let decl = net
+            .topology()
+            .hosts
+            .iter()
+            .find(|host| host.name == name)
+            .cloned()
+            .unwrap_or_default();
         hosts.push(ReadyHost {
             name: info.name.clone(),
             host_id: info.host_id,
             profile: info.profile,
             front_door: info.front_door.clone(),
             config: info.config.clone(),
+            dir: info.dir.clone(),
+            process: info.process,
+            supervised: decl.supervised,
+            provider: decl.provider,
+            up: net.is_up(&name),
+            lan_port: std::fs::read_to_string(
+                node::profile_dir(&info.data_dir, info.profile).join(node::LAN_PORT_FILE),
+            )
+            .ok()
+            .and_then(|text| text.trim().parse().ok()),
         });
     }
     Ok(Readiness {
@@ -403,6 +567,7 @@ fn readiness(net: &Net, control: SocketAddr) -> Result<Readiness, NetError> {
                 host: agent.host.clone(),
                 id: agent.id,
                 kind: agent.kind,
+                provider: agent.provider,
             })
             .collect(),
         cloud_url: net.relay().ok().map(|relay| relay.url().to_owned()),
@@ -422,6 +587,7 @@ fn readiness(net: &Net, control: SocketAddr) -> Result<Readiness, NetError> {
 async fn connection(
     stream: TcpStream,
     net: Arc<Mutex<Option<Net>>>,
+    flaps: Flaps,
     close: Arc<watch::Sender<bool>>,
 ) {
     let (read, mut write) = stream.into_split();
@@ -431,7 +597,17 @@ async fn connection(
             continue;
         }
         let (reply, shutting_down) = match serde_json::from_str::<Control>(&line) {
+            Ok(Control::Flap {
+                a,
+                b,
+                down_ms,
+                up_ms,
+            }) => (flap(&net, &flaps, a, b, down_ms, up_ms).await, false),
+            Ok(Control::FlapStop {}) => (flap_stop(&net, &flaps).await, false),
             Ok(Control::Shutdown) => {
+                for (_, flap) in std::mem::take(&mut *flaps.lock().unwrap()) {
+                    flap.abort();
+                }
                 let taken = net.lock().await.take();
                 let reply = match taken {
                     Some(net) => match net.shutdown().await {
@@ -471,6 +647,98 @@ async fn connection(
             return;
         }
     }
+}
+
+/// Starts cutting the link between `a` and `b` for `down_ms` and restoring
+/// it for `up_ms`, over and over, until stopped: a connection that keeps
+/// dropping. The first cut happens before this answers.
+async fn flap(
+    net: &Arc<Mutex<Option<Net>>>,
+    flaps: &Flaps,
+    a: String,
+    b: String,
+    down_ms: u64,
+    up_ms: u64,
+) -> Reply {
+    if down_ms == 0 || up_ms == 0 {
+        return Reply::Error {
+            kind: ErrorKind::Invalid,
+            message: "a flap needs a down and an up period".to_owned(),
+        };
+    }
+    {
+        let mut guard = net.lock().await;
+        let Some(held) = guard.as_mut() else {
+            return closed();
+        };
+        if let Err(error) = held.sever_link(&a, &b) {
+            return refusal(&error);
+        }
+    }
+    let task = tokio::spawn({
+        let (net, a, b) = (net.clone(), a.clone(), b.clone());
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(down_ms)).await;
+                if let Some(held) = net.lock().await.as_mut() {
+                    let _ = held.restore_link(&a, &b).await;
+                } else {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(up_ms)).await;
+                if let Some(held) = net.lock().await.as_mut() {
+                    let _ = held.sever_link(&a, &b);
+                } else {
+                    return;
+                }
+            }
+        }
+    });
+    if let Some(earlier) = flaps
+        .lock()
+        .unwrap()
+        .insert(crate::topology::link_key(&a, &b), task)
+    {
+        earlier.abort();
+    }
+    Reply::Ok(json!({
+        "installed": format!("link {a} - {b} flapping: {down_ms} ms down, {up_ms} ms up"),
+    }))
+}
+
+/// Stops every flap and restores each link, so none is left cut.
+async fn flap_stop(net: &Arc<Mutex<Option<Net>>>, flaps: &Flaps) -> Reply {
+    let stopped: Vec<(String, String)> = {
+        let mut flaps = flaps.lock().unwrap();
+        let stopped = flaps.keys().cloned().collect();
+        for (_, flap) in std::mem::take(&mut *flaps) {
+            flap.abort();
+        }
+        stopped
+    };
+    let mut guard = net.lock().await;
+    let Some(held) = guard.as_mut() else {
+        return closed();
+    };
+    for (a, b) in &stopped {
+        if let Err(error) = held.restore_link(a, b).await {
+            return refusal(&error);
+        }
+    }
+    Reply::Ok(json!({
+        "installed": if stopped.is_empty() {
+            "nothing was flapping".to_owned()
+        } else {
+            format!(
+                "stopped flapping and restored {}",
+                stopped
+                    .iter()
+                    .map(|(a, b)| format!("{a} - {b}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        },
+    }))
 }
 
 fn closed() -> Reply {
@@ -533,8 +801,12 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             json!({ "incarnation": resumed.incarnation })
         }
         Control::Send { agent, text } => {
-            let verdict = net.send(&agent, &text).await?;
-            json!({ "verdict": format!("{:?}", verdict.of) })
+            let kind = net.agent(&agent)?.kind;
+            let id = Uuid::new_v4();
+            let verdict = net
+                .input(&agent, crate::net::prompt(kind, id.as_bytes(), &text))
+                .await?;
+            json!({ "verdict": format!("{:?}", verdict.of), "input_id": hex(id.as_bytes()) })
         }
         Control::Stop { agent } => value(net.stop(&agent).await?),
         Control::Freeze { agent } => value(net.freeze(&agent)?),
@@ -545,21 +817,103 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             host,
             delay_ms,
             loss_percent,
+            jitter_ms,
+            reorder_percent,
+            rate_bytes_per_sec,
         } => value(net.set_lan_faults(
             &host,
-            crate::Faults {
+            faults(
+                delay_ms,
                 loss_percent,
-                delay: Duration::from_millis(delay_ms),
-            },
+                jitter_ms,
+                reorder_percent,
+                rate_bytes_per_sec,
+            ),
         )?),
         Control::RelayGate {} => json!({ "addr": net.relay_gate().await?.to_string() }),
         Control::RelayFaults {
             delay_ms,
             loss_percent,
-        } => value(net.set_relay_faults(crate::Faults {
+            jitter_ms,
+            reorder_percent,
+            rate_bytes_per_sec,
+        } => value(net.set_relay_faults(faults(
+            delay_ms,
             loss_percent,
-            delay: Duration::from_millis(delay_ms),
-        })?),
+            jitter_ms,
+            reorder_percent,
+            rate_bytes_per_sec,
+        ))?),
+        Control::NetFaults {
+            target,
+            delay_ms,
+            loss_percent,
+            jitter_ms,
+            reorder_percent,
+            rate_bytes_per_sec,
+        } => value(net.set_net_faults(
+            &target,
+            faults(
+                delay_ms,
+                loss_percent,
+                jitter_ms,
+                reorder_percent,
+                rate_bytes_per_sec,
+            ),
+        )?),
+        Control::BlockUdp { host, blocked } => value(net.block_udp(&host, blocked)?),
+        Control::Flap { .. } | Control::FlapStop {} => {
+            unreachable!("the connection handles flaps")
+        }
+        Control::PairGate { from, to } => json!({ "addr": net.pair_gate(&from, &to)?.to_string() }),
+        Control::AddHost { host } => value(net.add_host(*host).await?),
+        Control::RemoveHost { host } => value(net.remove_host(&host).await?),
+        Control::AddLink { a, b } => value(net.add_link(&a, &b).await?),
+        Control::RemoveLink { a, b } => value(net.remove_link(&a, &b).await?),
+        Control::AddAccount { account } => value(net.add_account(account).await?),
+        Control::Settle {
+            agent,
+            input,
+            timeout_ms,
+        } => {
+            let patience = match timeout_ms {
+                Some(ms) => Duration::from_millis(ms),
+                None => net.patience_of(&agent)?,
+            };
+            if let Some(input) = input {
+                let bytes = unhex(&input).ok_or_else(|| NetError::Host {
+                    host: agent.clone(),
+                    error: format!("{input:?} is not an input id in hex"),
+                })?;
+                net.input_settled_within(&agent, &bytes, patience).await?;
+            }
+            net.settle_within(&agent, patience).await?;
+            json!({ "installed": format!("{agent} is at rest") })
+        }
+        Control::Release {
+            version,
+            channel,
+            rollout,
+            broken,
+        } => value(
+            net.publish_release(
+                &version,
+                channel.as_deref().unwrap_or("stable"),
+                rollout,
+                broken,
+            )
+            .await?,
+        ),
+        Control::Status {} => {
+            let control = "0.0.0.0:0".parse().expect("an address");
+            let mut status =
+                serde_json::to_value(readiness(net, control)?).expect("readiness serializes");
+            status["topology"] = serde_json::to_value(net.topology()).expect("a topology");
+            if let Some(object) = status.as_object_mut() {
+                object.remove("control");
+            }
+            status
+        }
         Control::Inventory { host } => {
             let mut inventory = net.observe_inventory(&host).await?;
             let events = inventory
@@ -576,6 +930,14 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         "phase": agent.phase,
                         "cwd": agent.cwd,
                         "branch": agent.git.as_ref().and_then(|git| git.branch.clone()),
+                        "kind": agent.kind().as_str_name().trim_start_matches("KIND_"),
+                        "lifecycle_name": agent.lifecycle().as_str_name().trim_start_matches("LIFECYCLE_"),
+                        "phase_name": agent.phase().as_str_name().trim_start_matches("PHASE_"),
+                        "working_on": agent.working_on,
+                        "incarnation": agent.incarnation,
+                        "exit_cause": (agent.lifecycle() == wire::Lifecycle::Exited)
+                            .then(|| agent.exit_cause().as_str_name().trim_start_matches("EXIT_CAUSE_").to_owned()),
+                        "exit_detail": agent.exit_detail,
                     })
                 })
                 .collect();
@@ -643,6 +1005,34 @@ fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    text.len()
+        .is_multiple_of(2)
+        .then(|| {
+            (0..text.len())
+                .step_by(2)
+                .map(|at| u8::from_str_radix(text.get(at..at + 2)?, 16).ok())
+                .collect()
+        })
+        .flatten()
+}
+
+fn faults(
+    delay_ms: u64,
+    loss_percent: u32,
+    jitter_ms: u64,
+    reorder_percent: u32,
+    rate_bytes_per_sec: u64,
+) -> Faults {
+    Faults {
+        loss_percent,
+        delay: Duration::from_millis(delay_ms),
+        jitter: Duration::from_millis(jitter_ms),
+        reorder_percent,
+        rate_bytes_per_sec,
+    }
 }
 
 /// An attachment as a journey checks it: what it is, its name, and the

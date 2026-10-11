@@ -25,10 +25,12 @@ patience = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }
 quinn = { workspace = true }
+release = { workspace = true, features = ["test-key"] }
 rcgen = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+shot = { path = "../shot" }
 store = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
@@ -37,6 +39,8 @@ tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tui = { workspace = true }
+unicode-width = "0.2"
 uuid = { workspace = true }
 wire = { workspace = true }
 

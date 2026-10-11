@@ -37,15 +37,26 @@ use wire::{
 
 use crate::binaries::Binaries;
 use crate::clock::DrivenClock;
+use crate::feed::Feed;
 use crate::gate::{Faults, UdpGate};
 use crate::invariant::{self, BlockViolation};
+use crate::lan::{FrontAdvert, Gated, Lan};
 use crate::observe::{self, InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck};
+use crate::process::ProcessHost;
+use crate::providers::{self, Commands, RealTools};
 use crate::relay::Relay;
-use crate::topology::{AgentDecl, FakeKind, HostDecl, TierDecl, Topology, TopologyError, link_key};
+use crate::topology::{
+    AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,
+    TopologyError, link_key,
+};
 
 /// The extension of the file beside an agent's script that its provider
 /// logs every line it reads to.
 const INPUT_LOG: &str = "input";
+
+/// The version a supervised host starts on: older than anything a test
+/// publishes.
+pub const SUPERVISED_VERSION: &str = "0.0.1";
 
 /// Lets a caller adjust a host's edge beyond what the topology declares,
 /// such as pointing its cloud link at a stand-in relay.
@@ -80,7 +91,24 @@ pub struct NetOptions {
     /// What every host does with product analytics: nothing, unless a
     /// test hands a sink to record into.
     pub analytics: Option<node::Telemetry>,
+    /// The size of each agent's facts ring, where it differs from the
+    /// product's: a ring large enough not to rotate holds an agent's whole
+    /// life for a dump.
+    pub facts_ring_mib: Option<u64>,
+    /// Where real providers' traffic is recorded, a folder per host and
+    /// agent; under the net's root when none is given, which goes with it.
+    pub recordings: Option<PathBuf>,
+    /// Route the LAN between hosts, and from a client outside the net,
+    /// through gates the net holds, so any pair of hosts can be cut and any
+    /// host's network degraded however the hosts came to trust each other.
+    /// Hosts then find each other at gate addresses rather than at their
+    /// listeners'.
+    pub gated_lan: bool,
 }
+
+/// How long a wait on a real provider's agent may take: a real turn on a
+/// small model is seconds, a slow one minutes.
+pub const REAL_PATIENCE: Duration = Duration::from_secs(240);
 
 /// A verb's acknowledgement: what was installed, at what policy time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,6 +134,8 @@ pub struct NetAgent {
     pub host_id: Uuid,
     pub id: Uuid,
     pub kind: FakeKind,
+    #[serde(default)]
+    pub provider: Provider,
 }
 
 impl NetAgent {
@@ -141,6 +171,13 @@ pub struct HostInfo {
     pub config: PathBuf,
     /// Where this host's agents work.
     pub work: PathBuf,
+    /// The host's own directory: its installation, its provider commands,
+    /// and for a process host its logs.
+    pub dir: PathBuf,
+    /// Whether the host is a real `amux` process rather than a runtime in
+    /// the net's.
+    #[serde(default)]
+    pub process: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -183,6 +220,8 @@ pub enum NetError {
     Unsupported(&'static str),
     #[error("the topology declares no relay")]
     NoRelay,
+    #[error("host {host:?} runs as a process: {why}")]
+    Process { host: String, why: String },
 }
 
 struct Host {
@@ -201,6 +240,12 @@ struct Host {
     /// The running daemon listens on a LAN socket a test handed it, which
     /// stays bound for as long as the test holds it.
     lan_handed: bool,
+    /// How a process host runs; none for one in the net's process.
+    process: Option<ProcessHost>,
+    /// A process host's daemon is up as far as the net's verbs know.
+    running: bool,
+    /// The host's `claude` and `codex` commands.
+    commands: Commands,
 }
 
 struct Link {
@@ -227,13 +272,21 @@ pub struct Net {
     relay: Option<Relay>,
     /// Each host's way to the relay's QUIC carrier, kept across restarts.
     udp: BTreeMap<String, UdpGate>,
-    /// A gate in front of a host's LAN listener, started on request: what a
-    /// client dials instead of the host so its packets can be delayed or
-    /// lost, the way a household network treats them.
-    lan_gates: BTreeMap<String, UdpGate>,
     /// A gate in front of the relay's QUIC carrier, for a client outside
     /// the net, once one has asked for it.
     relay_gate: Option<UdpGate>,
+    /// The gates on the LAN between hosts, and in front of each.
+    lan: Arc<Lan>,
+    facts_ring_mib: Option<u64>,
+    recordings: PathBuf,
+    /// The real providers, found the first time a host or agent needs one.
+    real: Option<RealTools>,
+    /// The release feed supervised hosts take updates from, started with
+    /// the first of them.
+    feed: Option<Feed>,
+    /// Faults set on the relay path as a whole, beside each host's own.
+    relay_faults: Faults,
+    gated_lan: bool,
 }
 
 impl Net {
@@ -247,7 +300,7 @@ impl Net {
     /// in order, each returning once its process has said hello. When this
     /// returns the net is ready.
     pub async fn start_with(topology: Topology, options: NetOptions) -> Result<Self, NetError> {
-        topology.validate()?;
+        topology.check()?;
         let driven = match options.clock {
             ClockMode::Driven => Some(options.driven.unwrap_or_default()),
             ClockMode::Wall => None,
@@ -265,9 +318,18 @@ impl Net {
         };
         std::fs::create_dir_all(root.path().join("gates"))?;
         std::fs::create_dir_all(root.path().join("scripts"))?;
+        let recordings = options
+            .recordings
+            .clone()
+            .unwrap_or_else(|| root.path().join("providers"));
         let mut net = Self {
             root,
-            topology: topology.clone(),
+            topology: Topology {
+                hosts: Vec::new(),
+                links: Vec::new(),
+                agents: Vec::new(),
+                ..topology.clone()
+            },
             clock,
             driven,
             binaries: Binaries::built().clone(),
@@ -280,17 +342,20 @@ impl Net {
             agents: BTreeMap::new(),
             relay: None,
             udp: BTreeMap::new(),
-            lan_gates: BTreeMap::new(),
             relay_gate: None,
+            lan: Arc::new(Lan::default()),
+            facts_ring_mib: options.facts_ring_mib,
+            recordings,
+            real: None,
+            feed: None,
+            relay_faults: Faults::default(),
+            gated_lan: options.gated_lan,
         };
         if let Some(relay) = &topology.relay {
             net.relay = Some(Relay::start(relay, net.clock.clone()).await?);
         }
         for decl in &topology.hosts {
             net.create_host(decl)?;
-            if let Some(script) = &decl.script {
-                net.write_script(&format!("{}.host", decl.name), script.clone())?;
-            }
             net.start_host(&decl.name).await?;
         }
         for decl in &topology.hosts {
@@ -299,25 +364,7 @@ impl Net {
             }
         }
         for link in &topology.links {
-            let a = net.edge(&link.a)?;
-            let b = net.edge(&link.b)?;
-            let trust = |error: tonic::Status| NetError::Host {
-                host: link.a.clone(),
-                error: error.message().to_owned(),
-            };
-            a.trust(&b).await.map_err(trust)?;
-            b.trust(&a).await.map_err(trust)?;
-            net.links.insert(
-                link_key(&link.a, &link.b),
-                Link {
-                    severed: false,
-                    live: None,
-                },
-            );
-        }
-        net.link_all()?;
-        for link in &topology.links {
-            net.wait_link(&link.a, &link.b, true).await?;
+            net.link_hosts(&link.a, &link.b).await?;
         }
         for agent in &topology.agents {
             net.spawn(agent.clone()).await?;
@@ -326,6 +373,243 @@ impl Net {
             }
         }
         Ok(net)
+    }
+
+    // --- growing the net ---------------------------------------------------
+
+    /// Adds a host to the running net, as a declared one starts: its
+    /// installation made, its daemon started, signed in to its account.
+    pub async fn add_host(&mut self, decl: HostDecl) -> Result<Ack, NetError> {
+        let mut grown = self.topology.clone();
+        grown.hosts.push(decl.clone());
+        grown.check()?;
+        if decl.account.is_some() && self.relay.is_none() {
+            return Err(TopologyError::NoRelay {
+                host: decl.name.clone(),
+                account: decl.account.clone().unwrap_or_default(),
+            }
+            .into());
+        }
+        self.create_host(&decl)?;
+        if let Err(error) = self.start_host(&decl.name).await {
+            self.forget_host(&decl.name);
+            return Err(error);
+        }
+        if let Some(account) = &decl.account {
+            self.sign_in(&decl.name, account).await?;
+        }
+        let kind = if decl.supervised {
+            "supervised process"
+        } else if decl.process {
+            "process"
+        } else {
+            "in-process"
+        };
+        Ok(self.ack(format!(
+            "host {} ({kind}, {} providers) started",
+            decl.name,
+            match decl.provider {
+                Provider::Real => "real",
+                Provider::Fake => "fake",
+            }
+        )))
+    }
+
+    /// Takes a host out of the net: its agents killed, its daemon gone,
+    /// every link and gate it had removed. Its peers still trust it, as
+    /// they would a machine that was switched off for good.
+    pub async fn remove_host(&mut self, name: &str) -> Result<Ack, NetError> {
+        self.host(name)?;
+        let links: Vec<(String, String)> = self
+            .links
+            .keys()
+            .filter(|(a, b)| a == name || b == name)
+            .cloned()
+            .collect();
+        for (a, b) in &links {
+            self.links.remove(&(a.clone(), b.clone()));
+        }
+        if self.is_up(name) {
+            match self.hosts[name].process.clone() {
+                Some(process) => {
+                    let _ = process.stop().await;
+                }
+                None => self.take_down(name, false).await?,
+            }
+        }
+        let dir = self.hosts[name].dir.clone();
+        kill_agents_under(&dir).await?;
+        self.forget_host(name);
+        Ok(self.ack(format!("host {name} removed")))
+    }
+
+    fn forget_host(&mut self, name: &str) {
+        self.hosts.remove(name);
+        self.agents.retain(|_, agent| agent.host != name);
+        self.topology.hosts.retain(|host| host.name != name);
+        self.topology
+            .links
+            .retain(|link| link.a != name && link.b != name);
+        self.topology.agents.retain(|agent| agent.host != name);
+        self.udp.remove(name);
+        self.lan.forget(name);
+    }
+
+    /// Makes two hosts trust each other and links them, as a declared
+    /// link does: in process when both run in the net's process, otherwise
+    /// by real pairing over the LAN through the net's gates. Returns once
+    /// the link carries traffic both ways.
+    pub async fn add_link(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
+        let mut grown = self.topology.clone();
+        grown.links.push(LinkDecl {
+            a: a.to_owned(),
+            b: b.to_owned(),
+        });
+        grown.check()?;
+        self.link_hosts(a, b).await?;
+        Ok(self.ack(format!("link {a} - {b} up")))
+    }
+
+    async fn link_hosts(&mut self, a: &str, b: &str) -> Result<(), NetError> {
+        self.host(a)?;
+        self.host(b)?;
+        if self.hosts[a].process.is_some() || self.hosts[b].process.is_some() {
+            self.pair_for_real(a, b).await?;
+        } else {
+            let edge_a = self.edge(a)?;
+            let edge_b = self.edge(b)?;
+            let trust = |error: tonic::Status| NetError::Host {
+                host: a.to_owned(),
+                error: error.message().to_owned(),
+            };
+            edge_a.trust(&edge_b).await.map_err(trust)?;
+            edge_b.trust(&edge_a).await.map_err(trust)?;
+            self.links.insert(
+                link_key(a, b),
+                Link {
+                    severed: false,
+                    live: None,
+                },
+            );
+            self.link_all()?;
+            self.wait_link(a, b, true).await?;
+        }
+        self.topology.links.push(LinkDecl {
+            a: a.to_owned(),
+            b: b.to_owned(),
+        });
+        Ok(())
+    }
+
+    /// Pairs `a` with `b` the way a person does, through their front doors:
+    /// `b` opens a pairing window, `a` dials it with the PIN at the gate the
+    /// net keeps for the pair, so the link they make can be cut there.
+    async fn pair_for_real(&mut self, a: &str, b: &str) -> Result<(), NetError> {
+        let gate = self.pair_gate(a, b)?;
+        let (profile_a, profile_b, id_b) = (
+            self.host(a)?.profile,
+            self.host(b)?.profile,
+            self.host(b)?.host_id,
+        );
+        let refused = |status: tonic::Status| NetError::Refused(Box::new(status));
+        let window = self
+            .front_door(b)
+            .await?
+            .start_pairing(wire::StartPairingRequest {
+                profile_id: profile_b.as_bytes().to_vec(),
+                method: Some(wire::start_pairing_request::Method::Pin(wire::Empty {})),
+                ..wire::StartPairingRequest::default()
+            })
+            .await
+            .map_err(refused)?
+            .into_inner();
+        let Some(wire::pairing_window::Secret::Pin(pin)) = window.secret else {
+            return Err(NetError::Host {
+                host: b.to_owned(),
+                error: "its pairing window has no PIN".to_owned(),
+            });
+        };
+        let mut door_a = self.front_door(a).await?;
+        let pending = door_a
+            .begin_pair(wire::BeginPairRequest {
+                profile_id: profile_a.as_bytes().to_vec(),
+                host_id: id_b.as_bytes().to_vec(),
+                secret: Some(wire::begin_pair_request::Secret::Pin(pin)),
+                addrs: vec![gate.to_string()],
+            })
+            .await
+            .map_err(refused)?
+            .into_inner();
+        door_a
+            .confirm_pair(wire::PendingPairRequest {
+                profile_id: profile_a.as_bytes().to_vec(),
+                token: pending.token,
+            })
+            .await
+            .map_err(refused)?;
+        self.wait_paired(a, b).await
+    }
+
+    /// Waits until each of two hosts lists the other as online in its
+    /// inventory, which a process host's peers show only once a link to it
+    /// is up.
+    async fn wait_paired(&self, a: &str, b: &str) -> Result<(), NetError> {
+        for (near, far) in [(a, b), (b, a)] {
+            let far_id = self.host(far)?.host_id;
+            let mut inventory = self.observe_inventory(near).await?;
+            inventory
+                .observe_until(
+                    |events| {
+                        observe::inventory_hosts(events).iter().any(|host| {
+                            host.host_id == far_id.as_bytes() && observe::host_online(host)
+                        })
+                    },
+                    PATIENCE,
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Takes a link out: the two hosts forget each other, as unpairing
+    /// does, and the net stops linking them.
+    pub async fn remove_link(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
+        let declared = self.links.remove(&link_key(a, b));
+        let listed = self
+            .topology
+            .links
+            .iter()
+            .any(|link| link_key(&link.a, &link.b) == link_key(a, b));
+        if declared.is_none() && !listed {
+            return Err(NetError::NoLink(a.to_owned(), b.to_owned()));
+        }
+        drop(declared);
+        self.untrust(a, b).await?;
+        self.untrust(b, a).await?;
+        self.topology
+            .links
+            .retain(|link| link_key(&link.a, &link.b) != link_key(a, b));
+        Ok(self.ack(format!("link {a} - {b} removed; each forgot the other")))
+    }
+
+    /// Adds an account to the relay's cloud, starting the relay when none
+    /// runs yet. A host that was already up when the relay started has no
+    /// way to it until it restarts; declare a relay up front to avoid that.
+    pub async fn add_account(&mut self, account: AccountDecl) -> Result<Ack, NetError> {
+        if self.relay.is_none() {
+            let relay = Relay::start(&RelayDecl::default(), self.clock.clone()).await?;
+            self.relay = Some(relay);
+            self.topology.relay = Some(RelayDecl::default());
+        }
+        let relay = self.relay.as_ref().expect("the relay");
+        if relay.user(&account.name).is_some() {
+            return Err(TopologyError::DuplicateAccount(account.name).into());
+        }
+        relay.add_account(&account.name, account.tier.into());
+        if let Some(declared) = self.topology.relay.as_mut() {
+            declared.accounts.push(account.clone());
+        }
+        Ok(self.ack(format!("account {} on {:?}", account.name, account.tier)))
     }
 
     // --- resources ---------------------------------------------------------
@@ -395,12 +679,35 @@ impl Net {
     pub fn is_up(&self, name: &str) -> bool {
         self.hosts
             .get(name)
-            .is_some_and(|host| host.daemon.is_some())
+            .is_some_and(|host| host.daemon.is_some() || host.running)
+    }
+
+    /// How a process host runs, or why `name` is not one.
+    fn process(&self, name: &str) -> Result<Option<&ProcessHost>, NetError> {
+        Ok(self
+            .hosts
+            .get(name)
+            .ok_or_else(|| NetError::NoHost(name.to_owned()))?
+            .process
+            .as_ref())
+    }
+
+    /// Refuses a verb that reaches into a daemon's runtime, which a process
+    /// host's daemon keeps to itself.
+    fn in_process(&self, name: &str, verb: &str) -> Result<(), NetError> {
+        match self.process(name)? {
+            Some(_) => Err(NetError::Process {
+                host: name.to_owned(),
+                why: format!("{verb} reaches into a daemon in the net's own process"),
+            }),
+            None => Ok(()),
+        }
     }
 
     /// The host's profile runtime. Hold it only as long as a call needs:
     /// a held runtime outlives a killed daemon.
     pub fn runtime(&self, name: &str) -> Result<Arc<ProfileRuntime>, NetError> {
+        self.in_process(name, "this")?;
         let host = self
             .hosts
             .get(name)
@@ -527,8 +834,9 @@ impl Net {
     // --- agents ------------------------------------------------------------
 
     /// Spawns an agent on its host: a real `amux agent` process whose
-    /// provider is the fake of its kind playing its script. Relative wait
-    /// paths in the script name files in [`Net::gates`].
+    /// provider is the fake of its kind playing its script, or the real one
+    /// when the agent or its host asks for it. Relative wait paths in the
+    /// script name files in [`Net::gates`].
     pub async fn spawn(&mut self, decl: AgentDecl) -> Result<wire::Agent, NetError> {
         if self.agents.contains_key(&decl.name) {
             return Err(NetError::AgentExists(decl.name));
@@ -539,6 +847,7 @@ impl Net {
             None => None,
         };
         decl.check_branch()?;
+        let provider = self.provider_of(&decl)?;
         let script = self.write_script(&decl.name, decl.script.clone().unwrap_or_default())?;
         let id = Uuid::new_v4();
         let cwd = match &decl.repository {
@@ -553,6 +862,7 @@ impl Net {
         if let Some(branch) = &decl.branch {
             on_branch(&decl.host, Path::new(&cwd), branch)?;
         }
+        providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
         let request = CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
             host: None,
@@ -566,22 +876,102 @@ impl Net {
                 .map(|text| submission(b"testnet-first", text)),
             new_worktree: false,
         };
-        let runtime = self.runtime(&decl.host)?;
-        runtime.set_launch(self.launch(&host, Some((decl.kind, &script))));
-        let spawned = runtime.spawn(request, None).await;
-        runtime.set_launch(self.launch(&host, None));
-        let agent = spawned?;
+        let agent = match self.hosts[&decl.host].process.clone() {
+            Some(process) => process
+                .client()
+                .await
+                .map_err(|why| NetError::Process {
+                    host: decl.host.clone(),
+                    why,
+                })?
+                .create_agent(request)
+                .await
+                .map_err(|status| NetError::Refused(Box::new(status)))?
+                .into_inner(),
+            None => {
+                let runtime = self.runtime(&decl.host)?;
+                runtime.set_launch(self.launch(&host, Some((decl.kind, &script, provider))));
+                let spawned = runtime.spawn(request, None).await;
+                runtime.set_launch(self.launch(&host, None));
+                spawned?
+            }
+        };
         self.agents.insert(
             decl.name.clone(),
             NetAgent {
-                name: decl.name,
+                name: decl.name.clone(),
                 host: host.name.clone(),
                 host_id: host.host_id,
                 id,
                 kind: decl.kind,
+                provider,
             },
         );
+        self.topology.agents.push(decl);
         Ok(agent)
+    }
+
+    /// The provider an agent runs: its own choice, else its host's; a real
+    /// one needs the real tools found and the host's commands able to run
+    /// them.
+    fn provider_of(&mut self, decl: &AgentDecl) -> Result<Provider, NetError> {
+        let host = self
+            .hosts
+            .get(&decl.host)
+            .ok_or_else(|| NetError::NoHost(decl.host.clone()))?;
+        let provider = decl.provider.unwrap_or(host.decl.provider);
+        if provider == Provider::Real {
+            self.ensure_real(&decl.host)?;
+        }
+        Ok(provider)
+    }
+
+    /// Where the agents' provider choices are recorded for the hosts'
+    /// commands to read.
+    fn choices(&self) -> PathBuf {
+        self.root.path().join("choices")
+    }
+
+    /// The real providers, found once, and `host`'s commands rewritten to
+    /// reach them if they were written without.
+    fn ensure_real(&mut self, host: &str) -> Result<(), NetError> {
+        if self.real.is_none() {
+            let found = RealTools::find(self.binaries.dir()).map_err(|error| NetError::Host {
+                host: host.to_owned(),
+                error,
+            })?;
+            self.real = Some(found);
+        }
+        let has_real = self.hosts[host].dir.join("codex-home").exists();
+        if !has_real {
+            let commands = self.write_commands(host)?;
+            self.hosts.get_mut(host).expect("the host").commands = commands;
+        }
+        Ok(())
+    }
+
+    fn write_commands(&self, host: &str) -> Result<Commands, NetError> {
+        let own = &self.hosts[host];
+        let host_script = own.decl.script.is_some().then(|| {
+            self.root
+                .path()
+                .join("scripts")
+                .join(format!("{host}.host.json"))
+        });
+        providers::write(&providers::Wrappers {
+            host,
+            dir: &own.dir,
+            default: own.decl.provider,
+            choices: &self.choices(),
+            recordings: &self.recordings.join(host),
+            real: self.real.as_ref(),
+            fakes: self.binaries.dir(),
+            host_script: host_script.as_deref(),
+        })
+        .map_err(|error| NetError::Host {
+            host: host.to_owned(),
+            error,
+        })
     }
 
     /// Waits until `name` has come to rest on its host: idle or needing
@@ -590,6 +980,12 @@ impl Net {
     /// first, so starting each once the one before has settled fixes the
     /// order they are listed in.
     pub async fn settle(&self, name: &str) -> Result<(), NetError> {
+        let patience = self.patience_for(self.agent(name)?);
+        self.settle_within(name, patience).await
+    }
+
+    /// [`Net::settle`] with its own deadline.
+    pub async fn settle_within(&self, name: &str, patience: Duration) -> Result<(), NetError> {
         let host = self.agent(name)?.host.clone();
         let mut session = self.observe(&host, name, 0).await?;
         session
@@ -608,7 +1004,7 @@ impl Net {
                                 )
                         })
                 },
-                PATIENCE,
+                patience,
             )
             .await?;
         Ok(())
@@ -627,16 +1023,33 @@ impl Net {
             .path()
             .join("scripts")
             .join(format!("{name}.json"));
+        let submission = text.map(|text| wire::PromptSubmission {
+            input_id: Uuid::new_v4().as_bytes().to_vec(),
+            prompt: Some(PromptInput {
+                text: text.to_owned(),
+                attachments: Vec::new(),
+            }),
+        });
+        if let Some(process) = self.hosts[&agent.host].process.clone() {
+            return Ok(process
+                .client()
+                .await
+                .map_err(|why| NetError::Process {
+                    host: agent.host.clone(),
+                    why,
+                })?
+                .resume_agent(wire::ResumeAgentRequest {
+                    agent_id: agent.id.as_bytes().to_vec(),
+                    initial_prompt: submission,
+                })
+                .await
+                .map_err(|status| NetError::Refused(Box::new(status)))?
+                .into_inner());
+        }
         let runtime = self.runtime(&agent.host)?;
-        runtime.set_launch(self.launch(&host, Some((agent.kind, &script))));
-        let bootstrap = text.map(|text| wire::Bootstrap {
-            of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
-                input_id: Uuid::new_v4().as_bytes().to_vec(),
-                prompt: Some(PromptInput {
-                    text: text.to_owned(),
-                    attachments: Vec::new(),
-                }),
-            })),
+        runtime.set_launch(self.launch(&host, Some((agent.kind, &script, agent.provider))));
+        let bootstrap = submission.map(|submission| wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(submission)),
         });
         let resumed = runtime.resume(agent.id, bootstrap).await;
         runtime.set_launch(self.launch(&host, None));
@@ -645,19 +1058,9 @@ impl Net {
 
     /// Sends the agent a prompt through its own host.
     pub async fn send(&self, name: &str, text: &str) -> Result<wire::SendInputResponse, NetError> {
-        let agent = self.agent(name)?;
-        let runtime = self.runtime(&agent.host)?;
-        let input = prompt(agent.kind, Uuid::new_v4().as_bytes(), text);
-        runtime
-            .send_input(&wire::SendInputRequest {
-                agent_id: agent.id.as_bytes().to_vec(),
-                input: Some(input),
-            })
+        let kind = self.agent(name)?.kind;
+        self.input(name, prompt(kind, Uuid::new_v4().as_bytes(), text))
             .await
-            .map_err(|error| NetError::Host {
-                host: agent.host.clone(),
-                error: error.to_string(),
-            })
     }
 
     /// Sends the agent any input through its own host: an answer, a
@@ -668,12 +1071,26 @@ impl Net {
         input: Input,
     ) -> Result<wire::SendInputResponse, NetError> {
         let agent = self.agent(name)?;
+        let request = wire::SendInputRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            input: Some(input),
+        };
+        if let Some(process) = &self.hosts[&agent.host].process {
+            return Ok(process
+                .client()
+                .await
+                .map_err(|why| NetError::Process {
+                    host: agent.host.clone(),
+                    why,
+                })?
+                .send_input(request)
+                .await
+                .map_err(|status| NetError::Refused(Box::new(status)))?
+                .into_inner());
+        }
         let runtime = self.runtime(&agent.host)?;
         runtime
-            .send_input(&wire::SendInputRequest {
-                agent_id: agent.id.as_bytes().to_vec(),
-                input: Some(input),
-            })
+            .send_input(&request)
             .await
             .map_err(|error| NetError::Host {
                 host: agent.host.clone(),
@@ -685,13 +1102,29 @@ impl Net {
     /// and can be resumed.
     pub async fn stop(&self, name: &str) -> Result<Ack, NetError> {
         let agent = self.agent(name)?.clone();
-        self.client(&agent.host)?
-            .stop_agent(tonic::Request::new(wire::StopAgentRequest {
-                agent_id: agent.id.as_bytes().to_vec(),
-                mode: wire::StopMode::Graceful as i32,
-            }))
-            .await
-            .map_err(|status| NetError::Refused(Box::new(status)))?;
+        let request = wire::StopAgentRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            mode: wire::StopMode::Graceful as i32,
+        };
+        match &self.hosts[&agent.host].process {
+            Some(process) => {
+                process
+                    .client()
+                    .await
+                    .map_err(|why| NetError::Process {
+                        host: agent.host.clone(),
+                        why,
+                    })?
+                    .stop_agent(request)
+                    .await
+            }
+            None => {
+                self.client(&agent.host)?
+                    .stop_agent(tonic::Request::new(request))
+                    .await
+            }
+        }
+        .map_err(|status| NetError::Refused(Box::new(status)))?;
         Ok(self.ack(format!("{name} stopped")))
     }
 
@@ -749,14 +1182,29 @@ impl Net {
     /// forgets every agent the cascade removed.
     pub async fn delete_family(&mut self, name: &str) -> Result<DeleteAgentResponse, NetError> {
         let agent = self.agent(name)?.clone();
-        let answer = self
-            .client(&agent.host)?
-            .delete_agent(tonic::Request::new(DeleteAgentRequest {
-                agent_id: agent.id.as_bytes().to_vec(),
-            }))
-            .await
-            .map_err(|status| NetError::Refused(Box::new(status)))?
-            .into_inner();
+        let request = DeleteAgentRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+        };
+        let answer = match self.process(&agent.host)?.cloned() {
+            Some(process) => {
+                process
+                    .client()
+                    .await
+                    .map_err(|why| NetError::Process {
+                        host: agent.host.clone(),
+                        why,
+                    })?
+                    .delete_agent(request)
+                    .await
+            }
+            None => {
+                self.client(&agent.host)?
+                    .delete_agent(tonic::Request::new(request))
+                    .await
+            }
+        }
+        .map_err(|status| NetError::Refused(Box::new(status)))?
+        .into_inner();
         self.agents.remove(name);
         for child in &answer.removed_children {
             self.agents
@@ -818,9 +1266,11 @@ impl Net {
             agent: Some(create_config(&decl)),
             ..CreateAgentRequest::default()
         };
+        let provider = self.provider_of(&decl)?;
+        providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
         let tools = self.tools(parent)?;
         let target = self.runtime(&decl.host)?;
-        target.set_launch(self.launch(&host, Some((decl.kind, &script))));
+        target.set_launch(self.launch(&host, Some((decl.kind, &script, provider))));
         let spawned = tools.create_agent(tonic::Request::new(request)).await;
         target.set_launch(self.launch(&host, None));
         let agent = spawned
@@ -834,6 +1284,7 @@ impl Net {
                 host_id: host.host_id,
                 id,
                 kind: decl.kind,
+                provider,
             },
         );
         Ok(agent)
@@ -847,7 +1298,7 @@ impl Net {
         let host = self.host(&agent.host)?.clone();
         let path = self.write_script(name, script)?;
         self.runtime(&agent.host)?
-            .set_launch(self.launch(&host, Some((agent.kind, &path))));
+            .set_launch(self.launch(&host, Some((agent.kind, &path, agent.provider))));
         Ok(self.ack(format!("{name}'s next start plays its new script")))
     }
 
@@ -919,10 +1370,12 @@ impl Net {
         Ok(path)
     }
 
-    /// What a host's agents start with. With an agent, its fake and its
-    /// script; without, the host's defaults: the host's declared script, or
-    /// nothing.
-    fn launch(&self, host: &HostInfo, agent: Option<(FakeKind, &Path)>) -> Launch {
+    /// What a host's agents start with. With an agent, its provider: the
+    /// fake of its kind playing its script, or the real one. Without, the
+    /// host's defaults: the host's declared script or nothing on a fake
+    /// host, the real providers on a real one.
+    fn launch(&self, host: &HostInfo, agent: Option<(FakeKind, &Path, Provider)>) -> Launch {
+        let own = &self.hosts[&host.name];
         let mut launch = Launch {
             install_path: self.binaries.amux(),
             claude_command: self
@@ -937,44 +1390,53 @@ impl Net {
                 .into_owned(),
             ..Launch::default()
         };
-        launch.provider_env.insert(
-            "CLAUDE_CONFIG_DIR".to_owned(),
-            self.hosts[&host.name]
-                .dir
-                .join("claude")
-                .to_string_lossy()
-                .into_owned(),
-        );
-        let host_script = self.hosts[&host.name].decl.script.is_some().then(|| {
-            self.root
-                .path()
-                .join("scripts")
-                .join(format!("{}.host.json", host.name))
-        });
-        let agent = agent.or(host_script
-            .as_deref()
-            .map(|script| (FakeKind::ClaudeSdk, script)));
-        if let Some((kind, script)) = agent {
-            if kind == FakeKind::ClaudePty {
-                launch.claude_command = self.binaries.fake(kind).to_string_lossy().into_owned();
-            }
-            launch
-                .provider_env
-                .insert(SCRIPT_ENV.to_owned(), script.to_string_lossy().into_owned());
+        let provider = agent.map_or(own.decl.provider, |(_, _, provider)| provider);
+        if provider == Provider::Real {
+            // The host's own commands run the real provider through its
+            // probe: a client's create or an agent's spawn tool carries no
+            // arguments of the net's, and terminal Claude's version check
+            // runs the command bare, so the command is the one place every
+            // start passes.
+            launch.claude_command = own.commands.claude.to_string_lossy().into_owned();
+            launch.codex_command = own.commands.codex.to_string_lossy().into_owned();
+        } else {
             launch.provider_env.insert(
-                INPUT_LOG_ENV.to_owned(),
-                script
-                    .with_extension(INPUT_LOG)
-                    .to_string_lossy()
-                    .into_owned(),
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                own.dir.join("claude").to_string_lossy().into_owned(),
             );
+            let host_script = own.decl.script.is_some().then(|| {
+                self.root
+                    .path()
+                    .join("scripts")
+                    .join(format!("{}.host.json", host.name))
+            });
+            let fake = agent.map(|(kind, script, _)| (kind, script)).or(host_script
+                .as_deref()
+                .map(|script| (FakeKind::ClaudeSdk, script)));
+            if let Some((kind, script)) = fake {
+                if kind == FakeKind::ClaudePty {
+                    launch.claude_command = self.binaries.fake(kind).to_string_lossy().into_owned();
+                }
+                launch
+                    .provider_env
+                    .insert(SCRIPT_ENV.to_owned(), script.to_string_lossy().into_owned());
+                launch.provider_env.insert(
+                    INPUT_LOG_ENV.to_owned(),
+                    script
+                        .with_extension(INPUT_LOG)
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
         }
         // Long enough to ride out a daemon restart, short enough that an
         // agent a failed run leaves behind goes away on its own.
         launch.agent.grace_secs = 20;
         launch.agent.drain_secs = 5;
+        if let Some(mib) = self.facts_ring_mib {
+            launch.agent.facts_ring_mib = mib;
+        }
         launch.stop_deadline_ms = 15_000;
-        let own = &self.hosts[&host.name];
         if !own.decl.repositories.is_empty() {
             launch.repository_roots = vec![own.dir.join(REPOSITORIES)];
         }
@@ -987,6 +1449,18 @@ impl Net {
     // --- hosts -------------------------------------------------------------
 
     fn create_host(&mut self, decl: &HostDecl) -> Result<(), NetError> {
+        // A daemon in its own process keeps the machine's time, which a
+        // driven clock cannot advance.
+        if decl.runs_as_process() && self.driven.is_some() {
+            return Err(NetError::Process {
+                host: decl.name.clone(),
+                why: "a process host keeps wall time: start the net with ClockMode::Wall"
+                    .to_owned(),
+            });
+        }
+        if decl.supervised && self.feed.is_none() {
+            self.feed = Some(Feed::start(self.root.path().join("releases"))?);
+        }
         // Names that differ only in case share a directory on a
         // case-insensitive filesystem.
         let twins = self
@@ -1034,13 +1508,24 @@ impl Net {
         let config = dir.join("installation.yaml");
         std::fs::write(
             &config,
-            format!(
-                "root: {}\nfront_door_socket: {}\nhost_name: {}\n",
-                data_dir.display(),
-                front_door.display(),
-                decl.name,
-            ),
+            self.installation_yaml(decl, &dir, &data_dir, &front_door)?,
         )?;
+        if let Some(script) = &decl.script {
+            self.write_script(&format!("{}.host", decl.name), script.clone())?;
+        }
+        let process = decl.runs_as_process().then(|| ProcessHost {
+            amux: if decl.supervised {
+                dir.join("install").join("amux")
+            } else {
+                self.binaries.amux()
+            },
+            config: config.clone(),
+            data_dir: data_dir.clone(),
+            front_door: front_door.clone(),
+            bin: dir.join("bin"),
+            bonjour: decl.bonjour,
+        });
+        self.lan.learn(&decl.name, host_id);
         self.hosts.insert(
             decl.name.clone(),
             Host {
@@ -1053,6 +1538,8 @@ impl Net {
                     front_door,
                     config,
                     work,
+                    dir: dir.clone(),
+                    process: decl.runs_as_process(),
                 },
                 dir,
                 daemon: None,
@@ -1060,9 +1547,81 @@ impl Net {
                 boot: 1,
                 checkpoint: None,
                 lan_handed: false,
+                process,
+                running: false,
+                commands: Commands {
+                    claude: PathBuf::new(),
+                    codex: PathBuf::new(),
+                },
             },
         );
+        let made = (|| {
+            if decl.provider == Provider::Real {
+                self.ensure_real(&decl.name)?;
+            } else {
+                let commands = self.write_commands(&decl.name)?;
+                self.hosts.get_mut(&decl.name).expect("the host").commands = commands;
+            }
+            if decl.supervised {
+                self.install_supervised(&decl.name)?;
+            }
+            Ok::<(), NetError>(())
+        })();
+        if let Err(error) = made {
+            self.hosts.remove(&decl.name);
+            self.lan.forget(&decl.name);
+            return Err(error);
+        }
+        self.topology.hosts.push(decl.clone());
         Ok(())
+    }
+
+    /// The host's installation config: what the terminal client and the
+    /// CLI read on any host, and what a process host's daemon runs by.
+    fn installation_yaml(
+        &self,
+        decl: &HostDecl,
+        dir: &Path,
+        data_dir: &Path,
+        front_door: &Path,
+    ) -> Result<String, NetError> {
+        let mut yaml = format!(
+            "root: {}\nfront_door_socket: {}\nhost_name: {}\n",
+            data_dir.display(),
+            front_door.display(),
+            decl.name,
+        );
+        if decl.provider == Provider::Real {
+            // A person's own defaults for a new agent, so one made from the
+            // terminal client starts on the small models; any client may
+            // still choose another.
+            yaml.push_str(
+                "new_agent:\n  claude: {model: haiku, effort: medium, permission: default}\n  \
+                 codex: {model: gpt-5.6-luna, effort: medium, permission: default}\n",
+            );
+        }
+        if decl.runs_as_process() {
+            let scope = decl
+                .scope
+                .clone()
+                .unwrap_or_else(|| self.topology.scope.clone());
+            yaml.push_str(&format!(
+                "keep_awake: off\ntelemetry: off\nsupervisor: {}\nupdates: manual\n\
+                 releases_url: {}\ndiscovery:\n  scope: {scope:?}\nagent:\n  grace_secs: 20\n  drain_secs: 5\n",
+                if decl.supervised { "on" } else { "off" },
+                self.feed_url(),
+            ));
+            if let Some(mib) = self.facts_ring_mib {
+                yaml.push_str(&format!("  facts_ring_mib: {mib}\n"));
+            }
+            if !decl.repositories.is_empty() {
+                yaml.push_str(&format!(
+                    "repository_roots:\n  - {}\n",
+                    dir.join(REPOSITORIES).display()
+                ));
+            }
+        }
+        Ok(yaml)
     }
 
     async fn start_host(&mut self, name: &str) -> Result<(), NetError> {
@@ -1070,14 +1629,24 @@ impl Net {
             && !self.udp.contains_key(name)
         {
             let gate = relay.gate().await?;
+            gate.set_faults(self.relay_faults.then(self.lan.faults(name)));
             self.udp.insert(name.to_owned(), gate);
         }
         let host = self
             .hosts
             .get(name)
             .ok_or_else(|| NetError::NoHost(name.to_owned()))?;
-        if host.daemon.is_some() {
+        if host.daemon.is_some() || host.running {
             return Err(NetError::Running(name.to_owned()));
+        }
+        if let Some(process) = host.process.clone() {
+            process.start().await.map_err(|error| NetError::Start {
+                host: name.to_owned(),
+                error,
+            })?;
+            self.hosts.get_mut(name).expect("the host").running = true;
+            self.advertise_process(name);
+            return Ok(());
         }
         let decl = &host.decl;
         let mut edge = EdgeOptions {
@@ -1087,13 +1656,37 @@ impl Net {
                 bind: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
                 socket: None,
             }),
-            discovery: if decl.bonjour {
+            discovery: if decl.bonjour && !self.gated_lan {
                 Some(Arc::new(|| {
                     Ok(Arc::new(crate::bonjour::SystemBonjour::new())
                         as Arc<dyn node::discovery::Discovery>)
                 }))
-            } else {
+            } else if decl.bonjour {
+                // A client outside the net finds the host at its front
+                // gate, so the net can degrade the client's network.
+                let (lan, me) = (self.lan.clone(), decl.name.clone());
+                Some(Arc::new(move || {
+                    Ok(Arc::new(FrontAdvert::new(
+                        Arc::new(crate::bonjour::SystemBonjour::new()),
+                        &me,
+                        lan.clone(),
+                    ))
+                        as Arc<dyn node::discovery::Discovery>)
+                }))
+            } else if !self.gated_lan {
                 decl.discovery.then(|| scripted_discovery(&self.bus))
+            } else {
+                decl.discovery.then(|| {
+                    // Each host finds its peers at the gates the net keeps
+                    // for each pair, so any pair can be cut.
+                    let (lan, me, bus) = (self.lan.clone(), decl.name.clone(), self.bus.clone());
+                    let factory: node::DiscoveryFactory = Arc::new(move || {
+                        let inner = scripted_discovery(&bus)()?;
+                        Ok(Arc::new(Gated::new(inner, &me, lan.clone()))
+                            as Arc<dyn node::discovery::Discovery>)
+                    });
+                    factory
+                })
             },
             discovery_scope: decl
                 .scope
@@ -1143,6 +1736,8 @@ impl Net {
     /// Makes `a` trust `b` as pairing would, without linking them: they
     /// meet over whatever route they find.
     pub async fn trust(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
+        self.in_process(a, "trusting without pairing")?;
+        self.in_process(b, "trusting without pairing")?;
         let far = self.edge(b)?;
         self.edge(a)?
             .trust(&far)
@@ -1172,6 +1767,26 @@ impl Net {
             })
             .await
             .map_err(|status| NetError::Refused(Box::new(status)))?;
+        if self.process(host)?.is_some() {
+            let what = format!("{host}'s relay link");
+            observe::until(&what, || async {
+                let profiles = self
+                    .front_door(host)
+                    .await
+                    .map_err(|error| error.to_string())?
+                    .list_profiles(wire::Empty {})
+                    .await
+                    .map_err(|status| status.message().to_owned())?
+                    .into_inner()
+                    .profiles;
+                let observed = profiles.first().map(wire::ProfileInfo::observed);
+                (observed == Some(wire::Observed::Connected))
+                    .then_some(())
+                    .ok_or_else(|| format!("observed {observed:?}"))
+            })
+            .await?;
+            return Ok(self.ack(format!("{host} signed in to {account}")));
+        }
         let edge = self.edge(host)?;
         observe::until(&format!("{host}'s relay link"), || {
             let observed = edge.observed();
@@ -1194,6 +1809,9 @@ impl Net {
             .hosts
             .values()
             .filter(|host| host.decl.account.as_deref() == Some(account))
+            // A process host's daemon asks on its own schedule; nothing on
+            // its sockets asks it to ask now.
+            .filter(|host| host.process.is_none())
             .map(|host| host.info.name.clone())
             .filter(|name| self.is_up(name))
             .collect();
@@ -1216,38 +1834,26 @@ impl Net {
     /// stays as it was, so a pairing link has to be rewritten to name the
     /// gate. Only a running host with a LAN listener has one.
     pub async fn lan_gate(&mut self, host: &str) -> Result<SocketAddr, NetError> {
-        if let Some(gate) = self.lan_gates.get(host) {
-            return Ok(gate.addr());
-        }
-        let info = self.host(host)?;
-        let port = std::fs::read_to_string(
-            node::profile_dir(&info.data_dir, info.profile).join(node::LAN_PORT_FILE),
-        )
-        .ok()
-        .and_then(|text| text.trim().parse::<u16>().ok())
-        .ok_or_else(|| NetError::Host {
+        let port = self.lan_port(host).map_err(|_| NetError::Host {
             host: host.to_owned(),
             error: "has no LAN listener to gate".to_owned(),
         })?;
-        let gate = UdpGate::start(SocketAddr::from(([127, 0, 0, 1], port))).await?;
-        let addr = gate.addr();
-        self.lan_gates.insert(host.to_owned(), gate);
-        Ok(addr)
+        Ok(self
+            .lan
+            .front(host, Some(SocketAddr::from(([127, 0, 0, 1], port))))?)
     }
 
     /// What the gate in front of `host`'s LAN listener does to each
     /// datagram from now on: delay, loss, or neither.
     pub fn set_lan_faults(&self, host: &str, faults: Faults) -> Result<Ack, NetError> {
-        let gate = self.lan_gates.get(host).ok_or_else(|| NetError::Host {
-            host: host.to_owned(),
-            error: "has no LAN gate; ask for one first".to_owned(),
-        })?;
-        gate.set_faults(faults);
-        Ok(self.ack(format!(
-            "{host}'s LAN gate delays {} ms and loses {}%",
-            faults.delay.as_millis(),
-            faults.loss_percent
-        )))
+        if !self.lan.has_front(host) {
+            return Err(NetError::Host {
+                host: host.to_owned(),
+                error: "has no LAN gate; ask for one first".to_owned(),
+            });
+        }
+        self.lan.set_front_faults(host, faults);
+        Ok(self.ack(format!("{host}'s LAN gate: {}", faults.describe())))
     }
 
     /// A gate in front of the relay's QUIC carrier, which a client outside
@@ -1271,11 +1877,7 @@ impl Net {
             error: "has no gate; ask for one first".to_owned(),
         })?;
         gate.set_faults(faults);
-        Ok(self.ack(format!(
-            "the relay's gate delays {} ms and loses {}%",
-            faults.delay.as_millis(),
-            faults.loss_percent
-        )))
+        Ok(self.ack(format!("the relay's gate: {}", faults.describe())))
     }
 
     /// Takes UDP away from the host's way to the relay, or gives it back:
@@ -1296,6 +1898,21 @@ impl Net {
     /// trust store and the links between them close.
     pub async fn untrust(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
         let peer = self.host(b)?.host_id;
+        if self.process(a)?.is_some() {
+            let profile = self.host(a)?.profile;
+            self.front_door(a)
+                .await?
+                .unpair(wire::UnpairRequest {
+                    profile_id: profile.as_bytes().to_vec(),
+                    peer: Some(wire::HostRef {
+                        of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
+                    }),
+                    reason: "testnet".to_owned(),
+                })
+                .await
+                .map_err(|status| NetError::Refused(Box::new(status)))?;
+            return Ok(self.ack(format!("{a} no longer trusts {b}")));
+        }
         self.edge(a)?
             .unpair(
                 wire::HostRef {
@@ -1373,6 +1990,7 @@ impl Net {
     /// channel for it can be opened, while the link between them and the
     /// sessions it carries stay up. `refuse: false` lifts it.
     pub fn refuse_calls(&self, a: &str, b: &str, refuse: bool) -> Result<Ack, NetError> {
+        self.in_process(a, "refusing calls")?;
         let peer = self.host(b)?.host_id;
         self.edge(a)?.refuse_calls(peer, refuse);
         Ok(self.ack(format!(
@@ -1384,6 +2002,9 @@ impl Net {
     /// Cuts the link between two hosts the way a dead connection goes: no
     /// LinkClose, the carrier just stops.
     pub fn sever_link(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
+        if !self.links.contains_key(&link_key(a, b)) {
+            return self.cut_lan(a, b, true);
+        }
         let link = self
             .links
             .get_mut(&link_key(a, b))
@@ -1402,6 +2023,9 @@ impl Net {
     /// link as a second dial from the same process, and an in-process link
     /// is never dialled again.
     pub async fn restore_link(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
+        if !self.links.contains_key(&link_key(a, b)) {
+            return self.cut_lan(a, b, false);
+        }
         let severed = self
             .links
             .get(&link_key(a, b))
@@ -1417,6 +2041,131 @@ impl Net {
             .severed = false;
         self.link_all()?;
         Ok(self.ack(format!("link {a} - {b} restored")))
+    }
+
+    /// Cuts the LAN between two hosts that are not linked in process, or
+    /// lets it through again: every gate between them, now and any made
+    /// later, so a pairing however it was made goes down as a dead
+    /// connection does.
+    fn cut_lan(&mut self, a: &str, b: &str, cut: bool) -> Result<Ack, NetError> {
+        self.host(a)?;
+        self.host(b)?;
+        // Only on a gated LAN does every route between two hosts run
+        // through the net's gates: elsewhere a host that found its peer by
+        // discovery dials the peer's own listener, which no gate stands in
+        // front of.
+        if a == b || !self.gated_lan {
+            return Err(NetError::NoLink(a.to_owned(), b.to_owned()));
+        }
+        let gates = self.lan.cut(a, b, cut);
+        let what = if cut { "severed" } else { "restored" };
+        Ok(self.ack(if gates == 0 {
+            format!(
+                "LAN {a} - {b} {what}, though no route between them runs through the net's \
+                 gates yet: one they find later will"
+            )
+        } else {
+            format!("LAN {a} - {b} {what} at {gates} gates")
+        }))
+    }
+
+    /// Announces a process host with discovery on the net's discovery bus,
+    /// as its own daemon would if it could reach the bus: the bus lives in
+    /// the net's process, and the daemon in its own. The hosts in the net's
+    /// process that browse the bus then find it, pair with it by name, and
+    /// dial it again after it restarts, which a direct link only does to a
+    /// peer discovery still finds.
+    fn advertise_process(&self, name: &str) {
+        let Some(host) = self.hosts.get(name) else {
+            return;
+        };
+        if host.process.is_none() || !host.decl.discovery || !host.decl.lan {
+            return;
+        }
+        let Ok(port) = self.lan_port(name) else {
+            tracing::warn!(
+                host = name,
+                "a process host with discovery has no LAN port to announce"
+            );
+            return;
+        };
+        self.bus.announce(node::discovery::Advertisement {
+            host_id: host.info.host_id,
+            name: name.to_owned(),
+            version: node::PROTOCOL_VERSION,
+            addrs: vec![SocketAddr::from(([127, 0, 0, 1], port))],
+            scope: host
+                .decl
+                .scope
+                .clone()
+                .unwrap_or_else(|| self.topology.scope.clone()),
+        });
+    }
+
+    /// Withdraws what [`Net::advertise_process`] announced, as a daemon's
+    /// goodbye would.
+    fn withdraw_process(&self, name: &str) {
+        if let Some(host) = self.hosts.get(name)
+            && host.process.is_some()
+            && host.decl.discovery
+        {
+            self.bus.withdraw_host(host.info.host_id);
+        }
+    }
+
+    /// The gate `from` dials to reach `to`'s LAN listener, made the first
+    /// time it is asked for: give it to a pairing in place of `to`'s own
+    /// address, and the pair can be cut and degraded there.
+    pub fn pair_gate(&self, from: &str, to: &str) -> Result<SocketAddr, NetError> {
+        self.host(from)?;
+        let port = self.lan_port(to)?;
+        Ok(self
+            .lan
+            .pair(from, to, SocketAddr::from(([127, 0, 0, 1], port)))?)
+    }
+
+    /// The port `host`'s LAN listener answers on, as its profile records.
+    fn lan_port(&self, host: &str) -> Result<u16, NetError> {
+        let info = self.host(host)?;
+        std::fs::read_to_string(
+            node::profile_dir(&info.data_dir, info.profile).join(node::LAN_PORT_FILE),
+        )
+        .ok()
+        .and_then(|text| text.trim().parse::<u16>().ok())
+        .ok_or_else(|| NetError::Host {
+            host: host.to_owned(),
+            error: "has no LAN listener".to_owned(),
+        })
+    }
+
+    /// Makes `target`'s network bad, a host's or the relay's: every gate a
+    /// host's datagrams cross (its way to the relay, its LAN pairings, its
+    /// front gate for clients outside the net) or every way to the relay.
+    /// A link made in process carries no datagrams and is untouched.
+    pub fn set_net_faults(&mut self, target: &str, faults: Faults) -> Result<Ack, NetError> {
+        let gates = if target == "relay" {
+            self.relay()?;
+            self.relay_faults = faults;
+            if let Some(gate) = &self.relay_gate {
+                gate.set_faults(faults);
+            }
+            for (host, gate) in &self.udp {
+                gate.set_faults(faults.then(self.lan.faults(host)));
+            }
+            self.udp.len() + usize::from(self.relay_gate.is_some())
+        } else {
+            self.host(target)?;
+            let mut gates = self.lan.set_faults(target, faults);
+            if let Some(gate) = self.udp.get(target) {
+                gate.set_faults(self.relay_faults.then(faults));
+                gates += 1;
+            }
+            gates
+        };
+        Ok(self.ack(format!(
+            "{target}'s network: {} ({gates} gates)",
+            faults.describe()
+        )))
     }
 
     /// Links every declared pair that is not severed, not live and has both
@@ -1446,6 +2195,34 @@ impl Net {
     /// Crashes a host's daemon. Its agent processes keep running, in their
     /// grace, waiting for the next daemon.
     pub async fn kill_daemon(&mut self, host: &str) -> Result<Ack, NetError> {
+        if let Some(process) = self.process(host)?.cloned() {
+            if !self.is_up(host) {
+                return Err(NetError::Down(host.to_owned()));
+            }
+            let pid = process.kill().map_err(|why| NetError::Process {
+                host: host.to_owned(),
+                why,
+            })?;
+            process.wait_down().await.map_err(|why| NetError::Process {
+                host: host.to_owned(),
+                why,
+            })?;
+            let supervised = self.hosts[host].decl.supervised;
+            // A supervisor starts its daemon again on its own, as it does
+            // after any crash; a bare daemon stays down.
+            self.hosts.get_mut(host).expect("the host").running = supervised;
+            if !supervised {
+                self.withdraw_process(host);
+            }
+            return Ok(self.ack(format!(
+                "{host}'s daemon (pid {pid}) killed{}",
+                if supervised {
+                    "; its supervisor will start it again"
+                } else {
+                    ""
+                }
+            )));
+        }
         self.take_down(host, false).await?;
         Ok(self.ack(format!("{host}'s daemon killed")))
     }
@@ -1453,6 +2230,18 @@ impl Net {
     /// Shuts a host's daemon down cleanly: flushed, marked clean. Its agent
     /// processes keep running.
     pub async fn stop_daemon(&mut self, host: &str) -> Result<Ack, NetError> {
+        if let Some(process) = self.process(host)?.cloned() {
+            if !self.is_up(host) {
+                return Err(NetError::Down(host.to_owned()));
+            }
+            process.stop().await.map_err(|why| NetError::Process {
+                host: host.to_owned(),
+                why,
+            })?;
+            self.hosts.get_mut(host).expect("the host").running = false;
+            self.withdraw_process(host);
+            return Ok(self.ack(format!("{host}'s daemon stopped with amux server stop")));
+        }
         self.take_down(host, true).await?;
         Ok(self.ack(format!("{host}'s daemon stopped")))
     }
@@ -1460,6 +2249,17 @@ impl Net {
     /// Starts a host's daemon again from what its installation holds, under
     /// the same boot, and relinks its declared links.
     pub async fn restart_daemon(&mut self, host: &str) -> Result<Ack, NetError> {
+        if let Some(process) = self.process(host)?.cloned() {
+            // A supervised host's daemon may already be back under its
+            // supervisor; `amux server start` then says so and waits for it.
+            process.start().await.map_err(|error| NetError::Start {
+                host: host.to_owned(),
+                error,
+            })?;
+            self.hosts.get_mut(host).expect("the host").running = true;
+            self.advertise_process(host);
+            return Ok(self.ack(format!("{host}'s daemon started with amux server start")));
+        }
         self.start_host(host).await?;
         self.link_all()?;
         Ok(self.ack(format!("{host}'s daemon started")))
@@ -1468,6 +2268,7 @@ impl Net {
     /// Records what has reached the drive now: the store flushed and its
     /// file as it stands. [`Net::rewind_host`] loses power back to here.
     pub async fn checkpoint_host(&mut self, host: &str) -> Result<Ack, NetError> {
+        self.in_process(host, "a checkpoint of what reached the drive")?;
         let runtime = self.runtime(host)?;
         let bytes = {
             // Held so nothing commits between the flush and the read.
@@ -1488,6 +2289,7 @@ impl Net {
     /// no WAL, each named journal is cut at its byte, and the machine comes
     /// back under a new boot id with the clean flag never set.
     pub async fn rewind_host(&mut self, host: &str, cuts: &[JournalCut]) -> Result<Ack, NetError> {
+        self.in_process(host, "losing power back to a checkpoint")?;
         let checkpoint = self
             .hosts
             .get(host)
@@ -1554,6 +2356,35 @@ impl Net {
         id: Uuid,
         tail: u32,
     ) -> Result<Observer, NetError> {
+        if let Some(process) = self.process(host)?.cloned() {
+            let mut stream = process
+                .client()
+                .await
+                .map_err(|why| NetError::Process {
+                    host: host.to_owned(),
+                    why,
+                })?
+                .subscribe(wire::SubscribeRequest {
+                    agent_id: id.as_bytes().to_vec(),
+                    tail,
+                })
+                .await
+                .map_err(|status| NetError::Refused(Box::new(status)))?
+                .into_inner();
+            let (sender, incoming) = mpsc::unbounded_channel();
+            let reader = tokio::spawn(async move {
+                while let Ok(Some(event)) = stream.message().await {
+                    if sender.send(event).is_err() {
+                        return;
+                    }
+                }
+            });
+            return Ok(ObserverOf::new(
+                format!("{agent} observed at {host}"),
+                incoming,
+                reader,
+            ));
+        }
         let mut subscription = self.runtime(host)?.subscribe(id.as_bytes(), tail).await?;
         let (sender, incoming) = mpsc::unbounded_channel();
         let reader = tokio::spawn(async move {
@@ -1572,6 +2403,32 @@ impl Net {
 
     /// Opens a SubscribeInventory stream on `host` and records it.
     pub async fn observe_inventory(&self, host: &str) -> Result<InventoryObserver, NetError> {
+        if let Some(process) = self.process(host)?.cloned() {
+            let mut stream = process
+                .client()
+                .await
+                .map_err(|why| NetError::Process {
+                    host: host.to_owned(),
+                    why,
+                })?
+                .subscribe_inventory(wire::Empty {})
+                .await
+                .map_err(|status| NetError::Refused(Box::new(status)))?
+                .into_inner();
+            let (sender, incoming) = mpsc::unbounded_channel();
+            let reader = tokio::spawn(async move {
+                while let Ok(Some(event)) = stream.message().await {
+                    if sender.send(event).is_err() {
+                        return;
+                    }
+                }
+            });
+            return Ok(ObserverOf::new(
+                format!("inventory at {host}"),
+                incoming,
+                reader,
+            ));
+        }
         let mut subscription = self.runtime(host)?.subscribe_inventory().await?;
         let (sender, incoming) = mpsc::unbounded_channel();
         let reader = tokio::spawn(async move {
@@ -1590,6 +2447,9 @@ impl Net {
 
     /// Whether both ends of a link route to each other directly now.
     pub async fn link_up(&self, a: &str, b: &str) -> bool {
+        if matches!(self.process(a), Ok(Some(_))) || matches!(self.process(b), Ok(Some(_))) {
+            return self.sees_direct(a, b).await && self.sees_direct(b, a).await;
+        }
         let (Ok(edge_a), Ok(edge_b), Ok(info_a), Ok(info_b)) =
             (self.edge(a), self.edge(b), self.host(a), self.host(b))
         else {
@@ -1597,6 +2457,29 @@ impl Net {
         };
         edge_a.via(info_b.host_id).await == LiveRoute::Direct
             && edge_b.via(info_a.host_id).await == LiveRoute::Direct
+    }
+
+    /// Whether `near`'s inventory lists `far` online over a direct route,
+    /// once it has caught up: what a process host's link looks like from
+    /// outside it.
+    async fn sees_direct(&self, near: &str, far: &str) -> bool {
+        let (Ok(far_id), Ok(mut inventory)) = (
+            self.host(far).map(|info| info.host_id),
+            self.observe_inventory(near).await,
+        ) else {
+            return false;
+        };
+        let Ok(events) = inventory
+            .observe_until(observe::inventory_caught_up, PATIENCE)
+            .await
+        else {
+            return false;
+        };
+        observe::inventory_hosts(events).iter().any(|host| {
+            host.host_id == far_id.as_bytes()
+                && observe::host_online(host)
+                && host.via() == wire::RouteKind::Direct
+        })
     }
 
     /// Waits until the link between two hosts is up, or down on both ends.
@@ -1650,6 +2533,11 @@ impl Net {
     /// one contiguous block ending at the origin's newest row, at the
     /// origin's revisions.
     pub async fn assert_block_invariant(&self, host: &str, agent: &str) -> Result<(), NetError> {
+        self.in_process(host, "the block invariant reads both stores and")?;
+        self.in_process(
+            &self.agent(agent)?.host,
+            "the block invariant reads both stores and",
+        )?;
         let agent = self.agent(agent)?.clone();
         let key = agent.key();
         let replica = {
@@ -1686,11 +2574,12 @@ impl Net {
         &self,
         host: &str,
         what: &str,
+        patience: Duration,
         mut probe: impl FnMut(&store::Sqlite) -> Result<T, String>,
     ) -> Result<T, NetError> {
         let runtime = self.runtime(host)?;
         let mut writes = runtime.committed();
-        let deadline = tokio::time::Instant::now() + PATIENCE;
+        let deadline = tokio::time::Instant::now() + patience;
         loop {
             // Marked seen before the read, so a write landing between the
             // read and the wait is a change the wait returns on.
@@ -1703,7 +2592,7 @@ impl Net {
                 Err(_) => {
                     return Err(Stuck::Hung {
                         what: what.to_owned(),
-                        waited: PATIENCE,
+                        waited: patience,
                     }
                     .into());
                 }
@@ -1720,7 +2609,7 @@ impl Net {
                 Err(_) => {
                     return Err(Stuck::Deadline {
                         what: what.to_owned(),
-                        waited: PATIENCE,
+                        waited: patience,
                         seen,
                     }
                     .into());
@@ -1729,14 +2618,135 @@ impl Net {
         }
     }
 
+    /// [`Net::on_write`] for a process host, whose store the net cannot
+    /// read: follows the agent's rows as a client does, on a Subscribe
+    /// stream, filling in what its opening tail left out with Fetch, and
+    /// asks `probe` again on every row. Each row arrives once, so this
+    /// needs no polling; a stream that ends is opened again. Subscribing
+    /// on a host that only holds a replica can start replicating, which
+    /// the in-process wait does not.
+    async fn on_rows<T>(
+        &self,
+        host: &str,
+        agent: &NetAgent,
+        what: &str,
+        patience: Duration,
+        mut probe: impl FnMut(&[wire::Item]) -> Result<T, String>,
+    ) -> Result<T, NetError> {
+        let process = self.process(host)?.cloned().expect("a process host");
+        let deadline = tokio::time::Instant::now() + patience;
+        let failed = |why: String| NetError::Process {
+            host: host.to_owned(),
+            why,
+        };
+        let mut seen = String::from("nothing yet");
+        loop {
+            let mut client = process.client().await.map_err(failed)?;
+            let mut rows: BTreeMap<String, wire::Item> = BTreeMap::new();
+            let mut stream = match tokio::time::timeout_at(
+                deadline,
+                client.subscribe(wire::SubscribeRequest {
+                    agent_id: agent.id.as_bytes().to_vec(),
+                    tail: 200,
+                }),
+            )
+            .await
+            {
+                Ok(Ok(stream)) => stream.into_inner(),
+                Ok(Err(status)) => return Err(NetError::Refused(Box::new(status))),
+                Err(_) => {
+                    return Err(Stuck::Deadline {
+                        what: what.to_owned(),
+                        waited: patience,
+                        seen,
+                    }
+                    .into());
+                }
+            };
+            loop {
+                let event = match tokio::time::timeout_at(deadline, stream.message()).await {
+                    Ok(Ok(Some(event))) => event,
+                    // The stream lagged, reset or closed: open it again and
+                    // look afresh, which only moves forward.
+                    Ok(_) => break,
+                    Err(_) => {
+                        return Err(Stuck::Deadline {
+                            what: what.to_owned(),
+                            waited: patience,
+                            seen,
+                        }
+                        .into());
+                    }
+                };
+                match event.of {
+                    Some(wire::session_event::Of::Item(item)) => {
+                        rows.insert(item.key.clone(), item);
+                    }
+                    Some(wire::session_event::Of::CaughtUp(_)) => {
+                        // The opening is capped: everything older comes
+                        // page by page.
+                        let mut before = rows.values().map(|item| item.order).min();
+                        while let Some(order) = before.filter(|order| *order > 1) {
+                            let page = client
+                                .fetch(wire::FetchRequest {
+                                    agent_id: agent.id.as_bytes().to_vec(),
+                                    before_order: Some(order),
+                                    limit: 500,
+                                })
+                                .await
+                                .map_err(|status| NetError::Refused(Box::new(status)))?
+                                .into_inner();
+                            before = page.items.iter().map(|item| item.order).min();
+                            for item in page.items {
+                                rows.entry(item.key.clone()).or_insert(item);
+                            }
+                            if page.exhausted {
+                                break;
+                            }
+                        }
+                    }
+                    _ => continue,
+                }
+                let mut ordered: Vec<wire::Item> = rows.values().cloned().collect();
+                ordered.sort_by_key(|item| item.order);
+                match probe(&ordered) {
+                    Ok(found) => return Ok(found),
+                    Err(now) => seen = now,
+                }
+            }
+        }
+    }
+
+    /// How long to wait on `agent`: a real provider's turn takes far longer
+    /// than a script's.
+    fn patience_for(&self, agent: &NetAgent) -> Duration {
+        match agent.provider {
+            Provider::Real => REAL_PATIENCE,
+            Provider::Fake => PATIENCE,
+        }
+    }
+
     /// Waits until `host` holds `agent`'s row at `order`: its newest row
     /// is that one or a later one. After it, what the host holds through
     /// `order` is what its store reports, on the origin and on a replica
     /// alike.
     pub async fn fence(&self, host: &str, agent: &str, order: u64) -> Result<(), NetError> {
-        let key = self.agent(agent)?.key();
+        let at = self.agent(agent)?.clone();
+        let key = at.key();
         let what = format!("{host} to hold {agent}'s row at order {order}");
-        self.on_write(host, &what, |store| {
+        let patience = self.patience_for(&at);
+        if self.process(host)?.is_some() {
+            return self
+                .on_rows(host, &at, &what, patience, |rows| {
+                    match rows.last().map(|item| item.order) {
+                        Some(held) if held >= order => Ok(()),
+                        Some(held) => Err(format!("newest order {held}")),
+                        None => Err("no rows".to_owned()),
+                    }
+                })
+                .await;
+        }
+        self.on_write(host, &what, patience, |store| {
             let newest = store
                 .last_n(&key, 1)
                 .map_err(|error| error.to_string())?
@@ -1760,7 +2770,22 @@ impl Net {
         let at = self.agent(agent)?.clone();
         let key = at.key();
         let what = format!("{agent}'s turn {k} to end");
-        self.on_write(&at.host, &what, |store| {
+        let patience = self.patience_for(&at);
+        if self.process(&at.host)?.is_some() {
+            return self
+                .on_rows(&at.host, &at, &what, patience, |rows| {
+                    let ends: Vec<u64> = rows
+                        .iter()
+                        .filter(|item| item.key.starts_with("turn:"))
+                        .map(|item| item.order)
+                        .collect();
+                    ends.get(k - 1)
+                        .copied()
+                        .ok_or_else(|| format!("{} turns ended", ends.len()))
+                })
+                .await;
+        }
+        self.on_write(&at.host, &what, patience, |store| {
             let mut ends: Vec<u64> = store
                 .cut(&key, u32::MAX)
                 .map_err(|error| error.to_string())?
@@ -1782,10 +2807,37 @@ impl Net {
     /// that row's order. A rejected input never settles; rejection is
     /// the answer `send` and `input` return.
     pub async fn input_settled(&self, agent: &str, input_id: &[u8]) -> Result<u64, NetError> {
+        let patience = self.patience_of(agent)?;
+        self.input_settled_within(agent, input_id, patience).await
+    }
+
+    /// How long a wait on `agent` allows by default: longer for a real
+    /// provider's.
+    pub fn patience_of(&self, agent: &str) -> Result<Duration, NetError> {
+        Ok(self.patience_for(self.agent(agent)?))
+    }
+
+    /// [`Net::input_settled`] with its own deadline.
+    pub async fn input_settled_within(
+        &self,
+        agent: &str,
+        input_id: &[u8],
+        patience: Duration,
+    ) -> Result<u64, NetError> {
         let at = self.agent(agent)?.clone();
         let key = at.key();
         let what = format!("{agent}'s input {} to settle", hex(input_id));
-        self.on_write(&at.host, &what, |store| {
+        if self.process(&at.host)?.is_some() {
+            return self
+                .on_rows(&at.host, &at, &what, patience, |rows| {
+                    rows.iter()
+                        .find(|item| item.input_id == input_id)
+                        .map(|item| item.order)
+                        .ok_or_else(|| "no row carries it".to_owned())
+                })
+                .await;
+        }
+        self.on_write(&at.host, &what, patience, |store| {
             store
                 .item_by_input(&key, input_id)
                 .map_err(|error| error.to_string())?
@@ -1839,6 +2891,87 @@ impl Net {
         Ok(())
     }
 
+    // --- releases ----------------------------------------------------------
+
+    /// The release feed's address, for a supervised host's config; a
+    /// discard address when no host is supervised.
+    fn feed_url(&self) -> String {
+        self.feed
+            .as_ref()
+            .map_or_else(|| "http://127.0.0.1:9".to_owned(), Feed::url)
+    }
+
+    /// Gives a supervised host its own copy of the build under test,
+    /// stamped as an old version so any release published later is newer.
+    /// A copy, never a link: an update swaps files beside it.
+    fn install_supervised(&self, host: &str) -> Result<(), NetError> {
+        let install = self.hosts[host].dir.join("install");
+        std::fs::create_dir_all(&install)?;
+        let amux = install.join("amux");
+        node::release::restamp(&self.binaries.amux(), &amux, SUPERVISED_VERSION)?;
+        crate::feed::warm(&amux);
+        Ok(())
+    }
+
+    /// Publishes the build under test as `version` on `channel`'s feed, to
+    /// `rollout` percent of hosts (all when none), or a build that exits at
+    /// once when `broken`, and has every supervised host check now rather
+    /// than at its hourly check. Answers what each host's supervisor said.
+    pub async fn publish_release(
+        &self,
+        version: &str,
+        channel: &str,
+        rollout: Option<u8>,
+        broken: bool,
+    ) -> Result<Ack, NetError> {
+        let feed = self.feed.as_ref().ok_or_else(|| NetError::Host {
+            host: "feed".to_owned(),
+            error: "no host is supervised, so nothing takes releases".to_owned(),
+        })?;
+        feed.publish(&self.binaries.amux(), version, channel, rollout, broken)
+            .map_err(|error| NetError::Host {
+                host: "feed".to_owned(),
+                error,
+            })?;
+        let mut answers = Vec::new();
+        for (name, host) in &self.hosts {
+            if !host.decl.supervised || !host.running {
+                continue;
+            }
+            let data_dir = host.info.data_dir.clone();
+            let answer = observe::until(&format!("{name}'s supervisor to take a check"), || {
+                let data_dir = data_dir.clone();
+                async move {
+                    let said = node::supervisor::ask(
+                        &data_dir,
+                        node::supervisor::Request::Check,
+                        Duration::from_secs(20),
+                    )
+                    .await
+                    .map_err(|error| error.to_string())?;
+                    // Busy installing or starting: it says to try again.
+                    if said.contains("try again") {
+                        Err(said)
+                    } else {
+                        Ok(said)
+                    }
+                }
+            })
+            .await?;
+            answers.push(format!("{name}: {answer}"));
+        }
+        Ok(self.ack(format!(
+            "{} {version} published on {channel}{}; {}",
+            if broken { "a broken" } else { "build" },
+            rollout.map(|n| format!(" to {n}%")).unwrap_or_default(),
+            if answers.is_empty() {
+                "no supervised host is up to check".to_owned()
+            } else {
+                answers.join("; ")
+            }
+        )))
+    }
+
     // --- teardown ----------------------------------------------------------
 
     /// Stops every agent and shuts every daemon down cleanly. The explicit
@@ -1853,8 +2986,19 @@ impl Net {
             }
         }
         for name in &names {
-            if self.is_up(name) {
-                self.take_down(name, true).await?;
+            if !self.is_up(name) {
+                continue;
+            }
+            match self.hosts[name].process.clone() {
+                Some(process) => {
+                    let _ = process.stop().await;
+                    // A supervised host whose daemon was killed may still be
+                    // starting it again; its supervisor goes with the stop.
+                    if let Some(pid) = process.daemon_pid() {
+                        let _ = crate::process::signal(pid, "-KILL");
+                    }
+                }
+                None => self.take_down(name, true).await?,
             }
         }
         // Agents of hosts that were down at the end have no daemon to

@@ -1,9 +1,13 @@
 //! `testnet serve <topology.json>`: starts a topology on wall time, prints
 //! one readiness JSON line once it is ready, and serves its door until a
 //! driver sends Shutdown or the process is interrupted or terminated.
+//!
+//! `testnet ctl …`: drives a served net from a shell, one command at a time,
+//! for a person or an agent exploring by hand.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
@@ -28,11 +32,44 @@ enum Command {
         /// directory, so every path a client draws is the same each run.
         #[arg(long, value_name = "DIR")]
         root_in: Option<PathBuf>,
+        /// Route the LAN through gates the net holds, so any pair of hosts
+        /// can be cut however they came to trust each other.
+        #[arg(long)]
+        gated_lan: bool,
+        /// Each agent's facts ring, in MiB, where it should differ from the
+        /// product's.
+        #[arg(long, value_name = "MIB")]
+        facts_ring_mib: Option<u64>,
+        /// Where real providers' traffic is recorded.
+        #[arg(long, value_name = "DIR")]
+        recordings: Option<PathBuf>,
+    },
+    /// Drive a served net from the shell (`testnet ctl --help`).
+    #[command(disable_help_flag = true)]
+    Ctl {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
     },
 }
 
+fn main() -> ExitCode {
+    // ctl parses its own arguments and never needs a runtime of its own; it
+    // is dispatched before clap sees the rest so its help reads as its own.
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().map(String::as_str) == Some("ctl") {
+        return testnet::ctl::main(arguments[1..].to_vec());
+    }
+    match serve() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error:?}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn serve() -> Result<()> {
     if std::env::var_os("RUST_LOG").is_some() {
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -43,11 +80,20 @@ async fn main() -> Result<()> {
         topology,
         control,
         root_in,
-    } = Cli::parse().command;
+        gated_lan,
+        facts_ring_mib,
+        recordings,
+    } = Cli::parse().command
+    else {
+        unreachable!("ctl is dispatched before parsing");
+    };
     let topology = Topology::load(&topology)?;
     let options = testnet::NetOptions {
         clock: testnet::ClockMode::Wall,
         root_in,
+        gated_lan,
+        facts_ring_mib,
+        recordings,
         ..testnet::NetOptions::default()
     };
     let mut served = testnet::door::serve_with(topology, control, options)

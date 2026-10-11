@@ -5,6 +5,10 @@ use std::sync::OnceLock;
 
 use crate::topology::FakeKind;
 
+/// Names a directory holding `amux`, the fakes and the probes, built
+/// already; a net then builds nothing.
+pub const PREBUILT_ENV: &str = "TESTNET_BINARIES";
+
 /// Where the built `amux` and fake provider binaries are: the target
 /// directory this process runs from.
 #[derive(Clone, Debug)]
@@ -17,9 +21,16 @@ impl Binaries {
     /// cargo and profile that built this one, and finds them beside it.
     /// Agents run the binary from the tree under test, never an installed
     /// one, and a release run measures release agents.
+    ///
+    /// With [`PREBUILT_ENV`] naming a directory, takes the binaries from
+    /// there and builds nothing: a driver that built them once, with the
+    /// features it chose, keeps every net it starts on that one build.
     pub fn built() -> &'static Binaries {
         static BUILT: OnceLock<Binaries> = OnceLock::new();
         BUILT.get_or_init(|| {
+            if let Some(dir) = std::env::var_os(PREBUILT_ENV) {
+                return Binaries { dir: dir.into() };
+            }
             let dir = target_dir();
             let mut args = vec![
                 "build",

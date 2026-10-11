@@ -1,3 +1,32 @@
+2026-10-11 — **A test net can be grown, broken and driven from the shell.**
+`testnet ctl` drives a served net one command at a time from a folder, for a
+person or an agent exploring by hand: `ctl up` starts an empty net there, and
+hosts, links and relay accounts are added and removed while it runs. Hosts
+can be real `amux` daemon processes (`--process`), started, stopped and
+killed as a person's would be and reached over their profile sockets, or run
+under `amux supervise` (`--supervised`) taking releases the net publishes on a
+local feed signed with the test key, including a broken build that never
+starts so the supervisor rolls back. A host or an agent can use the real
+Claude or Codex in place of the fakes, through wrapper commands that record
+the provider's traffic with the probes and keep the operator's own settings,
+tool servers and plugins out. With the LAN gated (`serve --gated-lan`, which
+`ctl` uses) every route between hosts, however they paired, and from the phone
+runs through a gate the net holds, so any pair can be cut and any host's
+network given loss, delay, jitter, reordering or a rate cap; `flap` cuts a
+link on a period. `ctl tui` runs the real terminal client in tmux and turns
+its screen into the client's own frame format and a PNG through `shot`;
+`ctl phone` drives the debug app on a leased simulator through its door.
+`ctl capture` copies everything about a problem at one moment (topology,
+session log, a dump of every host, provider traffic, screens, logs) into a
+finding folder, `ctl dump show` prints a captured dump, and `ctl ledger`
+appends to a QA run's shared ledger. Every `ctl` command is logged to the
+folder's `session.jsonl`. A process host with discovery is announced on the
+net's discovery bus by the net itself, because its daemon cannot reach the
+in-process bus; a link to a crashed process host comes back once the other
+side's connection times out. New harness tests cover growth, the new gate
+faults, a process host's pairing, cut and crash, and a supervised host's
+update and rollback; a smoke test runs `ctl` end to end.
+
 2026-10-11 — **The Codex probe's own socket is short wherever it records.**
 The capture proxy in `codex-probe` had Codex's app server listen on a socket
 inside the capture directory. A capture directory deep in a QA run's folders

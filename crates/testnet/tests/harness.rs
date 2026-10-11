@@ -18,8 +18,8 @@ use store::{Absorb, AgentRow};
 use testnet::door::{CAPABILITIES, Control, ErrorKind, Readiness, Reply};
 use testnet::observe::{self, Mark, marks};
 use testnet::{
-    AgentDecl, FakeKind, JournalCut, Net, NetError, PATIENCE, Stuck, Topology, TopologyError,
-    holds_for, until, until_within,
+    AgentDecl, FakeKind, Faults, HostDecl, JournalCut, Net, NetError, PATIENCE, Stuck, Topology,
+    TopologyError, UdpGate, holds_for, until, until_within,
 };
 use wire::{ClaudeSdkItem, SessionEvent, claude_sdk_item, session_event};
 
@@ -918,12 +918,74 @@ fn every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map()
             host: "a".into(),
             delay_ms: 100,
             loss_percent: 0,
+            jitter_ms: 0,
+            reorder_percent: 0,
+            rate_bytes_per_sec: 0,
         },
         Control::RelayGate {},
         Control::RelayFaults {
             delay_ms: 100,
             loss_percent: 0,
+            jitter_ms: 0,
+            reorder_percent: 0,
+            rate_bytes_per_sec: 0,
         },
+        Control::NetFaults {
+            target: "a".into(),
+            delay_ms: 10,
+            loss_percent: 1,
+            jitter_ms: 5,
+            reorder_percent: 2,
+            rate_bytes_per_sec: 1000,
+        },
+        Control::BlockUdp {
+            host: "a".into(),
+            blocked: true,
+        },
+        Control::Flap {
+            a: "a".into(),
+            b: "b".into(),
+            down_ms: 1,
+            up_ms: 1,
+        },
+        Control::FlapStop {},
+        Control::PairGate {
+            from: "a".into(),
+            to: "b".into(),
+        },
+        Control::AddHost {
+            host: Box::new(testnet::HostDecl {
+                name: "c".into(),
+                ..testnet::HostDecl::default()
+            }),
+        },
+        Control::RemoveHost { host: "c".into() },
+        Control::AddLink {
+            a: "a".into(),
+            b: "b".into(),
+        },
+        Control::RemoveLink {
+            a: "a".into(),
+            b: "b".into(),
+        },
+        Control::AddAccount {
+            account: testnet::AccountDecl {
+                name: "x".into(),
+                tier: testnet::TierDecl::Pro,
+            },
+        },
+        Control::Settle {
+            agent: "x".into(),
+            input: None,
+            timeout_ms: Some(5),
+        },
+        Control::Release {
+            version: "9.9.9".into(),
+            channel: None,
+            rollout: Some(10),
+            broken: false,
+        },
+        Control::Status {},
         Control::Inventory { host: "a".into() },
         Control::Block {
             host: "a".into(),
@@ -976,4 +1038,313 @@ fn every_door_verb_maps_to_one_capability_and_the_crate_docs_list_the_same_map()
         table, expected,
         "the crate docs' table is the capability map"
     );
+}
+
+fn wall() -> testnet::NetOptions {
+    testnet::NetOptions {
+        clock: testnet::ClockMode::Wall,
+        ..testnet::NetOptions::default()
+    }
+}
+
+fn lan_host(name: &str) -> HostDecl {
+    HostDecl {
+        name: name.to_owned(),
+        lan: true,
+        ..HostDecl::default()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_empty_net_grows_hosts_links_and_accounts_and_sheds_them_while_it_runs() {
+    let mut net = Net::start_with(Topology::new(), testnet::NetOptions::default())
+        .await
+        .unwrap();
+    assert!(net.host_names().is_empty(), "a net may start with no host");
+    net.add_host(lan_host("desk")).await.unwrap();
+    net.add_host(lan_host("laptop")).await.unwrap();
+    assert!(matches!(
+        net.add_host(lan_host("desk")).await,
+        Err(NetError::Topology(TopologyError::DuplicateHost(..)))
+    ));
+    net.add_link("desk", "laptop").await.unwrap();
+    assert!(net.link_up("desk", "laptop").await);
+    net.spawn(
+        AgentDecl::new("worker", "desk")
+            .steps(vec![text("grown"), Step::TurnEnd])
+            .prompt("go"),
+    )
+    .await
+    .unwrap();
+    net.settle("worker").await.unwrap();
+    let mut laptop = net.observe_inventory("laptop").await.unwrap();
+    laptop
+        .observe_until(
+            |events| {
+                observe::inventory_agents(events)
+                    .iter()
+                    .any(|agent| agent.name == "worker")
+            },
+            PATIENCE,
+        )
+        .await
+        .unwrap();
+
+    net.remove_link("desk", "laptop").await.unwrap();
+    net.wait_link("desk", "laptop", false).await.unwrap();
+    assert!(net.topology().links.is_empty());
+
+    net.add_account(testnet::AccountDecl {
+        name: "ada".to_owned(),
+        tier: testnet::TierDecl::Pro,
+    })
+    .await
+    .unwrap();
+    assert!(net.relay().is_ok(), "the first account starts the relay");
+    net.add_host(HostDecl {
+        account: Some("ada".to_owned()),
+        ..lan_host("phone-less")
+    })
+    .await
+    .unwrap();
+
+    net.remove_host("laptop").await.unwrap();
+    assert_eq!(net.host_names(), vec!["desk", "phone-less"]);
+    assert!(matches!(net.host("laptop"), Err(NetError::NoHost(..))));
+    net.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_gate_reorders_jitters_and_caps_the_rate_of_what_it_passes() {
+    async fn pass(faults: Faults, count: usize, size: usize) -> (Vec<u8>, Duration) {
+        let sink = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let gate = UdpGate::bind(Some(sink.local_addr().unwrap())).unwrap();
+        gate.set_faults(faults);
+        let sender = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let started = Instant::now();
+        for n in 0..count {
+            let mut datagram = vec![0_u8; size.max(1)];
+            datagram[0] = n as u8;
+            sender.send_to(&datagram, gate.addr()).await.unwrap();
+        }
+        let mut order = Vec::new();
+        let mut buffer = vec![0_u8; 65_536];
+        while order.len() < count {
+            let (_, _) = tokio::time::timeout(Duration::from_secs(10), sink.recv_from(&mut buffer))
+                .await
+                .expect("every datagram arrives")
+                .unwrap();
+            order.push(buffer[0]);
+        }
+        (order, started.elapsed())
+    }
+    let in_order: Vec<u8> = (0..40).collect();
+
+    let (order, _) = pass(
+        Faults {
+            delay: Duration::from_millis(5),
+            jitter: Duration::from_millis(20),
+            ..Faults::default()
+        },
+        40,
+        1,
+    )
+    .await;
+    assert_eq!(order, in_order, "jitter alone keeps the wire's order");
+
+    let (order, _) = pass(
+        Faults {
+            delay: Duration::from_millis(20),
+            reorder_percent: 50,
+            ..Faults::default()
+        },
+        40,
+        1,
+    )
+    .await;
+    let mut sorted = order.clone();
+    sorted.sort_unstable();
+    assert_eq!(sorted, in_order, "reordering loses nothing");
+    assert_ne!(order, in_order, "half held back: some are overtaken");
+
+    // Ten kilobytes at ten a second take a second, within the second's
+    // worth the gate queues before it drops.
+    let (_, took) = pass(
+        Faults {
+            rate_bytes_per_sec: 10_000,
+            ..Faults::default()
+        },
+        10,
+        1_000,
+    )
+    .await;
+    assert!(
+        took >= Duration::from_millis(800),
+        "the rate cap spaces them out: {took:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_process_host_pairs_for_real_through_gates_that_cut_it_and_survives_a_crash() {
+    assert!(matches!(
+        Net::start(Topology::new().host_decl(HostDecl {
+            process: true,
+            ..lan_host("box")
+        }))
+        .await,
+        Err(NetError::Process { .. })
+    ));
+
+    let mut net = Net::start_with(
+        Topology::new(),
+        testnet::NetOptions {
+            gated_lan: true,
+            ..wall()
+        },
+    )
+    .await
+    .unwrap();
+    net.add_host(HostDecl {
+        process: true,
+        discovery: true,
+        ..lan_host("box")
+    })
+    .await
+    .unwrap();
+    net.add_host(HostDecl {
+        discovery: true,
+        ..lan_host("desk")
+    })
+    .await
+    .unwrap();
+    assert!(net.host("box").unwrap().process);
+    net.add_link("desk", "box").await.unwrap();
+    assert!(net.link_up("desk", "box").await);
+
+    net.spawn(
+        AgentDecl::new("worker", "box")
+            .steps(vec![
+                text("from a process"),
+                Step::TurnEnd,
+                text("while cut"),
+                Step::TurnEnd,
+                text("after the crash"),
+                Step::TurnEnd,
+            ])
+            .prompt("go"),
+    )
+    .await
+    .unwrap();
+    net.turn_ended("worker", 1).await.unwrap();
+    let mut replica = net.observe("desk", "worker", 50).await.unwrap();
+    replica
+        .observe_until(|events| says(events, "from a process"), PATIENCE)
+        .await
+        .unwrap();
+
+    // The pair's gate cuts a link the hosts made by pairing, silently, as
+    // a dead network does: nothing crosses until it is restored, and then
+    // what was held back arrives.
+    net.sever_link("desk", "box").unwrap();
+    net.send("worker", "again").await.unwrap();
+    net.turn_ended("worker", 2).await.unwrap();
+    assert!(
+        replica
+            .observe_until(|events| says(events, "while cut"), Duration::from_secs(2))
+            .await
+            .is_err(),
+        "nothing crosses a cut link"
+    );
+    net.restore_link("desk", "box").await.unwrap();
+    replica
+        .observe_until(|events| says(events, "while cut"), PATIENCE)
+        .await
+        .unwrap();
+
+    // A crash kills the daemon process; its agent runs on in its grace and
+    // the next daemon adopts it.
+    net.kill_daemon("box").await.unwrap();
+    assert!(!net.is_up("box"));
+    net.restart_daemon("box").await.unwrap();
+    net.send("worker", "once more").await.unwrap();
+    net.turn_ended("worker", 3).await.unwrap();
+
+    assert!(
+        net.checkpoint_host("box").await.is_err(),
+        "reaching into a process's store is refused"
+    );
+    net.stop_daemon("box").await.unwrap();
+    assert!(!net.is_up("box"));
+    net.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one() {
+    let mut net = Net::start_with(Topology::new(), wall()).await.unwrap();
+    net.add_host(HostDecl {
+        supervised: true,
+        ..lan_host("box")
+    })
+    .await
+    .unwrap();
+    let install = net.host("box").unwrap().dir.join("install/amux");
+    let supervisor_log = net.host("box").unwrap().data_dir.join("supervisor.log");
+    let version = || {
+        Command::new(&install)
+            .arg("--version")
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+            .unwrap_or_default()
+    };
+    assert!(
+        version().ends_with(testnet::SUPERVISED_VERSION),
+        "{}",
+        version()
+    );
+
+    net.publish_release("0.0.2", "stable", None, false)
+        .await
+        .unwrap();
+    until("the supervisor to run 0.0.2", || {
+        let log = std::fs::read_to_string(&supervisor_log).unwrap_or_default();
+        let now = version();
+        async move {
+            (log.contains("supervising version=\"0.0.2\"") && now.ends_with("0.0.2"))
+                .then_some(())
+                .ok_or(now)
+        }
+    })
+    .await
+    .unwrap();
+
+    net.publish_release("0.0.3", "stable", None, true)
+        .await
+        .unwrap();
+    until("the supervisor to reject 0.0.3 and put 0.0.2 back", || {
+        let log = std::fs::read_to_string(&supervisor_log).unwrap_or_default();
+        let now = version();
+        async move {
+            (log.contains("rejected=0.0.3")
+                && log.contains("put prev back")
+                && now.ends_with("0.0.2"))
+            .then_some(())
+            .ok_or(now)
+        }
+    })
+    .await
+    .unwrap();
+
+    // A crash under a supervisor is followed by a start it makes itself.
+    net.kill_daemon("box").await.unwrap();
+    net.spawn(
+        AgentDecl::new("worker", "box")
+            .steps(vec![text("after the crash"), Step::TurnEnd])
+            .prompt("go"),
+    )
+    .await
+    .unwrap();
+    net.turn_ended("worker", 1).await.unwrap();
+    net.shutdown().await.unwrap();
 }

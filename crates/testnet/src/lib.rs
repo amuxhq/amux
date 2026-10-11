@@ -55,6 +55,19 @@
 //! | `LanFaults` | `Net::set_lan_faults` |
 //! | `RelayGate` | `Net::relay_gate` |
 //! | `RelayFaults` | `Net::set_relay_faults` |
+//! | `NetFaults` | `Net::set_net_faults` |
+//! | `BlockUdp` | `Net::block_udp` |
+//! | `Flap` | `Net::sever_link + Net::restore_link on a period` |
+//! | `FlapStop` | `Net::restore_link for each flapping link` |
+//! | `PairGate` | `Net::pair_gate` |
+//! | `AddHost` | `Net::add_host` |
+//! | `RemoveHost` | `Net::remove_host` |
+//! | `AddLink` | `Net::add_link` |
+//! | `RemoveLink` | `Net::remove_link` |
+//! | `AddAccount` | `Net::add_account` |
+//! | `Settle` | `Net::input_settled when an input is named + Net::settle_within` |
+//! | `Release` | `Net::publish_release` |
+//! | `Status` | `Net::topology + Net::host` |
 //! | `Inventory` | `Net::observe_inventory + observe_until(CaughtUp)` |
 //! | `Block` | `Net::assert_block_invariant` |
 //! | `Chat` | `Net::observe or Net::observe_id + observe_until(CaughtUp)` |
@@ -65,27 +78,32 @@
 mod binaries;
 mod bonjour;
 mod clock;
+pub mod ctl;
 pub mod door;
+mod feed;
 mod gate;
 mod invariant;
+mod lan;
 mod net;
 pub mod observe;
+mod process;
+mod providers;
 mod relay;
 mod topology;
 
-pub use binaries::Binaries;
+pub use binaries::{Binaries, PREBUILT_ENV};
 pub use clock::DrivenClock;
 pub use gate::{Faults, UdpGate};
 pub use invariant::BlockViolation;
 pub use net::{
     Ack, ClockMode, EdgeHook, HostInfo, JournalCut, LaunchHook, Net, NetAgent, NetError,
-    NetOptions, local_channel, prompt, withdraw,
+    NetOptions, REAL_PATIENCE, SUPERVISED_VERSION, local_channel, prompt, withdraw,
 };
 pub use observe::{
     InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck, holds_for, until, until_within,
 };
 pub use relay::{CREDENTIAL_TTL, RELAY_HOST, Relay};
 pub use topology::{
-    AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, RelayDecl, TierDecl, Topology,
+    AccountDecl, AgentDecl, FakeKind, HostDecl, LinkDecl, Provider, RelayDecl, TierDecl, Topology,
     TopologyError,
 };

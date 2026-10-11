@@ -368,11 +368,14 @@ def tree_name() -> str | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--testers", type=int, default=4, help="testers in each wave (default 4)")
-    parser.add_argument("--phone", type=int, default=2, help="how many of them hold a phone (default 2)")
+    parser.add_argument("--phone", type=int, default=None,
+                        help="how many of them hold a phone (default 2, or every tester when fewer)")
     parser.add_argument("--persona", action="append", default=[], help="a persona to use (repeatable)")
     parser.add_argument("--waves", type=int, default=2,
                         help="stop after this many waves (default 2; 0: until one finds nothing new)")
     args = parser.parse_args()
+    if args.phone is None:
+        args.phone = min(2, args.testers)
     if args.phone > args.testers:
         sys.exit("qa: --phone cannot exceed --testers")
     if args.phone > 2:

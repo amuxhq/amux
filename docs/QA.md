@@ -23,7 +23,7 @@ just qa --persona commuter --persona families --waves 0
 | Option | Meaning |
 | --- | --- |
 | `--testers N` | Testers per wave; four unless given. |
-| `--phone M` | How many of them also drive the phone app; two unless given, and at most the number of simulator leases (two). |
+| `--phone M` | How many of them also drive the phone app; two unless given (or every tester, when there are fewer), and at most the number of simulator leases (two). |
 | `--persona P` | Personas to use, by name (the files in `qa/personas/`); repeat it. Otherwise each wave draws fresh ones. |
 | `--waves W` | Stop after this many waves; two unless given. `0` runs waves until one finds nothing new. |
 
@@ -35,6 +35,10 @@ Before the first wave, the launcher:
 - launches each fresh binary once, because macOS can stall a binary's first launch;
 - checks that the operator's Claude and Codex logins can run a real agent. Testers create real agents on Claude
   Haiku and Codex `gpt-5.6-luna` with those logins.
+
+Testers attach files in the terminal client the way a person does, through the Mac's clipboard (`ctl tui clip`).
+Each paste puts back the clipboard's text afterwards, but an image or file copied on the Mac during a run is
+replaced, so leave the clipboard alone while one runs.
 
 Each wave starts its testers at once. A tester with a phone runs entirely inside its own simulator lease (the
 `iphone` pool), held for the tester's whole life, so two phone testers never share a device. When a wave ends the

@@ -488,7 +488,8 @@ program paints by clearing to the end of a line is not kept, and the font has no
 opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.
 `tui clip` attaches as a person does in the terminal client: it puts a file's path (or, with `--image`, a PNG as
 picture data) on the Mac's clipboard and presses Ctrl+V in the pane. The clipboard is the machine's own, so `clip`
-holds a lock across every session for the moment the client reads it and then puts back the text the clipboard held.
+holds a lock across every session for the moment the client reads it and then puts back the text the clipboard held;
+an image or file copied on the Mac is replaced.
 `phone attach` hands the open chat's draft a file or photo as the system's photo library or file browser would; those
 pickers are the system's own screens, which nothing outside them drives.
 

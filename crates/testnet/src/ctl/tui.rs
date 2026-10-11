@@ -60,7 +60,8 @@ pub enum TuiCommand {
     ///
     /// The clipboard is the Mac's own, shared by every pane and session:
     /// the command holds it only while the client reads it, then puts back
-    /// the text it held before.
+    /// the text it held before. Only text is put back: an image or file
+    /// copied on the Mac is replaced.
     Clip {
         pane: String,
         file: PathBuf,
@@ -526,17 +527,43 @@ fn clip(folder: &Folder, pane: &str, file: &Path, image: bool) -> Result<Outcome
     let lock = std::fs::File::create(std::env::temp_dir().join("testnet-clipboard.lock"))
         .map_err(|error| error.to_string())?;
     lock.lock().map_err(|error| error.to_string())?;
+    // Only the clipboard's text is kept and put back: an image or a file
+    // someone had copied is replaced by it.
     let before_text = std::process::Command::new("pbpaste")
         .output()
         .map(|output| output.stdout)
         .unwrap_or_default();
+    let pasted = paste_from_clipboard(folder, pane, &file, image);
+    let _ = pb_copy(&before_text);
+    drop(lock);
+    pasted?;
+    Ok(Outcome::new(
+        format!("copied {} and pressed Ctrl+V in {pane}", file.display()),
+        json!({"file": file, "image": image}),
+    ))
+}
+
+/// Puts FILE on the clipboard and presses Ctrl+V in the pane, returning
+/// once the client has read it.
+fn paste_from_clipboard(
+    folder: &Folder,
+    pane: &str,
+    file: &Path,
+    image: bool,
+) -> Result<(), String> {
     let set = if image {
+        // The path goes in as an argument, never into the script's source,
+        // so no file name can change what the script does.
         std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(format!(
-                "set the clipboard to (read (POSIX file \"{}\") as «class PNGf»)",
-                file.display()
-            ))
+            .args([
+                "-e",
+                "on run argv",
+                "-e",
+                "set the clipboard to (read (POSIX file (item 1 of argv)) as «class PNGf»)",
+                "-e",
+                "end run",
+            ])
+            .arg(file)
             .output()
     } else {
         pb_copy(file.to_string_lossy().as_bytes())
@@ -563,12 +590,7 @@ fn clip(folder: &Folder, pane: &str, file: &Path, image: bool) -> Result<Outcome
         std::thread::sleep(Duration::from_millis(50));
     }
     std::thread::sleep(Duration::from_millis(300));
-    let _ = pb_copy(&before_text);
-    drop(lock);
-    Ok(Outcome::new(
-        format!("copied {} and pressed Ctrl+V in {pane}", file.display()),
-        json!({"file": file, "image": image}),
-    ))
+    Ok(())
 }
 
 fn pb_copy(bytes: &[u8]) -> std::io::Result<std::process::Output> {

@@ -1,3 +1,12 @@
+2026-10-11 — **`ctl tui clip` takes any file name and always puts the
+clipboard back.** An image's path went into the AppleScript that copies it,
+so a name with a quote failed and a crafted one could run a shell command
+from a tester confined to read-only tools; the path is now an argument. The
+clipboard's text is put back however the paste ends, and the docs say that
+an image or file copied on the Mac is replaced. `just qa --testers 1` works
+again: the default number of phone testers is two or every tester, whichever
+is fewer.
+
 2026-10-11 — **Two more QA personas, and testers can attach files.**
 A Codex-first developer works mostly with Codex on `gpt-5.6-luna`: approvals,
 plan mode, and Codex's own view compared with amux's chat. An attacher puts

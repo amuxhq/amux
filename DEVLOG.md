@@ -1,3 +1,15 @@
+2026-10-11 — **QA testers run in Claude Code's auto mode.** A tester's shell
+was a growing allow list of utilities in `dontAsk` mode, refusing loops and
+`$(...)`, and it still could not hold a tool's arguments to the tester's
+folder (`sort -o`, `uniq IN OUT` wrote outside it). Auto mode judges each
+command against the tester's instructions, so ordinary shell work runs and
+nothing waits on a person. `testnet` stays allowed outright so the
+classifier never holds up `ctl`, and `git`, the web and subagents stay
+denied. In a trial auto mode let a tester write outside its folder and read
+the repository when asked to; the folder and the prompt are the
+confinement, as before. A tester given a refused compound command carried
+on with the rest of its work.
+
 2026-10-11 — **A QA run cannot start from a topology file, and stopping an
 ended tester touches nothing.** A topology file could declare fake hosts or
 scripted agents, getting round the real-only check on `ctl host add`; in a QA

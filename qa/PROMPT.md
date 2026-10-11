@@ -134,16 +134,12 @@ Claude and Codex.
 - A command that waits on a real agent can take up to four minutes; let it.
 - There is no time limit. Stop only as step 11 says, never because you feel
   you have spent long enough.
-- Your shell runs `testnet` and simple reading tools (`ls`, `cat`, `head`,
-  `tail`, `grep`, `jq`, `wc`, `diff`, `file`, `cut`, `sort`, `uniq`, `tr`,
-  `seq`, `date`, `echo`, `printf`, `sleep`, `ps`), joined with `&&`, `;` or
-  pipes, and writes only inside your folder. Loops (`for`, `while`),
-  `$(...)`, other programs and anything outside the run folder are refused.
-- A refusal reads "Permission to use Bash has been denied because Claude Code
-  is running in don't ask mode". Despite its words, it refuses only that one
-  command: your shell works, and the next command you run is judged on its
-  own. Rewrite the refused one as simpler commands from the list above, or
-  do it with `testnet ctl`; that is how the shell is meant to be used here,
-  not a way around a rule. Nobody will grant a permission, so never stop to
-  ask for one, and never stop because something was refused.
+- Use your shell for ordinary work: `testnet`, loops, pipes, waits, reading
+  and shaping text. Each command is judged on its own; `git` and the web are
+  refused.
+- A refusal ("Permission to use Bash ... has been denied") refuses only that
+  one command: your shell works, and the next command you run is judged on
+  its own. Rewrite the refused one as simpler commands, or do it with
+  `testnet ctl`, and carry on. Nobody will grant a permission, so never stop
+  to ask for one, and never stop because something was refused.
 - Nothing will answer a question you ask: decide, note why, and go on.

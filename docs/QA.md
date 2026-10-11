@@ -116,19 +116,20 @@ Each tester's folder holds:
 
 A tester is `claude -p --model sonnet`, started in its own folder outside the repository, so the repository's
 agent instructions never load into it. It loads no user settings, skills, plugins or tool servers of the
-operator's, and has only the shell, file reading and file editing tools. Its permissions run in `dontAsk` mode, so
-anything not allowed is refused at once:
+operator's, and has only the shell, file reading and file editing tools. Its permissions run in Claude Code's
+`auto` mode: a classifier judges each action against the tester's instructions, so ordinary shell work (loops,
+pipes, waits) runs and nothing ever waits on a person.
 
-- it may run `testnet` (all of `testnet ctl`) and simple reading tools (`ls`, `cat`, `head`, `tail`, `grep`, `jq`,
-  `wc`, `diff`, `file`, `cut`, `sort`, `uniq`, `tr`, `seq`, `date`, `echo`, `printf`, `sleep`, `ps`), joined with
-  `&&`, `;` or pipes; loops, `$(...)` and every other program are refused, and `git` is denied;
-- it may read anywhere in the run folder, `reference/` included;
-- it may write and edit only inside its own folder: notes and findings. Large files for attachments and
-  pastes come from `testnet ctl make-file`, which makes them only below the folder; a shell command that writes
-  files (`dd`, `mkfile`) cannot be confined that way, because a permission rule matches only how a command starts.
+- `testnet` (all of `testnet ctl`) is allowed outright, so the classifier never holds up the tool every action
+  goes through; reading the run folder and writing the tester's own folder are allowed outright too;
+- `git`, the web and subagents are denied;
+- a refusal refuses only that one command, and the prompt tells the tester to rewrite it and carry on.
 
-Its prompt tells it to read only `reference/docs` and `reference/qa`, and never to look for or read source code,
-tests or history. Testers judge what a person would expect, not what the code does.
+The confinement is the folder and the instruction, not the permission rules: auto mode lets a tester write outside
+its folder and read the repository if it decides to. The prompt tells it to write only inside its folder (large
+files for attachments and pastes come from `testnet ctl make-file`, which makes them only below the folder) and
+to read only `reference/docs` and `reference/qa`, never source code, tests or history. Testers judge what a person
+would expect, not what the code does.
 
 The prompt is assembled from the committed `qa/` folder:
 

@@ -42,10 +42,6 @@ TARGET = ROOT / "target" / "debug"
 APP = ROOT / "target" / "ios" / "DerivedData" / "Build" / "Products" / "Debug-iphonesimulator" / "Amux.app"
 STATE = Path.home() / ".local" / "state" / "amux-qa"
 SEVERITIES = ["data loss", "broken flow", "wrong state", "visual", "wording"]
-# What a tester's shell may run besides testnet: reading and shaping text,
-# waiting, never writing or running other code.
-READ_ONLY = ["ls", "cat", "head", "tail", "grep", "jq", "wc", "diff", "file",
-             "sleep", "cut", "sort", "uniq", "tr", "seq", "date", "echo", "printf", "ps"]
 BINARIES = ["amux", "testnet", "dump-show", "claude-probe", "codex-probe",
             "fake-claude-sdk", "fake-claude-pty", "fake-codex"]
 
@@ -127,13 +123,16 @@ def personas(chosen: list[str]) -> list[Path]:
 
 
 def settings(run: Path, folder: Path) -> dict:
-    """The tester's permissions: testnet and reading, anywhere in the run;
-    writing only in its own folder; nothing else, and nothing asks."""
+    """The tester's permissions. Claude Code's auto mode judges each other
+    action against the tester's instructions, so ordinary shell work (loops,
+    pipes, waits) runs without an ever-growing list and nothing waits on a
+    person. `testnet` is allowed outright so the classifier never holds up
+    the tool every action goes through; reading the run and writing the
+    tester's folder likewise; git and the web are refused."""
     return {
         "permissions": {
-            "defaultMode": "dontAsk",
-            "allow": ["Bash(testnet:*)", *[f"Bash({tool}:*)" for tool in READ_ONLY],
-                      f"Read(/{run}/**)", f"Edit(/{folder}/**)"],
+            "defaultMode": "auto",
+            "allow": ["Bash(testnet:*)", f"Read(/{run}/**)", f"Edit(/{folder}/**)"],
             "deny": ["WebFetch", "WebSearch", "Task", "Agent", "Bash(git:*)"],
         },
         # A wait on a real agent's turn may take four minutes; the shell

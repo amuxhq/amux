@@ -1,6 +1,6 @@
 //! Files a session makes for itself to test with: a large attachment, a
-//! long paste. A tester may write only inside its own folder, and a shell
-//! command's arguments cannot be confined to one, so the files are made
+//! long paste. A tester writes only inside its own folder, and nothing in
+//! its shell holds a command's arguments to that, so the files are made
 //! here, where the path is checked.
 
 use std::io::Write as _;

@@ -1113,6 +1113,17 @@ impl State {
                 .unwrap_or_default(),
         };
         self.local_turn = false;
+        // A message from another agent went in labelled; its row is the
+        // words alone, as an agent message's row is.
+        let text = self
+            .submitted
+            .iter()
+            .find(|prompt| {
+                prompt.id == input_id
+                    && !prompt.words.is_empty()
+                    && prompt.text.trim() == text.trim()
+            })
+            .map_or(text, |prompt| prompt.words.clone());
         self.shared.item(
             emit,
             ItemDraft {

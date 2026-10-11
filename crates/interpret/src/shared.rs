@@ -1163,6 +1163,22 @@ pub(crate) fn carried(envelope: &Envelope) -> String {
     }
 }
 
+/// What a provider reads for a queued input: its words, labelled as
+/// [`carried`] labels a message when another agent sent them. A queued
+/// input from an agent is a parent's message that resumed its recipient;
+/// every other agent message is handed over as it arrives.
+pub(crate) fn provider_text(entry: &QueuedInput) -> String {
+    match entry.sender.as_ref().and_then(|from| from.value.as_ref()) {
+        Some(sender::Value::Agent(_)) => carried(&Envelope {
+            from: entry.sender.clone(),
+            kind: wire::EnvelopeKind::Message as i32,
+            text: entry.text.clone(),
+            ..Default::default()
+        }),
+        _ => entry.text.clone(),
+    }
+}
+
 /// How a child's incarnation ended, as its parent's model reads it: the
 /// cause, then its own words when it has any ("the provider exited: exit
 /// code 1"). A cause this build does not know reads as a plain end.

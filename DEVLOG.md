@@ -1,3 +1,11 @@
+2026-10-12 — **A parent's message that resumes its child keeps its sender's
+label.** A message to an exited child resumes it with the message as its
+first prompt, and that prompt reached the provider as the bare words, so the
+child's model took its parent's words for its person's. Every provider now
+reads a queued input from another agent labelled as a live message is
+(`[message from agent <name>]`), and the row keeps the words alone,
+terminal Claude's included once its transcript reflects the labelled text.
+
 2026-10-12 — **A relay stream opened as its account lapses does not start.**
 A link renewing as free ends every pipe through it, but a pipe still
 waiting for the far end to accept its stream registered only afterwards,

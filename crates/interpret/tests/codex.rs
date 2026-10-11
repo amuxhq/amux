@@ -1054,3 +1054,53 @@ fn a_refused_thread_resume_ends_the_incarnation_with_codexs_words() {
         refused.step,
     );
 }
+
+/// A child resumed by its parent's message takes it as its first prompt,
+/// labelled with its sender as a message handed over live is: without
+/// the label the model takes the parent's words for its person's.
+#[test]
+fn a_parents_message_that_resumes_its_child_reaches_codex_labelled() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        bootstrap: Some(wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::AgentMessage(wire::Envelope {
+                id: b"m1".to_vec(),
+                from: Some(wire::Sender {
+                    value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                        name: "lead".into(),
+                        ..Default::default()
+                    })),
+                }),
+                kind: wire::EnvelopeKind::Message as i32,
+                text: "Pick it up again.".into(),
+                ..Default::default()
+            })),
+        }),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    let stepped = Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.160.0", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let turn = writes(&stepped.effects)
+        .into_iter()
+        .find(|write| write["method"] == "turn/start")
+        .expect("the message starts a turn");
+    assert_eq!(
+        turn["params"]["input"][0]["text"], "[message from agent lead]\nPick it up again.",
+        "{turn}"
+    );
+    let item = stepped
+        .step
+        .items
+        .iter()
+        .find(|item| item.input_id == b"m1")
+        .expect("the message's row");
+    assert_eq!(
+        item.text, "Pick it up again.",
+        "the row keeps the words alone"
+    );
+}

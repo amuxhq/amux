@@ -213,7 +213,9 @@ The carrier is the provider's own injection channel wherever one exists, so
 the provider queues the message and amux's queue for people never sees it.
 Every carrier hands over the same text, labelled with its sender
 (`[message from agent <name>]` before the message's words), worded by the
-interpreters' shared code:
+interpreters' shared code. A message that resumes an exited child becomes
+that child's first prompt instead, and is labelled the same way; its row
+keeps the words alone:
 
 | Kind | Carrier | Consumed when |
 | --- | --- | --- |

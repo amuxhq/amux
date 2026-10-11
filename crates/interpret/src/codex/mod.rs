@@ -882,7 +882,7 @@ impl State {
             );
         } else {
             consumes.append(&mut self.parked);
-            let mut params = self.turn_params(&entry.text);
+            let mut params = self.turn_params(&crate::shared::provider_text(&entry));
             params.client_user_message_id = Some(client_message_id(&entry.input_id));
             let request =
                 self.request_bytes(ClientRequest::TurnStart(params), Request::Turn { consumes });
@@ -955,7 +955,7 @@ impl State {
         let params = TurnSteerParams {
             thread_id: self.thread(),
             expected_turn_id: turn.to_owned(),
-            input: vec![UserInput::text(entry.text.clone())],
+            input: vec![UserInput::text(crate::shared::provider_text(&entry))],
             client_user_message_id: Some(client_message_id(&entry.input_id)),
             ..Default::default()
         };

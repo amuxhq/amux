@@ -484,3 +484,69 @@ fn a_plan_ask_where_claude_offers_no_auto_mode_switches_to_accept_edits() {
         "the ask names acceptEdits as the permission its switch moves to: {plan:?}"
     );
 }
+
+/// A child resumed by its parent's message types it as its first prompt,
+/// labelled with its sender as a message handed over live is, and its
+/// transcript's reflection of the labelled text is a row of the words.
+#[test]
+fn a_parents_message_that_resumes_its_child_reaches_terminal_claude_labelled() {
+    use interpret::claude_pty::TerminalInput;
+    use interpret::{Channel, Fact};
+    use serde_json::json;
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        bootstrap: Some(wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::AgentMessage(wire::Envelope {
+                id: b"m1".to_vec(),
+                from: Some(wire::Sender {
+                    value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                        name: "lead".into(),
+                        ..Default::default()
+                    })),
+                }),
+                kind: wire::EnvelopeKind::Message as i32,
+                text: "Pick it up again.".into(),
+                ..Default::default()
+            })),
+        }),
+        ..Default::default()
+    };
+    let labelled = "[message from agent lead]\nPick it up again.";
+    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let stepped = ClaudePty::step(
+        &mut state,
+        Event::Fact(Fact {
+            channel: Channel::Agent,
+            payload: interpret::claude_pty::ready_fact(),
+        }),
+    );
+    let typed = stepped.effects.iter().find_map(|effect| match effect {
+        Effect::Terminal(TerminalInput::Prompt { text, .. }) => Some(text.clone()),
+        _ => None,
+    });
+    assert_eq!(typed.as_deref(), Some(labelled));
+    let reflected = ClaudePty::step(
+        &mut state,
+        Event::Fact(Fact {
+            channel: Channel::Transcript,
+            payload: json!({
+                "type": "user", "uuid": "u1", "timestamp": "2027-01-15T08:00:00.010Z",
+                "sessionId": "s1", "origin": {"kind": "human"}, "promptSource": "typed",
+                "message": {"role": "user", "content": labelled},
+            })
+            .to_string()
+            .into_bytes(),
+        }),
+    );
+    let item = reflected
+        .step
+        .items
+        .iter()
+        .find(|item| item.input_id == b"m1")
+        .expect("the message's row");
+    assert_eq!(
+        item.text, "Pick it up again.",
+        "the row keeps the words alone"
+    );
+}

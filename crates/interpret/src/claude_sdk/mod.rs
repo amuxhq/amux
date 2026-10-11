@@ -527,6 +527,7 @@ impl State {
                     .send_now(emit, &id, &send.queued_input_id, running)
                 {
                     let uuid = client_uuid(&entry.input_id);
+                    let text = crate::shared::provider_text(&entry);
                     self.clients.insert(
                         uuid.clone(),
                         Client {
@@ -536,7 +537,7 @@ impl State {
                     );
                     emit.effect(Effect::UserMessage {
                         uuid,
-                        text: entry.text,
+                        text,
                         attachments: entry.attachments,
                     });
                 }
@@ -703,7 +704,7 @@ impl State {
         );
         emit.effect(Effect::UserMessage {
             uuid: uuid.clone(),
-            text: entry.text.clone(),
+            text: crate::shared::provider_text(&entry),
             attachments: entry.attachments.clone(),
         });
         self.shared.item(

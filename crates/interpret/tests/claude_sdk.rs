@@ -771,3 +771,52 @@ fn a_failed_report_is_worded_for_the_parents_provider() {
         "the provider exited: exit code 1"
     );
 }
+
+/// A child resumed by its parent's message takes it as its first prompt,
+/// labelled with its sender as a message handed over live is: without
+/// the label the model takes the parent's words for its person's.
+#[test]
+fn a_parents_message_that_resumes_its_child_reaches_claude_labelled() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        bootstrap: Some(wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::AgentMessage(wire::Envelope {
+                id: b"m1".to_vec(),
+                from: Some(wire::Sender {
+                    value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                        name: "lead".into(),
+                        ..Default::default()
+                    })),
+                }),
+                kind: wire::EnvelopeKind::Message as i32,
+                text: "Pick it up again.".into(),
+                ..Default::default()
+            })),
+        }),
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudeSdk::initial(&spec, "test");
+    let stepped = ClaudeSdk::step(
+        &mut state,
+        stream(json!({"type": "system", "subtype": "init", "uuid": "i", "session_id": "s"})),
+    );
+    let sent = stepped.effects.iter().find_map(|effect| match effect {
+        Effect::UserMessage { text, .. } => Some(text.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        sent.as_deref(),
+        Some("[message from agent lead]\nPick it up again.")
+    );
+    let item = stepped
+        .step
+        .items
+        .iter()
+        .find(|item| item.input_id == b"m1")
+        .expect("the message's row");
+    assert_eq!(
+        item.text, "Pick it up again.",
+        "the row keeps the words alone"
+    );
+}

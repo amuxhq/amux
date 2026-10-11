@@ -1174,13 +1174,21 @@ impl State {
     /// Types a prompt submitted from the queue or at once, remembering its
     /// text until its reflection.
     fn typed(&mut self, emit: &mut Emit, entry: wire::QueuedInput) {
+        // Another agent's words go in labelled, and Claude's transcript
+        // reflects them so; the prompt's row keeps the words alone.
+        let text = crate::shared::provider_text(&entry);
+        let words = if text == entry.text {
+            String::new()
+        } else {
+            entry.text
+        };
         self.submitted.push(PendingMessage {
             id: entry.input_id,
-            text: entry.text.clone(),
-            words: String::new(),
+            text: text.clone(),
+            words,
         });
         emit.effect(Effect::Terminal(TerminalInput::Prompt {
-            text: entry.text,
+            text,
             attachments: entry.attachments,
         }));
     }
@@ -1257,7 +1265,7 @@ impl State {
                     .send_now(emit, &id, &send.queued_input_id, running)
                 {
                     emit.effect(Effect::Terminal(TerminalInput::SendNow {
-                        text: entry.text,
+                        text: crate::shared::provider_text(&entry),
                         attachments: entry.attachments,
                     }));
                 }

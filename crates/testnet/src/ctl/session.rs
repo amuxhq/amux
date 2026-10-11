@@ -235,6 +235,15 @@ pub(crate) fn up(folder: &Folder, topology: Option<&Path>) -> Result<Outcome, St
     let recordings = folder.dir.join("providers");
     std::fs::create_dir_all(&recordings).map_err(|error| error.to_string())?;
     let mut command = std::process::Command::new(binary("testnet"));
+    // Run from inside a Claude Code session (a tester is one), the net
+    // would hand that session's identity to every real Claude agent it
+    // starts, which then behaves as a child of the session.
+    for (key, _) in std::env::vars_os() {
+        let key = key.to_string_lossy();
+        if key.starts_with("CLAUDECODE") || key.starts_with("CLAUDE_CODE_") || key == "CLAUDE_PID" {
+            command.env_remove(key.as_ref());
+        }
+    }
     command
         .arg("serve")
         .arg(&file)

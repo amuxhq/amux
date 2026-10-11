@@ -1,3 +1,8 @@
+2026-10-11 — **A QA tester's net does not pass on the tester's Claude session.**
+A tester is itself a Claude Code session, and the variables naming that
+session reached every real Claude agent its net started, through `ctl up`
+and through the launcher. Both now leave them out.
+
 2026-10-11 — **Adversarial QA runs by hand with `just qa`.**
 `just qa [--testers N] [--phone M] [--persona P...] [--waves W]` builds every
 binary once, checks the operator's Claude and Codex logins with one real agent

@@ -291,8 +291,12 @@ def main() -> int:
     # beside its own executable.
     (bin_dir / "testnet").write_text(f'#!/bin/sh\nexec "{TARGET / "testnet"}" "$@"\n')
     (bin_dir / "testnet").chmod(0o755)
+    # A launcher started from inside another Claude Code session must not
+    # hand its testers that session's identity, nor its own amux or tmux.
     env = {key: value for key, value in os.environ.items()
-           if key not in ("AMUX_CONFIG", "AMUX_LOG", "TMUX", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
+           if key not in ("AMUX_CONFIG", "AMUX_LOG", "TMUX")
+           and not key.startswith(("CLAUDECODE", "CLAUDE_CODE_"))
+           and key not in ("CLAUDE_PID", "CLAUDE_EFFORT")}
     env.update(PATH=f"{bin_dir}:{env.get('PATH', '')}", TESTNET_BINARIES=str(TARGET),
                AMUX_QA_RUN=str(run), AMUX_QA_APP=str(APP))
     say(f"run folder {run}")

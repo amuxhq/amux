@@ -1350,14 +1350,14 @@ impl Home {
                     // Laid out like a heading: the `+` on the screen's left
                     // edge with the top line and the headings' arrows, the
                     // words on the column the headings' labels use.
-                    let mut line = Line::default();
+                    let mut line = control_lead(chosen, theme);
                     pad_to(&mut line, HEAD_COL);
                     push(&mut line, "+", mark, width);
                     pad_to(&mut line, MARK_COL);
                     push(&mut line, "New Agent", words, width);
                     let to = text::line_width(&line);
                     laid.push(Laid {
-                        line,
+                        line: tint(line, chosen, width, theme),
                         spots: vec![(Some((HEAD_COL, to)), Hit::Row(Target::New))],
                     });
                 }
@@ -1369,7 +1369,7 @@ impl Home {
                     // and label brighten, and only they answer the mouse.
                     let target = Target::Section(*section);
                     let chosen = selected == target;
-                    let mut line = Line::default();
+                    let mut line = control_lead(chosen, theme);
                     pad_to(&mut line, HEAD_COL);
                     let marker = if *folded { "▸" } else { "▾" };
                     let (marker_style, label) = match (chosen, section) {
@@ -1389,7 +1389,7 @@ impl Home {
                     let rule = end.saturating_sub(text::line_width(&line));
                     push(&mut line, "─".repeat(rule), theme.hairline(), width);
                     laid.push(Laid {
-                        line,
+                        line: tint(line, chosen, width, theme),
                         spots: vec![(Some((HEAD_COL, to)), Hit::Row(target))],
                     });
                 }
@@ -1446,9 +1446,7 @@ impl Home {
         {
             laid.pop();
         }
-        if matches!(selected, Target::Agent(_)) {
-            pad_highlight(&mut laid, highlight, width, theme);
-        }
+        pad_highlight(&mut laid, highlight, width, theme);
         let highlight = in_view;
         if self.reveal {
             if highlight.0 < self.top {
@@ -1548,17 +1546,11 @@ impl Home {
                 .sum::<usize>()
                 + 3 * groups.len().saturating_sub(1)
         };
-        // Too long for the edge: the mode drops, then the permission, then
-        // the model (ctrl+s or shift+tab still reach them), then the folder
-        // shortens in the middle.
-        for dropped in [Setting::Mode, Setting::Permission, Setting::Model] {
-            if measure(&groups) > room {
-                for group in &mut groups {
-                    group.retain(|(item, _)| *item != dropped);
-                }
-                groups.retain(|group| !group.is_empty());
-            }
-        }
+        // Too long for the edge: the folder shortens in the middle first,
+        // since the model and the permission are what the person is about
+        // to start the agent with. Still too long, the mode drops, then the
+        // model, then the permission (ctrl+s or shift+tab still reach
+        // them).
         let over = measure(&groups).saturating_sub(room);
         if over > 0 {
             for group in &mut groups {
@@ -1568,6 +1560,14 @@ impl Home {
                         *words = text::ellipsize_middle(words, keep);
                     }
                 }
+            }
+        }
+        for dropped in [Setting::Mode, Setting::Model, Setting::Permission] {
+            if measure(&groups) > room {
+                for group in &mut groups {
+                    group.retain(|(item, _)| *item != dropped);
+                }
+                groups.retain(|group| !group.is_empty());
             }
         }
         let label = measure(&groups);
@@ -1627,9 +1627,12 @@ impl Home {
                 if let Some(problem) =
                     wire::agent_name_problem(editor.text().trim()).filter(|_| !editor.is_empty())
                 {
+                    // The way out stays on the line; the reason gives way,
+                    // a whole word at a time.
+                    let room = width.saturating_sub(MARGIN + text::str_width(" · esc cancel"));
                     push(
                         &mut line,
-                        crate::words::name_problem(problem),
+                        text::ellipsize_words(&crate::words::name_problem(problem), room),
                         theme.warning(),
                         width,
                     );
@@ -1898,6 +1901,18 @@ fn lead(chosen: bool, theme: Theme) -> Line<'static> {
     let mut line = Line::default();
     if chosen && theme.row_surface().is_none() {
         pad_to(&mut line, HEAD_COL);
+        line.spans.push(Span::styled("›", theme.text()));
+    }
+    line
+}
+
+/// A control's first cells ("+ New Agent", a section heading), which
+/// highlight as an agent row does: tinted where the terminal gave a ground
+/// to tint, else marked. The control's own glyph holds the heading column,
+/// so its `›` sits in the margin before it.
+fn control_lead(chosen: bool, theme: Theme) -> Line<'static> {
+    let mut line = Line::default();
+    if chosen && theme.row_surface().is_none() {
         line.spans.push(Span::styled("›", theme.text()));
     }
     line

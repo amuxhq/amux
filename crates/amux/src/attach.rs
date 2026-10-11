@@ -353,12 +353,16 @@ enum Scanned {
 }
 
 /// Finds `<leader> d` and `<leader> s` in typed bytes. The leader arrives
-/// as its control byte, or as its CSI u form when the agent has switched
-/// on the kitty keyboard protocol; a leader followed by anything else goes
-/// to the agent as typed.
+/// as its control byte, as its CSI u form when the agent has switched on
+/// the kitty keyboard protocol, or as `CSI 27 ; 5 ; code ~` when it has
+/// switched on xterm's modifyOtherKeys (terminal Claude turns on both, and
+/// a terminal that honours the latter, tmux with extended keys among them,
+/// sends that form); a leader followed by anything else goes to the agent
+/// as typed.
 struct Chords {
     raw: u8,
     csi_u: Vec<u8>,
+    modify_other: Vec<u8>,
     /// A leader seen at the end of the last read, as it was typed.
     pending: Option<Vec<u8>>,
 }
@@ -368,6 +372,7 @@ impl Chords {
         Chords {
             raw: leader.raw_byte(),
             csi_u: leader.csi_u_sequence(),
+            modify_other: leader.modify_other_keys_sequence(),
             pending: None,
         }
     }
@@ -400,6 +405,9 @@ impl Chords {
             } else if bytes[at..].starts_with(&self.csi_u) {
                 self.pending = Some(self.csi_u.clone());
                 at += self.csi_u.len();
+            } else if bytes[at..].starts_with(&self.modify_other) {
+                self.pending = Some(self.modify_other.clone());
+                at += self.modify_other.len();
             } else {
                 keys.push(bytes[at]);
                 at += 1;

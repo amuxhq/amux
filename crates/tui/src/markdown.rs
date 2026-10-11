@@ -262,8 +262,11 @@ impl Drawer {
                     link: self.link.clone(),
                 });
             }
-            Event::SoftBreak => self.text(" "),
-            Event::HardBreak => self.runs.push(Run {
+            // A single newline stays a line break, unlike CommonMark: agents
+            // write lists, logs and "one per line" answers as lines, and
+            // Claude's and Codex's own interfaces draw them so. A blank line
+            // still parts paragraphs.
+            Event::SoftBreak | Event::HardBreak => self.runs.push(Run {
                 text: "\n".into(),
                 style: Style::default(),
                 link: None,

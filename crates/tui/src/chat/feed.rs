@@ -1376,15 +1376,31 @@ pub fn clock(at_ms: i64) -> String {
 }
 
 /// A moment as the person reads it: on this machine's clock. The crate's
-/// own tests read UTC instead, so a golden drawn from a recording's real
-/// timestamps reads the same in every time zone.
+/// own tests, and the component vocabulary once it has drawn, read UTC
+/// instead, so a golden drawn from real timestamps reads the same in every
+/// time zone.
 pub(crate) fn local_time(at_ms: i64) -> Option<chrono::DateTime<chrono::FixedOffset>> {
     use chrono::TimeZone;
-    #[cfg(test)]
-    let zone = chrono::Utc;
-    #[cfg(not(test))]
-    let zone = chrono::Local;
-    zone.timestamp_millis_opt(at_ms)
-        .single()
-        .map(|at| at.fixed_offset())
+    let at = if cfg!(test) || times_in_utc() {
+        chrono::Utc
+            .timestamp_millis_opt(at_ms)
+            .single()?
+            .fixed_offset()
+    } else {
+        chrono::Local
+            .timestamp_millis_opt(at_ms)
+            .single()?
+            .fixed_offset()
+    };
+    Some(at)
+}
+
+#[cfg(feature = "fixtures")]
+fn times_in_utc() -> bool {
+    crate::vocabulary::TIMES_IN_UTC.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(not(feature = "fixtures"))]
+fn times_in_utc() -> bool {
+    false
 }

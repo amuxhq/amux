@@ -4,9 +4,9 @@
 //! terminal, and a rename's refusal at 80 columns. Each test reads the
 //! drawn cells, so what it asserts is what a person sees.
 
-use super::*;
-
 use ui_view::{AskCard, Choice, Segment};
+
+use super::*;
 
 /// The buffer drawn for a whole chat, one string per row.
 fn rows_of(

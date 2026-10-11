@@ -38,6 +38,19 @@ pub(crate) fn ellipsize(text: &str, max: usize) -> String {
     format!("{}…", clip_to_width(text, max - 1))
 }
 
+/// `text` in at most `max` cells, cut after its last whole word that fits
+/// with "…" in place of the rest, so no word is left half-shown.
+pub(crate) fn ellipsize_words(text: &str, max: usize) -> String {
+    if str_width(text) <= max {
+        return text.to_owned();
+    }
+    let room = clip_to_width(text, max.saturating_sub(1));
+    match room.rfind(' ') {
+        Some(at) => format!("{}…", room[..at].trim_end_matches([' ', ','])),
+        None => ellipsize(text, max),
+    }
+}
+
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
     line.spans.iter().map(|span| str_width(&span.content)).sum()
 }
@@ -204,14 +217,24 @@ pub(crate) fn fill(line: &mut Line<'static>, style: Style, width: usize) {
 /// Word-wraps one paragraph at `width` cells; a word longer than the line
 /// is split. Newlines in `text` start new lines; an empty line stays one.
 pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
+    wrap_after(text, width, width)
+}
+
+/// Word-wraps as [`wrap`] does, with only `first` cells left on the first
+/// line (it continues one already holding something) and `width` on every
+/// line after. A first word that fits a whole line but not the room left
+/// starts on the next line, leaving the first piece empty.
+pub(crate) fn wrap_after(text: &str, first: usize, width: usize) -> Vec<String> {
     let width = width.max(1);
-    let mut out = Vec::new();
+    let first = first.clamp(1, width);
+    let mut out: Vec<String> = Vec::new();
     for paragraph in text.split('\n') {
         let mut line = String::new();
         let mut used = 0usize;
         for word in words(paragraph) {
+            let limit = if out.is_empty() { first } else { width };
             let w = str_width(word);
-            if used + w <= width {
+            if used + w <= limit {
                 line.push_str(word);
                 used += w;
                 continue;
@@ -221,12 +244,16 @@ pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
                 used = 0;
                 continue;
             }
-            if !line.is_empty() {
+            if !line.is_empty() || (out.is_empty() && w <= width) {
                 out.push(std::mem::take(&mut line).trim_end().to_owned());
             }
             let mut rest = word;
-            while str_width(rest) > width {
-                let head = clip_to_width(rest, width);
+            loop {
+                let limit = if out.is_empty() { first } else { width };
+                if str_width(rest) <= limit {
+                    break;
+                }
+                let head = clip_to_width(rest, limit);
                 let head = if head.is_empty() {
                     rest.graphemes(true).next().unwrap_or(rest)
                 } else {

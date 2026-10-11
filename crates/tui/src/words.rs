@@ -77,8 +77,9 @@ pub(crate) fn name_problem(problem: wire::AgentNameProblem) -> String {
             format!("a name is at most {} characters", wire::AGENT_NAME_MOST)
         }
         wire::AgentNameProblem::Characters => {
-            "a name is lowercase letters, digits and hyphens, starting with a letter or digit"
-                .to_owned()
+            // Short enough to sit beside its way out on an 80-column hint
+            // line.
+            "a name is a-z, 0-9 and hyphens, starting with a letter or digit".to_owned()
         }
     }
 }

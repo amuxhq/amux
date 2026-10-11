@@ -1,3 +1,19 @@
+2026-10-11 — **Terminal client fixes from the first QA run.** A draft left in
+a chat waits in its composer until the chat opens again. For half a second
+after an ask is first drawn, keys go to the draft and Enter does nothing, so
+a digit typed as it appears never approves something unread. Words after a
+row of chips wrap at the message's full width. Agent prose keeps its single
+line breaks. A typed answer or note in an ask shows its line breaks. A long
+edit path keeps its file name; a long command's ask keeps its choices and
+key line on a short screen, the subject and reason giving way. A refused
+rename keeps `esc cancel` at 80 columns. The new-agent edge shortens the
+folder before dropping the model or the permission. `+ New Agent` and the
+section headings carry the agent rows' highlight (`›`, or the tint). Raw
+attach recognises the leader in xterm's modifyOtherKeys form and resets
+modifyOtherKeys on leaving, so Ctrl chords work again afterwards. The
+component vocabulary draws times in UTC, so its goldens pass in every time
+zone. TERMINAL.md no longer promises a note with a Codex refusal.
+
 2026-10-11 — **An edit ask names its file relative to the agent's folder,
 and a row's preview skips attachment placeholders.** The shared view hands
 both clients an edit ask's path relative to the agent's working folder when

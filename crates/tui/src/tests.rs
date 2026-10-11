@@ -2241,7 +2241,7 @@ fn q_and_question_mark_reach_an_open_fleet_overlay_first() {
     assert_eq!(view.key(&fleet, q), vec![]);
     assert_eq!(view.key(&fleet, help), vec![]);
     assert_eq!(view.key(&fleet, key(KeyCode::Enter)), vec![]);
-    assert!(fleet_screen(&mut view, &fleet).contains("lowercase letters, digits and hyphens"));
+    assert!(fleet_screen(&mut view, &fleet).contains("a-z, 0-9 and hyphens"));
     view.key(&fleet, key(KeyCode::Backspace));
     let effects = view.key(&fleet, key(KeyCode::Enter));
     assert!(
@@ -3947,10 +3947,8 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
 /// a person typing as it opens has not read it, so a digit among their words
 /// is part of the draft, not an answer. After the window a digit answers.
 ///
-/// The view's only clock today is the time each frame is drawn at; the ask
-/// is first drawn at `at` and the first digit is pressed in that frame, the
-/// second in a frame 600 ms later. A fix that gives `ChatView::key` the time
-/// of the key changes how this test passes the time, not what it asserts.
+/// The ask is first drawn at `at` and the first digit is pressed then; the
+/// second is pressed 600 ms later, after another frame.
 #[test]
 fn keys_typed_as_an_ask_appears_go_to_the_draft_for_half_a_second() {
     let idle = chat(vec![]);
@@ -3958,7 +3956,7 @@ fn keys_typed_as_an_ask_appears_go_to_the_draft_for_half_a_second() {
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
     typed(&mut view, &idle, "I have ");
     draw(&mut view, &asking, at, W, H, theme());
-    let effects = view.key(&asking, key(KeyCode::Char('1')), theme());
+    let effects = view.key_at(&asking, key(KeyCode::Char('1')), theme(), at);
     assert!(
         !effects
             .iter()
@@ -3971,7 +3969,7 @@ fn keys_typed_as_an_ask_appears_go_to_the_draft_for_half_a_second() {
         "a key typed as the ask appeared lands in the draft"
     );
     draw(&mut view, &asking, at + 600, W, H, theme());
-    let effects = view.key(&asking, key(KeyCode::Char('1')), theme());
+    let effects = view.key_at(&asking, key(KeyCode::Char('1')), theme(), at + 600);
     assert!(
         matches!(effects.as_slice(), [ChatEffect::Answer(_)]),
         "after the window a digit answers: {effects:?}"

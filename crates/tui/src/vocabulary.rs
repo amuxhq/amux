@@ -91,8 +91,14 @@ pub struct Component {
     pub buffer: Buffer,
 }
 
+/// Set once the vocabulary draws: its pictures are references, so the
+/// times on them read UTC rather than the drawing machine's clock.
+pub(crate) static TIMES_IN_UTC: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Every component, in catalogue order.
 pub fn components(theme: Theme) -> Vec<Component> {
+    TIMES_IN_UTC.store(true, std::sync::atomic::Ordering::Relaxed);
     let w = usize::from(WIDTH);
     let mut out = Vec::new();
     let mut add = |name, shows, lines: Vec<Line<'static>>| {

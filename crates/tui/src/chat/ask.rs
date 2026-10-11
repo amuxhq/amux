@@ -282,6 +282,59 @@ pub struct BoxLines {
     pub spots: Vec<Spot>,
 }
 
+/// How many of a typed field's last lines the box shows.
+const FIELD_LINES: usize = 4;
+
+impl BoxLines {
+    /// Pushes `row`, which ends where a typed field starts, with the
+    /// field's words: each of their lines on a row of its own, later rows
+    /// set in to the field's column, so what is drawn before Enter is what
+    /// is sent. Only the last [`FIELD_LINES`] show, the first of them
+    /// marked "…" when earlier ones are cut. A click on any of its rows
+    /// reaches `spot`; with `cursor` the cursor sits after the words, and
+    /// `after` follows them.
+    fn push_field(
+        &mut self,
+        mut row: Line<'static>,
+        typed: &str,
+        ink: Style,
+        width: usize,
+        spot: Option<BoxSpot>,
+        cursor: bool,
+        after: Option<(String, Style)>,
+    ) {
+        let col = text::line_width(&row);
+        let room = width.saturating_sub(col + 1);
+        let lines: Vec<&str> = typed.split('\n').collect();
+        let cut = lines.len().saturating_sub(FIELD_LINES);
+        let mut end = 0;
+        for (i, part) in lines[cut..].iter().enumerate() {
+            if i > 0 {
+                self.spots
+                    .extend(spot.map(|spot| (self.lines.len(), (0, width), spot)));
+                self.lines.push(std::mem::take(&mut row));
+                push(&mut row, " ".repeat(col), ink, width);
+            }
+            let shown = if i == 0 && cut > 0 {
+                text_tail(&format!("…{part}"), room)
+            } else {
+                text_tail(part, room)
+            };
+            end = text::str_width(&shown);
+            push(&mut row, shown, ink, width);
+        }
+        if cursor {
+            self.cursor = Some((self.lines.len(), col + end));
+        }
+        if let Some((words, style)) = after {
+            push(&mut row, words, style, width);
+        }
+        self.spots
+            .extend(spot.map(|spot| (self.lines.len(), (0, width), spot)));
+        self.lines.push(row);
+    }
+}
+
 /// Whether the chat draws `card` in the composer's box: from the moment it
 /// opens until the agent confirms the answer.
 pub fn boxed(card: &AskCard) -> bool {
@@ -668,6 +721,17 @@ impl AskUi {
             ));
         }
 
+        // What a short terminal leaves the subject and the reason, once the
+        // chat's header, the box's own lines and every choice have theirs:
+        // the choices are what the ask is for, so the words give way.
+        let words_room = if self.room == 0 {
+            usize::MAX
+        } else {
+            self.room
+                .saturating_sub(BOX_CHROME + out.lines.len() + 1 + box_choices(card).len())
+                .max(1)
+        };
+        let subject_lines = SUBJECT_LINES.min(words_room);
         // The subject, verbatim in the code colour: never cut short
         // without saying so.
         let capped = |out: &mut BoxLines, words: &str, show_all: bool| {
@@ -675,9 +739,9 @@ impl AskUi {
                 .lines()
                 .flat_map(|l| text::wrap(l, width.max(1)))
                 .collect();
-            let cut = !show_all && wrapped.len() > SUBJECT_LINES;
+            let cut = !show_all && wrapped.len() > subject_lines;
             let take = if cut {
-                SUBJECT_LINES - 1
+                subject_lines - 1
             } else {
                 wrapped.len()
             };
@@ -752,18 +816,24 @@ impl AskUi {
                 ..
             } => {
                 // The path and where in the file, then why, then the patch.
+                // A path too long for the line loses its folders from the
+                // front: the file's name is what the approval is about.
+                let more = (*files > 1).then(|| format!(" and {} more files", files - 1));
+                let at = first.map(|line| format!(" · line {line}"));
+                let after = more
+                    .iter()
+                    .chain(&at)
+                    .map(|s| text::str_width(s))
+                    .sum::<usize>();
                 let mut name = Line::default();
-                push(&mut name, path.clone(), theme.code(), width);
-                if *files > 1 {
-                    push(
-                        &mut name,
-                        format!(" and {} more files", files - 1),
-                        theme.faint(),
-                        width,
-                    );
-                }
-                if let Some(line) = first {
-                    push(&mut name, format!(" · line {line}"), theme.faint(), width);
+                push(
+                    &mut name,
+                    text_tail(path, width.saturating_sub(after).max(1)),
+                    theme.code(),
+                    width,
+                );
+                for words in more.into_iter().chain(at) {
+                    push(&mut name, words, theme.faint(), width);
                 }
                 out.lines.push(name);
                 for part in text::wrap(reason, width.max(1)) {
@@ -858,7 +928,23 @@ impl AskUi {
             _ => String::new(),
         };
         if !reason.is_empty() {
-            for part in text::wrap(&reason, width.max(1)) {
+            // Whatever room the subject left, the last line that fits
+            // saying with "…" that there is more.
+            let used = out.lines.len();
+            let room = (self.room != 0).then(|| {
+                self.room
+                    .saturating_sub(BOX_CHROME + used + 1 + box_choices(card).len())
+            });
+            let mut parts = text::wrap(&reason, width.max(1));
+            if let Some(room) = room
+                && parts.len() > room
+            {
+                parts.truncate(room);
+                if let Some(last) = parts.last_mut() {
+                    *last = text::ellipsize(&format!("{last}…"), width.max(1));
+                }
+            }
+            for part in parts {
                 out.lines.push(line(part, theme.faint()));
             }
         }
@@ -885,12 +971,17 @@ impl AskUi {
             if deny && choice.takes_note && (self.noting || !typed.is_empty()) {
                 // "No: <note>", the note as typed.
                 push(&mut row, format!("{said}: "), ink, width);
-                let at_col = text::line_width(&row);
-                let shown = text_tail(typed, width.saturating_sub(at_col + 1));
-                push(&mut row, shown.clone(), ink, width);
-                if lit && self.noting {
-                    out.cursor = Some((out.lines.len(), at_col + text::str_width(&shown)));
-                }
+                let cursor = lit && self.noting;
+                out.push_field(
+                    row,
+                    typed,
+                    ink,
+                    width,
+                    Some(BoxSpot::Choice(at)),
+                    cursor,
+                    None,
+                );
+                continue;
             } else {
                 push(&mut row, said, ink, width);
                 if deny {
@@ -2002,6 +2093,10 @@ fn preview_lines(
     (lines.into_iter().take(keep).collect(), hidden)
 }
 
+/// The rows around a boxed ask's own lines: the chat's header and the
+/// blank under it, the box's two edges, and the blank and key lines below.
+const BOX_CHROME: usize = 7;
+
 /// The rows an opened diff leaves to the rest of the chat: the header, a
 /// little feed, the box's own lines around the diff, and the hint.
 const DIFF_CHROME: usize = 16;
@@ -2132,27 +2227,28 @@ impl AskUi {
             } else {
                 self.other.text().to_owned()
             };
-            let col = text::line_width(&row);
-            let shown = text_tail(&typed, width.saturating_sub(col + 1));
-            if shown.is_empty() && !(lit && self.noting) {
+            let open = lit && self.noting;
+            if typed.is_empty() && !open {
                 push(&mut row, "type an answer", theme.faint(), width);
+                out.spots
+                    .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
+                out.lines.push(row);
             } else {
-                push(&mut row, shown.clone(), theme.bright(), width);
+                let problem = self
+                    .invalid
+                    .as_ref()
+                    .filter(|_| open)
+                    .map(|problem| (format!(" · {}", problem_words(problem)), theme.faint()));
+                out.push_field(
+                    row,
+                    &typed,
+                    theme.bright(),
+                    width,
+                    Some(BoxSpot::Choice(at)),
+                    open,
+                    problem,
+                );
             }
-            if lit && self.noting {
-                out.cursor = Some((out.lines.len(), col + text::str_width(&shown)));
-                if let Some(problem) = &self.invalid {
-                    push(
-                        &mut row,
-                        format!(" · {}", problem_words(problem)),
-                        theme.faint(),
-                        width,
-                    );
-                }
-            }
-            out.spots
-                .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
-            out.lines.push(row);
         } else if let Some(at) = rows.other {
             let lit = self.selected == at;
             let mut row = row_line(at, lit);
@@ -2166,42 +2262,36 @@ impl AskUi {
             let open = lit && self.noting;
             if open || !typed.is_empty() {
                 push(&mut row, format!("{name}: "), ink, width);
-                let col = text::line_width(&row);
-                let shown = text_tail(&typed, width.saturating_sub(col + 1));
-                push(&mut row, shown.clone(), ink, width);
-                if open {
-                    out.cursor = Some((out.lines.len(), col + text::str_width(&shown)));
-                }
-                if open && let Some(problem) = &self.invalid {
-                    push(
-                        &mut row,
-                        format!(" · {}", problem_words(problem)),
-                        theme.faint(),
-                        width,
-                    );
-                }
+                let problem = self
+                    .invalid
+                    .as_ref()
+                    .filter(|_| open)
+                    .map(|problem| (format!(" · {}", problem_words(problem)), theme.faint()));
+                out.push_field(
+                    row,
+                    &typed,
+                    ink,
+                    width,
+                    Some(BoxSpot::Choice(at)),
+                    open,
+                    problem,
+                );
             } else {
                 push(&mut row, name, ink, width);
                 if lit {
                     push(&mut row, " · enter to type", theme.faint(), width);
                 }
+                out.spots
+                    .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
+                out.lines.push(row);
             }
-            out.spots
-                .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
-            out.lines.push(row);
         }
         // The question's note, once there is one or while it is typed.
         let note = self.note.text();
         if self.annotating || !note.is_empty() {
             let mut row = Line::default();
             push(&mut row, "  Note: ", theme.faint(), width);
-            let col = text::line_width(&row);
-            let shown = text_tail(note, width.saturating_sub(col + 1));
-            push(&mut row, shown.clone(), theme.text(), width);
-            if self.annotating {
-                out.cursor = Some((out.lines.len(), col + text::str_width(&shown)));
-            }
-            out.lines.push(row);
+            out.push_field(row, note, theme.text(), width, None, self.annotating, None);
         }
         // Skip and the way out are a footer, not answers: apart,
         // unnumbered, faint until highlighted.
@@ -2244,16 +2334,20 @@ impl AskUi {
         if self.replying || !typed.is_empty() {
             // "Reply instead: <words>", the words as typed.
             push(&mut row, format!("{footer}: "), ink, width);
-            let col = text::line_width(&row);
-            let shown = text_tail(typed, width.saturating_sub(col + 1));
-            push(&mut row, shown.clone(), theme.bright(), width);
-            if self.replying {
-                out.cursor = Some((out.lines.len(), col + text::str_width(&shown)));
-            }
-        } else {
-            push(&mut row, footer, ink, width);
-            push(&mut row, "  esc", theme.faint(), width);
+            let replying = self.replying;
+            out.push_field(
+                row,
+                typed,
+                theme.bright(),
+                width,
+                Some(BoxSpot::Choice(at)),
+                replying,
+                None,
+            );
+            return out;
         }
+        push(&mut row, footer, ink, width);
+        push(&mut row, "  esc", theme.faint(), width);
         out.spots
             .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
         out.lines.push(row);

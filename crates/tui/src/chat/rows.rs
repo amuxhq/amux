@@ -257,8 +257,10 @@ pub fn segment_lines(
                     if i > 0 {
                         lines.push(Line::default());
                     }
+                    // Words after a chip fill what is left of its line, then
+                    // wrap at the message's whole width.
                     let used = lines.last().map_or(0, text::line_width);
-                    let wrapped = text::wrap(part, width.saturating_sub(used).max(1));
+                    let wrapped = text::wrap_after(part, width.saturating_sub(used), width);
                     for (j, piece) in wrapped.into_iter().enumerate() {
                         if j > 0 {
                             lines.push(Line::default());

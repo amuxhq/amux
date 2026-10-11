@@ -269,6 +269,10 @@ pub struct App {
     host_offers: HashMap<Vec<u8>, wire::Catalogue>,
     /// Each host's provider asked once per hash the host named.
     offers_asked: HashSet<OfferAsked>,
+    /// Drafts left in chats that are not open, by agent: a half-written
+    /// prompt is the person's work, and it waits in the composer for the
+    /// chat's return, as on the phone.
+    drafts: HashMap<AgentKey, crate::editor::Editor>,
     events: mpsc::UnboundedSender<AppEvent>,
     pub receiver: mpsc::UnboundedReceiver<AppEvent>,
 }
@@ -330,6 +334,7 @@ impl App {
             report_asked: false,
             report: None,
             host_offers: HashMap::new(),
+            drafts: HashMap::new(),
             offers_asked: HashSet::new(),
             events,
             receiver,
@@ -436,11 +441,15 @@ impl App {
                     Ok(session) => {
                         if let Some(open) = self.chat.take() {
                             self.fleet.close(&open.agent);
+                            self.keep_draft(open);
                         }
                         let terminal = self.fleet.state().agent(&agent).is_some_and(|entry| {
                             self.config.attach && terminal_refusal(entry, &self.config).is_none()
                         });
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
+                        if let Some(draft) = self.drafts.remove(&agent) {
+                            view.editor = draft;
+                        }
                         view.leader = self.config.leader;
                         view.local = agent.host == self.config.local_host;
                         // The overview opens where it was left; the
@@ -590,7 +599,15 @@ impl App {
     pub fn close_chat(&mut self) {
         if let Some(chat) = self.chat.take() {
             self.fleet.close(&chat.agent);
-            self.fleet_view.select(chat.agent);
+            self.fleet_view.select(chat.agent.clone());
+            self.keep_draft(chat);
+        }
+    }
+
+    /// Keeps a closing chat's draft for when it opens again.
+    fn keep_draft(&mut self, chat: OpenChat) {
+        if !chat.view.editor.is_empty() {
+            self.drafts.insert(chat.agent, chat.view.editor);
         }
     }
 
@@ -956,7 +973,7 @@ impl App {
                 self.help = true;
                 return Flow::Continue;
             }
-            chat.view.key(&state, key, theme)
+            chat.view.key_at(&state, key, theme, now_ms())
         };
         // Before any send the key made: sending a prompt is a return to
         // the newest row.

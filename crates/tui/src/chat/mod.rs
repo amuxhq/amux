@@ -62,6 +62,11 @@ fn wheel_lines(direction: Direction) -> isize {
 /// How long an empty chat waits before saying it is loading.
 pub const LOADING_HINT_MS: i64 = 300;
 
+/// How long after an ask is first drawn keys still go to the draft. A
+/// person typing as an ask opens has not read it yet, and a digit or Enter
+/// among their words would answer it unseen.
+pub const ASK_ARMS_MS: i64 = 500;
+
 /// What a key asks the event loop to do with the session.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ChatEffect {
@@ -323,6 +328,9 @@ pub struct ChatView {
     feed_origin: (u16, u16),
     epoch: u64,
     opened_at_ms: i64,
+    /// The head ask's key and when it was first drawn, for the time it
+    /// leaves keys with the draft.
+    ask_drawn: Option<(String, i64)>,
     /// The last frame's layout, for scrolling and focus.
     laid: Laid,
     feed: (usize, usize),
@@ -394,6 +402,7 @@ impl ChatView {
             feed_origin: (0, 0),
             epoch: 0,
             opened_at_ms: now_ms,
+            ask_drawn: None,
             laid: Laid::default(),
             feed: (0, 0),
             told_following: true,
@@ -568,8 +577,31 @@ impl ChatView {
         (card.state != CardState::Dismissed).then_some(card)
     }
 
-    /// One key. Ctrl+C and the leader are the app's and never reach here.
+    /// One key with no time of its own: every ask open has long been on
+    /// screen.
     pub fn key(&mut self, state: &SessionState, key: KeyEvent, theme: Theme) -> Vec<ChatEffect> {
+        self.timed_key(state, key, theme, None)
+    }
+
+    /// One key, pressed at `now_ms`. Ctrl+C and the leader are the app's
+    /// and never reach here.
+    pub fn key_at(
+        &mut self,
+        state: &SessionState,
+        key: KeyEvent,
+        theme: Theme,
+        now_ms: i64,
+    ) -> Vec<ChatEffect> {
+        self.timed_key(state, key, theme, Some(now_ms))
+    }
+
+    fn timed_key(
+        &mut self,
+        state: &SessionState,
+        key: KeyEvent,
+        theme: Theme,
+        now_ms: Option<i64>,
+    ) -> Vec<ChatEffect> {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if self.review_open
             && let Some(page) = &mut self.review
@@ -632,6 +664,14 @@ impl ChatView {
             return self.pane_key(state, key);
         }
         if let Some(card) = self.card_takes_keys(state) {
+            if !self.ask_armed(&card, now_ms) {
+                // Words typed as the ask appears are still the draft's; Enter
+                // neither sends the draft nor answers what was not read.
+                if key.code != KeyCode::Enter && self.editor.key(key) == Edit::Changed {
+                    self.not_sent = None;
+                }
+                return vec![];
+            }
             self.ask.sync(&card);
             // An ask takes over the composer's box, and Esc there never
             // leaves the ask.
@@ -646,6 +686,19 @@ impl ChatView {
             return self.tray_key(state, selected, key);
         }
         self.composer_key(state, key)
+    }
+
+    /// Whether `card` takes keys pressed at `now_ms`: once it has been on
+    /// screen for [`ASK_ARMS_MS`]. An ask not drawn yet has not been seen
+    /// at all.
+    fn ask_armed(&self, card: &AskCard, now_ms: Option<i64>) -> bool {
+        let Some(now_ms) = now_ms else {
+            return true;
+        };
+        match &self.ask_drawn {
+            Some((key, at)) if *key == card.key => now_ms.saturating_sub(*at) >= ASK_ARMS_MS,
+            _ => false,
+        }
     }
 
     /// What the chat does for an action on the ask card.
@@ -1838,6 +1891,18 @@ impl ChatView {
 
         let mut cursor = None;
         let card = self.card(state);
+        match &card {
+            Some(card)
+                if self
+                    .ask_drawn
+                    .as_ref()
+                    .is_none_or(|(key, _)| *key != card.key) =>
+            {
+                self.ask_drawn = Some((card.key.clone(), now_ms));
+            }
+            Some(_) => {}
+            None => self.ask_drawn = None,
+        }
         // A plan stays in the feed, as the agent's text, while the box asks.
         self.asking = card
             .as_ref()

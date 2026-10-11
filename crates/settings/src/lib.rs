@@ -205,6 +205,11 @@ impl LeaderKey {
         seq
     }
 
+    /// xterm's modifyOtherKeys form: ESC[27;5;<ascii>~
+    pub fn modify_other_keys_sequence(&self) -> Vec<u8> {
+        format!("\x1b[27;5;{}~", self.char).into_bytes()
+    }
+
     fn parse(s: &str) -> std::result::Result<Self, String> {
         let s = s.trim();
         let lower = s.to_ascii_lowercase();

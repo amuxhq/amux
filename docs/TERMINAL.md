@@ -68,6 +68,8 @@ Codex`, `usage limit reached`); why it exited (`finished`, a crash in red); that
 agent has no second line. A folded family whose member needs you says that member's name and what it asks. The
 highlighted row is tinted, with half a line of the tint above and below; under the pointer or the
 keys alike, and it shows `[x]` in place of its age to stop the agent, or delete it once it has exited, after asking.
+A terminal that gives no background to tint marks it with `›` instead. `+ New Agent` and the section headings
+highlight the same way, tinted or marked, so a keyboard user always sees where Enter lands.
 
 On a row, `r` renames it in place (Enter saves, Esc cancels), `s` stops it and `x` deletes it, each asking first
 in a small window (Enter confirms, Esc cancels). A daemon that has not answered yet shows `connecting` at the
@@ -134,7 +136,8 @@ Enter on a row opens its chat. From top to bottom:
     as you scroll through a long answer; as the next turn's message nears the top the pinned one fades, then that
     message takes the pin. Clicking it scrolls to the message;
   - everything the agent wrote is in one reading ink, at most 100 columns a line; code and paths wear the
-    terminal's cyan, and code blocks are highlighted in its palette. Thinking is never drawn;
+    terminal's cyan, and code blocks are highlighted in its palette. A single line break in its text stays a line
+    break, as Claude's and Codex's own interfaces draw it; a blank line parts paragraphs. Thinking is never drawn;
   - each run of tool steps between two pieces of its text folds to one faint line of what the steps did
     (`▸ 3 commands · 2 edits · 4 reads`). Clicking it, or the leader then `o`, opens it to one line per step,
     verb first (`Ran just lint · exit 1 · 22s`, `Edited session.rs · +0 −1`); clicking a step opens its detail: a
@@ -171,7 +174,8 @@ Enter on a row opens its chat. From top to bottom:
 The composer takes a draft at any time. Enter sends while the chat is current and the agent is live; while the
 agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
 its first prompt (an empty Enter just resumes). A prompt to an idle agent shows at once in the feed, and one to a
-busy agent at once in the queue. A draft typed while the host is away stays in the composer. A prompt the agent
+busy agent at once in the queue. A draft typed while the host is away stays in the composer, and a draft left in a
+chat for home or another chat waits in its composer until the chat opens again. A prompt the agent
 refuses, an exited agent's included, comes back into the composer with the reason, worded from the typed reason
 the view hands over, the same as the phone's; one whose connection dropped before a reply waits in the
 queue as `may not have arrived`, to resend or discard, and nothing is resent by itself.
@@ -194,12 +198,16 @@ to attachments after that.
 ### Asks
 
 When the agent waits on you, the ask takes over the composer's box, its edge in the attention ink; the draft waits
-behind it and comes back after. The plan or the call it is about stays in the feed above.
+behind it and comes back after. For half a second after an ask is first drawn, keys still go to the draft (Enter
+does nothing), so a digit or Enter typed as it appears never answers what was not read. The plan or the call it is
+about stays in the feed above. A typed answer or note shows its own line breaks, its last four lines at most.
 
 - **A permission** (`● Wants to run`, `Wants to edit`, `Wants to create`, `Wants to use`): the command, the file
-  with its diff and the line of its first change, or the tool and its arguments, then numbered choices worded as what happens (`1. Yes`, `2. Yes,
+  with its diff and the line of its first change (relative to the agent's folder when it is inside it, and cut
+  from the front when too long, so the file's name stays), or the tool and its arguments, then numbered choices worded as what happens (`1. Yes`, `2. Yes,
   and always allow cargo test in this project`, `3. Yes, and don't ask again this session`) and the way out last
-  (`No`). Tab on `No` adds a note that goes back to the agent with the refusal. A long diff or command is cut,
+  (`No`). Where the agent takes a reason with a refusal, Claude's, Tab on `No` adds a note that goes back with it;
+  Codex's refusal carries no reason, so its `No` offers no note. A long diff or command is cut,
   with `[Full Diff]` or `[Show All]` (or `f`) opening the whole of it inside the box.
 - **A plan** (`● Plan ready`): `Yes, start building`, `Yes, and accept edits without asking` where the agent
   offers it, and `No, keep planning`, which takes a note.

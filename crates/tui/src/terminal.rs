@@ -77,6 +77,8 @@ pub fn write_begin_frame(out: &mut impl Write) -> io::Result<()> {
     crossterm::queue!(out, BeginSynchronizedUpdate, Hide)
 }
 
+const MODIFY_OTHER_KEYS_OFF: &[u8] = b"\x1b[>4m";
+
 /// Bytes that close a frame opened by [`write_begin_frame`].
 pub fn write_end_frame(out: &mut impl Write) -> io::Result<()> {
     crossterm::execute!(out, EndSynchronizedUpdate)
@@ -85,11 +87,16 @@ pub fn write_end_frame(out: &mut impl Write) -> io::Result<()> {
 /// Bytes that restore the terminal from chrome mode. Input modes are
 /// disabled before the alternate screen is left, the cursor is shown, and
 /// the text style is reset last, on the screen the shell will draw on.
-/// Focus reporting and the style reset are more than the chrome itself
-/// sets: the same bytes put the terminal back after a raw passthrough,
-/// where the agent may have switched on anything. Every exit path —
-/// orderly, error, panic, signal — must emit these.
+/// Focus reporting, xterm's modifyOtherKeys and the style reset are more
+/// than the chrome itself sets: the same bytes put the terminal back after
+/// a raw passthrough, where the agent may have switched on anything. An
+/// agent that leaves modifyOtherKeys on (terminal Claude does) makes every
+/// Ctrl chord arrive as `CSI 27 ; 5 ; key ~`, which the client's key reader
+/// does not read. Every exit path — orderly, error, panic, signal — must
+/// emit these.
 pub fn write_restore(out: &mut impl Write) -> io::Result<()> {
+    // `CSI > 4 m` resets modifyOtherKeys; crossterm has no command for it.
+    out.write_all(MODIFY_OTHER_KEYS_OFF)?;
     crossterm::execute!(
         out,
         DisableMouseCapture,
@@ -129,7 +136,8 @@ pub fn write_osc52(out: &mut impl Write, text: &str) -> io::Result<Option<String
 /// The restore as literal bytes: pop keyboard-enhancement flags (before
 /// leaving the alternate screen — kitty keeps per-screen stacks; a pop with
 /// nothing pushed is a no-op, and unknown-CSI-tolerant terminals ignore it),
-/// disable mouse capture, focus reporting and bracketed paste, show the
+/// reset modifyOtherKeys, disable mouse capture, focus reporting and
+/// bracketed paste, show the
 /// cursor, leave the alternate screen, then reset the text style —
 /// mirroring [`restore_now`] (locked to crossterm's actual bytes by a unit
 /// test below). Written verbatim by the async-signal-safe handler, and by
@@ -138,7 +146,7 @@ pub fn write_osc52(out: &mut impl Write, text: &str) -> io::Result<Option<String
 /// lost when it dies or the client detaches while it is still running. Every
 /// sequence is a no-op on a terminal that is already sane, which is what
 /// makes writing it unconditionally safe.
-pub const RESTORE_BYTES: &[u8] = b"\x1b[<1u\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[?1049l\x1b[0m";
+pub const RESTORE_BYTES: &[u8] = b"\x1b[<1u\x1b[>4m\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[?1049l\x1b[0m";
 
 fn restore_now() {
     // Pop the keyboard-enhancement flags first, while still on the

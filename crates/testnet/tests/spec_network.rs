@@ -2617,3 +2617,105 @@ async fn a_killed_host_signed_in_to_the_relay_starts_again_on_its_port() {
 
     net.shutdown().await.unwrap();
 }
+
+/// How long a peer may take to notice a dead QUIC connection: its idle
+/// timeout is two minutes off the phone.
+const NOTICE_PATIENCE: Duration = Duration::from_secs(180);
+
+/// How long a host may take to dial a paired peer again once the peer can
+/// be reached: a redial backs off, but not past half a minute.
+const REDIAL_PATIENCE: Duration = Duration::from_secs(90);
+
+/// A host that listens on the LAN and does not browse it: whatever links
+/// it has come from pairing by address, as across a network discovery
+/// cannot see (a VPN, another subnet).
+fn undiscovered_lan_host(name: &str, scope: &str) -> testnet::HostDecl {
+    testnet::HostDecl {
+        discovery: false,
+        ..lan_host(name, scope)
+    }
+}
+
+/// A net on wall time with a gated LAN, so a real pairing can be cut,
+/// holding desk in process and box as a real daemon process, paired by
+/// address with desk dialling and box answering, and discovery off on both.
+async fn paired_without_discovery() -> Net {
+    let mut net = Net::start_with(
+        Topology::new(),
+        testnet::NetOptions {
+            clock: testnet::ClockMode::Wall,
+            gated_lan: true,
+            ..testnet::NetOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+    let scope = net.topology().scope.clone();
+    net.add_host(testnet::HostDecl {
+        process: true,
+        ..undiscovered_lan_host("box", &scope)
+    })
+    .await
+    .unwrap();
+    net.add_host(undiscovered_lan_host("desk", &scope))
+        .await
+        .unwrap();
+    net.add_link("desk", "box").await.unwrap();
+    assert!(net.link_up("desk", "box").await, "desk and box are linked");
+    net
+}
+
+/// Waits until `a` and `b` route to each other directly, or, with `up`
+/// false, until they no longer do.
+async fn until_link(net: &Net, a: &str, b: &str, up: bool, within: Duration) {
+    testnet::until_within(
+        &format!(
+            "{a} and {b} {}",
+            if up { "linked directly" } else { "unlinked" }
+        ),
+        within,
+        || async move {
+            (net.link_up(a, b).await == up)
+                .then_some(())
+                .ok_or_else(|| format!("direct both ways: {}", !up))
+        },
+    )
+    .await
+    .unwrap_or_else(|stuck| panic!("{stuck:?}"));
+}
+
+/// A host keeps dialling a paired peer's last working direct address,
+/// backing off, while the peer is away, whether or not anything discovers
+/// it. Here the host that answered the pairing restarts: it stored no way
+/// to reach the dialler, so the dialler must dial it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_dials_the_peer_that_answered_its_pairing_again_after_that_peer_restarts() {
+    let mut net = paired_without_discovery().await;
+
+    net.stop_daemon("box").await.unwrap();
+    net.restart_daemon("box").await.unwrap();
+    println!("box, which answered the pairing, stopped and started again");
+
+    until_link(&net, "desk", "box", true, REDIAL_PATIENCE).await;
+    println!("desk dialled box again without discovery");
+
+    net.shutdown().await.unwrap();
+}
+
+/// The same promise without a restart: the LAN between two paired hosts
+/// goes dead until both notice, then comes back. Neither host restarts,
+/// so only a redial to the address that last worked brings the link back.
+#[tokio::test(flavor = "multi_thread")]
+async fn hosts_paired_by_address_link_again_after_the_lan_between_them_comes_back() {
+    let mut net = paired_without_discovery().await;
+
+    net.sever_link("desk", "box").unwrap();
+    until_link(&net, "desk", "box", false, NOTICE_PATIENCE).await;
+    println!("the LAN between desk and box is dead and both have noticed");
+
+    net.restore_link("desk", "box").await.unwrap();
+    until_link(&net, "desk", "box", true, REDIAL_PATIENCE).await;
+    println!("desk and box linked again without discovery");
+
+    net.shutdown().await.unwrap();
+}

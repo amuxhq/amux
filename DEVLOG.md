@@ -1,3 +1,13 @@
+2026-10-11 — **Failing specs: paired hosts redial each other without
+discovery.** A decision from the QA triage: a host keeps redialling a paired
+peer's last working direct address, with backoff, while the peer is away,
+whether or not discovery finds it. Today a link that ends is redialled only
+when discovery lists the peer, so two hosts paired by address with
+discovery off never relink after the answering side restarts or after the
+LAN between them comes back. The answering side already sees the dialler's
+listener address as the link's source, since one endpoint serves the
+listener and the dials, but keeps nothing.
+
 2026-10-11 — **The fake Codex holds its thread like real Codex, and a failing
 test for resuming past a lingering server.** The fake now holds a
 per-thread writer lock across processes for as long as it runs, and refuses

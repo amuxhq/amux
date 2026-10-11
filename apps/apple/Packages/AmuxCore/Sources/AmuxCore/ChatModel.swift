@@ -484,6 +484,10 @@ public final class ChatModel {
         }
     }
 
+    /// The newest listing of the changed files, so a test can wait for its
+    /// answer to land rather than guess how long the host takes.
+    @ObservationIgnored private(set) var listing: Task<Void, Never>?
+
     /// Asks the agent's host for the changed files while the overview shows
     /// them, once per comparison and totals.
     private func listChangedFiles() {
@@ -491,7 +495,7 @@ public final class ChatModel {
         let asked = Listed(comparison: comparison, totals: totals(comparison))
         guard asked != listed else { return }
         listed = asked
-        Task { [weak self] in
+        listing = Task { [weak self] in
             guard let self, case .success(let overview) = await self.source.openOverview(asked.comparison),
                   self.comparison == asked.comparison, self.overview != overview
             else { return }

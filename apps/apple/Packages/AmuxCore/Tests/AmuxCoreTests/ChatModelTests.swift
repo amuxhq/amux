@@ -1043,14 +1043,14 @@ final class ChatModelTests: XCTestCase {
                 path: "README.md", name: "README.md", added: 2, removed: 0, status: .modified, binary: false)])])
         let model = ChatModel(source: source)
         model.showOverview(true)
-        await settle()
+        await model.listing?.value
         XCTAssertEqual(source.listings, [.uncommitted])
         XCTAssertEqual(model.overview?.changes, source.files)
 
         // A wake that moves nothing asks nothing again.
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         model.woke()
-        await settle()
+        await model.listing?.value
         XCTAssertEqual(source.listings, [.uncommitted])
 
         // The turn ended with more changed: the totals moved.
@@ -1059,17 +1059,17 @@ final class ChatModelTests: XCTestCase {
             onBranch: ChangeTotals(files: 2, added: 9, removed: 1))
         source.pending = ChatChanges(keys: [], reloaded: false, session: true)
         model.woke()
-        await settle()
+        await model.listing?.value
         XCTAssertEqual(source.listings, [.uncommitted, .uncommitted])
 
         model.compare(.onBranch)
-        await settle()
+        await model.listing?.value
         XCTAssertEqual(source.listings, [.uncommitted, .uncommitted, .onBranch])
 
         // Off screen, nothing is listed.
         model.showOverview(false)
         model.compare(.uncommitted)
-        await settle()
+        await model.listing?.value
         XCTAssertEqual(source.listings.count, 3)
     }
 

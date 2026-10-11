@@ -1,3 +1,9 @@
+2026-10-12 — **The overview's changed-files test waits for its answer.** The
+phone's chat model lists an agent's changed files on a task of its own, and
+the test gave that task twenty yields of the main actor to come back; on
+the CI runner the host's answer had not landed by then. The model keeps its
+newest listing task and the test awaits it after each step.
+
 2026-10-12 — **The out-of-sight resume spec follows the stop cascade.** The
 spec stops a parent while its child on another host is mid-turn, resumes
 the parent, and expects the child's row for the old incarnation to be

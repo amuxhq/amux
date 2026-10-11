@@ -25,7 +25,14 @@
 //! reads the loaded thread with its turns (`thread/read` with
 //! `includeTurns`) or resumes it with them. Asked to finish (SIGTERM), it
 //! finishes the running turn and exits, as a stdio server does at the end of
-//! its input.
+//! its input; a script's `exit_ms` holds it that much longer first.
+//!
+//! A server that starts or resumes a thread is that thread's writer for as
+//! long as it runs, across processes, as Codex is: it holds a lock on the
+//! thread under its Codex home (`CODEX_HOME`, or `.codex` in its working
+//! directory). Another server's resume of the thread while the writer lives
+//! is refused with Codex's own error, `thread <id> already has an active
+//! writer` (codex-cli 0.161.0, recorded in a QA run).
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -179,6 +186,13 @@ async fn next_frame(
     }
 }
 
+/// Why a server could not become a thread's writer.
+enum WriterError {
+    /// Another live server is the thread's writer.
+    Held,
+    Io(std::io::Error),
+}
+
 /// One connected client, and whether it has joined the thread.
 struct Client {
     writer: Writer,
@@ -224,6 +238,13 @@ struct Engine {
     schema: Option<crate::script::Schema>,
     /// `account/read` answers no account.
     signed_out: bool,
+    /// How long a server asked to finish lingers before it exits.
+    exit_ms: u64,
+    /// Asked to finish by SIGTERM.
+    terminated: bool,
+    /// The lock that makes this process its thread's writer, held until it
+    /// exits.
+    writer: Option<std::fs::File>,
 }
 
 impl Engine {
@@ -263,6 +284,9 @@ impl Engine {
             chunk_ms: script.chunk_ms,
             schema: None,
             signed_out: script.signed_out,
+            exit_ms: script.exit_ms,
+            terminated: false,
+            writer: None,
         }
     }
 
@@ -275,6 +299,9 @@ impl Engine {
                 continue;
             }
             if self.eof {
+                if self.terminated && self.exit_ms > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(self.exit_ms)).await;
+                }
                 return 0;
             }
             let event = self.events.recv().await;
@@ -303,7 +330,10 @@ impl Engine {
             Some(Event::Closed(id)) => {
                 self.clients.remove(&id);
             }
-            Some(Event::Terminated) => self.eof = true,
+            Some(Event::Terminated) => {
+                self.terminated = true;
+                self.eof = true;
+            }
         }
     }
 
@@ -401,6 +431,26 @@ impl Engine {
         }
     }
 
+    /// Becomes `thread`'s writer, unless another live server is.
+    fn take_writer(&self, thread: &str) -> Result<std::fs::File, WriterError> {
+        let home = std::env::var_os("CODEX_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(&self.cwd).join(".codex"));
+        let dir = home.join("writers");
+        std::fs::create_dir_all(&dir).map_err(WriterError::Io)?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join(format!("{thread}.lock")))
+            .map_err(WriterError::Io)?;
+        match file.try_lock() {
+            Ok(()) => Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) => Err(WriterError::Held),
+            Err(std::fs::TryLockError::Error(error)) => Err(WriterError::Io(error)),
+        }
+    }
+
     fn thread_id(&self) -> String {
         self.thread.clone().unwrap_or_default()
     }
@@ -442,6 +492,17 @@ impl Engine {
                     .as_str()
                     .map(str::to_owned)
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                match self.take_writer(&thread) {
+                    Ok(writer) => self.writer = Some(writer),
+                    Err(WriterError::Held) => {
+                        let message = format!("thread {thread} already has an active writer");
+                        self.refuse(client, &id, -32600, &message).await;
+                        return;
+                    }
+                    Err(WriterError::Io(error)) => {
+                        eprintln!("fake-codex: the thread's writer lock: {error}");
+                    }
+                }
                 self.thread = Some(thread);
                 // A resumed thread was read from disk.
                 self.materialized = method == "thread/resume";

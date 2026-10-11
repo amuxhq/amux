@@ -1,3 +1,14 @@
+2026-10-11 — **The fake Codex holds its thread like real Codex, and a failing
+test for resuming past a lingering server.** The fake now holds a
+per-thread writer lock across processes for as long as it runs, and refuses
+another process's resume of that thread with real Codex's error ("thread …
+already has an active writer"); a script's `exit_ms` makes it linger that
+long after it is told to terminate. With it, a Codex agent killed at the
+stop deadline and resumed at once races its old server: the resume waits
+only for the agent directory's lock, Codex refuses the thread, and the new
+incarnation sits starting. The test expects the resume to wait for, or
+retry past, the old server.
+
 2026-10-11 — **Failing phone test: an agent's single line breaks stay line
 breaks.** Decided in the QA triage for both clients; the terminal's test
 already stands. The phone's markdown parser joins a paragraph's lines with

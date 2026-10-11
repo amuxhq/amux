@@ -1392,3 +1392,116 @@ async fn a_host_lists_where_its_agents_ran_and_its_repositories_for_trusted_host
     desk_daemon.shutdown().await.unwrap();
     laptop_daemon.shutdown().await.unwrap();
 }
+
+/// A Codex agent whose process the daemon had to kill leaves its Codex
+/// server behind for a moment: the server is in a process group of its own,
+/// is told to finish by its tether once the agent dies, and, like real
+/// Codex, can take seconds to exit, staying its thread's writer until it
+/// does. A resume in that moment must wait for the old server (or retry
+/// past it), not race it: the next incarnation resumes the thread, takes
+/// its prompt and comes to rest. Real Codex refuses the racing resume with
+/// "thread … already has an active writer", and the agent then sat at
+/// starting forever.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_it() {
+    let install = Install::new();
+    let log = install.path("codex-input.jsonl");
+    let mut launch = install.launch("lingering", vec![]);
+    // Every Codex server the agent starts answers a prompt and then, asked
+    // to finish, lingers five seconds as its thread's writer.
+    let script = provider_fakes::script::Script {
+        steps: vec![text("answered"), wire_turn_end()],
+        exit_ms: 5_000,
+        ..provider_fakes::script::Script::default()
+    };
+    let script_path = install.path("lingering.json");
+    std::fs::write(&script_path, serde_json::to_string(&script).unwrap()).unwrap();
+    launch.provider_env.insert(
+        provider_fakes::script::SCRIPT_ENV.to_owned(),
+        script_path.to_string_lossy().into_owned(),
+    );
+    launch.provider_env.insert(
+        provider_fakes::INPUT_LOG_ENV.to_owned(),
+        log.to_string_lossy().into_owned(),
+    );
+    // The agent will not answer its stop: the daemon kills it at once.
+    launch.stop_deadline_ms = 500;
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let id = id_of(
+        &runtime
+            .spawn(
+                wire::CreateAgentRequest {
+                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
+                    ..create(&install.work, "codex", Some("first"))
+                },
+                None,
+            )
+            .await
+            .unwrap(),
+    );
+    let dir = install.agent_dir(id);
+    let at_rest = |incarnation: u32| {
+        let runtime = runtime.clone();
+        move || {
+            let runtime = runtime.clone();
+            async move {
+                let row = runtime.agent(id).await.map_err(|error| error.to_string())?;
+                (row.incarnation == incarnation
+                    && row.lifecycle == Lifecycle::Live as i32
+                    && row.phase == Phase::Idle as i32)
+                    .then_some(())
+                    .ok_or_else(|| {
+                        format!(
+                            "incarnation {}, {:?}, {:?}",
+                            row.incarnation,
+                            row.lifecycle(),
+                            row.phase()
+                        )
+                    })
+            }
+        }
+    };
+    until("the first incarnation at rest", at_rest(1))
+        .await
+        .unwrap();
+
+    // A frozen agent cannot answer the stop, so the deadline's kill ends
+    // it, as when a stop overruns; its Codex server is told to finish.
+    let frozen = std::process::Command::new("pkill")
+        .args(["-STOP", "-f", &format!("agent {}", dir.display())])
+        .status()
+        .unwrap();
+    assert!(frozen.success(), "the agent process is frozen");
+    let stopped = runtime.stop(id, StopMode::Graceful).await.unwrap();
+    assert_eq!(stopped.exit_cause(), ExitCause::Killed);
+
+    runtime
+        .resume(
+            id,
+            Some(wire::Bootstrap {
+                of: Some(wire::bootstrap::Of::Prompt(submission(b"p1", "carry on"))),
+            }),
+        )
+        .await
+        .expect("the resume is accepted");
+    let rested = until(
+        "the resumed incarnation to resume its thread, take its prompt and rest",
+        at_rest(2),
+    )
+    .await;
+    let input = std::fs::read_to_string(&log).unwrap_or_default();
+    let resumes = input.matches("\"thread/resume\"").count();
+    let turns = input.matches("\"turn/start\"").count();
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    rested.unwrap_or_else(|stuck| {
+        panic!(
+            "the resume raced the old Codex server, which still held the thread: {stuck:?}; \
+             Codex read {resumes} thread/resume and {turns} turn/start"
+        )
+    });
+    assert_eq!(turns, 2, "the resumed incarnation ran its prompt");
+}

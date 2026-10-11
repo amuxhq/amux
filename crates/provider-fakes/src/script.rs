@@ -99,6 +99,11 @@ pub struct Script {
     /// initialize answer names no account, Codex's `account/read` none.
     #[serde(default)]
     pub signed_out: bool,
+    /// Codex asked to finish (SIGTERM) takes this many milliseconds to exit
+    /// once its running turn has ended, still holding its thread, as a real
+    /// server can take seconds. None by default: it exits at once.
+    #[serde(default)]
+    pub exit_ms: u64,
 }
 
 /// A tool server as headless Claude reports it.

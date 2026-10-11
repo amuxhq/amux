@@ -1,3 +1,11 @@
+2026-10-12 — **An attachment chip reads out as one phrase.** Drawing a
+chip's name and size as separate texts, so the size never cuts the name,
+had VoiceOver read a sent message's chips in pieces ("Pasted text, · 12
+lines"); the chip's words are one accessibility element again, named as
+the chip is. The phone journeys are re-recorded for this round's visible
+changes: the repeat mark on lasting choices, the plan card's switch, the
+chip's remove target and the composer's clear button.
+
 2026-10-11 — **The fake Codex keeps its writer locks out of the chat's
 folder.** Without `CODEX_HOME` it locked its threads under `.codex` in its
 working directory, so every fake Codex chat's review listed a

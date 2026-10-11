@@ -18,7 +18,7 @@ ask.choice.2 | Send back… |  | 205,770,169,44
  | More |  | 344,69,44,44
  | Plan ready |  | 62,684,79,20
  | More |  | 338,672,44,44
- | Accept edits without asking, Until the plan is done | 0 | 28,720,346,38
+ | Switch to Accept edits, As the work starts | 0 | 28,720,346,38
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
  | Started |  | 18,132,366,34

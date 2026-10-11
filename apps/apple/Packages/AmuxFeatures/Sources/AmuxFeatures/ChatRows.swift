@@ -799,11 +799,19 @@ public struct AttachmentChip: View {
 }
 
 extension AttachmentChip {
+    /// The chip's words, read out as the one phrase they are, however many
+    /// texts draw them.
+    private var words: some View {
+        wordsLaidOut
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(ChatWords.chip(view))
+    }
+
     /// The name, cut in its middle so its extension stays, and what it
     /// measures, never cut. At an accessibility size the name may take two
     /// lines and the size goes under it.
     @ViewBuilder
-    private var words: some View {
+    private var wordsLaidOut: some View {
         let (name, detail) = ChatWords.chipParts(view)
         if typeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 1) {

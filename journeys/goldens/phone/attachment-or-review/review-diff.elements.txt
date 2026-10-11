@@ -6,10 +6,10 @@ chat.back | Back |  | 16,68,42,46
 chat.title | reviewer | reviewer | 51,72,156,38
 chat.changes | +2 −1 | Uncommitted | 280,73,60,36
 chat.more | More |  | 344,69,44,44
-chat.attachment | Pasted text · 12 lines |  | 28,714,215,26
-chat.attachment.remove | Remove |  | 213,712,31,30
+chat.attachment | Pasted text · 12 lines |  | 28,714,214,26
+chat.attachment.remove | Remove |  | 206,705,44,44
 chat.field | Message reviewer | Please check against | 28,750,318,24
-chat.clear | Clear |  | 342,738,44,43
+chat.clear | Clear |  | 342,738,44,44
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,139,44
 chat.dictate | Dictate | idle | 287,779,44,44

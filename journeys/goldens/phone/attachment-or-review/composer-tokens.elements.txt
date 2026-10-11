@@ -6,12 +6,12 @@ chat.back | Back |  | 16,68,42,46
 chat.title | reviewer | reviewer | 51,72,156,38
 chat.changes | +2 −1 | Uncommitted | 280,73,60,36
 chat.more | More |  | 344,69,44,44
-chat.attachment | Pasted text · 12 lines |  | 28,683,215,26
-chat.attachment.remove | Remove |  | 213,680,31,30
-chat.attachment | Review · 1 comment |  | 28,714,189,26
-chat.attachment.remove | Remove |  | 187,712,31,30
+chat.attachment | Pasted text · 12 lines |  | 28,683,214,26
+chat.attachment.remove | Remove |  | 206,674,44,44
+chat.attachment | Review · 1 comment |  | 28,714,188,26
+chat.attachment.remove | Remove |  | 180,705,44,44
 chat.field | Message reviewer | Please check against | 28,750,318,24
-chat.clear | Clear |  | 342,738,44,43
+chat.clear | Clear |  | 342,738,44,44
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,139,44
 chat.dictate | Dictate | idle | 287,779,44,44
@@ -22,11 +22,11 @@ chat.send | Send |  | 335,779,44,44
  | More |  | 344,69,44,44
  | Plain Text |  | 38,689,10,13
  | Pasted text · 12 lines |  | 57,688,159,16
- | Remove |  | 213,680,31,30
+ | Remove |  | 206,674,44,44
  | Comment Lines |  | 38,721,13,13
  | Review · 1 comment |  | 60,719,130,16
- | Remove |  | 187,712,31,30
- | Clear |  | 342,738,44,43
+ | Remove |  | 180,705,44,44
+ | Clear |  | 342,738,44,44
  | Attach |  | 23,779,44,44
  | claude-fake-1 |  | 71,779,139,44
  | Dictate |  | 287,779,44,44

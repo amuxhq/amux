@@ -110,6 +110,10 @@ pub struct NetOptions {
 /// small model is seconds, a slow one minutes.
 pub const REAL_PATIENCE: Duration = Duration::from_secs(240);
 
+/// How long a restart waits for its host's LAN port: past the two minutes
+/// a client's idle connection to the dead listener may last.
+const LAN_PORT_PATIENCE: Duration = Duration::from_secs(150);
+
 /// A verb's acknowledgement: what was installed, at what policy time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ack {
@@ -1650,6 +1654,8 @@ impl Net {
             self.advertise_process(name);
             return Ok(());
         }
+        self.wait_lan_port(name).await?;
+        let host = &self.hosts[name];
         let decl = &host.decl;
         let mut edge = EdgeOptions {
             host_name: decl.name.clone(),
@@ -1966,23 +1972,6 @@ impl Net {
             }
         })
         .await?;
-        // A dead daemon's sockets die with its process, and the next one
-        // listens where it did. In process, the dropped listener lets go of
-        // its port only once its last task has, so wait for that. A socket
-        // a test handed in is the test's to hold or let go.
-        let lan_port = std::fs::read_to_string(
-            node::profile_dir(&host.info.data_dir, host.info.profile).join(node::LAN_PORT_FILE),
-        )
-        .ok()
-        .and_then(|text| text.trim().parse::<u16>().ok())
-        .filter(|_| host.decl.lan && !host.lan_handed);
-        if let Some(port) = lan_port {
-            observe::until(&format!("{name}'s LAN port to be free"), || {
-                let bound = std::net::UdpSocket::bind(("127.0.0.1", port));
-                async move { bound.map(|_| ()).map_err(|error| error.to_string()) }
-            })
-            .await?;
-        }
         Ok(())
     }
 
@@ -2190,6 +2179,35 @@ impl Net {
                     error,
                 })?;
             self.links.get_mut(&(a, b)).expect("the link").live = Some(std::sync::Mutex::new(live));
+        }
+        Ok(())
+    }
+
+    /// Waits until the LAN port `name`'s last daemon listened on is free
+    /// again, so the next daemon listens where it did and every gate and
+    /// stored address still reaches it. A dead daemon's sockets die with its
+    /// process; in process, the dropped listener lets go of its port only
+    /// once its last connection's task has, which a client outside the net
+    /// (the phone) can hold until its connection times out. A socket a test
+    /// handed in is the test's to hold or let go.
+    async fn wait_lan_port(&self, name: &str) -> Result<(), NetError> {
+        let host = &self.hosts[name];
+        let port = std::fs::read_to_string(
+            node::profile_dir(&host.info.data_dir, host.info.profile).join(node::LAN_PORT_FILE),
+        )
+        .ok()
+        .and_then(|text| text.trim().parse::<u16>().ok())
+        .filter(|_| host.decl.lan && !host.lan_handed);
+        if let Some(port) = port {
+            observe::until_within(
+                &format!("{name}'s LAN port to be free"),
+                LAN_PORT_PATIENCE,
+                || {
+                    let bound = std::net::UdpSocket::bind(("127.0.0.1", port));
+                    async move { bound.map(|_| ()).map_err(|error| error.to_string()) }
+                },
+            )
+            .await?;
         }
         Ok(())
     }

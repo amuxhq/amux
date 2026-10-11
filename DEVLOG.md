@@ -1,3 +1,14 @@
+2026-10-11 — **A host with the phone connected can be killed or removed at once.**
+The pilot QA run found that `ctl host remove` on a host the phone had been
+talking to failed after thirty seconds and left the host half-declared: the
+net waited for the host's LAN port as it took a daemon down, and in process the
+port stays held while the phone's connection to the dead listener lasts, up to
+two minutes. The wait now happens only when a host starts again, where the
+port matters, with patience past that timeout; killing, stopping and removing
+return at once. The same run found the phone tester started in the tree's
+root, because `wt exec` runs there; the launcher now changes back to the
+tester's folder inside the lease.
+
 2026-10-11 — **A QA tester's net does not pass on the tester's Claude session.**
 A tester is itself a Claude Code session, and the variables naming that
 session reached every real Claude agent its net started, through `ctl up`

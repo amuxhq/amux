@@ -37,7 +37,9 @@ the store, the client's state, its views, and the screen. The first layer that i
 
 Use whatever is cheapest that still shows the problem:
 
-- the fake-provider script the tester wrote (attached to the finding when they managed one);
+- a fake-provider script you write here, from the dump's facts (what the provider said, in order) and the real
+  agent's recorded traffic in `providers/<agent>/`: testers use real agents only, so the scripted repro that
+  takes the model out of it is built in triage;
 - a topology and a few `testnet ctl` steps, from `session.jsonl`;
 - a terminal set (`journeys/sets`) for a screen state;
 - the dump's own facts, as an interpreter fixture.
@@ -67,8 +69,7 @@ File the issue with the test named, and fix it on its own branch.
 
 ## Worked example: a card that clips a long command
 
-**The finding.** A tester running a fake agent whose script streams a tool call with a 140-character shell
-command reports, at an 80-column terminal, that the command's card cuts the command off mid-word with no ellipsis,
+**The finding.** A tester whose real agent ran a 140-character shell command reports, at an 80-column terminal, that the command's card cuts the command off mid-word with no ellipsis,
 and the rest is unreachable. `screens/` holds the 80-column shot and a 160-column shot where it fits.
 
 **The stage.** `ctl chat desk worker` in `session.jsonl` shows the whole command in the host's record, and

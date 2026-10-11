@@ -17,8 +17,7 @@ read them first, then hold amux to them.
 ## Their machines and network
 
 - A desk and a laptop, linked, with an agent on each: `ctl host add desk --lan`, `ctl host add laptop --lan`,
-  `ctl link desk laptop`. Use real agents (`--provider real`) to see what a model makes of an attachment, and
-  fakes to get there cheaply.
+  `ctl link desk laptop`, so you can see what a real model makes of each attachment.
 - Files to attach, made in your own folder with `ctl make-file NAME SIZE [--fill zero|random|text]`: a large one
   (`ctl make-file big.bin 50m --fill random`), an empty one (`0`), odd types (no extension, a misleading
   extension, a long or unicode name), several at once, the same file twice under two names.

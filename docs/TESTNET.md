@@ -471,7 +471,7 @@ readable text; `--json` prints the door's reply instead.
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
 | A host's own record | `fleet HOST`, `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
 | The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
-| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
+| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
 | Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the menu that is open), `phone type TEXT --into ID`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
 | Files to test with | `make-file NAME SIZE [--fill zero\|random\|text]`: a file below the folder (no `..`), up to 2g |
@@ -508,7 +508,8 @@ every running host with the note as its reason (`dumps/<host>/`), the phone app'
 pane and of the phone plus every earlier shot (`screens/`), and the net's and each process host's logs (`logs/`).
 Anything it could not take is named in `errors.txt`. `dump show` prints a captured dump bundle as text with the
 `dump-show` binary from `crates/replay-support`, which must be built beside `testnet`. The ledger commands are
-for a [QA](QA.md) run and need its `AMUX_QA_RUN`.
+for a [QA](QA.md) run and need its `AMUX_QA_RUN`. Inside such a run agents are real only: `host add` defaults to
+`--provider real`, and `host add` and `spawn` refuse `--provider fake` and `--script`.
 
 ## The harness's own tests
 

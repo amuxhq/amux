@@ -61,8 +61,13 @@ While a wave runs the launcher samples memory every five seconds, in two ways:
 A tester works as the one signing amux off for its persona. It ends only when everything it has not covered is
 something it cannot do, and closes with `ctl ledger done`: what it covered, its verdict for the persona (ready, or
 not ready and why), and what it could not do and why. Those last lists are where the harness or a tester's
-permissions fall short; read them when planning the next run. Each tester also uses at least one real Claude and
-one real Codex agent.
+permissions fall short; read them when planning the next run.
+
+Testers use real agents only, Claude and Codex, because a tester stands in for a person and a person only meets
+real agents. Inside a run (`AMUX_QA_RUN` set), `ctl host add` starts real providers unless told otherwise, and
+`ctl` refuses `--provider fake` and `--script`. A tester holds a turn open for precise timing with a command that
+takes time, and reproduces a finding by seeing it again with real agents. A fake-script repro, which takes the model
+out of it, is built in triage from the capture's facts and recorded provider traffic ([`qa/TRIAGE.md`](../qa/TRIAGE.md)).
 
 At the end the launcher prints a summary, such as (the figures are illustrative):
 
@@ -114,10 +119,11 @@ agent instructions never load into it. It loads no user settings, skills, plugin
 operator's, and has only the shell, file reading and file editing tools. Its permissions run in `dontAsk` mode, so
 anything not allowed is refused at once:
 
-- it may run `testnet` (all of `testnet ctl`) and read-only utilities (`ls`, `cat`, `head`, `tail`, `grep`, `jq`,
-  `wc`, `diff`, `file`); `git` is denied;
+- it may run `testnet` (all of `testnet ctl`) and simple reading tools (`ls`, `cat`, `head`, `tail`, `grep`, `jq`,
+  `wc`, `diff`, `file`, `cut`, `sort`, `uniq`, `tr`, `seq`, `date`, `echo`, `printf`, `sleep`, `ps`), joined with
+  `&&`, `;` or pipes; loops, `$(...)` and every other program are refused, and `git` is denied;
 - it may read anywhere in the run folder, `reference/` included;
-- it may write and edit only inside its own folder: notes, fake scripts, findings. Large files for attachments and
+- it may write and edit only inside its own folder: notes and findings. Large files for attachments and
   pastes come from `testnet ctl make-file`, which makes them only below the folder; a shell command that writes
   files (`dd`, `mkfile`) cannot be confined that way, because a permission rule matches only how a command starts.
 

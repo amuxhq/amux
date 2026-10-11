@@ -294,3 +294,35 @@ fn down_never_kills_a_process_that_took_a_crashed_nets_pid() {
     let _ = stranger.kill();
     drop(down);
 }
+
+#[test]
+fn a_qa_tester_is_refused_fake_agents() {
+    let run = tempfile::tempdir().expect("a run folder");
+    for args in [
+        &["host", "add", "desk", "--provider", "fake"][..],
+        &["host", "add", "desk", "--script", "hello.json"],
+        &["spawn", "--host", "desk", "--provider", "fake", "worker"],
+        &[
+            "spawn",
+            "--host",
+            "desk",
+            "--script",
+            "hello.json",
+            "worker",
+        ],
+    ] {
+        let refused = Command::new(env!("CARGO_BIN_EXE_testnet"))
+            .arg("ctl")
+            .args(args)
+            .current_dir(run.path())
+            .env("AMUX_QA_RUN", run.path())
+            .output()
+            .expect("testnet runs");
+        assert!(!refused.status.success(), "{args:?} is refused");
+        assert!(
+            String::from_utf8_lossy(&refused.stderr).contains("real agents only"),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&refused.stderr)
+        );
+    }
+}

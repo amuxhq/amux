@@ -21,8 +21,8 @@ things again before the last one finished.
   - `ctl kill desk` while an agent streams a long answer, then `ctl restart desk`;
   - `ctl freeze AGENT` while it holds an ask, then `ctl thaw AGENT`;
   - `ctl stop-agent AGENT` mid-turn, then `ctl resume AGENT`;
-  - a fake agent that waits on a gate (`wait_for`) so you can crash things at an exact step, then
-    `ctl gate open NAME`.
+  - an agent held mid-turn by a command that takes time (`AGENTS-GUIDE.md`), so you can crash things while
+    it runs.
 
 ## What would make them unhappy
 

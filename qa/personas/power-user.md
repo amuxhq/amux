@@ -15,8 +15,8 @@ terminal client, glance at the phone, and expect the fleet to tell them at a loo
 
 - Three hosts: `ctl host add desk --lan --provider real`, `ctl host add buildbox --lan --process --provider
   real`, `ctl host add laptop --lan --provider real`, all linked (`ctl link`).
-- Many agents: mix real ones (Haiku, Luna) with fake ones (`ctl spawn --provider fake --script FILE`) that
-  stream long output, ask, or wait on a gate, so the fleet is crowded and busy without waiting on models.
+- Many real agents, Claude and Codex, started together: some streaming long answers, some held on a command that
+  takes time, some waiting on an ask, so the fleet is crowded and busy.
 - A wide terminal most of the time (`ctl tui open desk --size 200x50`), a narrow split sometimes (`--size
   80x24`).
 - The phone, occasionally, to check the same fleet.

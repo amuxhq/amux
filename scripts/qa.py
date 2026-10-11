@@ -42,8 +42,10 @@ TARGET = ROOT / "target" / "debug"
 APP = ROOT / "target" / "ios" / "DerivedData" / "Build" / "Products" / "Debug-iphonesimulator" / "Amux.app"
 STATE = Path.home() / ".local" / "state" / "amux-qa"
 SEVERITIES = ["data loss", "broken flow", "wrong state", "visual", "wording"]
-# What a tester's shell may run besides testnet: reading, never changing.
-READ_ONLY = ["ls", "cat", "head", "tail", "grep", "jq", "wc", "diff", "file"]
+# What a tester's shell may run besides testnet: reading and shaping text,
+# waiting, never writing or running other code.
+READ_ONLY = ["ls", "cat", "head", "tail", "grep", "jq", "wc", "diff", "file",
+             "sleep", "cut", "sort", "uniq", "tr", "seq", "date", "echo", "printf", "ps"]
 BINARIES = ["amux", "testnet", "dump-show", "claude-probe", "codex-probe",
             "fake-claude-sdk", "fake-claude-pty", "fake-codex"]
 

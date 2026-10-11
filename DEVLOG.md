@@ -1,3 +1,17 @@
+2026-10-11 — **QA testers use real agents only and keep going past a refused
+command.** A tester stands in for a person, who only meets real agents: in a
+QA run `ctl host add` starts real providers and `ctl` refuses fakes, the
+prompt has testers see a finding twice with real agents and hold a turn open
+with a slow command for timing, and the fake-script repro moves to triage,
+built from the capture's facts and provider recordings. Two testers in run
+20261011-160731 ended three minutes in after one compound command was
+refused, reading Claude Code's "Permission to use Bash has been denied" as
+their whole shell. Their shell now also allows `sleep`, `cut`, `sort`,
+`uniq`, `tr`, `seq`, `date`, `echo`, `printf` and `ps`; the prompt says
+what runs (chains and pipes of those), what is refused (loops, `$(...)`),
+that a refusal covers one command, and that there is no time limit.
+`ctl tui paste` takes `--file`, since `$(cat file)` is refused.
+
 2026-10-11 — **Removing a host kills only that host's processes.** Removal killed
 every process whose command line contained the host's folder as text, so
 removing `desk` also killed `desk2`'s agents and the net's tmux server, with

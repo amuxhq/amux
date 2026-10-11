@@ -124,10 +124,10 @@ pub enum Command {
     /// Start an agent the way a person's create does, on any host.
     ///
     /// On a real host (or with --provider real) it is the real Claude or
-    /// Codex: pass --model haiku for Claude, --model gpt-5.6-luna for
-    /// Codex. With a fake, --script FILE is what it plays (the script
-    /// language is in the TestNet docs). --wait returns once the agent has
-    /// come to rest.
+    /// Codex, on Haiku or gpt-5.6-luna unless --model says otherwise. With
+    /// a fake, --script FILE is what it plays (the script language is in
+    /// the TestNet docs). In a QA run agents are real only. --wait returns
+    /// once the agent has come to rest.
     Spawn(SpawnArgs),
     /// Send an agent a prompt through its own host. --wait returns once
     /// that prompt has been taken and the agent is at rest again.
@@ -253,9 +253,9 @@ pub struct HostArgs {
     #[arg(long)]
     pub supervised: bool,
     /// What every agent made on it runs: the real Claude or Codex, or the
-    /// scripted fakes.
-    #[arg(long, value_enum, default_value_t = ProviderArg::Fake)]
-    pub provider: ProviderArg,
+    /// scripted fakes. Fakes unless given; real, and only real, in a QA run.
+    #[arg(long, value_enum)]
+    pub provider: Option<ProviderArg>,
     /// A script file every agent a client creates on it plays (fake hosts).
     #[arg(long)]
     pub script: Option<PathBuf>,
@@ -503,6 +503,13 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
             Ok(Outcome::new(describe_status(&status), status))
         }
         Command::Host(HostCommand::Add(host)) => {
+            let provider = match (host.provider, in_qa_run()) {
+                (Some(ProviderArg::Fake), true) => return Err(REAL_ONLY.to_owned()),
+                (_, true) if host.script.is_some() => return Err(REAL_ONLY.to_owned()),
+                (None, true) => ProviderArg::Real,
+                (Some(provider), _) => provider,
+                (None, false) => ProviderArg::Fake,
+            };
             let mut decl = json!({
                 "name": host.name,
                 "lan": host.lan,
@@ -510,7 +517,7 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
                 "bonjour": host.bonjour,
                 "process": host.process,
                 "supervised": host.supervised,
-                "provider": host.provider.word(),
+                "provider": provider.word(),
             });
             if let Some(account) = host.account {
                 decl["account"] = json!(account);
@@ -666,7 +673,21 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
     }
 }
 
+/// Whether this session is a tester's in a `just qa` run.
+fn in_qa_run() -> bool {
+    std::env::var_os(evidence::RUN_ENV).is_some_and(|run| !run.is_empty())
+}
+
+/// A tester stands in for a person, and a person only ever meets real
+/// agents; a fake script that reproduces a finding is built in triage.
+const REAL_ONLY: &str = "a QA tester uses real agents only, as a person meets them: \
+     leave out --provider fake and --script (a fake-script repro is triage's work)";
+
 fn spawn_agent(folder: &Folder, spawn: SpawnArgs) -> Result<Outcome, String> {
+    if in_qa_run() && (matches!(spawn.provider, Some(ProviderArg::Fake)) || spawn.script.is_some())
+    {
+        return Err(REAL_ONLY.to_owned());
+    }
     let mut decl = json!({
         "name": spawn.name,
         "host": spawn.host,

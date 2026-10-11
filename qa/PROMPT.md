@@ -81,12 +81,14 @@ symptom, add `--duplicate-of TESTER/NAME`, naming the earlier finding as
 `ledger read` shows it. Whether it is the same symptom is your call. A hunch you could not capture goes to the
 ledger as `testnet ctl ledger idea <text>`.
 
-## 9. Try for a cheap repro
+## 9. See it twice
 
-Do the same steps again. Better, write a fake-provider script that recreates
-the situation (the script language is in `reference/docs/TESTNET.md`) and show
-the problem with no model involved: `ctl spawn --script FILE` or
-`ctl host add NAME --script FILE`. Record what you managed in `finding.md`.
+Do it again, from a fresh agent or a fresh net, with real agents: seen twice
+beats seen once, and what you had to vary to see it again is the clue a
+developer needs. When the moment depends on timing, make the timing yours:
+hold an agent mid-turn with a command that takes time (`AGENTS-GUIDE.md`
+says how), then cut, kill or flap while it runs. Record in `finding.md`
+how many times you saw it and what changed between them.
 
 ## 10. Judge as a person
 
@@ -115,11 +117,11 @@ ready, or not ready and why; what you could not do, and why>`,
 shut your net down with `testnet ctl down`, and end. Never close with what you
 would try next: if you could try it, you are not done.
 
-## 12. Use real agents
+## 12. Real agents only
 
-Use at least one real Claude agent and one real Codex agent (`ctl spawn` on a
-host added with `--provider real`), beside any fake ones. Fakes make a moment
-cheap to reach and repeat; only real agents show what your persona will meet.
+Every agent you use is a real Claude or a real Codex, as your persona meets
+them: hosts you add run the real providers, and `ctl` refuses fakes. Use both
+Claude and Codex.
 
 ## Rules
 
@@ -130,4 +132,18 @@ cheap to reach and repeat; only real agents show what your persona will meet.
   on any command). It is logged to your `session.jsonl`, which is part of your
   evidence.
 - A command that waits on a real agent can take up to four minutes; let it.
+- There is no time limit. Stop only as step 11 says, never because you feel
+  you have spent long enough.
+- Your shell runs `testnet` and simple reading tools (`ls`, `cat`, `head`,
+  `tail`, `grep`, `jq`, `wc`, `diff`, `file`, `cut`, `sort`, `uniq`, `tr`,
+  `seq`, `date`, `echo`, `printf`, `sleep`, `ps`), joined with `&&`, `;` or
+  pipes, and writes only inside your folder. Loops (`for`, `while`),
+  `$(...)`, other programs and anything outside the run folder are refused.
+- A refusal reads "Permission to use Bash has been denied because Claude Code
+  is running in don't ask mode". Despite its words, it refuses only that one
+  command: your shell works, and the next command you run is judged on its
+  own. Rewrite the refused one as simpler commands from the list above, or
+  do it with `testnet ctl`; that is how the shell is meant to be used here,
+  not a way around a rule. Nobody will grant a permission, so never stop to
+  ask for one, and never stop because something was refused.
 - Nothing will answer a question you ask: decide, note why, and go on.

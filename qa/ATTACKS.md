@@ -7,16 +7,10 @@ After every move, compare the views: the terminal client (`ctl tui screen`), the
 host's own record (`ctl chat HOST AGENT`, `ctl fleet HOST`), and the provider's own view where there is one
 (`ctl tui attach PANE AGENT`). Any two that differ is a finding, even when neither looks wrong alone.
 
-Fake agents make timing exact. A script that waits on a gate holds the agent at a known step until you release
-it, so you can break things at exactly that moment:
-
-```json
-{"steps": [{"text": {"chunks": ["first half "]}}, {"wait_for": {"path": "half"}},
-           {"text": {"chunks": ["second half"]}}, "turn_end"]}
-```
-
-`ctl spawn --host desk --provider fake --script half.json --prompt go writer`, act, then `ctl gate open half`.
-The script language is in `reference/docs/TESTNET.md`.
+Every agent is a real Claude or Codex. To break things at an exact moment, hold an agent mid-turn: ask it to run
+a command that takes time (`AGENTS-GUIDE.md` has the wording for each), and while it runs cut the link, kill the
+daemon, flap the network or stop the agent. Network faults (`ctl sever`, `ctl flap`, `ctl net`) give you the rest
+of the timing.
 
 ## Interrupt it halfway
 
@@ -61,12 +55,12 @@ The script language is in `reference/docs/TESTNET.md`.
 ## Empty, huge and strange input
 
 - An empty prompt; only spaces; only newlines.
-- A huge prompt (`ctl tui paste PANE "$(cat bigfile)"`, the file made with `ctl make-file bigfile 2m --fill text`), a
-  very long single line, thousands of short lines.
+- A huge prompt (`ctl make-file big.txt 2m --fill text`, then `ctl tui paste PANE --file big.txt`), a very long
+  single line, thousands of short lines.
 - Unicode: accents, right-to-left text, combining marks, emoji, CJK, zero-width characters, a name made of them.
 - Long names for agents, hosts and folders; names with spaces, slashes, quotes.
-- A fake script that streams a very long answer, or a very long command (`tool` steps), to see wrapping and
-  clipping at 80 columns.
+- Ask an agent for a very long answer, a single 300-character line, or to run a very long shell command, to
+  see wrapping and clipping at 80 columns.
 
 ## Cancel, then retry
 

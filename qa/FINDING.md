@@ -19,8 +19,7 @@
 
 ## Repro
 
-<!-- One of: seen once; reproduced again (how many times); reproduced with a fake script (attach it here,
-     and the ctl steps that run it). -->
+<!-- Seen once, or seen again with real agents: how many times, and what you varied between them. -->
 
 ## Suspected stage
 

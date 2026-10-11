@@ -40,6 +40,7 @@ word for word, and change only the names, files and texts in them.
 | A question with options and a preview of each | Prompt: "Use the AskUserQuestion tool to ask me which of two names to use for a new helper function, parse_line or read_line, with a short code preview of each. Ask nothing else." Headless and terminal Claude both ask one question with two options, each with a code preview. |
 | Two questions in one ask | Prompt: "Use the AskUserQuestion tool once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. Then reply with the single word done. Do nothing else." |
 | A permission ask from a shell command | Start it with the permission `default`. Prompt: "Run exactly this shell command once, with your shell tool, and nothing else: touch decided.txt. Then reply with the single word done." Terminal Claude may treat a file in its own folder as safe; a network command always asks: "... and nothing else: curl -sI https://example.com. Then reply with the single word done." |
+| A turn held open for 30 seconds | Prompt: "Run exactly this shell command once, with your shell tool, and nothing else: python3 -c 'import time; time.sleep(30)'. Then reply with the single word done." With the permission `default` it asks first; approve it, and the turn stays working for the 30 seconds, time to cut, kill or flap. Claude refuses a bare `sleep 30` (its own rule against waiting), so do not ask for one. |
 | Planning | Switch the agent into plan mode the way a person does: create it with the permission `plan` (`ctl spawn --permission plan`, the Permission menu on the phone), or cycle the permission with Shift+Tab in the terminal client. Then give it an ordinary task, such as "Change README.md's only line from CURRENT to UPDATED." in a folder holding that README. It presents its plan for approval itself. Never tell it which tool to plan with. Claude may report a different model while it plans. |
 
 ## Codex
@@ -50,7 +51,8 @@ word for word, and change only the names, files and texts in them.
 | A patch (file change) approval | Permission `read-only`. Prompt: "Create a file named notes.txt containing the single line hello, by editing files with your patch tool, not the shell. The sandbox is read-only, so the edit needs my approval; I will approve. Then reply with the single word done." |
 | Planning | Create it in plan mode (`ctl spawn --kind codex --mode plan`; Shift+Tab steps Codex's mode in the terminal client), then give it an ordinary task as for Claude. It presents a plan to start or keep refining. |
 | A question | Codex asks questions only while planning. In plan mode: "Use your tool for asking the user questions to ask me one question, 'Which colour?', with the options Red and Blue. Then reply with the single word done. Do nothing else." |
-| A permission grant | Not reachable with the stock Codex: its tool for requesting extra sandbox permissions is switched off, and asked for one it asks for a command approval instead. Use a fake script with an `ask` of `grant` (see `reference/docs/TESTNET.md`). |
+| A turn held open for 30 seconds | Prompt: "Run exactly this shell command once, with your shell tool, and nothing else: sleep 30. Then reply with the single word done." It runs at once and the turn stays working for the 30 seconds, time to cut, kill or flap. |
+| A permission grant | Not reachable with the stock Codex: its tool for requesting extra sandbox permissions is switched off, and asked for one it asks for a command approval instead. |
 
 ## amux's own agent tools
 
@@ -63,12 +65,8 @@ Every agent carries amux's tool server (`reference/docs/AGENT_TOOLS.md`).
 | A status line | "Use amux's status tool to set your status to 'reviewing the README'. Then reply with only the word done." The fleet's "working on" then reads that text. |
 | What it can see | "Use amux's agents tool and reply with only the names of the agents it lists, comma-separated." |
 
-## What only a fake can do
+## What no real agent does
 
-Real agents carry no tool server but amux's, and amux's tools never ask a
-person anything. A tool server's form, a link it asks to open, terminal
-Claude's tool-server dialog and Codex's permission grant therefore come only
-from a fake provider's script: an `ask` step of `form`, `link`,
-`tool_server_dialog` or `grant`. A fake script is also the cheapest repro of
-anything timing-dependent: hold a turn on a `wait_for` gate and release it with
-`ctl gate open NAME` exactly when you want.
+amux's tools never ask a person anything, and the agents carry no other tool server, so a tool server's form, a
+link it asks to open, terminal Claude's tool-server dialog and Codex's permission grant do not come up in testing.
+Leave them out of your ground.

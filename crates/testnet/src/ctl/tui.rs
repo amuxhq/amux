@@ -52,8 +52,15 @@ pub enum TuiCommand {
     },
     /// Type text as keystrokes, literally.
     Type { pane: String, text: String },
-    /// Paste text as a terminal paste (bracketed), the way a person pastes.
-    Paste { pane: String, text: String },
+    /// Paste text as a terminal paste (bracketed), the way a person pastes:
+    /// TEXT, or with --file the contents of a file in your folder.
+    Paste {
+        pane: String,
+        #[arg(required_unless_present = "file")]
+        text: Option<String>,
+        #[arg(long, conflicts_with = "text")]
+        file: Option<PathBuf>,
+    },
     /// Copy FILE and press Ctrl+V in the pane, the way a person attaches
     /// a file they copied (or, with --image, an image: a PNG put on the
     /// clipboard as picture data, as a screenshot tool does).
@@ -222,16 +229,31 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
                 json!({"typed": text}),
             ))
         }
-        TuiCommand::Paste { pane, text } => {
+        TuiCommand::Paste { pane, text, file } => {
             known(folder, &pane)?;
+            let text = match (text, file) {
+                (Some(text), _) => text,
+                (None, Some(file)) => {
+                    let path = folder.dir.join(file);
+                    std::fs::read_to_string(&path)
+                        .map_err(|error| format!("reading {}: {error}", path.display()))?
+                }
+                (None, None) => return Err("paste TEXT, or --file FILE".to_owned()),
+            };
             tmux(folder, &["set-buffer", "-b", "ctl", &text])?;
             tmux(
                 folder,
                 &["paste-buffer", "-p", "-d", "-b", "ctl", "-t", &pane],
             )?;
             Ok(Outcome::new(
-                format!("pasted into {pane}"),
-                json!({"pasted": text}),
+                format!("pasted {} bytes into {pane}", text.len()),
+                // A large paste is kept by its size: the session log is
+                // evidence, read whole.
+                if text.len() > 4096 {
+                    json!({"pasted_bytes": text.len()})
+                } else {
+                    json!({"pasted": text})
+                },
             ))
         }
         TuiCommand::Clip { pane, file, image } => clip(folder, &pane, &file, image),

@@ -152,10 +152,10 @@ enum ComponentCatalog {
             row("command-asking", r("x6", 16, .command(
                 command: "cargo test -p amux-ui", state: .asking, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
                 durationMs: nil, exitCode: nil), attention: true)),
-            row("explore", r("e1", 17, .explore(verb: .read, subject: "crates/wire/src/codes.rs", state: .succeeded))),
-            row("run", r("e2", 18, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded),
+            row("explore", r("e1", 17, .explore(verb: .read, subject: "crates/wire/src/codes.rs", state: .succeeded, result: ""))),
+            row("run", r("e2", 18, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""),
                 run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil))),
-            row("run-open-below", r("e3", 19, .explore(verb: .read, subject: "src/lib.rs", state: .succeeded),
+            row("run-open-below", r("e3", 19, .explore(verb: .read, subject: "src/lib.rs", state: .succeeded, result: ""),
                 run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, subagents: 0, other: 0), recent: nil))),
             row("subagent-running", r("a1", 20, .subagent(
                 description: "Find every INVALID_PIN reader", running: true, toolCount: 12,
@@ -190,8 +190,8 @@ enum ComponentCatalog {
                 r("a3", 35, .subagent(
                     description: "Explore the pairing code", running: true, toolCount: 2,
                     lastTool: "Grep INVALID_PIN", answer: "", durationMs: 9_000)),
-                r("a4", 36, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded), parent: "a3"),
-                r("a5", 37, .explore(verb: .read, subject: "wire/src/codes.rs", state: .succeeded), parent: "a3")),
+                r("a4", 36, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""), parent: "a3"),
+                r("a5", 37, .explore(verb: .read, subject: "wire/src/codes.rs", state: .succeeded, result: ""), parent: "a3")),
             row("ask-question", height: 130, r("q1", 38, .ask(.questions(
                 questions: [F.redactionQuestion], answers: [AnswerView(picked: ["amux-core"], hidden: false, skipped: false, note: nil, other: nil)],
                 skipped: 0, resolution: .answered, reply: nil)))),
@@ -288,9 +288,9 @@ enum ComponentCatalog {
             ask("question-single", height: 440, F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
             ask("question-multi", height: 460, preset: .highlighted(0), F.card(.claudeSdk, .question([F.platformQuestion]), [])),
             ask("questions-step", height: 440, F.card(.codex, .question(F.threeQuestions), [])),
-            ask("questions-review", height: 520, preset: .reviewing([.options([0, 1]), .options([1]), .other("Only failures, with the host id")]),
+            ask("questions-review", height: 520, preset: .reviewing([.picked([0, 1]), .picked([1]), .typed("Only failures, with the host id")]),
                 F.card(.codex, .question(F.threeQuestions), [])),
-            ask("questions-skipped", height: 560, preset: .reviewing([.options([0, 1]), .options([]), .other("Only failures, with the host id")]),
+            ask("questions-skipped", height: 560, preset: .reviewing([.picked([0, 1]), .picked([]), .typed("Only failures, with the host id")]),
                 F.card(.codex, .question(F.threeQuestions), [])),
             ask("question-note", height: 560, preset: .questionNote("Keep the old strings for one release"),
                 F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
@@ -406,9 +406,9 @@ enum ComponentCatalog {
                 ])),
             composer("resume", height: 200, frame: ScriptedChat.frame(phase: .exited(cause: .failed("code 1")), mode: .resume),
                      draft: "Pick up where you left off and rerun the tests.", settlesLate: true),
-            composer("detached", height: 180, frame: ScriptedChat.frame(mode: .disabled(.detached), caughtUp: false, waiting: .detached),
+            composer("detached", height: 180, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached),
                      draft: "Also add a test for the new string."),
-            composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .disabled(.catchingUp), caughtUp: false, waiting: .catchingUp)),
+            composer("catching-up", height: 160, frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false, waiting: .catchingUp)),
             composer("strip", height: 280, frame: ScriptedChat.frame(phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 94_000)),
                      strip: ScriptedChat.strip(
                         tasks: F.pairingTasks,
@@ -526,13 +526,13 @@ enum ComponentCatalog {
                     card: F.card(.claudeSdk, .command(command: "cargo test -p amux-ui", cwd: "~/src/amux", reason: "", description: "Run the spec suite"), F.sdkPermissionChoices))
             }),
             chat("detached", chat: {
-                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(mode: .disabled(.detached), caughtUp: false, waiting: .detached))
+                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached))
             }),
             chat("loading", readiness: ("chat.loading", "shown"), chat: {
-                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .disabled(.catchingUp), caughtUp: false, waiting: .catchingUp))
+                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.catchingUp), caughtUp: false, waiting: .catchingUp))
             }),
             chat("away", chat: {
-                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .disabled(.detached), caughtUp: false, waiting: .detached))
+                ScriptedChat(rows: [], frame: ScriptedChat.frame(mode: .holds(.detached), caughtUp: false, waiting: .detached))
             }, subject: F.awaySubject),
             chat("new-activity", readiness: ("chat.newActivity", "shown"), chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .working))
@@ -1030,8 +1030,8 @@ enum CatalogFixtures {
     /// A prompt, the agent's look around, and the plan it proposed.
     static let planned: [Row] = [
         ScriptedChat.row("p1", 1, .prompt(text: [.text("Plan how to collapse the pairing errors.")], steered: false)),
-        ScriptedChat.row("e1", 2, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded)),
-        ScriptedChat.row("e2", 3, .explore(verb: .read, subject: "wire/src/codes.rs", state: .succeeded)),
+        ScriptedChat.row("e1", 2, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: "")),
+        ScriptedChat.row("e2", 3, .explore(verb: .read, subject: "wire/src/codes.rs", state: .succeeded, result: "")),
         ScriptedChat.row("l1", 4, .ask(.plan(body: planBody, verdict: .open, mode: "", modeName: "", writing: false, note: nil, title: planTitle))),
     ]
 
@@ -1063,7 +1063,7 @@ enum CatalogFixtures {
             r("c01", 1, .boundary(kind: .started, cause: "")),
             r("c02", 2, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false)),
             r("c03", 3, .thinking(text: "", open: false, durationMs: 8_000)),
-            r("c04", 4, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded),
+            r("c04", 4, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""),
               run: Run(first: "c04", last: "c04", steps: 6, live: false, openBelow: false, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil)),
             r("c05", 5, .fileChange(files: [FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 9, removed: 14, line: nil)], state: .succeeded)),
             r("c06", 6, .command(command: "cargo check -p amux-ui", state: .failed, outputHead: ["error[E0308]: mismatched types"], moreLines: 214, outputTrimmed: false, outputTail: [], durationMs: 4_200, exitCode: 101)),
@@ -1093,18 +1093,18 @@ enum CatalogFixtures {
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
         name: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
-        members: 1, descendants: 0, backgroundJobs: 0, branch: nil, exitCause: .finished)
+        members: 1, descendants: 0, backgroundJobs: 0, stopHeld: false, branch: nil, exitCause: .finished)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
                       name: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
-                      members: 1, descendants: 0, backgroundJobs: 0, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, stopHeld: false, branch: nil, exitCause: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
                       name: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
-                      members: 1, descendants: 0, backgroundJobs: 0, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, stopHeld: false, branch: nil, exitCause: nil),
         ],
         attention: .needsYou, needYou: 1, parent: nil)
 }
@@ -1284,4 +1284,14 @@ extension CatalogFixtures {
             OfferedPermission(value: "bypassPermissions", displayName: "Bypass permissions", normal: false, neverAsks: true, settable: true, models: []),
         ],
         modes: [])
+}
+
+private extension QuestionResponse {
+    static func picked(_ positions: [UInt32]) -> QuestionResponse {
+        QuestionResponse(note: nil, other: nil, picked: positions)
+    }
+
+    static func typed(_ words: String) -> QuestionResponse {
+        QuestionResponse(note: nil, other: words, picked: [])
+    }
 }

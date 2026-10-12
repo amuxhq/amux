@@ -1,3 +1,24 @@
+2026-10-13 — **The phone opens a host's own page, holds sends while a host is away, and runs the client's commands.**
+Tapping a host on the Hosts tab opened a blank page. It now opens the host's
+page: how the phone reaches it, its platform, version, providers, addresses
+and key fingerprint, and Revoke. Revoke asks first there and on the Devices
+sheet, saying the phone stops reaching the machine and only pairing again
+brings it back. A test opens every page the shell can push and fails on one
+with nothing built behind it.
+
+A message, answer or stop sent while the chat is catching up or its host is
+out of reach is handed to the client library to hold rather than refused, so
+Send stays enabled. A held prompt is drawn pending with Cancel, which returns
+its words to the draft; a held answer shows on the ask card with Cancel; a
+held stop shows under the chat's header and on the agent's home row, and the
+menu offers Cancel Stop. The empty field says when a message goes in words
+short enough for one line. A draft starting with `/` runs the library's own
+commands (settings, rename, model) on the phone and says which words an
+agent does not take. When terminal Claude's own view switches to another
+conversation, the chat says so with Switch Back, readable at large text
+sizes. A multi-select question now sends its ticked options together with
+the words typed as Something else; typing no longer unticks them.
+
 2026-10-13 — **The terminal attaches up to 64 MB, waits for a file still attaching, and keeps drafts across closing.**
 A file over the attachment limit was uploaded and then failed with a raw
 error; it is now refused before upload in words naming the limit ("files can

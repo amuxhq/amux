@@ -30,7 +30,7 @@ final class CaughtUpSession: OpenChat, @unchecked Sendable {
     func frame() -> ChatFrame? {
         ChatFrame(
             agent: agent, name: "a", kind: .claudeSdk, phase: .needsYou,
-            composer: ComposerView(mode: .send, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: current,
+            composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: current,
             hasOlder: false, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
             signIn: nil, waiting: nil)
     }

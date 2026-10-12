@@ -20,6 +20,9 @@ public enum AskAction: Equatable, Sendable {
     /// The answer was not confirmed: send it again, or forget it.
     case resend
     case discard
+    /// The answer is held while the host cannot be reached: take it back
+    /// and answer again.
+    case cancelHeld
 }
 
 /// Where a card starts, for a capture of one part-way through: a note being
@@ -29,7 +32,7 @@ public enum AskPreset: Equatable, Sendable {
     case noting(Int)
     case other(String)
     case highlighted(UInt32)
-    case reviewing([Pick])
+    case reviewing([QuestionResponse])
     case autoAccept
     /// The first question's note being written.
     case questionNote(String)
@@ -127,7 +130,7 @@ public struct AskCardView: View {
     private var showsBody: Bool {
         switch card.state {
         case .open, .rejected: true
-        case .sending, .notConfirmed, .dismissed: false
+        case .sending, .notConfirmed, .dismissed, .held: false
         }
     }
 
@@ -137,6 +140,7 @@ public struct AskCardView: View {
         case .sending: "sending"
         case .rejected: "rejected"
         case .notConfirmed: "not-confirmed"
+        case .held: "held"
         case .dismissed: "dismissed"
         }
     }
@@ -197,6 +201,17 @@ public struct AskCardView: View {
                     choiceButton(String(localized: "Discard"), kind: .outline, id: "ask.discard") {
                         act(.discard)
                     }
+                }
+            }
+        case .held:
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Your answer is held: the agent’s host can’t be reached. It sends when the host is back.")
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.inkMuted.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .identified("ask.held", label: String(localized: "Your answer is held"))
+                choiceButton(String(localized: "Cancel"), kind: .outline, id: "ask.held.cancel") {
+                    act(.cancelHeld)
                 }
             }
         case .dismissed:
@@ -817,6 +832,7 @@ struct DiffPreview: View {
 
     private func text(_ line: EditLine) -> String {
         switch line {
+        case .file(let file): ChatWords.fileHeader(file)
         case .hunk(_, let newStart): String(localized: "Line \(newStart)")
         case .line(let line):
             switch line.kind {
@@ -829,6 +845,7 @@ struct DiffPreview: View {
 
     private func ink(_ line: EditLine) -> Color {
         if case .hunk = line { return design.inkFaint.color }
+        if case .file = line { return design.inkMuted.color }
         return design.ink.color
     }
 
@@ -1079,11 +1096,15 @@ struct QuestionCard: View {
             }
         case .reviewing(let answers)?:
             for (index, answer) in answers.enumerated() where index < count {
-                switch answer {
-                case .options(let chosen) where chosen.isEmpty: skipped[index] = true
-                case .options(let chosen): picks[index] = Set(chosen)
-                case .other(let text): others[index] = text
+                let chosen = answer.picked ?? []
+                let typed = answer.other.flatMap { $0.isEmpty ? nil : $0 }
+                if chosen.isEmpty && typed == nil {
+                    skipped[index] = true
+                } else {
+                    picks[index] = Set(chosen)
+                    others[index] = typed
                 }
+                notes[index] = answer.note ?? ""
             }
             _reviewing = State(initialValue: true)
         case .questionNote(let text)?:
@@ -1326,7 +1347,6 @@ struct QuestionCard: View {
 
     private func select(_ position: UInt32, in question: QuestionView, at index: Int) {
         guard picks.indices.contains(index) else { return }
-        others[index] = nil
         skipped[index] = false
         highlighted[index] = position
         if question.multiSelect {
@@ -1335,6 +1355,7 @@ struct QuestionCard: View {
             }
             return
         }
+        others[index] = nil
         picks[index] = [position]
         if tapAnswers {
             send(responses)
@@ -1349,7 +1370,13 @@ struct QuestionCard: View {
         if open {
             let binding = Binding(
                 get: { others.indices.contains(index) ? others[index] ?? "" : "" },
-                set: { others[index] = $0; picks[index] = []; skipped[index] = false })
+                set: {
+                    // A multi-select keeps its ticks beside the typed words;
+                    // a single choice is one or the other.
+                    others[index] = $0
+                    if !question.multiSelect { picks[index] = [] }
+                    skipped[index] = false
+                })
             Group {
                 if question.secret {
                     SecureField(String(localized: "Something else"), text: binding)
@@ -1369,7 +1396,7 @@ struct QuestionCard: View {
         } else {
             Button {
                 others[index] = ""
-                picks[index] = []
+                if !question.multiSelect { picks[index] = [] }
             } label: {
                 OptionRow(
                     label: String(localized: "Something else…"), detail: "", recommended: false,
@@ -1391,18 +1418,15 @@ struct QuestionCard: View {
         }
     }
 
-    /// One response per question, in order: what was picked or typed, an
-    /// empty pick for one not answered, and its note.
+    /// One response per question, in order: the options ticked and the
+    /// words typed (a multi-select carries both; a single choice one or the
+    /// other), nothing for one not answered, and its note.
     private var responses: [QuestionResponse] {
         questions.indices.map { index in
             let note = notes[index].trimmingCharacters(in: .whitespacesAndNewlines)
-            let pick: Pick
-            if let other = others[index], !other.isEmpty {
-                pick = .other(other)
-            } else {
-                pick = .options(picks[index].sorted())
-            }
-            return QuestionResponse(pick: pick, note: note.isEmpty ? nil : note)
+            let other = others[index].flatMap { $0.isEmpty ? nil : $0 }
+            let picked = other != nil && !questions[index].multiSelect ? [] : picks[index].sorted()
+            return QuestionResponse(note: note.isEmpty ? nil : note, other: other, picked: picked)
         }
     }
 
@@ -1449,13 +1473,13 @@ struct QuestionCard: View {
 
     private func summary(_ question: QuestionView, at index: Int) -> String {
         guard picks.indices.contains(index) else { return "" }
-        if let other = others[index], !other.isEmpty {
-            return question.secret ? String(localized: "answered (hidden)") : "“\(other)”"
-        }
-        let labels = picks[index].sorted().compactMap { position in
+        var parts = picks[index].sorted().compactMap { position in
             question.options.indices.contains(Int(position)) ? question.options[Int(position)].label : nil
         }
-        if !labels.isEmpty { return labels.joined(separator: ", ") }
+        if let other = others[index], !other.isEmpty {
+            parts.append(question.secret ? String(localized: "answered (hidden)") : "“\(other)”")
+        }
+        if !parts.isEmpty { return parts.joined(separator: ", ") }
         return skipped[index] ? String(localized: "Skipped") : String(localized: "Not answered")
     }
 

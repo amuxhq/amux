@@ -226,8 +226,8 @@ public struct Shell: View {
             }
     }
 
-    /// One page per route. A route with no screen behind it yet says so rather
-    /// than showing something that looks like the screen it is not.
+    /// One page per route, every route with a built screen: the switch has
+    /// no default, so a new route does not compile until it has one.
     @ViewBuilder
     private func page(_ route: Route) -> some View {
         switch route {
@@ -246,8 +246,18 @@ public struct Shell: View {
             SignInPage(from: from, router: router, model: signIn, actions: actions)
         case .paywall(let from):
             PaywallPage(from: from, router: router, model: paywall, actions: actions)
-        default:
-            UnbuiltPage(route: route)
+        case .host(let host):
+            HostPage(model: stores.hosts, host: host) { action in
+                switch action {
+                case .back: router.pop()
+                // The page is about a machine that is leaving the list, so
+                // it goes with it.
+                case .revoke(let host):
+                    stores.revoke(host)
+                    router.pop()
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
@@ -442,7 +452,8 @@ private struct ChatPage: View {
             directory: row?.workingDirectory ?? "",
             reach: host?.reach ?? row?.hostReach ?? .offline,
             descendants: Int(card?.descendants ?? 0),
-            backgroundJobs: Int(card?.backgroundJobs ?? 0))
+            backgroundJobs: Int(card?.backgroundJobs ?? 0),
+            stopHeld: card?.stopHeld ?? false)
     }
 
     private func act(_ action: ChatAction) {
@@ -451,6 +462,7 @@ private struct ChatPage: View {
         case .attach(let choice): picking = choice
         case .rename(let name): Task { _ = await stores.rename(name, of: agent) }
         case .stopAgent: Task { _ = await stores.stop(agent) }
+        case .cancelStop: Task { _ = await stores.cancelStop(agent) }
         case .delete:
             Task {
                 if case .success = await stores.delete(agent) { router.pop() }

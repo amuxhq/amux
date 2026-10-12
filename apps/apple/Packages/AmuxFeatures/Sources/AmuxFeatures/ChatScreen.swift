@@ -16,10 +16,13 @@ public struct ChatSubject: Equatable, Sendable {
     public let descendants: Int
     /// Jobs its provider runs in the background, as its fleet row counts them.
     public let backgroundJobs: Int
+    /// A stop of it from this phone is held: its host cannot be reached, and
+    /// the stop goes when the host is back.
+    public let stopHeld: Bool
 
     public init(
         name: String, host: String, directory: String, reach: Reach, descendants: Int = 0,
-        backgroundJobs: Int = 0
+        backgroundJobs: Int = 0, stopHeld: Bool = false
     ) {
         self.name = name
         self.host = host
@@ -27,6 +30,7 @@ public struct ChatSubject: Equatable, Sendable {
         self.reach = reach
         self.descendants = descendants
         self.backgroundJobs = backgroundJobs
+        self.stopHeld = stopHeld
     }
 
     public var reachable: Bool { reach.online }
@@ -63,6 +67,8 @@ public enum ChatAction: Equatable, Sendable {
     case rename(String)
     /// End the agent's process. Resume starts it again.
     case stopAgent
+    /// Take back a stop held while the agent's host cannot be reached.
+    case cancelStop
     case delete
     case copyAddress
     /// A parent or child in this chat's family.
@@ -313,7 +319,11 @@ public struct ChatScreen: View {
         ]
         // A live agent is stopped, which keeps it to resume; only an exited
         // one is deleted, so nothing live is ever removed from here.
-        if running {
+        if running && subject.stopHeld {
+            items.append(MenuItem(title: String(localized: "Cancel Stop"), systemImage: "arrow.uturn.backward") {
+                actions(.cancelStop)
+            })
+        } else if running {
             items.append(MenuItem(
                 title: String(localized: "Stop Agent"), systemImage: "stop.circle", destructive: true
             ) { showing = .stop })
@@ -478,7 +488,19 @@ public struct ChatStanding: View {
     }
 
     public var body: some View {
-        standing.onChange(of: putDown) { focused = false }
+        standing
+            .onChange(of: putDown) { focused = false }
+            // A bare /model, /effort or /rename opens amux's own picker or
+            // the rename card, as the menu would.
+            .onChange(of: model.asks) { _, asks in
+                guard let asks else { return }
+                model.asks = nil
+                focused = false
+                switch asks {
+                case .settings: showing = .settings
+                case .rename: showing = .rename
+                }
+            }
     }
 
     /// A question card's picks live on the chat, like the draft.
@@ -498,6 +520,8 @@ public struct ChatStanding: View {
     @ViewBuilder
     private var standing: some View {
         VStack(spacing: 8) {
+            if subject.stopHeld { heldStop }
+            if model.frame?.composer.switchedAway == true { switchedAway }
             if let notice = model.notice {
                 Text(notice)
                     .designFont(.detail, design)
@@ -561,6 +585,50 @@ public struct ChatStanding: View {
         .animation(photographed ? nil : Motion.standard, value: showing)
     }
 
+    /// Terminal Claude's own view resumed another conversation: prompts are
+    /// refused until this one is back, which one tap does.
+    private var switchedAway: some View {
+        let words = String(localized: "Claude’s own view switched to another conversation")
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(words)
+                .designFont(.detail, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { model.switchBack() } label: {
+                ActionLabel(String(localized: "Switch Back"), kind: .primary, fill: true)
+            }
+            .buttonStyle(.amuxControl)
+            .identified("chat.switchBack", label: String(localized: "Switch Back"))
+        }
+        .padding(14)
+        .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
+        .identified("chat.switchedAway", label: words)
+    }
+
+    /// A stop that has not gone yet, with the way to take it back.
+    private var heldStop: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock")
+                .font(.system(size: 14))
+                .foregroundStyle(design.inkMuted.color)
+            Text(String(localized: "Stop held · sends when \(subject.host) is back"))
+                .designFont(.detail, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { actions(.cancelStop) } label: {
+                ActionLabel(String(localized: "Cancel"), kind: .outline)
+            }
+            .buttonStyle(.amuxControl)
+            .identified("chat.stopHeld.cancel", label: String(localized: "Cancel"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
+        .identified("chat.stopHeld", label: String(localized: "Stop held · sends when \(subject.host) is back"))
+    }
+
     @ViewBuilder
     private var composerStack: some View {
         if showing != .plus {
@@ -616,6 +684,7 @@ public struct ChatStanding: View {
         case .stop: model.interrupt()
         case .resend: model.resendAnswer()
         case .discard: model.discardAnswer()
+        case .cancelHeld: model.cancelHeldAnswer()
         }
     }
 }

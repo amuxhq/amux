@@ -64,6 +64,29 @@ final class PhoneDecisionsTests: XCTestCase {
         probe.elements.first { $0.identifier == identifier }
     }
 
+    /// Builds the screen's accessibility tree, which a SwiftUI screen only
+    /// keeps while something reads it: the debug door's driver does, and a
+    /// test turns on the same automation reading for itself alone.
+    private func accessible() async throws {
+        let handle = try XCTUnwrap(dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW))
+        let symbol = try XCTUnwrap(dlsym(handle, "_AXSSetAutomationEnabled"))
+        let automation = unsafeBitCast(symbol, to: (@convention(c) (Int32) -> Void).self)
+        automation(1)
+        addTeardownBlock { automation(0) }
+        await spin()
+    }
+
+    /// Acts on a control the way VoiceOver does, which is the one way to
+    /// press a SwiftUI button from inside the process.
+    private func activate(_ identifier: String) throws {
+        let window = try XCTUnwrap(window)
+        let declared = try XCTUnwrap(element(identifier), "\(identifier) is not drawn")
+        let control = VisibleTree.find(identifier, in: window)
+            ?? VisibleTree.element(
+                at: CGPoint(x: declared.frame.midX, y: declared.frame.midY), in: window, saying: declared.label)
+        XCTAssertTrue(control?.accessibilityActivate() ?? false, "\(identifier) did not activate")
+    }
+
     private func menuItem(_ title: String) throws -> (UIButton, UIAction)? {
         MenuSource.item(title, in: try XCTUnwrap(window))
     }
@@ -127,6 +150,34 @@ final class PhoneDecisionsTests: XCTestCase {
             "the stop confirm names the turn, its 2 background jobs and its sub-agent: \(said)")
     }
 
+    /// Terminal Claude's own view resumed another conversation: the chat
+    /// says so above the composer and offers the way back, at a large text
+    /// size too.
+    func testAChatWhoseClaudeViewSwitchedAwaySaysSoAndOffersSwitchBack() async throws {
+        _ = try await chat(
+            ScriptedChat(
+                rows: CatalogFixtures.conversation,
+                frame: ScriptedChat.frame(kind: .claudePty, phase: .idle, switchedAway: true)),
+            size: .accessibility3)
+        let notice = try XCTUnwrap(element("chat.switchedAway"), "the chat does not say its conversation left")
+        XCTAssertEqual(notice.label, "Claude’s own view switched to another conversation")
+        let back = try XCTUnwrap(element("chat.switchBack"), "the chat offers no way back")
+        XCTAssertTrue(
+            try XCTUnwrap(window).bounds.contains(back.frame),
+            "Switch Back is off screen at accessibility3: \(back.frame)")
+    }
+
+    /// A prompt held while its host is away is drawn pending, with Cancel.
+    func testAHeldPromptIsDrawnPendingWithCancel() async throws {
+        let held = SentPrompt(inputId: [7], text: [.text("Run the tests.")], lands: .queue, underway: .held)
+        _ = try await chat(ScriptedChat(
+            rows: CatalogFixtures.conversation,
+            frame: ScriptedChat.frame(phase: .idle, underway: [held])))
+        let row = try XCTUnwrap(element("chat.underway.0"), "the held prompt is not drawn")
+        XCTAssertTrue((row.value ?? "").contains("sends when"), "the held prompt says \(row.value ?? "")")
+        XCTAssertNotNil(element("chat.underway.0.cancel"), "the held prompt has no Cancel")
+    }
+
     // MARK: - Ask cards
 
     /// At a large text size a long question card squeezed into the space
@@ -182,6 +233,33 @@ final class PhoneDecisionsTests: XCTestCase {
             card: CatalogFixtures.card(.claudeSdk, .question([CatalogFixtures.previewQuestion]), [])))
         XCTAssertNotNil(element("ask.question"), "the card shows its question")
         XCTAssertNotNil(element("ask.preview"), "a question whose options carry previews shows none until one is picked")
+    }
+
+    /// A multi-select carries the options ticked and the words typed as
+    /// "Something else" together: typing does not untick anything.
+    func testAMultiSelectSendsItsTicksAndItsOwnWordsTogether() async throws {
+        var sent: [AskAction] = []
+        try host(AskCardView(card: CatalogFixtures.card(.claudeSdk, .question([CatalogFixtures.platformQuestion]), [])) {
+            sent.append($0)
+        })
+        await spin()
+        try await accessible()
+        try activate("ask.option.0")
+        try activate("ask.option.2")
+        try activate("ask.option.other")
+        await spin()
+        let window = try XCTUnwrap(window)
+        let field = try XCTUnwrap(
+            DoorWindow.allTextViews(in: window).first as? (any UIKeyInput & UIResponder),
+            "Something else opens no field")
+        _ = field.becomeFirstResponder()
+        field.insertText("FreeBSD")
+        await spin()
+        try activate("ask.next")
+        await spin()
+        XCTAssertEqual(
+            sent, [.respond([QuestionResponse(note: nil, other: "FreeBSD", picked: [0, 2])])],
+            "the ticks and the typed words do not both reach the answer")
     }
 
     // MARK: - Home and new agent

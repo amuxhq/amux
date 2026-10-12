@@ -229,7 +229,7 @@ private func frame(
 ) -> ChatFrame {
     ChatFrame(
         agent: AgentKey(host: [1], agent: [2]), name: "a", kind: kind, phase: phase,
-        composer: ComposerView(mode: mode, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: caughtUp,
+        composer: ComposerView(mode: mode, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: caughtUp,
         hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
         signIn: nil, waiting: nil)
 }
@@ -618,19 +618,13 @@ final class ChatModelTests: XCTestCase {
         XCTAssertTrue(source.paged.isEmpty)
     }
 
-    func testTheDraftIsKeptWhileCatchingUpAndSendsOnlyWhenCaughtUpAndLive() async {
-        let source = FakeChat(rows: [], frame: frame(mode: .disabled(.catchingUp), caughtUp: false))
+    func testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold() async {
+        // Decided: a chat that is not current still takes a send. The client
+        // library holds it, shown pending with Cancel, and sends it under its
+        // id once the chat is current; the phone does not keep Send disabled.
+        let source = FakeChat(rows: [], frame: frame(mode: .holds(.catchingUp), caughtUp: false))
         let model = ChatModel(source: source)
         model.draft = "Run the tests."
-        XCTAssertFalse(model.canSend)
-        model.send()
-        await settle()
-        XCTAssertTrue(source.sent.isEmpty)
-        XCTAssertEqual(model.draft, "Run the tests.")
-
-        source.current = frame()
-        source.pending = ChatChanges(keys: [], reloaded: false, session: true)
-        model.woke()
         XCTAssertTrue(model.canSend)
         model.send()
         await settle()
@@ -960,8 +954,8 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         await settle()
         let answers = [
-            QuestionResponse(pick: .options([1]), note: "only on staging"),
-            QuestionResponse(pick: .options([]), note: nil),
+            QuestionResponse(note: "only on staging", other: nil, picked: [1]),
+            QuestionResponse(note: nil, other: nil, picked: []),
         ]
         model.answer(responses: answers)
         await settle()

@@ -150,11 +150,11 @@ final class RouterTests: XCTestCase {
         let agent = agent()
 
         router.open(.conversation(agent))
-        router.open(.accounts)
+        router.open(.paywall(.you))
 
         XCTAssertEqual(router.tab, .you)
         XCTAssertEqual(router.path(.agents), [.conversation(agent)])
-        XCTAssertEqual(router.path(.you), [.accounts])
+        XCTAssertEqual(router.path(.you), [.paywall(.you)])
 
         router.select(.agents)
         XCTAssertEqual(router.path, [.conversation(agent)])
@@ -223,7 +223,7 @@ final class RouterTests: XCTestCase {
         XCTAssertEqual(Route.newAgent.tab, .agents)
         XCTAssertEqual(Route.pairByCode(machine).tab, .hosts)
         XCTAssertEqual(Route.host(HostId(UUID())).tab, .hosts)
-        XCTAssertEqual(Route.accounts.tab, .you)
+        XCTAssertEqual(Route.signIn(.you).tab, .you)
     }
 
     /// A different account on screen leaves none of the last one's pages on
@@ -236,14 +236,13 @@ final class RouterTests: XCTestCase {
         router.open(.conversation(agent))
         router.open(.changes(agent))
         router.open(.host(machine))
-        router.open(.accounts)
         router.open(.signIn(.you))
 
         router.leaveAccount()
 
         XCTAssertEqual(router.path(.agents), [])
         XCTAssertEqual(router.path(.hosts), [])
-        XCTAssertEqual(router.path(.you), [.accounts, .signIn(.you)])
+        XCTAssertEqual(router.path(.you), [.signIn(.you)])
         XCTAssertEqual(
             loader.abandoned, [.conversation(agent), .changes(agent), .host(machine)],
             "what the pages held open is let go")

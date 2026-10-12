@@ -54,11 +54,11 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         name: String = "refactor-auth", kind: Kind = .claudeSdk, phase: PhaseView = .idle,
         mode: Composer = .send, activity: Activity? = nil, caughtUp: Bool = true,
         hasOlder: Bool = false, queue: [QueuedRow] = [], underway: [SentPrompt] = [],
-        refused: [RefusedPrompt] = [], waiting: Waiting? = nil
+        refused: [RefusedPrompt] = [], waiting: Waiting? = nil, switchedAway: Bool = false
     ) -> ChatFrame {
         ChatFrame(
             agent: agent, name: name, kind: kind, phase: phase,
-            composer: ComposerView(mode: mode, activity: activity), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live,
+            composer: ComposerView(mode: mode, switchedAway: switchedAway, activity: activity), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live,
             caughtUp: caughtUp, hasOlder: hasOlder, arrivalsHeld: false, queue: queue,
             underway: underway, refused: refused, askInput: nil, context: nil,
             ended: nil,

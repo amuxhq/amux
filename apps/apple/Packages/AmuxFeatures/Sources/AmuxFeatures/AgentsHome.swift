@@ -330,9 +330,14 @@ public struct AgentsHome: View {
     /// listing its members beside it.
     private func agentRow(_ row: AgentRow) -> some View {
         let state = RowState(row: row)
+        // A stop that is held until the host is back says so before anything
+        // else the row would say; the chat has its Cancel.
+        let second = row.card.stopHeld
+            ? (text: String(localized: "Stop held · sends when \(row.hostName) is back"), ink: FleetWords.Ink.warning)
+            : FleetWords.secondLine(row.secondLine, kind: row.card.kind, now: model.orderedAt)
         let content = AgentRowView(
             row: row, state: state, host: PlaceNames.host(row.hostName), now: model.orderedAt,
-            second: FleetWords.secondLine(row.secondLine, kind: row.card.kind, now: model.orderedAt))
+            second: second)
         return HStack(spacing: 0) {
             if row.depth > 0 {
                 Rectangle()

@@ -450,6 +450,12 @@ public final class StoreBundle {
         return await profile.act(.stop, on: agent)
     }
 
+    /// Takes back a stop held while the agent's host could not be reached.
+    public func cancelStop(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
+        guard let profile else { return .failure(RuntimeFailure("nothing is running")) }
+        return await profile.act(.cancelStop, on: agent)
+    }
+
     public func delete(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
         guard let profile else { return .failure(RuntimeFailure("nothing is running")) }
         return await profile.act(.delete, on: agent)

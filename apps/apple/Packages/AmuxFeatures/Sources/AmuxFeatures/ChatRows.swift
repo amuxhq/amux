@@ -89,7 +89,10 @@ public struct ChatRowView: View {
                     commandMeta(state, exitCode: exitCode, durationMs: durationMs), row,
                     verbPhase: state, note: false)),
                 quote: denialNote, output: outputHead, trimmed: outputTrimmed, more: moreLines)
-        case .explore(let verb, let subject, let state):
+        case .explore(let verb, let subject, let state, let result):
+            // A step that heads a folded run opens the run; any other opens
+            // what it found, which is kept even when the step failed.
+            let folds = row.run?.folds(row) == true
             GridRow(
                 kind: "explore", glyph: glyph(state, "magnifyingglass"), accented: accented(state),
                 rail: rail, verb: ChatWords.explore(verb), subject: subject,
@@ -98,7 +101,8 @@ public struct ChatRowView: View {
                        row.run.map { expanded && $0.folds(row) ? ChatWords.run($0) : "" } ?? ""]
                     .filter { !$0.isEmpty }.joined(separator: " · ")),
                 truncation: .head, quote: denialNote,
-                opens: row.run?.folds(row) == true, open: expanded, toggle: toggle)
+                detail: expanded && !folds && !result.isEmpty ? result : nil,
+                opens: folds || !result.isEmpty, open: expanded, toggle: toggle)
         case .subagent(let description, let running, let toolCount, let lastTool, let answer, let durationMs):
             GridRow(
                 kind: "subagent", glyph: "arrow.triangle.branch", rail: rail,
@@ -218,7 +222,7 @@ public struct ChatRowView: View {
     /// What a folded run's line names: its newest step's subject.
     private static func anchor(_ row: Row) -> String {
         switch row.kind {
-        case .explore(_, let subject, _): subject
+        case .explore(_, let subject, _, _): subject
         case .command(let command, _, _, _, _, _, _, _): ChatWords.firstLine(command)
         case .toolCall(let server, let tool, _, _, _): server.isEmpty ? tool : "\(server) · \(tool)"
         case .fileChange(let files, _): files.first?.path ?? ""

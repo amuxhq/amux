@@ -656,6 +656,7 @@ struct ChatDock: View {
     private func onItsWay(_ prompt: SentPrompt, index: Int) -> some View {
         let id = "chat.underway.\(index)"
         let lost = prompt.underway == .mayNotHaveArrived
+        let held = prompt.underway == .held
         return trayRow(
             text: ChatWords.text(of: prompt.text), state: ChatWords.underway(prompt.underway, host: host),
             warn: lost, id: id
@@ -664,6 +665,10 @@ struct ChatDock: View {
                 Image(systemName: "exclamationmark.circle")
                     .font(.system(size: 14))
                     .foregroundStyle(design.accent.color)
+            } else if held {
+                Image(systemName: "clock")
+                    .font(.system(size: 14))
+                    .foregroundStyle(design.inkMuted.color)
             } else {
                 Image(systemName: "paperplane")
                     .font(.system(size: 13))
@@ -673,6 +678,10 @@ struct ChatDock: View {
             if lost {
                 icon("arrow.clockwise", String(localized: "Resend"), id: "\(id).resend") { model.resend(prompt.inputId) }
                 icon("xmark", String(localized: "Discard"), id: "\(id).discard") { model.discard(prompt.inputId) }
+            }
+            // It never left, so taking it back puts its words in the draft.
+            if held {
+                icon("xmark", String(localized: "Cancel"), id: "\(id).cancel") { model.cancelHeld(prompt.inputId) }
             }
         }
     }

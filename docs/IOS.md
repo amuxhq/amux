@@ -94,6 +94,27 @@ only what changed. A chat is a `ChatModel` over an open `Chat`:
   before anything is read or uploaded, and one over it is refused in words
   naming the file and the limit. One that fails to store is named with the
   reason in the chat's notice.
+- A send while the chat is not current (catching up, reconnecting, or its
+  host out of reach) is handed to the client library rather than refused:
+  Send stays enabled, the field says when the message goes, and the library
+  holds the prompt, answer or stop and sends it, with the same id, once the
+  host can be reached. A held prompt is drawn pending with "held · sends
+  when desk is back" and a Cancel that returns its words to the draft; a held
+  answer shows on the ask card with Cancel; a held stop shows under the
+  chat's header and on the agent's home row, and the chat's menu offers
+  Cancel Stop.
+- A draft starting with `/` goes to the library's client commands first:
+  what the library runs itself (opening settings, renaming, choosing a
+  model) happens on the phone, a word the agent does not take is refused in
+  words naming what it does take, and anything else is sent to the agent as
+  typed.
+- When terminal Claude's own view resumes another conversation, the chat
+  says so above the composer ("Claude's own view switched to another
+  conversation") with Switch Back, which asks the library to return that
+  view to this chat.
+- A multi-select question sends the options ticked and any words typed as
+  "Something else" together; typing does not untick anything. A
+  single-choice question sends one or the other.
 
 A bundle keeps every chat a page shows open, plus chats viewed in the last
 five minutes, plus a chat a push is bringing current.
@@ -168,6 +189,13 @@ The app declares `_amux._udp` in `NSBonjourServices` and explains the
 local-network permission as "amux finds hosts on your network so this phone
 can pair and connect to them directly." When access is denied, the Hosts tab
 says so, lists no machine and offers the Settings route.
+
+Tapping a host on the Hosts tab opens its page: how the phone reaches it,
+its platform, version, providers and addresses, the last dial error while it
+is offline, and its key's fingerprint in full. The page and the Devices sheet
+both offer Revoke, and both ask first, saying the phone stops reaching the
+machine and only pairing again brings it back. Every route the shell can
+push has a built page; `RoutePagesTests` opens each one.
 
 ## Foreground, background and pushes
 

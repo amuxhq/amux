@@ -133,7 +133,8 @@ pipes, waits) runs and nothing ever waits on a person.
 The confinement is the folder and the instruction, not the permission rules: auto mode lets a tester write outside
 its folder and read the repository if it decides to. The prompt tells it to write only inside its folder (large
 files for attachments and pastes come from `testnet ctl make-file`, which makes them only below the folder) and
-to read only `reference/docs` and `reference/qa`, never source code, tests or history. Testers judge what a person
+to read only `reference/docs` and `reference/qa`, never source code, tests or history. Its `TESTNET_FOLDER` names
+its folder, so `ctl` reaches its net from whichever folder it runs in. Testers judge what a person
 would expect, not what the code does.
 
 The prompt is assembled from the committed `qa/` folder:

@@ -1,3 +1,16 @@
+2026-10-13 — **The QA launcher shuts every net down, and a tester's `ctl`
+finds its net from any folder.** In the second overnight run one `ctl down`
+outlasted the launcher's three-minute wait; the timeout went uncaught, the
+run ended with no summary and the last wave's nets kept running. The
+launcher now gives `ctl down` five minutes, kills whatever of a net is
+still running after it fails or times out (the folder's tmux server and
+every process whose command line lies in the tester's folder), carries on
+with the other testers, and writes the summary however the run ends, naming
+any net it had to kill. Testers who changed folder hit "no net in this
+folder" 349 times: `ctl` now takes the session folder from
+`TESTNET_FOLDER`, which the launcher sets to each tester's own, and looks
+for a relative input file in the current folder first.
+
 2026-10-12 — **A message counts as in hand once it is written to its
 agent.** The cross-host family journey cuts the sender's links while the
 recipient's host holds a hand-off for a frozen agent, and expects the agent

@@ -17,6 +17,7 @@ fn ctl(folder: &Path, args: &[&str]) -> Output {
         // test's.
         .env_remove("AMUX_QA_SCOPE")
         .env_remove("AMUX_QA_RUN")
+        .env_remove("TESTNET_FOLDER")
         .env_remove("TMUX")
         .output()
         .expect("testnet runs");
@@ -358,4 +359,48 @@ fn a_qa_tester_is_refused_fake_agents() {
             String::from_utf8_lossy(&refused.stderr)
         );
     }
+}
+
+#[test]
+fn a_session_named_in_the_environment_is_found_from_any_folder() {
+    let session = tempfile::tempdir().expect("a session folder");
+    let session = session.path();
+    std::fs::write(
+        session.join("session.jsonl"),
+        r#"{"time":"2026-10-12T09:00:00+00:00","args":["status"],"ok":true,"reply":"net at somewhere","files":[]}"#,
+    )
+    .expect("a session log");
+    let elsewhere = session.join("findings/lost-row");
+    std::fs::create_dir_all(&elsewhere).expect("a folder inside it");
+    let run = |args: &[&str], named: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_testnet"));
+        command
+            .arg("ctl")
+            .args(args)
+            .current_dir(&elsewhere)
+            .env_remove("AMUX_QA_RUN")
+            .env_remove("AMUX_QA_SCOPE")
+            .env_remove("TESTNET_FOLDER");
+        if named {
+            command.env("TESTNET_FOLDER", session);
+        }
+        command.output().expect("testnet runs")
+    };
+
+    let log = run(&["log"], true);
+    assert!(
+        said(&log).contains("ctl status"),
+        "the named session's log, read from a folder inside it: {}",
+        String::from_utf8_lossy(&log.stderr)
+    );
+    assert!(
+        !run(&["log"], false).status.success(),
+        "without the name, the current folder is the session"
+    );
+    let status = run(&["status"], true);
+    let refused = String::from_utf8_lossy(&status.stderr);
+    assert!(
+        refused.contains(&format!("no net in {}", session.display())),
+        "{refused}"
+    );
 }

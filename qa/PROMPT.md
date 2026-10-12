@@ -127,7 +127,8 @@ Claude and Codex.
 
 - Read `reference/docs` and `reference/qa` only. Do not look for or read source
   code, tests or history: you are testing the product as a person meets it.
-- Work in your own folder; write nowhere else.
+- Work in your own folder; write nowhere else. `testnet ctl` finds your net
+  from any folder.
 - Every action goes through `testnet ctl` (`testnet ctl --help`, and `--help`
   on any command). It is logged to your `session.jsonl`, which is part of your
   evidence.

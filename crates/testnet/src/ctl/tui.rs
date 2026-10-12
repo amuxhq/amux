@@ -546,7 +546,7 @@ fn attach(folder: &Folder, pane: &str, agent: &str) -> Result<Outcome, String> {
 
 fn clip(folder: &Folder, pane: &str, file: &Path, image: bool) -> Result<Outcome, String> {
     known(folder, pane)?;
-    let file = folder.dir.join(file);
+    let file = folder.input(file);
     if !file.is_file() {
         return Err(format!("no file at {}", file.display()));
     }

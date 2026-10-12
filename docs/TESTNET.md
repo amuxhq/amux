@@ -446,8 +446,10 @@ verb means adding the capability to `Net` first.
 `testnet ctl` drives a served net from a shell, one command at a time. It is the only tool a QA tester has, and
 its `--help` and each group's `--help` describe every command fully; this is the overview.
 
-Run every command from the same folder. `ctl up [TOPOLOGY]` starts a net there, from a topology file or empty,
-and later commands find it through the folder:
+Run every command from the same folder, or name that folder in `TESTNET_FOLDER`, which `ctl` then uses whatever
+the current folder is (a QA tester's is set). `ctl up [TOPOLOGY]` starts a net there, from a topology file or
+empty, and later commands find it through the folder. A relative file a command reads (`tui paste --file`,
+`tui clip`, `phone attach`) is looked for in the current folder first, then in the session's:
 
 | In the folder | What it is |
 | --- | --- |

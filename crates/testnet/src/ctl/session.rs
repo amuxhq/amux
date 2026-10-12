@@ -45,10 +45,18 @@ pub(crate) struct Record {
     pub readiness: Value,
 }
 
-/// The session's folder.
+/// The session's folder, and where the command was run from.
 pub struct Folder {
     pub dir: PathBuf,
+    /// The current folder, against which a relative file a command reads
+    /// is found first.
+    cwd: PathBuf,
 }
+
+/// Names the session's folder whatever the current folder is: a QA
+/// tester's own, set by the launcher, so a tester that changed folder still
+/// reaches its net.
+pub const FOLDER_ENV: &str = "TESTNET_FOLDER";
 
 /// The net's own files, inside the session folder.
 const NET_DIR: &str = ".testnet";
@@ -58,9 +66,46 @@ const NET_DIR: &str = ".testnet";
 const FACTS_RING_MIB: u64 = 64;
 
 impl Folder {
+    /// The folder [`FOLDER_ENV`] names, or else the current one.
     pub fn here() -> Result<Self, String> {
-        let dir = std::env::current_dir().map_err(|error| error.to_string())?;
-        Ok(Self { dir })
+        let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+        let dir = match std::env::var_os(FOLDER_ENV).filter(|dir| !dir.is_empty()) {
+            Some(dir) => {
+                let dir = cwd.join(dir);
+                if !dir.is_dir() {
+                    return Err(format!(
+                        "{FOLDER_ENV} names {}, which is not a folder",
+                        dir.display()
+                    ));
+                }
+                dir
+            }
+            None => cwd.clone(),
+        };
+        Ok(Self { dir, cwd })
+    }
+
+    /// A session in `dir`, run from there.
+    #[cfg(test)]
+    pub(crate) fn at(dir: &Path) -> Self {
+        Self {
+            dir: dir.to_path_buf(),
+            cwd: dir.to_path_buf(),
+        }
+    }
+
+    /// A file a command reads: as given when absolute; else where the
+    /// command was run from, when it is there; else in the session folder.
+    pub(crate) fn input(&self, path: &Path) -> PathBuf {
+        if path.is_absolute() {
+            return path.to_path_buf();
+        }
+        let here = self.cwd.join(path);
+        if here.exists() {
+            here
+        } else {
+            self.dir.join(path)
+        }
     }
 
     pub(crate) fn net_dir(&self) -> PathBuf {
@@ -70,8 +115,11 @@ impl Folder {
     pub(crate) fn record(&self) -> Result<Record, String> {
         let path = self.net_dir().join("net.json");
         let text = std::fs::read_to_string(&path).map_err(|_| {
-            "no net in this folder: start one with `testnet ctl up` (and run ctl from the folder you started it in)"
-                .to_owned()
+            format!(
+                "no net in {}: start one with `testnet ctl up`, and run ctl from the folder you \
+                 started it in (or name that folder in {FOLDER_ENV})",
+                self.dir.display()
+            )
         })?;
         serde_json::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))
     }

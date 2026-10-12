@@ -42,6 +42,9 @@ TARGET = ROOT / "target" / "debug"
 APP = ROOT / "target" / "ios" / "DerivedData" / "Build" / "Products" / "Debug-iphonesimulator" / "Amux.app"
 STATE = Path.home() / ".local" / "state" / "amux-qa"
 SEVERITIES = ["data loss", "broken flow", "wrong state", "visual", "wording"]
+# `ctl down` waits up to three minutes for the net's door and one more for
+# `testnet serve` to exit; past this, the launcher kills what is left.
+DOWN_PATIENCE = 300
 BINARIES = ["amux", "testnet", "dump-show", "claude-probe", "codex-probe",
             "fake-claude-sdk", "fake-claude-pty", "fake-codex"]
 
@@ -177,6 +180,8 @@ class Tester:
         self.started = 0.0
         self.ended: float | None = None
         self.udid: str | None = None
+        self.net_shut = False
+        self.shutdown_problem: str | None = None
         # The largest total seen, with its parts at that moment.
         self.peak: dict[str, int] = {}
 
@@ -185,7 +190,8 @@ class Tester:
         (self.folder / "settings.json").write_text(json.dumps(settings(self.run, self.folder), indent=2))
         text = prompt(self.run, self.folder, self.persona, self.phone)
         (self.folder / "prompt.md").write_text(text)
-        env = dict(env, AMUX_QA_TESTER=self.name, AMUX_QA_SCOPE=f"qa-{self.run.name}-{self.name}")
+        env = dict(env, AMUX_QA_TESTER=self.name, AMUX_QA_SCOPE=f"qa-{self.run.name}-{self.name}",
+                   TESTNET_FOLDER=str(self.folder))
         command = ["claude", "-p", "--model", "sonnet", "--setting-sources", "project",
                    "--strict-mcp-config", "--disable-slash-commands",
                    "--tools", "Bash,Read,Write,Edit,Glob,Grep",
@@ -242,9 +248,34 @@ class Tester:
             self.ended = time.monotonic()
         return True
 
-    def shut_net(self, env: dict[str, str]) -> None:
+    def shut_net(self, env: dict[str, str]) -> str | None:
+        """Shuts the tester's net down, and kills whatever of it is still
+        running after `ctl down` ends, fails or runs out of time. Answers
+        what went wrong, if anything; never raises, so one net that will
+        not go down leaves the others to be shut and the summary written."""
+        if self.net_shut:
+            return None
+        self.net_shut = True
+        problem = None
         if (self.folder / ".testnet" / "net.json").exists():
-            ctl(self.folder, dict(env, AMUX_QA_TESTER=self.name), "down", timeout=180)
+            try:
+                done = ctl(self.folder, dict(env, AMUX_QA_TESTER=self.name, TESTNET_FOLDER=str(self.folder)),
+                           "down", timeout=DOWN_PATIENCE)
+                if done.returncode != 0:
+                    problem = f"ctl down failed: {(done.stderr or done.stdout).strip()}"
+            except subprocess.TimeoutExpired:
+                problem = f"ctl down took over {DOWN_PATIENCE} seconds"
+            except OSError as error:
+                problem = f"ctl down did not run: {error}"
+        try:
+            killed = kill_net(self.folder)
+        except Exception as error:  # noqa: BLE001 -- the next net must still be shut
+            return f"{problem + '; ' if problem else ''}clearing what was left failed: {error}"
+        if killed:
+            left = (f"killed {len(killed)} process{'' if len(killed) == 1 else 'es'} "
+                    "its net left running")
+            problem = f"{problem}; {left}" if problem else left
+        return problem
 
     def outcome(self) -> str:
         try:
@@ -366,6 +397,48 @@ def process_tree(root: int) -> list[int]:
             tree.append(pid)
             queue.extend(children.get(pid, []))
     return tree
+
+
+def folder_hash(folder: Path) -> str:
+    """The short name `testnet ctl` gives a folder's own tmux server: FNV-1a
+    over the path, its low 32 bits in hex."""
+    value = 0xCBF29CE484222325
+    for byte in str(folder).encode():
+        value = ((value ^ byte) * 0x100000001B3) % 2**64
+    return f"{value & 0xFFFFFFFF:08x}"
+
+
+def kill_net(folder: Path) -> list[int]:
+    """Kills everything of a tester's net still running: the folder's own
+    tmux server, and every process whose command line lies in the folder
+    (`testnet serve`, process and supervised daemons, agents and their
+    providers), with their children. A net interrupted mid-shutdown can
+    still be starting or stopping processes, so it looks again until a
+    look finds nothing. Answers the processes it killed."""
+    subprocess.run(["tmux", "-L", f"testnet-{folder_hash(folder)}", "kill-server"],
+                   capture_output=True)
+    mine = re.compile(re.escape(str(folder)) + r"(?:/|\s|$)")
+    spared = {os.getpid(), os.getppid()}
+    killed: list[int] = []
+    for _ in range(5):
+        table = processes()
+        pids = sorted(descendants(table, {pid for pid, (_, _, command) in table.items()
+                                          if mine.search(command)}) - spared)
+        if not pids:
+            break
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            for pid in pids:
+                try:
+                    os.kill(pid, sig)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and any(alive(pid) for pid in pids):
+                time.sleep(0.2)
+            if not any(alive(pid) for pid in pids):
+                break
+        killed += [pid for pid in pids if pid not in killed]
+    return killed
 
 
 def alive(pid: int) -> bool:
@@ -529,39 +602,60 @@ def main() -> int:
     signal.signal(signal.SIGTERM, interrupt)
     wave = 0
     next_persona = 0
-    while not stopping.is_set():
-        wave += 1
-        before = len(ledger(run))
-        baseline = memory_in_use()
-        current = []
-        for slot in range(args.testers):
-            tester = Tester(run, len(testers) + 1, pool[next_persona % len(pool)], slot < args.phone, tree)
-            next_persona += 1
-            testers.append(tester)
-            current.append(tester)
-            tester.start(env)
-        peak = baseline
-        while not all([t.finished() for t in current]):  # every one, to note each end
-            peak = max(peak, memory_in_use())
-            table = processes()
+    try:
+        while not stopping.is_set():
+            wave += 1
+            before = len(ledger(run))
+            baseline = memory_in_use()
+            current = []
+            for slot in range(args.testers):
+                tester = Tester(run, len(testers) + 1, pool[next_persona % len(pool)], slot < args.phone, tree)
+                next_persona += 1
+                testers.append(tester)
+                current.append(tester)
+                tester.start(env)
+            peak = baseline
+            while not all([t.finished() for t in current]):  # every one, to note each end
+                peak = max(peak, memory_in_use())
+                table = processes()
+                for tester in current:
+                    parts = tester_memory(table, tester)
+                    total = sum(parts.values())
+                    if total > tester.peak.get("total", 0):
+                        tester.peak = {"total": total, **parts}
+                time.sleep(5)
             for tester in current:
-                parts = tester_memory(table, tester)
-                total = sum(parts.values())
-                if total > tester.peak.get("total", 0):
-                    tester.peak = {"total": total, **parts}
-            time.sleep(5)
-        for tester in current:
-            tester.shut_net(env)
-            say(f"{tester.outcome()}")
-        new, duplicates = findings(ledger(run)[before:])
-        line = (f"wave {wave}: {count(len(current), 'tester')}, {count(len(new), 'new finding')}, "
-                f"{count(len(duplicates), 'duplicate')}; the machine's memory in use rose by up to "
-                f"{gib(max(peak - baseline, 0))} GiB over the {gib(baseline)} GiB in use when it began")
-        waves.append(line)
-        say(line)
-        if stopping.is_set() or not new or (args.waves and wave >= args.waves):
-            break
+                shut(tester, env)
+                say(f"{tester.outcome()}")
+            new, duplicates = findings(ledger(run)[before:])
+            line = (f"wave {wave}: {count(len(current), 'tester')}, {count(len(new), 'new finding')}, "
+                    f"{count(len(duplicates), 'duplicate')}; the machine's memory in use rose by up to "
+                    f"{gib(max(peak - baseline, 0))} GiB over the {gib(baseline)} GiB in use when it began")
+            waves.append(line)
+            say(line)
+            if stopping.is_set() or not new or (args.waves and wave >= args.waves):
+                break
+    finally:
+        # However the run ends, a crash in the launcher included: no tester
+        # or net is left running, and the summary is written.
+        for tester in testers:
+            if not tester.net_shut:
+                left = tester.stop()
+                if left:
+                    say(f"{tester.name}: processes {left} would not end; kill them by hand")
+                shut(tester, env)
+        summarise(run, testers, wave, waves)
+    return 130 if stopping.is_set() else 0
 
+
+def shut(tester: Tester, env: dict[str, str]) -> None:
+    problem = tester.shut_net(env)
+    if problem:
+        tester.shutdown_problem = problem
+        say(f"{tester.name}'s net: {problem}")
+
+
+def summarise(run: Path, testers: list[Tester], wave: int, waves: list[str]) -> None:
     new, duplicates = findings(ledger(run))
     by_severity: dict[str, int] = {}
     for entry in new:
@@ -577,10 +671,11 @@ def main() -> int:
     lines.append("tester peaks are physical footprints in GiB: its Claude session, its net and agents, "
                  "and a phone tester's simulator")
     lines += [tester.outcome() for tester in testers]
+    lines += [f"{tester.name}'s net: {tester.shutdown_problem}" for tester in testers
+              if tester.shutdown_problem]
     lines.append(f"run folder: {run}")
     (run / "summary.txt").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
-    return 130 if stopping.is_set() else 0
 
 
 if __name__ == "__main__":

@@ -1354,8 +1354,12 @@ async fn a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pr
         .host_decl(relay_host("desk", "ada"))
         .host_decl(relay_host("laptop", "ada"));
     let mut net = Net::start(topology).await.unwrap();
-    net.trust("desk", "laptop").await.unwrap();
+    // The desk, which makes every call here, trusts last. Trusting first,
+    // its first stream could reach the laptop before the laptop trusted it
+    // back, be refused, and leave the desk holding that refusal, which its
+    // own later trust clears and the laptop's does not.
     net.trust("laptop", "desk").await.unwrap();
+    net.trust("desk", "laptop").await.unwrap();
     let laptop = host_id(&net, "laptop");
     until_via(&net, "desk", "laptop", LiveRoute::Relay).await;
     peer_inventory_hosts(&edge(&net, "desk"), laptop)

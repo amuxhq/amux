@@ -1,3 +1,9 @@
+2026-10-12 — **The lapsed-account spec trusts from its caller last.** Under
+load, its first call, made while the account was still Pro, was refused as
+no longer trusted: the desk trusted the laptop first and reached it before
+the laptop trusted it back. The desk, which makes every call in the spec,
+now trusts the laptop after the laptop trusts it.
+
 2026-10-12 — **The overview's changed-files test waits for its answer.** The
 phone's chat model lists an agent's changed files on a task of its own, and
 the test gave that task twenty yields of the main actor to come back; on

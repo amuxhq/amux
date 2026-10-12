@@ -1310,13 +1310,14 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
     let refusal = |agent: &wire::Agent| crate::app::terminal_refusal(agent, &config);
     assert_eq!(refusal(&agent(b"a", Kind::ClaudePty)), None);
     assert_eq!(refusal(&agent(b"a", Kind::Codex)), None);
-    assert!(refusal(&agent(b"a", Kind::ClaudeSdk)).is_some_and(|why| why.contains("its chat")));
-    // Every agent on another host opens its chat with the same notice:
-    // raw attach reads the agent's directory on this machine.
+    assert!(refusal(&agent(b"a", Kind::ClaudeSdk)).is_some_and(|why| why.contains("no terminal")));
+    // Every agent on another host is refused with the same reason: raw
+    // attach reads the agent's directory on this machine. Home adds that
+    // Enter opens its chat; a chat does not, since Enter there sends.
     for kind in [Kind::ClaudePty, Kind::Codex, Kind::ClaudeSdk] {
         assert_eq!(
             refusal(&agent(b"b", kind)),
-            Some("its terminal is on another machine; enter opens its chat"),
+            Some("its terminal is on another machine"),
         );
     }
 }
@@ -2493,7 +2494,8 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     );
     home.key(&fleet, key(KeyCode::Char('k')), false);
     home_screen(&mut home, &fleet, theme());
-    // The × stops, after asking.
+    // The × stops, after asking; beta is working, so the window says the
+    // stop cuts its turn, and Enter on the focused [Stop] confirms.
     let effects = home.mouse(
         &fleet,
         mouse(MouseEventKind::Down(MouseButton::Left), W - 5, beta),
@@ -2501,8 +2503,8 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     );
     assert!(effects.is_empty());
     let screen = home_screen(&mut home, &fleet, theme());
-    assert!(screen.contains("Stop beta?"), "{screen}");
-    let effects = home.key(&fleet, key(KeyCode::Char('y')), false);
+    assert!(screen.contains("beta is working. Stop anyway?"), "{screen}");
+    let effects = home.key(&fleet, key(KeyCode::Enter), false);
     assert!(matches!(effects.as_slice(), [FleetEffect::Stop(agent)] if agent.agent == b"w2"));
 }
 

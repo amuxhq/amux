@@ -51,6 +51,63 @@ pub(crate) fn ellipsize_words(text: &str, max: usize) -> String {
     }
 }
 
+/// How a key line's `key action` pairs fit `room` columns: the gap
+/// between them, which of them show, in order, and where a ` …` marking a
+/// cut goes: before the `mark`th shown pair (`shown.len()` for the end).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Fitted {
+    pub gap: usize,
+    pub shown: Vec<usize>,
+    pub mark: Option<usize>,
+}
+
+/// Lays out a key line: three blanks between pairs, or two when that makes
+/// them all fit. Short of room, whole pairs go from the end (each line
+/// lists its keys most needed first), but the way out (`esc`, `q`) always
+/// stays, last, and the cut is marked with `…` where it fits (see
+/// [`Fitted`]); a key is never cut mid-word.
+pub(crate) fn fit_hints(pairs: &[(&str, &str)], room: usize) -> Fitted {
+    let size = |(key, action): &(&str, &str)| str_width(key) + 1 + str_width(action);
+    let total =
+        |gap: usize| pairs.iter().map(size).sum::<usize>() + gap * pairs.len().saturating_sub(1);
+    let all = (0..pairs.len()).collect();
+    if total(3) <= room {
+        return Fitted {
+            gap: 3,
+            shown: all,
+            mark: None,
+        };
+    }
+    if total(2) <= room {
+        return Fitted {
+            gap: 2,
+            shown: all,
+            mark: None,
+        };
+    }
+    let way_out = |at: &usize| matches!(pairs[*at].0, "esc" | "q");
+    let (out, rest): (Vec<usize>, Vec<usize>) = (0..pairs.len()).partition(way_out);
+    let kept: usize = out.iter().map(|at| 2 + size(&pairs[*at])).sum();
+    let mut used = 0;
+    let mut shown = Vec::new();
+    for at in rest {
+        let need = if shown.is_empty() { 0 } else { 2 } + size(&pairs[at]);
+        if used + need + kept > room {
+            break;
+        }
+        used += need;
+        shown.push(at);
+    }
+    // The mark only where it fits: a key is worth more than the mark.
+    let mark = (used + kept + 2 <= room).then_some(shown.len());
+    shown.extend(out);
+    Fitted {
+        gap: 2,
+        shown,
+        mark,
+    }
+}
+
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
     line.spans.iter().map(|span| str_width(&span.content)).sum()
 }

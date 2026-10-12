@@ -49,7 +49,8 @@ The client opens on home, and every chat returns to it. The top line is `amux` a
 right: hosts it does not reach now, how many agents are working or starting and how many need you (agents, not
 families, folded or not), a daemon running another build (`amux 0.8.0 running · restart to update`) and, when
 this machine's hosts are away because it is signed out, `signed out · amux login`. `/` turns the top line into a filter over names, folders and hosts; Enter keeps it, Esc
-clears it, and it looks into folded sections too. It matches names, branches, folders and hosts.
+clears it, and it looks into folded sections too. It matches names, branches, folders and hosts, and as it is
+typed the highlight moves to the first agent it finds, so `/ name Enter Enter` opens that agent.
 
 Below it, `+ New Agent`, then the agents in sections drawn alike (a fold marker, the label, a count, a faint rule):
 **Needs you**, **Live** (starting, working and idle) and **Exited**, folded until opened. Within a section agents are
@@ -62,7 +63,7 @@ Each row is the agent's mark (`○` idle, starting, exited or on a host that is 
 attention ink when it needs you), its name, its branch when it works in a repository, then faint which agent it is
 (`Claude`, `Claude (terminal)` or `Codex`), its folder from `~` and its host when that is not this machine, and at
 the right how long it has been in its state. Short of room, the folder is cut from the left down to its last name,
-then the host goes, then the agent. The second line says what the agent's state calls for: what it asks (`wants to
+then in its middle (a name with no separators), then the host goes, then the agent. The second line says what the agent's state calls for: what it asks (`wants to
 run cargo test -p auth`), the step it is running, what it last said, or why it cannot go on (`signed out of
 Codex`, `usage limit reached`); why it exited (`finished`, a crash in red); that its host is away. A starting
 agent has no second line. A folded family whose member needs you says that member's name and what it asks. The
@@ -71,9 +72,15 @@ keys alike, and it shows `[x]` in place of its age to stop the agent, or delete 
 A terminal that gives no background to tint marks it with `›` instead. `+ New Agent` and the section headings
 highlight the same way, tinted or marked, so a keyboard user always sees where Enter lands.
 
-On a row, `r` renames it in place (Enter saves, Esc cancels), `s` stops it and `x` deletes it, each asking first
-in a small window (Enter confirms, Esc cancels). A daemon that has not answered yet shows `connecting` at the
-right of the top line.
+On a row, `r` renames it in place (Enter saves, Esc cancels; a name that will not do, an empty one included, says
+why on the key line), and `x` ends it: a live agent is stopped (it exits, and can be resumed), and only an exited
+one is deleted with its history. Either asks first in a small window: ← → or Tab move between its buttons, Enter
+presses the one shown on a chip, and Esc cancels; no letter answers it. A stop says what it cuts when the agent is
+working, has background jobs or has sub-agents (`desk-1 is working and has 2 background jobs and 1 sub-agent. Stop
+anyway?`), and otherwise asks plainly. When a chat closes under the person (its agent deleted, its host no longer
+linked, each said in those words), home takes no key until half a second passes with none, as an ask arms, so the
+rest of what they were typing never acts on another agent. A daemon that has not answered yet shows `connecting`
+at the right of the top line.
 
 ### A new agent
 
@@ -90,8 +97,12 @@ chats with their agents, the installation's `ui.chat_in`:
   asked of the host before any agent runs on it; until it answers a model can be typed by name. Another model starts
   at its own default effort, and a permission it does not take gives way to the normal one. A provider the host
   says is signed out reads `Codex (not signed in)`. Long lists filter as you type; the folder's panel lists that
-  host's recent folders and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
-  or Claude's permissions that still ask, as in a chat. Claude runs headless here, Codex on its app server.
+  host's recent folders and takes a typed path; a host that is away is listed but not picked, and choosing it says
+  why (`desk is away, so it cannot start an agent now`). A folder names a place on one machine, so choosing another
+  host takes the folder its agents last worked in, or none (`+ Folder`); with none, Enter opens the folder's panel
+  instead of starting. Shift+Tab steps Codex's mode, or Claude's permissions that still ask, as in a chat. At 80
+  columns the settings letters keep `a agent` and `esc back`, the worktree's `w` giving way first. Claude runs
+  headless here, Codex on its app server.
 - **In each agent's own terminal** (`terminal`): a small window over home with the name, the agent (Claude or
   Codex, each marked `not signed in` where the chosen host says so), the folder and the host, and no prompt or model,
   which the agent's own terminal sets. Enter moves from row to row and starts the agent from the last; ←/→ change
@@ -101,7 +112,8 @@ chats with their agents, the installation's `ui.chat_in`:
 
 A new agent always shows the values it will start with: each agent's model, effort and permission come from the
 installation's `new_agent.claude` and `new_agent.codex`, and the leader then `n` from a chat starts from that
-chat's agent, folder and host instead.
+chat's agent, folder and host instead. Left with nothing typed, the new agent is abandoned, and the next opens
+with those values again; left with words, it keeps them and its settings for the next visit.
 
 ### Hosts
 
@@ -313,14 +325,16 @@ and `TERM` to choose truecolor or ANSI, and `NO_COLOR` turns colour off.
 ## Keys
 
 Keys come in three layers. **amux** keys are about amux itself (home, a new agent, hosts, reporting, leaving): on
-home they are bare letters, and in a chat the leader then a letter, mostly the same one (`<leader> s` goes home,
-while `s` on home stops an agent). **This chat** keys act on the open chat (review, attach, focus rows), also under
+home they are bare letters, and in a chat the leader then a letter, mostly the same one (`<leader> n` starts a
+new agent, as `n` does on home). **This chat** keys act on the open chat (review, attach, focus rows), also under
 the leader. **Local** keys belong to whatever has focus (an ask, a panel, the overview, home's list, a window) and
 never leak out of it. Control chords are kept for speed and habit only: Ctrl+X stops the turn, Shift+Tab steps the mode or permission, Ctrl+C
 clears the field, Ctrl+O opens the overview, Ctrl+S opens the settings letters. Esc backs out one level and never
 stops the agent or answers an ask; clearing a field and stopping the agent are never the same key.
 
 `?` on home, or the leader then `?`, shows every key; j/k or the wheel scroll it and any other key closes it.
+Every key line fits its terminal: short of room it puts two blanks between keys, then drops whole keys from its
+end, marking the cut with `…` where that fits, and keeps its way out (`esc`, `q`) last.
 
 ### Everywhere
 
@@ -341,7 +355,7 @@ stops the agent or answers an ask; clearing a field and stopping the agent are n
 | → ← or Space | Show or hide a family's agents |
 | `n` | A new agent |
 | `r` | Rename, in place |
-| `s`, `x` | Stop, or delete, asking first |
+| `x` | Stop a live agent, or delete an exited one, asking first |
 | `h` | Hosts |
 | `b` | Report a problem |
 | `d`, `q` | Leave for the shell; agents keep running |
@@ -440,12 +454,14 @@ cannot answer.
 Terminal bytes never travel over the wire. The client finds the agent's directory by convention,
 `<profile directory>/agents/<agent id>/`, and connects straight to its `pty.sock`; the daemon is not involved.
 [AGENT_PROCESS.md](AGENT_PROCESS.md) describes the socket, including how terminal Claude's screen is replayed to a
-late attacher and how each Codex attach gets its own view of the thread. Two refusals follow, each pointing at the
+late attacher and how each Codex attach gets its own view of the thread. Three refusals follow, each pointing at the
 chat, which reaches every agent:
 
 - **An agent on another host.** Its terminal is on another machine. `amux attach` says so and suggests opening its
-  chat with `amux` and Enter; home shows the same notice.
+  chat with `amux` and Enter; home shows the same notice, adding that Enter opens its chat. Asked for from inside
+  the chat, the notice gives only the reason, since Enter there sends the draft.
 - **Headless Claude** (`claude_sdk`). It has no terminal.
+- **A stopped agent.** Its terminal is gone until it is resumed: `it is stopped`.
 
 While attached, typing and resizes go to the agent. How it ends:
 

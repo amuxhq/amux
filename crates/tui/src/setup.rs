@@ -160,7 +160,8 @@ pub struct Setup {
     pub mode: Option<String>,
     /// What the chosen host offers for the chosen agent, once it has said.
     pub offered: Option<(Vec<u8>, wire::Catalogue)>,
-    /// Where it works, as the request names it.
+    /// Where it works, as the request names it; empty until one is chosen
+    /// on a host that has none yet.
     pub folder: String,
     pub host: Vec<u8>,
     /// This machine's host, from which every other is reached or not.
@@ -316,7 +317,11 @@ impl Setup {
         if let Some(mode) = view.modes.iter().find(|mode| mode.current && !mode.normal) {
             runs.push((Item::Mode, crate::words::mode_words(mode)));
         }
-        let mut place = vec![(Item::Folder, text::tilde(&self.folder))];
+        let folder = match self.folder.as_str() {
+            "" => "+ Folder".to_owned(),
+            folder => text::tilde(folder),
+        };
+        let mut place = vec![(Item::Folder, folder)];
         if self.worktree {
             place.push((Item::Worktree, "new worktree".to_owned()));
         }
@@ -433,15 +438,29 @@ impl Setup {
                     self.folder = expand_tilde(value.trim());
                 }
             }
+            // A folder names a place on one machine: on another host it
+            // names nothing, or something else. The new host's last folder
+            // comes from the fleet (`fill_folder`), else one must be chosen.
             Item::Host => {
                 if let Some(host) = host_of_value(value)
                     && host != self.host
                 {
                     self.host = host;
+                    self.folder.clear();
                     self.offered = None;
                 }
             }
             Item::Worktree => self.worktree = !self.worktree,
+        }
+    }
+
+    /// With no folder on its host yet, the one the host's agents last
+    /// worked in, when the fleet knows one.
+    pub fn fill_folder(&mut self, fleet: &FleetState) {
+        if self.folder.is_empty()
+            && let Some(folder) = recent_folders(fleet, &self.host, "").into_iter().next()
+        {
+            self.folder = folder;
         }
     }
 
@@ -562,7 +581,10 @@ fn recent_folders(fleet: &FleetState, host: &[u8], current: &str) -> Vec<String>
         .filter(|agent| agent.host_id == host && !agent.cwd.is_empty())
         .collect();
     agents.sort_by_key(|agent| std::cmp::Reverse(agent.phase_since_ms));
-    let mut folders = vec![current.to_owned()];
+    let mut folders: Vec<String> = Some(current.to_owned())
+        .filter(|current| !current.is_empty())
+        .into_iter()
+        .collect();
     for agent in agents {
         if !folders.contains(&agent.cwd) {
             folders.push(agent.cwd.clone());
@@ -698,6 +720,9 @@ pub struct Picker {
     selected: usize,
     field: Editor,
     shape: Shape,
+    /// Why the choice last reached for cannot be picked, said under the
+    /// list until the next key.
+    refused: Option<String>,
 }
 
 /// Lists this long filter as you type.
@@ -718,6 +743,7 @@ impl Picker {
             selected,
             field: Editor::default(),
             shape: if typed { Shape::Typed } else { Shape::List },
+            refused: None,
         }
     }
 
@@ -732,6 +758,7 @@ impl Picker {
             selected: 0,
             field,
             shape: Shape::Text,
+            refused: None,
         }
     }
 
@@ -782,8 +809,24 @@ impl Picker {
         }
     }
 
+    /// `choice` picked, or when it cannot be (a host that is away), why.
+    fn reach(&mut self, choice: Option<&Choice>) -> Pick {
+        match choice {
+            Some(choice) if choice.disabled => {
+                self.refused = Some(format!(
+                    "{} is {}, so it cannot start an agent now",
+                    choice.label, choice.detail
+                ));
+                Pick::None
+            }
+            Some(choice) => Pick::Value(choice.value.clone()),
+            None => Pick::None,
+        }
+    }
+
     pub fn key(&mut self, key: KeyEvent) -> Pick {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        self.refused = None;
         if self.shape == Shape::Text {
             return match key.code {
                 KeyCode::Esc => Pick::Close,
@@ -809,10 +852,7 @@ impl Picker {
                 self.selected = Self::step(&shown, selected, 1)
             }
             KeyCode::Char(c @ '1'..='9') if !self.filtering() => {
-                let at = c as usize - '1' as usize;
-                if let Some(choice) = shown.get(at).filter(|c| !c.disabled) {
-                    return Pick::Value(choice.value.clone());
-                }
+                return self.reach(shown.get(c as usize - '1' as usize));
             }
             // The best match fills the field, to go on typing.
             KeyCode::Tab if self.shape == Shape::Typed => {
@@ -822,11 +862,7 @@ impl Picker {
                     self.selected = 0;
                 }
             }
-            KeyCode::Enter => {
-                if let Some(choice) = shown.get(selected).filter(|c| !c.disabled) {
-                    return Pick::Value(choice.value.clone());
-                }
-            }
+            KeyCode::Enter => return self.reach(shown.get(selected)),
             _ if self.filtering() && !ctrl => {
                 self.field.key(key);
                 self.selected = 0;
@@ -925,15 +961,20 @@ impl Picker {
             lines.push(none);
             rows.push(None);
         }
+        if let Some(refused) = &self.refused {
+            let mut why = Line::from(Span::raw("  "));
+            push(&mut why, refused, theme.warning(), wide);
+            lines.push(why);
+            rows.push(None);
+        }
         (lines, rows, cursor)
     }
 
     /// A click on the `at`th choice shown.
     pub fn click(&mut self, at: usize) -> Pick {
-        match self.shown().get(at) {
-            Some(choice) if !choice.disabled => Pick::Value(choice.value.clone()),
-            _ => Pick::None,
-        }
+        self.refused = None;
+        let shown = self.shown();
+        self.reach(shown.get(at))
     }
 
     /// The flyover in its hairline border, its title on the top edge, at
@@ -1121,6 +1162,23 @@ impl Form {
         setup.pick(Item::Folder, self.folder.text());
     }
 
+    /// Starts the agent, or with no folder yet, has the person type one.
+    fn start(&mut self, setup: &mut Setup) -> FormOutcome {
+        self.apply(setup);
+        if setup.folder.is_empty() {
+            self.field = Field::Folder;
+            self.typing = true;
+            return FormOutcome::None;
+        }
+        FormOutcome::Start
+    }
+
+    /// Another host: the folder field follows the folder chosen there.
+    fn host_changed(&mut self, setup: &mut Setup, fleet: &FleetState) {
+        setup.fill_folder(fleet);
+        self.folder.set(&text::tilde(&setup.folder), Vec::new());
+    }
+
     fn text_row(field: Field) -> bool {
         matches!(field, Field::Name | Field::Folder)
     }
@@ -1155,6 +1213,7 @@ impl Form {
                 let next = Picker::step(&choices, at, step);
                 if let Some(choice) = choices.get(next) {
                     setup.pick(Item::Host, &choice.value);
+                    self.host_changed(setup, fleet);
                 }
             }
             Field::Worktree => setup.pick(Item::Worktree, ""),
@@ -1214,17 +1273,14 @@ impl Form {
             KeyCode::Char('l') if !ctrl => self.change(setup, fleet, 1),
             KeyCode::Char(' ') if self.field == Field::Worktree => setup.pick(Item::Worktree, ""),
             KeyCode::Enter if Self::text_row(self.field) => self.typing = true,
-            KeyCode::Enter => {
-                self.apply(setup);
-                return FormOutcome::Start;
-            }
+            KeyCode::Enter => return self.start(setup),
             _ => {}
         }
         FormOutcome::None
     }
 
     /// A click on the form.
-    pub fn click(&mut self, setup: &mut Setup, hit: FormHit) -> FormOutcome {
+    pub fn click(&mut self, setup: &mut Setup, fleet: &FleetState, hit: FormHit) -> FormOutcome {
         match hit {
             FormHit::Field(field) => {
                 self.field = field;
@@ -1239,6 +1295,7 @@ impl Form {
                 self.field = Field::Host;
                 self.typing = false;
                 setup.pick(Item::Host, &value);
+                self.host_changed(setup, fleet);
             }
             FormHit::Folder(folder) => {
                 self.field = Field::Folder;
@@ -1249,10 +1306,7 @@ impl Form {
                 self.typing = false;
                 setup.pick(Item::Worktree, "");
             }
-            FormHit::Start => {
-                self.apply(setup);
-                return FormOutcome::Start;
-            }
+            FormHit::Start => return self.start(setup),
             FormHit::Cancel => return FormOutcome::Close,
         }
         FormOutcome::None

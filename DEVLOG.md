@@ -1,3 +1,40 @@
+2026-10-13 — **Home ends an agent with one key and asks in a window the arrows work; a new agent's folder follows its host.**
+On home, `x` is now the one key that ends an agent: a live agent is stopped
+(it exits and can be resumed later) and only an exited one is deleted; the
+separate `s` key is gone. The window that asks first confirmed on `y` and
+ignored the arrows, so moving to Cancel and pressing Enter still stopped the
+agent, and a sentence typed into a chat that had just closed ("so sure, yes")
+stopped a healthy one. Its buttons now answer ← → and Tab, Enter presses the
+one shown on a chip, Esc cancels, and no letter answers it. When a stop cuts
+something the window says what, as the phone does: "desk-1 is working and has
+2 background jobs and 1 sub-agent. Stop anyway?", counting from the fleet row
+and from the sub-agents this machine sees itself. A chat that closes under the
+person now says why in their terms (its agent was deleted, or its host is no
+longer linked to this machine) rather than "no agent with that id", and home
+then takes no key until half a second passes with none, as an ask arms, so
+the rest of what they were typing does nothing.
+
+Typing a filter moves the highlight to the first agent it finds, so `/ name`
+then Enter twice opens that agent instead of starting a new one. Emptying a
+rename says why Enter does nothing. A folder name with no separators to cut
+at is cut in its middle, so its row keeps the agent's kind and host.
+
+A new agent's folder now follows its host: choosing another host takes the
+folder that host's agents last worked in, or leaves one to be chosen (Enter
+then opens the folder's panel), where it kept this machine's path, which on
+another machine names nothing or something else. Choosing a host that is
+away says why it cannot take the agent instead of doing nothing. A new agent
+left with nothing typed opens with the defaults next time, rather than with
+a permission cycled and abandoned. Raw attach to a stopped agent says it is
+stopped instead of failing on its socket's path, and asked for from inside a
+chat the notice no longer says Enter opens the chat, since Enter there sends.
+
+At 80 columns key lines keep their way out: they tighten, then drop whole
+keys from their end with a `…` where it fits, so the new agent's settings
+letters keep `a agent` and `esc back` and the review page keeps `q back`. The
+keys reference wraps its words instead of cutting them, and terminal Claude's
+hint for changing its model is short enough to fit.
+
 2026-10-13 — **The phone stops, interrupts and deletes as decided, and keeps its drafts.**
 On the phone, a live agent's menu now offers Stop Agent and never Delete
 Agent: stopping ends the agent but keeps it, resumable, and only an exited

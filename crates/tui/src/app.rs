@@ -271,6 +271,11 @@ pub struct App {
     /// prompt is the person's work, and it waits in the composer for the
     /// chat's return, as on the phone.
     drafts: HashMap<AgentKey, crate::editor::Editor>,
+    /// A chat closed under the person: home takes no key until
+    /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
+    /// rest of what they were typing never acts on another agent. The last
+    /// key's time, or the close's.
+    home_held: Option<i64>,
     events: mpsc::UnboundedSender<AppEvent>,
     pub receiver: mpsc::UnboundedReceiver<AppEvent>,
 }
@@ -281,13 +286,20 @@ fn now_ms() -> i64 {
 }
 
 /// Why an agent's own terminal cannot be attached from here: raw attach
-/// reads the agent's directory on this machine, and headless Claude has no
-/// terminal at all. Its chat is the way in either way.
+/// reads the agent's directory on this machine, headless Claude has no
+/// terminal at all, and a stopped agent's terminal is gone until it is
+/// resumed. Its chat is the way in either way.
 pub(crate) fn terminal_refusal(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
+    terminal_elsewhere(agent, config)
+        .or_else(|| (agent.lifecycle() == wire::Lifecycle::Exited).then_some("it is stopped"))
+}
+
+/// Why `agent` has no terminal on this machine at all, running or not.
+fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
     if agent.host_id != config.local_host {
-        Some("its terminal is on another machine; enter opens its chat")
+        Some("its terminal is on another machine")
     } else if agent.kind() == wire::Kind::ClaudeSdk {
-        Some("headless Claude has no terminal; enter opens its chat")
+        Some("headless Claude has no terminal")
     } else {
         None
     }
@@ -333,6 +345,7 @@ impl App {
             report: None,
             host_offers: HashMap::new(),
             drafts: HashMap::new(),
+            home_held: None,
             offers_asked: HashSet::new(),
             events,
             receiver,
@@ -442,7 +455,7 @@ impl App {
                             self.keep_draft(open);
                         }
                         let terminal = self.fleet.state().agent(&agent).is_some_and(|entry| {
-                            self.config.attach && terminal_refusal(entry, &self.config).is_none()
+                            self.config.attach && terminal_elsewhere(entry, &self.config).is_none()
                         });
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
                         if let Some(draft) = self.drafts.remove(&agent) {
@@ -550,9 +563,10 @@ impl App {
                     if refusal.is_none() && self.config.attach {
                         return Flow::Attach(Box::new(agent));
                     }
-                    let why = refusal.unwrap_or(
-                        "its own terminal would open here, but this amux cannot hand the terminal over; its chat opens instead",
-                    );
+                    let why = match refusal {
+                        Some(why) => format!("{why}; its chat opens instead"),
+                        None => "its own terminal would open here, but this amux cannot hand the terminal over; its chat opens instead".to_owned(),
+                    };
                     self.notice(why, Tone::Warn);
                     self.config.initial_chat = Some(agent.agent_id.clone());
                     self.fleet_changed();
@@ -870,6 +884,14 @@ impl App {
     }
 
     fn fleet_key(&mut self, key: KeyEvent) -> Flow {
+        if let Some(since) = self.home_held {
+            let now = now_ms();
+            if now.saturating_sub(since) < crate::chat::ASK_ARMS_MS {
+                self.home_held = Some(now);
+                return Flow::Continue;
+            }
+            self.home_held = None;
+        }
         let effects = {
             let fleet = self.fleet.state();
             self.fleet_view.key(&fleet, key)
@@ -1139,26 +1161,67 @@ impl App {
     }
 
     /// Hands the terminal to the agent's own interface when it is on this
-    /// machine and has one; says why not otherwise.
+    /// machine and has one; says why not otherwise, and from home, that
+    /// Enter opens its chat (in the chat, Enter sends the draft).
     fn raw_attach(&mut self, agent: &AgentKey) -> Option<Flow> {
         let entry = self.fleet.state().agent(agent).cloned()?;
         match terminal_refusal(&entry, &self.config) {
             None => Some(Flow::Attach(Box::new(entry))),
-            Some(why) => {
+            Some(why) if self.chat.is_some() => {
                 self.notice(why, Tone::Warn);
                 None
             }
+            Some(why) => {
+                self.notice(format!("{why}; enter opens its chat"), Tone::Warn);
+                None
+            }
         }
+    }
+
+    /// Why the open chat can no longer be served, in the person's terms:
+    /// its agent deleted, or its host no longer linked to this machine (the
+    /// runtime says only that it knows no such agent). None while it can.
+    fn chat_gone(&self) -> Option<String> {
+        let chat = self.chat.as_ref()?;
+        let fleet = self.fleet.state();
+        let ended = chat.session.ended();
+        let listed = fleet.agent(&chat.agent).is_some();
+        // An agent the fleet stopped listing, once the fleet is current.
+        let dropped =
+            !listed && fleet.caught_up() && fleet.connection() == ui_state::Connection::Live;
+        if ended.is_none() && !dropped {
+            return None;
+        }
+        let state = chat.session.state();
+        let linked = fleet
+            .host(&chat.agent.host)
+            .is_some_and(|host| host.trust() == wire::Trust::Trusted);
+        let host = state
+            .host()
+            .map(|host| host.name.clone())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "its host".to_owned());
+        let not_found = ended
+            .as_ref()
+            .is_some_and(|error| error.code() == Some(wire::ErrorCode::NotFound));
+        Some(match ended {
+            _ if !linked && (dropped || not_found) => {
+                format!("{host} is no longer linked to this machine")
+            }
+            _ if dropped || not_found => format!("{} was deleted", state.agent().name),
+            Some(error) => error.to_string(),
+            None => return None,
+        })
     }
 
     /// What the loop does before each frame: a deleted agent's open chat
     /// closes to the fleet, and the changed files its overview lists are
     /// fetched when it asks.
     pub fn housekeep(&mut self) {
-        let ended = self.chat.as_ref().and_then(|chat| chat.session.ended());
-        if let Some(error) = ended {
+        if let Some(why) = self.chat_gone() {
             self.close_chat();
-            self.notice(format!("the chat closed: {error}"), Tone::Warn);
+            self.home_held = Some(now_ms());
+            self.notice(format!("the chat closed: {why}"), Tone::Warn);
             return;
         }
         self.ask_host_offers();
@@ -1542,7 +1605,7 @@ fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
     entries
 }
 
-fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {
+pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {
     let leader = format!("ctrl+{leader}");
     let mut rows: Vec<(&str, String)> = crate::home::help_rows();
     rows.extend([
@@ -1651,7 +1714,21 @@ fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {
             push(&mut line, "─".repeat(rule), theme.hairline(), width);
         } else if !words.is_empty() {
             push(&mut line, format!("{key:<24}"), theme.emphasis(), width);
-            push(&mut line, words, theme.faint(), width);
+            // The words wrap under their own column: cut at the edge, a
+            // narrow terminal lost the end of a rule ("never stops the
+            // agent").
+            let room = width.saturating_sub(2 * 2 + 24).max(12);
+            let mut parts = text::wrap(&words, room).into_iter();
+            if let Some(first) = parts.next() {
+                push(&mut line, first, theme.faint(), width);
+            }
+            lines.push(line);
+            for part in parts {
+                let mut more = Line::from(Span::raw(" ".repeat(2 + 24)));
+                push(&mut more, part, theme.faint(), width);
+                lines.push(more);
+            }
+            continue;
         }
         lines.push(line);
     }

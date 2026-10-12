@@ -125,7 +125,10 @@ A client can pause SPAKE2 before granting trust. `BeginPair` (PIN or QR
 secret, optional host id and addresses) returns a `PendingPair`: an
 opaque token, the responder's `PairingIdentity` (host id, public key, name and
 an expiry sealed inside the responder identity) and the route pairing found
-(a `RouteKind`: direct or through the relay).
+(a `RouteKind`: direct or through the relay). When no address and no relay
+route reaches the other host, `BeginPair` answers `ERROR_CODE_UNREACHABLE`
+naming what it tried, never `UNAVAILABLE`, which means this daemon is not
+answering.
 Neither trust store changes during this phase. The profile's pairing
 administration holds the open stream behind the single-use token until that
 expiry, and holds at most 32 at once. The token is a local capability, not a

@@ -11,7 +11,7 @@ use wire::client_service_client::ClientServiceClient;
 use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Empty, HostEntry, Input, Kind, Lifecycle,
-    Phase, PromptInput, PromptSubmission, RenameAgentRequest, ResolveAgentRequest,
+    Phase, PromptInput, PromptSubmission, Refusal, RenameAgentRequest, ResolveAgentRequest,
     ResumeAgentRequest, SendInputRequest, StopAgentRequest, claude_pty_input, claude_sdk_input,
     codex_input, create_agent_request, inventory_event, send_input_response,
 };
@@ -327,13 +327,33 @@ pub async fn send(client: &mut Client, reference: &str, text: &str) -> Result<()
         Some(send_input_response::Of::Rejected(rejected)) => Err(anyhow!(
             "{} did not take it: {}",
             agent.name,
-            rejected.detail.clone().unwrap_or_else(|| rejected
-                .refusal()
-                .as_str_name()
-                .trim_start_matches("REFUSAL_")
-                .to_ascii_lowercase())
+            rejected
+                .detail
+                .clone()
+                .filter(|detail| !detail.is_empty())
+                .unwrap_or_else(|| refusal_words(&agent.name, rejected.refusal()))
         )),
         None => Err(anyhow!("the daemon gave no verdict")),
+    }
+}
+
+/// Why an agent did not take an input, as a sentence about it.
+fn refusal_words(name: &str, refusal: Refusal) -> String {
+    match refusal {
+        Refusal::Unspecified => format!("{name} refused it"),
+        Refusal::ClosedAsk => "the question it answers is no longer open".to_owned(),
+        Refusal::NotQueued => "the message it names is no longer waiting".to_owned(),
+        Refusal::Unsupported => format!("{name} cannot take that input"),
+        Refusal::Draining => format!("{name} is finishing its last turn and takes nothing new"),
+        Refusal::Exiting => format!("{name} is stopping"),
+        Refusal::Exited => {
+            format!("{name} has stopped; start it again with `amux resume {name} <text>`")
+        }
+        Refusal::HostUnreachable => format!("{name}'s host cannot be reached"),
+        Refusal::ConversationElsewhere => format!(
+            "Claude's own view switched to another conversation, so {name}'s conversation is \
+             not the one on its screen"
+        ),
     }
 }
 

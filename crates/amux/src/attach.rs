@@ -22,7 +22,7 @@ use anyhow::{Context as _, Result, anyhow};
 use settings::LeaderKey;
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
-use wire::{Agent, Kind, ProfileInfo};
+use wire::{Agent, Kind, Lifecycle, ProfileInfo};
 
 /// How a stretch of raw attach ended.
 #[derive(Debug, PartialEq)]
@@ -71,6 +71,11 @@ impl Attacher {
             Some(format!(
                 "{name} runs on another host, and raw attach is only for agents on this \
                  machine; open its chat instead: run `amux` and press enter on it"
+            ))
+        } else if agent.lifecycle() == Lifecycle::Exited {
+            Some(format!(
+                "{name} is stopped, so it has no terminal to attach to; start it again with \
+                 `amux resume {name}`"
             ))
         } else if agent.kind() == Kind::ClaudeSdk {
             Some(format!(
@@ -257,6 +262,10 @@ async fn passthrough(held: &Held, leader: &LeaderKey, returning: bool) -> Result
         screen.parser.set_size(rows, cols);
         let unshown = screen.unshown.take();
         let mut out = io::stdout().lock();
+        // The agent draws on the alternate screen, left on the way out
+        // (RESTORE_BYTES), so leaving gives the shell its own screen back
+        // instead of the agent's last frame in its scrollback.
+        let _ = out.write_all(ENTER_ALTERNATE_SCREEN);
         if returning {
             // The fleet drew over the terminal: put back the agent's screen
             // as the model holds it, with the modes it had switched on.
@@ -303,6 +312,8 @@ async fn passthrough(held: &Held, leader: &LeaderKey, returning: bool) -> Result
     let _ = out.flush();
     Ok(outcome)
 }
+
+const ENTER_ALTERNATE_SCREEN: &[u8] = b"\x1b[?1049h";
 
 struct RawMode;
 

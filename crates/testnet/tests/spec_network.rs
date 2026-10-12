@@ -1065,7 +1065,15 @@ async fn profiles_and_accounts_share_no_keys_windows_presence_or_administration(
     )
     .await
     .expect_err("no pairing route through another account's relay");
-    assert_eq!(across.code(), tonic::Code::Unavailable);
+    // The other host not being reachable is the daemon's answer, typed
+    // unreachable; Unavailable would say this host's daemon went away.
+    assert_eq!(across.code(), tonic::Code::FailedPrecondition);
+    assert_eq!(
+        <wire::Error as prost::Message>::decode(across.details())
+            .map(|error| error.code())
+            .ok(),
+        Some(wire::ErrorCode::Unreachable)
+    );
     start_pairing(&net, "desk", qr_window())
         .await
         .expect_err("the desk's PIN window is still open");

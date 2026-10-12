@@ -1,3 +1,13 @@
+2026-10-13 — **The CLI says what went wrong in sentences.** `amux send` to
+an agent that refused says why in words ("worker has stopped; start it again
+with `amux resume worker <text>`") instead of the refusal's wire name.
+`amux attach` to a stopped agent is refused as stopped before any socket is
+tried, instead of printing the socket's path and "os error 2". Raw attach
+draws on the alternate screen, so leaving it gives the shell its own screen
+back rather than the agent's last frame. Pairing to an address where nothing
+answers is answered by the daemon as unreachable (naming the address), not
+as unavailable, which the CLI rightly reads as its own daemon going away.
+
 2026-10-13 — **The second QA round's protocol changes.** The wire changes
 the round's decisions need, with only the code that keeps everything
 building; the behaviour behind most of them is follow-up work.

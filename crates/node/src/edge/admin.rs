@@ -378,7 +378,7 @@ impl Edge {
                     continue;
                 }
                 Err(_) => {
-                    last_unreachable = Some(format!("pairing QUIC dial to {addr} timed out"));
+                    last_unreachable = Some(format!("nothing answered at {addr}"));
                     continue;
                 }
             };
@@ -430,12 +430,19 @@ impl Edge {
             .map_err(opaque_pairing_status)?;
             selected = Some((pending, Reachability::Cloud, RouteKind::Relay, false));
         }
-        let (pending, reachability, via, from_discovery) =
-            selected.ok_or_else(|| {
-                Status::unavailable(last_unreachable.unwrap_or_else(|| {
-                    crate::link::ChannelError::CloudPairingUnavailable.to_string()
-                }))
-            })?;
+        // The other host not answering is this daemon's answer, not this
+        // daemon going away: Unavailable would read as the latter.
+        let (pending, reachability, via, from_discovery) = selected.ok_or_else(|| {
+            crate::grpc::status(crate::grpc::wire_error(
+                wire::ErrorCode::Unreachable,
+                format!(
+                    "the other host could not be reached: {}",
+                    last_unreachable.unwrap_or_else(|| {
+                        crate::link::ChannelError::CloudPairingUnavailable.to_string()
+                    })
+                ),
+            ))
+        })?;
         let peer_host = host_from_bytes("PairingIdentity.host_id", &pending.peer.host_id)
             .map_err(|_| invalid_pin())?;
         if peer_host == self.host_id() || pending.peer.pubkey == self.public_key() {

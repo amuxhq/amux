@@ -437,12 +437,13 @@ cannot answer.
 Terminal bytes never travel over the wire. The client finds the agent's directory by convention,
 `<profile directory>/agents/<agent id>/`, and connects straight to its `pty.sock`; the daemon is not involved.
 [AGENT_PROCESS.md](AGENT_PROCESS.md) describes the socket, including how terminal Claude's screen is replayed to a
-late attacher and how each Codex attach gets its own view of the thread. Two refusals follow, each pointing at the
-chat, which reaches every agent:
+late attacher and how each Codex attach gets its own view of the thread. Three refusals come before any socket is
+tried:
 
 - **An agent on another host.** Its terminal is on another machine. `amux attach` says so and suggests opening its
   chat with `amux` and Enter; home shows the same notice.
-- **Headless Claude** (`claude_sdk`). It has no terminal.
+- **A stopped agent.** It has no process and so no terminal; the refusal says it is stopped and how to resume it.
+- **Headless Claude** (`claude_sdk`). It has no terminal; the refusal points at its chat.
 
 While attached, typing and resizes go to the agent. How it ends:
 
@@ -454,8 +455,9 @@ While attached, typing and resizes go to the agent. How it ends:
 
 Only `<leader> s` comes back home. Leaving for home keeps the connection and a model of the agent's screen, so
 attaching to the same agent again repaints it where it was rather than starting over; picking another agent opens
-a second connection. The terminal is restored whichever way attach ends, including the modes the agent's interface
-switched on.
+a second connection. The agent is drawn on the terminal's alternate screen, so leaving gives the shell its own
+screen back rather than the agent's last frame. The terminal is restored whichever way attach ends, including the
+modes the agent's interface switched on.
 
 ## Command-line verbs
 
@@ -468,7 +470,7 @@ by its name or its id.
 | `amux ls` (`list`) | Lists the agents with children beneath their parent: name, short id, kind and state. |
 | `amux create <kind>` (`new`) | Starts an agent: `claude_pty` (also `claude`), `claude_sdk` or `codex`, with `--name`, `--cwd` (the current directory otherwise), `--model`, `--prompt` for its first prompt, and extra arguments for Claude after `--`. |
 | `amux attach <agent>` | Hands this terminal to the agent's own interface; see [raw attach](#raw-attach). |
-| `amux send <agent> <text…>` | Sends a prompt and prints whether the agent took it. |
+| `amux send <agent> <text…>` | Sends a prompt and prints whether the agent took it, and if not, why in a sentence. |
 | `amux stop <agent>` | Stops the agent now, and every descendant: its turn is cancelled the provider's own way (a question waiting on you is dismissed) and it exits, to be resumed later. |
 | `amux resume <agent> [text…]` | Starts an exited agent again, with an optional first prompt. |
 | `amux rename <agent> <name>` | Renames an agent. |

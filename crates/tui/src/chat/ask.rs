@@ -13,7 +13,7 @@ use ratatui::text::{Line, Span};
 use ui_view::{
     AskBody, AskCard, CardState, Choice, ChoiceOutcome, EditLine, FieldProblem, FileChangeView,
     FileRow, FormField as Field, FormFieldKind as FieldKind, FormValue, LineKind, PermissionGrant,
-    Pick, QuestionResponse, QuestionView, Scope, answer_input, form_answer, form_problems,
+    QuestionResponse, QuestionView, Scope, answer_input, form_answer, form_problems,
     question_answer, reply_answer,
 };
 
@@ -61,10 +61,8 @@ impl QuestionPick {
 
     fn response(&self) -> QuestionResponse {
         QuestionResponse {
-            pick: match self.other.as_ref().filter(|other| !other.is_empty()) {
-                Some(other) => Pick::Other(other.clone()),
-                None => Pick::Options(self.selected.clone()),
-            },
+            picked: self.selected.clone(),
+            other: self.other.clone().filter(|other| !other.is_empty()),
             note: self.note.trim().to_owned(),
         }
     }
@@ -1112,8 +1110,9 @@ fn takes_notes(card: &AskCard) -> bool {
     matches!(card.body, AskBody::Question(_)) && card.question_note
 }
 
-/// "The shell", "The fleet, The chat", "\"tmux style\"", "nothing picked":
-/// an answer in words, empty when the question was skipped.
+/// "The shell", "The fleet, The chat", "The fleet, tmux style": an answer
+/// in words, the options picked then the words typed, empty when the
+/// question was skipped.
 fn pick_words(question: &QuestionView, pick: &QuestionPick) -> String {
     if !pick.answered() {
         return String::new();
@@ -1121,16 +1120,15 @@ fn pick_words(question: &QuestionView, pick: &QuestionPick) -> String {
     if question.secret && pick.answered() {
         return "answered (hidden)".to_owned();
     }
-    if let Some(other) = pick.other.as_ref().filter(|other| !other.is_empty()) {
-        return other.clone();
-    }
-    if pick.selected.is_empty() {
+    let other = pick.other.as_ref().filter(|other| !other.is_empty());
+    if pick.selected.is_empty() && other.is_none() {
         return "nothing picked".to_owned();
     }
     pick.selected
         .iter()
         .filter_map(|i| question.options.get(*i as usize))
         .map(|option| option.label.clone())
+        .chain(other.cloned())
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -1330,7 +1328,8 @@ impl AskUi {
                 pick.none = !pick.answered();
                 return self.question_answered(card, questions);
             }
-            pick.other = None;
+            // Ticking keeps any words typed as "Something else": a
+            // multi-select sends both.
             pick.none = false;
             match pick.selected.iter().position(|s| *s == option) {
                 Some(found) => {
@@ -1356,7 +1355,11 @@ impl AskUi {
             }
             if confirm && !typed.is_empty() {
                 let pick = &mut self.picks[self.step];
-                pick.selected.clear();
+                // A multi-select keeps its ticks beside the typed words;
+                // a single choice is one or the other.
+                if !question.multi_select {
+                    pick.selected.clear();
+                }
                 pick.none = false;
                 pick.other = Some(typed);
                 pick.skipped = false;

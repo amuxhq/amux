@@ -16,7 +16,7 @@ use model::{AgentKey, InputState, PhaseView, Refusal, RefusalReason};
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use testnet::{AgentDecl, FakeKind, Net, Topology};
 use tokio::sync::mpsc;
-use ui_view::{AskBody, ChoiceOutcome, Comparison, Pick, QuestionResponse, RowKind, SettingChange};
+use ui_view::{AskBody, ChoiceOutcome, Comparison, QuestionResponse, RowKind, SettingChange};
 
 const PATIENCE: Duration = Duration::from_secs(20);
 
@@ -295,9 +295,9 @@ async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     };
     assert_eq!(questions.len(), 2);
     assert!(questions[1].multi_select);
-    let given = [Pick::Options(vec![1]), Pick::Options(vec![0, 2])].map(|pick| QuestionResponse {
-        pick,
-        note: String::new(),
+    let given = [vec![1], vec![0, 2]].map(|picked| QuestionResponse {
+        picked,
+        ..QuestionResponse::default()
     });
     assert_eq!(
         chat.answer_questions(&card.key, &given).await,

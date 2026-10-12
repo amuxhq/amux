@@ -322,7 +322,7 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `chat_rows(state, range, opts)` | One `Row` per held item whose order is in `range`, widened to include any run that crosses either edge. The terminal's call, for what is on screen. |
 | `chat_rows_for(state, keys, opts)` | Rows for these keys, in order. The phone's call, for the cells an update changed. |
 | `ask_card(state)` | The head ask as an `AskCard`, with its count, or `None`. |
-| `answer_input(card, answer, note)`, `question_answer(card, picks, note)` | The input that answers the card in its kind's arm. |
+| `answer_input(card, answer, note)`, `question_answer(card, responses)` | The input that answers the card in its kind's arm; a question's response carries its picks and its typed "Something else" words together. |
 | `form_problems(fields, values)`, `form_answer(card, values)` | A tool server's form, checked and encoded once for every client: given one `FormValue` per field (typed text, a toggle, a choice or picks by position), each field's `FieldProblem` (required and empty, not a number or not a whole one, out of the schema's range, too short or long, too few or many picked), or the Submit carrying the JSON object the schema describes. |
 | `composer(state, now_ms)`, `waiting(state)` | The composer mode and the activity line inside it; the waiting reason. |
 | `composer_tokens(draft, attachments)`, `segments(text, attachments)` | Text runs and attachment chips at their placeholder positions. |

@@ -844,18 +844,17 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
     (body, choices)
 }
 
-/// One question's answer as the person gave it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum Pick {
-    /// The chosen options; none, with no text, skips the question.
-    Options(Vec<u32>),
-    Other(String),
-}
-
-/// One question's pick and the person's note on it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// One question's answer as the person gave it: the options picked, the
+/// words typed as "Something else", and a note. A multi-select carries
+/// picks and typed words together; nothing picked and nothing typed skips
+/// the question.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct QuestionResponse {
-    pub pick: Pick,
+    #[serde(default)]
+    pub picked: Vec<u32>,
+    /// The words typed as "Something else"; None when nothing was typed.
+    #[serde(default)]
+    pub other: Option<String>,
     /// Empty when there is none.
     #[serde(default)]
     pub note: String,
@@ -864,10 +863,7 @@ pub struct QuestionResponse {
 impl QuestionResponse {
     /// The question left unanswered.
     pub fn skip() -> QuestionResponse {
-        QuestionResponse {
-            pick: Pick::Options(Vec::new()),
-            note: String::new(),
-        }
+        QuestionResponse::default()
     }
 }
 
@@ -875,13 +871,9 @@ fn responses(given: &[QuestionResponse]) -> Vec<wire::QuestionResponse> {
     given
         .iter()
         .map(|response| {
-            let (selected, other) = match &response.pick {
-                Pick::Options(selected) => (selected.clone(), None),
-                Pick::Other(text) => (vec![], Some(text.clone())),
-            };
             wire::QuestionResponse {
-                selected,
-                other,
+                selected: response.picked.clone(),
+                other: response.other.clone().filter(|other| !other.is_empty()),
                 note: (!response.note.is_empty()).then(|| response.note.clone()),
             }
         })

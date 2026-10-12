@@ -17,7 +17,7 @@ use interpret::{Checkpoint, Effect, Event, Interpreter, decode_checkpoint, encod
 use support::Committer;
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
-    Answer, AskBody, AskCard, CardState, Changeable, Pick, QuestionResponse, SettingChange,
+    Answer, AskBody, AskCard, CardState, Changeable, QuestionResponse, SettingChange,
     answer_input, ask_card, question_answer, reply_answer, setting_input, settings,
 };
 use wire::{Kind, SessionEvent, send_input_response, session_event};
@@ -150,12 +150,17 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
         };
         let first: Vec<QuestionResponse> = questions
             .iter()
-            .map(|question| QuestionResponse {
-                pick: match question.options.is_empty() {
-                    true => Pick::Other("typed".into()),
-                    false => Pick::Options(vec![0]),
+            .map(|question| match question.options.is_empty() {
+                true => QuestionResponse {
+                    other: Some("typed".into()),
+                    note: note("a note"),
+                    ..QuestionResponse::default()
                 },
-                note: note("a note"),
+                false => QuestionResponse {
+                    picked: vec![0],
+                    note: note("a note"),
+                    ..QuestionResponse::default()
+                },
             })
             .collect();
         answers.push(("first options".into(), question_answer(card, &first), ""));
@@ -163,11 +168,27 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
             let typed: Vec<QuestionResponse> = questions
                 .iter()
                 .map(|_| QuestionResponse {
-                    pick: Pick::Other("something else".into()),
-                    note: String::new(),
+                    other: Some("something else".into()),
+                    ..QuestionResponse::default()
                 })
                 .collect();
             answers.push(("something else".into(), question_answer(card, &typed), ""));
+        }
+        // A multi-select takes ticked options and typed words together.
+        if questions
+            .iter()
+            .all(|question| question.allow_other && question.multi_select)
+            && questions.iter().all(|question| question.options.len() >= 2)
+        {
+            let both: Vec<QuestionResponse> = questions
+                .iter()
+                .map(|_| QuestionResponse {
+                    picked: vec![0, 1],
+                    other: Some("and something else".into()),
+                    ..QuestionResponse::default()
+                })
+                .collect();
+            answers.push(("picks and something else".into(), question_answer(card, &both), ""));
         }
         if card.question_skip {
             let mut skipped = first.clone();
@@ -176,7 +197,8 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
         }
         if card.question_reply {
             let mut so_far = vec![QuestionResponse::skip(); questions.len()];
-            so_far[0].pick = first[0].pick.clone();
+            so_far[0].picked = first[0].picked.clone();
+            so_far[0].other = first[0].other.clone();
             answers.push((
                 "reply instead".into(),
                 reply_answer(card, "Let's talk it through first", &so_far),
@@ -408,5 +430,66 @@ fn settings_picks_reach_the_interpreter() {
         pick_all::<Codex>(Kind::Codex, "codex"),
         BTreeSet::from(["effort", "mode", "model", "permission"]),
         "Codex's picks"
+    );
+}
+
+/// Options ticked on a multi-select travel with the words typed as
+/// "Something else": neither drops the other on the way to the agent.
+#[test]
+fn a_multi_select_answer_keeps_its_picks_beside_something_else() {
+    let path = fixtures("claude_pty").join("recorded_question_multi_other.json");
+    let script = interpret::fixture_script::<ClaudePty>(&path).unwrap();
+    let mut driven = Driven::start::<ClaudePty>(Kind::ClaudePty, &script.spec, &script.producer);
+    let mut card = None;
+    for (_, event) in script.events {
+        driven.step::<ClaudePty>(event);
+        if let Some(open) = ask_card(&driven.session)
+            && let AskBody::Question(questions) = &open.body
+            && questions.iter().any(|question| question.multi_select)
+        {
+            card = Some(open);
+            break;
+        }
+    }
+    let card = card.expect("the fixture opens a multi-select question");
+    let AskBody::Question(questions) = &card.body else {
+        unreachable!()
+    };
+    let given: Vec<QuestionResponse> = questions
+        .iter()
+        .map(|question| match question.multi_select {
+            true => QuestionResponse {
+                picked: vec![0, 1],
+                other: Some("and the docs".into()),
+                ..QuestionResponse::default()
+            },
+            false => QuestionResponse {
+                picked: vec![0],
+                ..QuestionResponse::default()
+            },
+        })
+        .collect();
+    let answer = question_answer(&card, &given);
+    let Answer::Claude(wire::ClaudeAnswer {
+        of: Some(wire::claude_answer::Of::Question(sent)),
+        ..
+    }) = &answer
+    else {
+        panic!("{answer:?}");
+    };
+    let multi = questions
+        .iter()
+        .position(|question| question.multi_select)
+        .unwrap();
+    assert_eq!(sent.answers[multi].selected, [0, 1]);
+    assert_eq!(sent.answers[multi].other.as_deref(), Some("and the docs"));
+
+    let mut input = answer_input(&card, &answer, "").expect("an input");
+    input.input_id = b"both".to_vec();
+    let replies = driven.step::<ClaudePty>(Some(Event::Input(input)));
+    assert!(
+        replies.iter().any(|(id, verdict)| id == b"both"
+            && matches!(verdict.of, Some(send_input_response::Of::Accepted(_)))),
+        "{replies:?}"
     );
 }

@@ -21,7 +21,7 @@ mod settings;
 mod text;
 
 pub use ask::{
-    Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, Pick, QuestionResponse,
+    Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, QuestionResponse,
     QuestionView, Scope, answer_input, ask_card, question_answer, reply_answer,
 };
 /// The character that marks an attachment's place in text.

@@ -234,7 +234,8 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   the empty pick, as the provider's own Submit does; options with previews show the
   highlighted one's preview beside them. On a short screen the options' descriptions give way first, then the
   question's words down to two lines, then the options show a window around the highlight (`↑ more`, `↓ more`),
-  so the free-text row, the way out and the keys always stay. `Something else · enter to type` opens a field for an answer of your own.
+  so the free-text row, the way out and the keys always stay. `Something else · enter to type` opens a field for an answer of your own; on a multi-select the
+  ticked options go with it.
   Secret answers type as dots. `Skip` leaves a question unanswered and Tab adds a note to it, each where the agent
   takes one; `Reply instead` sends your own words in place of the answers. Terminal Claude takes no note, and a
   skip only when it asks several questions: Claude's own form has a review screen only then, and submits a lone

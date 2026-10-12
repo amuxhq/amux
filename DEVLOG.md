@@ -1,3 +1,11 @@
+2026-10-13 — **A multi-select sends its ticked options with the words typed as "Something else".**
+The shared answer for a question held either picks or typed words, never
+both, so ticking two options and then typing "Something else" sent only the
+words, on both clients. A question's response now carries the picked options
+and the typed words side by side; a multi-select sends both, a single choice
+one or the other, and nothing in either skips the question. The terminal's
+review line lists the picks then the typed words.
+
 2026-10-13 — **Home's stop window sizes itself with a clamp.**
 The width of the window that asks before a stop is now bounded with one clamp
 rather than a max and a min, which the linter refuses; nothing it draws moves.

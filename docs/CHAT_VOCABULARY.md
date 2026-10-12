@@ -180,8 +180,9 @@ carry no numbers and no line.
 `AskBody::Question` holds one `QuestionView` per question: header, question, options (each with a description,
 an optional preview, and "(Recommended)" lifted out of the label into `recommended`), `multi_select`,
 `allow_other` ("Something else…", always last) and `secret` (a typed answer is hidden, and the row later reads
-"answered (hidden)"). The client builds the answer with `question_answer(card, picks, note)`, one `Pick` per
-question: `Options(indices)` or `Other(text)`.
+"answered (hidden)"). The client builds the answer with `question_answer(card, responses)`, one
+`QuestionResponse` per question: the options `picked`, the words typed as `other`, and a note. A multi-select
+sends its ticks and the typed words together; a single choice is one or the other; neither skips the question.
 
 - One pick-one question without previews answers on the pick.
 - Several picks, several questions, previews and "Something else" collect picks and send from a review screen,

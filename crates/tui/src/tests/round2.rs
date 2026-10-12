@@ -738,6 +738,67 @@ fn enter_on_a_multi_select_with_nothing_ticked_submits_an_empty_pick() {
     );
 }
 
+/// Options ticked on a multi-select and words typed as "Something else"
+/// go to the agent together: the typed words used to replace the ticks.
+#[test]
+fn a_multi_select_sends_its_ticks_with_the_words_typed_as_something_else() {
+    let body = wire::ClaudeSdkSnapshot {
+        asks: vec![wire::Ask {
+            key: "q-1".into(),
+            item_key: "call-q".into(),
+            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+                questions: vec![wire::Question {
+                    header: "Toppings".into(),
+                    question: "Which toppings?".into(),
+                    options: ["Cheese", "Basil", "Olives"]
+                        .map(|label| wire::QuestionOption {
+                            label: label.into(),
+                            ..Default::default()
+                        })
+                        .into(),
+                    multi_select: true,
+                    allow_other: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut state = chat(replies(1, 2));
+    state.update(snapshot(Phase::NeedsYou, body.encode_to_vec(), vec![]));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    screen_of(&mut view, &state, 0, W, H);
+    let mut effects = Vec::new();
+    for code in [KeyCode::Char('1'), KeyCode::Char('3'), KeyCode::Char('4')] {
+        effects.extend(view.key(&state, key(code), theme()));
+    }
+    for c in "pepper".chars() {
+        effects.extend(view.key(&state, key(KeyCode::Char(c)), theme()));
+    }
+    effects.extend(view.key(&state, key(KeyCode::Enter), theme()));
+    let screen = screen_of(&mut view, &state, 0, W, H);
+    let answer = effects
+        .iter()
+        .find_map(|effect| match effect {
+            ChatEffect::Answer(input) => Some(input.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no answer from {effects:?}:\n{screen}"));
+    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+        of: Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+            of: Some(wire::claude_answer::Of::Question(sent)),
+            ..
+        })),
+    })) = answer.decode_body()
+    else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(sent.answers[0].selected, [0, 2], "{screen}");
+    assert_eq!(sent.answers[0].other.as_deref(), Some("pepper"), "{screen}");
+}
+
 /// Up in an empty composer with nothing queued recalls this chat's last
 /// sent prompt: there was no way to send an earlier prompt again without
 /// retyping it.

@@ -108,6 +108,38 @@ pub(crate) fn fit_hints(pairs: &[(&str, &str)], room: usize) -> Fitted {
     }
 }
 
+/// Columns between tab stops in an agent's code.
+const TAB_STOP: usize = 4;
+
+/// `text` with each tab widened to spaces up to the next tab stop: a
+/// terminal cell cannot hold a tab, and drawn as nothing it glues the words
+/// either side together and loses a Makefile's or Go's indentation.
+pub(crate) fn expand_tabs(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('\t') {
+        return text.into();
+    }
+    let mut out = String::with_capacity(text.len() + TAB_STOP);
+    let mut column = 0;
+    for grapheme in text.graphemes(true) {
+        match grapheme {
+            "\t" => {
+                let to = (column / TAB_STOP + 1) * TAB_STOP;
+                out.extend(std::iter::repeat_n(' ', to - column));
+                column = to;
+            }
+            "\n" | "\r\n" => {
+                out.push_str(grapheme);
+                column = 0;
+            }
+            _ => {
+                out.push_str(grapheme);
+                column += str_width(grapheme);
+            }
+        }
+    }
+    out.into()
+}
+
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
     line.spans.iter().map(|span| str_width(&span.content)).sum()
 }

@@ -1622,9 +1622,9 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
         ),
         (
             "↑ in an empty composer",
-            "the queued messages: enter sends one now, backspace withdraws it".into(),
+            "the queued messages: enter sends one now, backspace withdraws it; with none queued, the last prompt again".into(),
         ),
-        ("ctrl+x", "stop the turn; the agent stays".into()),
+        ("ctrl+x", "interrupt: end the turn; the agent stays".into()),
         ("ctrl+c", "clear the draft; twice on nothing quits".into()),
         ("ctrl+o", "the overview of what is in flight".into()),
         (

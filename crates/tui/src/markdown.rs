@@ -557,6 +557,7 @@ impl Drawer {
     /// coloured by kind of token; long lines keep their spacing and wrap.
     fn code_block(&mut self, language: &str, code: &str) {
         let theme = self.theme;
+        let code = &crate::text::expand_tabs(code);
         let lines: Vec<Vec<(String, Style)>> = match highlight::highlight(code, language) {
             Some(tokens) => tokens
                 .iter()

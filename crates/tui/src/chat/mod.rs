@@ -259,6 +259,9 @@ pub struct ChatView {
     panel_spots: Vec<(u16, (u16, u16), char)>,
     /// The pinned prompt's rows and its key.
     pin_spot: Option<((u16, u16), Key)>,
+    /// A page down moved the feed: the next frame keeps the lines the pin
+    /// would cover below it, so paging skips none.
+    paged: bool,
     /// The overview pane: the row above the composer, unfolded. Whether it
     /// shows is the client's layout, kept across chats by the app.
     pub pane_open: bool,
@@ -375,6 +378,7 @@ impl ChatView {
             hint_spots: Vec::new(),
             panel_spots: Vec::new(),
             pin_spot: None,
+            paged: false,
             pane_open: false,
             pane_keys: false,
             pane_focus: None,
@@ -643,7 +647,12 @@ impl ChatView {
                 };
             }
             KeyCode::PageUp => {
-                let page = self.feed.1.saturating_sub(2).max(1) as isize;
+                // The pin covers the top of the page above too.
+                let pin = self
+                    .pin_spot
+                    .as_ref()
+                    .map_or(0, |((from, to), _)| usize::from(to - from) + 1);
+                let page = self.feed.1.saturating_sub(2 + pin).max(1) as isize;
                 if !self.scroll_box_diff(state, -page) {
                     self.scroll(state, -page, theme);
                 }
@@ -653,6 +662,7 @@ impl ChatView {
                 let page = self.feed.1.saturating_sub(2).max(1) as isize;
                 if !self.scroll_box_diff(state, page) {
                     self.scroll(state, page, theme);
+                    self.paged = true;
                 }
                 return vec![];
             }
@@ -785,6 +795,25 @@ impl ChatView {
                 self.tray = Some(self.queue_entries(state, "").len() - 1);
                 vec![]
             }
+            // Nothing queued: the chat's last prompt comes back to send
+            // again or edit, as a shell's history does.
+            KeyCode::Up if self.editor.is_empty() => {
+                if let Some(last) = state.transcript().iter().rev().find(|held| {
+                    matches!(
+                        held.class,
+                        ui_state::ItemClass::Prompt | ui_state::ItemClass::Steer
+                    )
+                }) {
+                    let words: String = last
+                        .item
+                        .text
+                        .chars()
+                        .filter(|c| *c != attachments::PLACEHOLDER)
+                        .collect();
+                    self.editor.set(words.trim(), Vec::new());
+                }
+                vec![]
+            }
             _ => {
                 if self.editor.key(key) == Edit::Changed {
                     self.focus = None;
@@ -871,7 +900,9 @@ impl ChatView {
     /// exited agent with the draft, and otherwise keep the draft.
     fn submit(&mut self, state: &SessionState) -> Vec<ChatEffect> {
         // Enter on an exited agent resumes it, with or without a message.
-        if self.editor.is_empty() && state.composer() != Composer::Resume {
+        // A draft of only blanks is no message: it would spend a turn.
+        let blank = self.editor.attachments().is_empty() && self.editor.text().trim().is_empty();
+        if blank && state.composer() != Composer::Resume {
             return vec![];
         }
         match state.composer() {
@@ -1531,9 +1562,23 @@ impl ChatView {
     }
 
     /// `<leader> o`: a folded run opens, an open run's first step folds it
-    /// again, and any other step opens its detail.
+    /// again, and any other step opens its detail. With no row focused, the
+    /// newest run on screen opens or folds, so a run is never out of the
+    /// keyboard's reach.
     pub fn toggle_expanded(&mut self, state: &SessionState) {
         let Some(key) = self.focus.clone() else {
+            let newest = self
+                .laid
+                .blocks
+                .iter()
+                .rev()
+                .find_map(|block| match &block.toggle {
+                    Toggle::Run(id) => Some(id.clone()),
+                    _ => None,
+                });
+            if let Some(id) = newest {
+                self.feed_hit(state, FeedHit::Run(id));
+            }
             return;
         };
         if let Some(block) = self.laid.blocks.iter().find(|block| block.key == key) {
@@ -1763,6 +1808,9 @@ impl ChatView {
         let pane_width = (full / 3).clamp(PANE_MIN, PANE_MAX).min(full);
         let beside = side && full.saturating_sub(pane_width) >= CHAT_MIN;
         let width = if beside { full - pane_width } else { full };
+        // Lying over the feed, the pane leaves the feed the columns to its
+        // left, and the feed's words wrap there rather than hide under it.
+        let feed_width = if side { full - pane_width } else { full };
         let name = state.agent().name.clone();
         let host = state
             .host()
@@ -1835,10 +1883,10 @@ impl ChatView {
             } else {
                 feed::clock(seen.at_ms)
             };
-            tail.extend(feed::pending_prompt(&prompt.text, &when, width, theme));
+            tail.extend(feed::pending_prompt(&prompt.text, &when, feed_width, theme));
         }
         if let Some(activity) = &view.activity {
-            tail.push(quiet_activity(activity, width, theme));
+            tail.push(quiet_activity(activity, feed_width, theme));
             tail.push(Line::default());
         }
         // An exited agent's feed ends saying so, like a session boundary,
@@ -1846,7 +1894,7 @@ impl ChatView {
         if let PhaseView::Exited { cause } = state.phase()
             && !ends_with_exit(state)
         {
-            tail.push(rows::rule(&exit_words(&cause), width, theme));
+            tail.push(rows::rule(&exit_words(&cause), feed_width, theme));
             tail.push(Line::default());
         }
         self.feed_tail = tail;
@@ -2031,13 +2079,13 @@ impl ChatView {
                     hint = Err(words);
                 } else if footer.is_none() {
                     let stop = if card.stops_turn {
-                        "ctrl+x stop · "
+                        "ctrl+x interrupt · "
                     } else {
                         ""
                     };
                     hint = Err(if self.ask.in_box_note(card) {
                         if card.stops_turn {
-                            "enter send · esc clear · ctrl+x stop".to_owned()
+                            "enter send · esc clear · ctrl+x interrupt".to_owned()
                         } else {
                             "enter send · esc clear".to_owned()
                         }
@@ -2140,7 +2188,7 @@ impl ChatView {
 
         let height = usize::from(area.height);
         let feed_height = height.saturating_sub(top.len() + bottom.len());
-        self.feed = (width, feed_height);
+        self.feed = (feed_width, feed_height);
         self.feed_origin = (area.x, area.y + top.len() as u16);
         let feed_top = top.len();
         let mut lines = top;
@@ -2173,11 +2221,12 @@ impl ChatView {
             if laid.at_bottom {
                 self.anchor = Anchor::Bottom;
             }
-            // The pinned prompt would cover the plan's first lines: the plan
-            // starts just below it instead.
-            if plan_arrived
+            // The pinned prompt would cover the plan's first lines, or the
+            // lines a page down brought to the top: they start just below
+            // it instead.
+            if (plan_arrived || std::mem::take(&mut self.paged))
                 && !laid.at_bottom
-                && let Some((pinned, _)) = pinned(state, &laid, feed_height, width, theme)
+                && let Some((pinned, _)) = pinned(state, &laid, feed_height, feed_width, theme)
             {
                 self.anchor = self
                     .frame(theme)
@@ -2186,7 +2235,7 @@ impl ChatView {
             }
             let mut feed: Vec<Line<'static>> = laid.lines.clone();
             text::drop_cut_padding(&mut feed);
-            if let Some((pinned, key)) = pinned(state, &laid, feed_height, width, theme) {
+            if let Some((pinned, key)) = pinned(state, &laid, feed_height, feed_width, theme) {
                 let rows = pinned.len();
                 // The blank line under the block is not the pin's to click.
                 let block_rows = rows.saturating_sub(1);
@@ -2902,7 +2951,9 @@ fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String
                 format!("{host} is away")
             }
         },
-        Composer::Disabled(Waiting::Reconnecting) => format!("reconnecting to {host}"),
+        // The client talks only to this machine's daemon: reconnecting is
+        // that daemon gone, never the agent's host, as home says it.
+        Composer::Disabled(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
         Composer::Disabled(Waiting::CatchingUp) => "catching up".to_owned(),
         Composer::Send | Composer::Resume => return None,
     })
@@ -3195,7 +3246,7 @@ fn turn_hint_words(state: &SessionState, editor: &Editor, reach: Reach, leader: 
         Composer::Send => {
             if working {
                 pairs.push("enter queue".into());
-                pairs.push("ctrl+x stop".into());
+                pairs.push("ctrl+x interrupt".into());
             } else if !editor.is_empty() && !crate::terminal::shift_enter_reported() {
                 // Shift+Enter is the newline everyone expects; where the
                 // terminal cannot tell it from Enter, say the key that works.
@@ -3277,7 +3328,7 @@ fn key_event(key: &str) -> Option<KeyEvent> {
     Some(KeyEvent::new(code, modifiers))
 }
 
-/// "enter send now" → ("enter", "send now"); "ctrl+x stop" → ("ctrl+x", "stop").
+/// "enter send now" → ("enter", "send now"); "ctrl+x interrupt" → ("ctrl+x", "interrupt").
 fn split_key(pair: &str) -> (String, String) {
     match pair.split_once(' ') {
         Some((key, action)) => (key.to_owned(), action.to_owned()),

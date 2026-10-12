@@ -4,6 +4,7 @@
 use ratatui::text::{Line, Span};
 use ui_state::{Composer, Waiting};
 use ui_view::{Away, Overview, QueuedRow, Reach, Segment, composer_tokens};
+use unicode_segmentation::UnicodeSegmentation as _;
 
 use super::rows::chip;
 use crate::editor::Editor;
@@ -390,23 +391,25 @@ pub fn editor_lines(
         };
     for segment in composer_tokens(editor.text(), editor.attachments()) {
         match segment {
+            // A grapheme at a time, so a combining accent stays on its
+            // letter and the cursor never stops inside a character.
             Segment::Text(text) => {
-                for c in text.chars() {
+                for grapheme in text.graphemes(true) {
                     place(&rows, used, at, &mut position);
-                    at += 1;
-                    if c == '\n' {
+                    at += grapheme.chars().count();
+                    if grapheme == "\n" || grapheme == "\r\n" {
                         rows.push(Vec::new());
                         used = 0;
                         continue;
                     }
-                    let shown = if editor.secret { '•' } else { c };
-                    let w = text::str_width(shown.encode_utf8(&mut [0; 4]));
+                    let shown = if editor.secret { "•" } else { grapheme };
+                    let w = text::str_width(shown);
                     if used + w > room {
                         rows.push(Vec::new());
                         used = 0;
                     }
                     if let Some(row) = rows.last_mut() {
-                        row.push(Span::styled(shown.to_string(), theme.text()));
+                        row.push(Span::styled(shown.to_owned(), theme.text()));
                     }
                     used += w;
                 }

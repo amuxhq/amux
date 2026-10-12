@@ -18,7 +18,6 @@ mod connection;
 mod daemon;
 pub mod discovery;
 mod dispatcher;
-mod drafts;
 mod dump;
 mod edge;
 mod fanout;

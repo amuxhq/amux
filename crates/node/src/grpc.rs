@@ -616,36 +616,6 @@ impl ClientService for ClientApi {
         ))
     }
 
-    async fn save_draft(
-        &self,
-        request: Request<wire::SaveDraftRequest>,
-    ) -> Result<Response<wire::Empty>, Status> {
-        if !self.forwards {
-            return Err(status(wire_error(
-                ErrorCode::InvalidArgument,
-                "a draft is kept by its client's own machine",
-            )));
-        }
-        let request = request.into_inner();
-        self.runtime()?
-            .save_draft(&request.agent_id, &request.draft.unwrap_or_default());
-        Ok(Response::new(wire::Empty {}))
-    }
-
-    async fn get_draft(
-        &self,
-        request: Request<wire::GetDraftRequest>,
-    ) -> Result<Response<wire::ComposerDraft>, Status> {
-        if !self.forwards {
-            return Err(status(wire_error(
-                ErrorCode::InvalidArgument,
-                "a draft is kept by its client's own machine",
-            )));
-        }
-        let request = request.into_inner();
-        Ok(Response::new(self.runtime()?.draft(&request.agent_id)))
-    }
-
     async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpReport>, Status> {
         // A local caller reads the bundle where it was written.
         let path = self

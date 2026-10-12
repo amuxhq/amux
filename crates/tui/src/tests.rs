@@ -21,6 +21,7 @@ use crate::theme::Theme;
 const W: u16 = 100;
 const H: u16 = 30;
 
+mod narrow;
 mod round2;
 mod text_layout;
 
@@ -494,7 +495,7 @@ fn every_ask_body_draws_in_the_box_with_the_way_to_stop() {
         let screen = text(&buffer);
         assert!(screen.contains("╭"), "{label}: {screen}");
         assert_eq!(
-            screen.contains("ctrl+x stop"),
+            screen.contains("ctrl+x interrupt"),
             card.stops_turn,
             "{label}: {screen}"
         );
@@ -579,7 +580,7 @@ fn an_unanswerable_ask_offers_the_terminal_and_stop() {
     let screen = text(&buffer);
     assert!(screen.contains("Can't answer this here"), "{screen}");
     assert!(screen.contains("Open Claude's terminal"), "{screen}");
-    assert!(screen.contains("ctrl+x stop"), "{screen}");
+    assert!(screen.contains("ctrl+x interrupt"), "{screen}");
     assert_eq!(
         view.key(&state, key(KeyCode::Enter), theme()),
         vec![ChatEffect::RawAttach]
@@ -3621,11 +3622,11 @@ fn the_keys_under_the_composer_follow_what_is_happening() {
         !keys.contains("attach") && !keys.contains("review"),
         "{keys}"
     );
-    // Working: Enter queues, and stopping is at hand.
+    // Working: Enter queues, and interrupting is at hand.
     state.update(snapshot(Phase::Working, vec![], vec![]));
     let keys = keys_of(&feed(&mut view, &state).0);
     assert!(keys.contains("enter queue"), "{keys}");
-    assert!(keys.contains("ctrl+x stop"), "{keys}");
+    assert!(keys.contains("ctrl+x interrupt"), "{keys}");
     // Exited: Enter resumes.
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
@@ -3932,10 +3933,10 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
             let screen = text(&buffer);
             assert!(screen.contains("Plan"), "{name} {when}:\n{screen}");
             // Codex proposes its plan as its turn ends, so there is no turn
-            // to stop; Claude asks mid-turn.
+            // to interrupt; Claude asks mid-turn.
             if when == "open" {
                 assert_eq!(
-                    screen.contains("ctrl+x stop"),
+                    screen.contains("ctrl+x interrupt"),
                     kind != Kind::Codex,
                     "{name}:\n{screen}"
                 );

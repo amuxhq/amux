@@ -217,7 +217,7 @@ both clients draw the title and body they are handed.
 
 ![A form from a tool server, a step per field in the server's order, the first a required text field, with decline as the way out.](figures/vocabulary/ask_form.light.png)
 
-![The escape from an ask this client cannot answer: the reason, which sends the person to Claude's own terminal, and opening that terminal; ctrl+x stops the turn.](figures/vocabulary/ask_unanswerable.light.png)
+![The escape from an ask this client cannot answer: the reason, which sends the person to Claude's own terminal, and opening that terminal; ctrl+x interrupts the turn.](figures/vocabulary/ask_unanswerable.light.png)
 
 ## In the chat afterwards
 

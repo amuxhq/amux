@@ -6112,56 +6112,6 @@ impl ::prost::Name for CatalogueBlob {
         "/amux.v1.CatalogueBlob".into()
     }
 }
-/// An agent's unsent draft: its words and the attachments already stored.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ComposerDraft {
-    #[prost(string, tag = "1")]
-    pub text: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
-}
-impl ::prost::Name for ComposerDraft {
-    const NAME: &'static str = "ComposerDraft";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.ComposerDraft".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.ComposerDraft".into()
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SaveDraftRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(message, optional, tag = "2")]
-    pub draft: ::core::option::Option<ComposerDraft>,
-}
-impl ::prost::Name for SaveDraftRequest {
-    const NAME: &'static str = "SaveDraftRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.SaveDraftRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.SaveDraftRequest".into()
-    }
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetDraftRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-}
-impl ::prost::Name for GetDraftRequest {
-    const NAME: &'static str = "GetDraftRequest";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.GetDraftRequest".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.GetDraftRequest".into()
-    }
-}
 /// Host-owned discovery; the client chooses a host, never a search root.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListRepositoriesRequest {
@@ -7142,51 +7092,6 @@ pub mod client_service_client {
                 .insert(GrpcMethod::new("amux.v1.ClientService", "Dump"));
             self.inner.unary(req, path, codec).await
         }
-        /// The unsent draft of an agent's composer, kept by this machine's daemon
-        /// for its clients so it outlives a client closing. Never synced to other
-        /// machines; an empty draft forgets it.
-        pub async fn save_draft(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SaveDraftRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/SaveDraft",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "SaveDraft"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_draft(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetDraftRequest>,
-        ) -> std::result::Result<tonic::Response<super::ComposerDraft>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/amux.v1.ClientService/GetDraft",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("amux.v1.ClientService", "GetDraft"));
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -7313,17 +7218,6 @@ pub mod client_service_server {
             &self,
             request: tonic::Request<super::DumpRequest>,
         ) -> std::result::Result<tonic::Response<super::DumpReport>, tonic::Status>;
-        /// The unsent draft of an agent's composer, kept by this machine's daemon
-        /// for its clients so it outlives a client closing. Never synced to other
-        /// machines; an empty draft forgets it.
-        async fn save_draft(
-            &self,
-            request: tonic::Request<super::SaveDraftRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn get_draft(
-            &self,
-            request: tonic::Request<super::GetDraftRequest>,
-        ) -> std::result::Result<tonic::Response<super::ComposerDraft>, tonic::Status>;
     }
     /// The whole client-facing surface.
     #[derive(Debug)]
@@ -8196,96 +8090,6 @@ pub mod client_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DumpSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/SaveDraft" => {
-                    #[allow(non_camel_case_types)]
-                    struct SaveDraftSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
-                    > tonic::server::UnaryService<super::SaveDraftRequest>
-                    for SaveDraftSvc<T> {
-                        type Response = super::Empty;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SaveDraftRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::save_draft(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = SaveDraftSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/amux.v1.ClientService/GetDraft" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetDraftSvc<T: ClientService>(pub Arc<T>);
-                    impl<
-                        T: ClientService,
-                    > tonic::server::UnaryService<super::GetDraftRequest>
-                    for GetDraftSvc<T> {
-                        type Response = super::ComposerDraft;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetDraftRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ClientService>::get_draft(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetDraftSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -131,26 +131,6 @@ pub trait Client: Send + Sync + 'static {
         request: ListRepositoriesRequest,
     ) -> Result<ListRepositoriesResponse, RpcError>;
     async fn dump(&self, request: DumpRequest) -> Result<DumpReport, RpcError>;
-    /// Keeps an agent's unsent draft on this machine; an empty one forgets
-    /// it. A client that keeps none of its own answers Unimplemented.
-    async fn save_draft(&self, _request: wire::SaveDraftRequest) -> Result<(), RpcError> {
-        Err(unimplemented("save_draft"))
-    }
-    async fn get_draft(
-        &self,
-        _request: wire::GetDraftRequest,
-    ) -> Result<wire::ComposerDraft, RpcError> {
-        Err(unimplemented("get_draft"))
-    }
-}
-
-/// The error a client that does not serve a call answers with.
-fn unimplemented(call: &str) -> RpcError {
-    RpcError::Refused(wire::Error {
-        code: ErrorCode::Unimplemented as i32,
-        message: format!("{call} is not served here"),
-        details: Vec::new(),
-    })
 }
 
 /// One implementation of [`Client`] per way of reaching the service:
@@ -249,18 +229,6 @@ macro_rules! client_impl {
 
             async fn dump(&self, request: DumpRequest) -> Result<DumpReport, RpcError> {
                 Ok($call!(self, dump, request).await?.into_inner())
-            }
-
-            async fn save_draft(&self, request: wire::SaveDraftRequest) -> Result<(), RpcError> {
-                $call!(self, save_draft, request).await?;
-                Ok(())
-            }
-
-            async fn get_draft(
-                &self,
-                request: wire::GetDraftRequest,
-            ) -> Result<wire::ComposerDraft, RpcError> {
-                Ok($call!(self, get_draft, request).await?.into_inner())
             }
         }
     };

@@ -216,11 +216,6 @@ service ClientService {
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   // The one bundle format.
   rpc Dump(DumpRequest) returns (DumpReport);
-  // The unsent draft of an agent's composer, kept by this machine's daemon
-  // for its clients so it outlives a client closing. Never synced to other
-  // machines; an empty draft forgets it.
-  rpc SaveDraft(SaveDraftRequest) returns (Empty);
-  rpc GetDraft(GetDraftRequest) returns (ComposerDraft);
 }
 
 // Daemon to daemon, over the link's application streams. Replication is a
@@ -467,21 +462,6 @@ enum Provider {
 message CatalogueBlob {
   bytes hash = 1;
   bytes bytes = 2;
-}
-
-// An agent's unsent draft: its words and the attachments already stored.
-message ComposerDraft {
-  string text = 1;
-  repeated Attachment attachments = 2;
-}
-
-message SaveDraftRequest {
-  bytes agent_id = 1;
-  ComposerDraft draft = 2;
-}
-
-message GetDraftRequest {
-  bytes agent_id = 1;
 }
 
 // Host-owned discovery; the client chooses a host, never a search root.

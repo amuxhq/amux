@@ -1146,6 +1146,11 @@ fn step_words(row: &Row) -> (String, String, String) {
     }
 }
 
+/// The columns of a step's subject kept before its meta is cut.
+const SUBJECT_LEAST: usize = 24;
+/// A step's meta cut shorter than this is left out.
+const META_LEAST: usize = 8;
+
 /// The step's facts with how the person answered its ask after them:
 /// "allowed", "always allowed" when the answer made a rule, "denied"
 /// unless the verb already says so. A refusal's note goes on its own line,
@@ -1214,13 +1219,27 @@ fn step(
     pad_to(&mut line, WORDS);
     // The diff has one place, the header's [Diff]; a step opens to its
     // own patch.
+    // Two blank columns at the right, as at the left.
+    let width = width.saturating_sub(2);
+    // The verb and some of the subject keep their place; a long meta
+    // ("always allowed … in this project") gives way to them, cut, or goes.
+    let least = text::str_width(&verb)
+        + if subject.is_empty() {
+            0
+        } else {
+            1 + text::str_width(&subject).min(SUBJECT_LEAST)
+        };
+    let spare = width.saturating_sub(WORDS + least);
+    let meta = if meta.is_empty() || spare < META_LEAST + 3 {
+        String::new()
+    } else {
+        text::ellipsize_words(&meta, spare - 3)
+    };
     let tail_width = if meta.is_empty() {
         0
     } else {
         text::str_width(&meta) + 3
     };
-    // Two blank columns at the right, as at the left.
-    let width = width.saturating_sub(2);
     let room = width.saturating_sub(tail_width);
     push(&mut line, verb.clone(), words, room);
     if !subject.is_empty() {

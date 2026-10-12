@@ -1,12 +1,33 @@
-2026-10-13 — **This machine's daemon keeps each agent's unsent draft for its own clients.**
-A draft typed into the terminal client lived only in that process, so
-detaching or closing the client threw it away. The daemon now answers two
-calls, `SaveDraft` and `GetDraft`: a client hands over an agent's draft (its
-words and attachments) as it closes or leaves the chat, and gets it back when
-it opens that chat again. Drafts are kept in a small file in the profile's
-directory, per agent, forgotten when the agent is deleted or the draft is
-emptied, and never synced: a paired host refuses the calls, so a draft stays
-on the machine it was typed on.
+2026-10-13 — **The chat edits whole characters, pages without skipping a line, and says interrupt for ending a turn.**
+The composer drew and edited one code point at a time, so a combining accent
+was drawn apart from its letter and Backspace left half an emoji behind. The
+cursor and Backspace now step over whole characters as the person sees them.
+A tab in an agent's code block drew as nothing and glued the words either
+side together; it now widens to the next fourth column. Page Down brought
+lines to the top that the pinned prompt then covered, so a long answer read a
+page at a time lost lines; a page now starts just below the pin, and Page Up
+moves by the same amount.
+
+A long question on a short screen pushed its way out and its keys off the
+bottom. The options' descriptions now give way first, then the question's
+words down to two lines, then the options show a window around the highlight
+marked `↑ more` / `↓ more`, so the free-text row, the way out and the keys
+stay. Enter on a multi-select with nothing ticked sends the empty pick, as
+the provider's own Submit does, where it did nothing.
+
+The leader then `o` with no row focused opens the newest run on screen
+instead of nothing. Up in an empty composer with nothing queued brings back
+the chat's last prompt. A prompt of only spaces is no longer sent. `ctrl+x`
+reads "interrupt" everywhere, since it ends the turn and the agent stays;
+"stop" is home's word for ending the agent. A chat whose link to this
+machine's own daemon dropped says "reconnecting to amux" rather than naming
+the agent's host, which was never the one gone.
+
+At 80 columns the overview lies over the feed's right side, and the chat's
+words now wrap to the columns it leaves rather than hide under it. A running
+step whose permission was answered "always allow" kept the long grant and
+lost its verb and command; the grant now gives way, cut or left out. These
+and the earlier 80-column fixes have tests drawn at 80 columns.
 
 2026-10-13 — **Home ends an agent with one key and asks in a window the arrows work; a new agent's folder follows its host.**
 On home, `x` is now the one key that ends an agent: a live agent is stopped

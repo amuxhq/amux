@@ -137,7 +137,8 @@ Enter on a row opens its chat. From top to bottom:
   (`[Diff vs main +120 −30]`). The leader then `c` switches between the two; the choice is the terminal's, kept
   with its layout, and the branch comparison needs a base branch to count against. The
   header says where the chat stands only when that is a problem: `exited` with its cause, `catching up` before the
-  first CaughtUp, `reconnecting`, `refreshing` while a rebuilt history is on its way, or why the host is away (not
+  first CaughtUp, `reconnecting` (to this machine's own daemon, the only one the client talks to, never the
+  agent's host), `refreshing` while a rebuilt history is on its way, or why the host is away (not
   current, this machine signed out, or the host no longer trusts this machine).
 - **The family line**, for an agent with a parent or children: the parent, the number of subagents and how many
   others in the whole family need you, grandchildren and the parent's side included.
@@ -148,10 +149,12 @@ Enter on a row opens its chat. From top to bottom:
     as you scroll through a long answer; as the next turn's message nears the top the pinned one fades, then that
     message takes the pin. Clicking it scrolls to the message;
   - everything the agent wrote is in one reading ink, at most 100 columns a line; code and paths wear the
-    terminal's cyan, and code blocks are highlighted in its palette. A single line break in its text stays a line
+    terminal's cyan, and code blocks are highlighted in its palette, a tab in them widened to the next fourth
+    column. A single line break in its text stays a line
     break, as Claude's and Codex's own interfaces draw it; a blank line parts paragraphs. Thinking is never drawn;
   - each run of tool steps between two pieces of its text folds to one faint line of what the steps did
-    (`▸ 3 commands · 2 edits · 4 reads`). Clicking it, or the leader then `o`, opens it to one line per step,
+    (`▸ 3 commands · 2 edits · 4 reads`). Clicking it, or the leader then `o` (the newest on screen when no row
+    has focus), opens it to one line per step,
     verb first (`Ran just lint · exit 1 · 22s`, `Edited session.rs · +0 −1`); clicking a step opens its detail: a
     command's last lines of output, an edit's patch, a call's result;
   - a failure the turn ended without fixing stays in view in red where it ran, above its folded run's line; one
@@ -227,8 +230,11 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   offers it (Claude's moves to auto mode where Claude offers it, to accept edits otherwise; Codex offers no switch), and `No, keep planning`, which takes a note.
 - **Questions**: one at a time; several get a row of tabs (`‹ Layout   Entry   Review ›`), answered ones ticked,
   and end on a review that lists each answer and sends them all. Options read `label · recommended ·
-  description`; several picks are `[ ]` boxes under `Select all that apply`; options with previews show the
-  highlighted one's preview beside them. `Something else · enter to type` opens a field for an answer of your own.
+  description`; several picks are `[ ]` boxes under `Select all that apply`, and Enter with none ticked sends
+  the empty pick, as the provider's own Submit does; options with previews show the
+  highlighted one's preview beside them. On a short screen the options' descriptions give way first, then the
+  question's words down to two lines, then the options show a window around the highlight (`↑ more`, `↓ more`),
+  so the free-text row, the way out and the keys always stay. `Something else · enter to type` opens a field for an answer of your own.
   Secret answers type as dots. `Skip` leaves a question unanswered and Tab adds a note to it, each where the agent
   takes one; `Reply instead` sends your own words in place of the answers. Terminal Claude takes no note, and a
   skip only when it asks several questions: Claude's own form has a review screen only then, and submits a lone
@@ -254,7 +260,8 @@ turn`.
 
 ### The overview
 
-`ctrl+o` opens the overview beside the chat (over it on a narrow terminal): what the agent has in flight, in
+`ctrl+o` opens the overview beside the chat (on a narrow terminal, over the feed's right side, the chat's words
+wrapping to the columns it leaves): what the agent has in flight, in
 sections like home's, each foldable: its tasks (`✓` done, `●` current, `○` to do); each background job still
 running, its command with how long it has run, which opens the step that started it; the changed files of the
 comparison the header counts, root files first and then each folder with its files and their lines added and
@@ -328,7 +335,7 @@ Keys come in three layers. **amux** keys are about amux itself (home, a new agen
 home they are bare letters, and in a chat the leader then a letter, mostly the same one (`<leader> n` starts a
 new agent, as `n` does on home). **This chat** keys act on the open chat (review, attach, focus rows), also under
 the leader. **Local** keys belong to whatever has focus (an ask, a panel, the overview, home's list, a window) and
-never leak out of it. Control chords are kept for speed and habit only: Ctrl+X stops the turn, Shift+Tab steps the mode or permission, Ctrl+C
+never leak out of it. Control chords are kept for speed and habit only: Ctrl+X interrupts (ends the turn), Shift+Tab steps the mode or permission, Ctrl+C
 clears the field, Ctrl+O opens the overview, Ctrl+S opens the settings letters. Esc backs out one level and never
 stops the agent or answers an ask; clearing a field and stopping the agent are never the same key.
 
@@ -368,19 +375,20 @@ end, marking the cut with `…` where that fits, and keeps its way out (`esc`, `
 | Enter | Send; queue while the agent works; resume an exited agent |
 | Shift+Enter, or Ctrl+J in any terminal | New line |
 | Ctrl+V | Attach an image or file from the clipboard |
-| ↑ in an empty composer | Into the queue |
-| Ctrl+X | Stop the turn; the agent stays live and idle, and the draft is untouched |
+| ↑ in an empty composer | Into the queue; with nothing queued, the chat's last prompt again |
+| Ctrl+X | Interrupt: end the turn; the agent stays live and idle, and the draft is untouched |
 | Shift+Tab | The agent's next mode, or where it has none its next permission |
 | Ctrl+S then `m`, `e` or `p` | The agent's model, effort or permission, where it can change from here |
 | Ctrl+O | The overview |
-| Page Up, Page Down, mouse wheel | Scroll |
+| Page Up, Page Down, mouse wheel | Scroll; a page never leaves a line under the pinned message |
 | Ctrl+Home, Ctrl+End | The oldest held row; follow the newest |
 | Esc | Back out one level: a panel, a field, the overview's keys, focus |
 
 The draft editor takes readline keys: Ctrl+B and Ctrl+F move by character, Ctrl+Left and Ctrl+Right by word,
 Ctrl+E and End to the line's end, Home to its start, Ctrl+P and Ctrl+N (or ↑ and ↓) between lines; Ctrl+W, Ctrl+U
 and Ctrl+K kill the word before, the line before and the line after the cursor; Ctrl+D deletes forward; Ctrl+Y
-yanks the last kill back.
+yanks the last kill back. The cursor and Backspace step over whole characters as drawn: an accent stays on its
+letter, and one Backspace removes an emoji with its skin tone.
 
 In the queue, ↑ and ↓ move and the highlighted prompt shows its controls; Enter does the first and Backspace the
 second: on a queued prompt, send it now into the running turn, or withdraw it back into the composer; on one that
@@ -398,7 +406,7 @@ may not have arrived, resend or discard it. Esc or typing returns to the compose
 | Tab on a refusal | Add a note to it |
 | Esc | To the way out (`No`, `Decline`); in an open field, clear and close it |
 | `f` | Open or close the whole diff or command inside the box |
-| Ctrl+X | Stop the turn, from anywhere |
+| Ctrl+X | Interrupt (end the turn), from anywhere |
 
 ### Review page
 
@@ -436,7 +444,7 @@ clicked.
 | `<leader> r` | Review the working tree; comments go in the draft |
 | `<leader> a` | Attach to the agent's own terminal, when it is on this machine |
 | `<leader> k`, `<leader> j` | Focus an older or newer row |
-| `<leader> o` | Open or close the focused row or run |
+| `<leader> o` | Open or close the focused row or run; with none focused, the newest run on screen |
 | `<leader> y` | Copy the focused row (through the terminal's OSC 52 clipboard) |
 
 During raw attach the leader is read out of the bytes you type: `<leader> d` detaches to the shell, `<leader> s`

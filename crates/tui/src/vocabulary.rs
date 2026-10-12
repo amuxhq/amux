@@ -64,7 +64,7 @@ pub const FRAMES: &[(&str, &str)] = &[
     ),
     (
         "ask_escape",
-        "A terminal Claude on the desk showing a tool server's sign-in dialog in its own terminal, read from the laptop: the escape in the composer's box, its reason sending the person to Claude's own terminal (a remote agent's terminal is not offered here) and ctrl+x to stop, with the conversation still above it: the prompt, the text that introduced the tool server's call, and the call folded.",
+        "A terminal Claude on the desk showing a tool server's sign-in dialog in its own terminal, read from the laptop: the escape in the composer's box, its reason sending the person to Claude's own terminal (a remote agent's terminal is not offered here) and ctrl+x to interrupt, with the conversation still above it: the prompt, the text that introduced the tool server's call, and the call folded.",
     ),
     (
         "running_call",
@@ -1955,7 +1955,7 @@ fn cards() -> Vec<CardSet> {
         ),
         (
             "ask_unanswerable",
-            "The escape from an ask this client cannot answer: the reason, and the agent's own terminal where it has one; ctrl+x stops the turn.",
+            "The escape from an ask this client cannot answer: the reason, and the agent's own terminal where it has one; ctrl+x interrupts the turn.",
             card(
                 AskBody::Unanswerable {
                     reason: UNANSWERABLE.into(),

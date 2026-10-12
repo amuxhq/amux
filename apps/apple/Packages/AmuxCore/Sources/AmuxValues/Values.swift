@@ -352,6 +352,10 @@ public enum AskBody: Codable, Hashable, Sendable {
     /// on when the patch says (a Claude edit's does not: it is only the
     /// text replaced and the text replacing it).
     case edit(path: String, files: UInt32, added: UInt32, removed: UInt32, lines: [EditLine], reason: String, created: Bool?, line: UInt32?)
+    /// A tool call. Its arguments are the input pretty-printed, except
+    /// for Claude's web fetch and web search, whose arguments are the
+    /// address it would fetch or the words it would search for, as Claude's
+    /// own dialog shows them.
     case tool(server: String, tool: String, arguments: String)
     case question([QuestionView])
     /// The plan's title and body, as its row has them.
@@ -2302,15 +2306,20 @@ public enum DraftPart: Codable, Hashable, Sendable {
     }
 }
 
-/// One line of an edit's patch as an ask carries it: where a hunk starts,
-/// by its first line in the old file and the new, or a line of the patch.
-/// A file's own header lines are not carried. Each client decides whether
-/// to draw a hunk's start.
+/// One line of an edit's patch as an ask carries it: where a file starts,
+/// where a hunk starts, by its first line in the old file and the new, or a
+/// line of the patch. A file's own header lines are not carried. Each
+/// client decides whether to draw a hunk's start.
 public enum EditLine: Codable, Hashable, Sendable {
+    /// In a patch of several files, where each file's lines start: the
+    /// file, named from the agent's folder, and what happens to it (added,
+    /// deleted, moved or edited), with its counts.
+    case file(FileRow)
     case hunk(oldStart: UInt32, newStart: UInt32)
     case line(PatchLine)
 
     private enum Tag: String, CodingKey {
+        case file = "File"
         case hunk = "Hunk"
         case line = "Line"
     }
@@ -2329,6 +2338,8 @@ public enum EditLine: Codable, Hashable, Sendable {
                     debugDescription: "a EditLine names exactly one variant"))
         }
         switch _tag {
+        case .file:
+            self = .file(try _container.decode(FileRow.self, forKey: .file))
         case .hunk:
             let _fields = try _container.nestedContainer(
                 keyedBy: HunkKeys.self, forKey: .hunk)
@@ -2342,6 +2353,9 @@ public enum EditLine: Codable, Hashable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
+        case .file(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .file)
         case .hunk(let oldStart, let newStart):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: HunkKeys.self, forKey: .hunk)
@@ -2873,7 +2887,8 @@ public struct FleetView: Codable, Hashable, Sendable {
     public var sections: [FleetSection]
     /// Agents across the whole fleet that need the person, and that are
     /// working or starting: counted by agent, not by family, whatever is
-    /// folded or filtered out of the sections.
+    /// folded or filtered out of the sections. An agent whose host is out
+    /// of reach is not counted: its row says only that.
     public var needYou: UInt32
     public var working: UInt32
 
@@ -4673,7 +4688,7 @@ public enum RowKind: Codable, Hashable, Sendable {
     case toolCall(server: String, tool: String, fact: String, state: CallPhase, result: String)
     case fileChange(files: [FileRow], state: CallPhase)
     case command(command: String, state: CallPhase, outputHead: [String], moreLines: UInt, outputTrimmed: Bool, outputTail: [String], durationMs: Int64?, exitCode: Int32?)
-    case explore(verb: ExploreVerb, subject: String, state: CallPhase)
+    case explore(verb: ExploreVerb, subject: String, state: CallPhase, result: String)
     case subagent(description: String, running: Bool, toolCount: UInt32, lastTool: String, answer: String, durationMs: Int64?)
     case background(command: String, running: Bool, durationMs: Int64?)
     case image(path: String, generated: Bool, image: BlobRef?)
@@ -4761,6 +4776,7 @@ public enum RowKind: Codable, Hashable, Sendable {
         case verb
         case subject
         case state
+        case result
     }
 
     private enum SubagentKeys: String, CodingKey {
@@ -4916,7 +4932,8 @@ public enum RowKind: Codable, Hashable, Sendable {
             self = .explore(
                 verb: try _fields.decode(ExploreVerb.self, forKey: .verb),
                 subject: try _fields.decode(String.self, forKey: .subject),
-                state: try _fields.decode(CallPhase.self, forKey: .state))
+                state: try _fields.decode(CallPhase.self, forKey: .state),
+                result: try _fields.decode(String.self, forKey: .result))
         case .subagent:
             let _fields = try _container.nestedContainer(
                 keyedBy: SubagentKeys.self, forKey: .subagent)
@@ -5059,12 +5076,13 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(outputTail, forKey: .outputTail)
             try _fields.encodeIfPresent(durationMs, forKey: .durationMs)
             try _fields.encodeIfPresent(exitCode, forKey: .exitCode)
-        case .explore(let verb, let subject, let state):
+        case .explore(let verb, let subject, let state, let result):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: ExploreKeys.self, forKey: .explore)
             try _fields.encode(verb, forKey: .verb)
             try _fields.encode(subject, forKey: .subject)
             try _fields.encode(state, forKey: .state)
+            try _fields.encode(result, forKey: .result)
         case .subagent(let description, let running, let toolCount, let lastTool, let answer, let durationMs):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: SubagentKeys.self, forKey: .subagent)
@@ -5320,6 +5338,10 @@ public enum SecondLine: Codable, Hashable, Sendable {
     case exited(ExitCause)
     /// The agent's host is out of reach; the agent is only as it last said.
     case hostAway
+    /// The agent's host no longer trusts this machine: it will not come
+    /// back on its own, only by pairing again. The agent is only as it last
+    /// said.
+    case hostRevoked
     /// Starting, or nothing known yet.
     case blank
 
@@ -5337,6 +5359,7 @@ public enum SecondLine: Codable, Hashable, Sendable {
         {
             switch _name {
             case "HostAway": self = .hostAway
+            case "HostRevoked": self = .hostRevoked
             case "Blank": self = .blank
             default:
                 throw DecodingError.dataCorruptedError(
@@ -5385,6 +5408,9 @@ public enum SecondLine: Codable, Hashable, Sendable {
         case .hostAway:
             var _container = encoder.singleValueContainer()
             try _container.encode("HostAway")
+        case .hostRevoked:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("HostRevoked")
         case .blank:
             var _container = encoder.singleValueContainer()
             try _container.encode("Blank")

@@ -5,6 +5,8 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use wire::{Attachment, BlobRef};
 
+use crate::text::without_direction_controls;
+
 /// A run of text or one attachment, in reading order. Each placeholder in
 /// the text is the next attachment, so attachments keep their positions.
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
@@ -34,13 +36,20 @@ pub enum AttachmentView {
 }
 
 impl AttachmentView {
+    /// The attachment as a chip shows it. Its name is drawn without
+    /// direction controls, which would make `invoice\u{202E}fdp.exe` read
+    /// as a PDF.
     pub fn of(attachment: &Attachment) -> AttachmentView {
         use wire::attachment::Of;
+        let named = |blob: &BlobRef| BlobRef {
+            name: without_direction_controls(&blob.name),
+            ..blob.clone()
+        };
         match &attachment.of {
-            Some(Of::Image(blob)) => AttachmentView::Image(blob.clone()),
-            Some(Of::File(blob)) => AttachmentView::File(blob.clone()),
+            Some(Of::Image(blob)) => AttachmentView::Image(named(blob)),
+            Some(Of::File(blob)) => AttachmentView::File(named(blob)),
             Some(Of::Text(text)) => AttachmentView::Text {
-                name: text.name.clone(),
+                name: without_direction_controls(&text.name),
                 lines: text.text.lines().count() as u32,
                 text: text.text.clone(),
             },

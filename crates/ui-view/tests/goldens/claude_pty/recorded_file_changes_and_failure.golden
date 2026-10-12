@@ -22,10 +22,10 @@
 ## 60 recorded 58: fact Transcript type=assistant uuid=6dfd4dba-af2c-431e-a225-a29a7037f907
   row    4 toolu_013jHbVUB15dSPqzs7eZGPEQ FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01FJjmDBCY6HDDDbVQ3CHCss x2 recent=1 live] attention
   row    5 b0b4f4f4-706e-43ad-b644-230ec57ba06b Thinking { text: "", open: false, duration_ms: Some(1213) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01FJjmDBCY6HDDDbVQ3CHCss x2 live] collapsed
-  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01FJjmDBCY6HDDDbVQ3CHCss x2 recent=0 live RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running, result: "" } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01FJjmDBCY6HDDDbVQ3CHCss x2 recent=0 live RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01FJjmDBCY6HDDDbVQ3CHCss" }) queue=[] underway=[] refused=[]
 ## 61 recorded 59: fact Transcript type=user uuid=042a6a79-cbbe-4c50-aa97-7eb7ad9c6fc7
-  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01FJjmDBCY6HDDDbVQ3CHCss x2 recent=0 live RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01FJjmDBCY6HDDDbVQ3CHCss x2 recent=0 live RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 65 recorded 63: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_012R6FqWBi8NJXv2M4XPgTYu
   composer Send activity=Some(Running { key: "toolu_012R6FqWBi8NJXv2M4XPgTYu" }) queue=[] underway=[] refused=[]
@@ -36,7 +36,7 @@
 ## 70 recorded 68: fact Transcript type=assistant uuid=db6c15b0-cf16-48ed-9519-5bf35e0d130d
   row    4 toolu_013jHbVUB15dSPqzs7eZGPEQ FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_012R6FqWBi8NJXv2M4XPgTYu x3 recent=2 live] attention
   row    5 b0b4f4f4-706e-43ad-b644-230ec57ba06b Thinking { text: "", open: false, duration_ms: Some(1213) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_012R6FqWBi8NJXv2M4XPgTYu x3 live] collapsed
-  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_012R6FqWBi8NJXv2M4XPgTYu x3 recent=1 live]
+  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_012R6FqWBi8NJXv2M4XPgTYu x3 recent=1 live]
   row    7 a166af93-b071-4ec3-a472-13dcd72d496b Thinking { text: "", open: false, duration_ms: Some(1086) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_012R6FqWBi8NJXv2M4XPgTYu x3 live] collapsed
   row    8 toolu_012R6FqWBi8NJXv2M4XPgTYu FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Running } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_012R6FqWBi8NJXv2M4XPgTYu x3 recent=0 live RunCounts { commands: 0, edits: 2, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_012R6FqWBi8NJXv2M4XPgTYu" }) queue=[] underway=[] refused=[]
@@ -52,7 +52,7 @@
 ## 81 recorded 79: fact Transcript type=assistant uuid=3c6997c2-722b-46bf-a00e-6eedc6e66be4
   row    4 toolu_013jHbVUB15dSPqzs7eZGPEQ FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01NgKbJgjWP2HSRNH9ffGnoB x4 live] collapsed attention
   row    5 b0b4f4f4-706e-43ad-b644-230ec57ba06b Thinking { text: "", open: false, duration_ms: Some(1213) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01NgKbJgjWP2HSRNH9ffGnoB x4 live] collapsed
-  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01NgKbJgjWP2HSRNH9ffGnoB x4 recent=2 live]
+  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01NgKbJgjWP2HSRNH9ffGnoB x4 recent=2 live]
   row    7 a166af93-b071-4ec3-a472-13dcd72d496b Thinking { text: "", open: false, duration_ms: Some(1086) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01NgKbJgjWP2HSRNH9ffGnoB x4 live] collapsed
   row    8 toolu_012R6FqWBi8NJXv2M4XPgTYu FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01NgKbJgjWP2HSRNH9ffGnoB x4 recent=1 live]
   row    9 e27a2974-aaec-4834-bf51-0d2a63b93473 Thinking { text: "", open: false, duration_ms: Some(1129) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01NgKbJgjWP2HSRNH9ffGnoB x4 live] collapsed
@@ -70,7 +70,7 @@
 ## 92 recorded 90: fact Transcript type=assistant uuid=36c95e0f-4e1d-4788-8821-cc56fc6dbff6
   row    4 toolu_013jHbVUB15dSPqzs7eZGPEQ FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01S6s6y1T4QecL8TWjDQdvTE x5 live] collapsed attention
   row    5 b0b4f4f4-706e-43ad-b644-230ec57ba06b Thinking { text: "", open: false, duration_ms: Some(1213) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01S6s6y1T4QecL8TWjDQdvTE x5 live] collapsed
-  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01S6s6y1T4QecL8TWjDQdvTE x5 live] collapsed
+  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01S6s6y1T4QecL8TWjDQdvTE x5 live] collapsed
   row    7 a166af93-b071-4ec3-a472-13dcd72d496b Thinking { text: "", open: false, duration_ms: Some(1086) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01S6s6y1T4QecL8TWjDQdvTE x5 live] collapsed
   row    8 toolu_012R6FqWBi8NJXv2M4XPgTYu FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01S6s6y1T4QecL8TWjDQdvTE x5 recent=2 live]
   row    9 e27a2974-aaec-4834-bf51-0d2a63b93473 Thinking { text: "", open: false, duration_ms: Some(1129) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_01S6s6y1T4QecL8TWjDQdvTE x5 live] collapsed
@@ -88,7 +88,7 @@
 ## 100 recorded 98: fact Transcript type=assistant uuid=0ff8d1fd-dba8-4bba-8d24-ada6897a3ff1
   row    4 toolu_013jHbVUB15dSPqzs7eZGPEQ FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed attention
   row    5 b0b4f4f4-706e-43ad-b644-230ec57ba06b Thinking { text: "", open: false, duration_ms: Some(1213) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
-  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
+  row    6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
   row    7 a166af93-b071-4ec3-a472-13dcd72d496b Thinking { text: "", open: false, duration_ms: Some(1086) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
   row    8 toolu_012R6FqWBi8NJXv2M4XPgTYu FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
   row    9 e27a2974-aaec-4834-bf51-0d2a63b93473 Thinking { text: "", open: false, duration_ms: Some(1129) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
@@ -106,7 +106,7 @@
      3 8c15fca5-6590-41d2-95b9-bf9579d66f9a Thinking { text: "", open: false, duration_ms: Some(2087) }
      4 toolu_013jHbVUB15dSPqzs7eZGPEQ FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Writing { lines: 1 }, added: 1, removed: 0, line: None }], state: Failed } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed attention
      5 b0b4f4f4-706e-43ad-b644-230ec57ba06b Thinking { text: "", open: false, duration_ms: Some(1213) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
-     6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
+     6 toolu_01FJjmDBCY6HDDDbVQ3CHCss Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
      7 a166af93-b071-4ec3-a472-13dcd72d496b Thinking { text: "", open: false, duration_ms: Some(1086) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
      8 toolu_012R6FqWBi8NJXv2M4XPgTYu FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed
      9 e27a2974-aaec-4834-bf51-0d2a63b93473 Thinking { text: "", open: false, duration_ms: Some(1129) } run[toolu_013jHbVUB15dSPqzs7eZGPEQ..toolu_018cH8azshatUkXvdDF85BWn x6 live] collapsed

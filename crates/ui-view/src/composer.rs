@@ -72,7 +72,7 @@ pub struct ComposerView {
 pub fn composer(state: &SessionState, now_ms: i64) -> ComposerView {
     ComposerView {
         mode: state.composer(),
-        activity: state.activity(now_ms),
+        activity: crate::fleet::activity(state, now_ms),
     }
 }
 

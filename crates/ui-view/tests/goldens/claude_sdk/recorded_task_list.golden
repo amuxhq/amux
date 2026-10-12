@@ -9,10 +9,10 @@
 ## 16 recorded 15: fact Stream type=assistant uuid=850df5d8-0c3a-43fa-9b62-99624a3393f2
   row    3 msg_011CfREGjfwaE9xmtmbyn8Qe:0 Thinking { text: "", open: false, duration_ms: Some(8956) }
 ## 18 recorded 17: fact Stream type=assistant uuid=0caf8adf-9df5-4cdb-8aae-8240515ba204
-  row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Running } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Running, result: "" } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01YJafHWooM6hL1guvrWe39C" }) queue=[] underway=[] refused=[]
 ## 20 recorded 19: fact Stream type=user uuid=d1bc29cf-26d0-4a40-ae63-25681ad72c94
-  row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 28 recorded 27: fact Stream type=assistant uuid=531bf113-9ff9-417c-bb47-beaacf4f2128
   row    5 msg_011CfREHRhUSCeCTZDeGzW29:0 Thinking { text: "", open: false, duration_ms: Some(1834) }
@@ -23,17 +23,17 @@
 ## 62 recorded 61: fact Stream type=assistant uuid=2ea1c27c-0950-47c5-9aeb-c1a3ffd2785c
   row    8 msg_011CfREHpn3Hk84LGLeepJ2T:0 Thinking { text: "", open: false, duration_ms: Some(1500) }
 ## 64 recorded 63: fact Stream type=assistant uuid=c59899ef-19c3-4599-94e1-4ff5deb71872
-  row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   row    9 msg_011CfREHpn3Hk84LGLeepJ2T:1 Prose { text: [Text("Done.")], streaming: false, working_note: false }
 ## 66 recorded 65: fact Stream type=result subtype=success uuid=86afc84d-d2b5-46c6-9b57-77002f1f48ff
-  row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   row   10 turn:1 TurnEnd { duration_ms: Some(16117), cost_usd: Some(0.04450130000000001), failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 73746469-6e2d-4200-8000-000000000000 Prompt { text: [Text("Track this work with your task or todo tool: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
      3 msg_011CfREGjfwaE9xmtmbyn8Qe:0 Thinking { text: "", open: false, duration_ms: Some(8956) }
-     4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+     4 toolu_01YJafHWooM6hL1guvrWe39C Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01YJafHWooM6hL1guvrWe39C..toolu_01YJafHWooM6hL1guvrWe39C x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
      5 msg_011CfREHRhUSCeCTZDeGzW29:0 Thinking { text: "", open: false, duration_ms: Some(1834) }
      6 msg_011CfREHcYanPEt4uiTcGqr2:0 Thinking { text: "", open: false, duration_ms: Some(2075) }
      7 msg_011CfREHjFfZi4DL3SGtnvt8:0 Thinking { text: "", open: false, duration_ms: Some(1327) }

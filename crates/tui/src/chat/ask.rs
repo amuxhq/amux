@@ -11,9 +11,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ui_view::{
-    AskBody, AskCard, CardState, Choice, ChoiceOutcome, EditLine, FieldProblem, FormField as Field,
-    FormFieldKind as FieldKind, FormValue, LineKind, PermissionGrant, Pick, QuestionResponse,
-    QuestionView, Scope, answer_input, form_answer, form_problems, question_answer, reply_answer,
+    AskBody, AskCard, CardState, Choice, ChoiceOutcome, EditLine, FieldProblem, FileChangeView,
+    FileRow, FormField as Field, FormFieldKind as FieldKind, FormValue, LineKind, PermissionGrant,
+    Pick, QuestionResponse, QuestionView, Scope, answer_input, form_answer, form_problems,
+    question_answer, reply_answer,
 };
 
 use crate::editor::Editor;
@@ -418,6 +419,19 @@ fn box_label(choice: &Choice, kind: wire::Kind) -> String {
                 .unwrap_or_default();
             format!("Yes, and {first}{}", chars.as_str())
         }
+    }
+}
+
+/// A file of a patch of several, where its lines start: its path and what
+/// the patch does to it.
+fn file_words(file: &FileRow) -> String {
+    match &file.change {
+        FileChangeView::Created { .. } | FileChangeView::Writing { .. } => {
+            format!("{} (new file)", file.path)
+        }
+        FileChangeView::Deleted => format!("{} (deleted)", file.path),
+        FileChangeView::Moved { to } => format!("{} → {to}", file.path),
+        FileChangeView::Edited => file.path.clone(),
     }
 }
 
@@ -828,7 +842,11 @@ impl AskUi {
                 // The path and where in the file, then why, then the patch.
                 // A path too long for the line loses its folders from the
                 // front: the file's name is what the approval is about.
-                let more = (*files > 1).then(|| format!(" and {} more files", files - 1));
+                let more = (*files > 1).then(|| {
+                    let others = files - 1;
+                    let s = if others == 1 { "" } else { "s" };
+                    format!(" and {others} more file{s}")
+                });
                 let at = first.map(|line| format!(" · line {line}"));
                 let after = more
                     .iter()
@@ -851,11 +869,17 @@ impl AskUi {
                 }
                 // The patch's first lines as the review page draws them; the
                 // line beside the path says where its change starts, so the
-                // hunks' starts are not drawn.
-                let lines: Vec<_> = patch
+                // hunks' starts are not drawn. A patch of several files names
+                // each file where its lines start.
+                let lines: Vec<(char, Style, String)> = patch
                     .iter()
                     .filter_map(|line| match line {
-                        EditLine::Line(line) => Some(line),
+                        EditLine::Line(line) => Some(match line.kind {
+                            LineKind::Added => ('+', theme.diff_added(), line.text.clone()),
+                            LineKind::Removed => ('-', theme.diff_removed(), line.text.clone()),
+                            LineKind::Context => (' ', theme.diff_context(), line.text.clone()),
+                        }),
+                        EditLine::File(file) => Some((' ', theme.code(), file_words(file))),
                         EditLine::Hunk { .. } => None,
                     })
                     .collect();
@@ -880,13 +904,8 @@ impl AskUi {
                 } else {
                     lines.len()
                 };
-                for l in lines.iter().skip(scroll).take(take) {
-                    let (mark, style) = match l.kind {
-                        LineKind::Added => ('+', theme.diff_added()),
-                        LineKind::Removed => ('-', theme.diff_removed()),
-                        LineKind::Context => (' ', theme.diff_context()),
-                    };
-                    let body = &l.text;
+                for (mark, style, body) in lines.iter().skip(scroll).take(take) {
+                    let (mark, style) = (*mark, *style);
                     let mut row = Line::default();
                     push(
                         &mut row,

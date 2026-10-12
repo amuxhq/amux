@@ -59,9 +59,9 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 
 | Item | Row kind | How it is drawn | claude_pty | claude_sdk | codex |
 |---|---|---|---|---|---|
-| Exploring | `Explore { verb, subject, state }` | Reads, searches, listings, fetches and web searches; each is a step of its run and folds with it. | full | full | partial: web search is its own item; reads and searches are shell commands Codex labels |
-| Command | `Command { command, state, exit_code, output_head, more_lines, output_trimmed, duration_ms }` | "Ran cmd · time" with the output's first lines (`OUTPUT_HEAD_LINES` = 3), opening to the full output. When a long command's output lost its start to the bound, `output_trimmed` is set and a faint "earlier output trimmed" line sits above what is left. A failure shows its exit code where the provider gives one. | partial: failed flag, no exit code | partial | full: exit code, duration, streamed output |
-| File edit | `FileChange { files, state }` | Each `FileRow` as path +N −N, opening that file's diff. | full: exact patch and counts | full | partial: per-file diff |
+| Exploring | `Explore { verb, subject, state, result }` | Reads, searches, listings, fetches and web searches; each is a step of its run and folds with it. `result` is why it failed or what a search, listing or fetch found, in the provider's words; a read's result is the file, which the row does not carry. A file in the agent's folder is named from it. Codex's opened page reads as a fetch of its address, a find within a page as a search for its words. | full | full | partial: web search is its own item; reads and searches are shell commands Codex labels |
+| Command | `Command { command, state, exit_code, output_head, more_lines, output_trimmed, duration_ms }` | "Ran cmd · time" with the output's first lines (`OUTPUT_HEAD_LINES` = 3), opening to the full output. The output is as a terminal leaves it on screen: no colour codes, and what follows a carriage return writes over the line. The time runs from when the call started running, after any wait for approval, where the provider says (Claude's `started_at_ms`). When a long command's output lost its start to the bound, `output_trimmed` is set and a faint "earlier output trimmed" line sits above what is left. A failure shows its exit code where the provider gives one. | partial: failed flag, no exit code | partial | full: exit code, duration, streamed output |
+| File edit | `FileChange { files, state }` | Each `FileRow` as path +N −N, opening that file's diff. A file in the agent's folder is named from it. A Codex patch that did not land made no file, so a file it would have added reads `Writing`, never `Created`. | full: exact patch and counts | full | partial: per-file diff |
 | File created, deleted, moved | `FileChange` with `Created { lines }`, `Deleted`, `Moved { to }` | "Created path · 38 lines", "Deleted path", "Moved a → b". | partial: create and overwrite only | partial | full |
 | Tool call | `ToolCall { server, tool, fact, state, result }` | "Used github · create_issue" plus one fact, opening to input and result. | partial: name and text result | full | full |
 | Subagent | `Subagent { description, running, tool_count, last_tool, answer, duration_ms }` | Live while running ("12 tools · 48s · last: Read"), its answer once finished; its own steps are rows with a `parent`, collapsed under it. | partial | full | partial |
@@ -73,7 +73,8 @@ A call's `state` is a `CallPhase`, decided once in the view for both clients: `A
 at the call and nothing has decided it (it runs only if the person allows it, and both clients mark it as
 waiting on the person), `Pending` when it is announced, not started and asks nobody, `Running`, `Succeeded`,
 `Failed`, `Denied` when the person or the agent's rules refused it whatever the call reports after, and
-`Cancelled`. Each client words the phase and branches on it, never on its own words.
+`Cancelled`. A call still in flight when its agent exited is `Cancelled`: nothing runs it on. Each client words
+the phase and branches on it, never on its own words.
 
 A native subagent (Claude's Task tool, a Codex child thread) is a row with detail inside the parent's
 transcript, not an agent. Only an amux spawn makes an agent with a chat of its own
@@ -90,7 +91,7 @@ transcript, not an agent. Only an amux spawn makes an agent with a chat of its o
 | Item | Row kind | How it is drawn | claude_pty | claude_sdk | codex |
 |---|---|---|---|---|---|
 | Turn finished | `TurnEnd { duration_ms, cost_usd, failed }` | A quiet footer under the last reply: "Worked 1m 42s". | full | full: duration and cost | full |
-| Stopped | `Stopped` | "You stopped it". | full | full | full |
+| Stopped | `Stopped` | "You stopped it". A turn interrupted so the person's reply could go instead of answering a question is a `TurnEnd`, since nobody stopped it. | full | full | full |
 | Compaction | `Compaction { tokens_before, tokens_after, automatic }` | A rule: "Compacted · 148k → 22k". | full | full | partial: a compacted boundary, no counts |
 | Error | `Error { error_kind, message, attempts, gave_up }` | What failed and what to do. While the provider retries, the retry shows on the activity line instead. | full | full | full: typed error kind and will-retry |
 | Model switched | `ModelSwitch { from, to, reason }` | A notice: "Switched to Sonnet · reason". | none | full: refusal fallback | full: reroute with reason |
@@ -114,7 +115,9 @@ one of:
 | `Compacting` | Until the compaction row lands. |
 | `Retrying { attempt, max_attempts, retry_at_ms }` | The provider failed a request and says it will try again. |
 
-The line is empty unless the phase is working. Elapsed time is measured from the relevant item's timestamp with
+`ui_view::composer` and each fleet row read it through the view, which names a step still running in the turn
+when the newest item says only `Working` (Codex writes reasoning while a command runs). The line is empty unless
+the phase is working. Elapsed time is measured from the relevant item's timestamp with
 the renderer's clock, which is why the terminal ticks while an agent works and at no other time. The terminal
 draws it as the running turn's live end in the feed (`Working · 33s`), where `Worked 6m` stands once the turn
 ends; its steps say what is running.
@@ -146,8 +149,11 @@ another device does not flash from a cached snapshot.
 
 The body is `Command` (command, working directory, reason, description), `Edit` (path, file count, counts, the
 patch as parsed lines and the new file's line its first change lands on) or `Tool` (server, tool and
-pretty-printed arguments). The edit's lines are `EditLine`s: a `Hunk` marker with where the hunk starts in the
-old and new file, or a `PatchLine` (added, removed or context, numbered where the patch says). A file's header
+pretty-printed arguments; for Claude's web fetch and web search, the address or the words, as Claude's own dialog
+shows them). The edit's lines are `EditLine`s: in a patch of several files a `File` marker where each file's lines
+start, with its path and what happens to it (added, deleted, moved, edited); a `Hunk` marker with where the hunk
+starts in the old and new file; or a `PatchLine` (added, removed or context, numbered where the patch says). A
+notebook edit's lines are the cell's new source. A file's header
 lines are dropped and only outside a hunk, so a removed `-- comment` or an added `++i` stays a line of the patch;
 a file Codex adds or deletes whole reads as added or removed lines. Each client decides whether to draw a
 hunk's start: the terminal names the first change's line beside the path, the phone draws each hunk's start
@@ -159,6 +165,7 @@ carry no numbers and no line.
 | `AllowOnce` | every kind |
 | `AllowAlways { subjects, directories, mode, scope }` | Claude: one per scope the provider suggested, its rule lifted to plain words; `Scope` is `Session`, `Project` (this project, for this person), `ProjectShared`, `User` (every project) or another destination |
 | `AllowForSession` | Codex |
+| `AllowAlways { subjects, scope: Session }` | Codex's "don't ask again" on a patch, which covers the patch's files: `subjects` are those files |
 | `AllowSimilar { prefix }` | Codex: the exact command prefix it would allow |
 | `AllowNetwork { hosts }` | Codex: a network rule naming the hosts |
 | `Deny { stops }` | every kind. Terminal Claude's denial always ends the turn (`stops: true`), so there it is the only deny |

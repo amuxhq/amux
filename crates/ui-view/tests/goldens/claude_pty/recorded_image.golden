@@ -12,7 +12,7 @@
 ## 44 recorded 42: fact Transcript type=assistant uuid=b6a68cb2-7864-41a8-9b95-d1cf54fd77eb
   row    3 b6a68cb2-7864-41a8-9b95-d1cf54fd77eb Thinking { text: "", open: false, duration_ms: Some(2970) }
 ## 45 recorded 43: fact Transcript type=assistant uuid=329d8b11-3dba-45b4-bed9-1d0b1a16cff1
-  row    4 toolu_01HGR4w5xbprSyoZpRZAoEus Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running } run[toolu_01HGR4w5xbprSyoZpRZAoEus..toolu_01HGR4w5xbprSyoZpRZAoEus x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    4 toolu_01HGR4w5xbprSyoZpRZAoEus Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running, result: "" } run[toolu_01HGR4w5xbprSyoZpRZAoEus..toolu_01HGR4w5xbprSyoZpRZAoEus x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01HGR4w5xbprSyoZpRZAoEus" }) queue=[] underway=[] refused=[]
 ## 46 recorded 44: fact Transcript type=user uuid=b68b7313-b85f-429e-8261-5e132c7ad77f
   row    4 toolu_01HGR4w5xbprSyoZpRZAoEus Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01HGR4w5xbprSyoZpRZAoEus..toolu_01HGR4w5xbprSyoZpRZAoEus x1 recent=0 live RunCounts {…

@@ -1022,6 +1022,7 @@ fn step_words(row: &Row) -> (String, String, String) {
             verb,
             subject,
             state,
+            ..
         } => {
             let said = state_meta(*state, row.decision.is_some());
             let meta = decided(said.map(str::to_owned).into_iter().collect(), row, false);
@@ -1362,6 +1363,15 @@ fn step_detail(row: &Row, facts: &RowFacts, width: usize, theme: Theme) -> Vec<L
             .unwrap_or_default(),
         RowKind::ToolCall { result, .. } if !result.is_empty() => {
             detail(result, width, theme.muted(), DETAIL_LINES, theme)
+        }
+        // Why a read or search failed, or what it found.
+        RowKind::Explore { result, state, .. } if !result.is_empty() => {
+            let style = if *state == CallPhase::Failed {
+                theme.error()
+            } else {
+                theme.muted()
+            };
+            detail(result, width, style, DETAIL_LINES, theme)
         }
         RowKind::Subagent { answer, .. } if !answer.is_empty() => {
             detail(answer, width, theme.muted(), DETAIL_LINES, theme)

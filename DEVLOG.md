@@ -1,3 +1,55 @@
+2026-10-13 — **Chat rows, asks and home rows say what happened, in the person's words.**
+Several things both clients draw from the shared views were wrong or hard to
+read; the views now hand both clients the corrected facts.
+
+Steps: a file step names a file in the agent's folder from that folder, as
+its ask already did, rather than by an absolute path cut off before the
+file's name. A read, search or fetch keeps why it failed or what it found
+(`Explore.result`), where before a failed search said only "failed". A
+command's output is what a terminal leaves on screen: colour codes are gone
+and the words after a carriage return are kept, where the phone drew
+`[31mRED[0m` and lost `bbb` from `aaa\rbbb`. A command's time runs from when
+it started running, after any wait for the person's approval, so a curl that
+waited 37 seconds to be allowed no longer reads "39s". A Codex patch that
+failed (refused in Codex's own view, say) no longer reads "Created" for a
+file it never wrote. A step still running when its agent exited is drawn
+cancelled, not "Running" under the exit. Codex's opened web page reads as a
+fetch of its address rather than an empty search.
+
+Turns: answering a Codex question with "Reply instead" interrupts the turn
+so the words can go as the next prompt; nobody stopped the agent, so the
+chat now ends that turn as any other, not with "You stopped it". A working
+Codex agent's activity line and home row name the command still running,
+even once Codex writes a reasoning item after it, instead of "Working".
+
+Asks: a Codex patch of several files marks where each file's lines start,
+with whether it is added, deleted, moved or edited, so one file no longer
+seems to hold every file's lines (the terminal draws each as a header line,
+and "1 more files" reads "1 more file"). Codex's "don't ask again" on a patch
+names the files it covers, as Codex's own view does, rather than promising
+the whole session. A web fetch or web search ask shows the address or the
+words, as Claude's own dialog does, not the tool's input as JSON with the
+address cut off. A notebook edit ask shows the cell's new source instead of
+nothing.
+
+Home: an agent's last line reads its markdown as words ("Updated README.md",
+not the link syntax with a full path and backticks). Agents on a host out of
+reach no longer count as working or needing the person in the header, as
+their rows already said the host was away. An agent on a host that unpaired
+this machine says the host no longer trusts it (`SecondLine::HostRevoked`)
+rather than that the host is away, which read as something to wait out.
+Right-to-left and other direction controls are dropped from agent names,
+attachment names and message text, so `invoice\u{202E}fdp.exe` cannot read
+as a PDF and every client spells a name the same way.
+
+The review page names a file git quotes in its patch headers (a quote, a
+backslash or a non-ASCII letter in the name) as it is on disk, which is also
+the path a review comment gives the agent.
+
+The phone's generated value types follow (`EditLine.file`,
+`RowKind.explore`'s `result`, `SecondLine.hostRevoked`); the phone's own
+code that matches on them still needs the new cases.
+
 2026-10-13 — **The phone's chat rows sit where they draw, and home's ages count.**
 Long replies on the phone had the turn's "Worked …" line drawn over their last
 lines. The chat list runs under the status bar and the header, and every row

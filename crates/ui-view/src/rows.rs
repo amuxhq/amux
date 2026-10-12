@@ -7,7 +7,7 @@ use std::ops::RangeInclusive;
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
-use ui_state::{Fold, Held, ItemBody, Key, SessionState};
+use ui_state::{Fold, Held, ItemBody, Key, PhaseView, SessionState};
 use wire::{
     Attachment, BlobRef, BoundaryKind, DecisionOutcome, EnvelopeKind, FileChangeKind, SendState,
     ToolCall, ToolState, TurnOutcome,
@@ -17,6 +17,7 @@ use crate::ask::{QuestionView, Scope, lift_rule, lifted, question, scope_of};
 use crate::review::LineKind;
 use crate::run::Run;
 use crate::segments::{Segment, segments};
+use crate::text::{terminal_text, within, without_direction_controls};
 
 /// How many lines of a command's output a row carries.
 pub const OUTPUT_HEAD_LINES: usize = 3;
@@ -117,6 +118,10 @@ pub enum RowKind {
         verb: ExploreVerb,
         subject: String,
         state: CallPhase,
+        /// Why it failed, or what a search, listing or fetch found, in the
+        /// provider's words; empty when it said nothing. A read's result is
+        /// the file itself, which the row does not carry.
+        result: String,
     },
     Subagent {
         description: String,
@@ -520,7 +525,7 @@ pub(crate) fn subject_of(held: &Held) -> String {
         | ItemBody::ClaudeSdk(wire::claude_sdk_item::Kind::Tool(tool)) => claude_subject(tool),
         ItemBody::Codex(wire::codex_item::Kind::Work(work)) => match &work.of {
             Some(wire::work::Of::Command(command)) => command.command.clone(),
-            Some(wire::work::Of::WebSearch(search)) => search.query.clone(),
+            Some(wire::work::Of::WebSearch(search)) => web_step(search).1,
             _ => String::new(),
         },
         _ => String::new(),
@@ -528,8 +533,28 @@ pub(crate) fn subject_of(held: &Held) -> String {
 }
 
 /// The call's phase from its state, its decision, and whether an open ask
-/// points at it. A refusal decides it whatever state the call reports.
-fn call_phase(state: i32, decision: Option<&Decision>, asked: bool) -> CallPhase {
+/// points at it. A refusal decides it whatever state the call reports, and
+/// a call its agent exited in the middle of is cancelled: nothing runs it
+/// on, whatever its last report said.
+fn call_phase(
+    session: &SessionState,
+    held: &Held,
+    state: i32,
+    decision: Option<&Decision>,
+) -> CallPhase {
+    let phase = reported_phase(state, decision, asked(session, held));
+    if exited(session) && phase.in_flight() {
+        CallPhase::Cancelled
+    } else {
+        phase
+    }
+}
+
+fn exited(state: &SessionState) -> bool {
+    matches!(state.phase(), PhaseView::Exited { .. })
+}
+
+fn reported_phase(state: i32, decision: Option<&Decision>, asked: bool) -> CallPhase {
     let denied = decision.is_some_and(|decision| decision.outcome == DecisionView::Denied);
     match ToolState::try_from(state).unwrap_or(ToolState::Unspecified) {
         _ if denied => CallPhase::Denied,
@@ -603,8 +628,16 @@ fn decision_view(
     })
 }
 
-fn duration(held: &Held, ended: Option<i64>) -> Option<i64> {
-    ended.map(|ended| (ended - held.item.at_ms).max(0))
+/// How long a call ran: from when it started running, else from its
+/// item's time, to when it ended.
+fn duration(started: i64, ended: Option<i64>) -> Option<i64> {
+    ended.map(|ended| (ended - started).max(0))
+}
+
+/// When a Claude call started running: after any wait for the person's
+/// approval, where the provider says, else when its item was written.
+fn claude_started(held: &Held, tool: &ToolCall) -> i64 {
+    tool.started_at_ms.unwrap_or(held.item.at_ms)
 }
 
 /// The row kind, the decision meta, and whether it failed.
@@ -613,7 +646,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
     use wire::claude_sdk_item::Kind as Sdk;
     use wire::codex_item::Kind as Codex;
     let item = &held.item;
-    let text = || segments(&item.text, &item.attachments);
+    let text = || chat_segments(held);
     let plain = |kind| (kind, None, false);
     match &held.body {
         ItemBody::ClaudePty(kind) => match kind {
@@ -628,7 +661,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Pty::Message(m) => plain(prose(held, m.complete, false)),
             Pty::Thinking(t) => plain(thinking(state, held, t.complete)),
             Pty::Tool(tool) => claude_tool(state, held, tool),
-            Pty::Turn(turn) => plain(turn_row(held, turn)),
+            Pty::Turn(turn) => plain(turn_row(state, held, turn)),
             Pty::Compaction(c) => plain(compaction(c)),
             Pty::CompactSummary(_) | Pty::Interruption(_) => plain(RowKind::Hidden),
             Pty::AgentMessage(m) => plain(agent_message(held, m)),
@@ -659,7 +692,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
                 answer: String::new(),
                 duration_ms: None,
             }),
-            Sdk::Turn(turn) => plain(turn_row(held, turn)),
+            Sdk::Turn(turn) => plain(turn_row(state, held, turn)),
             Sdk::Status(_) => plain(RowKind::Hidden),
             Sdk::Boundary(b) => plain(boundary(b)),
             Sdk::AgentMessage(m) => plain(agent_message(held, m)),
@@ -697,7 +730,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }
             Codex::Work(work) => codex_work(state, held, work),
             Codex::McpStartup(_) | Codex::TurnDiff(_) => plain(RowKind::Hidden),
-            Codex::Turn(turn) => plain(turn_row(held, turn)),
+            Codex::Turn(turn) => plain(turn_row(state, held, turn)),
             Codex::Boundary(b) => plain(boundary(b)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
             Codex::Error(e) => error(e),
@@ -855,9 +888,19 @@ pub(crate) fn plan_parts(text: &str, writing: bool) -> (Option<String>, String) 
     (named.then(|| title.to_owned()), rest.to_owned())
 }
 
+/// A message's text and attachments as a row draws them. Direction
+/// controls are dropped from the text, so a name quoted in it reads the
+/// same on every client and cannot turn the rest of the message around.
+fn chat_segments(held: &Held) -> Vec<Segment> {
+    segments(
+        &without_direction_controls(&held.item.text),
+        &held.item.attachments,
+    )
+}
+
 fn prose(held: &Held, complete: bool, working_note: bool) -> RowKind {
     RowKind::Prose {
-        text: segments(&held.item.text, &held.item.attachments),
+        text: chat_segments(held),
         streaming: !complete,
         working_note,
     }
@@ -897,10 +940,18 @@ fn is_status(held: &Held) -> bool {
     )
 }
 
-fn turn_row(held: &Held, turn: &wire::Turn) -> RowKind {
+/// A turn's end. A turn interrupted so the person's reply could go instead
+/// of answering a question ended for that reply, not because anyone
+/// stopped it, so it ends as a turn does.
+fn turn_row(state: &SessionState, held: &Held, turn: &wire::Turn) -> RowKind {
     let duration_ms =
         (turn.started_at_ms > 0).then(|| (held.item.at_ms - turn.started_at_ms).max(0));
     match TurnOutcome::try_from(turn.outcome).unwrap_or(TurnOutcome::Unspecified) {
+        TurnOutcome::Interrupted if replied_instead(state, held) => RowKind::TurnEnd {
+            duration_ms,
+            cost_usd: turn.cost_usd,
+            failed: false,
+        },
         TurnOutcome::Interrupted | TurnOutcome::Stopped => RowKind::Stopped,
         TurnOutcome::Failed => RowKind::TurnEnd {
             duration_ms,
@@ -913,6 +964,39 @@ fn turn_row(held: &Held, turn: &wire::Turn) -> RowKind {
             failed: false,
         },
     }
+}
+
+/// Whether the turn ending at `end` held a question the person replied to
+/// in their own words instead of answering.
+fn replied_instead(state: &SessionState, end: &Held) -> bool {
+    use wire::claude_pty_item::Kind as Pty;
+    use wire::claude_sdk_item::Kind as Sdk;
+    use wire::codex_item::Kind as Codex;
+    for held in state
+        .transcript()
+        .range(0..=end.item.order.saturating_sub(1))
+        .rev()
+    {
+        match &held.body {
+            ItemBody::ClaudePty(Pty::Ask(ask))
+            | ItemBody::ClaudeSdk(Sdk::Ask(ask))
+            | ItemBody::Codex(Codex::Ask(ask))
+                if ask
+                    .closed
+                    .as_ref()
+                    .is_some_and(|closed| closed.outcome() == wire::AskOutcome::Replied) =>
+            {
+                return true;
+            }
+            ItemBody::ClaudePty(Pty::Turn(_) | Pty::Prompt(_) | Pty::Steer(_))
+            | ItemBody::ClaudeSdk(Sdk::Turn(_) | Sdk::Prompt(_) | Sdk::Steer(_))
+            | ItemBody::Codex(Codex::Turn(_) | Codex::Prompt(_) | Codex::Steer(_)) => {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 fn compaction(c: &wire::Compaction) -> RowKind {
@@ -1023,6 +1107,18 @@ fn claude_subject(tool: &ToolCall) -> String {
     String::new()
 }
 
+/// What a step that only looks says about how it went: why it failed, or
+/// what it found. A read found the file, which is not news on its row.
+fn explore_result(verb: ExploreVerb, phase: CallPhase, outcome: &str) -> String {
+    match phase {
+        CallPhase::Failed => terminal_text(outcome).trim().to_owned(),
+        CallPhase::Succeeded if verb != ExploreVerb::Read => {
+            terminal_text(outcome).trim().to_owned()
+        }
+        _ => String::new(),
+    }
+}
+
 fn output_head(text: &str) -> (Vec<String>, usize) {
     let all: Vec<&str> = text.lines().collect();
     let head = all
@@ -1056,11 +1152,12 @@ fn claude_tool(
     tool: &ToolCall,
 ) -> (RowKind, Option<Decision>, bool) {
     let decision = decision_view(tool.decision.as_ref(), &state.agent_state().permissions);
-    let view = call_phase(tool.state, decision.as_ref(), asked(state, held));
+    let view = call_phase(state, held, tool.state, decision.as_ref());
     let failed = view == CallPhase::Failed;
     let input = input(tool);
-    let subject = claude_subject(tool);
-    let duration_ms = duration(held, tool.ended_at_ms);
+    // Paths in the agent's folder are named from it.
+    let subject = within(&state.agent().cwd, &claude_subject(tool));
+    let duration_ms = duration(claude_started(held, tool), tool.ended_at_ms);
     let kind = if let Some(image) = image_of(&tool.attachments) {
         RowKind::Image {
             image: Some(image),
@@ -1080,6 +1177,7 @@ fn claude_tool(
             verb,
             subject,
             state: view,
+            result: explore_result(verb, view, &tool.outcome_text),
         }
     } else {
         match tool.name.as_str() {
@@ -1089,7 +1187,8 @@ fn claude_tool(
                 duration_ms,
             },
             "Bash" => {
-                let (output_head, more_lines) = output_head(&tool.outcome_text);
+                let output = terminal_text(&tool.outcome_text);
+                let (output_head, more_lines) = output_head(&output);
                 RowKind::Command {
                     command: field(&input, "command"),
                     state: view,
@@ -1097,7 +1196,7 @@ fn claude_tool(
                     output_head,
                     more_lines,
                     output_trimmed: false,
-                    output_tail: output_tail(&tool.outcome_text),
+                    output_tail: output_tail(&output),
                     duration_ms,
                 }
             }
@@ -1132,7 +1231,7 @@ fn claude_tool(
                     state: view,
                 }
             }
-            "Agent" | "Task" => subagent(held, tool, &input, view),
+            "Agent" | "Task" => subagent(tool, &input, view, exited(state), duration_ms),
             name if ui_state::is_task_tool(name) => RowKind::Hidden,
             name => RowKind::ToolCall {
                 server: String::new(),
@@ -1182,7 +1281,7 @@ fn claude_counts(tool: &ToolCall, input: &Value) -> (u32, u32) {
         .unwrap_or_else(|| vec![input.clone()]);
     edits.iter().fold((0, 0), |(added, removed), edit| {
         (
-            added + lines(&field(edit, "new_string")),
+            added + lines(&field(edit, "new_string")) + lines(&field(edit, "new_source")),
             removed + lines(&field(edit, "old_string")),
         )
     })
@@ -1204,15 +1303,22 @@ fn explore_verb(class: i32) -> Option<ExploreVerb> {
     }
 }
 
-fn subagent(held: &Held, tool: &ToolCall, input: &Value, view: CallPhase) -> RowKind {
+fn subagent(
+    tool: &ToolCall,
+    input: &Value,
+    view: CallPhase,
+    exited: bool,
+    duration_ms: Option<i64>,
+) -> RowKind {
     let progress = tool.subagent.clone().unwrap_or_default();
+    // A background subagent outlives its call, but not its agent's exit.
     RowKind::Subagent {
         description: field(input, "description"),
-        running: view.in_flight() || (tool.background && !progress.finished),
+        running: view.in_flight() || (tool.background && !progress.finished && !exited),
         tool_count: progress.tool_count,
         last_tool: progress.last_tool,
         answer: tool.outcome_text.clone(),
-        duration_ms: duration(held, tool.ended_at_ms),
+        duration_ms,
     }
 }
 
@@ -1223,22 +1329,25 @@ fn codex_work(
 ) -> (RowKind, Option<Decision>, bool) {
     use wire::work::Of;
     let decision = decision_view(work.decision.as_ref(), &state.agent_state().permissions);
-    let view = call_phase(work.state, decision.as_ref(), asked(state, held));
+    let view = call_phase(state, held, work.state, decision.as_ref());
     let failed = view == CallPhase::Failed;
+    let duration_ms = duration(held.item.at_ms, work.ended_at_ms);
     let kind = match (&work.of, explore_verb(work.class)) {
         (Some(Of::Command(command)), Some(verb)) => RowKind::Explore {
             verb,
             subject: command.command.clone(),
             state: view,
+            result: explore_result(verb, view, &held.item.text),
         },
         (of, _) => match of {
             Some(Of::Command(command)) if command.background => RowKind::Background {
                 command: command.command.clone(),
                 running: view.in_flight(),
-                duration_ms: duration(held, work.ended_at_ms),
+                duration_ms,
             },
             Some(Of::Command(command)) => {
-                let (output_head, more_lines) = output_head(&held.item.text);
+                let output = terminal_text(&held.item.text);
+                let (output_head, more_lines) = output_head(&output);
                 RowKind::Command {
                     command: command.command.clone(),
                     state: view,
@@ -1246,14 +1355,23 @@ fn codex_work(
                     output_head,
                     more_lines,
                     output_trimmed: command.output_dropped_bytes > 0,
-                    output_tail: output_tail(&held.item.text),
-                    duration_ms: duration(held, work.ended_at_ms),
+                    output_tail: output_tail(&output),
+                    duration_ms,
                 }
             }
-            Some(Of::FileChange(change)) => RowKind::FileChange {
-                files: change.changes.iter().map(codex_file).collect(),
-                state: view,
-            },
+            Some(Of::FileChange(change)) => {
+                // A patch that did not land wrote nothing: a file it would
+                // have added is not said to be created.
+                let landed = view.in_flight() || view == CallPhase::Succeeded;
+                RowKind::FileChange {
+                    files: change
+                        .changes
+                        .iter()
+                        .map(|change| codex_file(&state.agent().cwd, change, landed))
+                        .collect(),
+                    state: view,
+                }
+            }
             Some(Of::Mcp(call)) => RowKind::ToolCall {
                 server: call.server.clone(),
                 tool: call.tool.clone(),
@@ -1267,11 +1385,15 @@ fn codex_work(
                     call.error.clone()
                 },
             },
-            Some(Of::WebSearch(search)) => RowKind::Explore {
-                verb: ExploreVerb::WebSearch,
-                subject: search.query.clone(),
-                state: view,
-            },
+            Some(Of::WebSearch(search)) => {
+                let (verb, subject) = web_step(search);
+                RowKind::Explore {
+                    verb,
+                    subject,
+                    state: view,
+                    result: explore_result(verb, view, &held.item.text),
+                }
+            }
             Some(Of::Image(image)) => RowKind::Image {
                 image: image_of(&held.item.attachments),
                 path: image.path.clone(),
@@ -1283,7 +1405,7 @@ fn codex_work(
                 tool_count: 0,
                 last_tool: collab.tool.clone(),
                 answer: String::new(),
-                duration_ms: duration(held, work.ended_at_ms),
+                duration_ms,
             },
             None => RowKind::Unrecognized {
                 what: "work".into(),
@@ -1294,19 +1416,37 @@ fn codex_work(
     (kind, decision, failed)
 }
 
-fn codex_file(change: &wire::FileChange) -> FileRow {
+/// What a Codex web step looked at: the page it opened, the words it
+/// looked for within one, or what it searched the web for.
+fn web_step(search: &wire::WebSearch) -> (ExploreVerb, String) {
+    let first = |a: &str, b: &str| if a.is_empty() { b } else { a }.to_owned();
+    match search.action() {
+        wire::WebAction::OpenPage => (ExploreVerb::Fetch, first(&search.url, &search.query)),
+        wire::WebAction::FindInPage => (ExploreVerb::Search, first(&search.pattern, &search.url)),
+        wire::WebAction::Search | wire::WebAction::Unspecified => {
+            (ExploreVerb::WebSearch, first(&search.query, &search.url))
+        }
+    }
+}
+
+/// A Codex file change as a row's file, named from the agent's folder
+/// `cwd`. One that did not `land` (failed, denied or cancelled) made no
+/// file, so a file it would have added reads as a write that never
+/// happened.
+pub(crate) fn codex_file(cwd: &str, change: &wire::FileChange, landed: bool) -> FileRow {
     let (added, removed) = counts(&change_lines(change));
     let change_view =
         match FileChangeKind::try_from(change.kind).unwrap_or(FileChangeKind::Unspecified) {
-            FileChangeKind::Add => FileChangeView::Created { lines: added },
+            FileChangeKind::Add if landed => FileChangeView::Created { lines: added },
+            FileChangeKind::Add => FileChangeView::Writing { lines: added },
             FileChangeKind::Delete => FileChangeView::Deleted,
             _ if !change.move_to.is_empty() => FileChangeView::Moved {
-                to: change.move_to.clone(),
+                to: within(cwd, &change.move_to),
             },
             _ => FileChangeView::Edited,
         };
     FileRow {
-        path: change.path.clone(),
+        path: within(cwd, &change.path),
         change: change_view,
         added,
         removed,
@@ -1367,13 +1507,20 @@ pub struct PatchLine {
     pub text: String,
 }
 
-/// One line of an edit's patch as an ask carries it: where a hunk starts,
-/// by its first line in the old file and the new, or a line of the patch.
-/// A file's own header lines are not carried. Each client decides whether
-/// to draw a hunk's start.
+/// One line of an edit's patch as an ask carries it: where a file starts,
+/// where a hunk starts, by its first line in the old file and the new, or a
+/// line of the patch. A file's own header lines are not carried. Each
+/// client decides whether to draw a hunk's start.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub enum EditLine {
-    Hunk { old_start: u32, new_start: u32 },
+    /// In a patch of several files, where each file's lines start: the
+    /// file, named from the agent's folder, and what happens to it (added,
+    /// deleted, moved or edited), with its counts.
+    File(FileRow),
+    Hunk {
+        old_start: u32,
+        new_start: u32,
+    },
     Line(PatchLine),
 }
 
@@ -1427,7 +1574,7 @@ fn patch_lines(lines: Vec<EditLine>) -> Vec<PatchLine> {
         .into_iter()
         .filter_map(|line| match line {
             EditLine::Line(line) => Some(line),
-            EditLine::Hunk { .. } => None,
+            EditLine::File(_) | EditLine::Hunk { .. } => None,
         })
         .collect()
 }
@@ -1491,6 +1638,8 @@ pub(crate) fn replaced_lines(input: &Value) -> Vec<EditLine> {
             ("old_string", LineKind::Removed),
             ("new_string", LineKind::Added),
             ("content", LineKind::Added),
+            // A notebook edit's new cell source.
+            ("new_source", LineKind::Added),
         ] {
             lines.extend(field(edit, name).lines().map(|text| {
                 EditLine::Line(PatchLine {
@@ -1610,11 +1759,19 @@ pub(crate) fn unified_patch(patch: &str) -> Vec<EditLine> {
 
 /// The new file's line the patch's first change lands on: an added line's
 /// own, or for a removal the new-side line where it was, counting from its
-/// hunk's start past the context before it.
+/// hunk's start past the context before it. In a patch of several files,
+/// only the first file's lines count.
 pub(crate) fn first_change(lines: &[EditLine]) -> Option<u32> {
     let mut at = None;
+    let mut files = 0;
     for line in lines {
         match line {
+            EditLine::File(_) => {
+                files += 1;
+                if files > 1 {
+                    return None;
+                }
+            }
             EditLine::Hunk { new_start, .. } => at = Some(*new_start),
             EditLine::Line(line) => match line.kind {
                 LineKind::Added => return line.number.or(at).map(|n| n.max(1)),

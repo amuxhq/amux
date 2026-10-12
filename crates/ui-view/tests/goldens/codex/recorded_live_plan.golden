@@ -38,13 +38,13 @@
 ## 64 recorded 63: fact Rpc method=item/completed
   row    3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: false, working_note: true }
 ## 66 recorded 65: fact Rpc method=item/started
-  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Running } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Running, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-727c560d-d90d-46a1-b4eb-707329c9d3c3" }) queue=[] underway=[] refused=[]
 ## 67 recorded 66: fact Rpc method=item/completed
-  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 75 recorded 74: fact Rpc method=item/started
-  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
 ## 77 recorded 76: fact Rpc method=item/plan/delta
   row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace", verdict: Open, mode: "", mode_name: "", note: None, writing: true })
@@ -87,7 +87,7 @@
 ## 113 recorded 112: fact Rpc method=item/completed
   row    5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Open, mode: "", mode_name: "", note: None, writing: false })
 ## 119 recorded 118: fact Rpc method=turn/completed
-  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   row    6 turn:1 TurnEnd { duration_ms: Some(5631), cost_usd: None, failed: false }
   ask plan:01a11479-9d93-7370-983a-6db72e75ab63-plan -> "01a11479-9d93-7370-983a-6db72e75ab63-plan" 1/1 Open
     choices ApprovePlan { mode: "", mode_name: "" }*, SendBack+note
@@ -149,14 +149,14 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 175 recorded 174: fact Rpc method=item/started
   row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "/bin/zsh -lc \"printf 'UPDATED\\\\n' > README.md\"", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(99) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1 live] decision=Decision { outcome: Allowed, g…
-  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Running } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Running, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4" }) queue=[] underway=[] refused=[]
 ## 177 recorded 176: fact Rpc method=item/completed
-  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 live RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 182 recorded 181: fact Rpc method=item/started
   row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "/bin/zsh -lc \"printf 'UPDATED\\\\n' > README.md\"", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(99) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, grante…
-  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [], streaming: true, working_note: false }
 ## 184 recorded 183: fact Rpc method=item/agentMessage/delta
   row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated")], streaming: true, working_note: false }
@@ -194,20 +194,20 @@
   row   11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents.")], streaming: false, working_note: false }
 ## 220 recorded 219: fact Rpc method=turn/completed
   row    9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "/bin/zsh -lc \"printf 'UPDATED\\\\n' > README.md\"", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(99) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, grante…
-  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row   10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   row   12 turn:2 TurnEnd { duration_ms: Some(6676), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:202d91dee4c248dcbd7377bbaa80e7ed Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval.")], steered: false }
      3 msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 Prose { text: [Text("I’ll check README.md and present the one-step plan for approval.")], streaming: false, working_note: true }
-     4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+     4 exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded, result: "" } run[exec-727c560d-d90d-46a1-b4eb-707329c9d3c3..exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
      5 01a11479-9d93-7370-983a-6db72e75ab63-plan Ask(Plan { title: None, body: "Replace README.md’s only line, `CURRENT`, with `UPDATED`, preserving the trailing newline.\n", verdict: Approved, mode: "", mode_name: "", note: None, writing: false })
      6 turn:1 TurnEnd { duration_ms: Some(5631), cost_usd: None, failed: false }
      7 prompt:089f0b3764f54cb0b1856c9c12b19fff Prompt { text: [Text("Implement the plan.")], steered: false }
      8 msg_071944380520314b016ac5c0f428d487d281549375adacceed Prose { text: [Text("I’ll replace the line with `UPDATED` and verify the file contents.")], streaming: false, working_note: true }
      9 exec-1ce5edf9-a814-458c-a852-ef3356c960e7 Command { command: "/bin/zsh -lc \"printf 'UPDATED\\\\n' > README.md\"", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(99) } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=1] decision=Decision { outcome: Allowed, grante…
-    10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+    10 exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 Explore { verb: Read, subject: "/bin/zsh -lc 'cat README.md'", state: Succeeded, result: "" } run[exec-1ce5edf9-a814-458c-a852-ef3356c960e7..exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
     11 msg_071944380520314b016ac5c0f90cc887d2a0a53a04c1eb8399 Prose { text: [Text("Updated README.md to `UPDATED`, preserving the trailing newline. Verified the contents.")], streaming: false, working_note: false }
     12 turn:2 TurnEnd { duration_ms: Some(6676), cost_usd: None, failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

@@ -12,13 +12,13 @@
   row    3 rs_07b442cd94dce1af016ab72ebab0a087d2af0fc0f2bb07812a Thinking { text: "", open: false, duration_ms: Some(7553) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 29 recorded 28: fact Rpc method=item/started
-  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "", state: Running } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "", state: Running, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "exec-3c575a4d-c180-4758-8b39-f2031d36f615" }) queue=[] underway=[] refused=[]
 ## 31 recorded 30: fact Rpc method=item/completed
-  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 36 recorded 35: fact Rpc method=item/started
-  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   row    5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [], streaming: true, working_note: false }
 ## 37 recorded 36: fact Rpc method=item/agentMessage/delta
   row    5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Can")], streaming: true, working_note: false }
@@ -27,14 +27,14 @@
 ## 41 recorded 40: fact Rpc method=item/completed
   row    5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Canberra")], streaming: false, working_note: false }
 ## 47 recorded 46: fact Rpc method=turn/completed
-  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   row    6 turn:1 TurnEnd { duration_ms: Some(12885), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d34 Prompt { text: [Text("Use your web search tool to look up the capital city of Australia, then reply with the city name only.")], steered: false }
      3 rs_07b442cd94dce1af016ab72ebab0a087d2af0fc0f2bb07812a Thinking { text: "", open: false, duration_ms: Some(7553) }
-     4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+     4 exec-3c575a4d-c180-4758-8b39-f2031d36f615 Explore { verb: WebSearch, subject: "capital city of Australia", state: Succeeded, result: "" } run[exec-3c575a4d-c180-4758-8b39-f2031d36f615..exec-3c575a4d-c180-4758-8b39-f2031d36f615 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
      5 msg_07b442cd94dce1af016ab72ec00f3487d29c6b7163e5df4754 Prose { text: [Text("Canberra")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(12885), cost_usd: None, failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

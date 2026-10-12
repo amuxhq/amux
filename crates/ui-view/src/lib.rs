@@ -18,6 +18,7 @@ mod rows;
 mod run;
 mod segments;
 mod settings;
+mod text;
 
 pub use ask::{
     Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, Pick, QuestionResponse,

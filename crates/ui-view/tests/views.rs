@@ -3644,3 +3644,39 @@ fn codexs_commands_are_amuxs_table_its_skills_and_the_clients_own() {
         "Codex's command list"
     );
 }
+
+/// A command's time is how long it ran, not how long it waited for the
+/// person to allow it: from when it started running, where Claude says,
+/// else from when its step was written.
+#[test]
+fn a_steps_time_leaves_out_the_wait_for_approval() {
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    state.update(snapshot(
+        Kind::ClaudeSdk,
+        Phase::Idle,
+        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        vec![],
+    ));
+    // Asked at 1s, allowed and started at 38s, done at 40s; the second
+    // says nothing of when it started, so it runs from its item's time.
+    for (order, started_at_ms) in [(1, Some(38_000)), (2, None)] {
+        let mut item = running(order, 1, "curl -s https://example.com");
+        let mut body = wire::ClaudeSdkItem::decode(item.body.as_slice()).unwrap();
+        if let Some(wire::claude_sdk_item::Kind::Tool(tool)) = &mut body.kind {
+            tool.state = ToolState::Succeeded as i32;
+            tool.started_at_ms = started_at_ms;
+            tool.ended_at_ms = Some(item.at_ms + 39_000);
+        }
+        item.body = body.encode_to_vec();
+        state.update(event(session_event::Of::Item(item)));
+    }
+    state.update(caught_up());
+    let times: Vec<Option<i64>> = all_rows(&state, &ChatOptions::default())
+        .into_iter()
+        .filter_map(|row| match row.kind {
+            RowKind::Command { duration_ms, .. } => Some(duration_ms),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(times, vec![Some(2_000), Some(39_000)]);
+}

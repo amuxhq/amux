@@ -12,13 +12,13 @@
 ## 43 recorded 41: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01Egc5HsizMsVn1xBhztAhiU
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 45 recorded 43: fact Transcript type=assistant uuid=9469b1c1-d28d-4a71-8c6c-28658c858a73
-  row    4 toolu_01Egc5HsizMsVn1xBhztAhiU Explore { verb: Search, subject: "select:ExitPlanMode", state: Running } run[toolu_01Egc5HsizMsVn1xBhztAhiU..toolu_01Egc5HsizMsVn1xBhztAhiU x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01Egc5HsizMsVn1xBhztAhiU Explore { verb: Search, subject: "select:ExitPlanMode", state: Running, result: "" } run[toolu_01Egc5HsizMsVn1xBhztAhiU..toolu_01Egc5HsizMsVn1xBhztAhiU x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01Egc5HsizMsVn1xBhztAhiU" }) queue=[] underway=[] refused=[]
 ## 46 recorded 44: fact Transcript type=user uuid=8e194933-7efd-4b89-a49e-a8a2b8b489b4
-  row    4 toolu_01Egc5HsizMsVn1xBhztAhiU Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_01Egc5HsizMsVn1xBhztAhiU..toolu_01Egc5HsizMsVn1xBhztAhiU x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01Egc5HsizMsVn1xBhztAhiU Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded, result: "" } run[toolu_01Egc5HsizMsVn1xBhztAhiU..toolu_01Egc5HsizMsVn1xBhztAhiU x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 49 recorded 47: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_012mL17q3UZCtEJ343VAWHka
-  row    4 toolu_01Egc5HsizMsVn1xBhztAhiU Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_01Egc5HsizMsVn1xBhztAhiU..toolu_01Egc5HsizMsVn1xBhztAhiU x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01Egc5HsizMsVn1xBhztAhiU Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded, result: "" } run[toolu_01Egc5HsizMsVn1xBhztAhiU..toolu_01Egc5HsizMsVn1xBhztAhiU x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   row    5 toolu_012mL17q3UZCtEJ343VAWHka Ask(Plan { title: Some("Context"), body: "\nThe user asked to change README.md's only line from `CURRENT` to `UPDATED`. This is a trivial, explicitly-specified text change.\n\n# Plan\n\n- Edit `README.md`, replacing its sole line's content `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read README.md after the edit to confirm it contains `UPDATED` and not `CUR…
   composer Send activity=Some(Running { key: "toolu_012mL17q3UZCtEJ343VAWHka" }) queue=[] underway=[] refused=[]
 ## 51 recorded 49: fact Hook hook_event_name=PermissionRequest
@@ -34,7 +34,7 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 9d93461f-f7ed-44fd-8de0-6196ce28c7df Prompt { text: [Text("Plan changing README.md's only line from CURRENT to UPDATED, then call ExitPlanMode. Do not ask questions.")], steered: false }
      3 8627bf34-f7e1-439f-8010-21bdf821e0ba Thinking { text: "", open: false, duration_ms: Some(2846) }
-     4 toolu_01Egc5HsizMsVn1xBhztAhiU Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded } run[toolu_01Egc5HsizMsVn1xBhztAhiU..toolu_01Egc5HsizMsVn1xBhztAhiU x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+     4 toolu_01Egc5HsizMsVn1xBhztAhiU Explore { verb: Search, subject: "select:ExitPlanMode", state: Succeeded, result: "" } run[toolu_01Egc5HsizMsVn1xBhztAhiU..toolu_01Egc5HsizMsVn1xBhztAhiU x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
      5 toolu_012mL17q3UZCtEJ343VAWHka Ask(Plan { title: Some("Context"), body: "\nThe user asked to change README.md's only line from `CURRENT` to `UPDATED`. This is a trivial, explicitly-specified text change.\n\n# Plan\n\n- Edit `README.md`, replacing its sole line's content `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read README.md after the edit to confirm it contains `UPDATED` and not `CUR…
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 51419, window_tokens: None, percent: None, near_full: false }) sign-in None

@@ -779,6 +779,17 @@ async fn the_door_serves_a_topology_to_a_real_client_once_it_publishes_readiness
             );
             std::thread::sleep(Duration::from_millis(50));
         }
+        // Beside the agents, the hosts they run on, with the trust a
+        // client filters them by.
+        let inventory = door.ok(json!({"Inventory": {"host": "laptop"}}));
+        assert!(
+            inventory["hosts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|host| host["name"] == "desk" && host["trust"] == "TRUSTED"),
+            "{inventory}"
+        );
         assert_eq!(
             door.ok(json!({"Link": {"a": "desk", "b": "laptop"}}))["up"],
             true

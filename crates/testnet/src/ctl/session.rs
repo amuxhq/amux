@@ -578,6 +578,9 @@ pub(crate) fn start_pairing(
             return Err(format!("amux pair exited ({status}):\n{}", text.trim()));
         }
         if Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            close_pairing(folder, host, config);
             return Err(format!(
                 "amux pair printed no PIN within a minute:\n{}",
                 text.trim()
@@ -597,6 +600,29 @@ fn pin_in(text: &str) -> Option<String> {
         .filter(char::is_ascii_digit)
         .collect();
     (digits.len() >= 4).then_some(digits)
+}
+
+/// Closes the pairing window `start_pairing` opened on `host`: ends the
+/// `amux pair` holding it, then closes whatever window is left on the host
+/// as `amux pair --cancel` does.
+pub(crate) fn close_pairing(folder: &Folder, host: &str, config: &str) {
+    let pid_file = folder.net_dir().join("pairing").join(format!("{host}.pid"));
+    if let Ok(pid) = std::fs::read_to_string(&pid_file) {
+        let pid = pid.trim().to_owned();
+        let _ = std::process::Command::new("kill")
+            .arg(&pid)
+            .stderr(std::process::Stdio::null())
+            .status();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while pid.parse().is_ok_and(alive) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let _ = std::fs::remove_file(&pid_file);
+    }
+    let _ = amux_command(config)
+        .args(["pair", "--cancel"])
+        .stdin(std::process::Stdio::null())
+        .output();
 }
 
 /// Ends every pairing window this session left open.

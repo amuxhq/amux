@@ -151,8 +151,9 @@ pub enum Command {
     /// Release every fake script step waiting on a gate file.
     #[command(subcommand)]
     Gate(GateCommand),
-    /// A host's fleet as its own inventory has it: every agent it knows,
-    /// its own and its peers'.
+    /// A host's fleet as its own inventory has it: its own agents and its
+    /// trusted peers', as its clients show them. Rows a host it no longer
+    /// trusts left in its store are listed apart, below.
     Fleet { host: String },
     /// Everything a host holds of an agent's chat, in order, with its phase
     /// and model: the host's own record, to compare with what clients show.
@@ -642,7 +643,7 @@ fn run(folder: &Folder, command: Command) -> Result<Outcome, String> {
         }
         Command::Fleet { host } => {
             let fleet = folder.call(json!({"Inventory": {"host": host}}))?;
-            Ok(Outcome::new(describe_fleet(folder, &fleet), fleet))
+            Ok(Outcome::new(describe_fleet(folder, &host, &fleet), fleet))
         }
         Command::Chat { host, agent } => {
             let chat = folder.call(json!({"Chat": {"host": host, "agent": agent}}))?;
@@ -910,12 +911,18 @@ fn describe_status(status: &Value) -> String {
     out
 }
 
-fn describe_fleet(folder: &Folder, fleet: &Value) -> String {
+fn describe_fleet(folder: &Folder, host: &str, fleet: &Value) -> String {
     let hosts = folder
         .call(json!({"Status": {}}))
         .ok()
         .and_then(|status| status["hosts"].as_array().cloned())
         .unwrap_or_default();
+    let own = hosts
+        .iter()
+        .find(|entry| entry["name"] == host)
+        .and_then(|entry| entry["host_id"].as_str())
+        .unwrap_or_default()
+        .to_owned();
     let host_name = |id: &str| {
         hosts
             .iter()
@@ -924,37 +931,64 @@ fn describe_fleet(folder: &Folder, fleet: &Value) -> String {
             .unwrap_or(id)
             .to_owned()
     };
+    // What the host's clients show: its own agents and those of the hosts
+    // it trusts. Rows a host it no longer trusts left behind stay in its
+    // store, and are listed apart.
+    let trusted = |id: &str| {
+        id == own
+            || fleet["hosts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|entry| entry["id"] == id && entry["trust"] == "TRUSTED")
+    };
     let agents = fleet["agents"].as_array().cloned().unwrap_or_default();
-    if agents.is_empty() {
-        return "no agents".to_owned();
-    }
+    let (shown, kept): (Vec<Value>, Vec<Value>) = agents
+        .into_iter()
+        .partition(|agent| trusted(agent["host_id"].as_str().unwrap_or_default()));
     let mut out = String::new();
-    for agent in agents {
-        let phase = agent["phase_name"].as_str().unwrap_or("?");
+    if shown.is_empty() {
+        out.push_str("no agents\n");
+    }
+    for agent in shown {
+        out.push_str(&describe_agent(&agent, &host_name));
+    }
+    if !kept.is_empty() {
         out.push_str(&format!(
-            "{}  on {}  {}  {}{}  incarnation {}  id {}\n",
-            agent["name"].as_str().unwrap_or("?"),
-            host_name(agent["host_id"].as_str().unwrap_or("?")),
-            agent["kind"].as_str().unwrap_or("?"),
-            agent["lifecycle_name"].as_str().unwrap_or("?"),
-            if phase.is_empty() || phase == "UNSPECIFIED" {
-                String::new()
-            } else {
-                format!(" {phase}")
-            },
-            agent["incarnation"],
-            agent["id"].as_str().unwrap_or("?"),
+            "\nkept from hosts {host} does not trust (no client of {host} shows these):\n"
         ));
-        if let Some(working) = agent["working_on"].as_str() {
-            out.push_str(&format!("    working on: {working}\n"));
+        for agent in kept {
+            out.push_str(&describe_agent(&agent, &host_name));
         }
-        if let Some(cause) = agent["exit_cause"].as_str() {
-            let detail = agent["exit_detail"]
-                .as_str()
-                .map(|detail| format!(": {detail}"))
-                .unwrap_or_default();
-            out.push_str(&format!("    ended: {cause}{detail}\n"));
-        }
+    }
+    out
+}
+
+fn describe_agent(agent: &Value, host_name: &dyn Fn(&str) -> String) -> String {
+    let phase = agent["phase_name"].as_str().unwrap_or("?");
+    let mut out = format!(
+        "{}  on {}  {}  {}{}  incarnation {}  id {}\n",
+        agent["name"].as_str().unwrap_or("?"),
+        host_name(agent["host_id"].as_str().unwrap_or("?")),
+        agent["kind"].as_str().unwrap_or("?"),
+        agent["lifecycle_name"].as_str().unwrap_or("?"),
+        if phase.is_empty() || phase == "UNSPECIFIED" {
+            String::new()
+        } else {
+            format!(" {phase}")
+        },
+        agent["incarnation"],
+        agent["id"].as_str().unwrap_or("?"),
+    );
+    if let Some(working) = agent["working_on"].as_str() {
+        out.push_str(&format!("    working on: {working}\n"));
+    }
+    if let Some(cause) = agent["exit_cause"].as_str() {
+        let detail = agent["exit_detail"]
+            .as_str()
+            .map(|detail| format!(": {detail}"))
+            .unwrap_or_default();
+        out.push_str(&format!("    ended: {cause}{detail}\n"));
     }
     out
 }

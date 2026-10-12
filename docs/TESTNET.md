@@ -414,7 +414,7 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"Flap": {"a", "b", "down_ms", "up_ms"}}`, `{"FlapStop": {}}` | Sever and restore a link on a period, until stopped; stop every flap, leaving each link restored. |
 | `{"Release": {"version", "channel", "rollout", "broken"}}` | Publish the build under test on the release feed (channel `stable` by default) and have supervised hosts check now. |
 | `{"Status": {}}` | The readiness record as it stands now, with `topology`: the declaration that would start this net again, run-time additions included. |
-| `{"Inventory": {"host"}}` | The host's fleet once its inventory has caught up: `{"agents": [{"name", "id", "host_id", "lifecycle", "phase", "cwd", "branch", "kind", "lifecycle_name", "phase_name", "working_on", "incarnation", "exit_cause", "exit_detail"}]}`; `branch` is null outside a repository, `exit_cause` null unless the agent has exited. |
+| `{"Inventory": {"host"}}` | The host's fleet once its inventory has caught up: `{"agents": [{"name", "id", "host_id", "lifecycle", "phase", "cwd", "branch", "kind", "lifecycle_name", "phase_name", "working_on", "incarnation", "exit_cause", "exit_detail"}], "hosts": [{"name", "id", "trust", "presence"}]}`; `branch` is null outside a repository, `exit_cause` null unless the agent has exited; `trust` is `TRUSTED` or `CANDIDATE`. |
 | `{"Chat": {"host", "agent"}}` | Everything the host holds of a chat, read to its first CaughtUp: `{"items": [{"key", "order", "text", "input_id", "attachments"}], "phase", "model"}`, `model` as the newest snapshot names it. `agent` is a declared name or, for an agent a client created, its id. |
 | `{"Block": {"host", "agent"}}` | Check the replica block invariant: `"holds"`. |
 | `{"ProviderInput": {"agent"}}` | Every line the agent's provider read: `{"lines": […]}`. |
@@ -480,13 +480,13 @@ what holds the port.
 | Faults | `sever A B`, `restore A B`, `flap A B --down D --up U`, `flap stop`, `net HOST\|relay [--loss P] [--delay D] [--jitter D] [--reorder P] [--rate R]`, `block-udp HOST on\|off`, `refuse-calls A B on\|off`, `kill HOST`, `stop HOST`, `restart HOST`, `freeze AGENT`, `thaw AGENT` |
 | Accounts and releases | `sign-in HOST ACCOUNT`, `tier ACCOUNT pro\|free`, `release publish VERSION [--channel C] [--rollout P] [--broken]` |
 | Agents | `spawn NAME --host H [--kind claude-sdk\|claude-pty\|codex] [--provider real\|fake] [--script FILE] [--prompt P] [--model M] [--permission P] [--mode M] [--parent A] [--cwd D] [--wait] [--timeout S]`, `send AGENT TEXT [--wait]`, `wait AGENT`, `stop-agent AGENT`, `resume AGENT [TEXT]`, `gate open NAME` |
-| A host's own record | `fleet HOST`, `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
+| A host's own record | `fleet HOST` (its own agents and its trusted peers', as its clients show them; rows a host it no longer trusts left behind are listed apart), `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
 | The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
-| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
+| Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
 | Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the menu that is open), `phone type TEXT --into ID`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
 | Files to test with | `make-file NAME SIZE [--fill zero\|random\|text]`: a file below the folder (no `..`), up to 2g |
-| Ledger | `ledger read`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME [--duplicate-of TESTER/NAME]`, `ledger done SUMMARY` |
+| Ledger | `ledger read`, `ledger findings`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME [--new\|--duplicate-of TESTER/NAME]`, `ledger done SUMMARY` |
 
 Durations take `ms` or `s` (`200ms`, `1.5s`); a rate is bytes a second, with `k` or `m` (`64k`). `--wait` on
 `spawn` and `send`, and `wait`, allow 100 seconds for a fake agent and 240 for a real one unless `--timeout` says
@@ -497,7 +497,8 @@ folder's own tmux server, at 24-bit colour in the chosen theme. That server read
 configuration (`crates/testnet/src/ctl/tmux.conf`), never the operator's, so keys reach the client the same way on
 every machine: legacy bytes by default and xterm's modifyOtherKeys form to a program that asks for it, as Claude
 Code does in `tui attach`. `tui keys` presses each key separately, as tmux names
-them. `tui shot` captures the pane with its styles, turns it into the frame format the terminal's own report writes
+them. `tui paste` loads the text into tmux's buffer from a file and pastes it as a bracketed paste byte for byte:
+line endings arrive as written, and a paste of any size goes through. `tui shot` captures the pane with its styles, turns it into the frame format the terminal's own report writes
 (`.frame.json`) and draws that to PNG with `crates/shot`; the exact text sits beside it (`.txt`). Background colour a
 program paints by clearing to the end of a line is not kept, and the font has no CJK or emoji glyphs. `tui attach`
 opens `amux attach` for an agent in a second pane: Claude's own interface for terminal Claude, Codex's own for Codex.

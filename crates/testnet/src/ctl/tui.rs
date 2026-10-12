@@ -53,7 +53,9 @@ pub enum TuiCommand {
     /// Type text as keystrokes, literally.
     Type { pane: String, text: String },
     /// Paste text as a terminal paste (bracketed), the way a person pastes:
-    /// TEXT, or with --file the contents of a file in your folder.
+    /// TEXT, or with --file the contents of a file (`--file -` reads
+    /// standard input). Line endings arrive as written, and a paste of any
+    /// size goes through; make a large one with `make-file`.
     Paste {
         pane: String,
         #[arg(required_unless_present = "file")]
@@ -246,18 +248,20 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
             known(folder, &pane)?;
             let text = match (text, file) {
                 (Some(text), _) => text,
+                (None, Some(file)) if file.as_os_str() == "-" => {
+                    let mut text = String::new();
+                    std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)
+                        .map_err(|error| format!("reading standard input: {error}"))?;
+                    text
+                }
                 (None, Some(file)) => {
-                    let path = folder.dir.join(file);
+                    let path = folder.input(&file);
                     std::fs::read_to_string(&path)
                         .map_err(|error| format!("reading {}: {error}", path.display()))?
                 }
                 (None, None) => return Err("paste TEXT, or --file FILE".to_owned()),
             };
-            tmux(folder, &["set-buffer", "-b", "ctl", &text])?;
-            tmux(
-                folder,
-                &["paste-buffer", "-p", "-d", "-b", "ctl", "-t", &pane],
-            )?;
+            paste(folder, &pane, &text)?;
             Ok(Outcome::new(
                 format!("pasted {} bytes into {pane}", text.len()),
                 // A large paste is kept by its size: the session log is
@@ -349,6 +353,30 @@ pub(crate) fn run(folder: &Folder, command: TuiCommand) -> Result<Outcome, Strin
 }
 
 /// The open panes' names.
+/// Pastes `text` into the pane as a bracketed paste, byte for byte.
+///
+/// The text goes into tmux's buffer from a file rather than on tmux's
+/// command line, which refuses a long one ("command too long"), and is
+/// pasted with `-r`: without it tmux turns every line feed into a carriage
+/// return, so a pasted CRLF arrived as two carriage returns.
+fn paste(folder: &Folder, pane: &str, text: &str) -> Result<(), String> {
+    let file = folder
+        .net_dir()
+        .join(format!("paste-{}.txt", std::process::id()));
+    std::fs::write(&file, text).map_err(|error| format!("writing {}: {error}", file.display()))?;
+    let loaded = tmux(
+        folder,
+        &["load-buffer", "-b", "ctl", file.to_string_lossy().as_ref()],
+    );
+    let _ = std::fs::remove_file(&file);
+    loaded?;
+    tmux(
+        folder,
+        &["paste-buffer", "-p", "-r", "-d", "-b", "ctl", "-t", pane],
+    )?;
+    Ok(())
+}
+
 pub(crate) fn open_panes(folder: &Folder) -> Vec<String> {
     panes(folder).into_keys().collect()
 }
@@ -1021,6 +1049,67 @@ fn frame_value(styled: &str, cols: u16, rows: u16) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A paste arrives byte for byte, line endings and all, however long:
+    /// a pane whose program reads raw input keeps exactly what was pasted.
+    #[test]
+    fn a_paste_keeps_its_line_endings_and_any_length() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let folder = Folder::at(dir.path());
+        std::fs::create_dir_all(folder.net_dir()).expect("the net's folder");
+        let out = dir.path().join("pasted");
+        let ready = dir.path().join("ready");
+        // Raw, so the terminal turns no carriage return into a line feed;
+        // `head -c` ends once the whole paste has arrived.
+        let mut text = String::from("one\r\ntwo\nthree\r\n");
+        text.push_str(&"0123456789abcdef".repeat(20_000));
+        text.push('\n');
+        let reader = format!(
+            "stty raw -echo; touch {ready}; head -c {} > {out}",
+            text.len(),
+            ready = ready.display(),
+            out = out.display()
+        );
+        tmux(
+            &folder,
+            &[
+                "new-session",
+                "-d",
+                "-s",
+                "raw",
+                "-x",
+                "80",
+                "-y",
+                "24",
+                &reader,
+            ],
+        )
+        .expect("a pane");
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !ready.exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the pane never started"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        paste(&folder, "raw", &text).expect("the paste");
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let got = loop {
+            let got = std::fs::read(&out).unwrap_or_default();
+            if got.len() >= text.len() || std::time::Instant::now() > deadline {
+                break got;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        };
+        let _ = tmux(&folder, &["kill-server"]);
+        assert_eq!(got.len(), text.len(), "the whole paste arrived");
+        assert!(
+            got == text.as_bytes(),
+            "the paste arrived changed; it began {:?}",
+            String::from_utf8_lossy(&got[..got.len().min(24)])
+        );
+    }
 
     #[test]
     fn styles_colours_and_columns_survive_the_capture() {

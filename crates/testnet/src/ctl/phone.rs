@@ -6,9 +6,7 @@
 //! (`WT_LEASE_IPHONE`): two sessions on one simulator would fight over it,
 //! and taking a lease here would reinstall the app under the session's
 //! feet. The app keeps running between commands; each command opens its
-//! own connection to the door and closes it however it ends, because the
-//! door serves one connection at a time and a stray open one would stall
-//! every command after it.
+//! own connection to the door and closes it however it ends.
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::TcpStream;
@@ -19,7 +17,7 @@ use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::session::{Folder, Outcome, alive, start_pairing};
+use super::session::{Folder, Outcome, alive, close_pairing, start_pairing};
 
 const BUNDLE_ID: &str = "sh.amux.app";
 
@@ -35,8 +33,13 @@ pub enum PhoneCommand {
         #[arg(long)]
         relay: bool,
     },
-    /// Tap the element with this identifier (see `phone query`), and wait
-    /// for the app to settle.
+    /// Tap the element with this identifier (see `phone query`), as a
+    /// finger does once it is there to tap.
+    ///
+    /// Waits up to ten seconds for the element to be on screen and enabled
+    /// first, taps it again while the app has not yet drawn it able to take
+    /// a tap, then waits for the screen to change and the app to settle, so
+    /// the next command sees what the tap did.
     Tap { id: String },
     /// Choose the item with this label in the menu that is open: a menu's
     /// items are drawn by the system and carry no identifier (`phone shot`
@@ -233,13 +236,7 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
             }
             Ok(outcome)
         }
-        // A tap answers once the app took it, which can be before the
-        // screen it opens is there: settle, so the next command finds it.
-        PhoneCommand::Tap { id } => {
-            let reply = request(folder, json!({"kind": "tap", "identifier": id}))?;
-            request(folder, json!({"kind": "settle"}))?;
-            Ok(Outcome::new(format!("tapped {id}"), reply))
-        }
+        PhoneCommand::Tap { id } => tap(folder, &id),
         PhoneCommand::Choose { label } => {
             request(folder, json!({"kind": "choose", "label": label}))
                 .map(|reply| Outcome::new(format!("chose {label}"), reply))
@@ -319,6 +316,69 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
         PhoneCommand::Settle => request(folder, json!({"kind": "settle"}))
             .map(|reply| Outcome::new("the app has settled", reply)),
     }
+}
+
+/// How long a tap waits for its element to be on screen and enabled, and
+/// for a just-enabled control to take it.
+const TAP_PATIENCE: Duration = Duration::from_secs(10);
+/// How long a tap waits for the screen to change after it.
+const TAP_ANSWER: Duration = Duration::from_secs(3);
+
+/// The element a query's state lists under `id`.
+fn element<'a>(state: &'a Value, id: &str) -> Option<&'a Value> {
+    state["elements"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|element| element["identifier"] == id)
+}
+
+/// A tap as a person makes one: on a control that is there and enabled,
+/// and over once the screen has answered it. The app enables a control
+/// in its model a frame or more before it draws it enabled, and a control
+/// drawn disabled does not take the tap.
+fn tap(folder: &Folder, id: &str) -> Result<Outcome, String> {
+    let deadline = Instant::now() + TAP_PATIENCE;
+    let before = loop {
+        let state = request(folder, json!({"kind": "query"}))?["state"].take();
+        let found = element(&state, id);
+        if found.is_some_and(|element| element["enabled"] != false) {
+            break state;
+        }
+        if Instant::now() > deadline {
+            return Err(match found {
+                Some(_) => format!(
+                    "{id} stayed disabled for {} seconds",
+                    TAP_PATIENCE.as_secs()
+                ),
+                None => format!(
+                    "no element {id} on screen within {} seconds; on screen:\n{}",
+                    TAP_PATIENCE.as_secs(),
+                    describe(&state)
+                ),
+            });
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    };
+    let reply = loop {
+        match request(folder, json!({"kind": "tap", "identifier": id})) {
+            Ok(reply) => break reply,
+            Err(error) if error.ends_with("did not activate") && Instant::now() < deadline => {
+                request(folder, json!({"kind": "settle"}))?;
+            }
+            Err(error) => return Err(error),
+        }
+    };
+    let answered = Instant::now() + TAP_ANSWER;
+    while Instant::now() < answered {
+        let state = request(folder, json!({"kind": "query"}))?["state"].take();
+        if state != before {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    request(folder, json!({"kind": "settle"}))?;
+    Ok(Outcome::new(format!("tapped {id}"), reply))
 }
 
 fn open(folder: &Folder, relay: bool) -> Result<Outcome, String> {
@@ -617,9 +677,12 @@ fn pair(folder: &Folder, host: &str) -> Result<Outcome, String> {
                 ));
             }
             Err(error) if Instant::now() > deadline => {
+                // The window this pairing opened would refuse the next
+                // attempt as already open.
+                close_pairing(folder, host, &config);
                 return Err(format!(
                     "the phone could not pair with {host}: {error} \
-                     (does it have --lan and --bonjour?)"
+                     (does it have --lan and --bonjour?); its pairing window is closed again"
                 ));
             }
             Err(_) => std::thread::sleep(Duration::from_secs(1)),

@@ -1,3 +1,21 @@
+2026-10-13 — **`testnet ctl` pastes, taps, pairs and reads a fleet the way
+a person meets them, and the phone's debug door keeps up.** `tui paste`
+pasted with tmux's `paste-buffer -p` without `-r`, turning every line feed
+into a carriage return (behind both CRLF findings), and long pastes failed
+as "command too long": the text now goes through a file into tmux's buffer
+and arrives byte for byte. `phone tap` waits for its element to be on
+screen and enabled, taps again while a just-enabled control is still drawn
+disabled (67 "chat.send did not activate" refusals), and waits for the
+screen to change before settling. A failed `phone pair` closes the pairing
+window it opened, so a retry is not refused as already open. `fleet HOST`
+lists only what the host's clients show, its own and its trusted peers'
+agents, and lists rows left by a host it no longer trusts apart; the
+door's `Inventory` reply carries the hosts with their trust. The phone's
+debug door rescanned its whole buffer on every 8 KiB read and served one
+connection at a time, so a 50 MB attach took many minutes and other
+queries timed out behind it: it now searches only new bytes for a line's
+end and reads each connection on a thread of its own.
+
 2026-10-13 — **A QA finding says whether it is new, and follows the
 template.** The second run's stop rule, a wave that finds nothing new,
 never fired: at least 44 findings repeated an earlier symptom unmarked,

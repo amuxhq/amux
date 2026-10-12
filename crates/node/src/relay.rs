@@ -209,6 +209,7 @@ impl ProfileRuntime {
             }
             tokio::time::sleep(POLL).await;
         }
+        let _handed = Handed::new(&handle);
         match tokio::time::timeout(ms(launch.reply_patience_ms), rx).await {
             Ok(Ok(verdict)) => Ok(verdict),
             // The connection ended before the answer: the watcher dropped
@@ -454,9 +455,33 @@ impl ProfileRuntime {
         self.lanes.lock().unwrap().entry(id).or_default().clone()
     }
 
-    /// Whether an input to the agent is in hand: handed to its process and
-    /// awaiting the verdict, or waiting its turn behind one.
+    /// Whether an input to the agent is in hand: written to its process
+    /// and awaiting the verdict. A message whose lane is taken but which is
+    /// not written yet is not in hand: a caller that goes away then takes
+    /// it with it.
     pub fn in_hand(&self, id: AgentId) -> bool {
-        self.lane(id).try_lock().is_err()
+        self.handle(id)
+            .is_some_and(|handle| handle.handed.load(std::sync::atomic::Ordering::SeqCst) > 0)
+    }
+}
+
+/// An input written to an agent's process, counted until its wait for the
+/// verdict ends, however it ends.
+struct Handed<'a>(&'a crate::runtime::AgentHandle);
+
+impl<'a> Handed<'a> {
+    fn new(handle: &'a crate::runtime::AgentHandle) -> Self {
+        handle
+            .handed
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Self(handle)
+    }
+}
+
+impl Drop for Handed<'_> {
+    fn drop(&mut self) {
+        self.0
+            .handed
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }

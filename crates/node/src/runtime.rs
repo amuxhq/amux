@@ -386,6 +386,8 @@ pub(crate) struct AgentHandle {
     /// Inputs waiting for their verdict on the current connection, by
     /// input id; dropped when the connection ends.
     replies: Mutex<HashMap<Vec<u8>, oneshot::Sender<SendInputResponse>>>,
+    /// Inputs written to the process and not yet answered.
+    pub(crate) handed: std::sync::atomic::AtomicUsize,
     /// Dumps waiting for the agent's part, by dump id; dropped when the
     /// connection ends.
     dumps: Mutex<HashMap<Vec<u8>, oneshot::Sender<DumpPart>>>,
@@ -423,6 +425,7 @@ impl AgentHandle {
             stopping: Mutex::new(None),
             exiting: AtomicBool::new(false),
             caught_up_due: AtomicBool::new(false),
+            handed: std::sync::atomic::AtomicUsize::new(0),
             pid,
             peer: Mutex::new(None),
             running: watch::Sender::new(pid.is_some()),

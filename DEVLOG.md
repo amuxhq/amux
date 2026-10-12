@@ -1,3 +1,12 @@
+2026-10-12 — **A message counts as in hand once it is written to its
+agent.** The cross-host family journey cuts the sender's links while the
+recipient's host holds a hand-off for a frozen agent, and expects the agent
+to take it when it thaws. It waited for the recipient's lane to be taken,
+which happens before the message is written; under load the links were cut
+in between, the caller went away and took the unwritten message with it.
+`in_hand` now counts only messages written to the agent's process and
+awaiting its verdict.
+
 2026-10-12 — **The lapsed-account spec trusts from its caller last.** Under
 load, its first call, made while the account was still Pro, was refused as
 no longer trusted: the desk trusted the laptop first and reached it before

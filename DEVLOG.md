@@ -1,3 +1,12 @@
+2026-10-12 — **QA testers compare with the native interfaces, stress asks,
+and drive terminal Claude from the phone.** Two new personas: one keeps
+Claude Code's or Codex's own interface beside amux's and records every
+disparity between them, and one answers every shape of question, permission
+ask and plan, on every kind and from both clients, around interrupts, stops
+and reconnects. Every tester with a phone now creates a terminal Claude on a
+desktop host and drives it from the phone, which earlier runs never did. The
+agent guide gains wordings for a multi-select question and a free-text answer.
+
 2026-10-12 — **Words after a chip that fills its row start on the next
 line.** The terminal client wraps a sent message's words at the room a chip
 left on its line, and a chip that filled the line left none; the wrapper

@@ -146,7 +146,9 @@ def prompt(run: Path, folder: Path, persona: Path, phone: bool) -> str:
     for name in ("ATTACKS.md", "AGENTS-GUIDE.md"):
         parts += ["\n---\n\n", (QA / name).read_text()]
     phone_line = ("You hold a phone: `testnet ctl phone open` installs and launches the app on the "
-                  "simulator leased to you." if phone else
+                  "simulator leased to you. Whatever your persona, create at least one terminal Claude "
+                  "(`--kind claude-pty`) on a desktop host and drive it from the phone: prompts, its "
+                  "questions, permission asks and a plan." if phone else
                   "You have no phone. Use the terminal client and the host's record.")
     parts.append(f"""
 ---

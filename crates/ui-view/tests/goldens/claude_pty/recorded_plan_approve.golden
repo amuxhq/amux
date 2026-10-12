@@ -63,4 +63,5 @@
   permission  "plan" "Plan" unsettable
   permission  "auto" "Auto" unsettable
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Sonnet 5") effort=None permission=None mode=None

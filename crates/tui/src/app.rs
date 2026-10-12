@@ -15,9 +15,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use tokio::sync::mpsc;
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
-use ui_state::{AgentKey, Composer, PhaseView};
+use ui_state::{AgentKey, Composer, InputWhat, PhaseView};
 use ui_view::family_header;
-use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest, StopAgentRequest};
+use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
 
 use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
@@ -310,7 +310,7 @@ fn plain(error: InputError) -> String {
         InputError::Rejected(reason) => {
             format!("not sent: {}", crate::chat::refusal_words(&reason))
         }
-        InputError::Uncertain => error.to_string(),
+        InputError::Uncertain | InputError::Held => error.to_string(),
     }
 }
 
@@ -949,14 +949,19 @@ impl App {
                     })
                 })
             }
+            FleetEffect::CancelStop(agent) => self.fleet.cancel_stop(&agent),
             FleetEffect::Stop(agent) => {
+                let fleet = self.fleet.clone();
                 self.spawn(async move {
-                    let request = StopAgentRequest {
-                        agent_id: agent.agent,
-                    };
-                    client.stop_agent(request).await.err().map(|error| {
-                        AppEvent::Notice(format!("could not stop: {error}"), Tone::Warn)
-                    })
+                    // A stop whose host cannot be reached is held by the
+                    // fleet and shown on the agent's row until it goes.
+                    match fleet.stop(&agent).await {
+                        Ok(_) => None,
+                        Err(error) => Some(AppEvent::Notice(
+                            format!("could not stop: {error}"),
+                            Tone::Warn,
+                        )),
+                    }
                 })
             }
             FleetEffect::Delete(agent) => self.spawn(async move {
@@ -1044,9 +1049,15 @@ impl App {
                     .await
                     .err()
                     .and_then(|error| match error {
-                        // The card itself says it was rejected or not confirmed.
-                        InputError::Rejected(_) | InputError::Uncertain => None,
+                        // The card itself says it was rejected, not
+                        // confirmed or held.
+                        InputError::Rejected(_) | InputError::Uncertain | InputError::Held => None,
                     })
+            }),
+            ChatEffect::SwitchBack => self.spawn(async move {
+                session.switch_back().await.err().map(|error| {
+                    AppEvent::Notice(format!("could not switch back: {}", plain(error)), Tone::Warn)
+                })
             }),
             ChatEffect::Interrupt => self.spawn(async move {
                 session
@@ -1096,6 +1107,27 @@ impl App {
                 }
             }
             ChatEffect::Discard { id } => session.discard(&id),
+            ChatEffect::Cancel { id } => {
+                let words = match session.state().inputs().get(&id).map(|sent| &sent.what) {
+                    Some(InputWhat::Prompt { text, attachments }) => {
+                        Some((text.clone(), attachments.clone()))
+                    }
+                    _ => None,
+                };
+                session.discard(&id);
+                if let Some((text, attachments)) = words {
+                    chat.view.editor.restore(&text, attachments);
+                }
+            }
+            ChatEffect::Rename(name) => {
+                let client = self.client.clone();
+                self.spawn(async move {
+                    let request = RenameAgentRequest { agent_id, name };
+                    client.rename_agent(request).await.err().map(|error| {
+                        AppEvent::Notice(format!("could not rename: {error}"), Tone::Warn)
+                    })
+                })
+            }
             ChatEffect::Page(n) => {
                 {
                     let state = session.state();

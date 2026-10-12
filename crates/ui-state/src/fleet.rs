@@ -80,6 +80,11 @@ pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
 pub enum FleetMsg {
     Event(Box<InventoryEvent>),
     Connection(Connection),
+    /// This client's stop of the agent never left: its host could not be
+    /// reached. It is held, and goes when the host is back.
+    HoldStop(AgentKey),
+    /// The person cancelled a held stop, or it went.
+    DropStop(AgentKey),
 }
 
 /// Parent edges, derived from the agent rows.
@@ -105,6 +110,12 @@ pub struct FleetState {
     /// Rows re-listed since the stream reopened; the rest are dropped at the
     /// next CaughtUp.
     relisted: Option<(BTreeSet<HostId>, BTreeSet<AgentKey>)>,
+    /// Stops this client holds because the agent's host could not be
+    /// reached, each with whether the host has been seen out of reach since:
+    /// the stop goes again once it is seen back.
+    held_stops: BTreeMap<AgentKey, bool>,
+    /// Held stops whose host is back, for the driver to send again.
+    released_stops: Vec<AgentKey>,
 }
 
 impl FleetState {
@@ -145,6 +156,17 @@ impl FleetState {
 
     pub fn families(&self) -> &Families {
         &self.families
+    }
+
+    /// Whether this client holds a stop of the agent until its host is back.
+    pub fn stop_held(&self, agent: &AgentKey) -> bool {
+        self.held_stops.contains_key(agent)
+    }
+
+    /// The held stops whose host is back since this was last asked: each is
+    /// no longer held, and the driver sends it again.
+    pub fn take_released_stops(&mut self) -> Vec<AgentKey> {
+        std::mem::take(&mut self.released_stops)
     }
 
     /// The agent's parent, when the fleet holds it.
@@ -202,6 +224,20 @@ impl FleetState {
     pub fn update(&mut self, msg: FleetMsg) -> Vec<AgentKey> {
         let mut changed = BTreeSet::new();
         match msg {
+            FleetMsg::HoldStop(agent) => {
+                let away = self
+                    .agents
+                    .get(&agent)
+                    .and_then(|row| self.hosts.get(&row.host_id))
+                    .is_none_or(|host| host.presence() != wire::Presence::Online);
+                self.held_stops.insert(agent.clone(), away);
+                changed.insert(agent);
+            }
+            FleetMsg::DropStop(agent) => {
+                if self.held_stops.remove(&agent).is_some() {
+                    changed.insert(agent);
+                }
+            }
             FleetMsg::Connection(connection) => {
                 self.connection = connection;
                 if connection == Connection::Reconnecting {
@@ -224,6 +260,23 @@ impl FleetState {
                             .filter(|agent| agent.host == host.host_id)
                         {
                             changed.insert(agent.clone());
+                        }
+                        let online = host.presence() == wire::Presence::Online;
+                        let mut back = Vec::new();
+                        for (agent, away) in self
+                            .held_stops
+                            .iter_mut()
+                            .filter(|(agent, _)| agent.host == host.host_id)
+                        {
+                            if !online {
+                                *away = true;
+                            } else if *away {
+                                back.push(agent.clone());
+                            }
+                        }
+                        for agent in back {
+                            self.held_stops.remove(&agent);
+                            self.released_stops.push(agent);
                         }
                         self.hosts.insert(host.host_id.clone(), host);
                     }
@@ -292,6 +345,14 @@ impl FleetState {
             }
         }
         changed.insert(at.clone());
+        // A held stop of an agent that has ended, or is gone, has nothing
+        // left to stop.
+        if agent
+            .as_ref()
+            .is_none_or(|agent| agent.lifecycle() == wire::Lifecycle::Exited)
+        {
+            self.held_stops.remove(&at);
+        }
         match agent {
             Some(agent) => {
                 let parent = parent_key(&agent);

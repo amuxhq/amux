@@ -78,6 +78,9 @@ pub struct Outcome {
     /// holds: the driver reopens the stream with a fresh tail and says so
     /// with [`Msg::Reloading`].
     pub reload: bool,
+    /// Held inputs the host can be reached for again: each is `Sent` from
+    /// now, and the driver sends it under its own id.
+    pub resend: Vec<Input>,
 }
 
 /// A queued prompt as the composer draws it.
@@ -379,6 +382,8 @@ impl SessionState {
     }
 
     /// Caught up and the entry says live. Drafting is never gated.
+    /// Whether a send goes to the runtime now. While the chat is not
+    /// current a prompt or an answer is held instead (see [`Composer::Holds`]).
     pub fn can_send(&self) -> bool {
         self.caught_up && !self.exited()
     }
@@ -389,11 +394,11 @@ impl SessionState {
         } else if self.caught_up {
             Composer::Send
         } else if self.connection == Connection::Reconnecting {
-            Composer::Disabled(Waiting::Reconnecting)
+            Composer::Holds(Waiting::Reconnecting)
         } else if self.detached {
-            Composer::Disabled(Waiting::Detached)
+            Composer::Holds(Waiting::Detached)
         } else {
-            Composer::Disabled(Waiting::CatchingUp)
+            Composer::Holds(Waiting::CatchingUp)
         }
     }
 
@@ -458,6 +463,13 @@ impl SessionState {
                 Some(QueueRow { entry, steered: entry.steer || sending_now })
             })
             .collect()
+    }
+
+    /// Inputs held to send once the host is back, drawn pending with Cancel.
+    pub fn held(&self) -> impl Iterator<Item = &SentInput> {
+        self.inputs
+            .iter()
+            .filter(|sent| sent.state == InputState::Held)
     }
 
     /// Inputs to draw as "not confirmed", with resend and discard.
@@ -590,7 +602,18 @@ impl SessionState {
                 outcome.session = true;
             }
             Msg::Send(input) => {
+                let id = input.input_id.clone();
                 outcome.session = self.inputs.push(input);
+                // Not current, a prompt or an answer certainly cannot leave:
+                // it is held, and goes once the chat is current again.
+                let hold = !self.caught_up && !self.exited();
+                if let Some(sent) = self.inputs.get_mut(&id)
+                    && hold
+                    && sent.state == InputState::Sent
+                    && sent.what.holds()
+                {
+                    sent.state = InputState::Held;
+                }
                 // A reflection can beat the optimistic row only on a resend
                 // of a known id, which the push refuses.
             }
@@ -608,7 +631,15 @@ impl SessionState {
                 outcome.session = true;
             }
             Msg::Host(host) => {
+                let back = host.presence() == wire::Presence::Online
+                    && self
+                        .host
+                        .as_ref()
+                        .is_some_and(|before| before.presence() != wire::Presence::Online);
                 self.host = Some(host);
+                if back && self.caught_up {
+                    outcome.resend = self.release_held();
+                }
                 outcome.session = true;
             }
             Msg::Blob { hash, status } => {
@@ -702,6 +733,7 @@ impl SessionState {
                 }
                 self.trim(changed);
                 self.resolve_uncertain();
+                outcome.resend = self.release_held();
                 outcome.session = true;
             }
             Of::Lagged(_) => {
@@ -823,7 +855,7 @@ impl SessionState {
             return false;
         };
         let settle = match sent.state {
-            InputState::Sent | InputState::Queued => true,
+            InputState::Sent | InputState::Queued | InputState::Held => true,
             // An uncertain input is judged against caught-up state only.
             InputState::Uncertain => caught_up && visible,
             InputState::Settled | InputState::Rejected(_) => false,
@@ -847,8 +879,10 @@ impl SessionState {
         if sent.state != InputState::Sent {
             return false;
         }
+        let holds = sent.what.holds();
         sent.state = match result {
             InputOutcome::Lost => InputState::Uncertain,
+            InputOutcome::Held => InputState::Held,
             InputOutcome::Reply(reply) => match reply.of {
                 // Queued while the queue lists it, or until it first does;
                 // seen listed and gone again before this reply, it already
@@ -864,6 +898,13 @@ impl SessionState {
                     InputWhat::Prompt { .. } if !reflected => InputState::Sent,
                     _ => InputState::Settled,
                 },
+                // Refused before it was written anywhere: it never left, and
+                // goes again once the host can be reached.
+                Some(Of::Rejected(rejected))
+                    if holds && rejected.refusal() == wire::Refusal::HostUnreachable =>
+                {
+                    InputState::Held
+                }
                 Some(Of::Rejected(rejected)) => {
                     let refusal = crate::refusal(&rejected);
                     if refusal.reason == RefusalReason::Exited {
@@ -890,6 +931,33 @@ impl SessionState {
                 _ => {}
             }
         }
+    }
+
+    /// The held inputs, sent from now: the chat is current again or the
+    /// agent's host came back. One that already landed (its reflection or
+    /// queue entry is here) is settled instead of sent twice.
+    fn release_held(&mut self) -> Vec<Input> {
+        let queue = &self.state.queue;
+        let transcript = &self.transcript;
+        let arrivals = &self.arrivals;
+        let mut resend = Vec::new();
+        for sent in self.inputs.iter_mut() {
+            if sent.state != InputState::Held {
+                continue;
+            }
+            if queue.iter().any(|entry| entry.input_id == sent.id) {
+                sent.state = InputState::Queued;
+                sent.seen_queued = true;
+            } else if transcript.key_for_input(&sent.id).is_some()
+                || arrivals.key_for_input(&sent.id)
+            {
+                sent.state = InputState::Settled;
+            } else {
+                sent.state = InputState::Sent;
+                resend.push(sent.input.clone());
+            }
+        }
+        resend
     }
 
     /// At CaughtUp: an uncertain input found in the queue is queued, one found

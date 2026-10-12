@@ -23,10 +23,7 @@ fn open_from_the_snapshot_and_held_rows_with_caught_up_later() {
             "the first render has the held rows"
         );
         assert!(!tape.state.can_send());
-        assert_eq!(
-            tape.state.composer(),
-            Composer::Disabled(Waiting::CatchingUp)
-        );
+        assert_eq!(tape.state.composer(), Composer::Holds(Waiting::CatchingUp));
         tape.apply(
             "live row before CaughtUp",
             ev_item(text(kind, 41, 41, "delta")),
@@ -91,7 +88,7 @@ fn a_subscribe_to_an_away_host_paints_held_rows_then_detached() {
         tape.apply("Detached", detached());
         assert_eq!(tape.state.transcript().len(), 41, "the rows stay");
         assert!(!tape.state.can_send());
-        assert_eq!(tape.state.composer(), Composer::Disabled(Waiting::Detached));
+        assert_eq!(tape.state.composer(), Composer::Holds(Waiting::Detached));
         // The draft is the client's; nothing here touches it, and nothing
         // else happens until the source resumes after its cursor.
         tape.apply("delta after wake", ev_item(text(kind, 341, 341, "delta")));
@@ -208,7 +205,7 @@ fn a_retail_that_meets_the_window_merges_without_a_reload() {
         }
         apply_checked(&mut state, caught_up(5));
         apply_checked(&mut state, Msg::Connection(Connection::Reconnecting));
-        assert_eq!(state.composer(), Composer::Disabled(Waiting::Reconnecting));
+        assert_eq!(state.composer(), Composer::Holds(Waiting::Reconnecting));
         apply_checked(&mut state, Msg::Connection(Connection::Live));
         apply_checked(
             &mut state,

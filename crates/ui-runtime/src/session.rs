@@ -17,8 +17,8 @@ use prost::Message as _;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use ui_state::{
-    BlobStatus, Connection, InputId, InputOutcome, Key, Msg, Outcome, Refusal, RefusalReason,
-    SessionState,
+    BlobStatus, Connection, InputId, InputOutcome, InputState, Key, Msg, Outcome, Refusal,
+    RefusalReason, SessionState,
 };
 use ui_view::SessionLine;
 use wire::{
@@ -42,6 +42,10 @@ pub struct Sent {
 pub enum InputError {
     #[error("rejected: {0:?}")]
     Rejected(Refusal),
+    /// It never left: the agent's host could not be reached. The client
+    /// holds it, shown pending, and sends it once the host is back.
+    #[error("held: the agent's host cannot be reached; it goes once it is back")]
+    Held,
     /// The connection dropped before the verdict: the chat shows it not
     /// confirmed until it has caught up again.
     #[error("not confirmed: the connection dropped before the agent answered")]
@@ -225,6 +229,7 @@ impl Inner {
         if outcome.session {
             self.want_catalogue();
         }
+        self.resend(outcome.resend.clone());
         if let Some(key) = &outcome.need_get {
             self.note(DriverEvent::Get { key: key.clone() });
             let request = GetRequest {
@@ -321,6 +326,34 @@ impl Inner {
         }
         let id = input.input_id.clone();
         self.apply(Msg::Send(input.clone()));
+        // Sent while the chat is not current: held, never handed on, until
+        // the chat catches up again.
+        if self.model().state.input_state(&id) == Some(InputState::Held) {
+            return Sent {
+                id,
+                outcome: InputOutcome::Held,
+            };
+        }
+        self.deliver(input).await
+    }
+
+    /// Held inputs whose host is back: each goes again under its own id.
+    fn resend(self: &Arc<Self>, inputs: Vec<Input>) {
+        for input in inputs {
+            self.note(DriverEvent::Resend {
+                id: input.input_id.clone(),
+            });
+            let inner = self.clone();
+            tokio::spawn(async move {
+                inner.deliver(input).await;
+            });
+        }
+    }
+
+    /// Hands an input the state already holds as sent to the runtime and
+    /// applies the verdict.
+    async fn deliver(&self, input: Input) -> Sent {
+        let id = input.input_id.clone();
         let request = SendInputRequest {
             agent_id: self.agent_id.clone(),
             input: Some(input),
@@ -650,7 +683,8 @@ impl Session {
 
     /// The agent's host, from the fleet, for the header.
     pub fn set_host(&self, host: HostEntry) {
-        self.inner.apply(Msg::Host(host));
+        let outcome = self.inner.apply(Msg::Host(host));
+        self.inner.resend(outcome.resend);
     }
 
     /// Where the reader is: at the newest row, or in history. A session
@@ -705,8 +739,10 @@ impl Session {
     }
 
     /// Sends an input, under a fresh id when it has none. The optimistic
-    /// row exists from now; a dropped connection leaves the input
-    /// uncertain, and nothing is ever resent on its own.
+    /// row exists from now. A prompt or an answer that certainly never left
+    /// (the chat not current, or its host unreachable) is held and goes
+    /// again under its id once the host is back; a dropped connection
+    /// leaves the input uncertain, and that is never resent on its own.
     pub async fn send(&self, input: Input) -> Sent {
         self.inner.send(input).await
     }
@@ -771,6 +807,18 @@ impl Session {
         }
     }
 
+    /// amux's rename of this agent. Never held: a host that cannot be
+    /// reached fails it at once, with the reason.
+    pub async fn rename(&self, name: &str) -> Result<Agent, RpcError> {
+        let request = wire::RenameAgentRequest {
+            agent_id: self.inner.agent_id.clone(),
+            name: name.to_owned(),
+        };
+        let agent = self.inner.client.rename_agent(request).await?;
+        self.inner.apply(Msg::Entry(agent.clone()));
+        Ok(agent)
+    }
+
     /// Takes a queued prompt back out of the queue.
     pub async fn withdraw(&self, queued: &[u8]) -> Result<(), InputError> {
         self.act(inputs::withdraw(self.kind(), queued)).await
@@ -792,6 +840,12 @@ impl Session {
         self.act(inputs::interrupt(self.kind())).await
     }
 
+    /// Takes the agent's own view back to its conversation after it
+    /// switched to another (terminal Claude).
+    pub async fn switch_back(&self) -> Result<(), InputError> {
+        self.act(inputs::switch_back(self.kind())).await
+    }
+
     /// Forgets an input that was not confirmed.
     pub fn discard(&self, id: &[u8]) {
         self.inner.apply(Msg::Discard(id.to_vec()));
@@ -803,7 +857,11 @@ impl Session {
                 RefusalReason::Unsupported,
             )));
         };
-        match self.send(input).await.outcome {
+        let sent = self.send(input).await;
+        if self.inner.model().state.input_state(&sent.id) == Some(InputState::Held) {
+            return Err(InputError::Held);
+        }
+        match sent.outcome {
             InputOutcome::Reply(SendInputResponse {
                 of: Some(send_input_response::Of::Accepted(_)),
             }) => Ok(()),
@@ -813,6 +871,7 @@ impl Session {
             InputOutcome::Reply(SendInputResponse { of: None }) | InputOutcome::Lost => {
                 Err(InputError::Uncertain)
             }
+            InputOutcome::Held => Err(InputError::Held),
         }
     }
 

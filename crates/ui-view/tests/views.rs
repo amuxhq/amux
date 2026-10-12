@@ -1263,8 +1263,8 @@ fn settings_mark_the_current_model_effort_and_permission() {
             .iter()
             .map(|command| command.name.as_str())
             .collect::<Vec<_>>(),
-        ["compact", "stripe:test-cards"],
-        "a terminal-only command is dropped"
+        ["model", "effort", "rename", "compact", "stripe:test-cards"],
+        "the client's own commands first; a terminal-only command is dropped"
     );
     assert_eq!(
         view.changeable,
@@ -1378,7 +1378,15 @@ fn codex_offers_permissions_and_modes_and_settings_outside_them_read_custom() {
         [("low", false, false), ("medium", true, true)],
         "no effort reported: the model's default is the one in force"
     );
-    assert_eq!(view.commands.len(), 1, "a Codex skill is never filtered");
+    assert_eq!(
+        view.commands
+            .iter()
+            .map(|command| command.name.as_str())
+            .filter(|name| !["model", "effort", "rename"].contains(name))
+            .count(),
+        1,
+        "a Codex skill is never filtered"
+    );
     assert_eq!(
         view.changeable,
         Changeability {
@@ -1466,7 +1474,14 @@ fn terminal_claude_shows_what_it_reports_and_says_how_to_type_a_change() {
         "the reported model alone: nothing is offered"
     );
     assert!(view.efforts.is_empty(), "nothing reports the effort");
-    assert!(view.commands.is_empty());
+    assert_eq!(
+        view.commands
+            .iter()
+            .map(|command| command.name.as_str())
+            .collect::<Vec<_>>(),
+        ["rename"],
+        "one model and no efforts offered: renaming is the client's only command"
+    );
     assert_eq!(
         view.permissions
             .iter()
@@ -2394,8 +2409,9 @@ fn the_overview_holds_the_changes_it_is_given() {
 /// A prompt on its way stays where it was first drawn: at the feed's end
 /// if the agent was idle, in the queue otherwise. While the link is down it
 /// waits for the host there; after catching up, one that never showed up
-/// may not have arrived and waits last in the queue for the person. A
-/// refused one is left for the composer.
+/// may not have arrived and waits last in the queue for the person. One
+/// its host could not take certainly never left: it is held, and goes again
+/// once the chat is current.
 #[test]
 fn prompts_on_their_way_follow_the_sending_rules() {
     let kind = Kind::Codex;
@@ -2442,6 +2458,12 @@ fn prompts_on_their_way_follow_the_sending_rules() {
             })),
         }),
     ));
+    assert!(
+        prompts_underway(&state, feed)
+            .iter()
+            .any(|prompt| prompt.input_id == b"p3" && prompt.underway == Underway::Held),
+        "one its host could not take is held"
+    );
     state.update(snapshot(kind, Phase::Working, vec![], vec![]));
     state.update(caught_up());
     let underway = prompts_underway(&state, feed);
@@ -2456,17 +2478,17 @@ fn prompts_on_their_way_follow_the_sending_rules() {
                 Lands::Queue,
                 Underway::Sending { waiting: false }
             ),
+            (
+                &b"p3"[..],
+                Lands::Queue,
+                Underway::Sending { waiting: false }
+            ),
             (&b"p1"[..], Lands::Queue, Underway::MayNotHaveArrived),
         ],
-        "caught up, the lost one may not have arrived and waits last"
+        "caught up, the held one goes again and the lost one may not have \
+         arrived and waits last"
     );
-    assert_eq!(
-        refused_prompts(&state),
-        vec![RefusedPrompt {
-            input_id: b"p3".to_vec(),
-            reason: ui_view::Refusal::of(ui_view::RefusalReason::HostUnreachable),
-        }]
-    );
+    assert!(refused_prompts(&state).is_empty(), "nothing was refused");
 }
 
 /// A tool server's form reads once, here, for every client: its fields in
@@ -3679,4 +3701,31 @@ fn a_steps_time_leaves_out_the_wait_for_approval() {
         })
         .collect();
     assert_eq!(times, vec![Some(2_000), Some(39_000)]);
+}
+
+#[test]
+fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
+    let snapshot = |switched_away_to: Option<&str>| {
+        event(session_event::Of::Snapshot(wire::Snapshot {
+            kind: Kind::ClaudePty as i32,
+            body: wire::ClaudePtySnapshot {
+                effort: Some("high".into()),
+                switched_away_to: switched_away_to.map(Into::into),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            phase: Phase::Idle as i32,
+            ..wire::Snapshot::default()
+        }))
+    };
+    let mut state = SessionState::new(agent(Kind::ClaudePty), CAP);
+    state.update(snapshot(Some("another-session")));
+    assert!(composer(&state, 0).switched_away);
+    assert_eq!(
+        state.agent_state().effort.as_deref(),
+        Some("high"),
+        "the snapshot's effort is the one in force"
+    );
+    state.update(snapshot(None));
+    assert!(!composer(&state, 0).switched_away, "back on its own conversation");
 }

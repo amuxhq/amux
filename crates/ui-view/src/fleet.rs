@@ -43,6 +43,9 @@ pub struct FleetCard {
     pub descendants: u32,
     /// Jobs its provider runs in the background, as its row reports them.
     pub background_jobs: u32,
+    /// This client's stop of it is held: its host could not be reached, and
+    /// the stop goes when the host is back. Cancel takes it back.
+    pub stop_held: bool,
 }
 
 /// Home's sections, computed once for every client. Empty sections are
@@ -431,6 +434,7 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         members: fleet.family(&at).len() as u32,
         descendants: agent.descendants,
         background_jobs: agent.background_jobs,
+        stop_held: fleet.stop_held(&at),
         agent: at,
     }
 }

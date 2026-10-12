@@ -138,6 +138,8 @@ impl Structure for FleetMsg {
         match self {
             FleetMsg::Event(event) => inventory(event),
             FleetMsg::Connection(connection) => format!("Connection {connection:?}"),
+            FleetMsg::HoldStop(key) => format!("HoldStop {}", hex(&key.agent)),
+            FleetMsg::DropStop(key) => format!("DropStop {}", hex(&key.agent)),
         }
     }
 }
@@ -253,6 +255,7 @@ fn input_outcome(outcome: &InputOutcome) -> String {
         }) => format!("rejected {:?}", rejected.refusal()),
         InputOutcome::Reply(SendInputResponse { of: None }) => "no verdict".into(),
         InputOutcome::Lost => "lost".into(),
+        InputOutcome::Held => "held".into(),
     }
 }
 

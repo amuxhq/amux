@@ -47,6 +47,9 @@ public enum ActOutcome: Codable, Hashable, Sendable {
     case rejected(Refusal)
     /// The connection dropped before the agent answered.
     case notConfirmed
+    /// It never left: the agent's host cannot be reached. The chat holds
+    /// it, shown pending with Cancel, and it goes once the host is back.
+    case held
     /// The call did not reach the agent.
     case failed(String)
 
@@ -62,6 +65,7 @@ public enum ActOutcome: Codable, Hashable, Sendable {
             switch _name {
             case "Done": self = .done
             case "NotConfirmed": self = .notConfirmed
+            case "Held": self = .held
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no ActOutcome is named \(_name)")
@@ -94,6 +98,9 @@ public enum ActOutcome: Codable, Hashable, Sendable {
         case .notConfirmed:
             var _container = encoder.singleValueContainer()
             try _container.encode("NotConfirmed")
+        case .held:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Held")
         case .failed(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .failed)
@@ -243,9 +250,13 @@ public struct ActivityLine: Codable, Hashable, Sendable {
 
 /// A change to one agent from outside its chat.
 public enum AgentAct: Codable, Hashable, Sendable {
-    case stop
     case delete
     case rename(String)
+    /// Stops it now. One whose host cannot be reached is held, shown on its
+    /// card, and goes when the host is back.
+    case stop
+    /// Takes back a held stop.
+    case cancelStop
 
     private enum Tag: String, CodingKey {
         case rename = "Rename"
@@ -256,8 +267,9 @@ public enum AgentAct: Codable, Hashable, Sendable {
            let _name = try? _single.decode(String.self)
         {
             switch _name {
-            case "Stop": self = .stop
             case "Delete": self = .delete
+            case "Stop": self = .stop
+            case "CancelStop": self = .cancelStop
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no AgentAct is named \(_name)")
@@ -279,15 +291,18 @@ public enum AgentAct: Codable, Hashable, Sendable {
 
     public func encode(to encoder: any Encoder) throws {
         switch self {
-        case .stop:
-            var _container = encoder.singleValueContainer()
-            try _container.encode("Stop")
         case .delete:
             var _container = encoder.singleValueContainer()
             try _container.encode("Delete")
         case .rename(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .rename)
+        case .stop:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Stop")
+        case .cancelStop:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("CancelStop")
         }
     }
 }
@@ -1319,6 +1334,9 @@ public enum CardState: Codable, Hashable, Sendable {
     case rejected(Refusal)
     /// The connection dropped before a reply: resend or discard.
     case notConfirmed
+    /// The answer never left: the agent's host cannot be reached, and it
+    /// goes once it is back. Cancel takes it back.
+    case held
     /// The agent exited with the ask open.
     case dismissed
 
@@ -1334,6 +1352,7 @@ public enum CardState: Codable, Hashable, Sendable {
             case "Open": self = .open
             case "Sending": self = .sending
             case "NotConfirmed": self = .notConfirmed
+            case "Held": self = .held
             case "Dismissed": self = .dismissed
             default:
                 throw DecodingError.dataCorruptedError(
@@ -1368,6 +1387,9 @@ public enum CardState: Codable, Hashable, Sendable {
         case .notConfirmed:
             var _container = encoder.singleValueContainer()
             try _container.encode("NotConfirmed")
+        case .held:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Held")
         case .dismissed:
             var _container = encoder.singleValueContainer()
             try _container.encode("Dismissed")
@@ -1850,6 +1872,129 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
     }
 }
 
+/// A command the client runs itself, on every kind, and never sends to the
+/// agent: amux's model and effort pickers and amux's rename.
+public enum ClientCommand: String, Codable, Hashable, Sendable, CaseIterable {
+    case model = "Model"
+    case effort = "Effort"
+    case rename = "Rename"
+}
+
+/// What the client did with a draft that names a command it runs itself
+/// (`/model`, `/effort`, `/rename`), or one the agent does not run.
+public enum CommandOutcome: Codable, Hashable, Sendable {
+    /// Not a command the client runs: send the draft as typed.
+    case send
+    /// A bare `/model` or `/effort`: open amux's own picker for it.
+    case pick(ClientCommand)
+    /// A bare `/rename`: ask for the agent's new name.
+    case askName
+    /// A setting set or the agent renamed, or how that failed.
+    case acted(ActOutcome)
+    /// The pick went as the agent's own command, typed (terminal Claude's
+    /// model and effort): a prompt, as any other.
+    case sent(SendOutcome)
+    /// The agent does not run this command, and it was not sent: Codex
+    /// runs only the commands amux implements for it and its skills.
+    /// `offered` is what it does run.
+    case refused(command: String, offered: [String])
+    /// The command names a model or effort the agent does not offer.
+    case unknown(command: ClientCommand, value: String, offered: [String])
+
+    private enum Tag: String, CodingKey {
+        case pick = "Pick"
+        case acted = "Acted"
+        case sent = "Sent"
+        case refused = "Refused"
+        case unknown = "Unknown"
+    }
+
+    private enum RefusedKeys: String, CodingKey {
+        case command
+        case offered
+    }
+
+    private enum UnknownKeys: String, CodingKey {
+        case command
+        case value
+        case offered
+    }
+
+    public init(from decoder: any Decoder) throws {
+        if let _single = try? decoder.singleValueContainer(),
+           let _name = try? _single.decode(String.self)
+        {
+            switch _name {
+            case "Send": self = .send
+            case "AskName": self = .askName
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: _single, debugDescription: "no CommandOutcome is named \(_name)")
+            }
+            return
+        }
+        let _container = try decoder.container(keyedBy: Tag.self)
+        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a CommandOutcome names exactly one variant"))
+        }
+        switch _tag {
+        case .pick:
+            self = .pick(try _container.decode(ClientCommand.self, forKey: .pick))
+        case .acted:
+            self = .acted(try _container.decode(ActOutcome.self, forKey: .acted))
+        case .sent:
+            self = .sent(try _container.decode(SendOutcome.self, forKey: .sent))
+        case .refused:
+            let _fields = try _container.nestedContainer(
+                keyedBy: RefusedKeys.self, forKey: .refused)
+            self = .refused(
+                command: try _fields.decode(String.self, forKey: .command),
+                offered: try _fields.decode([String].self, forKey: .offered))
+        case .unknown:
+            let _fields = try _container.nestedContainer(
+                keyedBy: UnknownKeys.self, forKey: .unknown)
+            self = .unknown(
+                command: try _fields.decode(ClientCommand.self, forKey: .command),
+                value: try _fields.decode(String.self, forKey: .value),
+                offered: try _fields.decode([String].self, forKey: .offered))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .send:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Send")
+        case .pick(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .pick)
+        case .askName:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("AskName")
+        case .acted(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .acted)
+        case .sent(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .sent)
+        case .refused(let command, let offered):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: RefusedKeys.self, forKey: .refused)
+            try _fields.encode(command, forKey: .command)
+            try _fields.encode(offered, forKey: .offered)
+        case .unknown(let command, let value, let offered):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: UnknownKeys.self, forKey: .unknown)
+            try _fields.encode(command, forKey: .command)
+            try _fields.encode(value, forKey: .value)
+            try _fields.encode(offered, forKey: .offered)
+        }
+    }
+}
+
 public struct CommandView: Codable, Hashable, Sendable {
     public var name: String
     public var description: String
@@ -1887,11 +2032,13 @@ public enum Composer: Codable, Hashable, Sendable {
     /// The agent has exited: the draft goes through ResumeAgent as the new
     /// incarnation's first prompt, one tap.
     case resume
-    /// Drafting continues; sending waits.
-    case disabled(Waiting)
+    /// The chat is not current. Drafting continues, and a send is held
+    /// by the client, shown pending with Cancel, until the chat is current
+    /// again and it goes.
+    case holds(Waiting)
 
     private enum Tag: String, CodingKey {
-        case disabled = "Disabled"
+        case holds = "Holds"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1915,8 +2062,8 @@ public enum Composer: Codable, Hashable, Sendable {
                     debugDescription: "a Composer names exactly one variant"))
         }
         switch _tag {
-        case .disabled:
-            self = .disabled(try _container.decode(Waiting.self, forKey: .disabled))
+        case .holds:
+            self = .holds(try _container.decode(Waiting.self, forKey: .holds))
         }
     }
 
@@ -1928,9 +2075,9 @@ public enum Composer: Codable, Hashable, Sendable {
         case .resume:
             var _container = encoder.singleValueContainer()
             try _container.encode("Resume")
-        case .disabled(let _value):
+        case .holds(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .disabled)
+            try _container.encode(_value, forKey: .holds)
         }
     }
 }
@@ -1939,15 +2086,20 @@ public enum Composer: Codable, Hashable, Sendable {
 /// or waiting while drafting continues; with the activity line inside it.
 public struct ComposerView: Codable, Hashable, Sendable {
     public var mode: Composer
+    /// The agent's own view is on another conversation: prompts are
+    /// refused until a switch back.
+    public var switchedAway: Bool
     public var activity: Activity?
 
-    public init(mode: Composer, activity: Activity?) {
+    public init(mode: Composer, switchedAway: Bool, activity: Activity?) {
         self.mode = mode
+        self.switchedAway = switchedAway
         self.activity = activity
     }
 
     private enum CodingKeys: String, CodingKey {
         case mode
+        case switchedAway = "switched_away"
         case activity
     }
 }
@@ -2778,13 +2930,16 @@ public struct FleetCard: Codable, Hashable, Sendable {
     public var descendants: UInt32
     /// Jobs its provider runs in the background, as its row reports them.
     public var backgroundJobs: UInt32
+    /// This client's stop of it is held: its host could not be reached, and
+    /// the stop goes when the host is back. Cancel takes it back.
+    public var stopHeld: Bool
     /// The branch of the folder the agent started in, as of its last turn
     /// end; None on a detached head or outside a repository.
     public var branch: String?
     /// How it ended, once it has.
     public var exitCause: ExitCause?
 
-    public init(agent: AgentKey, name: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, branch: String?, exitCause: ExitCause?) {
+    public init(agent: AgentKey, name: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, stopHeld: Bool, branch: String?, exitCause: ExitCause?) {
         self.agent = agent
         self.name = name
         self.kind = kind
@@ -2798,6 +2953,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.members = members
         self.descendants = descendants
         self.backgroundJobs = backgroundJobs
+        self.stopHeld = stopHeld
         self.branch = branch
         self.exitCause = exitCause
     }
@@ -2816,6 +2972,7 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case members
         case descendants
         case backgroundJobs = "background_jobs"
+        case stopHeld = "stop_held"
         case branch
         case exitCause = "exit_cause"
     }
@@ -3355,8 +3512,16 @@ public enum InputState: Codable, Hashable, Sendable {
     case rejected(Refusal)
     /// The connection dropped before a reply. Resolved only at CaughtUp from
     /// the snapshot's queue and the items; one found in neither stays here
-    /// and the person decides. Nothing is resent on its own.
+    /// and the person decides. Nothing is resent on its own: it may have
+    /// reached the agent, and agents do not drop a person's input sent twice.
     case uncertain
+    /// A prompt or an answer that certainly never left: sent while the chat
+    /// was not current, or refused because the agent's host could not be
+    /// reached. The client holds it, shown pending with Cancel, and sends
+    /// it again under the same id once the host is reachable. It lives only
+    /// as long as this client: closing the client drops it (a held prompt's
+    /// words go back to the draft).
+    case held
 
     private enum Tag: String, CodingKey {
         case rejected = "Rejected"
@@ -3371,6 +3536,7 @@ public enum InputState: Codable, Hashable, Sendable {
             case "Queued": self = .queued
             case "Settled": self = .settled
             case "Uncertain": self = .uncertain
+            case "Held": self = .held
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no InputState is named \(_name)")
@@ -3407,6 +3573,9 @@ public enum InputState: Codable, Hashable, Sendable {
         case .uncertain:
             var _container = encoder.singleValueContainer()
             try _container.encode("Uncertain")
+        case .held:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Held")
         }
     }
 }
@@ -4221,45 +4390,6 @@ public enum PhaseView: Codable, Hashable, Sendable {
     }
 }
 
-/// One question's answer as the person gave it.
-public enum Pick: Codable, Hashable, Sendable {
-    /// The chosen options; none, with no text, skips the question.
-    case options([UInt32])
-    case other(String)
-
-    private enum Tag: String, CodingKey {
-        case options = "Options"
-        case other = "Other"
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let _container = try decoder.container(keyedBy: Tag.self)
-        guard _container.allKeys.count == 1, let _tag = _container.allKeys.first else {
-            throw DecodingError.dataCorrupted(
-                .init(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "a Pick names exactly one variant"))
-        }
-        switch _tag {
-        case .options:
-            self = .options(try _container.decode([UInt32].self, forKey: .options))
-        case .other:
-            self = .other(try _container.decode(String.self, forKey: .other))
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        switch self {
-        case .options(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .options)
-        case .other(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .other)
-        }
-    }
-}
-
 public enum PlanVerdict: String, Codable, Hashable, Sendable, CaseIterable {
     case open = "Open"
     case approved = "Approved"
@@ -4318,20 +4448,27 @@ public struct ProviderSignIn: Codable, Hashable, Sendable {
     }
 }
 
-/// One question's pick and the person's note on it.
+/// One question's answer as the person gave it: the options picked, the
+/// words typed as "Something else", and a note. A multi-select carries
+/// picks and typed words together; nothing picked and nothing typed skips
+/// the question.
 public struct QuestionResponse: Codable, Hashable, Sendable {
-    public var pick: Pick
     /// Empty when there is none.
     public var note: String?
+    /// The words typed as "Something else"; None when nothing was typed.
+    public var other: String?
+    public var picked: [UInt32]?
 
-    public init(pick: Pick, note: String?) {
-        self.pick = pick
+    public init(note: String?, other: String?, picked: [UInt32]?) {
         self.note = note
+        self.other = other
+        self.picked = picked
     }
 
     private enum CodingKeys: String, CodingKey {
-        case pick
         case note
+        case other
+        case picked
     }
 }
 
@@ -5904,6 +6041,9 @@ public enum Underway: Codable, Hashable, Sendable {
     /// neither queued nor in the transcript: only the person can say
     /// whether to send it again or discard it.
     case mayNotHaveArrived
+    /// It never left: the agent's host cannot be reached. It goes once the
+    /// host is back; Cancel takes it back into the draft.
+    case held
 
     private enum Tag: String, CodingKey {
         case sending = "Sending"
@@ -5919,6 +6059,7 @@ public enum Underway: Codable, Hashable, Sendable {
         {
             switch _name {
             case "MayNotHaveArrived": self = .mayNotHaveArrived
+            case "Held": self = .held
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no Underway is named \(_name)")
@@ -5950,6 +6091,9 @@ public enum Underway: Codable, Hashable, Sendable {
         case .mayNotHaveArrived:
             var _container = encoder.singleValueContainer()
             try _container.encode("MayNotHaveArrived")
+        case .held:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Held")
         }
     }
 }

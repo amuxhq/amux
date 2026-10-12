@@ -751,8 +751,11 @@ fn an_unconfirmed_answer_offers_resend_and_discard() {
 
 // --- the composer ----------------------------------------------------------
 
+/// A draft is taken at any time, and Enter always hands it on: while the
+/// chat is not yet current the client library holds it, pending, and sends
+/// it once the chat catches up.
 #[test]
-fn a_draft_is_taken_any_time_and_sent_only_when_caught_up_and_live() {
+fn a_draft_is_taken_any_time_and_held_until_the_chat_is_current() {
     let mut state = SessionState::new(
         fixtures::agent(Kind::ClaudeSdk),
         crate::chat::layout::CAP as usize,
@@ -761,12 +764,8 @@ fn a_draft_is_taken_any_time_and_sent_only_when_caught_up_and_live() {
     state.update(snapshot(Phase::Idle, vec![], vec![]));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     typed(&mut view, &state, "hello");
-    assert!(view.key(&state, key(KeyCode::Enter), theme()).is_empty());
-    assert_eq!(view.editor.text(), "hello");
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     assert!(text(&buffer).contains("catching up"), "{}", text(&buffer));
-
-    state.update(caught_up(0));
     let effects = view.key(&state, key(KeyCode::Enter), theme());
     assert_eq!(
         effects,
@@ -776,6 +775,29 @@ fn a_draft_is_taken_any_time_and_sent_only_when_caught_up_and_live() {
         }]
     );
     assert!(view.editor.is_empty());
+    // The library holds it, pending, while the chat catches up.
+    let held = wire::Input::new(
+        b"held-1".to_vec(),
+        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: "hello".into(),
+                attachments: vec![],
+            })),
+        }),
+    );
+    state.update(Msg::Send(held));
+    assert_eq!(
+        state.input_state(b"held-1"),
+        Some(ui_state::InputState::Held)
+    );
+    let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
+    assert!(
+        text(&buffer).contains("sends when"),
+        "the held prompt shows pending: {}",
+        text(&buffer)
+    );
+    let outcome = state.update(caught_up(0));
+    assert_eq!(outcome.resend.len(), 1, "caught up, it goes");
 }
 
 #[test]
@@ -1013,7 +1035,7 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("Draft kept · sending waits until this machine signs in"),
+        screen.contains("it sends once this machine signs in"),
         "{screen}"
     );
 
@@ -1113,10 +1135,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         screen.contains("desk no longer trusts this machine"),
         "{screen}"
     );
-    assert!(
-        screen.contains("sending waits until you pair again"),
-        "{screen}"
-    );
+    assert!(screen.contains("it sends once you pair again"), "{screen}");
 }
 
 #[test]

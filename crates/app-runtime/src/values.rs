@@ -334,6 +334,36 @@ pub struct SendOutcome {
     pub state: InputState,
 }
 
+/// What the client did with a draft that names a command it runs itself
+/// (`/model`, `/effort`, `/rename`), or one the agent does not run.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CommandOutcome {
+    /// Not a command the client runs: send the draft as typed.
+    Send,
+    /// A bare `/model` or `/effort`: open amux's own picker for it.
+    Pick(ui_view::ClientCommand),
+    /// A bare `/rename`: ask for the agent's new name.
+    AskName,
+    /// A setting set or the agent renamed, or how that failed.
+    Acted(ActOutcome),
+    /// The pick went as the agent's own command, typed (terminal Claude's
+    /// model and effort): a prompt, as any other.
+    Sent(SendOutcome),
+    /// The agent does not run this command, and it was not sent: Codex
+    /// runs only the commands amux implements for it and its skills.
+    /// `offered` is what it does run.
+    Refused {
+        command: String,
+        offered: Vec<String>,
+    },
+    /// The command names a model or effort the agent does not offer.
+    Unknown {
+        command: ui_view::ClientCommand,
+        value: String,
+        offered: Vec<String>,
+    },
+}
+
 /// What an act on a chat came to.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum ActOutcome {
@@ -342,6 +372,9 @@ pub enum ActOutcome {
     Rejected(Refusal),
     /// The connection dropped before the agent answered.
     NotConfirmed,
+    /// It never left: the agent's host cannot be reached. The chat holds
+    /// it, shown pending with Cancel, and it goes once the host is back.
+    Held,
     /// The call did not reach the agent.
     Failed(String),
 }
@@ -459,7 +492,11 @@ pub struct Directories {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum AgentAct {
     Rename(String),
+    /// Stops it now. One whose host cannot be reached is held, shown on its
+    /// card, and goes when the host is back.
     Stop,
+    /// Takes back a held stop.
+    CancelStop,
     Delete,
 }
 

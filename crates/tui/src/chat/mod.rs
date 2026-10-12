@@ -29,8 +29,9 @@ use ui_state::{
 };
 pub use ui_view::Comparison;
 use ui_view::{
-    AskBody, AskCard, Away, CardState, Changeable, ChatOptions, ExitCause, FamilyHeader, Reach,
-    RowKind, ToolRows, ask_card, chat_rows_for, composer, overview, queue_rows,
+    AskBody, AskCard, Away, CardState, Changeable, ChatOptions, ClientCommand, ExitCause,
+    FamilyHeader, Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview,
+    queue_rows,
 };
 use wire::{Attachment, attachment};
 
@@ -100,6 +101,13 @@ pub enum ChatEffect {
     Discard {
         id: Vec<u8>,
     },
+    /// Takes Claude's own view back to this agent's conversation.
+    SwitchBack,
+    /// Takes a held prompt back before it goes; its words return to the
+    /// composer.
+    Cancel {
+        id: Vec<u8>,
+    },
     Page(u32),
     /// Ctrl+V: read the clipboard and attach what it holds.
     Paste,
@@ -126,6 +134,27 @@ pub enum ChatEffect {
     Chord(char),
     /// Say this in the notice line.
     Notice(String),
+    /// amux's rename of this chat's agent: `/rename <name>`.
+    Rename(String),
+}
+
+/// Why a slash command was not sent: the agent does not run it, and what it
+/// does run.
+fn refused_command_words(state: &SessionState, command: &str, offered: &[String]) -> String {
+    let agent = match state.kind() {
+        wire::Kind::Codex => "Codex",
+        wire::Kind::ClaudePty | wire::Kind::ClaudeSdk => "Claude",
+        wire::Kind::Unspecified => "This agent",
+    };
+    let commands: Vec<String> = offered.iter().map(|name| format!("/{name}")).collect();
+    if commands.is_empty() {
+        format!("{agent} does not run /{command} here")
+    } else {
+        format!(
+            "{agent} does not run /{command} here; it runs {}",
+            commands.join(" ")
+        )
+    }
 }
 
 /// Takes a queued prompt back; its words return to the composer (after any
@@ -474,6 +503,11 @@ impl ChatView {
                     input_id: prompt.input_id,
                     text: prompt.text,
                 },
+                ui_view::Underway::Held => QueueEntry::Held {
+                    input_id: prompt.input_id,
+                    text: prompt.text,
+                    host: host.to_owned(),
+                },
             });
         }
         entries
@@ -512,10 +546,14 @@ impl ChatView {
                 continue;
             }
             match &sent.state {
-                InputState::Sent | InputState::Queued | InputState::Uncertain => {
+                InputState::Sent
+                | InputState::Queued
+                | InputState::Uncertain
+                | InputState::Held => {
                     self.sending.entry(sent.id.clone()).or_insert(Sending {
                         at_ms: now_ms,
-                        in_feed: to_feed && sent.state != InputState::Queued,
+                        in_feed: to_feed
+                            && !matches!(sent.state, InputState::Queued | InputState::Held),
                     });
                 }
                 InputState::Rejected(_) | InputState::Settled => {}
@@ -638,6 +676,14 @@ impl ChatView {
             return effects;
         }
         match key.code {
+            KeyCode::Char('b') if ctrl => {
+                // Takes Claude's own view back to this agent's conversation.
+                return if ui_view::switched_away(state) {
+                    vec![ChatEffect::SwitchBack]
+                } else {
+                    vec![]
+                };
+            }
             KeyCode::Char('x') if ctrl => {
                 let stops = ui_view::ask_card(state).is_some_and(|card| card.stops_turn);
                 return if state.phase() == PhaseView::Working || stops {
@@ -892,6 +938,9 @@ impl ChatView {
             (QueueEntry::Unconfirmed { input_id, .. }, 1) => Some(ChatEffect::Discard {
                 id: input_id.clone(),
             }),
+            (QueueEntry::Held { input_id, .. }, 0) => Some(ChatEffect::Cancel {
+                id: input_id.clone(),
+            }),
             _ => None,
         }
     }
@@ -906,7 +955,12 @@ impl ChatView {
             return vec![];
         }
         match state.composer() {
-            Composer::Send if state.can_send() => {
+            // Not current, the client library holds what is sent and sends
+            // it once the chat is current again.
+            Composer::Send | Composer::Holds(_) => {
+                if let Some(effects) = self.slash_command(state) {
+                    return effects;
+                }
                 let (text, attachments) = self.editor.take_prompt();
                 self.not_sent = None;
                 self.follow();
@@ -919,8 +973,66 @@ impl ChatView {
                 self.follow();
                 vec![ChatEffect::Resume { text, attachments }]
             }
-            _ => vec![],
         }
+    }
+
+    /// A draft that is a command the client handles, or one this agent
+    /// does not run: what it does instead of going as a prompt. None sends
+    /// the draft as typed.
+    fn slash_command(&mut self, state: &SessionState) -> Option<Vec<ChatEffect>> {
+        use crate::setup::{Item, Picker};
+        let text = self.editor.text().to_owned();
+        if !self.editor.attachments().is_empty() {
+            return None;
+        }
+        let effects = match ui_view::slash(state, &text) {
+            Slash::Prompt => return None,
+            Slash::Typed(typed) => vec![ChatEffect::Prompt {
+                text: typed,
+                attachments: Vec::new(),
+            }],
+            Slash::Set(input) => vec![ChatEffect::Answer(input)],
+            Slash::Pick(command) => {
+                let view = ui_view::settings(state);
+                let (item, title, choices) = match command {
+                    ClientCommand::Effort => {
+                        (Item::Effort, "Effort", crate::setup::effort_choices(&view))
+                    }
+                    _ => (Item::Model, "Model", crate::setup::model_choices(&view)),
+                };
+                self.picker = Some(Picker::new(item, title, choices, false));
+                vec![]
+            }
+            Slash::Rename(name) if name.is_empty() => {
+                return Some(vec![ChatEffect::Notice(
+                    "Name the agent after the command: /rename <name>".into(),
+                )]);
+            }
+            Slash::Rename(name) => vec![ChatEffect::Rename(name)],
+            // The draft stays, so the person can fix it.
+            Slash::Refused { command, offered } => {
+                return Some(vec![ChatEffect::Notice(refused_command_words(
+                    state, &command, &offered,
+                ))]);
+            }
+            Slash::Unknown {
+                command,
+                value,
+                offered,
+            } => {
+                let what = match command {
+                    ClientCommand::Effort => "effort",
+                    _ => "model",
+                };
+                return Some(vec![ChatEffect::Notice(format!(
+                    "No {what} {value} here; it offers {}",
+                    offered.join(", ")
+                ))]);
+            }
+        };
+        self.editor.take_prompt();
+        self.not_sent = None;
+        Some(effects)
     }
 
     /// Ctrl+S and what follows it: a running chat's model, effort and
@@ -998,10 +1110,18 @@ impl ChatView {
                     Item::Permission => ui_view::SettingChange::Permission(value),
                     _ => ui_view::SettingChange::Model(value),
                 };
-                ui_view::setting_input(state.kind(), &change)
-                    .map(ChatEffect::Answer)
-                    .into_iter()
-                    .collect()
+                match ui_view::setting_input(state.kind(), &change) {
+                    Some(input) => vec![ChatEffect::Answer(input)],
+                    // An agent that changes it only by its own command
+                    // (terminal Claude) gets that command typed.
+                    None => ui_view::typed_setting(&change)
+                        .map(|text| ChatEffect::Prompt {
+                            text,
+                            attachments: Vec::new(),
+                        })
+                        .into_iter()
+                        .collect(),
+                }
             }
         }
     }
@@ -2028,7 +2148,7 @@ impl ChatView {
             // Kept from sending, or exited, the box's edge says why; the
             // empty field still invites the draft.
             let invite = match state.composer() {
-                Composer::Disabled(_) | Composer::Resume => format!("Message {name}"),
+                Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
                 composer => placeholder(&composer, &name, &host, self.reach),
             };
             let boxed = boxed_composer(editor, &invite, &edge_words, !pane_keys, width, theme);
@@ -2160,11 +2280,13 @@ impl ChatView {
         }
         // The plain composer's top edge says what stands in the way of
         // sending, most pressing first: the last prompt refused (error
-        // ink), the link to the host down, an exited agent that Enter
-        // resumes, a usage limit reached (warning ink; sending stays open).
+        // ink), Claude's own view on another conversation (warning ink),
+        // the link to the host down, an exited agent that Enter resumes, a
+        // usage limit reached (warning ink; sending stays open).
         if let Some(at) = plain_box {
             let words = edge_title(
                 self.not_sent.as_deref(),
+                ui_view::switched_away(state),
                 &state.composer(),
                 &host,
                 self.reach,
@@ -2793,7 +2915,7 @@ fn problem_words(
 ) -> Option<(String, ratatui::style::Style)> {
     let (words, style) = state_words(state, reach, host, theme);
     match (state.composer(), state.phase()) {
-        (_, PhaseView::Exited { .. }) | (Composer::Disabled(_), _) => Some((
+        (_, PhaseView::Exited { .. }) | (Composer::Holds(_), _) => Some((
             words,
             if style == theme.muted() {
                 theme.faint()
@@ -2944,7 +3066,7 @@ fn sign_in_lines(
 /// down, for the box's edge; None when it can.
 fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String> {
     Some(match composer {
-        Composer::Disabled(Waiting::Detached) => match reach {
+        Composer::Holds(Waiting::Detached) => match reach {
             Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
             Reach::Away(Away::SignedOut) => format!("{host} is away · this machine is signed out"),
             Reach::Online(_) | Reach::Away(Away::Plain) | Reach::Offline => {
@@ -2953,18 +3075,24 @@ fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String
         },
         // The client talks only to this machine's daemon: reconnecting is
         // that daemon gone, never the agent's host, as home says it.
-        Composer::Disabled(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
-        Composer::Disabled(Waiting::CatchingUp) => "catching up".to_owned(),
+        Composer::Holds(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
+        Composer::Holds(Waiting::CatchingUp) => "catching up".to_owned(),
         Composer::Send | Composer::Resume => return None,
     })
 }
 
+/// The composer's top edge while terminal Claude's own view is on another
+/// conversation: prompts are refused until it is back on this one.
+const SWITCHED_AWAY_WORDS: &str =
+    "Claude's own view switched to another conversation · ctrl+b switch back";
+
 /// What the plain composer's top edge says stands in the way of sending,
-/// most pressing first, with its ink: the last prompt refused, the link to
-/// the host down, an exited agent that Enter resumes, a usage limit
-/// reached (sending stays open).
+/// most pressing first, with its ink: the last prompt refused, Claude's own
+/// view on another conversation, the link to the host down, an exited agent
+/// that Enter resumes, a usage limit reached (sending stays open).
 fn edge_title(
     not_sent: Option<&str>,
+    switched_away: bool,
     composer: &Composer,
     host: &str,
     reach: Reach,
@@ -2973,6 +3101,9 @@ fn edge_title(
 ) -> Option<(String, ratatui::style::Style)> {
     if let Some(reason) = not_sent {
         return Some((reason.to_owned(), theme.error()));
+    }
+    if switched_away {
+        return Some((SWITCHED_AWAY_WORDS.to_owned(), theme.warning()));
     }
     waiting_words(composer, host, reach)
         .map(|words| (words, theme.faint()))
@@ -2996,7 +3127,7 @@ pub(crate) fn composer_lines(
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let invite = match composer {
-        Composer::Disabled(_) | Composer::Resume => format!("Message {name}"),
+        Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
         composer => placeholder(composer, name, host, reach),
     };
     let edge = EdgeWords {
@@ -3005,7 +3136,7 @@ pub(crate) fn composer_lines(
         controls: None,
     };
     let mut lines = boxed_composer(editor, &invite, &edge, true, width, theme).lines;
-    if let Some((words, ink)) = edge_title(None, composer, host, reach, None, theme)
+    if let Some((words, ink)) = edge_title(None, false, composer, host, reach, None, theme)
         && let Some(top) = lines.first_mut()
     {
         *top = marked_edge_in(&words, ink, width, theme);
@@ -3257,13 +3388,22 @@ fn turn_hint_words(state: &SessionState, editor: &Editor, reach: Reach, leader: 
             }
         }
         Composer::Resume => pairs.push("enter resume".into()),
-        Composer::Disabled(Waiting::Detached) if reach == Reach::Away(Away::SignedOut) => {
-            return "Draft kept · sending waits until this machine signs in".to_owned();
+        // A send now is held, shown pending with Cancel, and goes by itself.
+        Composer::Holds(Waiting::Detached) if reach == Reach::Away(Away::SignedOut) => {
+            return "enter holds it · it sends once this machine signs in".to_owned();
         }
-        Composer::Disabled(Waiting::Detached) if reach == Reach::Away(Away::Revoked) => {
-            return "Draft kept · sending waits until you pair again".to_owned();
+        Composer::Holds(Waiting::Detached) if reach == Reach::Away(Away::Revoked) => {
+            return "enter holds it · it sends once you pair again".to_owned();
         }
-        Composer::Disabled(_) => return "Draft kept · sending waits".to_owned(),
+        Composer::Holds(Waiting::Detached) => {
+            return "enter holds it · it sends when the host is back".to_owned();
+        }
+        Composer::Holds(Waiting::Reconnecting) => {
+            return "enter holds it · it sends once amux is back".to_owned();
+        }
+        Composer::Holds(Waiting::CatchingUp) => {
+            return "enter holds it · it sends once caught up".to_owned();
+        }
     }
     pairs.push(more);
     pairs.join(" · ")
@@ -3556,11 +3696,9 @@ fn state_words(
             (format!("{ended} · {}", away_words()), theme.warning())
         }
         (_, PhaseView::Exited { cause }) => (exit_words(&cause), theme.muted()),
-        (Composer::Disabled(Waiting::Detached), _) => (away_words(), theme.warning()),
-        (Composer::Disabled(Waiting::Reconnecting), _) => {
-            ("reconnecting".to_owned(), theme.warning())
-        }
-        (Composer::Disabled(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.muted()),
+        (Composer::Holds(Waiting::Detached), _) => (away_words(), theme.warning()),
+        (Composer::Holds(Waiting::Reconnecting), _) => ("reconnecting".to_owned(), theme.warning()),
+        (Composer::Holds(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.muted()),
         (_, _) if state.reset_pending() => ("refreshing".to_owned(), theme.muted()),
         (_, PhaseView::NeedsYou) => ("needs you".to_owned(), theme.attention()),
         (_, PhaseView::Working) => ("working".to_owned(), theme.muted()),
@@ -3659,7 +3797,7 @@ fn empty_feed(
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let mut lines = vec![Line::default(); height];
-    let away = matches!(state.composer(), Composer::Disabled(Waiting::Detached)) || !reach.online();
+    let away = matches!(state.composer(), Composer::Holds(Waiting::Detached)) || !reach.online();
     let words = if away {
         Some("Its host is away, and nothing of this chat is held here yet.")
     } else if state.has_snapshot() && state.caught_up() {

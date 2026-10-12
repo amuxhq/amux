@@ -562,6 +562,13 @@ impl AskUi {
                     _ => AskAction::None,
                 };
             }
+            // Cancel takes the held answer back, and the card is open again.
+            CardState::Held => {
+                return match key.code {
+                    KeyCode::Char('c') => AskAction::Discard,
+                    _ => AskAction::None,
+                };
+            }
             CardState::Sending | CardState::Dismissed => return AskAction::None,
         }
         match &card.body {
@@ -704,6 +711,15 @@ impl AskUi {
                 ));
                 out.lines
                     .push(line("r resend · d discard".into(), theme.faint()));
+                return out;
+            }
+            CardState::Held => {
+                out.lines.push(line(
+                    "Your answer is held: the agent's host can't be reached. It sends when the host is back."
+                        .into(),
+                    theme.warning(),
+                ));
+                out.lines.push(line("c cancel".into(), theme.faint()));
                 return out;
             }
             _ => {}

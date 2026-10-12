@@ -1,3 +1,40 @@
+2026-10-13 — **A conversation switched away in terminal Claude's own view says so, with a way back.**
+When someone resumes another conversation inside terminal Claude's own
+screen, the agent's conversation has left that process and prompts are
+refused. The chat now says so on the composer's edge ("Claude's own view
+switched to another conversation") with the way back: Ctrl+B in the
+terminal, a Switch back button on the phone, both sending the input that
+types the resume of this agent's conversation. The snapshot's effort is now
+read as the one in force for terminal Claude too.
+
+2026-10-13 — **`/model`, `/effort` and `/rename` are the client's own commands, and Codex refuses what it does not run.**
+Typing `/model` sent a slash command to the agent, which on terminal Claude
+opened a dialog amux could not see, and Codex took any "/..." as a prompt for
+the model. The command list both clients offer now starts with the client's
+own `/model` and `/effort` (where there is a choice) and `/rename`, ahead of
+the agent's commands of the same name. Bare `/model` or `/effort` opens the
+picker, `/model <name>` sets it without a prompt, and `/rename <name>` is
+amux's rename. On Codex any other command it does not run is refused in the
+composer with the commands it does offer; an unknown model or effort is
+refused the same way. The phone reaches the same decisions through one bridge
+call that classifies a draft before it is sent.
+
+2026-10-13 — **A prompt, an answer or a stop that never left waits for the host and goes by itself.**
+A send refused because the agent's host could not be reached, or made while
+the chat was not yet current, certainly never reached the agent, yet clients
+showed it as failed and the person had to send it again. The client library
+now holds such a prompt or answer: it shows pending with Cancel ("sends when
+desk is back"), and goes again under its own id once the chat is current,
+whether the chat caught up or the host's entry turned online. A send whose
+connection dropped after it was written still waits as "may not have arrived"
+for the person to resend or discard, since nothing can tell whether the agent
+already has it. A stop is held the same way by the fleet and shown on the
+agent's row on home (`x` cancels it); rename and delete still fail at once
+with the reason. Held inputs live as long as the client; a held answer or
+stop is dropped when it closes. The composer's
+"waiting" mode is now "holds": typing and Enter are open while the chat
+catches up or reconnects, and the key line says when it will send.
+
 2026-10-13 — **A multi-select sends its ticked options with the words typed as "Something else".**
 The shared answer for a question held either picks or typed words, never
 both, so ticking two options and then typing "Something else" sent only the

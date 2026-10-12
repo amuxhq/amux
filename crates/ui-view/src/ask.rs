@@ -55,6 +55,9 @@ pub enum CardState {
     Rejected(Refusal),
     /// The connection dropped before a reply: resend or discard.
     NotConfirmed,
+    /// The answer never left: the agent's host cannot be reached, and it
+    /// goes once it is back. Cancel takes it back.
+    Held,
     /// The agent exited with the ask open.
     Dismissed,
 }
@@ -237,6 +240,7 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
             Some(InputState::Sent | InputState::Settled | InputState::Queued) => CardState::Sending,
             Some(InputState::Rejected(reason)) => CardState::Rejected(reason.clone()),
             Some(InputState::Uncertain) => CardState::NotConfirmed,
+            Some(InputState::Held) => CardState::Held,
             None => CardState::Open,
         }
     };

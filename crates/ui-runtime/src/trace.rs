@@ -78,6 +78,10 @@ pub enum DriverEvent {
         tail: u32,
         cap: u32,
     },
+    /// A held input went again, its host reachable once more.
+    Resend {
+        id: Vec<u8>,
+    },
     /// The phone left the foreground: the stream was dropped.
     Suspended,
     /// Back in the foreground: reopened with a tail.

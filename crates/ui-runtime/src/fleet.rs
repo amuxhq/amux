@@ -18,7 +18,10 @@ use futures_util::StreamExt as _;
 use tokio::sync::{OnceCell, watch};
 use tokio::task::JoinHandle;
 use ui_state::{AgentKey, Connection, FleetMsg, FleetState};
-use wire::{Agent, DumpFile, DumpPart, InventoryEvent, Lifecycle, inventory_event};
+use wire::{
+    Agent, DumpFile, DumpPart, ErrorCode, InventoryEvent, Lifecycle, StopAgentRequest,
+    inventory_event,
+};
 
 use crate::Backoff;
 use crate::session::{Catalogues, Session};
@@ -34,6 +37,25 @@ pub const HELD_ROWS: u32 = 16;
 pub struct Window {
     pub tail: u32,
     pub cap: u32,
+}
+
+/// What became of a person's stop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stop {
+    Stopped,
+    /// The agent's host could not be reached, so it never left: the fleet
+    /// holds it, the row shows it with Cancel, and it goes when the host is
+    /// back. Closing the client drops it.
+    Held,
+}
+
+/// Whether a lifecycle call's error says it never reached the agent's
+/// host: the daemon could not reach it and wrote nothing.
+fn never_left(error: &RpcError) -> bool {
+    matches!(
+        error.code(),
+        Some(ErrorCode::Unavailable | ErrorCode::Unreachable)
+    )
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -100,6 +122,28 @@ impl Inner {
             .unwrap_or_else(|poison| poison.into_inner())
     }
 
+    /// Stops the agent; a stop that never left, its host out of reach, is
+    /// held and goes again when the host is back.
+    async fn stop(self: &Arc<Self>, agent: AgentKey) -> Result<Stop, RpcError> {
+        let request = StopAgentRequest {
+            agent_id: agent.agent.clone(),
+        };
+        match self.client.stop_agent(request).await {
+            Ok(()) => {
+                self.apply(FleetMsg::DropStop(agent));
+                Ok(Stop::Stopped)
+            }
+            Err(error) if never_left(&error) => {
+                self.apply(FleetMsg::HoldStop(agent));
+                Ok(Stop::Held)
+            }
+            Err(error) => {
+                self.apply(FleetMsg::DropStop(agent));
+                Err(error)
+            }
+        }
+    }
+
     fn sessions(&self) -> MutexGuard<'_, HashMap<AgentKey, Slot>> {
         self.sessions
             .lock()
@@ -123,6 +167,7 @@ impl Inner {
             )
         );
         let keys = state.update(msg);
+        let released = state.take_released_stops();
         let moved = connection || host || !keys.is_empty();
         model.changed.extend(keys.iter().cloned());
         model.hosts_changed |= host;
@@ -132,6 +177,18 @@ impl Inner {
         }
         if moved {
             self.changed.send_replace(());
+        }
+        if !released.is_empty()
+            && let Some(me) = self.me.upgrade()
+        {
+            for agent in released {
+                let me = me.clone();
+                tokio::spawn(async move {
+                    // Held again if the host went before it landed; any
+                    // other failure is the stop's own, and it is not held.
+                    let _ = me.stop(agent).await;
+                });
+            }
         }
     }
 
@@ -373,6 +430,18 @@ impl Fleet {
 
     pub fn state(&self) -> FleetGuard<'_> {
         FleetGuard(self.inner.model())
+    }
+
+    /// A person's stop of the agent. One whose host cannot be reached
+    /// never left: it is held, shown on the agent's row with Cancel, and
+    /// goes when the host is back. Rename and delete are never held.
+    pub async fn stop(&self, agent: &AgentKey) -> Result<Stop, RpcError> {
+        self.inner.stop(agent.clone()).await
+    }
+
+    /// Takes back a held stop before it goes.
+    pub fn cancel_stop(&self, agent: &AgentKey) {
+        self.inner.apply(FleetMsg::DropStop(agent.clone()));
     }
 
     /// The one session for a live agent, held with a small window while no

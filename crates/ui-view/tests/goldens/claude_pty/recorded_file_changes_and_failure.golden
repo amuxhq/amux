@@ -125,4 +125,5 @@
   permission  "auto" "Auto" unsettable
   permission* unlisted "bypassPermissions" "bypassPermissions" unsettable
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Haiku 4.5") effort=None permission=Some("bypassPermissions") mode=None

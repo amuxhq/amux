@@ -638,6 +638,9 @@ impl Home {
             }
             KeyCode::Char('x') => {
                 if let Some(agent) = agent {
+                    if fleet.stop_held(&agent) {
+                        return vec![FleetEffect::CancelStop(agent)];
+                    }
                     self.confirm_close(fleet, agent);
                 }
             }
@@ -1006,6 +1009,9 @@ impl Home {
                     self.draft.prefix = false;
                     self.open_setting(fleet, item);
                     vec![]
+                }
+                Some(Hit::Close(agent)) if listing && fleet.stop_held(&agent) => {
+                    vec![FleetEffect::CancelStop(agent)]
                 }
                 Some(Hit::Close(agent)) if listing => {
                     self.confirm_close(fleet, agent);
@@ -2146,6 +2152,18 @@ fn second_words(
     now_ms: i64,
     theme: Theme,
 ) -> Option<(String, Style)> {
+    // A stop the person gave while the host was out of reach waits to be
+    // sent; `x` takes it back.
+    if row.card.stop_held {
+        let host = match row.card.host.as_str() {
+            "" => "its host",
+            host => host,
+        };
+        return Some((
+            format!("stop held · it goes when {host} is back · x cancels"),
+            theme.warning(),
+        ));
+    }
     Some(match line {
         // What it asks is the most important line on home.
         SecondLine::Ask(ask) => (ask_words(ask), theme.text()),

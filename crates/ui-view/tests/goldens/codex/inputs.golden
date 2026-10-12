@@ -70,4 +70,5 @@
   permission* unlisted "auto" "auto" unsettable
   mode* unlisted "plan" "plan" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("GPT-5.6 Luna") effort=Some("high") permission=None mode=Some("plan")

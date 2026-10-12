@@ -69,6 +69,8 @@ Codex`, `usage limit reached`); why it exited (`finished`, a crash in red); that
 agent has no second line. A folded family whose member needs you says that member's name and what it asks. The
 highlighted row is tinted, with half a line of the tint above and below; under the pointer or the
 keys alike, and it shows `[x]` in place of its age to stop the agent, or delete it once it has exited, after asking.
+A stop given while the agent's host could not be reached is held, and its row says so (`stop held · it goes when
+desk is back · x cancels`) until the host is back and the stop goes; `[x]` then takes it back without asking.
 A terminal that gives no background to tint marks it with `›` instead. `+ New Agent` and the section headings
 highlight the same way, tinted or marked, so a keyboard user always sees where Enter lands.
 
@@ -179,21 +181,36 @@ Enter on a row opens its chat. From top to bottom:
   (Claude's and Codex's `default`); otherwise it reads `auto`, `accept edits`, `plan`, `bypass permissions`
   (Claude) or `read only`, `full access`, `plan` (Codex), and `custom` for a Codex pair outside its presets. Its
   top edge says what stands in the way of sending, most pressing first: a prompt the
-  agent refused (`not sent: its host is shutting down`, in red), the host away (`desk is away`), an exited agent (`Enter
+  agent refused (`not sent: its host is shutting down`, in red), terminal Claude's own view on another conversation
+  (`Claude's own view switched to another conversation · ctrl+b switch back`, in the warning ink: prompts are
+  refused until it is back, and Ctrl+B types the resume of this agent's conversation into Claude), the host away (`desk is away`), an exited agent (`Enter
   resumes`), a usage limit reached (`5-hour limit reached · resets 23:24`, in the warning ink; sending stays
   open). One blank line below it, the key line: `shift+tab permission · ctrl+a more` at rest
   (`shift+tab mode` for an agent with modes), `enter queue · ctrl+x
-  stop` added while the agent works, `enter resume` once it has exited, `Draft kept · sending waits` while the
-  host is away. What everyone knows (Enter sends, pasting attaches) is not said.
+  interrupt` added while the agent works, `enter resume` once it has exited, `enter holds it · it sends when the host is back`
+  while the chat is not current. What everyone knows (Enter sends, pasting attaches) is not said.
 
-The composer takes a draft at any time. Enter sends while the chat is current and the agent is live; while the
-agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
-its first prompt (an empty Enter just resumes). A prompt to an idle agent shows at once in the feed, and one to a
-busy agent at once in the queue. A draft typed while the host is away stays in the composer, and a draft left in a
-chat for home or another chat waits in its composer until the chat opens again. A prompt the agent
-refuses, an exited agent's included, comes back into the composer with the reason, worded from the typed reason
-the view hands over, the same as the phone's; one whose connection dropped before a reply waits in the
-queue as `may not have arrived`, to resend or discard, and nothing is resent by itself.
+The composer takes a draft at any time. Enter sends while the agent is live; while the agent works it queues the
+prompt behind the running turn; when the agent has exited it resumes it with the draft as its first prompt (an empty
+Enter just resumes). A prompt to an idle agent shows at once in the feed, and one to a busy agent at once in the
+queue. A prompt of only spaces is not sent. A prompt sent while the host is away, or while the chat is not yet
+current, certainly never left: it waits in the queue as `sends when desk is back`, with `[Cancel]` (Enter on it)
+putting its words back in the composer, and goes by itself, under its own id, once the chat is current again. An
+answer to an ask is held the same way (`c` cancels it). A draft left in a chat for home or another chat waits in
+its composer until the chat opens again, and every draft, held prompts' words included, is handed to this
+machine's daemon as the client closes, so it is there when any terminal client on this machine opens the chat
+again (never on another machine). A prompt the agent refuses, an exited agent's included, comes back into the
+composer with the reason, worded from the typed reason the view hands over, the same as the phone's; one whose
+connection dropped before a reply waits in the queue as `may not have arrived`, to resend or discard, and nothing
+uncertain is resent by itself: it may already have reached the agent.
+
+**Commands.** `/model` and `/effort` are amux's own on every kind, where the agent offers a choice: bare, they
+open amux's picker; with a value (`/model sonnet`, `/effort high`) they set it and send nothing to the agent.
+Terminal Claude takes no model or effort input, so there the pick is typed as Claude's own `/model <value>`.
+`/rename <name>` is amux's rename, and says why when it fails. Other commands are the agent's: Claude runs its own
+from the text; Codex runs only the commands amux implements for it (`/compact`, `/clear`, `/review`, `/init`,
+`/plan`) and its skills, and any other `/…` is refused in the composer, which keeps it and names what Codex runs.
+A first word with another slash in it (`/Users/me/notes.md`) is words, not a command.
 
 Scrolled back, a control floats at the bottom centre of the feed, `↓ Jump to Bottom  ctrl+end`, or `↓ 3 new` when
 rows arrived meanwhile; clicking it or Ctrl+End returns to the newest. Because the client reads the mouse, the
@@ -378,6 +395,7 @@ end, marking the cut with `…` where that fits, and keeps its way out (`esc`, `
 | Ctrl+V | Attach an image or file from the clipboard |
 | ↑ in an empty composer | Into the queue; with nothing queued, the chat's last prompt again |
 | Ctrl+X | Interrupt: end the turn; the agent stays live and idle, and the draft is untouched |
+| Ctrl+B | While terminal Claude's own view is on another conversation, take it back to this agent's |
 | Shift+Tab | The agent's next mode, or where it has none its next permission |
 | Ctrl+S then `m`, `e` or `p` | The agent's model, effort or permission, where it can change from here |
 | Ctrl+O | The overview |

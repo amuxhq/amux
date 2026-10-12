@@ -22,6 +22,9 @@
   mode  "default" "Default" normal
   mode  "plan" "Plan"
   changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
+  command /rename source="" hint="<name>" "Rename the agent"
   command /autopilot source="user" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested."
   command /documents:documents source="user" hint="" "Create, edit, redline, and comment on `.docx`, Word, and Google Docs-targeted document artifacts inside the container, with a strict render-and-verify workflow. Use `render_docx.py` to generate page PNGs (and optional PDF) for visual QA, then iterate until layout is flawless before delivering the final document."
   command /imagegen source="system" hint="" "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the …

@@ -168,6 +168,13 @@ final class FeedView: UICollectionView {
     /// rather than reading them.
     var carried: FeedCoordinator.Held?
 
+    /// None, for the rows. The list runs under the status bar, the header
+    /// and the home indicator, and a hosted cell passing under them took
+    /// their safe area as padding: drawn taller than the height it was
+    /// measured and placed at, over the row below. Its insets are the
+    /// content insets the screen hands down, never the window's.
+    override var safeAreaInsets: UIEdgeInsets { .zero }
+
     /// The bottom is set before the cells are placed, so the rows at the
     /// top are never displayed on the way to the bottom and never taken
     /// for the reader reaching them. Nobody moving the list means not a
@@ -475,6 +482,10 @@ final class FeedCoordinator: NSObject, UICollectionViewDelegate {
             view.contentInset = UIEdgeInsets(
                 top: insets.top + 8, left: 0, bottom: insets.bottom, right: 0)
             moving = false
+            // The keyboard, a notice or a taller card growing the space under
+            // the rows: a reader following the newest row keeps it above
+            // them, which the next layout pass does.
+            if model.following { view.setNeedsLayout() }
         }
         var reconfigure: [ListItem] = []
         var remeasure = false

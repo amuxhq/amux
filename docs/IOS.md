@@ -611,7 +611,10 @@ stacks the rows by height, measures a row with one hidden hosting view
 when it first comes within a screen of view (as if photographed, so a row
 that parses its markdown on a background task is measured at its final
 shape), and forgets a height only when the model says that row was read
-again, the width changes or the environment does. UIKit's self-sizing was
+again, the width changes or the environment does. The list reports no safe
+area to its cells: it runs under the status bar, the header and the home
+indicator, and a hosted cell passing under them took their insets as
+padding and drew taller than it was placed, over the row below. UIKit's self-sizing was
 tried first and measured out: it measures from estimates on demand, keeps
 what it measured by index path, animates each result, and measures every
 cell on screen again whenever one moves, which under the stream at the
@@ -643,7 +646,8 @@ What the leaf owns, and what stays in `ChatModel`:
   at the same position on screen before anything is drawn, so nothing the
   reader is looking at moves. A reader following the newest row is kept at
   the bottom in every layout pass instead: rows arriving, rows measured,
-  the keyboard or a card changing the space. `ChatFeedTests` holds rows
+  the keyboard, a notice or a card changing the space under the rows.
+  `ChatFeedTests` holds rows
   still to the pixel under a landing page and under arrivals, holds the
   bottom while following, and shows a streamed chat exactly as the same
   rows open.

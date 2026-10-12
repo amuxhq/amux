@@ -1,3 +1,21 @@
+2026-10-13 — **The phone's chat rows sit where they draw, and home's ages count.**
+Long replies on the phone had the turn's "Worked …" line drawn over their last
+lines. The chat list runs under the status bar and the header, and every row
+cell passing under them took the window's safe area as padding that the row's
+measured height never included, so the cell drew taller than the place it was
+given. The list now reports no safe area to its cells. A chat following its
+newest row also failed to keep it in view when the space under the rows grew,
+as when the keyboard came up or a notice appeared over the composer; it now
+keeps the newest row above whatever grew.
+
+Home's "how long ago" ages froze at "0s" for minutes, because they were read
+against the moment the list was last pulled to refresh. They now count every
+second while home is on screen, and never read a row as older than nothing.
+A reopened app no longer flashes "Nothing paired yet" before it has read its
+saved hosts: home waits until it knows. The New Agent form now drops "desk
+cannot be reached" once desk is reachable again, instead of keeping it until
+the person edited something.
+
 2026-10-13 — **An ask waits for a pause in typing, and the settings key lets other keys through.**
 An ask that opens while the person is typing took the next key typed half a
 second after it was first drawn, so someone typing a key every second or so

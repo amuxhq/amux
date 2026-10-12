@@ -39,6 +39,7 @@ public enum HomeAction: Equatable, Sendable {
 public struct AgentsHome: View {
     @Environment(\.design) private var design
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.photographed) private var photographed
     private let model: FleetStore
     private let accounts: AccountRegistry
     /// The machines, for the one thing this screen says about them: a phone
@@ -92,6 +93,11 @@ public struct AgentsHome: View {
                 // would say the pairing it just did never happened.
                 if !model.rows.isEmpty {
                     fleet
+                } else if !model.loaded {
+                    // A reopened app draws before its saved hosts are read;
+                    // saying nothing is paired then would be untrue a moment
+                    // later, so nothing is said until it is known.
+                    Color.clear
                 } else if !model.machines.isEmpty {
                     noAgentsYet
                 } else {
@@ -101,6 +107,15 @@ public struct AgentsHome: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .onAppear { actions(.refresh) }
+        // Ages count while the list is on screen, as the terminal's do. A
+        // compared picture holds its clock still.
+        .task(id: photographed) {
+            guard !photographed else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                model.refreshOrder(now: Date())
+            }
+        }
         // A screen is a container of the things on it, not a name for all of
         // them. Without this the system spreads this identifier over every
         // element underneath — the title, the buttons, the rows — so
@@ -261,6 +276,7 @@ public struct AgentsHome: View {
                 : "\(entry.name) · \(waiting) need you"
         }
         if !model.rows.isEmpty { return model.subtitle }
+        if !model.loaded { return "" }
         if !model.machines.isEmpty {
             let count = model.machines.count
             return "No agents yet · \(count) host\(count == 1 ? "" : "s")"

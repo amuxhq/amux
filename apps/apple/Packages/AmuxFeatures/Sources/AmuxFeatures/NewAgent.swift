@@ -64,6 +64,9 @@ public struct NewAgent: View {
             }
         }
         .moving(value: model.browsing)
+        .onChange(of: model.machine.flatMap { hosts.host($0)?.online }, initial: true) { _, online in
+            if let online { model.machineReached(online) }
+        }
         // A screen is a container of the things on it, not a name for all of
         // them. Without this the system spreads this identifier over every
         // element underneath — the title, the buttons, the rows — so

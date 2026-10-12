@@ -424,7 +424,12 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
         .unwrap()
         .into_inner();
     let offered = Catalogue::decode(blob.bytes.as_slice()).unwrap();
-    let hosts = runtime.held_host_catalogue(node::Provider::Claude).unwrap();
+    // A folder with no project of its own offers what the host's Claude
+    // offers anywhere; the agent's was asked in its folder.
+    let hosts = runtime
+        .host_catalogue(node::Provider::Claude)
+        .await
+        .unwrap();
     assert_eq!(offered.models, hosts.catalogue.models);
     assert_eq!(offered.commands, hosts.catalogue.commands);
     assert_eq!(

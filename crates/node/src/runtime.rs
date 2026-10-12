@@ -900,7 +900,7 @@ impl ProfileRuntime {
         let dir = self.agent_dir(id);
         private_dir(&dir)?;
         let launch = self.launch();
-        let offered = self.offered_to(kind).await;
+        let offered = self.offered_to(kind, &request.cwd).await;
         let spec = spec::build(
             &launch,
             spec::Incarnation {
@@ -1025,7 +1025,7 @@ impl ProfileRuntime {
         let next = previous.incarnation + 1;
         let latest = self.last_settings(&key, previous.kind()).await?;
         let resolved = spec::carry(&previous, latest);
-        let offered = self.offered_to(previous.kind()).await;
+        let offered = self.offered_to(previous.kind(), &previous.cwd).await;
         let spec = spec::build(
             &launch,
             spec::Incarnation {
@@ -1102,12 +1102,14 @@ impl ProfileRuntime {
     }
 
     /// What the host's provider offers, for a kind that cannot ask its
-    /// provider itself: terminal Claude takes the host's Claude's.
-    async fn offered_to(&self, kind: Kind) -> Option<wire::Catalogue> {
+    /// provider itself: terminal Claude takes what the host's Claude offers
+    /// in the folder the agent works in, which includes the project's own
+    /// commands.
+    async fn offered_to(&self, kind: Kind, cwd: &str) -> Option<wire::Catalogue> {
         if kind != Kind::ClaudePty {
             return None;
         }
-        self.host_catalogue(crate::Provider::Claude)
+        self.folder_catalogue(crate::Provider::Claude, Path::new(cwd))
             .await
             .ok()
             .map(|offered| offered.catalogue)

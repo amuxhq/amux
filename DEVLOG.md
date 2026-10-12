@@ -1,3 +1,12 @@
+2026-10-13 — **Terminal Claude offers its project's own commands.** Claude
+lists a project's commands and skills only when asked from inside the
+project, and the daemon asked the host's Claude in the profile's own
+directory, so a project's slash commands never appeared in a terminal Claude
+agent's command list. The daemon now asks in the agent's folder when it
+spawns or resumes one, keeping each folder's answer in memory as long as the
+host's copy would be kept, and falls back to the host's copy if the ask
+fails.
+
 2026-10-13 — **A resume keeps the settings the agent last ran with.** Stop
 then resume put the agent back on the model, permission and effort it was
 created with: the next spec copied the previous one's. The daemon now reads

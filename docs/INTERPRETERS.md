@@ -204,9 +204,12 @@ nothing.
   that arrive while an ask is out cost one more ask after its answer. Codex
   says nothing when its models change, so they are asked once per server.
 - **Terminal Claude** cannot be asked, so it offers what its host's Claude
-  offers: the daemon hands it the models and commands of its copy for the
-  host in `AgentSpec.offered`, and it publishes them, with its own
-  permissions, when it launches.
+  offers in the agent's own folder: the daemon asks the host's Claude from
+  inside that folder (so a project's own commands and skills are listed),
+  hands it the models and commands in `AgentSpec.offered`, and it publishes
+  them, with its own permissions, when it launches. A folder's answer is
+  kept in memory as long as the host's copy would be; a failed ask falls
+  back to the host's copy.
 
 Each snapshot also states the running model's display name: the catalogue
 entry amux chose the model as, while that entry stands for the reported
@@ -427,8 +430,8 @@ shapes); on any other menu the card offers allow once and deny.
 
 Terminal Claude offers no list of models, efforts or commands a program could
 read, so its catalogue, written when it launches, holds the models and
-commands its host's Claude offers (from `AgentSpec.offered`, empty when the
-host has no copy) and Claude's permissions, each marked not settable. It
+commands its host's Claude offers in its folder (from `AgentSpec.offered`,
+empty when the host could not be asked) and Claude's permissions, each marked not settable. It
 takes no model or effort input: a person types `/model <name>` or `/effort <level>` as a prompt and
 the command's own rows reflect it. The permission changes only by cycling,
 since the cycle's order depends on how Claude was launched. Its inputs are

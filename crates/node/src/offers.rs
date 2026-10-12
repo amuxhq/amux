@@ -106,6 +106,9 @@ struct Held {
 /// The copies, and one run at a time per provider.
 pub(crate) struct Offers {
     held: Mutex<HashMap<Provider, Held>>,
+    /// What each provider offered when asked from inside a folder an agent
+    /// works in, kept in memory only.
+    folders: Mutex<HashMap<(Provider, PathBuf), Held>>,
     runs: HashMap<Provider, tokio::sync::Mutex<()>>,
 }
 
@@ -132,6 +135,7 @@ impl Offers {
         }
         Self {
             held: Mutex::new(held),
+            folders: Mutex::new(HashMap::new()),
             runs: ASKED
                 .into_iter()
                 .map(|provider| (provider, tokio::sync::Mutex::new(())))
@@ -214,7 +218,11 @@ impl ProfileRuntime {
             return Ok(offer.clone());
         }
 
-        let asked = match self.ask_provider(provider, &command, &launch).await {
+        let providers = self.dir().join(PROVIDERS);
+        let asked = match self
+            .ask_provider(provider, &command, &launch, &providers)
+            .await
+        {
             Ok(asked) => asked,
             Err(error) => {
                 tracing::warn!(provider = provider_word(provider), %error, "asking what the provider offers failed");
@@ -248,19 +256,71 @@ impl ProfileRuntime {
         Ok(answer)
     }
 
+    /// What `provider` offers an agent working in `folder`. Claude lists a
+    /// project's own commands and skills only when asked from inside the
+    /// project, so the host's copy, asked in the profile's directory, would
+    /// miss them. Asked there and kept in memory as long as the host's copy
+    /// would be; an ask that fails answers with the host's catalogue.
+    pub async fn folder_catalogue(
+        &self,
+        provider: Provider,
+        folder: &Path,
+    ) -> Result<HostCatalogue, CatalogueError> {
+        let offers = self.offers();
+        let launch = self.launch();
+        let now = self.clock_now();
+        let key = (provider, folder.to_owned());
+        if let Some(held) = offers.folders.lock().unwrap().get(&key) {
+            let age = now.saturating_sub(held.asked_at_ms);
+            if age < launch.catalogue_max_age_ms
+                && (held.offer.signed_in || age < launch.catalogue_recheck_ms)
+            {
+                return Ok(held.offer.clone());
+            }
+        }
+        let command = provider_command(provider, &launch).to_owned();
+        let asked = {
+            let _run = offers.runs[&provider].lock().await;
+            self.ask_provider(provider, &command, &launch, folder).await
+        };
+        match asked {
+            Ok(asked) => {
+                let answer = host_catalogue(ProviderOffer {
+                    asked_at_ms: now,
+                    ..asked
+                });
+                offers.folders.lock().unwrap().insert(
+                    key,
+                    Held {
+                        offer: answer.clone(),
+                        asked_at_ms: now,
+                        version_read_at_ms: now,
+                    },
+                );
+                Ok(answer)
+            }
+            Err(error) => {
+                tracing::warn!(provider = provider_word(provider), folder = %folder.display(), %error, "asking what the provider offers in a folder failed");
+                self.host_catalogue(provider).await
+            }
+        }
+    }
+
     /// The copy for `provider` as held, asking nothing.
     pub fn held_host_catalogue(&self, provider: Provider) -> Option<HostCatalogue> {
         let held = self.offers().held.lock().unwrap();
         held.get(&provider).map(|held| held.offer.clone())
     }
 
-    /// Runs `amux catalogue <provider>` in the profile's providers
-    /// directory, in its own process group, and reads what it wrote.
+    /// Runs `amux catalogue <provider>` in `folder`, in its own process
+    /// group, and reads what it wrote to the profile's providers directory.
+    /// The caller holds the provider's run lock.
     async fn ask_provider(
         &self,
         provider: Provider,
         command: &str,
         launch: &Launch,
+        folder: &Path,
     ) -> Result<ProviderOffer, CatalogueError> {
         let dir = self.dir().join(PROVIDERS);
         std::fs::create_dir_all(&dir).map_err(CatalogueError::Write)?;
@@ -275,7 +335,7 @@ impl ProfileRuntime {
             .arg("--out")
             .arg(&out)
             .envs(&launch.provider_env)
-            .current_dir(&dir)
+            .current_dir(folder)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())

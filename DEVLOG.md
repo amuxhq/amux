@@ -1,3 +1,12 @@
+2026-10-13 — **A file one agent sends another arrives as a file.** A file
+forwarded between agents travelled as the attachment element's text, naming
+a path on the sender's host that a recipient on another machine cannot
+open. Before a message reaches its recipient, the recipient's daemon now
+puts each attached file into the recipient's own blobs, copied from the
+sender's directory on the same host or fetched from the sender's host and
+checked against its hash; a file that cannot be brought refuses the message
+in words.
+
 2026-10-13 — **A stopped or deleted child tells its parent it was
 stopped.** A child deleted mid-turn reported to its parent as "finished its
 turn" with no words, and parents told the person the work was done. Every

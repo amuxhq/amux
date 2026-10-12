@@ -48,6 +48,10 @@ pub enum RelayError {
     Stale,
     #[error("resuming the agent: {0}")]
     Resume(Box<RegistryError>),
+    /// A file the message carries could not be brought to the recipient's
+    /// host, so the recipient could not open it; the message is not sent.
+    #[error("the message's attachment {name} could not be brought to the recipient: {why}")]
+    Attachment { name: String, why: String },
     #[error(transparent)]
     Forwarded(#[from] crate::forward::ForwardError),
     #[error("the store: {0}")]
@@ -68,6 +72,7 @@ impl RelayError {
             // deleted recipient does.
             Self::Stale => ErrorCode::NotFound,
             Self::Forwarded(error) => return error.to_wire(),
+            Self::Attachment { .. } => ErrorCode::FailedPrecondition,
             Self::Resume(_) | Self::Store(_) => ErrorCode::Internal,
         };
         wire::Error {
@@ -120,6 +125,16 @@ fn said(rejected: &Rejected) -> String {
             .trim_start_matches("REFUSAL_")
             .to_ascii_lowercase()
     })
+}
+
+/// The blob an attachment's bytes are, for the kinds that have one.
+fn blob_of(attachment: &wire::Attachment) -> Option<&wire::BlobRef> {
+    use wire::attachment::Of;
+    match attachment.of.as_ref()? {
+        Of::Image(blob) | Of::File(blob) => Some(blob),
+        Of::Review(review) => review.diff.as_ref()?.patch.as_ref(),
+        Of::Text(_) => None,
+    }
 }
 
 /// The envelope id of an outbox row: the same for every re-send of one
@@ -305,6 +320,7 @@ impl ProfileRuntime {
             }
         };
         envelope.from = Some(from);
+        self.bring_attachments(id, &envelope).await?;
         let envelope_id = envelope.id.clone();
         let incarnation = envelope.incarnation;
         self.deliver(id, envelope, is_parent, incarnation).await?;
@@ -336,6 +352,69 @@ impl ProfileRuntime {
                 client.send_message(envelope).await
             })
             .await?)
+    }
+
+    /// Puts the bytes of every file a message carries into the recipient's
+    /// own blobs, from the sending agent's: copied when it runs on this
+    /// host, fetched from its host otherwise. The recipient then reads each
+    /// file at a path on its own host, exactly as a person's attachment. A
+    /// message from a person carries files already stored with the
+    /// recipient.
+    async fn bring_attachments(
+        &self,
+        recipient: AgentId,
+        envelope: &Envelope,
+    ) -> Result<(), RelayError> {
+        let Some(sender::Value::Agent(sender)) =
+            envelope.from.as_ref().and_then(|from| from.value.as_ref())
+        else {
+            return Ok(());
+        };
+        let blobs = self.agent_dir(recipient).join(agent_dir::BLOBS);
+        for blob in envelope.attachments.iter().filter_map(blob_of) {
+            let name = if blob.name.is_empty() {
+                crate::blobs::hex(&blob.hash)
+            } else {
+                blob.name.clone()
+            };
+            let failed = |why: String| RelayError::Attachment {
+                name: name.clone(),
+                why,
+            };
+            if blobs.join(crate::blobs::hex(&blob.hash)).is_file() {
+                continue;
+            }
+            let request = wire::GetBlobRequest {
+                agent_id: sender.agent_id.clone(),
+                hash: blob.hash.clone(),
+            };
+            let bytes = if sender.host_id == self.host().as_bytes() {
+                self.get_blob(request)
+                    .await
+                    .map_err(|error| failed(error.to_string()))?
+                    .bytes
+            } else {
+                let host = Uuid::from_slice(&sender.host_id)
+                    .map_err(|_| failed("its sender names no host".to_owned()))?;
+                self.on_peer(
+                    host,
+                    |mut client| async move { client.get_blob(request).await },
+                )
+                .await
+                .map_err(|error| failed(error.to_string()))?
+                .bytes
+            };
+            use sha2::Digest as _;
+            if sha2::Sha256::digest(&bytes)[..] != blob.hash[..] {
+                return Err(failed("the bytes that came are not the file".to_owned()));
+            }
+            let (dir, hash) = (blobs.clone(), blob.hash.clone());
+            tokio::task::spawn_blocking(move || crate::blobs::write_blob(&dir, &hash, &bytes))
+                .await
+                .map_err(|error| failed(error.to_string()))?
+                .map_err(|error| failed(error.to_string()))?;
+        }
+        Ok(())
     }
 
     pub(crate) fn agent_sender(&self, id: AgentId, row: Option<&store::AgentRow>) -> Sender {

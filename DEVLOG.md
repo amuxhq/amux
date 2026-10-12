@@ -1,3 +1,11 @@
+2026-10-13 — **The daemon tells an agent how many agents below it are
+live.** A new control frame, `Children { live }`, carries an agent's count of
+live descendants from its daemon: sent when the agent connects with any below
+it, and whenever the daemon recounts it (the same count the fleet row
+shows). It lets a one-shot sub-agent wait for its own children before it
+exits. Each write reads the newest count under the connection's lock, so
+writes that race each other still end on the latest.
+
 2026-10-13 — **The second QA round's protocol changes.** The wire changes
 the round's decisions need, with only the code that keeps everything
 building; the behaviour behind most of them is follow-up work.

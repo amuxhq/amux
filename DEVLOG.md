@@ -1,3 +1,17 @@
+2026-10-13 — **Account plans in a test net behave like real ones.**
+`ctl tier` nudged only in-process hosts named in the topology, so a host
+signed in with `ctl sign-in`, or running as its own process, learned a
+lapse minutes later; process hosts could not reach the net's relay at all,
+since they did not trust its self-signed certificate. The net's account
+service had no plan read, so the phone kept the plan the door had set at
+sign-in, and `ctl status` printed each account's tier as created. Now
+process hosts trust the relay through `AMUX_CLOUD_TLS_CA`; every host
+signed in to the account learns a change at once (a process host by a
+pause and resume of its profile); the account service answers the phone's
+`/api/graphql` plan read from the account's current tier; the phone's
+debug door signs in by reading that plan and reads it there afterwards;
+and the net's topology, which `ctl status` prints, carries the new tier.
+
 2026-10-13 — **`testnet ctl` pastes, taps, pairs and reads a fleet the way
 a person meets them, and the phone's debug door keeps up.** `tui paste`
 pasted with tmux's `paste-buffer -p` without `-r`, turning every line feed

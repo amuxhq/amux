@@ -122,7 +122,13 @@ pub enum Command {
     /// Sign a host in to an account on the relay; returns once its relay
     /// link is up.
     SignIn { host: String, account: String },
-    /// Change what an account has bought.
+    /// Change what an account has bought, as a purchase or a lapse does.
+    ///
+    /// Every host signed in to it learns at once (a process host's relay
+    /// link drops for a moment to fetch it), the relay carries what the new
+    /// tier buys, and the phone's next read of the plan says so: signing
+    /// in (`phone connect`) reads it, as the app does wherever it asks
+    /// amux.sh.
     Tier { account: String, tier: Tier },
     /// The release feed supervised hosts update from.
     #[command(subcommand)]

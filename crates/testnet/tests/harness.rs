@@ -1416,3 +1416,73 @@ async fn removing_a_host_leaves_a_host_whose_name_it_starts_alone() {
     net.turn_ended("held", 1).await.unwrap();
     net.shutdown().await.unwrap();
 }
+
+/// The plan the net's account service gives `account` when the phone
+/// reads it: the `access` of its answer to `/api/graphql`.
+fn plan(net: &Net, account: &str) -> Value {
+    let url = net.relay().unwrap().url().to_owned();
+    let addr = url.trim_start_matches("http://");
+    let body = r#"{"query":"{ me { access { pro until grant { __typename } } } }"}"#;
+    let mut stream = TcpStream::connect(addr).unwrap();
+    write!(
+        stream,
+        "POST /api/graphql HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer access-{account}\r\n\
+         Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .unwrap();
+    let mut answer = String::new();
+    std::io::Read::read_to_string(&mut stream, &mut answer).unwrap();
+    let (_, json) = answer.split_once("\r\n\r\n").expect("an HTTP answer");
+    serde_json::from_str::<Value>(json).unwrap()["data"]["me"]["access"].take()
+}
+
+/// A changed plan reaches a host running as its own process as at once as
+/// one in the net's process, and the plan read a phone makes says the same:
+/// given access while Pro, access that ended when it went Free.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
+    let mut net = Net::start_with(Topology::new().relay(&["ada"]), wall())
+        .await
+        .unwrap();
+    net.add_host(HostDecl {
+        process: true,
+        account: Some("ada".to_owned()),
+        ..HostDecl {
+            name: "box".to_owned(),
+            ..HostDecl::default()
+        }
+    })
+    .await
+    .unwrap();
+    let tier = async |net: &Net| {
+        net.front_door("box")
+            .await
+            .unwrap()
+            .list_profiles(wire::Empty {})
+            .await
+            .unwrap()
+            .into_inner()
+            .profiles[0]
+            .tier()
+    };
+    assert_eq!(tier(&net).await, wire::Tier::Pro);
+    assert_eq!(plan(&net, "ada")["pro"], true);
+
+    let said = net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
+    assert!(said.installed.contains("box learned it"), "{said:?}");
+    assert_eq!(tier(&net).await, wire::Tier::Free, "box knows at once");
+    let lapsed = plan(&net, "ada");
+    assert_eq!(lapsed["pro"], false, "{lapsed}");
+    assert!(lapsed["until"].is_string(), "the access ended: {lapsed}");
+    assert_eq!(
+        net.topology().relay.as_ref().unwrap().accounts[0].tier,
+        testnet::TierDecl::Free,
+        "the net's own account of it, which `ctl status` prints, follows"
+    );
+
+    net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
+    assert_eq!(tier(&net).await, wire::Tier::Pro);
+    assert_eq!(plan(&net, "ada")["until"], Value::Null);
+    net.shutdown().await.unwrap();
+}

@@ -72,11 +72,9 @@ pub enum PhoneCommand {
     /// needs --lan and --bonjour, so the phone finds it on the network.
     Pair { host: String },
     /// Sign the phone in to a relay account (needs `phone open --relay`).
-    Connect {
-        account: String,
-        #[arg(long, default_value = "pro")]
-        tier: String,
-    },
+    /// The phone reads what the account may do from the net's account
+    /// service, as it does from amux.sh: `ctl tier` changes that answer.
+    Connect { account: String },
     /// Wait until the app has nothing in flight, then answer.
     Settle,
     /// Attach FILE to AGENT's draft as the photo library or file browser
@@ -274,7 +272,7 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
                 .map(|reply| Outcome::new(format!("text size {size}"), reply))
         }
         PhoneCommand::Pair { host } => pair(folder, &host),
-        PhoneCommand::Connect { account, tier } => {
+        PhoneCommand::Connect { account } => {
             let record = folder.record()?;
             let cloud = record.readiness["cloud_url"]
                 .as_str()
@@ -287,13 +285,12 @@ pub(crate) fn run(folder: &Folder, command: PhoneCommand) -> Result<Outcome, Str
                     "relay": cloud,
                     "token": format!("refresh-{account}"),
                     "user": account,
-                    "tier": tier,
                 }),
             )
             .map(|reply| Outcome::new(format!("the phone signed in as {account}"), reply))
         }
         PhoneCommand::Attach { agent, file, image } => {
-            let path = folder.dir.join(&file);
+            let path = folder.input(&file);
             let bytes = std::fs::read(&path)
                 .map_err(|error| format!("reading {}: {error}", path.display()))?;
             let name = path

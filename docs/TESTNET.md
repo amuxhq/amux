@@ -514,9 +514,22 @@ takes a lease itself, so a session that drives the phone runs entirely under one
 (`wt exec <tree> -- scripts/with iphone -- …`). `phone open` copies the app from
 `AMUX_QA_APP`, or the tree's debug build under `target/ios`, into the net's folder, so another session rebuilding
 it cannot break the install, then installs and launches that copy browsing the net's discovery scope; later
-commands talk to the app's door. `phone tap` waits for the app to settle before it answers, so the screen a tap
-opens is there for the next command. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`;
-`phone open --relay` and `phone connect ACCOUNT` reach accounts through the net's relay instead.
+commands talk to the app's door, which serves several connections at once. `phone tap` waits up to ten seconds for
+its element to be on screen and enabled, taps again while the app has not yet drawn a just-enabled control able to
+take it, then waits for the screen to change and the app to settle, so the screen a tap opens is there for the next
+command. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`; a `phone pair`
+that fails closes the pairing window it opened, so the next attempt can open one. `phone open --relay` and
+`phone connect ACCOUNT` reach accounts through the net's relay instead; signing in reads what the account may do
+from the net's account service, as the app does from amux.sh.
+
+**Accounts.** The relay's account service answers sign-in, relay credentials and the plan read a phone makes
+(`/api/graphql`): a Pro account has access given to it, one moved from Pro to Free had that access end when it
+moved, and one that was always Free has none. `tier ACCOUNT pro|free` changes the account, and every host signed in
+to it learns at once: an in-process host asks over its relay link, and a process host's profile is paused and
+resumed, which dials the relay afresh (its relay link drops for that moment). `status` prints each account's tier
+as it is now. A process host's debug daemon trusts the relay's certificate through `AMUX_CLOUD_TLS_CA`, so it reaches
+the relay where the account service names it, but not through the net's gates: `block-udp` and `net` do not touch
+its way to the relay.
 
 **Evidence.** `capture NAME` copies, never moves, everything about the moment into `findings/NAME/`: a
 `finding.md` to fill in (from `qa/FINDING.md`), the topology as it stands, the session log, an `amux dump` of

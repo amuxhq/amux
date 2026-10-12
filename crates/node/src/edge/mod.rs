@@ -116,7 +116,8 @@ impl Default for EdgeOptions {
     fn default() -> Self {
         Self {
             host_name: "amux".to_owned(),
-            kinds: Vec::new(),
+            // What this platform hosts; a phone says it runs none.
+            kinds: crate::routing::local_kinds(),
             lan: None,
             discovery: None,
             discovery_scope: String::new(),

@@ -222,6 +222,13 @@ pub enum RegistryError {
     Worktree(#[from] git_facts::WorktreeError),
     #[error("spawning on another host goes through that host's daemon")]
     OtherHost,
+    #[error("{}", kind_not_run_words(.host, *.kind, *.runs_none))]
+    KindNotRun {
+        host: String,
+        kind: Kind,
+        /// The host runs no agents at all, as a phone does.
+        runs_none: bool,
+    },
     #[error(transparent)]
     HostName(#[from] crate::forward::HostNameError),
     #[error(transparent)]
@@ -250,6 +257,20 @@ fn own_names(store: &Sqlite, host: &[u8]) -> Result<HashSet<String>, StoreError>
         .collect())
 }
 
+/// Why a host will not start an agent of a kind, as a sentence.
+fn kind_not_run_words(host: &str, kind: Kind, runs_none: bool) -> String {
+    if runs_none {
+        return format!("{host} runs no agents; start the agent on a host that runs them");
+    }
+    let kind = match kind {
+        Kind::ClaudePty => "terminal Claude",
+        Kind::ClaudeSdk => "headless Claude",
+        Kind::Codex => "Codex",
+        Kind::Unspecified => "these",
+    };
+    format!("{host} does not run {kind} agents")
+}
+
 /// A refused name, as the daemon's error says it.
 fn name_words(problem: wire::AgentNameProblem) -> String {
     match problem {
@@ -274,6 +295,7 @@ impl RegistryError {
                 ErrorCode::InvalidArgument
             }
             Self::OtherHost => ErrorCode::Unimplemented,
+            Self::KindNotRun { .. } => ErrorCode::FailedPrecondition,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
                 git_facts::WorktreeError::BranchExists(_)
@@ -800,6 +822,9 @@ impl ProfileRuntime {
             return Err(RegistryError::NoKind);
         };
         let kind = agent.kind();
+        if let Some(edge) = self.edge() {
+            self.runs_kind(&edge.capabilities(), edge.host_name(), kind)?;
+        }
         let resolved = spec::resolve(agent);
         let mut request = request;
         let bootstrap = request.initial_prompt.take().map(spec::prompt_bootstrap);
@@ -965,6 +990,14 @@ impl ProfileRuntime {
         request: CreateAgentRequest,
         caller: Option<AgentId>,
     ) -> Result<Agent, RegistryError> {
+        // A host that announced which kinds it runs is not asked to start
+        // another: a phone runs none.
+        if let Some(entry) = self.host_entry_of(host)
+            && let Some(capabilities) = &entry.capabilities
+            && let Some(kind) = request.agent.as_ref().map(|agent| agent.kind())
+        {
+            self.runs_kind(capabilities, &entry.name, kind)?;
+        }
         let mut request = request;
         if let Some(caller) = caller {
             request.parent = Some(AgentRef {
@@ -981,6 +1014,23 @@ impl ProfileRuntime {
                 client.create_agent(request).await
             })
             .await?)
+    }
+
+    /// Refuses a kind `capabilities` do not list, in words naming `host`.
+    fn runs_kind(
+        &self,
+        capabilities: &wire::Capabilities,
+        host: &str,
+        kind: Kind,
+    ) -> Result<(), RegistryError> {
+        if capabilities.kinds.contains(&(kind as i32)) {
+            return Ok(());
+        }
+        Err(RegistryError::KindNotRun {
+            host: host.to_owned(),
+            kind,
+            runs_none: capabilities.kinds.is_empty(),
+        })
     }
 
     /// Starts the agent's next incarnation: waits for a dying process to

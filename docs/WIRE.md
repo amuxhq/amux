@@ -129,7 +129,11 @@ message ResumeAgentRequest { bytes agent_id = 1; optional PromptSubmission initi
 `host` names the host that runs the agent, by id or by the name a person
 knows it by, resolved against this host and the trusted ones: exact first,
 then ignoring case. A name more than one host answers to is refused with the
-candidates (`AmbiguousHostName`). The `agent` arm is the kind: both Claude
+candidates (`AmbiguousHostName`). A host runs only the kinds its handshake
+announces (`Capabilities.kinds`; a phone announces none): a create naming a
+kind its host does not run is refused `FAILED_PRECONDITION` in words ("phone
+runs no agents"), by the near daemon before forwarding and by the host
+itself. The `agent` arm is the kind: both Claude
 kinds take `ClaudeCreateConfig` and Codex takes `CodexCreateConfig`, so the
 settings are always the kind's own. A create with no arm set names no
 interpreter and fails with `INVALID_ARGUMENT`. `initial_prompt` is a prompt with its attachments and the client's

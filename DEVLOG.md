@@ -1,3 +1,11 @@
+2026-10-13 — **A spawn on a host that runs no agents is refused in words.**
+The terminal offered the paired phone as a host, and a spawn there was
+forwarded and failed with a socket-path error from the phone's sandbox. A
+create naming a kind its host does not announce is now refused before it is
+forwarded ("phone runs no agents; start the agent on a host that runs
+them"), and a host refuses a kind it does not announce itself. An edge's
+kinds default to what its platform hosts.
+
 2026-10-13 — **The daemon enforces the attachment limit.** A file of 64 MB
 or more failed with "h2 protocol error", blaming the local runtime. The
 channel now carries a file at the limit, and the daemon refuses one over

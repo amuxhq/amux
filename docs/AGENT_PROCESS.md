@@ -163,15 +163,16 @@ provider's process group at once and writes nothing.
 |---|---|---|
 | `Running`, no daemon connected | The grace timer runs out | The interpreter writes a daemon-lost boundary; `Draining` (daemon lost) |
 | `Running` | `Stop` arrives | The interpreter cancels the turn the provider's own way, so an open ask closes as dismissed and its call as cancelled; `Draining` (stop) |
-| `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST` or `STOPPED` |
+| `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST` or `STOPPED`; a one-shot agent whose turn ends quiescent while it drains for a lost daemon exits `FINISHED`, as its parent hears it |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
-| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued and no accepted agent message still unconsumed | `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed and no agent below it live | `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has a parent, quiescent | The daemon's count of live agents below it falls to none, and the agent has taken as many reports since agents were live below it as were ever live at once | `exit` with `FINISHED`: the reports it waited for came before the count did |
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
 | Any | The provider exits | The loop ends; `PROVIDER_EXITED` with the exit code or signal |
-| Any | `Stop { kill }` arrives | The provider's process group is killed; `KILLED` |
+| Any | `Stop { kill }` arrives | Everything below the provider, and its process group, is killed; `KILLED` |
 | Start | The provider cannot be started | `COULD_NOT_START`, with why |
-| `Exiting` | Ten seconds pass | The provider's process group is killed |
+| `Exiting` | Ten seconds pass | Everything below the provider, and its process group, is killed |
 
 Why the incarnation ended travels in the journal, not on `ctl.sock`: the
 step that writes the final boundary also carries `incarnation_end`, and the
@@ -227,7 +228,8 @@ version integer, and a frame a reader does not know is ignored.
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's part of a dump bundle, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
-| `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill the provider's process group at once (the daemon's escalation past the stop deadline) |
+| `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
+| `children` | daemon → agent | `Children { live }`: how many agents below this one are live, on every host its daemon knows of, sent when the agent connects with any below it and whenever the count changes; a one-shot agent waits for none to be left |
 | `dump` | agent → daemon | `DumpPart`, answering a dump request |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 

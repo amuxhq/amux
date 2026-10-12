@@ -1,3 +1,15 @@
+2026-10-13 — **A sub-agent waits for its running children.** A one-shot
+agent now exits only when its turn has ended, nothing is queued or pending
+and no agent below it is live, by its daemon's count. QA saw a middle agent
+exit while its scout still worked, so the scout's result had nowhere to go
+and the lead waited forever. The child's report starts the sub-agent's next
+turn, which reports up as usual. When the daemon's word that the last child
+ended comes after the report that ended the sub-agent's turn, the sub-agent
+exits then, if it has taken as many reports as agents were live below it at
+once, so it never exits ahead of a report still on its way. A one-shot child
+whose turn ends while it drains for a lost daemon now exits finished, as its
+parent hears it, not "while the daemon was away".
+
 2026-10-13 — **A stop leaves nothing of the agent's commands running.**
 Claude's and Codex's tool shells each lead a session of their own, so the
 kill of the provider's process group missed them: QA saw a stopped headless

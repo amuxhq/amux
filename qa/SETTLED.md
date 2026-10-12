@@ -112,8 +112,9 @@ you are testing still behaves otherwise, that difference is a finding.
 - Claude handles its own slash commands: amux passes `/command args` through.
   Claude's built-in commands run with no model turn. Commands that exist only
   on Claude's own screen exist only in terminal Claude.
-- `/model`, `/effort` and `/rename` are amux's own, on both clients: bare,
-  they open amux's picker; with a value, they set it. There is no `/status`.
+- `/model`, `/effort` and `/rename` are amux's own, on both clients. Bare,
+  `/model` and `/effort` open amux's picker and `/rename` its rename; with a
+  value, each sets it. There is no `/status`.
 - For Codex, amux offers `/compact`, `/clear`, `/review`, `/init`, `/plan` and
   skills (`$name`). Any other slash command is refused in the composer.
 - `/clear` starts the agent afresh on every kind, marked in the chat as a new
@@ -127,8 +128,9 @@ you are testing still behaves otherwise, that difference is a finding.
 
 - Codex's own view may switch to another conversation (`/new`). amux keeps
   sending to its own.
-- When terminal Claude's own view resumes a different conversation, the agent
-  needs you ("Claude's own view switched to another conversation"). Prompts
+- When terminal Claude's own view resumes a different conversation, the chat
+  says so ("Claude's own view is on another conversation") with Switch back.
+  This is information, not an ask: the agent's phase does not change. Prompts
   are refused with that reason until its own conversation is resumed in
   Claude's view, or Switch back is used.
 

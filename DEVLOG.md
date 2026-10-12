@@ -1,3 +1,8 @@
+2026-10-13 — **The settled list says a conversation switched in Claude's own
+view is information, not an ask.** It told testers the agent needs you; the
+chat instead says so, with Switch back, and the phase does not change. It
+also said a bare `/rename` opens the picker; it opens the rename.
+
 2026-10-13 — **Account plans in a test net behave like real ones.**
 `ctl tier` nudged only in-process hosts named in the topology, so a host
 signed in with `ctl sign-in`, or running as its own process, learned a

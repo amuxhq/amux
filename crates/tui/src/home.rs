@@ -1191,8 +1191,7 @@ impl Home {
                 // screen.
                 let inner = text::str_width(&sentence)
                     .max(crate::panel::content_width(std::slice::from_ref(&legend)))
-                    .max(36)
-                    .min(48)
+                    .clamp(36, 48)
                     .min(width.saturating_sub(8));
                 let said = text::wrap(&sentence, inner);
                 let mut rows = vec![Line::default()];

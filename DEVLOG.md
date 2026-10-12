@@ -1,3 +1,7 @@
+2026-10-13 — **Home's stop window sizes itself with a clamp.**
+The width of the window that asks before a stop is now bounded with one clamp
+rather than a max and a min, which the linter refuses; nothing it draws moves.
+
 2026-10-13 — **The chat edits whole characters, pages without skipping a line, and says interrupt for ending a turn.**
 The composer drew and edited one code point at a time, so a combining accent
 was drawn apart from its letter and Backspace left half an emoji behind. The

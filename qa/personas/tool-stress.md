@@ -14,6 +14,17 @@ amux.
   - Plans: enter plan mode the way a person does, then approve, approve and switch permission, and send back with
     a note; refine a plan more than once before approving.
   - Codex approvals for commands and patches, and Codex's questions while planning.
+- Watch the tools that change a turn's shape, and check every client shows them truthfully while they run and
+  after:
+  - Task lists: Claude's to-do list and Codex's plan progress, updated several times in one turn.
+  - Claude's subagents: a nested agent running inside one turn, interrupted while it runs.
+  - Background shells: a command started in the background, its output checked, then killed; a long command
+    whose output streams in for a minute.
+  - Edits beyond one file: several edits to one file at once, a notebook, a deleted and a renamed file, a large
+    diff, a binary file, one Codex patch touching many files. Check the approval card and the review page.
+  - Web fetch and search, and the permission asks they raise.
+  - Slash commands typed into amux's composer (`/compact`, `/clear`, `/model`), and the chat after Claude
+    compacts its context.
 - Leave asks open and come back: switch chats, switch clients, answer from the other client, answer twice.
 - Have the worst thing happen while an ask is open: interrupt, stop, resume, the host restarting, the link
   dropping, the phone going to the background.

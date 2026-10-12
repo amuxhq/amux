@@ -1,3 +1,9 @@
+2026-10-12 — **The ask-heavy QA persona also stresses the tools that change
+a turn's shape.** Task lists and Codex's plan progress, Claude's subagents,
+background shells, edits beyond one file, web fetches, and slash commands
+typed into amux's composer, with wordings in the agent guide that produce
+each reliably.
+
 2026-10-12 — **The native-parity QA persona leaves amux's own presentation
 alone.** It now reads how the clients present a chat before comparing, and
 records a difference only when amux loses or gets wrong what the native

@@ -34,6 +34,63 @@ pub struct Resolved {
     pub model: Option<String>,
     pub permission: Option<String>,
     pub mode: Option<String>,
+    pub effort: Option<String>,
+}
+
+/// The settings an agent last ran with, as its snapshot says them; each
+/// one absent is carried from the previous incarnation's spec.
+#[derive(Clone, Debug, Default)]
+pub struct Settings {
+    pub model: Option<String>,
+    pub permission: Option<String>,
+    pub mode: Option<String>,
+    pub effort: Option<String>,
+}
+
+/// What a resumed incarnation starts with: the previous one's extra
+/// arguments, and the model, permission, mode and effort the agent last
+/// ran with, not the ones it was created with. A setting changed in the
+/// chat survives a stop and a resume.
+pub fn carry(previous: &AgentSpec, latest: Settings) -> Resolved {
+    use create_agent_request::Agent;
+    let config = previous.config.clone().unwrap_or_default();
+    let model = latest.model.or(config.model);
+    let permission = latest.permission.or(config.permission);
+    let mode = latest.mode.or(config.mode);
+    let effort = latest.effort.or(config.effort);
+    match previous.kind() {
+        Kind::Codex => resolve(&Agent::Codex(wire::CodexCreateConfig {
+            model,
+            effort,
+            permission,
+            mode,
+        })),
+        _ => resolve(&Agent::ClaudeSdk(wire::ClaudeCreateConfig {
+            args: without_settings(&previous.provider_args),
+            model,
+            effort,
+            permission,
+        })),
+    }
+}
+
+/// Claude's arguments with the settings amux passes taken out, leaving the
+/// ones the person gave: [`resolve`] adds the settings again.
+fn without_settings(args: &[String]) -> Vec<String> {
+    const SETTINGS: [&str; 3] = ["--model", "--permission-mode", "--effort"];
+    let mut kept = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if SETTINGS.contains(&arg.as_str()) {
+            args.next();
+        } else if !SETTINGS
+            .iter()
+            .any(|setting| arg.starts_with(&format!("{setting}=")))
+        {
+            kept.push(arg.clone());
+        }
+    }
+    kept
 }
 
 /// Resolves a creation's per-provider settings. Claude takes its model and
@@ -60,6 +117,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 model: claude.model,
                 permission: claude.permission,
                 mode: None,
+                effort: claude.effort,
             }
         }
         Agent::Codex(codex) => {
@@ -90,6 +148,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                 model: codex.model,
                 permission: codex.permission,
                 mode: codex.mode,
+                effort: codex.effort,
             }
         }
     }
@@ -166,6 +225,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
             model: at.resolved.model.clone(),
             permission: at.resolved.permission.clone(),
             mode: at.resolved.mode.clone(),
+            effort: at.resolved.effort.clone(),
             install_path: launch.install_path.to_string_lossy().into_owned(),
         }),
         daemon_version: crate::version().to_owned(),
@@ -234,6 +294,49 @@ mod tests {
     use wire::{ClaudeCreateConfig, CodexCreateConfig};
 
     use super::*;
+
+    #[test]
+    fn a_resume_carries_the_persons_arguments_and_the_settings_last_run_with() {
+        let created = resolve(&Agent::ClaudePty(ClaudeCreateConfig {
+            args: vec!["--verbose".into(), "--add-dir".into(), "/tmp".into()],
+            model: Some("opus".into()),
+            permission: Some("plan".into()),
+            effort: None,
+        }));
+        let previous = AgentSpec {
+            kind: Kind::ClaudePty as i32,
+            provider_args: created.provider_args,
+            config: Some(EffectiveConfig {
+                model: created.model,
+                permission: created.permission,
+                ..EffectiveConfig::default()
+            }),
+            ..AgentSpec::default()
+        };
+        let resumed = carry(
+            &previous,
+            Settings {
+                permission: Some("acceptEdits".into()),
+                effort: Some("high".into()),
+                ..Settings::default()
+            },
+        );
+        assert_eq!(
+            resumed.provider_args,
+            [
+                "--verbose",
+                "--add-dir",
+                "/tmp",
+                "--model",
+                "opus",
+                "--permission-mode",
+                "acceptEdits",
+                "--effort",
+                "high"
+            ]
+        );
+        assert_eq!(resumed.effort.as_deref(), Some("high"));
+    }
 
     #[test]
     fn a_claude_permission_is_its_permission_mode_argument() {

@@ -1023,12 +1023,8 @@ impl ProfileRuntime {
 
         let previous = spec::newest(&dir)?.ok_or(RegistryError::NoSpec(id))?;
         let next = previous.incarnation + 1;
-        let resolved = spec::Resolved {
-            provider_args: previous.provider_args.clone(),
-            model: previous.config.as_ref().and_then(|c| c.model.clone()),
-            permission: previous.config.as_ref().and_then(|c| c.permission.clone()),
-            mode: previous.config.as_ref().and_then(|c| c.mode.clone()),
-        };
+        let latest = self.last_settings(&key, previous.kind()).await?;
+        let resolved = spec::carry(&previous, latest);
         let offered = self.offered_to(previous.kind()).await;
         let spec = spec::build(
             &launch,
@@ -1061,6 +1057,48 @@ impl ProfileRuntime {
             store.set_marker(&key, None);
         }
         self.start_process(id, &dir, &launch).await
+    }
+
+    /// The model, permission, mode and effort the agent last ran with, as
+    /// its newest snapshot says them; nothing for a setting it never said.
+    async fn last_settings(
+        &self,
+        key: &AgentKey,
+        kind: Kind,
+    ) -> Result<spec::Settings, RegistryError> {
+        use prost::Message as _;
+        let snapshot = self.store.lock().await.cut(key, 0)?.snapshot;
+        let Some(body) = snapshot.map(|snapshot| snapshot.body) else {
+            return Ok(spec::Settings::default());
+        };
+        let body = body.as_slice();
+        Ok(match kind {
+            Kind::ClaudeSdk => wire::ClaudeSdkSnapshot::decode(body)
+                .map(|snapshot| spec::Settings {
+                    model: snapshot.model,
+                    permission: snapshot.permission,
+                    mode: None,
+                    effort: snapshot.effort,
+                })
+                .unwrap_or_default(),
+            Kind::ClaudePty => wire::ClaudePtySnapshot::decode(body)
+                .map(|snapshot| spec::Settings {
+                    model: snapshot.model,
+                    permission: snapshot.permission,
+                    mode: None,
+                    effort: snapshot.effort,
+                })
+                .unwrap_or_default(),
+            Kind::Codex => wire::CodexSnapshot::decode(body)
+                .map(|snapshot| spec::Settings {
+                    model: snapshot.model,
+                    permission: snapshot.permission,
+                    mode: snapshot.mode,
+                    effort: snapshot.effort,
+                })
+                .unwrap_or_default(),
+            Kind::Unspecified => spec::Settings::default(),
+        })
     }
 
     /// What the host's provider offers, for a kind that cannot ask its

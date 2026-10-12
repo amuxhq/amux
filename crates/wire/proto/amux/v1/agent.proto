@@ -85,13 +85,15 @@ message EffectiveConfig {
   uint32 drain_ms = 2;
   uint64 facts_ring_bytes = 3;
   uint64 journal_segment_bytes = 4;
+  // The model, permission, mode and effort this incarnation starts with, as
+  // its catalogue names them: the creation's for the first, and for a
+  // resumed one the ones the agent last ran with.
   optional string model = 5;
-  // The permission and mode the agent was created with, as its catalogue
-  // names them.
   optional string permission = 6;
   optional string mode = 7;
   // The canonical install path the hook binary and tool server run from.
   string install_path = 8;
+  optional string effort = 9;
 }
 
 // ctl.sock frames, length-prefixed, no version integer.

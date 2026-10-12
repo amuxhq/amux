@@ -282,7 +282,9 @@ deadline (`agent.drain_secs`) and then exits as "orphaned while waiting for
 you". Whichever daemon starts next ingests the journal remainder and shows
 the agent exited with one-step resume.
 
-A resume writes the next `spec.<n>` from the current configuration and
+A resume writes the next `spec.<n>` from the current configuration, with
+the model, permission, mode and effort the agent last ran with (from its
+newest snapshot) rather than the ones it was created with, and
 starts the directory again with the same agent id, so family edges and
 replicas keep pointing at the same thing. There is no automatic resume.
 

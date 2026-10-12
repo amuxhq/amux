@@ -1,3 +1,11 @@
+2026-10-13 — **A resume keeps the settings the agent last ran with.** Stop
+then resume put the agent back on the model, permission and effort it was
+created with: the next spec copied the previous one's. The daemon now reads
+the agent's newest snapshot and builds the resumed spec from the model,
+permission, mode and effort it last ran with, keeping the extra arguments the
+person gave. `EffectiveConfig` gains `effort`, so each spec says the effort
+its incarnation started with.
+
 2026-10-13 — **Agents that outlive a daemon restart keep amux's tools.** The
 daemon bound an agent's `tools.sock` only when it started the agent, so an
 agent adopted by a restarted daemon answered every fleet tool call with

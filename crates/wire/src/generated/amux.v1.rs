@@ -12394,10 +12394,11 @@ pub struct EffectiveConfig {
     pub facts_ring_bytes: u64,
     #[prost(uint64, tag = "4")]
     pub journal_segment_bytes: u64,
+    /// The model, permission, mode and effort this incarnation starts with, as
+    /// its catalogue names them: the creation's for the first, and for a
+    /// resumed one the ones the agent last ran with.
     #[prost(string, optional, tag = "5")]
     pub model: ::core::option::Option<::prost::alloc::string::String>,
-    /// The permission and mode the agent was created with, as its catalogue
-    /// names them.
     #[prost(string, optional, tag = "6")]
     pub permission: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, optional, tag = "7")]
@@ -12405,6 +12406,8 @@ pub struct EffectiveConfig {
     /// The canonical install path the hook binary and tool server run from.
     #[prost(string, tag = "8")]
     pub install_path: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "9")]
+    pub effort: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for EffectiveConfig {
     const NAME: &'static str = "EffectiveConfig";

@@ -21,6 +21,7 @@ use crate::theme::Theme;
 const W: u16 = 100;
 const H: u16 = 30;
 
+mod round2;
 mod text_layout;
 
 fn theme() -> Theme {

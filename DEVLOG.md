@@ -1,3 +1,18 @@
+2026-10-12 — **Failing tests for the terminal client's second QA round.** From
+the triage of two overnight runs, in `crates/tui/src/tests/round2.rs`. Each
+states the behaviour a fix must give. Words typed on home after a chat
+closes stop and delete nothing. Enter after a filter opens the agent it
+found. A long question keeps "Reply instead" and its keys on an 80x24
+screen. The new-agent settings line keeps its keys at 80 columns. PageDown
+skips no line under the pinned prompt. The composer draws a combining
+accent and Backspace removes a whole emoji. A tab in a code block keeps
+words apart. Another host's folder is dropped when the host changes. A
+form left empty reopens with the defaults. An empty rename says why Enter
+does nothing. A key after Ctrl+S that is no setting reaches the draft, and
+Ctrl+S under an open ask opens no hidden picker. Moving to Cancel in the
+stop window cancels. A prompt of only spaces is not sent. A prompt sent
+while its file attaches waits for the file.
+
 2026-10-12 — **A message counts as in hand once it is written to its
 agent.** The cross-host family journey cuts the sender's links while the
 recipient's host holds a hand-off for a frozen agent, and expects the agent

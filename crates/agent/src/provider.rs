@@ -1072,19 +1072,22 @@ fn codex_turn_input(
         }
     };
     for attachment in attachments {
-        input.push(match &attachment.of {
-            Some(wire::attachment::Of::Image(blob)) => UserInput::LocalImage(LocalImageInput {
+        // Every attachment is introduced by its element, which names it: a
+        // bare local image reaches the model as "Image #1", and it cannot
+        // tell which attached file is which.
+        input.push(UserInput::text(attachments::element(
+            attachment,
+            attachments::blob_path(attachment, blobs).as_deref(),
+        )));
+        if let Some(wire::attachment::Of::Image(blob)) = &attachment.of {
+            input.push(UserInput::LocalImage(LocalImageInput {
                 path: blobs
                     .join(interpret::to_hex(&blob.hash))
                     .to_string_lossy()
                     .into_owned(),
                 extra: Default::default(),
-            }),
-            _ => UserInput::text(attachments::element(
-                attachment,
-                attachments::blob_path(attachment, blobs).as_deref(),
-            )),
-        });
+            }));
+        }
     }
     Ok(codex_protocol::encode(&request))
 }
@@ -1203,9 +1206,14 @@ fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<S
             .map(|event| (*event).to_owned())
             .collect(),
         accept_cross_session: true,
+        // The files amux attaches live in the agent's blob folder, outside
+        // the working folder: without this Claude asks to read a file the
+        // person just attached, naming only its hash path. `//` makes the
+        // rule's path absolute.
         permissions_allow: tools
             .iter()
             .map(|_| format!("mcp__{}__*", interpret::AMUX_TOOL_SERVER))
+            .chain([format!("Read(/{}/**)", dir.join(dir::BLOBS).display())])
             .collect(),
         ..Default::default()
     };
@@ -1455,7 +1463,8 @@ mod tests {
     use std::path::Path;
 
     /// A file reaches Codex as its element naming where the file is, so the
-    /// model can open it; an image goes as a local image by the same path.
+    /// model can open it; an image goes as its element and then as a local
+    /// image by the same path.
     #[test]
     fn codex_attachments_name_their_blob_paths() {
         let blob = |hash: u8, name: &str, mime: &str| wire::BlobRef {
@@ -1496,9 +1505,13 @@ mod tests {
                 .unwrap()
                 .contains(&format!("path=\"{}\"", file.display()))
         );
-        assert_eq!(input[2]["type"], "localImage");
         assert_eq!(
-            input[2]["path"],
+            input[2]["text"],
+            attachments::element(&attachments[1], Some(&blobs.join("ab".repeat(32))))
+        );
+        assert_eq!(input[3]["type"], "localImage");
+        assert_eq!(
+            input[3]["path"],
             blobs.join("ab".repeat(32)).display().to_string()
         );
     }

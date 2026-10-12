@@ -1,3 +1,10 @@
+2026-10-13 — **Attachments the model can tell apart, and read without
+asking.** Codex is told each attached image's name: its element goes before
+the local image, as a file's element does, where a bare image left the model
+calling them "Image #1" and "Image #2". Claude (both kinds) may read the
+agent's `blobs/` folder without asking: headless Claude asked permission to
+read a file the person had just attached, naming only its hash path.
+
 2026-10-13 — **A sub-agent waits for its running children.** A one-shot
 agent now exits only when its turn has ended, nothing is queued or pending
 and no agent below it is live, by its daemon's count. QA saw a middle agent

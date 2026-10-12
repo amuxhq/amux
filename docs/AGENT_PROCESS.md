@@ -306,7 +306,8 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   command for `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
   `PermissionRequest`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
   `Stop` and `Notification`, accepts messages from other sessions at once, and allows amux's own tools
-  without asking.
+  and reading the agent's `blobs/` folder (where the files a person attaches
+  are) without asking. Headless Claude gets the same settings.
 - `--mcp-config` naming amux's tool server (see [the tool server](#the-tool-server)).
 - `--messaging-socket-path private/messaging.sock`.
 
@@ -393,8 +394,9 @@ also reads it with its turns (`thread/read`), which has Codex write it, so
 the app can attach before the first turn. Every message the server sends the agent is a fact; the
 interpreter writes every request after the handshake with ids of its own
 (`amux-<n>`). A turn whose prompt carries attachments has them appended to
-its input: an image as a local image at its blob's path, anything else as the
-element text the model reads.
+its input, each as the element text the model reads (naming it and where it
+is), and an image then also as a local image at its blob's path, so the
+model can tell which attached image is which.
 
 Closing the agent's connection ends a stdio server. On a socket, the end of
 the agent's connection (closed by the agent, or dropped by the server) is

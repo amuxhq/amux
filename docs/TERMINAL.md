@@ -198,8 +198,10 @@ to attachments after that.
 ### Asks
 
 When the agent waits on you, the ask takes over the composer's box, its edge in the attention ink; the draft waits
-behind it and comes back after. For half a second after an ask is first drawn, keys still go to the draft (Enter
-does nothing), so a digit or Enter typed as it appears never answers what was not read. The plan or the call it is
+behind it and comes back after. An ask takes keys only once it has been on screen for half a second with no key
+pressed; until then keys still go to the draft (Enter does nothing), and every key restarts the wait, so a digit or
+Enter typed in a sentence as the ask appears never answers what was not read. Someone typing about one key a second
+can still land a key on an armed ask. Once armed, the ask keeps the keys. The plan or the call it is
 about stays in the feed above. A typed answer or note shows its own line breaks, its last four lines at most.
 
 - **A permission** (`● Wants to run`, `Wants to edit`, `Wants to create`, `Wants to use`): the command, the file
@@ -281,7 +283,8 @@ moves the agent to its next mode where it offers modes (Codex: default and plan)
 permission that still asks before acting (terminal Claude: Claude's own cycle key). `ctrl+s` then `m`, `e` or `p`
 changes a running agent's model, effort or permission where it lets a client change them, and otherwise says how
 (terminal Claude's model and effort change by typing its own `/model` or `/effort`, its permission only by
-cycling); each model in the list carries the agent's own line on it, which says what an alias such as Claude's
+cycling). A key after `ctrl+s` that names no setting goes on to the draft as typed, and while an ask holds the
+composer's box `ctrl+s` opens nothing and says the settings wait for the answer. Each model in the list carries the agent's own line on it, which says what an alias such as Claude's
 Default stands for. The composer's edge names the permission and the mode when they are not the agent's normal
 ones, and Codex settings that match no named permission read custom; the phone's model chip says the same. The
 phone's settings sheet offers every model, effort, permission and mode the agent offers.

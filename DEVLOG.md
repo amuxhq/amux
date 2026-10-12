@@ -1,3 +1,19 @@
+2026-10-13 — **An ask waits for a pause in typing, and the settings key lets other keys through.**
+An ask that opens while the person is typing took the next key typed half a
+second after it was first drawn, so someone typing a key every second or so
+answered permission asks with the digits of a sentence, one of them writing a
+standing always-allow rule. The ask now takes keys only once it has been on
+screen for half a second with no key pressed; every key restarts the wait,
+and once armed it keeps the keys. Someone typing about one key a second can
+still land a key on an armed ask; that is accepted.
+
+After Ctrl+S, a key that names no setting was swallowed, so the "/" of a
+"/model sonnet" typed after reading its hint was lost and the rest went to the
+model. It now goes on to the draft as typed. Under an open ask, Ctrl+S opened a
+model or effort picker that was never drawn but took arrows and Enter, changing
+the setting blind; the ask now wins, and Ctrl+S says the settings wait for the
+answer.
+
 2026-10-13 — **The second QA round's protocol changes.** The wire changes
 the round's decisions need, with only the code that keeps everything
 building; the behaviour behind most of them is follow-up work.

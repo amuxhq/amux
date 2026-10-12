@@ -62,9 +62,10 @@ fn wheel_lines(direction: Direction) -> isize {
 /// How long an empty chat waits before saying it is loading.
 pub const LOADING_HINT_MS: i64 = 300;
 
-/// How long after an ask is first drawn keys still go to the draft. A
-/// person typing as an ask opens has not read it yet, and a digit or Enter
-/// among their words would answer it unseen.
+/// How long an ask must be on screen with no key pressed before it takes
+/// keys. A person typing as an ask opens has not read it yet, and a digit or
+/// Enter among their words would answer it unseen; every key they press
+/// restarts the wait, so steady typing never reaches the ask.
 pub const ASK_ARMS_MS: i64 = 500;
 
 /// What a key asks the event loop to do with the session.
@@ -331,6 +332,12 @@ pub struct ChatView {
     /// The head ask's key and when it was first drawn, for the time it
     /// leaves keys with the draft.
     ask_drawn: Option<(String, i64)>,
+    /// When the last timed key was pressed: an ask arms only after
+    /// [`ASK_ARMS_MS`] with no key.
+    last_key_at: Option<i64>,
+    /// The ask that has armed. Once it takes keys it keeps them, so moving
+    /// through its choices quickly never hands keys back to the draft.
+    ask_armed: Option<String>,
     /// The last frame's layout, for scrolling and focus.
     laid: Laid,
     feed: (usize, usize),
@@ -403,6 +410,8 @@ impl ChatView {
             epoch: 0,
             opened_at_ms: now_ms,
             ask_drawn: None,
+            last_key_at: None,
+            ask_armed: None,
             laid: Laid::default(),
             feed: (0, 0),
             told_following: true,
@@ -602,6 +611,10 @@ impl ChatView {
         theme: Theme,
         now_ms: Option<i64>,
     ) -> Vec<ChatEffect> {
+        let quiet_since = self.last_key_at;
+        if now_ms.is_some() {
+            self.last_key_at = now_ms;
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if self.review_open
             && let Some(page) = &mut self.review
@@ -664,7 +677,7 @@ impl ChatView {
             return self.pane_key(state, key);
         }
         if let Some(card) = self.card_takes_keys(state) {
-            if !self.ask_armed(&card, now_ms) {
+            if !self.arm_ask(&card, now_ms, quiet_since) {
                 // Words typed as the ask appears are still the draft's; Enter
                 // neither sends the draft nor answers what was not read.
                 if key.code != KeyCode::Enter && self.editor.key(key) == Edit::Changed {
@@ -688,17 +701,28 @@ impl ChatView {
         self.composer_key(state, key)
     }
 
-    /// Whether `card` takes keys pressed at `now_ms`: once it has been on
-    /// screen for [`ASK_ARMS_MS`]. An ask not drawn yet has not been seen
-    /// at all.
-    fn ask_armed(&self, card: &AskCard, now_ms: Option<i64>) -> bool {
+    /// Whether `card` takes a key pressed at `now_ms`, the key before it
+    /// having been pressed at `last_key`: once it has been on screen for
+    /// [`ASK_ARMS_MS`] with no key pressed. An ask not drawn yet has not been
+    /// seen at all. Once armed it stays armed.
+    fn arm_ask(&mut self, card: &AskCard, now_ms: Option<i64>, last_key: Option<i64>) -> bool {
         let Some(now_ms) = now_ms else {
             return true;
         };
-        match &self.ask_drawn {
-            Some((key, at)) if *key == card.key => now_ms.saturating_sub(*at) >= ASK_ARMS_MS,
-            _ => false,
+        if self.ask_armed.as_deref() == Some(card.key.as_str()) {
+            return true;
         }
+        let armed = match &self.ask_drawn {
+            Some((key, drawn)) if *key == card.key => {
+                let quiet_from = last_key.map_or(*drawn, |at| at.max(*drawn));
+                now_ms.saturating_sub(quiet_from) >= ASK_ARMS_MS
+            }
+            _ => false,
+        };
+        if armed {
+            self.ask_armed = Some(card.key.clone());
+        }
+        armed
     }
 
     /// What the chat does for an action on the ask card.
@@ -873,6 +897,20 @@ impl ChatView {
     /// not this.
     fn setting_key(&mut self, state: &SessionState, key: KeyEvent) -> Option<Vec<ChatEffect>> {
         use crate::setup::{Item, Picker};
+        // An open ask holds the composer's box, where a picker would be
+        // drawn: a picker opened under it would take keys unseen, so the ask
+        // wins and the settings wait until it is answered.
+        if self.card_takes_keys(state).is_some() {
+            self.picker = None;
+            self.setting_prefix = false;
+            let settings_key =
+                key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL);
+            return settings_key.then(|| {
+                vec![ChatEffect::Notice(
+                    "Answer the ask first; settings change once it is answered".into(),
+                )]
+            });
+        }
         if let Some(picker) = &mut self.picker {
             let pick = picker.key(key);
             return Some(self.picked(state, pick));
@@ -883,7 +921,10 @@ impl ChatView {
                 KeyCode::Char('m') => (&view.changeable.model, Item::Model, "Model"),
                 KeyCode::Char('e') => (&view.changeable.effort, Item::Effort, "Effort"),
                 KeyCode::Char('p') => (&view.changeable.permission, Item::Permission, "Permission"),
-                _ => return Some(vec![]),
+                // Esc takes the settings key back; any other key was never
+                // meant for it and goes on as typed.
+                KeyCode::Esc => return Some(vec![]),
+                _ => return None,
             };
             if *setting != Changeable::Pick {
                 // A setting this agent can't change from here says why

@@ -309,6 +309,7 @@
 		FEBA1A1A192A1C4DDFF960C1 /* components.composer-sending-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 72944A8BB86F187E3E7573E9 /* components.composer-sending-dark.png */; };
 		FECCD286E139E2AE150C9B59 /* components.ask-access-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 26B70DA5646FAA4A91591B17 /* components.ask-access-dark.png */; };
 		FEFC3BBA0CB92BA1BB050232 /* components.composer-slash-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 577232130231CB5D8185A90C /* components.composer-slash-dark.png */; };
+		FF749DDB912A5BABF39B1D3D /* PhoneDecisionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFEA5875EF6777749C973C1B /* PhoneDecisionsTests.swift */; };
 		FFF6A7EFCC5AE20CB7B034F7 /* components.row-command-asking-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 7498B4D487BB9006C1BD65DF /* components.row-command-asking-dark.png */; };
 /* End PBXBuildFile section */
 
@@ -563,6 +564,7 @@
 		BB4EDB73163856BAB87E17FA /* components.row-subagent-running-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-subagent-running-light.png"; sourceTree = "<group>"; };
 		BC5B92076B3DD4D6F335450B /* components.row-ask-secret-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-ask-secret-dark.png"; sourceTree = "<group>"; };
 		BCD6B5DF44428C9C7B9BD6C0 /* components.row-run-open-below-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-run-open-below-light.png"; sourceTree = "<group>"; };
+		BFEA5875EF6777749C973C1B /* PhoneDecisionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneDecisionsTests.swift; sourceTree = "<group>"; };
 		C0F7E7027EB3BCC3F157B3EA /* components.row-command-asking-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-command-asking-light.png"; sourceTree = "<group>"; };
 		C1574DB91FBC2F4BDC446EF2 /* components.row-run-open-below-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-run-open-below-dark.png"; sourceTree = "<group>"; };
 		C3BC54305950995B6BB6490E /* components.ask-questions-step-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-questions-step-light.png"; sourceTree = "<group>"; };
@@ -1047,6 +1049,7 @@
 			children = (
 				8EEC45DFA7E5DD6C27FB07F4 /* ChatFeedTests.swift */,
 				9F5CB3619E7C3A489C1D92DF /* DoorTargetTests.swift */,
+				BFEA5875EF6777749C973C1B /* PhoneDecisionsTests.swift */,
 				821F9981F05DEE81D729D42C /* ReportFreezeTests.swift */,
 			);
 			path = AmuxAppTests;
@@ -1558,6 +1561,7 @@
 			files = (
 				D089F8E1D4F8BC606C2D4825 /* ChatFeedTests.swift in Sources */,
 				F57D20E641910776C2CB94DE /* DoorTargetTests.swift in Sources */,
+				FF749DDB912A5BABF39B1D3D /* PhoneDecisionsTests.swift in Sources */,
 				99B82C08E29C0F2FE41DDBEC /* ReportFreezeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

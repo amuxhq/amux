@@ -1,0 +1,233 @@
+import AmuxCore
+import AmuxFeatures
+import SwiftUI
+import UIKit
+import XCTest
+@testable import Amux
+
+/// Screens as a person meets them, drawn whole in a window: what the chat's
+/// menus offer, what its buttons say, what a stop warns of, and how an ask
+/// card, the home screen and the new-agent form read in the states QA found
+/// them wrong.
+@MainActor
+final class PhoneDecisionsTests: XCTestCase {
+    private var window: UIWindow?
+    private let probe = Probe()
+    private var acted: [ChatAction] = []
+
+    @MainActor
+    private final class Probe {
+        var elements: [IdentifiedElement] = []
+    }
+
+    override func tearDown() async throws {
+        window?.isHidden = true
+        window?.rootViewController = nil
+        window = nil
+    }
+
+    private func host<Content: View>(_ content: Content, size: DynamicTypeSize = .large) throws {
+        let probe = self.probe
+        let root = content
+            .dynamicTypeSize(size)
+            .reportingIdentifiedElements()
+            .onPreferenceChange(IdentifiedElements.self) { declared in
+                MainActor.assumeIsolated { probe.elements = declared }
+            }
+        let controller = UIHostingController(rootView: root)
+        let scene = try XCTUnwrap(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        self.window = window
+    }
+
+    private func chat(
+        _ source: ScriptedChat, family: FamilyHeader? = nil, size: DynamicTypeSize = .large
+    ) async throws -> ChatModel {
+        let model = ChatModel(source: source, loadingHintAfter: .zero)
+        try host(
+            ChatScreen(model: model, subject: CatalogFixtures.subject, family: family) { [unowned self] action in
+                acted.append(action)
+            }, size: size)
+        await spin()
+        return model
+    }
+
+    private func spin(_ seconds: Double = 0.5) async {
+        try? await Task.sleep(for: .seconds(seconds))
+    }
+
+    private func element(_ identifier: String) -> IdentifiedElement? {
+        probe.elements.first { $0.identifier == identifier }
+    }
+
+    private func menuItem(_ title: String) throws -> (UIButton, UIAction)? {
+        MenuSource.item(title, in: try XCTUnwrap(window))
+    }
+
+    private var oneChild: FamilyHeader {
+        FamilyHeader(
+            children: [CatalogFixtures.family.children[1]], attention: .working, needYou: 0, parent: nil)
+    }
+
+    // MARK: - Stop, delete, interrupt
+
+    /// A live agent is stopped, not deleted; only an exited one is deleted.
+    func testALiveAgentOffersStopAndOnlyAnExitedOneOffersDelete() async throws {
+        _ = try await chat(ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working)))
+        XCTAssertNotNil(try menuItem("Stop Agent"), "a live agent's menu offers Stop Agent")
+        XCTAssertNil(try menuItem("Delete Agent"), "a live agent's menu offers Delete Agent; only an exited agent may be deleted")
+
+        tearDownWindow()
+        _ = try await chat(ScriptedChat(
+            rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended))))
+        XCTAssertNotNil(try menuItem("Delete Agent"), "an exited agent's menu offers Delete Agent")
+        XCTAssertNil(try menuItem("Stop Agent"), "an exited agent has nothing to stop")
+    }
+
+    /// The square button under a working turn ends the turn, not the agent,
+    /// and says so in words.
+    func testTheComposersTurnButtonSaysInterrupt() async throws {
+        _ = try await chat(ScriptedChat(rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working)))
+        let button = try XCTUnwrap(element("chat.stop"), "a working chat with no draft shows its square button")
+        XCTAssertEqual(button.label, "Interrupt", "the button that ends the turn reads \(String(reflecting: button.label))")
+    }
+
+    /// The ask card's way of ending the turn is called Interrupt too.
+    func testTheAskCardsTurnButtonSaysInterrupt() async throws {
+        _ = try await chat(ScriptedChat(
+            rows: CatalogFixtures.conversation + [CatalogFixtures.askedCommand],
+            frame: ScriptedChat.frame(phase: .needsYou),
+            card: CatalogFixtures.card(
+                .claudeSdk, .command(command: "cargo test -p amux-ui", cwd: "~/src/amux", reason: "", description: "Run the spec suite"),
+                CatalogFixtures.sdkPermissionChoices)))
+        XCTAssertNil(try menuItem("Stop the turn"), "the ask card still offers \"Stop the turn\"")
+        XCTAssertNotNil(try menuItem("Interrupt"), "the ask card offers Interrupt to end the turn")
+    }
+
+    /// Stopping is always "stop now"; when it cuts work, the confirm says
+    /// what: the turn under way, its background jobs and its sub-agents.
+    func testStoppingAWorkingAgentNamesWhatTheStopCuts() async throws {
+        _ = try await chat(
+            ScriptedChat(
+                rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(name: "desk-1", phase: .working),
+                strip: ScriptedChat.strip(background: 2)),
+            family: oneChild)
+        let (button, stop) = try XCTUnwrap(try menuItem("Stop Agent"))
+        MenuSource.run(stop, from: button)
+        await spin()
+        XCTAssertFalse(acted.contains(.stopAgent), "the agent was stopped with no confirm naming what it cut")
+        let said = probe.elements.map { [$0.label, $0.value].compactMap { $0 }.joined(separator: " ") }
+            .joined(separator: " | ")
+        XCTAssertTrue(
+            said.contains("working") && said.contains("2 background jobs") && said.contains("1 sub-agent"),
+            "the stop confirm names the turn, its 2 background jobs and its sub-agent: \(said)")
+    }
+
+    // MARK: - Ask cards
+
+    /// At a large text size a long question card squeezed into the space
+    /// left overprints its options and pushes Send and Reply instead off
+    /// screen, so a person cannot answer it. The card must fit the screen,
+    /// every option stay clear of the question and of each other, and the
+    /// ways to answer stay on screen.
+    func testALongQuestionAtALargeTextSizeCanStillBeReadAndAnswered() async throws {
+        let options = [
+            ("Managed PostgreSQL", "Hosted by the cloud provider, with point-in-time recovery and read replicas across zones"),
+            ("SQLite embedded", "One file beside the binary, no server to run, replicated by shipping the write-ahead log"),
+            ("MongoDB Atlas", "Document store with a hosted control plane and automatic sharding once the standby copies are"),
+            ("Self-hosted MySQL", "Runs on our own machines with the operational burden of backups, upgrades and failover"),
+        ].map { OptionView(label: $0.0, description: $0.1, preview: "", recommended: false) }
+        let question = QuestionView(
+            header: "Database",
+            question: "Which database should the service use for its durable state, given that we need replication, "
+                + "point-in-time recovery and something the team already knows how to operate?",
+            multiSelect: false, options: options, allowOther: true, secret: false)
+        _ = try await chat(
+            ScriptedChat(
+                rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .needsYou),
+                card: CatalogFixtures.card(.claudeSdk, .question([question]), [])),
+            size: .accessibility3)
+        let bounds = try XCTUnwrap(window).bounds
+        let asked = try XCTUnwrap(element("ask.question"), "the card shows its question")
+        let card = try XCTUnwrap(element("ask"), "the card is drawn")
+        XCTAssertTrue(bounds.contains(card.frame), "the card is taller than the screen at accessibility3: \(card.frame)")
+        let drawn = probe.elements.filter { $0.identifier.hasPrefix("ask.option.") }
+        XCTAssertEqual(drawn.count, options.count + 1, "every option and Something else is drawn")
+        for (index, option) in drawn.enumerated() {
+            XCTAssertFalse(
+                option.frame.intersects(asked.frame),
+                "\(option.identifier) (\(option.label ?? "")) is drawn over the question at accessibility3")
+            for other in drawn.dropFirst(index + 1) where option.frame.intersects(other.frame) {
+                XCTFail("\(option.identifier) and \(other.identifier) are drawn over each other at accessibility3")
+            }
+        }
+        for way in ["ask.skip", "ask.reply"] {
+            let control = try XCTUnwrap(element(way), "the card offers \(way)")
+            XCTAssertTrue(
+                bounds.contains(control.frame),
+                "\(way) is off screen at accessibility3, so the question cannot be answered: \(control.frame)")
+        }
+    }
+
+    /// A question whose options carry previews shows one before anything is
+    /// picked: a phone has no hover, and the terminal shows the first
+    /// option's preview from the start.
+    func testAQuestionWithPreviewsShowsOneBeforeAnythingIsPicked() async throws {
+        _ = try await chat(ScriptedChat(
+            rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .needsYou),
+            card: CatalogFixtures.card(.claudeSdk, .question([CatalogFixtures.previewQuestion]), [])))
+        XCTAssertNotNil(element("ask.question"), "the card shows its question")
+        XCTAssertNotNil(element("ask.preview"), "a question whose options carry previews shows none until one is picked")
+    }
+
+    // MARK: - Home and new agent
+
+    /// A reopened app draws its home before its saved hosts are read; it must
+    /// not say nothing is paired until it knows.
+    func testHomeSaysNothingIsPairedOnlyOnceItHasReadItsHosts() async throws {
+        let fleet = FleetStore()
+        try host(AgentsHome(model: fleet, accounts: AccountRegistry(), hosts: HostsStore()) { _ in })
+        await spin()
+        XCTAssertNil(
+            element("home.empty.firstRun"),
+            "before its hosts are read, home says \"No agents yet\" and offers to pair")
+        fleet.show(FleetView(sections: [], needYou: 0, working: 0), hosts: [])
+        await spin()
+        XCTAssertNotNil(element("home.empty.firstRun"), "with no hosts read, home invites pairing")
+    }
+
+    /// "desk cannot be reached" from a refused start goes once desk is back.
+    func testTheNewAgentFormDropsAReachRefusalOnceTheHostIsBack() async throws {
+        let desk = HostId(UUID(uuidString: "00000000-0000-0000-0000-00000000de5c")!)
+        func view(_ reach: Reach) -> HostView {
+            HostView(
+                hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false, reach: reach,
+                addrs: [], current: true, providers: [], lastDialError: nil, platform: "macOS",
+                signedIn: nil, version: nil)
+        }
+        let hosts = HostsStore()
+        hosts.show([view(.offline)])
+        let form = NewAgentStore()
+        form.open(on: desk)
+        form.starts()
+        form.started(.failure(RuntimeFailure("desk cannot be reached")))
+        try host(NewAgent(model: form, hosts: hosts) { _ in })
+        await spin()
+        hosts.show([view(.online(.direct))])
+        await spin()
+        XCTAssertNil(
+            element("new-agent.refusal"),
+            "desk is back (direct) and the form still says: \(element("new-agent.refusal")?.value ?? "")")
+    }
+
+    private func tearDownWindow() {
+        window?.isHidden = true
+        window?.rootViewController = nil
+        window = nil
+        probe.elements = []
+    }
+}

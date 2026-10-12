@@ -67,9 +67,9 @@ final class StoreBundleSessionTests: XCTestCase {
     private var opened: [CaughtUpSession] = []
     private var current = true
 
-    private func bundle() -> StoreBundle {
+    private func bundle(account: String = "a") -> StoreBundle {
         StoreBundle(
-            account: AccountId("a"), clock: { [unowned self] in clock },
+            account: AccountId(account), clock: { [unowned self] in clock },
             sessionRetention: .seconds(300),
             opener: { [unowned self] agent in
                 let session = CaughtUpSession(id: UInt64(opened.count + 1), agent: agent)
@@ -155,5 +155,38 @@ final class StoreBundleSessionTests: XCTestCase {
         let warmed = await warming.value
         XCTAssertTrue(warmed)
         XCTAssertTrue(opened[0].closed, "once current it is kept or closed like any other chat")
+    }
+
+    /// A half-typed message outlives its chat's session: the phone keeps
+    /// drafts across the session closing after its retention.
+    func testADraftOutlivesItsChatsSessionClosing() throws {
+        let stores = bundle(account: "drafts-\(UUID().uuidString)")
+        let agent = Cards.key(2)
+        stores.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
+        try stores.chat(agent).draft = "half typed, do not lose me"
+        stores.leave(agent)
+        clock = Cards.now.addingTimeInterval(301)
+        stores.keepSessions()
+        XCTAssertFalse(stores.holds(agent), "the session closed after its retention")
+        XCTAssertEqual(
+            try stores.chat(agent).draft, "half typed, do not lose me",
+            "the draft went with the chat's session")
+    }
+
+    /// A half-typed message outlives the app: closing every chat and opening
+    /// the account again, as a relaunch does, gives the draft back.
+    func testADraftOutlivesTheAppClosing() throws {
+        let account = "relaunch-\(UUID().uuidString)"
+        let agent = Cards.key(2)
+        let before = bundle(account: account)
+        before.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
+        try before.chat(agent).draft = "half typed before the app closed"
+        before.closeChats()
+
+        let after = bundle(account: account)
+        after.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
+        XCTAssertEqual(
+            try after.chat(agent).draft, "half typed before the app closed",
+            "the draft was lost when the app was reopened")
     }
 }

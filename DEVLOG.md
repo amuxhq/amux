@@ -1,3 +1,14 @@
+2026-10-13 — **Failing phone tests for the second QA round's decisions.** A
+draft outlives its chat's session closing and the app closing. A file over
+the attachment limit is refused before upload, naming the limit. In a new
+app-hosted suite that draws whole screens: a live agent's menu offers Stop
+and only an exited one offers Delete; the composer's and the ask card's
+turn buttons say "Interrupt"; stopping a working agent names what the stop
+cuts; a long question at accessibility3 can still be read and answered; a
+question with previews shows one before anything is picked; home says
+nothing is paired only once it has read its hosts; and the New Agent form
+drops a reach refusal once the host is back.
+
 2026-10-13 — **Failing daemon, network and CLI tests for the second QA
 round's decisions.** Names are unique per host counting exited agents: a
 spawn with a taken name gets the next suffix, a rename to a taken name is

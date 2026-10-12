@@ -190,7 +190,11 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
     /// What storing an attachment fails with, when it does.
     var blobFailure: RuntimeFailure?
 
+    /// The name of every attachment handed over to be stored, in order.
+    var stored: [String] = []
+
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
+        stored.append(name)
         if let blobFailure { return .failure(blobFailure) }
         return .success(BlobRef(hash: [9], name: name, mime: mime, size: UInt64(data.count)))
     }
@@ -875,6 +879,20 @@ final class ChatModelTests: XCTestCase {
         XCTAssertTrue(
             said.contains("mid.bin"),
             "the failed attachment left no trace naming it: notice \(String(reflecting: model.notice)), chips \(model.attachments)")
+    }
+
+    func testAnAttachmentOverTheSizeLimitIsRefusedBeforeUploadNamingTheLimit() async {
+        // An attachment has a stated limit of 64 MB, checked by the phone
+        // before it uploads anything and refused in plain words naming it.
+        let source = FakeChat(rows: [], frame: frame())
+        let model = ChatModel(source: source)
+        model.attach(Data(count: 64 * 1024 * 1024 + 1), name: "huge.bin", mime: "application/octet-stream", image: false)
+        await settle()
+        XCTAssertEqual(source.stored, [], "a file over the limit was handed over for upload")
+        XCTAssertTrue(model.attachments.isEmpty, "a file over the limit became a chip")
+        XCTAssertTrue(
+            (model.notice ?? "").contains("64 MB") && (model.notice ?? "").contains("huge.bin"),
+            "the refusal names the file and the 64 MB limit: \(String(reflecting: model.notice))")
     }
 
     func testAnEmptyChatSaysItIsLoadingOnlyAfterAMoment() async throws {

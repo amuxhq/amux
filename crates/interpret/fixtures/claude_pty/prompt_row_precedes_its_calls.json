@@ -344,9 +344,7 @@
           }
         }
       },
-      "expect": {
-        "silent": true
-      },
+      "expect": {},
       "note": "a background task's notification began a turn before the typed prompt landed"
     },
     {

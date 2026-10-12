@@ -120,6 +120,9 @@ struct Tool {
     /// Images the tool read, by the blobs that hold them.
     #[serde(with = "serde_pb::msgs")]
     images: Vec<Attachment>,
+    /// What amux's attach tool attached, from the element it answered.
+    #[serde(default, with = "serde_pb::msgs")]
+    attached: Vec<Attachment>,
     /// An ExitPlanMode call is drawn as its plan, with this verdict.
     plan: Option<Verdict>,
     /// An AskUserQuestion call is drawn as its question, closed with this
@@ -261,9 +264,16 @@ pub struct State {
     sign_in: Option<SignIn>,
     /// Claude's background jobs; the shared part publishes them.
     jobs: Jobs,
+    /// Tasks Claude marks ambient, its own work rather than the person's.
+    #[serde(default)]
+    ambient: std::collections::BTreeSet<String>,
     /// The newest slash command sent, which a local command's output
-    /// belongs to.
+    /// belongs to; taken by that output.
     slash: Option<String>,
+    /// A built-in command's answer drawn before Claude named its command:
+    /// its key and text, for the command's replay to name it.
+    #[serde(default)]
+    synthetic: Option<(String, String)>,
     /// An interrupt was sent in the running turn.
     interrupted: bool,
 }
@@ -371,6 +381,8 @@ impl State {
             sign_in: None,
             jobs: Jobs::default(),
             slash: None,
+            synthetic: None,
+            ambient: Default::default(),
             interrupted: false,
         }
     }
@@ -980,11 +992,13 @@ impl State {
         }
         tool.emitted = body.clone();
         let at_ms = tool.at_ms;
+        let attachments = tool.attached.clone();
         self.shared.item(
             emit,
             ItemDraft {
                 key: id.to_owned(),
                 body,
+                attachments,
                 at_ms: Some(at_ms),
                 complete: true,
                 ..Default::default()

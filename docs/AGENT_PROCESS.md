@@ -305,7 +305,7 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   them. The agent's part registers `<install path> hooks claude` as the hook
   command for `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
   `PermissionRequest`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-  `Stop` and `Notification`, accepts messages from other sessions at once, and allows amux's own tools
+  `Stop`, `SubagentStop` and `Notification`, accepts messages from other sessions at once, and allows amux's own tools
   and reading the agent's `blobs/` folder (where the files a person attaches
   are) without asking. Headless Claude gets the same settings.
 - `--mcp-config` naming amux's tool server (see [the tool server](#the-tool-server)).
@@ -323,18 +323,10 @@ paste on has been followed by 100 ms of quiet, or 500 ms at most. The
 `SessionStart` hook is no signal on its own, because some Claude versions run
 it only after the first prompt.
 
-For the whole of its life the agent also keeps Claude's screen as Claude
-draws it (at the terminal's height, and at least 240 columns wide so a
-recording replayed into a narrower terminal still lands where it was drawn)
-and reads two things off it that nothing else says yet. The footer's
-permission (`⏵⏵ accept edits on`, `⏸ plan mode on`, `⏸ manual mode on`)
-changes at once when Shift+Tab is typed, but Claude records the change only
-with the next prompt; the agent sends a permission fact each time the
-footer names a different one. And a plan approval menu's first entry
-(`Yes, and use auto mode` or `Yes, auto-accept edits`) is the permission
-that approving with a switch moves to; the agent sends a plan-menu fact each
-time a menu opens. Claude redraws only the cells that change, so neither
-can be read off a single chunk of output.
+Nothing else is read off the screen. The permission Claude runs in is the
+one amux cycled it to with Shift+Tab, confirmed by the permission Claude
+records next; the permission approving a plan switches to follows from the
+launch arguments and the catalogue (see [the interpreters](INTERPRETERS.md)).
 
 Keystrokes are typed by one task, in order, with the pauses the keymap's
 programs ask for; what an attached terminal types goes through the same task,

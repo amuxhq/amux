@@ -27,6 +27,7 @@ tagged_enum! {
         "PostToolUseFailure" => PostToolUseFailure(PostToolUseFailure),
         "Notification" => Notification(Notification),
         "Stop" => Stop(Stop),
+        "SubagentStop" => SubagentStop(SubagentStop),
     }
 }
 
@@ -48,6 +49,7 @@ impl Payload {
             Self::PostToolUseFailure(payload) => &payload.common,
             Self::Notification(payload) => &payload.common,
             Self::Stop(payload) => &payload.common,
+            Self::SubagentStop(payload) => &payload.common,
             Self::Unknown(_) => return None,
         })
     }
@@ -224,6 +226,21 @@ pub struct Stop {
     pub background_tasks: Option<Vec<BackgroundTask>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_crons: Option<Vec<Value>>,
+    #[serde(flatten)]
+    pub extensions: Extensions,
+}
+
+/// A subagent finished; its agent id is the common `agent_id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubagentStop {
+    #[serde(flatten)]
+    pub common: Common,
+    #[serde(default = "crate::absent::stop_hook_active")]
+    pub stop_hook_active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_transcript_path: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_assistant_message: Option<String>,
     #[serde(flatten)]
     pub extensions: Extensions,
 }

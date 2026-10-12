@@ -476,15 +476,34 @@ impl JobInput {
     }
 }
 
+/// The kind of background job Claude's name for a task's type says: its
+/// stream's `task_type` (`local_bash`, `local_agent`) or its Stop hook's
+/// `type` (`shell`, `subagent`).
+pub(crate) fn job_kind(task_type: &str) -> wire::BackgroundKind {
+    match task_type {
+        "local_bash" | "shell" => wire::BackgroundKind::Shell,
+        "local_agent" | "remote_agent" | "subagent" => wire::BackgroundKind::Subagent,
+        other if other.contains("monitor") => wire::BackgroundKind::Monitor,
+        "" => wire::BackgroundKind::Unspecified,
+        _ => wire::BackgroundKind::Other,
+    }
+}
+
 /// Claude's background jobs by its task id: the call that started each, as
-/// far as Claude has said, and which of them Claude lists as running.
+/// far as Claude has said, and which of them Claude lists as running. A job
+/// is published from when its call says it started until Claude's next list
+/// leaves it out or Claude says it ended.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Jobs {
     jobs: BTreeMap<String, Job>,
     /// The task ids of Claude's newest list, in its order.
     listed: Vec<String>,
-    /// How many lists Claude has stated; none means the jobs are unknown.
+    /// How many lists Claude has stated.
     lists: u64,
+    /// Whether anything is known about the jobs: a list stated, or a job
+    /// launched. Before either they are unknown.
+    #[serde(default)]
+    known: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -495,11 +514,20 @@ struct Job {
     /// The number of lists stated before the job's call said it started:
     /// a job launched after the newest list is kept until the next one.
     launched_after: u64,
+    #[serde(default)]
+    kind: i32,
 }
 
 impl Jobs {
-    /// The call keyed `step` started task `task_id` at `at_ms`.
-    pub(crate) fn launched(&mut self, task_id: &str, step: &str, command: String, at_ms: i64) {
+    /// The call keyed `step` started task `task_id`, of `kind`, at `at_ms`.
+    pub(crate) fn launched(
+        &mut self,
+        task_id: &str,
+        step: &str,
+        command: String,
+        at_ms: i64,
+        kind: wire::BackgroundKind,
+    ) {
         let job = self.jobs.entry(task_id.to_owned()).or_default();
         job.step = step.to_owned();
         if !command.is_empty() {
@@ -507,18 +535,22 @@ impl Jobs {
         }
         job.started_at_ms = at_ms;
         job.launched_after = self.lists;
+        if kind != wire::BackgroundKind::Unspecified {
+            job.kind = kind as i32;
+        }
+        self.known = true;
     }
 
-    /// Claude's list of the tasks running now, as (task id, description):
-    /// a task no call is known to have started is shown by its
+    /// Claude's list of the tasks running now, as (task id, description,
+    /// kind): a task no call is known to have started is shown by its
     /// description, from now. Returns the jobs to publish.
     pub(crate) fn listed(
         &mut self,
-        tasks: impl IntoIterator<Item = (String, String)>,
+        tasks: impl IntoIterator<Item = (String, String, wire::BackgroundKind)>,
         now_ms: i64,
     ) -> Vec<BackgroundJob> {
         self.listed.clear();
-        for (task_id, description) in tasks {
+        for (task_id, description, kind) in tasks {
             let job = self.jobs.entry(task_id.clone()).or_insert_with(|| Job {
                 started_at_ms: now_ms,
                 launched_after: self.lists,
@@ -527,30 +559,51 @@ impl Jobs {
             if job.command.is_empty() {
                 job.command = description;
             }
+            if kind != wire::BackgroundKind::Unspecified {
+                job.kind = kind as i32;
+            }
             self.listed.push(task_id);
         }
         let (listed, lists) = (&self.listed, self.lists);
         self.jobs
             .retain(|id, job| listed.contains(id) || job.launched_after == lists);
         self.lists += 1;
+        self.known = true;
         self.published()
     }
 
-    /// The jobs to publish when what is known about them changed; None
-    /// before Claude has stated any list.
-    pub(crate) fn current(&self) -> Option<Vec<BackgroundJob>> {
-        (self.lists > 0).then(|| self.published())
+    /// Claude said task `task_id` ended. Returns the jobs to publish when
+    /// it was one.
+    pub(crate) fn ended(&mut self, task_id: &str) -> Option<Vec<BackgroundJob>> {
+        let was = self.jobs.remove(task_id).is_some();
+        self.listed.retain(|id| id != task_id);
+        was.then(|| self.published())
     }
 
+    /// The jobs to publish when what is known about them changed; None
+    /// while nothing is.
+    pub(crate) fn current(&self) -> Option<Vec<BackgroundJob>> {
+        self.known.then(|| self.published())
+    }
+
+    /// Claude's newest list in its order, then the jobs launched since it,
+    /// by when they started.
     fn published(&self) -> Vec<BackgroundJob> {
+        let mut launched: Vec<_> = self
+            .jobs
+            .iter()
+            .filter(|(id, job)| job.launched_after == self.lists && !self.listed.contains(id))
+            .collect();
+        launched.sort_by_key(|(id, job)| (job.started_at_ms, (*id).clone()));
         self.listed
             .iter()
             .filter_map(|id| Some((id, self.jobs.get(id)?)))
+            .chain(launched)
             .map(|(id, job)| BackgroundJob {
                 item_key: job.step.clone(),
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
-                kind: wire::BackgroundKind::Unspecified as i32,
+                kind: job.kind,
                 id: id.clone(),
             })
             .collect()
@@ -1138,6 +1191,59 @@ pub(crate) fn allows_never_ask(args: &[String]) -> bool {
             || (arg == "--permission-mode"
                 && args.get(at + 1).is_some_and(|mode| mode == NEVER_ASK))
     })
+}
+
+/// The permission launch arguments start Claude in, when they name one.
+pub(crate) fn launched_permission(args: &[String]) -> Option<String> {
+    args.iter().enumerate().find_map(|(at, arg)| {
+        if arg == "--dangerously-skip-permissions" {
+            return Some(NEVER_ASK.to_owned());
+        }
+        if let Some(mode) = arg.strip_prefix("--permission-mode=") {
+            return Some(mode.to_owned());
+        }
+        (arg == "--permission-mode")
+            .then(|| args.get(at + 1).cloned())
+            .flatten()
+    })
+}
+
+/// Text a terminal program wrote, without its colour and cursor codes:
+/// CSI and OSC sequences and the other escapes.
+pub(crate) fn without_terminal_codes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            // CSI: parameters and intermediates, then one final byte.
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            // OSC: up to BEL or ST.
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' {
+                        break;
+                    }
+                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            // A two-character escape.
+            _ => {}
+        }
+    }
+    out
 }
 
 /// The models an initialize answer says take Claude's auto permission.

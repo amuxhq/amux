@@ -404,15 +404,6 @@
       }
     },
     {
-      "fact": {
-        "channel": "agent",
-        "json": {
-          "type": "plan_menu",
-          "switch": "acceptEdits"
-        }
-      }
-    },
-    {
       "input": {
         "id": "a5",
         "answer": {

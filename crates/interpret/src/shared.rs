@@ -22,6 +22,9 @@ pub const STATUS_TOOL: &str = "status";
 /// amux's tool that messages another agent; its call is drawn as the
 /// message it sent, never as a tool call.
 pub const SEND_TOOL: &str = "send";
+/// amux's tool that attaches a file: it answers with the attachment's
+/// element, which its step carries as the attachment, never as text.
+pub const ATTACH_TOOL: &str = "attach";
 
 /// An open ask as the shared list needs to see it. Implemented by the
 /// per-kind ask messages.
@@ -377,6 +380,10 @@ pub struct Shared<A: OpenAsk> {
     /// The hash of the catalogue last written; None until the provider
     /// says what it offers.
     catalogue: Option<Vec<u8>>,
+    /// A submitted prompt starts no turn: the provider's own record of the
+    /// prompt does (terminal Claude, where keys typed may never arrive).
+    #[serde(default)]
+    turn_on_reflection: bool,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -402,6 +409,7 @@ impl<A: OpenAsk> Shared<A> {
             git: None,
             jobs: None,
             catalogue: None,
+            turn_on_reflection: false,
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.working_on = first_line(&entry.text);
@@ -706,8 +714,16 @@ impl<A: OpenAsk> Shared<A> {
 
     fn mark_submitted(&mut self, input_id: &[u8]) {
         self.submitted.push(input_id.to_vec());
-        self.busy = true;
-        self.turn.begin(self.now_ms);
+        if !self.turn_on_reflection {
+            self.busy = true;
+            self.turn.begin(self.now_ms);
+        }
+    }
+
+    /// A submitted prompt starts no turn; the kind calls
+    /// [`Self::turn_started`] when the provider records the prompt.
+    pub fn start_turns_on_reflection(&mut self) {
+        self.turn_on_reflection = true;
     }
 
     /// The input id of the oldest submitted prompt the provider has not yet
@@ -946,6 +962,11 @@ pub fn status_working_on(arguments_json: &[u8]) -> Option<Option<String>> {
 /// Whether a tool-server call is amux's status tool.
 pub fn is_status_tool(server: &str, tool: &str) -> bool {
     server == AMUX_TOOL_SERVER && tool == STATUS_TOOL
+}
+
+/// Whether a tool-server call is amux's attach tool.
+pub fn is_attach_tool(server: &str, tool: &str) -> bool {
+    server == AMUX_TOOL_SERVER && tool == ATTACH_TOOL
 }
 
 /// Whether a tool-server call is amux's send tool.

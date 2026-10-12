@@ -16,7 +16,7 @@
   ask none
 ## 7 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
   row    2 boundary:1 Boundary { kind: Started, cause: "" }
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+  composer Send activity=None queue=[] underway=[] refused=[]
 == chat
      1 ask:ask:1 [Answered: Folder = Trust this folder skipped=0] Ask(Questions { questions: [QuestionView { header: "Folder", question: "Do you trust the files in this folder?", multi_select: false, options: [OptionView { label: "Trust this folder", description: "Claude can read, edit and run files here", preview: "", recommended: false }, OptionView { label: "Exit", description: "Claude exits with…
      2 boundary:1 Boundary { kind: Started, cause: "" }

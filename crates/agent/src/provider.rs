@@ -67,6 +67,7 @@ const HOOK_EVENTS: &[&str] = &[
     "PostToolUse",
     "PostToolUseFailure",
     "Stop",
+    "SubagentStop",
     "Notification",
 ];
 
@@ -148,8 +149,6 @@ pub struct Provider {
     #[cfg_attr(unix, allow(dead_code))]
     kill: Option<oneshot::Sender<()>>,
     terminal: Option<pty_host::PtyHandle>,
-    /// Terminal Claude's screen as drawn, kept the terminal's size.
-    screen: Option<Arc<std::sync::Mutex<crate::screen::Screen>>>,
     /// Terminal Claude's keymap, when one covers its version.
     keys: Option<Keys>,
     messaging: Option<claude::hooks::MessagingCredentials>,
@@ -254,7 +253,6 @@ impl Provider {
             pid,
             kill: Some(kill),
             terminal: None,
-            screen: None,
             keys: None,
             messaging: None,
             session,
@@ -508,7 +506,6 @@ impl Provider {
             pid,
             kill: Some(kill),
             terminal: None,
-            screen: None,
             keys: None,
             messaging: None,
             session: String::new(),
@@ -588,11 +585,6 @@ impl Provider {
         let mut output = handle.output();
         let mut exit = process.exit;
         let forward = events.clone();
-        let size = pty_host::PtySize::default();
-        let screen = Arc::new(std::sync::Mutex::new(crate::screen::Screen::new(
-            size.rows, size.cols,
-        )));
-        let drawn = screen.clone();
         tokio::spawn(async move {
             let agent_fact = |payload| {
                 ProviderEvent::Fact(Fact {
@@ -613,18 +605,6 @@ impl Provider {
                     bytes = output.recv() => match bytes {
                         Some(bytes) => {
                             let _ = forward.send(ProviderEvent::Output(bytes.to_vec())).await;
-                            let seen = drawn.lock().map(|mut screen| screen.watch(&bytes)).unwrap_or_default();
-                            for seen in seen {
-                                let payload = match seen {
-                                    crate::screen::Seen::Permission(permission) => {
-                                        interpret::claude_pty::permission_fact(permission)
-                                    }
-                                    crate::screen::Seen::PlanSwitch(permission) => {
-                                        interpret::claude_pty::plan_menu_fact(permission)
-                                    }
-                                };
-                                let _ = forward.send(agent_fact(payload)).await;
-                            }
                             if trust.as_mut().is_some_and(|trust| trust.watch(&bytes)) {
                                 trust = None;
                                 let payload = interpret::claude_pty::trust_dialog_fact();
@@ -667,7 +647,6 @@ impl Provider {
             pid: Some(handle.pid()),
             kill: None,
             terminal: Some(handle),
-            screen: Some(screen),
             keys,
             messaging: None,
             session,
@@ -1029,9 +1008,6 @@ impl Provider {
     pub fn resize(&self, rows: u16, cols: u16) {
         if let Some(terminal) = &self.terminal {
             let _ = terminal.resize(pty_host::PtySize { rows, cols });
-        }
-        if let Some(Ok(mut screen)) = self.screen.as_ref().map(|screen| screen.lock()) {
-            screen.resize(rows, cols);
         }
     }
 }

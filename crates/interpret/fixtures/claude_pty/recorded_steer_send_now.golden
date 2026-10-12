@@ -22,6 +22,6 @@ snapshot WORKING queue=[] working_on=- at=1790396286319 asks=[] session=54e51d89
 item toolu_01NG2nrg9ukVCrHuC45fehtJ tool final at=1790396286474 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"python3 -c 'import time; time.sleep(30)'; echo S…"
 ## 48 recorded 46: fact Transcript type=user uuid=b785e6c1-4ef3-4a9e-9b50-a923f598b807
 item toolu_01NG2nrg9ukVCrHuC45fehtJ tool final at=1790396286474 text="" Bash TOOL_STATE_SUCCEEDED ended=1790396290616 input="{\"command\":\"python3 -c 'import time; time.sleep(30)'; echo S…" out="Command was moved to the background (ID: ba4rtox6w) so that …"
-snapshot WORKING queue=[] working_on=- at=1790396290186 asks=[] session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=43591 tasks=? background=?
+snapshot WORKING queue=[] working_on=- at=1790396290186 asks=[] session=54e51d89-3ba3-4cd7-91cb-a43e68ca75d5 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=43591 tasks=? background=[toolu_01NG2nrg9ukVCrHuC45fehtJ:"python3 -c 'import time; time.sleep(30)'; echo S1"@1790396286474]
 ## 52 recorded 50: fact Transcript type=user uuid=c9bd22e9-7222-47ec-a1b0-3a78e7ed9913
 item c9bd22e9-7222-47ec-a1b0-3a78e7ed9913 prompt final at=1790396290642 text="Also append the word DURIAN."

@@ -3,7 +3,7 @@
 ## 2 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 3 input {"id":"p1","prompt":{"text":"test it"}}
-  composer Send activity=Some(Working) queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("test it")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("test it")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
 ## 4 fact {"channel":"transcript","json":{"message":{"content":"test it","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
   row    2 u1 Prompt { text: [Text("test it")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
@@ -28,9 +28,10 @@
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"text":"[Request interrupted by user for tool use]","type":"text"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.026Z","type":"user","uuid":"i1"}}
   row    4 i1 Hidden collapsed
   row    5 turn:1 Stopped
-  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+  composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"transcript","json":{"message":{"content":"Use the old palette.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"user","uuid":"u2"}}
   row    6 u2 Prompt { text: [Text("Use the old palette.")], steered: false }
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 u1 Prompt { text: [Text("test it")], steered: false }

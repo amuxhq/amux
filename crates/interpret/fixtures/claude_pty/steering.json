@@ -43,7 +43,7 @@
         }
       },
       "expect": {
-        "phase": "WORKING",
+        "phase": "IDLE",
         "queue": []
       }
     },
@@ -292,7 +292,7 @@
       },
       "expect": {
         "queue": [],
-        "phase": "WORKING"
+        "phase": "IDLE"
       }
     },
     {
@@ -498,7 +498,7 @@
       },
       "expect": {
         "queue": [],
-        "phase": "WORKING"
+        "phase": "IDLE"
       }
     },
     {

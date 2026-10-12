@@ -32,7 +32,7 @@
       },
       "expect": {
         "queue": [],
-        "phase": "WORKING",
+        "phase": "IDLE",
         "effects": [
           "follow \"/t/s1.jsonl\"",
           "terminal prompt \"first\""
@@ -175,7 +175,7 @@
       },
       "expect": {
         "reply": "accepted",
-        "phase": "WORKING"
+        "phase": "IDLE"
       }
     },
     {

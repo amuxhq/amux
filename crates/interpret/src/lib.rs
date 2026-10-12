@@ -38,8 +38,8 @@ pub use serde_pb::{from_hex, to_hex};
 pub use shared::{
     AMUX_TOOL_SERVER, Asks, Emit, ItemDraft, OUTPUT_CAP, OpenAsk, OpenTurn, Output, Queue,
     SEND_TOOL, STATUS_TOOL, SendOutcome, Shared, TurnCounter, agent_message_body,
-    agent_message_key, human, is_send_tool, is_status_tool, output_cut, sent_message,
-    status_working_on,
+    agent_message_key, human, is_attach_tool, is_send_tool, is_status_tool, output_cut,
+    sent_message, status_working_on,
 };
 use wire::{AgentSpec, Envelope, Input, SendInputResponse, Step};
 

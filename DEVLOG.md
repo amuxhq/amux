@@ -1,3 +1,24 @@
+2026-10-13 — **Claude's interpreters read what Claude records, not its
+screen.** Terminal Claude: a turn starts on the prompt's transcript row,
+since keys typed into a terminal may land in one of Claude's own screens
+and never reach the conversation (QA saw a phantom working turn). The screen
+watcher is gone: the permission is the one amux cycled to, from Claude's
+known cycle, confirmed by the permission Claude next records, and a plan's
+switch follows from the launch arguments and the catalogue (never ask, auto
+mode, then accept edits). Effort comes from assistant rows; `/model` in
+Claude's own view names the model at once. A `resume` of another session in
+Claude's own view marks the agent switched away: prompts are refused, the
+other session's hooks ignored, and switch back types `/resume` with the
+agent's session. `!commands` are shell steps, local output loses terminal
+colour codes, and a prompt's attachment elements become attachments. Jobs:
+both kinds carry the job's kind and publish a launch at once; terminal
+Claude drops a job on its task notification or the new `SubagentStop` hook,
+and keeps a background subagent's dialog open across `Stop`. Headless
+Claude reads `is_backgrounded` from `task_updated`, drops finished tasks,
+hides ambient ones, and draws a built-in command's `<synthetic>` answer as
+the command's output rather than a reply. amux's attach tool's step carries
+its attachment in both.
+
 2026-10-13 — **A plan sent back without a note reaches terminal Claude.**
 The plan menu's program typed the note whenever the answer kept planning,
 and an empty note failed to encode, so nothing was typed while amux marked

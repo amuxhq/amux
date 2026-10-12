@@ -1737,6 +1737,7 @@ async fn retention_sweep() {
                 }),
                 text: "one more thing".into(),
                 context: None,
+                attachments: Vec::new(),
             },
             Some(parent),
         )

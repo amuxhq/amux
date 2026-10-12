@@ -22,8 +22,8 @@ use wire::client_service_server::ClientService;
 use wire::{
     Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
     InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest, SendInputResponse,
-    SendMessageRequest, SendMessageResponse, StopMode, Trust, create_agent_request,
-    inventory_event, send_input_response,
+    SendMessageRequest, SendMessageResponse, Trust, create_agent_request, inventory_event,
+    send_input_response,
 };
 
 const ME: [u8; 16] = [0xa1; 16];
@@ -990,7 +990,7 @@ async fn the_harness_runs_the_tool_server_from_the_install_path(kind: Kind) {
         ],
         "{kind:?}"
     );
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     agent.exit().await;
 }
 

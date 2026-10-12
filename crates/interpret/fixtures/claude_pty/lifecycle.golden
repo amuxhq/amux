@@ -26,7 +26,7 @@ snapshot git(branch=fix-tests base=main uncommitted=1f+12-3 on_branch=3f+42-7)
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:1->- permission:Bash deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t1 Bash since=1800000000000
 ## 9 daemon_lost {}
 item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_DAEMON_LOST session=s1 version=2.1.282 keymap=claude-2.1
-## 10 stop "abort"
+## 10 stop {}
 effect terminal interrupt
 ## 11 exiting "stopped"
 item boundary:3 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED session=s1 version=2.1.282 keymap=claude-2.1 cause=STOPPED

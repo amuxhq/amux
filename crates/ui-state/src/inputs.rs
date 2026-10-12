@@ -24,6 +24,7 @@ pub fn refusal_reason(refusal: wire::Refusal) -> RefusalReason {
         wire::Refusal::Exiting => RefusalReason::Exiting,
         wire::Refusal::Exited => RefusalReason::Exited,
         wire::Refusal::HostUnreachable => RefusalReason::HostUnreachable,
+        wire::Refusal::ConversationElsewhere => RefusalReason::ConversationElsewhere,
     }
 }
 
@@ -81,9 +82,10 @@ impl InputWhat {
                 Some(pty::Of::Withdraw(w)) => withdraw(w),
                 Some(pty::Of::SendNow(n)) => send_now(n),
                 Some(pty::Of::Interrupt(_)) => InputWhat::Interrupt,
-                Some(pty::Of::CyclePermissionMode(_) | pty::Of::Clear(_)) | None => {
-                    InputWhat::Other
-                }
+                Some(
+                    pty::Of::CyclePermissionMode(_) | pty::Of::Clear(_) | pty::Of::SwitchBack(_),
+                )
+                | None => InputWhat::Other,
             },
             Some(KindInput::ClaudeSdk(input)) => match &input.of {
                 Some(sdk::Of::Prompt(p)) => prompt(p),

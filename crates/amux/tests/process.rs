@@ -433,7 +433,7 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
 
     // Stopped and resumed through the CLI, the headless agent keeps every
     // item of its first incarnation and adds its second turn.
-    install.ok(&["stop", "sdk", "--mode", "graceful"]).await;
+    install.ok(&["stop", "sdk"]).await;
     assert!(line_of(&install.ok(&["ls"]).await, "sdk").contains("exited: stopped"));
     install.ok(&["resume", "sdk", "second", "task"]).await;
     until("the resumed agent finishes its second turn", || {
@@ -500,7 +500,7 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
     }
 
     for name in ["sdk", "codex"] {
-        install.ok(&["stop", name, "--mode", "kill"]).await;
+        install.ok(&["stop", name]).await;
     }
 }
 

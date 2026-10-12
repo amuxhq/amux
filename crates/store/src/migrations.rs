@@ -48,6 +48,8 @@ CREATE TABLE agents (
   turn_open           INTEGER NOT NULL DEFAULT 0, -- own rows: the incarnation has a turn it has not ended
   created_at_ms       INTEGER NOT NULL,  -- when the agent was created, on its origin's clock
   incarnation         INTEGER NOT NULL,  -- the agent's spec.<n>, counting resumes from 1
+  background_jobs     INTEGER NOT NULL DEFAULT 0, -- copied from the newest snapshot: jobs the provider runs in the background
+  descendants         INTEGER NOT NULL DEFAULT 0, -- live agents below this one: own rows counted here, replicas as their origin counts
   PRIMARY KEY (origin_host, agent_id)
 );
 
@@ -63,6 +65,7 @@ CREATE TABLE deliveries (
   body                TEXT,              -- finished: the child's last message
   exit_cause          INTEGER,           -- failed: amux.v1.ExitCause, how the incarnation ended
   exit_detail         TEXT,              -- failed: the cause's own words, when it has any
+  outcome             INTEGER,           -- finished: amux.v1.TurnOutcome, how the turn ended
   PRIMARY KEY (child_id, incarnation, kind, turn_id)
 );
 

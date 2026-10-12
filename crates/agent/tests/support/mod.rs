@@ -17,8 +17,8 @@ use tokio::task::JoinHandle;
 use wire::{
     AgentHello, AgentRef, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
     ClaudeSdkSnapshot, CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase,
-    PromptInput, Stop, StopMode, claude_pty_input, claude_pty_item, claude_sdk_input,
-    claude_sdk_item, codex_input, codex_item, ctl_frame, send_input_response,
+    PromptInput, Stop, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item,
+    codex_input, codex_item, ctl_frame, send_input_response,
 };
 
 /// When every agent in these tests starts.
@@ -746,9 +746,14 @@ impl Daemon {
         }
     }
 
-    pub async fn stop(&mut self, mode: StopMode) {
-        self.send(ctl_frame::Of::Stop(Stop { mode: mode as i32 }))
-            .await;
+    /// The daemon's stop: the turn cancelled the provider's way, then exit.
+    pub async fn stop(&mut self) {
+        self.send(ctl_frame::Of::Stop(Stop { kill: false })).await;
+    }
+
+    /// The daemon's kill, its escalation past the stop deadline.
+    pub async fn kill(&mut self) {
+        self.send(ctl_frame::Of::Stop(Stop { kill: true })).await;
     }
 }
 

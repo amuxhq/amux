@@ -12,8 +12,8 @@ use wire::{
     Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Empty, HostEntry, Input, Kind, Lifecycle,
     Phase, PromptInput, PromptSubmission, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, StopAgentRequest, StopMode, claude_pty_input,
-    claude_sdk_input, codex_input, create_agent_request, inventory_event, send_input_response,
+    ResumeAgentRequest, SendInputRequest, StopAgentRequest, claude_pty_input, claude_sdk_input,
+    codex_input, create_agent_request, inventory_event, send_input_response,
 };
 
 type Client = ClientServiceClient<Channel>;
@@ -99,7 +99,6 @@ fn exit_words(agent: &Agent) -> Option<String> {
         ExitCause::Unspecified => "",
         ExitCause::Finished => "finished",
         ExitCause::Stopped => "stopped",
-        ExitCause::Aborted => "aborted",
         ExitCause::Killed => "killed",
         ExitCause::ProviderExited => "the provider exited",
         ExitCause::DaemonLost | ExitCause::EndedWhileAway => "while the daemon was away",
@@ -226,16 +225,6 @@ pub enum CliKind {
     Codex,
 }
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub enum CliStopMode {
-    /// Let the current turn finish, then exit.
-    Graceful,
-    /// Cancel the current turn and exit.
-    Abort,
-    /// End the process group at once.
-    Kill,
-}
-
 /// A prompt in the input arm the agent's kind takes.
 /// A first prompt for a create or a resume.
 fn submission(text: &str) -> PromptSubmission {
@@ -348,17 +337,11 @@ pub async fn send(client: &mut Client, reference: &str, text: &str) -> Result<()
     }
 }
 
-pub async fn stop(client: &mut Client, reference: &str, mode: CliStopMode) -> Result<()> {
+pub async fn stop(client: &mut Client, reference: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
-    let mode = match mode {
-        CliStopMode::Graceful => StopMode::Graceful,
-        CliStopMode::Abort => StopMode::Abort,
-        CliStopMode::Kill => StopMode::Kill,
-    };
     client
         .stop_agent(StopAgentRequest {
             agent_id: agent.agent_id.clone(),
-            mode: mode as i32,
         })
         .await
         .map_err(crate::plain)?;

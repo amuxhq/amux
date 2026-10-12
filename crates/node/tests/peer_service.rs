@@ -15,7 +15,7 @@ use tonic::Code;
 use wire::{
     DeleteAgentRequest, DiffRequest, Empty, FetchRequest, GetBlobRequest, GetRequest,
     InventoryEvent, PeerSubscribeRequest, Phase, PutBlobRequest, RenameAgentRequest,
-    ResumeAgentRequest, SendInputRequest, StopAgentRequest, StopMode, inventory_event,
+    ResumeAgentRequest, SendInputRequest, StopAgentRequest, inventory_event,
     peer_subscribe_request, session_event,
 };
 
@@ -234,7 +234,6 @@ async fn replica_agent_is_refused_on_every_read_and_input() {
             "StopAgent",
             peer.stop_agent(StopAgentRequest {
                 agent_id: coder.clone(),
-                mode: StopMode::Kill.into(),
             })
             .await
             .err(),

@@ -26,8 +26,8 @@ use tokio::io::{ReadHalf, WriteHalf};
 use wire::{
     AgentHello, AgentSpec, ClaudePtyInput, ClaudePtyItem, ClaudeSdkInput, ClaudeSdkItem,
     CodexInput, CodexItem, CtlFrame, EffectiveConfig, Input, Kind, Phase, PromptInput, PtyMode,
-    Stop, StopMode, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item,
-    codex_input, codex_item, ctl_frame, send_input_response,
+    Stop, claude_pty_input, claude_pty_item, claude_sdk_input, claude_sdk_item, codex_input,
+    codex_item, ctl_frame, send_input_response,
 };
 /// Long enough that no deadline fires during a test: the daemon's absence
 /// is survived, never drained.
@@ -300,9 +300,12 @@ impl Daemon {
         }
     }
 
-    async fn stop(&mut self, mode: StopMode) {
-        self.send(ctl_frame::Of::Stop(Stop { mode: mode as i32 }))
-            .await;
+    async fn stop(&mut self) {
+        self.send(ctl_frame::Of::Stop(Stop { kill: false })).await;
+    }
+
+    async fn kill(&mut self) {
+        self.send(ctl_frame::Of::Stop(Stop { kill: true })).await;
     }
 }
 
@@ -486,7 +489,7 @@ async fn life_of_an_agent(kind: Kind) {
 
     // A daemon dialling back in finds it caught up, and stops it.
     let mut daemon = agent.dial().await;
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert!(exits(&mut process).await.success());
     for attached in &mut terminals {
         ended(attached).await;
@@ -581,7 +584,7 @@ async fn life_of_an_agent(kind: Kind) {
             })
             .await;
     }
-    daemon.stop(StopMode::Kill).await;
+    daemon.kill().await;
     exits(&mut process).await;
     agent.assert_released();
 }

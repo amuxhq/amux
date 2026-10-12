@@ -2209,6 +2209,18 @@
         }
       }
     },
+    "Claude’s own view switched to another conversation": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude’s own view switched to another conversation"
+          }
+        }
+      }
+    },
     "Clear": {
       "comment": "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Composer.swift.",
       "extractionState": "manual",

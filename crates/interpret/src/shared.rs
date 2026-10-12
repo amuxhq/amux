@@ -473,6 +473,7 @@ impl<A: OpenAsk> Shared<A> {
             phase_since_ms,
             git: self.git.clone(),
             catalogue: self.catalogue.clone(),
+            background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len() as u32),
         };
         let changed = self.last_snapshot.as_ref().is_none_or(|last| {
             Snapshot {
@@ -878,15 +879,16 @@ impl<A: OpenAsk> Shared<A> {
         self.turn.current()
     }
 
-    /// The provider reports the turn over: the step carries TurnEnd, and
-    /// the ended turn is returned for the kind's Turn item. None when no
-    /// turn was running.
-    pub fn turn_ended(&mut self, emit: &mut Emit) -> Option<OpenTurn> {
+    /// The provider reports the turn over, ended as `outcome`: the step
+    /// carries TurnEnd, and the ended turn is returned for the kind's Turn
+    /// item. None when no turn was running.
+    pub fn turn_ended(&mut self, emit: &mut Emit, outcome: wire::TurnOutcome) -> Option<OpenTurn> {
         self.busy = false;
         let turn = self.turn.end()?;
         emit.step.turn_end = Some(TurnEnd {
             turn_id: turn.id,
             last_message_key: turn.last_message_key.clone(),
+            outcome: outcome as i32,
         });
         Some(turn)
     }
@@ -1190,7 +1192,6 @@ fn ended_words(end: Option<&wire::IncarnationEnd>) -> String {
     let words = match cause {
         Ok(ExitCause::Finished) => "finished",
         Ok(ExitCause::Stopped) => "stopped",
-        Ok(ExitCause::Aborted) => "aborted",
         Ok(ExitCause::Killed) => "killed",
         Ok(ExitCause::ProviderExited) => "the provider exited",
         Ok(ExitCause::DaemonLost | ExitCause::EndedWhileAway) => "ended while its daemon was away",
@@ -1433,13 +1434,18 @@ mod tests {
                 .admit_prompt(&mut emit, b"p2", prompt, human())
                 .is_none()
         );
-        assert_eq!(shared.turn_ended(&mut emit).map(|turn| turn.id), Some(1));
+        assert_eq!(
+            shared
+                .turn_ended(&mut emit, wire::TurnOutcome::Completed)
+                .map(|turn| turn.id),
+            Some(1)
+        );
         assert!(!shared.quiescent(), "p2 is queued");
         assert_eq!(
             shared.next_queued().map(|entry| entry.input_id),
             Some(b"p2".to_vec())
         );
-        shared.turn_ended(&mut emit);
+        shared.turn_ended(&mut emit, wire::TurnOutcome::Completed);
         assert!(shared.quiescent());
     }
 
@@ -1450,7 +1456,11 @@ mod tests {
         shared.turn_started();
         let mut emit = Emit::default();
         assert_eq!(shared.provider_exited().map(|turn| turn.id), Some(1));
-        assert!(shared.turn_ended(&mut emit).is_none());
+        assert!(
+            shared
+                .turn_ended(&mut emit, wire::TurnOutcome::Completed)
+                .is_none()
+        );
         assert!(emit.step.turn_end.is_none());
         assert_eq!(shared.phase(), Phase::Starting);
     }
@@ -1503,7 +1513,7 @@ mod tests {
 
         shared.tick(60);
         let mut emit = Emit::default();
-        shared.turn_ended(&mut emit);
+        shared.turn_ended(&mut emit, wire::TurnOutcome::Completed);
         let done = shared.finish(emit, Vec::new()).step;
         assert_eq!(since(&done), Some((Phase::Idle as i32, 60)));
     }

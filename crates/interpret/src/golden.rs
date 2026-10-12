@@ -48,8 +48,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use wire::{
     AgentSpec, ClaudeAnswer, CodexAnswer, Envelope, EnvelopeKind, Input, Item, Phase, PromptInput,
-    SendInputResponse, SendQueuedNow, Sender, Snapshot, Step, StopMode, WithdrawQueued,
-    claude_answer, claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
+    SendInputResponse, SendQueuedNow, Sender, Snapshot, Step, WithdrawQueued, claude_answer,
+    claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
 };
 
 use crate::serde_pb::{from_hex, to_hex};
@@ -602,14 +602,7 @@ fn scripted<I: Interpreter>(value: &Value) -> Result<Scripted, String> {
                 detail: None,
             }))
         }
-        "stop" => Action::Event(Event::StopRequested(
-            match body.as_str().ok_or("stop takes a mode")? {
-                "graceful" => StopMode::Graceful,
-                "abort" => StopMode::Abort,
-                "kill" => StopMode::Kill,
-                other => return Err(format!("unknown stop mode {other:?}")),
-            },
-        )),
+        "stop" => Action::Event(Event::StopRequested),
         "git" => Action::Event(Event::Git(git_of(body)?)),
         "checkpoint" => Action::Checkpoint,
         other => return Err(format!("unknown action {other:?}")),
@@ -742,6 +735,8 @@ fn agent_message(body: &Value) -> Result<Envelope, String> {
         text: message.text,
         ended: None,
         incarnation: None,
+        attachments: Vec::new(),
+        outcome: None,
     })
 }
 
@@ -1763,10 +1758,7 @@ fn event_label(event: &Event) -> String {
         Event::ProviderExit { code } => format!("provider_exit {code:?}"),
         Event::DaemonLost => "daemon_lost".into(),
         Event::Exiting(exiting) => format!("exiting {}", incarnation_end(exiting)),
-        Event::StopRequested(mode) => format!(
-            "stop {}",
-            mode.as_str_name().trim_start_matches("STOP_MODE_")
-        ),
+        Event::StopRequested => "stop".into(),
         Event::Git(None) => "git none".into(),
         Event::Git(Some(git)) => git_label(git),
     }

@@ -120,7 +120,8 @@ message HostRemoved {
 }
 
 // The inventory row: lifecycle from the daemon; phase, working_on,
-// phase_since_ms and git copied from the snapshot envelope, never a snapshot.
+// phase_since_ms, git and background_jobs copied from the snapshot
+// envelope, never a snapshot.
 message Agent {
   bytes agent_id = 1;
   bytes host_id = 2;
@@ -142,6 +143,12 @@ message Agent {
   uint32 incarnation = 14;
   // The snapshot's git facts; absent outside a repository.
   optional Git git = 15;
+  // Live agents below this one, on every host the agent's host knows of:
+  // what a stop or delete would cut. Best effort; a host out of reach may
+  // be undercounted.
+  uint32 descendants = 16;
+  // The snapshot's count of jobs the provider runs in the background.
+  uint32 background_jobs = 17;
 }
 
 // ResolveAgent found more than one agent by that name.
@@ -372,16 +379,11 @@ message RenameAgentRequest {
   string name = 2;
 }
 
+// Ends the agent now: the running turn is cancelled the provider's own way
+// and the agent exits, resumable. Named apart from the Interrupt input, which
+// ends only the turn.
 message StopAgentRequest {
   bytes agent_id = 1;
-  StopMode mode = 2;
-}
-
-// Named apart from the Interrupt input so the two are never confused.
-enum StopMode {
-  STOP_MODE_GRACEFUL = 0;
-  STOP_MODE_ABORT = 1;
-  STOP_MODE_KILL = 2;
 }
 
 // The composer of an exited chat sends its draft through initial_prompt.
@@ -409,6 +411,8 @@ message SendMessageRequest {
   AgentRef to = 2;
   string text = 3;
   optional bytes context = 4;
+  // Blobs in the sender's directory on the sender's host.
+  repeated Attachment attachments = 5;
 }
 
 message SendMessageResponse {
@@ -562,4 +566,7 @@ enum Refusal {
   REFUSAL_EXITING = 5;
   REFUSAL_EXITED = 6;
   REFUSAL_HOST_UNREACHABLE = 7;
+  // Terminal Claude's own view switched to another conversation; this
+  // agent's conversation is not the one on its screen.
+  REFUSAL_CONVERSATION_ELSEWHERE = 8;
 }

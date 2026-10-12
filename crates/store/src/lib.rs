@@ -94,6 +94,14 @@ pub struct AgentRow {
     /// starts. An incarnation that exits with one open tells its parent it
     /// failed; one that ended its turn already told it it finished.
     pub turn_open: bool,
+    /// Copied from the snapshot envelope at commit, and for a replica from
+    /// its inventory row: how many jobs the provider runs in the
+    /// background.
+    pub background_jobs: u32,
+    /// Live agents below this one. An own row's is counted by its daemon
+    /// over the rows it holds ([`Sqlite::live_descendants`]); a replica's is
+    /// what its origin counted.
+    pub descendants: u32,
 }
 
 impl AgentRow {
@@ -124,6 +132,8 @@ impl AgentRow {
             created_at_ms: 0,
             incarnation: 1,
             turn_open: true,
+            background_jobs: 0,
+            descendants: 0,
         }
     }
 }
@@ -271,6 +281,9 @@ pub struct Delivery {
     pub body: String,
     /// How a failed incarnation ended; None for a finished turn.
     pub ended: Option<wire::IncarnationEnd>,
+    /// How a finished turn ended (`wire::TurnOutcome` as an integer); None
+    /// for a failed incarnation.
+    pub outcome: Option<i32>,
 }
 
 /// The push outbox row for one turn into needs_you, built from envelope

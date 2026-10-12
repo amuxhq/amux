@@ -139,7 +139,7 @@ impl ::prost::Name for AgentRef {
 }
 /// An agent message. `from` is set by the daemon from the caller's identity;
 /// the recipient's daemon dedupes by id against the recipient's items.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Envelope {
     #[prost(bytes = "vec", tag = "1")]
     pub id: ::prost::alloc::vec::Vec<u8>,
@@ -164,6 +164,14 @@ pub struct Envelope {
     /// recipient's daemon drops it for any other incarnation.
     #[prost(uint32, optional, tag = "8")]
     pub incarnation: ::core::option::Option<u32>,
+    /// A message's attachments, referencing blobs in the sender's directory on
+    /// the sender's host.
+    #[prost(message, repeated, tag = "9")]
+    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
+    /// Set only on a finished report: how the child's turn ended, so the
+    /// parent hears a stopped or interrupted turn as that, not as finished.
+    #[prost(enumeration = "TurnOutcome", optional, tag = "10")]
+    pub outcome: ::core::option::Option<i32>,
 }
 impl ::prost::Name for Envelope {
     const NAME: &'static str = "Envelope";
@@ -394,6 +402,11 @@ pub struct Snapshot {
     /// onto the row.
     #[prost(bytes = "vec", optional, tag = "11")]
     pub catalogue: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// How many jobs the body's background list holds; zero while the list is
+    /// unknown. The daemon copies it onto the inventory row, so a fleet row
+    /// counts what a stop would cut without decoding a body.
+    #[prost(uint32, tag = "12")]
+    pub background_jobs: u32,
 }
 impl ::prost::Name for Snapshot {
     const NAME: &'static str = "Snapshot";
@@ -463,6 +476,9 @@ pub struct TurnEnd {
     /// no assistant text.
     #[prost(string, tag = "2")]
     pub last_message_key: ::prost::alloc::string::String,
+    /// How the turn ended; a parent's finished report carries it.
+    #[prost(enumeration = "TurnOutcome", tag = "3")]
+    pub outcome: i32,
 }
 impl ::prost::Name for TurnEnd {
     const NAME: &'static str = "TurnEnd";
@@ -774,27 +790,28 @@ pub enum ExitCause {
     Unspecified = 0,
     /// A child's turn ended with nothing queued: the one-shot rule.
     Finished = 1,
+    /// Stopped by a person, a parent's stop or a cascade: the turn was
+    /// cancelled the provider's own way, then the agent exited.
     Stopped = 2,
-    Aborted = 3,
-    Killed = 4,
+    Killed = 3,
     /// The provider process ended on its own; the detail is its exit code
     /// or signal.
-    ProviderExited = 5,
+    ProviderExited = 4,
     /// The agent drained after its daemon was gone past the grace period.
-    DaemonLost = 6,
+    DaemonLost = 5,
     /// An ask was open with nobody to answer it when the daemon was lost.
-    Orphaned = 7,
+    Orphaned = 6,
     /// The agent process or its provider could not start; the detail says
     /// which and why.
-    CouldNotStart = 8,
+    CouldNotStart = 7,
     /// Its directory is gone, or a write to it failed; the detail says which.
-    DirectoryFailed = 9,
+    DirectoryFailed = 8,
     /// The process was found dead when a daemon returned, and its journal
     /// does not say why.
-    EndedWhileAway = 10,
+    EndedWhileAway = 9,
     /// The process ended while a daemon watched, and its journal does not say
     /// why.
-    EndedUnexpectedly = 11,
+    EndedUnexpectedly = 10,
 }
 impl ExitCause {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -806,7 +823,6 @@ impl ExitCause {
             Self::Unspecified => "EXIT_CAUSE_UNSPECIFIED",
             Self::Finished => "EXIT_CAUSE_FINISHED",
             Self::Stopped => "EXIT_CAUSE_STOPPED",
-            Self::Aborted => "EXIT_CAUSE_ABORTED",
             Self::Killed => "EXIT_CAUSE_KILLED",
             Self::ProviderExited => "EXIT_CAUSE_PROVIDER_EXITED",
             Self::DaemonLost => "EXIT_CAUSE_DAEMON_LOST",
@@ -823,7 +839,6 @@ impl ExitCause {
             "EXIT_CAUSE_UNSPECIFIED" => Some(Self::Unspecified),
             "EXIT_CAUSE_FINISHED" => Some(Self::Finished),
             "EXIT_CAUSE_STOPPED" => Some(Self::Stopped),
-            "EXIT_CAUSE_ABORTED" => Some(Self::Aborted),
             "EXIT_CAUSE_KILLED" => Some(Self::Killed),
             "EXIT_CAUSE_PROVIDER_EXITED" => Some(Self::ProviderExited),
             "EXIT_CAUSE_DAEMON_LOST" => Some(Self::DaemonLost),
@@ -864,6 +879,45 @@ impl Phase {
             "PHASE_IDLE" => Some(Self::Idle),
             "PHASE_WORKING" => Some(Self::Working),
             "PHASE_NEEDS_YOU" => Some(Self::NeedsYou),
+            _ => None,
+        }
+    }
+}
+/// How a turn ended: on a kind's Turn item, on the step's TurnEnd, and on a
+/// child's finished report to its parent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TurnOutcome {
+    Unspecified = 0,
+    Completed = 1,
+    /// The turn was cancelled and the agent stays live.
+    Interrupted = 2,
+    Failed = 3,
+    /// The turn was cut short because the agent was stopped.
+    Stopped = 4,
+}
+impl TurnOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "TURN_OUTCOME_UNSPECIFIED",
+            Self::Completed => "TURN_OUTCOME_COMPLETED",
+            Self::Interrupted => "TURN_OUTCOME_INTERRUPTED",
+            Self::Failed => "TURN_OUTCOME_FAILED",
+            Self::Stopped => "TURN_OUTCOME_STOPPED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "TURN_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
+            "TURN_OUTCOME_COMPLETED" => Some(Self::Completed),
+            "TURN_OUTCOME_INTERRUPTED" => Some(Self::Interrupted),
+            "TURN_OUTCOME_FAILED" => Some(Self::Failed),
+            "TURN_OUTCOME_STOPPED" => Some(Self::Stopped),
             _ => None,
         }
     }
@@ -1834,6 +1888,10 @@ pub struct ToolCall {
     /// A file edit that finished: the line its first change landed on.
     #[prost(uint32, optional, tag = "16")]
     pub line: ::core::option::Option<u32>,
+    /// When the call began running, after any approval. Its duration is
+    /// ended_at_ms minus this, else minus the item's at_ms.
+    #[prost(int64, optional, tag = "17")]
+    pub started_at_ms: ::core::option::Option<i64>,
 }
 impl ::prost::Name for ToolCall {
     const NAME: &'static str = "ToolCall";
@@ -2884,6 +2942,11 @@ pub struct BackgroundJob {
     pub command: ::prost::alloc::string::String,
     #[prost(int64, tag = "3")]
     pub started_at_ms: i64,
+    #[prost(enumeration = "BackgroundKind", tag = "4")]
+    pub kind: i32,
+    /// The provider's own id for the job: Claude's task id, Codex's process id.
+    #[prost(string, tag = "5")]
+    pub id: ::prost::alloc::string::String,
 }
 impl ::prost::Name for BackgroundJob {
     const NAME: &'static str = "BackgroundJob";
@@ -3434,38 +3497,6 @@ impl SendState {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum TurnOutcome {
-    Unspecified = 0,
-    Completed = 1,
-    Interrupted = 2,
-    Failed = 3,
-}
-impl TurnOutcome {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "TURN_OUTCOME_UNSPECIFIED",
-            Self::Completed => "TURN_OUTCOME_COMPLETED",
-            Self::Interrupted => "TURN_OUTCOME_INTERRUPTED",
-            Self::Failed => "TURN_OUTCOME_FAILED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "TURN_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
-            "TURN_OUTCOME_COMPLETED" => Some(Self::Completed),
-            "TURN_OUTCOME_INTERRUPTED" => Some(Self::Interrupted),
-            "TURN_OUTCOME_FAILED" => Some(Self::Failed),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
 pub enum PlanChoice {
     Unspecified = 0,
     /// Start building (Claude) or implement the plan (Codex), the permission
@@ -3739,6 +3770,46 @@ impl SignInState {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
+pub enum BackgroundKind {
+    /// The provider has not said what the job is.
+    Unspecified = 0,
+    /// A shell command.
+    Shell = 1,
+    /// A sub-agent the provider runs itself.
+    Subagent = 2,
+    /// A watch the provider keeps on something.
+    Monitor = 3,
+    /// A kind the provider names that amux has no word for.
+    Other = 4,
+}
+impl BackgroundKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "BACKGROUND_KIND_UNSPECIFIED",
+            Self::Shell => "BACKGROUND_KIND_SHELL",
+            Self::Subagent => "BACKGROUND_KIND_SUBAGENT",
+            Self::Monitor => "BACKGROUND_KIND_MONITOR",
+            Self::Other => "BACKGROUND_KIND_OTHER",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "BACKGROUND_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "BACKGROUND_KIND_SHELL" => Some(Self::Shell),
+            "BACKGROUND_KIND_SUBAGENT" => Some(Self::Subagent),
+            "BACKGROUND_KIND_MONITOR" => Some(Self::Monitor),
+            "BACKGROUND_KIND_OTHER" => Some(Self::Other),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
 pub enum FormAction {
     Unspecified = 0,
     Accept = 1,
@@ -3913,6 +3984,14 @@ pub struct ClaudePtySnapshot {
     /// until then.
     #[prost(message, repeated, tag = "12")]
     pub running_calls: ::prost::alloc::vec::Vec<RunningCall>,
+    /// The reasoning effort Claude last recorded running with; absent until it
+    /// has. A provider string, validated against the catalogue's model levels.
+    #[prost(string, optional, tag = "13")]
+    pub effort: ::core::option::Option<::prost::alloc::string::String>,
+    /// Claude's own view resumed another conversation: that conversation's
+    /// session id. Informational; the phase is left as it is.
+    #[prost(string, optional, tag = "14")]
+    pub switched_away_to: ::core::option::Option<::prost::alloc::string::String>,
 }
 impl ::prost::Name for ClaudePtySnapshot {
     const NAME: &'static str = "ClaudePtySnapshot";
@@ -3945,7 +4024,7 @@ impl ::prost::Name for RunningCall {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClaudePtyInput {
-    #[prost(oneof = "claude_pty_input::Of", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "claude_pty_input::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     pub of: ::core::option::Option<claude_pty_input::Of>,
 }
 /// Nested message and enum types in `ClaudePtyInput`.
@@ -3970,6 +4049,10 @@ pub mod claude_pty_input {
         Withdraw(super::WithdrawQueued),
         #[prost(message, tag = "7")]
         SendNow(super::SendQueuedNow),
+        /// Back to this agent's conversation after Claude's own view switched
+        /// away: types `/resume <this agent's session>`.
+        #[prost(message, tag = "8")]
+        SwitchBack(super::SwitchBack),
     }
 }
 impl ::prost::Name for ClaudePtyInput {
@@ -3992,6 +4075,18 @@ impl ::prost::Name for CyclePermissionMode {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.CyclePermissionMode".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SwitchBack {}
+impl ::prost::Name for SwitchBack {
+    const NAME: &'static str = "SwitchBack";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.SwitchBack".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.SwitchBack".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -4626,6 +4721,14 @@ impl ::prost::Name for McpToolCall {
 pub struct WebSearch {
     #[prost(string, tag = "1")]
     pub query: ::prost::alloc::string::String,
+    #[prost(enumeration = "WebAction", tag = "2")]
+    pub action: i32,
+    /// The page opened, or searched within.
+    #[prost(string, tag = "3")]
+    pub url: ::prost::alloc::string::String,
+    /// The words looked for within the page.
+    #[prost(string, tag = "4")]
+    pub pattern: ::prost::alloc::string::String,
 }
 impl ::prost::Name for WebSearch {
     const NAME: &'static str = "WebSearch";
@@ -5062,6 +5165,38 @@ impl FileChangeKind {
         }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WebAction {
+    Unspecified = 0,
+    Search = 1,
+    OpenPage = 2,
+    FindInPage = 3,
+}
+impl WebAction {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WEB_ACTION_UNSPECIFIED",
+            Self::Search => "WEB_ACTION_SEARCH",
+            Self::OpenPage => "WEB_ACTION_OPEN_PAGE",
+            Self::FindInPage => "WEB_ACTION_FIND_IN_PAGE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WEB_ACTION_UNSPECIFIED" => Some(Self::Unspecified),
+            "WEB_ACTION_SEARCH" => Some(Self::Search),
+            "WEB_ACTION_OPEN_PAGE" => Some(Self::OpenPage),
+            "WEB_ACTION_FIND_IN_PAGE" => Some(Self::FindInPage),
+            _ => None,
+        }
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -5294,7 +5429,8 @@ impl ::prost::Name for HostRemoved {
     }
 }
 /// The inventory row: lifecycle from the daemon; phase, working_on,
-/// phase_since_ms and git copied from the snapshot envelope, never a snapshot.
+/// phase_since_ms, git and background_jobs copied from the snapshot
+/// envelope, never a snapshot.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Agent {
     #[prost(bytes = "vec", tag = "1")]
@@ -5332,6 +5468,14 @@ pub struct Agent {
     /// The snapshot's git facts; absent outside a repository.
     #[prost(message, optional, tag = "15")]
     pub git: ::core::option::Option<Git>,
+    /// Live agents below this one, on every host the agent's host knows of:
+    /// what a stop or delete would cut. Best effort; a host out of reach may
+    /// be undercounted.
+    #[prost(uint32, tag = "16")]
+    pub descendants: u32,
+    /// The snapshot's count of jobs the provider runs in the background.
+    #[prost(uint32, tag = "17")]
+    pub background_jobs: u32,
 }
 impl ::prost::Name for Agent {
     const NAME: &'static str = "Agent";
@@ -5746,12 +5890,13 @@ impl ::prost::Name for RenameAgentRequest {
         "/amux.v1.RenameAgentRequest".into()
     }
 }
+/// Ends the agent now: the running turn is cancelled the provider's own way
+/// and the agent exits, resumable. Named apart from the Interrupt input, which
+/// ends only the turn.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StopAgentRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(enumeration = "StopMode", tag = "2")]
-    pub mode: i32,
 }
 impl ::prost::Name for StopAgentRequest {
     const NAME: &'static str = "StopAgentRequest";
@@ -5818,7 +5963,7 @@ impl ::prost::Name for DeleteAgentResponse {
 /// one per send. Who it is from is the caller: a person on a client socket,
 /// or the agent whose tools socket made the call. Finished and failed
 /// messages are the daemon's own and cannot be submitted.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SendMessageRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub id: ::prost::alloc::vec::Vec<u8>,
@@ -5828,6 +5973,9 @@ pub struct SendMessageRequest {
     pub text: ::prost::alloc::string::String,
     #[prost(bytes = "vec", optional, tag = "4")]
     pub context: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// Blobs in the sender's directory on the sender's host.
+    #[prost(message, repeated, tag = "5")]
+    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
 }
 impl ::prost::Name for SendMessageRequest {
     const NAME: &'static str = "SendMessageRequest";
@@ -6368,36 +6516,6 @@ impl RemovalReason {
         }
     }
 }
-/// Named apart from the Interrupt input so the two are never confused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum StopMode {
-    Graceful = 0,
-    Abort = 1,
-    Kill = 2,
-}
-impl StopMode {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Graceful => "STOP_MODE_GRACEFUL",
-            Self::Abort => "STOP_MODE_ABORT",
-            Self::Kill => "STOP_MODE_KILL",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "STOP_MODE_GRACEFUL" => Some(Self::Graceful),
-            "STOP_MODE_ABORT" => Some(Self::Abort),
-            "STOP_MODE_KILL" => Some(Self::Kill),
-            _ => None,
-        }
-    }
-}
 /// Which provider's program a host runs: the vocabulary amux uses to ask a
 /// host what it offers with no agent running. Distinct from Kind, which is
 /// the interpreter.
@@ -6445,6 +6563,9 @@ pub enum Refusal {
     Exiting = 5,
     Exited = 6,
     HostUnreachable = 7,
+    /// Terminal Claude's own view switched to another conversation; this
+    /// agent's conversation is not the one on its screen.
+    ConversationElsewhere = 8,
 }
 impl Refusal {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6461,6 +6582,7 @@ impl Refusal {
             Self::Exiting => "REFUSAL_EXITING",
             Self::Exited => "REFUSAL_EXITED",
             Self::HostUnreachable => "REFUSAL_HOST_UNREACHABLE",
+            Self::ConversationElsewhere => "REFUSAL_CONVERSATION_ELSEWHERE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -6474,6 +6596,7 @@ impl Refusal {
             "REFUSAL_EXITING" => Some(Self::Exiting),
             "REFUSAL_EXITED" => Some(Self::Exited),
             "REFUSAL_HOST_UNREACHABLE" => Some(Self::HostUnreachable),
+            "REFUSAL_CONVERSATION_ELSEWHERE" => Some(Self::ConversationElsewhere),
             _ => None,
         }
     }
@@ -12409,10 +12532,14 @@ impl ::prost::Name for Nudge {
         "/amux.v1.Nudge".into()
     }
 }
+/// The daemon ends its agent. Without `kill`, the running turn is cancelled
+/// the provider's own way and the agent exits. With it, the provider's process
+/// group is killed at once and nothing more is written: the daemon's escalation
+/// once a stop overruns its deadline, never a person's.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Stop {
-    #[prost(enumeration = "StopMode", tag = "1")]
-    pub mode: i32,
+    #[prost(bool, tag = "1")]
+    pub kill: bool,
 }
 impl ::prost::Name for Stop {
     const NAME: &'static str = "Stop";

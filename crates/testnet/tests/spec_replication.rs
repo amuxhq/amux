@@ -24,9 +24,7 @@ use store::{AgentKey, CommitClock, Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
 use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, holds_for, until};
 use wire::client_service_server::ClientService as _;
-use wire::{
-    FetchRequest, InventoryEvent, Item, SessionEvent, StopMode, inventory_event, session_event,
-};
+use wire::{FetchRequest, InventoryEvent, Item, SessionEvent, inventory_event, session_event};
 
 fn text(text: &str) -> Step {
     Step::Text {
@@ -987,11 +985,7 @@ async fn on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close
 
     // An agent that exits: its source closes once its catch-up has landed.
     let quiet_id = net.agent("quiet").unwrap().id;
-    net.runtime("desk")
-        .unwrap()
-        .stop(quiet_id, StopMode::Graceful)
-        .await
-        .unwrap();
+    net.runtime("desk").unwrap().stop(quiet_id).await.unwrap();
     until("quiet's source to close", || async {
         let open = laptop.open_sources();
         (!open.contains(&quiet))
@@ -1300,11 +1294,7 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
     net.checkpoint_host("desk").await.unwrap();
     net.send("brief", "lost").await.unwrap();
     wait_origin_says(&net, "brief", "t1-0").await;
-    net.runtime("desk")
-        .unwrap()
-        .stop(brief.id, StopMode::Graceful)
-        .await
-        .unwrap();
+    net.runtime("desk").unwrap().stop(brief.id).await.unwrap();
     let laptop = net.runtime("laptop").unwrap();
     until("the laptop to settle brief exited", || async {
         let row = laptop.store().await.agent(&key).unwrap();
@@ -1404,11 +1394,7 @@ async fn an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit() 
     wait_origin_says(&net, "brief", "t0-1").await;
     net.current("laptop", "brief").await.unwrap();
     armed.store(true, Ordering::SeqCst);
-    net.runtime("desk")
-        .unwrap()
-        .stop(brief.id, StopMode::Graceful)
-        .await
-        .unwrap();
+    net.runtime("desk").unwrap().stop(brief.id).await.unwrap();
     until(
         "the laptop to list brief exited while holding an exit record",
         || async {

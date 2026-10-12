@@ -7,7 +7,7 @@ mod support;
 use agent::ExitCause;
 use provider_fakes::Step;
 use support::*;
-use wire::{Kind, StopMode};
+use wire::Kind;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
@@ -32,7 +32,7 @@ async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
     let thread = agent.provider_session();
     assert!(!thread.is_empty(), "the thread the server made is kept");
 
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 
     agent.resume();
@@ -45,7 +45,7 @@ async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
         .await;
     assert_eq!(agent.provider_session(), thread, "the same thread resumed");
     let mut daemon = agent.dial().await;
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
@@ -110,7 +110,7 @@ async fn a_codex_agent_is_one_client_of_a_server_on_its_private_socket() {
         .await;
     assert!(agent.log().has_text("hello"));
 
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
     let ended = tokio::time::timeout(PATIENCE, async {
         while let Some(Ok(_)) = other.next().await {}
@@ -144,7 +144,7 @@ async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
     agent
         .wait("the turn ends", |log| log.turn_ends() == 1)
         .await;
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 
     let session = agent.dir.join(agent::PRIVATE).join("provider-session");
@@ -311,7 +311,7 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
 
     let before = agent.log();
     let full = before.full_items();
-    daemon.stop(StopMode::Kill).await;
+    daemon.kill().await;
     assert_eq!(agent.exit().await, ExitCause::Killed);
 
     agent.resume();
@@ -358,7 +358,7 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
         kinds.values().all(|kinds| kinds.len() == 1),
         "no boundary key is reused: {kinds:?}"
     );
-    daemon.stop(StopMode::Kill).await;
+    daemon.kill().await;
     assert_eq!(agent.exit().await, ExitCause::Killed);
 }
 
@@ -398,7 +398,7 @@ fn a_terminal_claude_agent_types_through_its_keymap_and_hears_its_hooks() {
             Some("STARTED 2.1.283 claude-2.1"),
             "the boundary records the version and the keymap resolved for it"
         );
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }
@@ -626,7 +626,7 @@ async fn headless_claude_replays_initialization_a_control_reply_and_the_end_of_i
         .wait("the turn ends", |log| log.turn_ends() == 1)
         .await;
     assert!(agent.log().has_text("You selected **Blue**."));
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
     assert_no_drift(&agent);
 }
@@ -682,7 +682,7 @@ async fn codex_replays_the_handshake_an_approval_and_the_end_of_input() {
         .wait("the turn ends", |log| log.turn_ends() == 1)
         .await;
     assert!(agent.log().has_text("DONE"));
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
     assert_no_drift(&agent);
 }
@@ -828,7 +828,7 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
         assert!(!log.has_text("never said"), "the deny ended the turn");
         assert!(log.has_text("Noted."), "the note followed as a prompt");
         assert_ne!(log.permission().as_deref(), Some("auto"));
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }
@@ -898,7 +898,7 @@ fn terminal_claude_takes_a_skipped_question_through_its_review_screen() {
             serde_json::json!({"Pick a color": "Blue", "Pick a size": "Small"}),
             "the skipped question is left out"
         );
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }
@@ -945,7 +945,7 @@ fn terminal_claude_asks_to_trust_its_folder_before_taking_a_prompt() {
         let log = agent.log();
         assert!(log.has_text("say hello"), "{:#?}", log.sequence());
         assert!(log.has_text("hello from a trusted folder"));
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }
@@ -999,7 +999,7 @@ fn a_terminal_session_that_never_began_is_started_not_resumed() {
         let mut daemon = agent.dial().await;
         agent.ready().await;
         let session = agent.provider_session();
-        daemon.stop(StopMode::Kill).await;
+        daemon.kill().await;
         assert_eq!(agent.exit().await, ExitCause::Killed);
 
         agent.resume();
@@ -1011,7 +1011,7 @@ fn a_terminal_session_that_never_began_is_started_not_resumed() {
             .await;
         assert!(agent.log().has_text("hello after all"));
         assert_eq!(agent.provider_session(), session, "the same session id");
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }
@@ -1034,7 +1034,7 @@ async fn a_headless_session_that_never_began_is_started_not_resumed() {
     let mut daemon = agent.dial().await;
     agent.ready().await;
     let session = agent.provider_session();
-    daemon.stop(StopMode::Kill).await;
+    daemon.kill().await;
     assert_eq!(agent.exit().await, ExitCause::Killed);
 
     agent.resume();
@@ -1046,7 +1046,7 @@ async fn a_headless_session_that_never_began_is_started_not_resumed() {
         .await;
     assert!(agent.log().has_text("hello after all"));
     assert_eq!(agent.provider_session(), session, "the same session id");
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
@@ -1071,7 +1071,7 @@ async fn a_headless_session_that_began_is_resumed() {
         .wait("the first turn ends", |log| log.turn_ends() == 1)
         .await;
     let session = agent.provider_session();
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 
     agent.resume();
@@ -1082,7 +1082,7 @@ async fn a_headless_session_that_began_is_resumed() {
         .wait("the second turn ends", |log| log.turn_ends() == 2)
         .await;
     assert_eq!(agent.provider_session(), session, "the same session id");
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
@@ -1233,7 +1233,7 @@ fn terminal_claude_never_starts_auto_mode_for_a_plan_approved_accepting_edits() 
             Some("auto"),
             "approving the plan \"accepting edits\" put Claude in auto mode"
         );
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }

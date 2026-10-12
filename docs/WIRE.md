@@ -88,7 +88,7 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | `SendInput(SendInputRequest)` | `SendInputResponse` | The interpreter's verdict on one input |
 | `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
 | `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`. The agent's branch keeps the name it was made with |
-| `StopAgent(StopAgentRequest)` | `Empty` | `STOP_MODE_GRACEFUL`, `STOP_MODE_ABORT` or `STOP_MODE_KILL`; a mode this host cannot read is `INVALID_ARGUMENT`; a registry act, never a chat control. Stops every descendant too, in the same mode, best effort |
+| `StopAgent(StopAgentRequest)` | `Empty` | Ends the agent now: its running turn is cancelled the provider's own way and it exits, resumable. There is no "stop when done". A registry act, never a chat control (the chat's is the interrupt input, which ends only the turn). Stops every descendant too, best effort |
 | `ResumeAgent(ResumeAgentRequest)` | `Agent` | Start the agent's directory again, optionally with a first prompt |
 | `DeleteAgent` | `DeleteAgentResponse` | Cascades to children; lists removed and unreachable children |
 | `SendMessage(SendMessageRequest)` | `SendMessageResponse` | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
@@ -265,7 +265,10 @@ message Item {
 
 `Snapshot` carries the same split: kind-neutral envelope fields (`revision`,
 the `queue` of `QueuedInput`s, `phase`, `working_on`, `at_ms`,
-`phase_since_ms`, `git`) and a per-kind `body`. `Phase` is `PHASE_STARTING`,
+`phase_since_ms`, `git`, `background_jobs`) and a per-kind `body`.
+`background_jobs` is how many jobs the body's background list holds (zero
+while it is unknown), so the daemon can put the count on the inventory row
+without decoding the body. `Phase` is `PHASE_STARTING`,
 `PHASE_IDLE`, `PHASE_WORKING` or `PHASE_NEEDS_YOU`.
 
 `phase_since_ms` is the interpreter's clock when `phase` last changed. The
@@ -374,6 +377,7 @@ message SendMessageRequest {
   AgentRef to = 2;
   string text = 3;
   optional bytes context = 4;
+  repeated Attachment attachments = 5;  // blobs in the sender's directory
 }
 ```
 
@@ -382,9 +386,13 @@ from: the person on a client socket, the agent whose tools socket made the
 call. The request has nowhere to name a sender, so no caller can speak for
 anyone else. Finished and failed messages are the daemon's own, sent when a
 child's turn or incarnation ends, and cannot be submitted. A finished message's
-text is the child's last message; a failed one has no text and carries how the
+text is the child's last message, and its `outcome` is how the turn ended (a
+`TurnOutcome`: completed, interrupted, stopped or failed), taken from the
+step's `TurnEnd`; a failed one has no text and carries how the
 child's incarnation ended as `ended` (an `IncarnationEnd`: the `ExitCause` and
-its own words), which the parent's interpreter words for its provider. The recipient's daemon dedupes by
+its own words), which the parent's interpreter words for its provider. A
+message's `attachments` reference blobs in the sender's directory on the
+sender's host; the envelope carries them as the request gave them. The recipient's daemon dedupes by
 `id` against the recipient's items, so a resend after a lost answer is one
 message. The answer comes once the recipient has accepted it. A paired host
 forwards the envelope its daemon stamped, and the receiving daemon takes that
@@ -405,7 +413,10 @@ message Input {
 A client sends semantic inputs in the agent's kind: a prompt, an answer to an
 open ask, a withdrawal or send-now of a queued prompt, an interrupt, a model,
 effort, permission or mode setting, and for terminal Claude its
-permission-mode cycle, the one keystroke a remote client sends. Raw terminal
+permission-mode cycle, the one keystroke a remote client sends, and
+`SwitchBack`, which returns Claude's own view to this agent's conversation
+after it switched to another (refused as unsupported until terminal Claude
+notices such a switch). Raw terminal
 bytes never cross the wire; anything else in Claude's terminal is typed at the
 machine, and a dialog amux cannot answer is left by stopping the agent or
 attaching there. The shared pieces (`PromptInput`, `WithdrawQueued`,
@@ -465,6 +476,7 @@ The `Refusal` says why:
 | `REFUSAL_EXITING` | the agent | A one-shot child decided to exit |
 | `REFUSAL_EXITED` | the owning daemon | The agent has exited; the composer offers Resume |
 | `REFUSAL_HOST_UNREACHABLE` | the local runtime | The agent's host cannot be reached, so the input never left; one that left and lost its answer is `ABORTED` instead |
+| `REFUSAL_CONVERSATION_ELSEWHERE` | interpreter | Terminal Claude's own view switched to another conversation, so a prompt would land in a conversation that is not this agent's |
 
 `detail` carries a sentence for a person when the refusal depends on the
 provider rather than the protocol: terminal Claude refuses send-now as
@@ -508,7 +520,11 @@ message BlobRef         { bytes hash = 1; string name = 2; string mime = 3; uint
 ```
 
 `PutBlob` writes a person's attachment into the named agent's directory on the
-agent's own host, named by its SHA-256, and returns the `BlobRef`. The client
+agent's own host, named by its SHA-256, and returns the `BlobRef`. An
+attachment is at most `wire::ATTACHMENT_SIZE_LIMIT` (64 MiB, which clients
+word "64 MB") of its own bytes; `wire::CHANNEL_MESSAGE_SIZE_LIMIT`, the cap
+on any one RPC message, is 1 MiB above it so a file at the limit still fits
+in one `PutBlobRequest` with its framing. The client
 then sends the input whose `Attachment` carries that reference. The same bytes
 twice are one file. Only a person can call it; an agent writes its own blobs
 directly into its directory.
@@ -585,7 +601,13 @@ for that host's agents keep running.
 with `exit_cause` and `exit_detail`, `phase`, `working_on`, `phase_since_ms`
 (on the origin host's clock; the row's creation time until its first
 snapshot) and `git` copied from the agent's newest snapshot envelope,
-and `incarnation`. It never carries a snapshot: a client
+`incarnation`, and two counts of what a stop or delete would cut:
+`background_jobs`, copied from the snapshot envelope, and `descendants`, the
+live agents below it. The agent's own host counts `descendants` over the rows
+it holds, walking into its own agents and taking each paired host's agent's
+own count for what lies below it, so the count reaches every host that host
+knows of; it is best effort, and a host out of reach may be undercounted. A
+replica row carries its origin's count. It never carries a snapshot: a client
 reads an agent's conversation from the agent's own session, which the client
 library keeps open for every live agent (see [the client
 library](CLIENT.md#the-fleet)), so the row stays small.
@@ -594,7 +616,8 @@ library](CLIENT.md#the-fleet)), so the row stays small.
 has any (a provider's exit code, why a provider could not start). Most causes
 are the agent's own, written in its journal as the last step's
 `incarnation_end` (see [the agent process](AGENT_PROCESS.md#lifecycle)):
-`FINISHED` (a child's one-shot exit), `STOPPED`, `ABORTED`, `PROVIDER_EXITED`,
+`FINISHED` (a child's one-shot exit), `STOPPED` (a stop: its turn cancelled the
+provider's own way, then the exit), `PROVIDER_EXITED`,
 `DAEMON_LOST`, `ORPHANED`, `COULD_NOT_START` and `DIRECTORY_FAILED`. The
 daemon copies that onto the row when it ingests the step, reads the journal
 to its end before it marks the agent exited, and records its own cause only

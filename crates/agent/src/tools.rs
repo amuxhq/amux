@@ -315,6 +315,7 @@ impl Server {
             }),
             text,
             context,
+            attachments: Vec::new(),
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {

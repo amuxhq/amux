@@ -7,7 +7,6 @@
 
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
-use wire::StopMode;
 
 use crate::{Channel, Event, Fact};
 
@@ -39,9 +38,7 @@ pub enum Entry {
         code: Option<i32>,
     },
     DaemonLost,
-    Stop {
-        mode: i32,
-    },
+    Stop,
     /// The cause's raw value, so one this build does not know is kept.
     Exiting {
         cause: i32,
@@ -80,7 +77,7 @@ impl Entry {
             Event::Tick { at_ms } => Entry::Tick { at_ms: *at_ms },
             Event::ProviderExit { code } => Entry::ProviderExit { code: *code },
             Event::DaemonLost => Entry::DaemonLost,
-            Event::StopRequested(mode) => Entry::Stop { mode: *mode as i32 },
+            Event::StopRequested => Entry::Stop,
             Event::Exiting(exiting) => Entry::Exiting {
                 cause: exiting.cause,
                 detail: exiting.detail.clone(),
@@ -112,7 +109,7 @@ impl Entry {
             Entry::Tick { at_ms } => Event::Tick { at_ms },
             Entry::ProviderExit { code } => Event::ProviderExit { code },
             Entry::DaemonLost => Event::DaemonLost,
-            Entry::Stop { mode } => Event::StopRequested(StopMode::try_from(mode).ok()?),
+            Entry::Stop => Event::StopRequested,
             Entry::Exiting { cause, detail } => {
                 Event::Exiting(wire::IncarnationEnd { cause, detail })
             }

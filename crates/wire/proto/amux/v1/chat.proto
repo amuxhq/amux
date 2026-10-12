@@ -78,6 +78,9 @@ message ToolCall {
   optional bool created = 15;
   // A file edit that finished: the line its first change landed on.
   optional uint32 line = 16;
+  // When the call began running, after any approval. Its duration is
+  // ended_at_ms minus this, else minus the item's at_ms.
+  optional int64 started_at_ms = 17;
 }
 
 enum ToolState {
@@ -231,13 +234,6 @@ message Turn {
   // When the turn started; "Worked 1m 42s" is at_ms minus this.
   int64 started_at_ms = 3;
   optional double cost_usd = 4;
-}
-
-enum TurnOutcome {
-  TURN_OUTCOME_UNSPECIFIED = 0;
-  TURN_OUTCOME_COMPLETED = 1;
-  TURN_OUTCOME_INTERRUPTED = 2;
-  TURN_OUTCOME_FAILED = 3;
 }
 
 message Compaction {
@@ -633,6 +629,22 @@ message BackgroundJob {
   // The command, or what the provider calls the task.
   string command = 2;
   int64 started_at_ms = 3;
+  BackgroundKind kind = 4;
+  // The provider's own id for the job: Claude's task id, Codex's process id.
+  string id = 5;
+}
+
+enum BackgroundKind {
+  // The provider has not said what the job is.
+  BACKGROUND_KIND_UNSPECIFIED = 0;
+  // A shell command.
+  BACKGROUND_KIND_SHELL = 1;
+  // A sub-agent the provider runs itself.
+  BACKGROUND_KIND_SUBAGENT = 2;
+  // A watch the provider keeps on something.
+  BACKGROUND_KIND_MONITOR = 3;
+  // A kind the provider names that amux has no word for.
+  BACKGROUND_KIND_OTHER = 4;
 }
 
 // ---------------------------------------------------------------------------

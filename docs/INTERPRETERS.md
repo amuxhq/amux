@@ -152,7 +152,11 @@ content.
 
 Every snapshot body carries `BackgroundJobs`: each command or task the
 provider runs past the call that started it, with the key of that call's
-item, the command (or the task's description) and when it started. The
+item, the command (or the task's description), when it started, its kind
+(shell, sub-agent, monitor or other, unspecified while the interpreter does
+not say) and the provider's own id for it (Claude's task id, Codex's process
+id). The snapshot envelope carries how many there are, which the daemon puts
+on the fleet row. The
 shared part holds the list and publishes it; each interpreter sets it from
 what its provider says:
 

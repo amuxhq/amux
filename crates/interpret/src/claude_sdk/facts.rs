@@ -1043,7 +1043,7 @@ impl State {
                 },
             );
         }
-        let Some(turn) = self.shared.turn_ended(emit) else {
+        let Some(turn) = self.shared.turn_ended(emit, outcome) else {
             return;
         };
         let at_ms = self.shared.now_ms();

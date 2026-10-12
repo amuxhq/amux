@@ -3511,6 +3511,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
                 item_key: "k2".into(),
                 command: "npm run dev".into(),
                 started_at_ms: 0,
+                ..Default::default()
             }],
         }),
         usage: Some(wire::ClaudeUsage {

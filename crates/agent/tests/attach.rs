@@ -13,7 +13,7 @@ use std::time::Duration;
 use agent::ExitCause;
 use agent::attach::Attached;
 use support::*;
-use wire::{Kind, PtyMode, StopMode};
+use wire::{Kind, PtyMode};
 
 const PATIENCE: Duration = Duration::from_secs(30);
 
@@ -109,7 +109,7 @@ fn two_clients_read_terminal_claude_from_its_files_and_type_into_it() {
         second.until("size 40x120").await;
 
         drop(first);
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
         second.until_closed().await;
     });
@@ -166,7 +166,7 @@ fn each_codex_client_gets_its_own_view_on_the_agents_thread() {
             .await;
         assert!(!agent.finished(), "the agent outlives its views");
 
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }

@@ -17,9 +17,7 @@ use tokio::sync::mpsc;
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
 use ui_state::{AgentKey, Composer, PhaseView};
 use ui_view::family_header;
-use wire::{
-    Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest, StopAgentRequest, StopMode,
-};
+use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest, StopAgentRequest};
 
 use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
@@ -933,7 +931,6 @@ impl App {
                 self.spawn(async move {
                     let request = StopAgentRequest {
                         agent_id: agent.agent,
-                        mode: StopMode::Graceful as i32,
                     };
                     client.stop_agent(request).await.err().map(|error| {
                         AppEvent::Notice(format!("could not stop: {error}"), Tone::Warn)

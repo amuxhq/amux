@@ -622,11 +622,13 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
                 item_key: "t1".into(),
                 command: "npm run dev".into(),
                 started_at_ms: 1_000,
+                ..Default::default()
             },
             wire::BackgroundJob {
                 item_key: "t2".into(),
                 command: "cargo watch".into(),
                 started_at_ms: 2_000,
+                ..Default::default()
             },
         ],
     };

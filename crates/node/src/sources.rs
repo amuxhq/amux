@@ -498,7 +498,8 @@ impl ProfileRuntime {
             sources.settling.remove(&row.agent);
         }
         store.put_agent(&row)?;
-        self.publish_row(store, &row.agent)
+        self.publish_row(store, &row.agent)?;
+        self.recount_from(store, row.parent)
     }
 
     fn drop_replica(
@@ -517,6 +518,7 @@ impl ProfileRuntime {
         if let Some((_, task)) = source {
             task.abort();
         }
+        let parent = store.agent(key)?.and_then(|row| row.parent);
         store.delete_agent(key)?;
         if let (Ok(host), Ok(agent)) = (Uuid::from_slice(&key.host), Uuid::from_slice(&key.agent)) {
             let dir = self
@@ -541,7 +543,7 @@ impl ProfileRuntime {
                 agent_id: key.agent.clone(),
                 reason: reason as i32,
             })));
-        Ok(())
+        self.recount_from(store, parent)
     }
 
     // --- the sweep -----------------------------------------------------------
@@ -1358,6 +1360,8 @@ pub(crate) fn from_wire(agent: &Agent) -> AgentRow {
     row.git = agent.git.clone();
     row.created_at_ms = agent.created_at_ms;
     row.incarnation = agent.incarnation;
+    row.background_jobs = agent.background_jobs;
+    row.descendants = agent.descendants;
     row
 }
 

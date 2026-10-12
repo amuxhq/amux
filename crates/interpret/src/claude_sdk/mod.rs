@@ -477,10 +477,10 @@ impl State {
             },
         );
         emit.effect(Effect::Inject {
-            envelope: Envelope {
+            envelope: Box::new(Envelope {
                 text: crate::shared::carried(&envelope),
                 ..envelope.clone()
-            },
+            }),
             via: Carrier::Stdin,
         });
         self.shared.item(
@@ -973,6 +973,7 @@ impl State {
             ended_at_ms: tool.ended_at_ms,
             created,
             line,
+            started_at_ms: None,
         }));
         if body == tool.emitted {
             return;
@@ -1304,8 +1305,7 @@ impl Interpreter for ClaudeSdk {
                     wire::IncarnationEnd::default(),
                 );
             }
-            Event::StopRequested(wire::StopMode::Abort) => state.interrupt(&mut emit),
-            Event::StopRequested(_) => {}
+            Event::StopRequested => state.interrupt(&mut emit),
             Event::Git(git) => state.shared.set_git(git),
         }
         if let Some(entry) = state.shared.next_queued() {

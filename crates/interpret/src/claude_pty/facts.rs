@@ -1287,7 +1287,7 @@ impl State {
     ) {
         self.local_turn = false;
         self.running.clear();
-        let Some(turn) = self.shared.turn_ended(emit) else {
+        let Some(turn) = self.shared.turn_ended(emit, outcome) else {
             return;
         };
         let at_ms = at_ms.unwrap_or_else(|| self.shared.now_ms());

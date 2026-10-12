@@ -46,6 +46,12 @@ message Envelope {
   // may have it: a child's finished or failed message to its parent. The
   // recipient's daemon drops it for any other incarnation.
   optional uint32 incarnation = 8;
+  // A message's attachments, referencing blobs in the sender's directory on
+  // the sender's host.
+  repeated Attachment attachments = 9;
+  // Set only on a finished report: how the child's turn ended, so the
+  // parent hears a stopped or interrupted turn as that, not as finished.
+  optional TurnOutcome outcome = 10;
 }
 
 message Sender {
@@ -164,6 +170,10 @@ message Snapshot {
   // directory; absent until its provider says what it offers. Not copied
   // onto the row.
   optional bytes catalogue = 11;
+  // How many jobs the body's background list holds; zero while the list is
+  // unknown. The daemon copies it onto the inventory row, so a fleet row
+  // counts what a stop would cut without decoding a body.
+  uint32 background_jobs = 12;
 }
 
 // The kind is the interpreter.
@@ -180,27 +190,28 @@ enum ExitCause {
   EXIT_CAUSE_UNSPECIFIED = 0;
   // A child's turn ended with nothing queued: the one-shot rule.
   EXIT_CAUSE_FINISHED = 1;
+  // Stopped by a person, a parent's stop or a cascade: the turn was
+  // cancelled the provider's own way, then the agent exited.
   EXIT_CAUSE_STOPPED = 2;
-  EXIT_CAUSE_ABORTED = 3;
-  EXIT_CAUSE_KILLED = 4;
+  EXIT_CAUSE_KILLED = 3;
   // The provider process ended on its own; the detail is its exit code
   // or signal.
-  EXIT_CAUSE_PROVIDER_EXITED = 5;
+  EXIT_CAUSE_PROVIDER_EXITED = 4;
   // The agent drained after its daemon was gone past the grace period.
-  EXIT_CAUSE_DAEMON_LOST = 6;
+  EXIT_CAUSE_DAEMON_LOST = 5;
   // An ask was open with nobody to answer it when the daemon was lost.
-  EXIT_CAUSE_ORPHANED = 7;
+  EXIT_CAUSE_ORPHANED = 6;
   // The agent process or its provider could not start; the detail says
   // which and why.
-  EXIT_CAUSE_COULD_NOT_START = 8;
+  EXIT_CAUSE_COULD_NOT_START = 7;
   // Its directory is gone, or a write to it failed; the detail says which.
-  EXIT_CAUSE_DIRECTORY_FAILED = 9;
+  EXIT_CAUSE_DIRECTORY_FAILED = 8;
   // The process was found dead when a daemon returned, and its journal
   // does not say why.
-  EXIT_CAUSE_ENDED_WHILE_AWAY = 10;
+  EXIT_CAUSE_ENDED_WHILE_AWAY = 9;
   // The process ended while a daemon watched, and its journal does not say
   // why.
-  EXIT_CAUSE_ENDED_UNEXPECTEDLY = 11;
+  EXIT_CAUSE_ENDED_UNEXPECTEDLY = 10;
 }
 
 // What a row says about the git repository an agent works in.
@@ -238,6 +249,20 @@ message TurnEnd {
   // The turn's newest complete text item, or empty if the turn ended with
   // no assistant text.
   string last_message_key = 2;
+  // How the turn ended; a parent's finished report carries it.
+  TurnOutcome outcome = 3;
+}
+
+// How a turn ended: on a kind's Turn item, on the step's TurnEnd, and on a
+// child's finished report to its parent.
+enum TurnOutcome {
+  TURN_OUTCOME_UNSPECIFIED = 0;
+  TURN_OUTCOME_COMPLETED = 1;
+  // The turn was cancelled and the agent stays live.
+  TURN_OUTCOME_INTERRUPTED = 2;
+  TURN_OUTCOME_FAILED = 3;
+  // The turn was cut short because the agent was stopped.
+  TURN_OUTCOME_STOPPED = 4;
 }
 
 // A person's queued prompt, or an agent's message where its provider has no

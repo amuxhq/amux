@@ -589,6 +589,7 @@ fn retention_of_a_replica_keeps_its_agents_row_for_the_children_here() {
         turn_end: Some(TurnEnd {
             turn_id: 9,
             last_message_key: "final".into(),
+            outcome: wire::TurnOutcome::Completed as i32,
         }),
         ..Default::default()
     };

@@ -321,6 +321,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
         snapshot: Some(Snapshot {
             phase_since_ms: 700,
             git: Some(git.clone()),
+            background_jobs: 2,
             ..snapshot(Phase::Working, Some("fixing the build"), 777)
         }),
         ..Default::default()
@@ -337,8 +338,45 @@ fn snapshots_copy_their_envelope_onto_the_row() {
     assert_eq!(row.last_activity_ms, Some(777));
     assert_eq!(row.phase_since_ms, Some(700));
     assert_eq!(row.git, Some(git));
+    assert_eq!(row.background_jobs, 2);
     assert_eq!(held_snapshot(&row), 2);
     assert_eq!(row.snapshot.as_ref(), Some(snap));
+}
+
+/// An own row's live descendants: own children and grandchildren walked
+/// into, an exited one not counted but walked through, and a replica child
+/// counting itself and what its origin counted below it, never walked into.
+#[test]
+fn live_descendants_walk_own_rows_and_take_a_replicas_own_count() {
+    let mut store = fresh();
+    let lead = own("lead");
+    let put = |store: &mut Fresh, key: &AgentKey, parent: &AgentKey, live: bool, below: u32| {
+        let mut row = AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/src/amux");
+        row.name = String::from_utf8_lossy(&key.agent).into_owned();
+        row.parent = Some(parent.clone());
+        row.descendants = below;
+        if !live {
+            row.lifecycle = wire::Lifecycle::Exited as i32;
+        }
+        store.put_agent(&row).unwrap();
+    };
+    store = with_agent(store, &lead);
+    put(&mut store, &own("notes"), &lead, true, 0);
+    put(&mut store, &own("done"), &lead, false, 0);
+    put(&mut store, &own("grandchild"), &own("done"), true, 0);
+    put(&mut store, &peer("helper"), &lead, true, 2);
+    // The replica's own children are its origin's to count.
+    put(&mut store, &peer("helpers-child"), &peer("helper"), true, 0);
+    assert_eq!(store.live_descendants(&lead).unwrap(), 5);
+    assert_eq!(store.live_descendants(&own("done")).unwrap(), 1);
+
+    assert!(store.set_descendants(&lead, 5).unwrap());
+    assert_eq!(store.agent(&lead).unwrap().unwrap().descendants, 5);
+    // A registry write leaves the daemon's count alone.
+    let mut row = store.agent(&lead).unwrap().unwrap();
+    row.descendants = 0;
+    store.put_agent(&row).unwrap();
+    assert_eq!(store.agent(&lead).unwrap().unwrap().descendants, 5);
 }
 
 /// Whether the incarnation has a turn it has not ended: from its start
@@ -356,6 +394,7 @@ fn a_turn_is_open_from_an_incarnations_start_until_it_ends() {
         turn_end: Some(TurnEnd {
             turn_id: 1,
             last_message_key: String::new(),
+            outcome: wire::TurnOutcome::Completed as i32,
         }),
         ..phase_step(phase)
     };
@@ -416,6 +455,7 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
         turn_end: Some(TurnEnd {
             turn_id: 7,
             last_message_key: key.into(),
+            outcome: wire::TurnOutcome::Interrupted as i32,
         }),
         ..Default::default()
     };
@@ -434,6 +474,7 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
             kind: EnvelopeKind::Finished as i32,
             body: "the answer".into(),
             ended: None,
+            outcome: Some(wire::TurnOutcome::Interrupted as i32),
         }]
     );
     let delivery = store.deliveries().unwrap().remove(0);
@@ -453,6 +494,7 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
             cause: wire::ExitCause::ProviderExited as i32,
             detail: Some("exit code 1".into()),
         }),
+        outcome: None,
     };
     store.put_delivery(&failed).unwrap();
     assert_eq!(store.deliveries().unwrap(), vec![failed]);
@@ -563,6 +605,7 @@ fn delete_removes_an_agent_whole() {
         turn_end: Some(TurnEnd {
             turn_id: 1,
             last_message_key: "m".into(),
+            outcome: wire::TurnOutcome::Completed as i32,
         }),
         ..Default::default()
     };

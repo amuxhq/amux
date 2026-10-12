@@ -469,7 +469,7 @@ by its name or its id.
 | `amux create <kind>` (`new`) | Starts an agent: `claude_pty` (also `claude`), `claude_sdk` or `codex`, with `--name`, `--cwd` (the current directory otherwise), `--model`, `--prompt` for its first prompt, and extra arguments for Claude after `--`. |
 | `amux attach <agent>` | Hands this terminal to the agent's own interface; see [raw attach](#raw-attach). |
 | `amux send <agent> <text…>` | Sends a prompt and prints whether the agent took it. |
-| `amux stop <agent>` | Stops the agent's process, and every descendant's: `--mode graceful` (the default: finish the turn, then exit; a turn waiting on you is cancelled), `abort` (cancel the turn and exit) or `kill` (end the process group at once). |
+| `amux stop <agent>` | Stops the agent now, and every descendant: its turn is cancelled the provider's own way (a question waiting on you is dismissed) and it exits, to be resumed later. |
 | `amux resume <agent> [text…]` | Starts an exited agent again, with an optional first prompt. |
 | `amux rename <agent> <name>` | Renames an agent. |
 | `amux delete <agent>` (`rm`) | Deletes an agent, its history and its children. |

@@ -173,8 +173,9 @@ impl Refusal {
 /// The reasons the wire's refusals carry, one for one: the agent had exited
 /// or was exiting, its host is shutting down or cannot be reached, this
 /// agent cannot take an input of the kind, the ask the answer names had
-/// closed, or the queued prompt it names was no longer queued. A reason
-/// this build does not know is unspecified.
+/// closed, the queued prompt it names was no longer queued, or terminal
+/// Claude's own view is on another conversation. A reason this build does
+/// not know is unspecified.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum RefusalReason {
     Unspecified,
@@ -185,6 +186,7 @@ pub enum RefusalReason {
     Unsupported,
     ClosedAsk,
     NotQueued,
+    ConversationElsewhere,
 }
 
 #[cfg(test)]

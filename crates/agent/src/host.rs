@@ -11,9 +11,10 @@
 //!   the agent drains: it finishes the running turn, writes its final
 //!   boundary and exits. An ask left open with nobody to answer it gets the
 //!   drain deadline and then exits "orphaned while waiting for you".
-//! - Stop graceful drains the same way; stop abort cancels the turn the
-//!   provider's way first; stop kill ends the process group at once and
-//!   writes nothing. A draining agent answers new input as `REFUSAL_DRAINING`.
+//! - A stop cancels the turn the provider's way and drains the same way; a
+//!   kill, the daemon's escalation past its stop deadline, ends the process
+//!   group at once and writes nothing. A draining agent answers new input as
+//!   `REFUSAL_DRAINING`.
 //! - An agent with a parent is one-shot: at a turn end with nothing queued,
 //!   running or accepted-but-unconsumed it exits, and input arriving while
 //!   it does is refused as `REFUSAL_EXITING`.
@@ -25,7 +26,7 @@ use std::sync::Arc;
 use interpret::{Effect, Event, Interpreter, Stepped, reply};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{Notify, mpsc, watch};
-use wire::{AgentHello, AgentSpec, CtlFrame, Nudge, Phase, StopMode, Verdict, ctl_frame};
+use wire::{AgentHello, AgentSpec, CtlFrame, Nudge, Phase, Verdict, ctl_frame};
 
 use crate::clock::Clock;
 use crate::dir::{self, PtyLog};
@@ -66,20 +67,18 @@ enum Mode {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Drain {
+    /// The daemon was gone past the grace: the running turn finishes.
     DaemonLost,
-    Graceful,
-    /// A graceful stop whose turn waited on the person: the turn was
-    /// cancelled the provider's own way, and the agent still ends stopped.
-    GracefulCancelled,
-    Abort,
+    /// The daemon stopped the agent: the turn was cancelled the provider's
+    /// own way, and the agent exits once it has ended.
+    Stop,
 }
 
 impl Drain {
     fn cause(self) -> ExitCause {
         match self {
             Drain::DaemonLost => ExitCause::DaemonLost,
-            Drain::Graceful | Drain::GracefulCancelled => ExitCause::Stopped,
-            Drain::Abort => ExitCause::Aborted,
+            Drain::Stop => ExitCause::Stopped,
         }
     }
 }
@@ -479,12 +478,7 @@ impl<I: Interpreter> Host<I> {
                     self.feed(Event::Rename { name: rename.name }).await?
                 }
             }
-            Some(ctl_frame::Of::Stop(stop)) => match StopMode::try_from(stop.mode) {
-                Ok(mode) => self.stop(mode).await?,
-                // A stop this version cannot read is refused rather than
-                // taken as some other stop.
-                Err(_) => eprintln!("amux agent: ignoring a stop of unknown mode {}", stop.mode),
-            },
+            Some(ctl_frame::Of::Stop(stop)) => self.stop(stop.kill).await?,
             // Hello, nudges, dump parts and replies travel the other way.
             _ => {}
         }
@@ -502,38 +496,29 @@ impl<I: Interpreter> Host<I> {
         Ok(())
     }
 
-    async fn stop(&mut self, mode: StopMode) -> Result<(), AgentError> {
-        match mode {
-            StopMode::Kill => {
-                if let Some(provider) = &mut self.provider {
-                    provider.kill();
-                }
-                self.done = Some(ExitCause::Killed);
+    /// The daemon's stop: the turn is cancelled the provider's own way and
+    /// the agent drains; with `kill`, the provider's group ends at once.
+    async fn stop(&mut self, kill: bool) -> Result<(), AgentError> {
+        if kill {
+            if let Some(provider) = &mut self.provider {
+                provider.kill();
             }
-            StopMode::Graceful => {
-                if matches!(self.mode, Mode::Running) {
-                    self.mode = Mode::Draining {
-                        why: Drain::Graceful,
-                        ask_until: None,
-                    };
-                }
-            }
-            StopMode::Abort => {
-                let aborting = matches!(
-                    self.mode,
-                    Mode::Draining {
-                        why: Drain::Abort,
-                        ..
-                    } | Mode::Exiting { .. }
-                );
-                if !aborting {
-                    self.feed(Event::StopRequested(StopMode::Abort)).await?;
-                    self.mode = Mode::Draining {
-                        why: Drain::Abort,
-                        ask_until: None,
-                    };
-                }
-            }
+            self.done = Some(ExitCause::Killed);
+            return Ok(());
+        }
+        let stopping = matches!(
+            self.mode,
+            Mode::Draining {
+                why: Drain::Stop,
+                ..
+            } | Mode::Exiting { .. }
+        );
+        if !stopping {
+            self.feed(Event::StopRequested).await?;
+            self.mode = Mode::Draining {
+                why: Drain::Stop,
+                ask_until: None,
+            };
         }
         Ok(())
     }
@@ -606,19 +591,6 @@ impl<I: Interpreter> Host<I> {
         };
         if let Some(cause) = cause {
             self.exit(cause).await?;
-        } else if phase == Phase::NeedsYou
-            && let Mode::Draining { why, .. } = &mut self.mode
-            && *why == Drain::Graceful
-        {
-            // A graceful stop waits for the turn to end, but a turn waiting
-            // on the person cannot: the person who would answer is the one
-            // who stopped it, and a draining agent takes no answers. Their
-            // stop is their decision not to answer, so the turn is
-            // cancelled the provider's own way (the ask closes as
-            // dismissed, the call as cancelled) and the agent still ends
-            // stopped once it has.
-            *why = Drain::GracefulCancelled;
-            self.feed(Event::StopRequested(StopMode::Abort)).await?;
         }
         Ok(())
     }

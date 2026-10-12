@@ -1,5 +1,5 @@
 {
-  "about": "The agent process's lifecycle as steps: the grace running out writes a daemon-lost boundary and leaves the ask open; a graceful stop changes nothing; an abort interrupts the turn the way the interrupt input does; the agent ending the incarnation dismisses the open ask and writes the final boundary with its cause.",
+  "about": "The agent process's lifecycle as steps: the grace running out writes a daemon-lost boundary and leaves the ask open; a stop interrupts the turn the way the interrupt input does; the agent ending the incarnation dismisses the open ask and writes the final boundary with its cause.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -124,13 +124,7 @@
       }
     },
     {
-      "stop": "graceful",
-      "expect": {
-        "silent": true
-      }
-    },
-    {
-      "stop": "abort",
+      "stop": {},
       "expect": {
         "asks": [
           "req-1"

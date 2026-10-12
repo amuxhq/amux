@@ -761,8 +761,8 @@ tests = [
   "amux/agent_process::a_terminal_claude_agent_outlives_its_daemon_and_resumes",
   "amux/attach::terminal_claude_attaches_twice_takes_keys_and_a_resize_and_detaches",
   "node/registry::the_installation_lock_admits_one_daemon",
-  "node/registry::stop_modes_end_the_process_and_record_why",
-  "agent/lifecycle::abort_cancels_the_turn_under_an_open_ask_and_exits",
+  "node/registry::a_stop_and_a_kill_end_the_process_and_record_why",
+  "agent/lifecycle::a_stop_cancels_the_turn_under_an_open_ask_and_exits_stopped",
   "node/supervisor::the_amux_daemon_exits_when_its_supervisor_dies",
   "amux/supervise_cli::the_supervisor_holds_the_sleep_assertion_under_keep_awake",
 ]

@@ -22,8 +22,13 @@ pub mod pb {
 
 /// Bound for link-control messages and application-stream prefaces.
 pub const MESSAGE_SIZE_LIMIT: usize = 16 * 1024 * 1024;
-/// RPC payloads include blobs plus protobuf framing overhead.
-pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = 64 * 1024 * 1024;
+/// The largest attachment a person may send: 64 MiB of the file's own
+/// bytes. Clients word it "64 MB".
+pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;
+/// RPC payloads: the largest attachment plus room for the protobuf framing
+/// around it (a `PutBlobRequest`'s agent id, name and mime type), so a file
+/// at the attachment limit still fits in one message.
+pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = ATTACHMENT_SIZE_LIMIT + 1024 * 1024;
 
 pub fn client_service_client(
     channel: tonic::transport::Channel,
@@ -368,6 +373,7 @@ mod tests {
             turn_end: Some(TurnEnd {
                 turn_id: 1,
                 last_message_key: "msg:1".into(),
+                outcome: TurnOutcome::Completed as i32,
             }),
             ..Default::default()
         };
@@ -404,7 +410,6 @@ mod tests {
         let enums = enums(&descriptor());
         for (enumeration, zero) in [
             ("Phase", "PHASE_STARTING"),
-            ("StopMode", "STOP_MODE_GRACEFUL"),
             ("PtyMode", "PTY_MODE_FILES"),
             ("UsageState", "USAGE_STATE_UNKNOWN"),
             ("HealthState", "HEALTH_STATE_UNKNOWN"),
@@ -424,7 +429,6 @@ mod tests {
             );
         }
         assert_eq!(Phase::default(), Phase::Starting);
-        assert_eq!(StopMode::default(), StopMode::Graceful);
         assert_eq!(PtyMode::default(), PtyMode::Files);
     }
 

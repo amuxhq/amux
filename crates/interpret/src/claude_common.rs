@@ -545,11 +545,13 @@ impl Jobs {
     fn published(&self) -> Vec<BackgroundJob> {
         self.listed
             .iter()
-            .filter_map(|id| self.jobs.get(id))
-            .map(|job| BackgroundJob {
+            .filter_map(|id| Some((id, self.jobs.get(id)?)))
+            .map(|(id, job)| BackgroundJob {
                 item_key: job.step.clone(),
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
+                kind: wire::BackgroundKind::Unspecified as i32,
+                id: id.clone(),
             })
             .collect()
     }

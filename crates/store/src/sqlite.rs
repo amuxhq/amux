@@ -187,6 +187,7 @@ fn copy_envelope(row: &mut AgentRow, snapshot: &Snapshot) {
     row.last_activity_ms = Some(snapshot.at_ms);
     row.phase_since_ms = Some(snapshot.phase_since_ms);
     row.git = snapshot.git.clone();
+    row.background_jobs = snapshot.background_jobs;
     row.snapshot = Some(snapshot.clone());
 }
 
@@ -393,6 +394,26 @@ impl Sqlite {
     pub fn put_agent(&mut self, row: &AgentRow) -> Result<(), StoreError> {
         let update = rows::registry_update(self.is_own(&row.agent));
         self.write(|rows| rows.upsert_agent(row, &update))
+    }
+
+    /// The live agents below `parent` in the rows held: own rows walked
+    /// into, each replica row counting itself and what its origin counted
+    /// below it.
+    pub fn live_descendants(&self, parent: &AgentKey) -> Result<u32, StoreError> {
+        self.read(|rows| rows.live_descendants(parent))
+    }
+
+    /// Writes an own row's count of live descendants; false when there is
+    /// no such row.
+    pub fn set_descendants(&mut self, agent: &AgentKey, count: u32) -> Result<bool, StoreError> {
+        self.write(|rows| {
+            let Some(mut row) = rows.agent(agent)? else {
+                return Ok(false);
+            };
+            row.descendants = count;
+            rows.upsert_agent(&row, &rows::update_of(&["descendants"]))?;
+            Ok(true)
+        })
     }
 
     /// Removes an agent whole: row, items, deliveries and notifications.
@@ -609,6 +630,7 @@ fn commit(
                 kind: wire::EnvelopeKind::Finished as i32,
                 body,
                 ended: None,
+                outcome: Some(turn_end.outcome),
             })?;
         }
         // A step that ends one turn may start the next; the snapshot says

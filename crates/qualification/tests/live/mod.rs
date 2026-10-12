@@ -580,7 +580,7 @@ impl Install {
                     .lines()
                     .any(|line| line.split_whitespace().next() == Some(name))
                 {
-                    let _ = self.amux(&["stop", name, "--mode", "kill"]).await;
+                    let _ = self.amux(&["stop", name]).await;
                 }
             }
         }
@@ -1109,7 +1109,7 @@ impl Install {
             .state(self.kind)
             .provider_session
             .ok_or("the first incarnation reported no provider session")?;
-        self.amux(&["stop", name, "--mode", "graceful"]).await?;
+        self.amux(&["stop", name]).await?;
         self.listed(name, "exited").await?;
         let mark = follow.snapshot().items.len();
         let before = follow.snapshot();

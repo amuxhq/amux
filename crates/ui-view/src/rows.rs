@@ -901,7 +901,7 @@ fn turn_row(held: &Held, turn: &wire::Turn) -> RowKind {
     let duration_ms =
         (turn.started_at_ms > 0).then(|| (held.item.at_ms - turn.started_at_ms).max(0));
     match TurnOutcome::try_from(turn.outcome).unwrap_or(TurnOutcome::Unspecified) {
-        TurnOutcome::Interrupted => RowKind::Stopped,
+        TurnOutcome::Interrupted | TurnOutcome::Stopped => RowKind::Stopped,
         TurnOutcome::Failed => RowKind::TurnEnd {
             duration_ms,
             cost_usd: turn.cost_usd,

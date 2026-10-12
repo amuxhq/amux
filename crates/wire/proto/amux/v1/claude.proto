@@ -74,6 +74,12 @@ message ClaudePtySnapshot {
   // a background task runs, so the activity line reads the call from here
   // until then.
   repeated RunningCall running_calls = 12;
+  // The reasoning effort Claude last recorded running with; absent until it
+  // has. A provider string, validated against the catalogue's model levels.
+  optional string effort = 13;
+  // Claude's own view resumed another conversation: that conversation's
+  // session id. Informational; the phase is left as it is.
+  optional string switched_away_to = 14;
 }
 
 message RunningCall {
@@ -95,10 +101,15 @@ message ClaudePtyInput {
     Interrupt interrupt = 5;
     WithdrawQueued withdraw = 6;
     SendQueuedNow send_now = 7;
+    // Back to this agent's conversation after Claude's own view switched
+    // away: types `/resume <this agent's session>`.
+    SwitchBack switch_back = 8;
   }
 }
 
 message CyclePermissionMode {}
+
+message SwitchBack {}
 
 // ---------------------------------------------------------------------------
 // Claude through the SDK

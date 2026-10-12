@@ -31,7 +31,7 @@ use wire::client_service_server::ClientService as _;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Input, PromptInput, StopMode,
+    CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Input, PromptInput,
     WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input, create_agent_request,
 };
 
@@ -1188,7 +1188,6 @@ impl Net {
         let agent = self.agent(name)?.clone();
         let request = wire::StopAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
-            mode: wire::StopMode::Graceful as i32,
         };
         match &self.hosts[&agent.host].process {
             Some(process) => {
@@ -3122,7 +3121,7 @@ impl Net {
         for name in &names {
             if let Ok(runtime) = self.runtime(name) {
                 for id in runtime.live() {
-                    let _ = tokio::time::timeout(PATIENCE, runtime.stop(id, StopMode::Kill)).await;
+                    let _ = tokio::time::timeout(PATIENCE, runtime.kill_agent(id)).await;
                 }
             }
         }

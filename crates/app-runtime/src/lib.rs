@@ -35,7 +35,7 @@ pub use values::{FleetChanges, HostView};
 pub use wire::Provider;
 use wire::{
     CreateAgentRequest, DeleteAgentRequest, DumpRequest, Kind, ListRepositoriesRequest,
-    ProjectEntry, RenameAgentRequest, StopAgentRequest, StopMode, Trust,
+    ProjectEntry, RenameAgentRequest, StopAgentRequest, Trust,
 };
 
 /// How many rows a chat opens with unless the host says otherwise.
@@ -306,14 +306,7 @@ impl AppRuntime {
                 })
                 .await
                 .map(drop),
-            AgentAct::Stop => {
-                self.client
-                    .stop_agent(StopAgentRequest {
-                        agent_id,
-                        mode: StopMode::Graceful as i32,
-                    })
-                    .await
-            }
+            AgentAct::Stop => self.client.stop_agent(StopAgentRequest { agent_id }).await,
             AgentAct::Delete => self
                 .client
                 .delete_agent(DeleteAgentRequest { agent_id })

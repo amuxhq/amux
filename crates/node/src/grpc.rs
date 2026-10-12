@@ -24,7 +24,7 @@ use wire::{
     GetBlobResponse, GetRequest, InventoryEvent, Item, ListRepositoriesRequest,
     ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest, ResolveAgentRequest,
     ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageRequest,
-    SendMessageResponse, SessionEvent, StopAgentRequest, StopMode, SubscribeRequest,
+    SendMessageResponse, SessionEvent, StopAgentRequest, SubscribeRequest,
 };
 
 use crate::blobs::BlobError;
@@ -435,14 +435,6 @@ impl ClientService for ClientApi {
         request: Request<StopAgentRequest>,
     ) -> Result<Response<Empty>, Status> {
         let request = request.into_inner();
-        // A stop this daemon cannot read is refused, never taken as some
-        // other stop.
-        let mode = StopMode::try_from(request.mode).map_err(|_| {
-            status(wire_error(
-                ErrorCode::InvalidArgument,
-                format!("no stop mode {}", request.mode),
-            ))
-        })?;
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             return forwarded(&runtime, host, |mut client| async move {
@@ -451,7 +443,7 @@ impl ClientService for ClientApi {
             .await;
         }
         runtime
-            .stop(agent_id(&request.agent_id)?, mode)
+            .stop(agent_id(&request.agent_id)?)
             .await
             .map(|_| Response::new(Empty {}))
             .map_err(|error| status(error.to_wire()))

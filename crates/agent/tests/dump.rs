@@ -9,7 +9,7 @@ use agent::ExitCause;
 use prost::Message as _;
 use provider_fakes::Step;
 use support::*;
-use wire::{AgentSpec, Kind, StopMode};
+use wire::{AgentSpec, Kind};
 
 /// Every planted secret contains this, so one search finds any survivor.
 const PLANTED: &str = "PLANTED";
@@ -89,7 +89,7 @@ fn dumps_without_its_secrets(kind: Kind) {
             "the name stays, the value goes"
         );
 
-        daemon.stop(StopMode::Graceful).await;
+        daemon.stop().await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
 }

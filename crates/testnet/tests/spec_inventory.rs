@@ -115,7 +115,6 @@ async fn a_trusted_host_stays_in_every_snapshot_while_unreachable() {
         &net.client("laptop").unwrap(),
         tonic::Request::new(wire::StopAgentRequest {
             agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
-            ..wire::StopAgentRequest::default()
         }),
     )
     .await

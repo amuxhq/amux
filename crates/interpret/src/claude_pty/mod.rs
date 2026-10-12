@@ -807,6 +807,7 @@ impl State {
             ended_at_ms: tool.ended_at_ms,
             created,
             line,
+            started_at_ms: None,
         }));
         if body == tool.emitted {
             return;
@@ -1207,10 +1208,10 @@ impl State {
             words: envelope.text.clone(),
         });
         emit.effect(Effect::Inject {
-            envelope: Envelope {
+            envelope: Box::new(Envelope {
                 text: carried,
                 ..envelope.clone()
-            },
+            }),
             via: Carrier::MessagingSocket,
         });
         self.shared.item(
@@ -1246,6 +1247,11 @@ impl State {
             }
             claude_pty_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
+            }
+            // Nothing yet notices Claude's own view switching conversations,
+            // so there is nothing to switch back from.
+            claude_pty_input::Of::SwitchBack(_) => {
+                self.shared.reject(emit, &id, Refusal::Unsupported)
             }
             // Typed while the turn runs, a prompt joins it at the next tool
             // boundary, as Codex's steer and headless Claude's mid-turn
@@ -1593,8 +1599,7 @@ impl Interpreter for ClaudePty {
                 wire::BoundaryKind::DaemonLost,
                 wire::IncarnationEnd::default(),
             ),
-            Event::StopRequested(wire::StopMode::Abort) => state.interrupt(&mut emit),
-            Event::StopRequested(_) => {}
+            Event::StopRequested => state.interrupt(&mut emit),
             Event::Git(git) => state.shared.set_git(git),
         }
         if let Some(entry) = state.shared.next_queued() {

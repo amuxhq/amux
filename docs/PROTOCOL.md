@@ -332,7 +332,9 @@ to tonic as one HTTP/2 channel. It has three channel classes:
 
 Separate streams give separate flow control, so a long subscription does not
 queue behind calls at the amux layer. Channel payloads are bounded by
-`CHANNEL_MESSAGE_SIZE_LIMIT` (64 MiB).
+`CHANNEL_MESSAGE_SIZE_LIMIT` (65 MiB): the largest attachment,
+`ATTACHMENT_SIZE_LIMIT` (64 MiB), with room for the `PutBlobRequest` framing
+around it.
 
 ## Chapter 6: Relay forwarding and entitlement
 
@@ -458,7 +460,7 @@ meanwhile.
 | `Subscribe`, `Fetch`, `Get` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
 | `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
-| `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. Delete cascades to children. |
+| `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way) and, like a delete, cascades to children. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `Diff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |

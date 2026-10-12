@@ -1,5 +1,5 @@
 {
-  "about": "The agent process's lifecycle as steps for Codex: the grace running out writes a daemon-lost boundary; an abort sends turn/interrupt the way the interrupt input does; the agent ending the incarnation dismisses the open ask and writes the final boundary with its cause.",
+  "about": "The agent process's lifecycle as steps for Codex: the grace running out writes a daemon-lost boundary; a stop sends turn/interrupt the way the interrupt input does; the agent ending the incarnation dismisses the open ask and writes the final boundary with its cause.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -154,7 +154,7 @@
       }
     },
     {
-      "stop": "abort"
+      "stop": {}
     },
     {
       "exiting": "stopped",

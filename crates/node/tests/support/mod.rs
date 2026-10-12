@@ -13,7 +13,7 @@ pub use patience::{PATIENCE, Stuck, holds_for, until};
 use provider_fakes::script::{SCRIPT_ENV, Script, Step};
 use wire::{
     AgentRef, ClaudeSdkInput, CreateAgentRequest, Input, Kind, PromptInput, PromptSubmission,
-    StopMode, claude_sdk_input,
+    claude_sdk_input,
 };
 
 /// The amux binary and the fake providers, built once per test run.
@@ -210,7 +210,7 @@ pub async fn listens(path: &Path) -> bool {
 /// Kills every agent the runtime is running, so none outlives its test.
 pub async fn kill_all(runtime: &ProfileRuntime) {
     for id in runtime.live() {
-        let _ = runtime.stop(id, StopMode::Kill).await;
+        let _ = runtime.kill_agent(id).await;
     }
 }
 

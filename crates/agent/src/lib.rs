@@ -58,11 +58,10 @@ pub enum ExitCause {
     /// An ask stayed open past the drain deadline with no daemon to carry an
     /// answer.
     Orphaned,
-    /// Stop graceful: the turn finished, then the agent exited.
+    /// Stopped: the turn was cancelled the provider's own way, then the
+    /// agent exited.
     Stopped,
-    /// Stop abort: the turn was cancelled, then the agent exited.
-    Aborted,
-    /// Stop kill: the process group ended at once; nothing more was written.
+    /// Killed: the process group ended at once; nothing more was written.
     Killed,
     /// One-shot: a child agent finished its work.
     Finished,
@@ -83,7 +82,6 @@ impl ExitCause {
             ExitCause::DaemonLost => (wire::ExitCause::DaemonLost, None),
             ExitCause::Orphaned => (wire::ExitCause::Orphaned, None),
             ExitCause::Stopped => (wire::ExitCause::Stopped, None),
-            ExitCause::Aborted => (wire::ExitCause::Aborted, None),
             ExitCause::Killed => (wire::ExitCause::Killed, None),
             ExitCause::Finished => (wire::ExitCause::Finished, None),
             ExitCause::Unstarted(why) => (

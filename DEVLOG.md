@@ -1,3 +1,51 @@
+2026-10-13 — **The second QA round's protocol changes.** The wire changes
+the round's decisions need, with only the code that keeps everything
+building; the behaviour behind most of them is follow-up work.
+
+A stop now ends the agent at once. `StopAgentRequest` loses its mode and
+`StopMode` leaves the wire: every stop cancels the running turn the
+provider's own way and the agent exits stopped, resumable. "Stop when done"
+is gone; the agent's own drain, finishing its turn, happens only when its
+daemon is lost. The daemon's control-socket `Stop` keeps a `kill` flag for
+its escalation past the 30-second deadline, which no client can ask for.
+`EXIT_CAUSE_ABORTED` is deleted (causes renumbered), since a stop and a
+delete both end as stopped. `amux stop` drops `--mode`; the TUI, the phone's
+runtime, the test net and the daemon's runtime (`stop(id)`, plus
+`kill_agent(id)` for tearing a runtime down) follow. The tests that sent a
+graceful stop now send the one stop; the graceful-stop-under-an-ask test
+folds into the stop test, which expects stopped, and the stop-deadline test
+freezes its agent so the stop overruns.
+
+The fleet row gains `descendants` and `background_jobs`. The snapshot
+envelope carries the background-job count, so the daemon copies it onto the
+row without decoding a body. An own row's descendants are counted by its
+daemon whenever a row below it is written or removed: its own agents walked
+into, each paired host's agent counting itself and what its origin counted
+below it. A replica row takes both counts from its origin's row. The store's
+agents table gains both columns and deliveries gains `outcome` (the
+unshipped migration is edited and re-pinned).
+
+`TurnOutcome` moves to records.proto and gains `STOPPED`; `TurnEnd` carries
+it, and a finished report's `Envelope.outcome` carries it to the parent,
+through the deliveries row. Interpreters set completed, interrupted or
+failed as their Turn items already did.
+
+Fields only, for the follow-up work: `attachments` on `SendMessageRequest`
+and `Envelope` (the daemon passes a request's on); terminal Claude's
+`effort` and `switched_away_to`; `ToolCall.started_at_ms`; Codex
+`WebSearch`'s `action`, `url` and `pattern`, which the Codex interpreter
+fills; `BackgroundJob`'s `kind` and the provider's `id` (Claude's task id,
+Codex's process id, and Codex's terminals are shells); `Refusal`'s
+`CONVERSATION_ELSEWHERE`, worded by both clients; and `ClaudePtyInput`'s
+`SwitchBack`, which terminal Claude refuses as unsupported for now.
+`wire::ATTACHMENT_SIZE_LIMIT` is stated at 64 MiB and the channel limit
+rises to 65 MiB so a file at the limit fits one `PutBlob`; nothing enforces
+the limit yet.
+
+This makes two of the round's failing tests pass: a person's stop ends a
+working agent as stopped within seconds, and the agent row counts live
+descendants and background jobs.
+
 2026-10-13 — **Failing phone tests for the second QA round's decisions.** A
 draft outlives its chat's session closing and the app closing. A file over
 the attachment limit is refused before upload, naming the limit. In a new

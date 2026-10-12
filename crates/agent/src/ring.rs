@@ -161,7 +161,6 @@ fn start_segment(dir: &Path, start: u64, checkpoint: &[u8]) -> io::Result<File> 
 #[cfg(test)]
 mod tests {
     use interpret::{Channel, Event, Fact};
-    use wire::StopMode;
 
     use super::*;
 
@@ -220,7 +219,7 @@ mod tests {
             Event::Tick { at_ms: 5 },
             Event::ProviderExit { code: Some(3) },
             Event::DaemonLost,
-            Event::StopRequested(StopMode::Abort),
+            Event::StopRequested,
             Event::Exiting(wire::IncarnationEnd {
                 cause: wire::ExitCause::Stopped as i32,
                 detail: None,

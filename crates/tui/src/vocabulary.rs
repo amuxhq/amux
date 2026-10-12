@@ -2088,11 +2088,13 @@ fn chat_surroundings(theme: Theme) -> Vec<(&'static str, &'static str, Buffer)> 
                 item_key: "t1".into(),
                 command: "npm run dev -- --port 5173".into(),
                 started_at_ms: now - 14 * MINUTE,
+                ..Default::default()
             },
             wire::BackgroundJob {
                 item_key: "t2".into(),
                 command: "cargo watch -x 'test -p ui-view'".into(),
                 started_at_ms: now - 40_000,
+                ..Default::default()
             },
         ],
     };

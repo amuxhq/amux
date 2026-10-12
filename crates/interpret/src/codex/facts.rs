@@ -6,7 +6,7 @@ use codex_protocol::client::{
 };
 use codex_protocol::items::{
     CommandAction, DynamicToolCallItem, McpToolCallItem, MessagePhase, PatchChangeKind,
-    TextContent, ThreadItem, ToolOutputContent, UserInput, WebSearchAction,
+    TextContent, ThreadItem, ToolOutputContent, UserInput, WebSearchAction, WebSearchItem,
 };
 use codex_protocol::server::{
     AccountReadResponse, AutoApprovalReview, BackgroundTerminalsResponse, CommandApprovalParams,
@@ -64,6 +64,37 @@ fn some(text: &str) -> Option<String> {
 
 fn some_of(text: Option<&str>) -> Option<String> {
     text.and_then(some)
+}
+
+/// A web search item: what it searched for, or the page it opened or looked
+/// within.
+fn web_search(search: &WebSearchItem) -> wire::WebSearch {
+    let (action, url, pattern, query) = match &search.action {
+        Some(WebSearchAction::Search(action)) => (
+            wire::WebAction::Search,
+            None,
+            None,
+            some_of(action.query.as_deref()),
+        ),
+        Some(WebSearchAction::OpenPage(page)) => {
+            (wire::WebAction::OpenPage, page.url.as_deref(), None, None)
+        }
+        Some(WebSearchAction::FindInPage(find)) => (
+            wire::WebAction::FindInPage,
+            find.url.as_deref(),
+            find.pattern.as_deref(),
+            None,
+        ),
+        Some(WebSearchAction::Other(_) | WebSearchAction::Unknown(_)) | None => {
+            (wire::WebAction::Unspecified, None, None, None)
+        }
+    };
+    wire::WebSearch {
+        query: some(&search.query).or(query).unwrap_or_default(),
+        action: action as i32,
+        url: url.unwrap_or_default().to_owned(),
+        pattern: pattern.unwrap_or_default().to_owned(),
+    }
 }
 
 /// A sandbox policy as the mode name inputs use.
@@ -616,6 +647,8 @@ impl State {
                     .works
                     .get(&terminal.item_id)
                     .map_or(now, |work| work.at_ms),
+                kind: wire::BackgroundKind::Shell as i32,
+                id: terminal.process_id.clone(),
             }
         }));
         match some_of(page.next_cursor.as_deref()) {
@@ -1824,16 +1857,7 @@ impl State {
                 (work::Of::Mcp(dynamic_work(call)), ToolClass::Consequential)
             }
             ThreadItem::WebSearch(search) => (
-                work::Of::WebSearch(wire::WebSearch {
-                    query: some(&search.query)
-                        .or_else(|| match &search.action {
-                            Some(WebSearchAction::Search(action)) => {
-                                some_of(action.query.as_deref())
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or_default(),
-                }),
+                work::Of::WebSearch(web_search(search)),
                 ToolClass::WebSearch,
             ),
             ThreadItem::ImageView(image) => (
@@ -2099,7 +2123,7 @@ impl State {
         }
         let at_ms = self.shared.now_ms();
         let duration = turn.duration_ms;
-        if let Some(ended) = self.shared.turn_ended(emit) {
+        if let Some(ended) = self.shared.turn_ended(emit, outcome) {
             let started_at_ms = duration.map_or(ended.started_at_ms, |duration| at_ms - duration);
             self.emit_item(
                 emit,

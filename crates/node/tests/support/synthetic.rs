@@ -52,7 +52,7 @@ pub enum Answer {
 #[derive(Clone, Debug)]
 pub enum Handed {
     Input(Input),
-    Message(Envelope),
+    Message(Box<Envelope>),
 }
 
 impl Handed {
@@ -290,7 +290,7 @@ impl SyntheticAgent {
                             let input = match frame.of {
                                 Some(ctl_frame::Of::Input(input)) => Handed::Input(input),
                                 Some(ctl_frame::Of::AgentMessage(envelope)) => {
-                                    Handed::Message(envelope)
+                                    Handed::Message(Box::new(envelope))
                                 }
                                 _ => continue,
                             };
@@ -383,7 +383,7 @@ async fn answer_input(
     conn: &tokio::sync::Mutex<Option<WriteHalf<LocalStream>>>,
 ) {
     let message = match input {
-        Handed::Message(envelope) => Some(envelope),
+        Handed::Message(envelope) => Some(&**envelope),
         Handed::Input(_) => None,
     };
     let verdict = match answer {
@@ -439,6 +439,7 @@ pub fn turn_end(turn_id: u64, key: &str) -> Step {
         turn_end: Some(TurnEnd {
             turn_id,
             last_message_key: key.to_owned(),
+            outcome: wire::TurnOutcome::Completed as i32,
         }),
         ..snapshot(Phase::Idle, &[], 4_000)
     }

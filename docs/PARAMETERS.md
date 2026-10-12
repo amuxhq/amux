@@ -67,7 +67,7 @@ embedded runtime reads no configuration file and runs with the defaults.
 | Loading hint delay | client | 300 ms | Reasoned: a chat that fills at once never flashes the hint. | `LOADING_HINT_MS` in [`crates/tui/src/chat/mod.rs`](../crates/tui/src/chat/mod.rs); `ChatModel.loadingHintDelay` in [`ChatModel.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift) |
 | Session retention after last view | client | Phone: 5 minutes. Terminal: none; a chat's session closes when the terminal returns to the fleet. | Reasoned: long enough that going back to a chat is instant, short enough that the sessions a phone holds follow what the person looks at. | `StoreBundle.sessionRetention` in [`StoreBundle.swift`](../apps/apple/Packages/AmuxCore/Sources/AmuxCore/StoreBundle.swift) |
 | WAL checkpoint interval | daemon | SQLite's automatic checkpoint (every 1,000 pages) | SQLite's default; amux sets no checkpoint pragma. Not measured. | Not set. Full checkpoints with a drive flush are taken explicitly by `Sqlite::flush_to_drive` in [`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs): at clean shutdown and before journal segments are reclaimed |
-| Put and fetch unary limit | wire | 64 MiB per RPC message; 16 MiB per link control message | Reasoned: room for blobs plus protobuf framing. | `CHANNEL_MESSAGE_SIZE_LIMIT` and `MESSAGE_SIZE_LIMIT` in [`crates/wire/src/lib.rs`](../crates/wire/src/lib.rs) (see note 5) |
+| Put and fetch unary limit | wire | 64 MiB per attachment; 65 MiB per RPC message; 16 MiB per link control message | Reasoned: an attachment at the limit plus its protobuf framing fits one message. | `ATTACHMENT_SIZE_LIMIT`, `CHANNEL_MESSAGE_SIZE_LIMIT` and `MESSAGE_SIZE_LIMIT` in [`crates/wire/src/lib.rs`](../crates/wire/src/lib.rs) (see note 5) |
 
 ## Notes
 
@@ -95,8 +95,9 @@ embedded runtime reads no configuration file and runs with the defaults.
    both in [`crates/node/src/serve.rs`](../crates/node/src/serve.rs). A client
    asking for a 1,000-row page at a collapsed run gets 500 and asks again.
 
-5. **Blob size.** There is no separate limit on `PutBlob` or `GetBlob`: a blob
-   is bounded by the RPC message limit.
+5. **Blob size.** An attachment is at most `ATTACHMENT_SIZE_LIMIT` (64 MiB,
+   worded "64 MB") of its own bytes; the RPC message limit sits 1 MiB above
+   it so a `PutBlobRequest` at the limit fits with its framing.
 
 ## Related constants
 

@@ -41,7 +41,7 @@ pub use shared::{
     agent_message_key, human, is_send_tool, is_status_tool, output_cut, sent_message,
     status_working_on,
 };
-use wire::{AgentSpec, Envelope, Input, SendInputResponse, Step, StopMode};
+use wire::{AgentSpec, Envelope, Input, SendInputResponse, Step};
 
 /// One interpreter per agent kind.
 pub trait Interpreter {
@@ -132,10 +132,10 @@ pub enum Event {
     /// The grace after ctl.sock closed ran out with no daemon back: the
     /// agent drains. The interpreter writes a daemon-lost boundary.
     DaemonLost,
-    /// A stop from the daemon. Abort cancels the running turn the
-    /// provider's own way, as the interrupt input does; graceful and kill
-    /// change nothing the interpreter holds.
-    StopRequested(StopMode),
+    /// A stop from the daemon: the running turn is cancelled the
+    /// provider's own way, as the interrupt input does, before the agent
+    /// exits. A kill reaches no interpreter.
+    StopRequested,
     /// The agent process is ending this incarnation for `cause` (a drain,
     /// a stop, the one-shot rule): the final boundary, open asks closed.
     /// The provider's own exit that follows is not reported.
@@ -205,7 +205,10 @@ pub enum Effect {
         verdict: SendInputResponse,
     },
     /// Hand an agent message to the provider's own injection channel.
-    Inject { envelope: Envelope, via: Carrier },
+    Inject {
+        envelope: Box<Envelope>,
+        via: Carrier,
+    },
     /// The agent process should exit with this cause.
     Exit { cause: String },
     /// Write `bytes` to the agent's blob directory as `blobs/<hex of

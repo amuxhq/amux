@@ -76,6 +76,7 @@ fn message(id: &[u8], to: &AgentRef, text: &str) -> wire::SendMessageRequest {
         to: Some(to.clone()),
         text: text.into(),
         context: None,
+        attachments: Vec::new(),
     }
 }
 
@@ -717,11 +718,7 @@ async fn an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped() {
     .await
     .unwrap();
     let lead = net.agent("lead").unwrap().id;
-    net.runtime("desk")
-        .unwrap()
-        .stop(lead, wire::StopMode::Graceful)
-        .await
-        .unwrap();
+    net.runtime("desk").unwrap().stop(lead).await.unwrap();
     net.resume("lead", None).await.unwrap();
     net.restore_link("desk", "server").await.unwrap();
     until("the stale row to be dropped", || {
@@ -777,10 +774,10 @@ async fn an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped() {
 /// is for there, so the child's host sends it; the parent's host, which
 /// knows better, answers NOT_FOUND, and the row is dropped unsent.
 ///
-/// Stopping the parent stops the child too, mid-turn: its graceful drain
-/// finishes the turn once the gate opens, or its deadline kills it first.
-/// Either way the child's last word is a row for the parent's stopped
-/// incarnation, Finished or Failed, and that row is the one refused.
+/// Stopping the parent stops the child too, mid-turn: its turn is
+/// cancelled and it exits, or its deadline kills it first. Either way the
+/// child's last word is a row for the parent's stopped incarnation,
+/// Finished or Failed, and that row is the one refused.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_lives() {
     let mut net = Net::start(
@@ -829,11 +826,7 @@ async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_liv
                 let _ = released.wait_for(|released| *released).await;
             }))
         })));
-    net.runtime("desk")
-        .unwrap()
-        .stop(lead, wire::StopMode::Graceful)
-        .await
-        .unwrap();
+    net.runtime("desk").unwrap().stop(lead).await.unwrap();
     net.resume("lead", None).await.unwrap();
     hearing.recv().await.expect("server hears lead stop");
     let seen = row(&net, "server", "lead").await.unwrap();
@@ -1236,9 +1229,9 @@ async fn a_headless_claude_parent_reads_which_child_finished() {
 /// Stopping a parent stops its whole family, as deleting it does: every
 /// descendant, on its own host or another, is asked to stop, and a child
 /// on a host the stop cannot reach is left as it is. Each child here is
-/// mid-turn when its parent stops; a graceful stop lets that turn finish
-/// and then ends the incarnation as stopped, where a child left running
-/// would end it as finished by the one-shot rule.
+/// mid-turn when its parent stops; the stop cancels that turn and ends the
+/// incarnation as stopped, where a child left running would end it as
+/// finished by the one-shot rule.
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_a_parent_stops_every_descendant_on_every_host() {
     let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();

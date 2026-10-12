@@ -19,7 +19,8 @@ use crate::{
 const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host, parent_id, \
     lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, \
     last_activity_ms, snapshot, ingest_cursor, next_revision, source_cursor, source_generation, \
-    complete_from_order, exhausted, turn_open, created_at_ms, incarnation";
+    complete_from_order, exhausted, turn_open, created_at_ms, incarnation, background_jobs, \
+    descendants";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, producer_version, input_id, text, kind, attachments, body";
@@ -47,7 +48,17 @@ const REGISTRY: &[&str] = &[
 
 /// What a replica's inventory row carries of its newest snapshot. Not its
 /// last activity: the inventory row does not hold it.
-const INVENTORY_ENVELOPE: &[&str] = &["phase", "working_on", "phase_since_ms", "git"];
+const INVENTORY_ENVELOPE: &[&str] = &[
+    "phase",
+    "working_on",
+    "phase_since_ms",
+    "git",
+    "background_jobs",
+];
+
+/// What a replica's inventory row counts that its origin owns: its live
+/// descendants. An own row's count is the daemon's, written apart.
+const INVENTORY_COUNTS: &[&str] = &["descendants"];
 
 /// What a commit writes: the newest snapshot's envelope, the cause the
 /// journal ended its incarnation with, and the own row's cursors.
@@ -58,6 +69,7 @@ pub(crate) const COMMITTED: &[&str] = &[
     "working_on",
     "phase_since_ms",
     "git",
+    "background_jobs",
     "last_activity_ms",
     "snapshot",
     "ingest_cursor",
@@ -72,6 +84,7 @@ pub(crate) const ABSORBED: &[&str] = &[
     "working_on",
     "phase_since_ms",
     "git",
+    "background_jobs",
     "last_activity_ms",
     "snapshot",
     "source_cursor",
@@ -118,7 +131,11 @@ pub(crate) fn registry_update(own: bool) -> String {
             starting = wire::Phase::Starting as i32,
         )
     } else {
-        format!("{registry}, {}", update_of(INVENTORY_ENVELOPE))
+        format!(
+            "{registry}, {}, {}",
+            update_of(INVENTORY_ENVELOPE),
+            update_of(INVENTORY_COUNTS)
+        )
     }
 }
 
@@ -153,6 +170,8 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             turn_open: row.get::<_, i64>(22)? != 0,
             created_at_ms: row.get(23)?,
             incarnation: row.get(24)?,
+            background_jobs: row.get(25)?,
+            descendants: row.get(26)?,
         },
         row.get(15)?,
         row.get(13)?,
@@ -209,6 +228,7 @@ fn delivery_row(row: &Row<'_>) -> rusqlite::Result<Delivery> {
         kind: row.get(6)?,
         body: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
         ended: cause.map(|cause| wire::IncarnationEnd { cause, detail }),
+        outcome: row.get(10)?,
     })
 }
 
@@ -306,7 +326,7 @@ impl Rows<'_> {
             .prepare(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(params![
                 row.agent.host,
@@ -336,8 +356,39 @@ impl Rows<'_> {
                 i64::from(row.turn_open),
                 row.created_at_ms,
                 row.incarnation,
+                row.background_jobs,
+                row.descendants,
             ])?;
         Ok(())
+    }
+
+    /// The live agents below `parent`, as far as the rows held say: an own
+    /// row is walked into, and a replica row counts itself and the
+    /// descendants its origin counted, since its origin knows its family
+    /// better than this host does.
+    pub(crate) fn live_descendants(&self, parent: &AgentKey) -> Result<u32, StoreError> {
+        let count: i64 = self.conn.query_row(
+            "WITH RECURSIVE below (origin_host, agent_id) AS ( \
+               SELECT origin_host, agent_id FROM agents \
+                 WHERE parent_host = ?1 AND parent_id = ?2 \
+               UNION \
+               SELECT agents.origin_host, agents.agent_id FROM agents JOIN below \
+                 ON agents.parent_host = below.origin_host \
+                 AND agents.parent_id = below.agent_id \
+                 WHERE below.origin_host = ?3 \
+             ) \
+             SELECT IFNULL(SUM((agents.lifecycle = ?4) \
+               + CASE WHEN agents.origin_host = ?3 THEN 0 ELSE agents.descendants END), 0) \
+             FROM below JOIN agents USING (origin_host, agent_id)",
+            params![
+                parent.host,
+                parent.agent,
+                self.own_host,
+                wire::Lifecycle::Live as i32
+            ],
+            |row| row.get(0),
+        )?;
+        Ok(count.clamp(0, i64::from(u32::MAX)) as u32)
     }
 
     /// Moves an own row's ingest cursor back to `cursor`, never forward.
@@ -565,8 +616,8 @@ impl Rows<'_> {
         self.conn
             .prepare(
                 "INSERT OR REPLACE INTO deliveries (child_id, incarnation, turn_id, parent_host, \
-                 parent_id, parent_incarnation, kind, body, exit_cause, exit_detail) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 parent_id, parent_incarnation, kind, body, exit_cause, exit_detail, outcome) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             )?
             .execute(params![
                 delivery.child_id,
@@ -579,6 +630,7 @@ impl Rows<'_> {
                 delivery.body,
                 delivery.ended.as_ref().map(|end| end.cause),
                 delivery.ended.as_ref().and_then(|end| end.detail.clone()),
+                delivery.outcome,
             ])?;
         Ok(())
     }
@@ -586,7 +638,7 @@ impl Rows<'_> {
     pub(crate) fn deliveries(&self) -> Result<Vec<Delivery>, StoreError> {
         let mut statement = self.conn.prepare(
             "SELECT child_id, incarnation, turn_id, parent_host, parent_id, parent_incarnation, \
-             kind, body, exit_cause, exit_detail FROM deliveries \
+             kind, body, exit_cause, exit_detail, outcome FROM deliveries \
              ORDER BY child_id, incarnation, kind, turn_id",
         )?;
         let rows = statement

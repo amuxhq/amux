@@ -266,7 +266,7 @@ The rest of the installation:
 
 The journal, ingest, the store's schema, durability and retention are on
 [the journal and store](JOURNAL_AND_STORE.md) page. What happens inside the
-agent process, its lifecycle, stop modes and the terminal socket are on
+agent process, its lifecycle, how it is stopped and the terminal socket are on
 [the agent process](AGENT_PROCESS.md) page.
 
 ### An agent outlives its daemon

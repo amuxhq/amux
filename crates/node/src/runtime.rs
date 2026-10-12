@@ -33,8 +33,7 @@ use uuid::Uuid;
 use wire::{
     Agent, AgentHello, AgentRef, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest, CtlFrame,
     DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, ExitCause, Kind, Lifecycle,
-    RemovalReason, Rename, SendInputResponse, Stop, StopMode, ctl_frame, inventory_event,
-    session_event,
+    RemovalReason, Rename, SendInputResponse, Stop, ctl_frame, inventory_event, session_event,
 };
 
 use crate::fanout::Fanout;
@@ -379,6 +378,15 @@ pub struct ProfileRuntime {
     pub(crate) peer_providers: Mutex<HashMap<Vec<u8>, Vec<wire::ProviderOnHost>>>,
 }
 
+/// How the daemon is ending an agent's process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stopping {
+    /// The turn cancelled the provider's own way, then the agent exits.
+    Stop,
+    /// The process group ended at once; nothing more is written.
+    Kill,
+}
+
 pub(crate) struct AgentHandle {
     dir: PathBuf,
     /// The write half of the control connection, while one is open.
@@ -394,7 +402,7 @@ pub(crate) struct AgentHandle {
     hello: watch::Sender<Option<AgentHello>>,
     /// The stop the daemon asked for: a kill names the exit's cause, since
     /// a killed process writes nothing more.
-    stopping: Mutex<Option<StopMode>>,
+    stopping: Mutex<Option<Stopping>>,
     /// The agent refused an input as exiting: it is on its way out.
     exiting: AtomicBool,
     /// The process id, when this daemon started the process.
@@ -1118,20 +1126,33 @@ impl ProfileRuntime {
 
     // --- stop, delete, rename --------------------------------------------
 
-    /// Stops a live agent's process: graceful finishes the turn, abort
-    /// cancels it, kill ends the process group at once. A stop that
+    /// Stops a live agent's process now: the running turn is cancelled the
+    /// provider's own way and the agent exits, resumable. A stop that
     /// overruns the stop deadline kills. An exited agent is left as it is.
     ///
     /// Stopping an agent stops its whole family, as deleting it does: each
-    /// child is stopped the same way, on this host or forwarded to its own,
-    /// which stops that child's children in turn. The children's stops run
-    /// beside this one and nothing waits for them, so a child whose host
-    /// cannot be reached, or whose stop fails, is left as it is.
-    pub async fn stop(&self, id: AgentId, mode: StopMode) -> Result<Agent, RegistryError> {
-        self.stop_children(id, mode).await;
+    /// child is stopped, on this host or forwarded to its own, which stops
+    /// that child's children in turn. The children's stops run beside this
+    /// one and nothing waits for them, so a child whose host cannot be
+    /// reached, or whose stop fails, is left as it is.
+    pub async fn stop(&self, id: AgentId) -> Result<Agent, RegistryError> {
+        self.stop_children(id).await;
         let operation = self.operation(id);
         let _operation = operation.lock().await;
-        self.stop_locked(id, mode).await
+        self.stop_locked(id).await
+    }
+
+    /// Kills a live agent's process group at once, writing nothing more,
+    /// as the stop deadline does; its children are left as they are. For
+    /// tearing a runtime down: no client call reaches it.
+    pub async fn kill_agent(&self, id: AgentId) -> Result<Agent, RegistryError> {
+        let operation = self.operation(id);
+        let _operation = operation.lock().await;
+        let Some(handle) = self.agents.lock().unwrap().get(&id).cloned() else {
+            return self.agent(id).await;
+        };
+        self.kill_locked(id, &handle).await?;
+        self.agent(id).await
     }
 
     /// [`Self::stop`] behind a named future type, so a stop can start its
@@ -1139,12 +1160,11 @@ impl ProfileRuntime {
     fn stop_boxed(
         self: Arc<Self>,
         id: AgentId,
-        mode: StopMode,
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<Agent, RegistryError>> + Send>> {
-        Box::pin(async move { self.stop(id, mode).await })
+        Box::pin(async move { self.stop(id).await })
     }
 
-    async fn stop_children(&self, id: AgentId, mode: StopMode) {
+    async fn stop_children(&self, id: AgentId) {
         let key = self.key(id);
         let children = match self.store.lock().await.agents_of_parent(&key) {
             Ok(children) => children,
@@ -1161,7 +1181,7 @@ impl ProfileRuntime {
                     return;
                 };
                 if child.agent.host == runtime.host.as_bytes() {
-                    if let Err(error) = runtime.clone().stop_boxed(child_id, mode).await {
+                    if let Err(error) = runtime.clone().stop_boxed(child_id).await {
                         tracing::warn!(child = %child_id, %error, "a cascaded stop failed");
                     }
                     return;
@@ -1171,7 +1191,6 @@ impl ProfileRuntime {
                 };
                 let request = wire::StopAgentRequest {
                     agent_id: child.agent.agent.clone(),
-                    mode: mode as i32,
                 };
                 if let Err(error) = runtime
                     .on_peer(host, |mut client| async move {
@@ -1185,48 +1204,61 @@ impl ProfileRuntime {
         }
     }
 
-    async fn stop_locked(&self, id: AgentId, mode: StopMode) -> Result<Agent, RegistryError> {
+    async fn stop_locked(&self, id: AgentId) -> Result<Agent, RegistryError> {
         let Some(handle) = self.agents.lock().unwrap().get(&id).cloned() else {
             return self.agent(id).await;
         };
-        *handle.stopping.lock().unwrap() = Some(mode);
+        *handle.stopping.lock().unwrap() = Some(Stopping::Stop);
         let frame = CtlFrame {
-            of: Some(ctl_frame::Of::Stop(Stop { mode: mode as i32 })),
+            of: Some(ctl_frame::Of::Stop(Stop { kill: false })),
         };
         let launch = self.launch();
         // A failed write means the connection is already going; the
         // deadline below still applies.
         let _ = handle.write_ctl(&frame, ms(launch.ctl_write_ms)).await;
-        let deadline = launch.stop_deadline_ms;
-        if self.wait_exit(&handle, deadline).await.is_err() {
-            // Past the deadline the stop becomes a kill: asked of the agent
-            // first, which kills its provider's group and exits, and only
-            // if it does not, done to its process from outside, as the
-            // process on the other end of its control socket.
-            *handle.stopping.lock().unwrap() = Some(StopMode::Kill);
-            let kill = CtlFrame {
-                of: Some(ctl_frame::Of::Stop(Stop {
-                    mode: StopMode::Kill as i32,
-                })),
-            };
-            let _ = handle.write_ctl(&kill, ms(launch.ctl_write_ms)).await;
-            if self
-                .wait_exit(&handle, KILL_ASK_PATIENCE.as_millis() as i64)
-                .await
-                .is_err()
-            {
-                if !self.kill(&handle) {
-                    return Err(RegistryError::StopTimeout(id));
-                }
-                self.wait_exit(&handle, KILL_PATIENCE.as_millis() as i64)
-                    .await
-                    .map_err(|_| RegistryError::StopTimeout(id))?;
-            }
+        if self
+            .wait_exit(&handle, launch.stop_deadline_ms)
+            .await
+            .is_err()
+        {
+            // Past the deadline the stop becomes a kill.
+            self.kill_locked(id, &handle).await?;
         }
         self.agent(id).await
     }
 
-    /// Deletes an agent: aborts its process if live, deletes its children
+    /// Kills the agent: asked of the agent first, which kills its
+    /// provider's group and exits, and only if it does not, done to its
+    /// process from outside, as the process on the other end of its
+    /// control socket.
+    async fn kill_locked(
+        &self,
+        id: AgentId,
+        handle: &Arc<AgentHandle>,
+    ) -> Result<(), RegistryError> {
+        *handle.stopping.lock().unwrap() = Some(Stopping::Kill);
+        let kill = CtlFrame {
+            of: Some(ctl_frame::Of::Stop(Stop { kill: true })),
+        };
+        let _ = handle
+            .write_ctl(&kill, ms(self.launch().ctl_write_ms))
+            .await;
+        if self
+            .wait_exit(handle, KILL_ASK_PATIENCE.as_millis() as i64)
+            .await
+            .is_err()
+        {
+            if !self.kill(handle) {
+                return Err(RegistryError::StopTimeout(id));
+            }
+            self.wait_exit(handle, KILL_PATIENCE.as_millis() as i64)
+                .await
+                .map_err(|_| RegistryError::StopTimeout(id))?;
+        }
+        Ok(())
+    }
+
+    /// Deletes an agent: stops its process if live, deletes its children
     /// on this host the same way and forwards the delete of each child on
     /// another host to that host, then removes its rows and its directory.
     /// A child whose host cannot be reached is reported as unreachable.
@@ -1247,10 +1279,7 @@ impl ProfileRuntime {
         if self.store.lock().await.agent(&key)?.is_none() {
             return Err(RegistryError::NotFound(id));
         }
-        // Abort, not graceful: a turn allowed to finish into a directory
-        // about to be removed is work thrown away, and a delete must not
-        // wait on an ask nobody will answer.
-        self.stop_locked(id, StopMode::Abort).await?;
+        self.stop_locked(id).await?;
 
         let children: Vec<AgentRow> = self.store.lock().await.agents_of_parent(&key)?;
         for child in children {
@@ -1277,6 +1306,7 @@ impl ProfileRuntime {
         // row, which the next sweep removes.
         {
             let mut store = self.store.lock().await;
+            let parent = store.agent(&key)?.and_then(|row| row.parent);
             store.delete_agent(&key)?;
             self.fanout.close(&key);
             self.fanout
@@ -1285,6 +1315,7 @@ impl ProfileRuntime {
                     agent_id: key.agent.clone(),
                     reason: RemovalReason::Deleted as i32,
                 })));
+            self.recount_from(&mut store, parent)?;
         }
         match std::fs::remove_dir_all(self.agent_dir(id)) {
             Ok(()) => {}
@@ -1820,7 +1851,7 @@ impl ProfileRuntime {
         // Unless the journal, now read to its end, said why: a kill the
         // daemon made, else the process ended without saying.
         let cause = match *handle.stopping.lock().unwrap() {
-            Some(StopMode::Kill) => ExitCause::Killed,
+            Some(Stopping::Kill) => ExitCause::Killed,
             _ => ExitCause::EndedUnexpectedly,
         };
         let cause = daemon_cause(cause, None);
@@ -1888,7 +1919,36 @@ impl ProfileRuntime {
         // A lifecycle or incarnation change can make a waiting delivery
         // deliverable, or stale.
         self.deliveries_due.notify_one();
-        self.publish_row(store, &row.agent)
+        self.publish_row(store, &row.agent)?;
+        self.recount_from(store, row.parent.clone())
+    }
+
+    /// Counts the live descendants of `parent` again, and of each own
+    /// ancestor above it, writing and publishing every count that changed;
+    /// a count that did not change leaves those above it unchanged too. A
+    /// replica ancestor's count is its origin's, which hears of the change
+    /// from this host's inventory.
+    pub(crate) fn recount_from(
+        &self,
+        store: &mut Sqlite,
+        mut parent: Option<AgentKey>,
+    ) -> Result<(), StoreError> {
+        while let Some(key) = parent {
+            if key.host != self.host.as_bytes() {
+                break;
+            }
+            let Some(row) = store.agent(&key)? else {
+                break;
+            };
+            let count = store.live_descendants(&key)?;
+            if count == row.descendants {
+                break;
+            }
+            store.set_descendants(&key, count)?;
+            self.publish_row(store, &key)?;
+            parent = row.parent;
+        }
+        Ok(())
     }
 
     /// Marks the row exited, then settles what the process leaves: its
@@ -1936,6 +1996,7 @@ impl ProfileRuntime {
             kind: EnvelopeKind::Failed as i32,
             body: String::new(),
             ended: Some(cause),
+            outcome: None,
         })?;
         self.deliveries_due.notify_one();
         Ok(())
@@ -2169,6 +2230,8 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         phase_since_ms: row.phase_since_ms.unwrap_or(row.created_at_ms),
         incarnation: row.incarnation,
         git: row.git.clone(),
+        descendants: row.descendants,
+        background_jobs: row.background_jobs,
     }
 }
 

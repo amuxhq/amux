@@ -109,6 +109,18 @@ message McpToolCall {
 
 message WebSearch {
   string query = 1;
+  WebAction action = 2;
+  // The page opened, or searched within.
+  string url = 3;
+  // The words looked for within the page.
+  string pattern = 4;
+}
+
+enum WebAction {
+  WEB_ACTION_UNSPECIFIED = 0;
+  WEB_ACTION_SEARCH = 1;
+  WEB_ACTION_OPEN_PAGE = 2;
+  WEB_ACTION_FIND_IN_PAGE = 3;
 }
 
 // A generated or viewed image; the image is the envelope's attachment.

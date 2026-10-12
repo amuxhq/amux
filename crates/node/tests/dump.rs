@@ -11,7 +11,7 @@ use std::sync::Arc;
 use node::{DAEMON_LOG, MANIFEST};
 use prost::Message as _;
 use support::*;
-use wire::{DumpRequest, Lifecycle, Phase, StopMode};
+use wire::{DumpRequest, Lifecycle, Phase};
 
 const TOKEN: &str = "ghp_PLANTEDdumptoken0001abcdef";
 const KEY: &str = "sk-ant-api03-PLANTEDdumpkey0002";
@@ -108,7 +108,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         .await
         .unwrap();
     }
-    runtime.stop(stopped, StopMode::Graceful).await.unwrap();
+    runtime.stop(stopped).await.unwrap();
     assert_eq!(
         runtime.agent(stopped).await.unwrap().lifecycle,
         Lifecycle::Exited as i32

@@ -300,7 +300,8 @@ A parent hears one thing per event, from the daemon, through an outbox: the
   child, incarnation, kind and turn. Its body is a copy of the turn's last
   message, taken when the row is written, so retention removing the child's
   transcript later cannot empty a delivery still waiting for a parent on an
-  away host.
+  away host. The row also keeps how the turn ended (completed, interrupted,
+  stopped or failed), which the envelope carries as `outcome`.
 - **Failed.** When a child's process ends while a turn is open (a crash, a
   stop, a child that never came up) the daemon writes a row of kind `failed`
   whose body is the cause in words, followed by its own words when it has

@@ -22,7 +22,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tonic::Code;
 
-use crate::verbs::{CliKind, CliStopMode};
+use crate::verbs::CliKind;
 
 #[derive(Debug, Parser)]
 #[command(name = "amux", version = node::version(), about = "Agent multiplexer")]
@@ -78,12 +78,8 @@ enum Command {
         #[arg(required = true, num_args = 1..)]
         text: Vec<String>,
     },
-    /// Stop an agent's process.
-    Stop {
-        agent: String,
-        #[arg(long, value_enum, default_value = "graceful")]
-        mode: CliStopMode,
-    },
+    /// Stop an agent now: its turn is cancelled and it exits, resumable.
+    Stop { agent: String },
     /// Start an exited agent again, with an optional first prompt.
     Resume { agent: String, text: Vec<String> },
     /// Rename an agent.
@@ -523,7 +519,7 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                     Command::Send { agent, text } => {
                         verbs::send(&mut client, &agent, &text.join(" ")).await
                     }
-                    Command::Stop { agent, mode } => verbs::stop(&mut client, &agent, mode).await,
+                    Command::Stop { agent } => verbs::stop(&mut client, &agent).await,
                     Command::Resume { agent, text } => {
                         let text = text.join(" ");
                         let text = Some(text.as_str()).filter(|text| !text.is_empty());

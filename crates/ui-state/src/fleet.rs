@@ -44,12 +44,7 @@ pub fn attention(agent: &Agent) -> Attention {
 pub fn exit_cause(agent: &Agent) -> ExitCause {
     match wire::ExitCause::try_from(agent.exit_cause) {
         Ok(wire::ExitCause::Finished) => ExitCause::Finished,
-        Ok(
-            wire::ExitCause::Stopped
-            | wire::ExitCause::Aborted
-            | wire::ExitCause::Killed
-            | wire::ExitCause::Unspecified,
-        )
+        Ok(wire::ExitCause::Stopped | wire::ExitCause::Killed | wire::ExitCause::Unspecified)
         | Err(_) => ExitCause::Ended,
         Ok(_) => ExitCause::Failed(exit_words(agent.exit_cause, agent.exit_detail.as_deref())),
     }
@@ -64,7 +59,6 @@ pub fn exit_words(cause: i32, detail: Option<&str>) -> String {
         Ok(ExitCause::Unspecified) | Err(_) => "",
         Ok(ExitCause::Finished) => "finished",
         Ok(ExitCause::Stopped) => "stopped",
-        Ok(ExitCause::Aborted) => "aborted",
         Ok(ExitCause::Killed) => "killed",
         Ok(ExitCause::ProviderExited) => "the provider exited",
         // Both read as the person sees them: the agent ended while no

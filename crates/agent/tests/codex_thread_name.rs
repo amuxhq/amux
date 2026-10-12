@@ -5,7 +5,7 @@ mod support;
 
 use agent::ExitCause;
 use support::*;
-use wire::{Kind, StopMode};
+use wire::Kind;
 
 /// The names the agent gave the thread, in order, from what the fake read.
 fn names(agent: &Agent, thread: &str) -> Vec<String> {
@@ -39,6 +39,6 @@ async fn the_thread_is_named_after_the_agent_at_start_and_on_rename() {
         })
         .await;
 
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }

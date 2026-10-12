@@ -120,7 +120,7 @@ of three modes:
 | Mode | Meaning |
 |---|---|
 | `Running` | Ordinary life. Inputs go to the interpreter. |
-| `Draining` | On its way out once the turn in progress ends; carries why (the daemon was lost, a graceful stop, an abort). Input is answered `REFUSAL_DRAINING`. |
+| `Draining` | On its way out once the turn in progress ends; carries why (the daemon was lost, or a stop, which has already cancelled the turn). Input is answered `REFUSAL_DRAINING`. |
 | `Exiting` | The final boundary is written and the provider has been asked to finish. Input is answered `REFUSAL_EXITING`. |
 
 These modes are the process's lifecycle. They are not the phase a client
@@ -146,22 +146,20 @@ action, `exit(cause)`:
 
 The provider's own exit then ends the loop. Two paths skip `exit`: the
 provider exiting by itself (the interpreter records it as the final boundary,
-with the exit code or "killed by a signal"), and a kill stop, which kills the
+with the exit code or "killed by a signal"), and a kill, which kills the
 provider's process group at once and writes nothing.
 
 | While | What happens | Result |
 |---|---|---|
 | `Running`, no daemon connected | The grace timer runs out | The interpreter writes a daemon-lost boundary; `Draining` (daemon lost) |
-| `Running` | `Stop(Graceful)` arrives | `Draining` (graceful) |
-| `Draining` (graceful) | An ask is open (phase needs you): the person who would answer it is the one who stopped the agent, and a draining agent takes no answers | The interpreter cancels the turn the provider's own way, so the ask closes as dismissed and its call as cancelled; still `STOPPED` once the turn ends |
-| `Running` | `Stop(Abort)` arrives | The interpreter cancels the turn the provider's own way; `Draining` (abort) |
-| `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST`, `STOPPED` or `ABORTED` |
+| `Running` | `Stop` arrives | The interpreter cancels the turn the provider's own way, so an open ask closes as dismissed and its call as cancelled; `Draining` (stop) |
+| `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST` or `STOPPED` |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
 | `Running`, the agent has a parent | A turn ends with nothing running, nothing queued and no accepted agent message still unconsumed | `exit` with `FINISHED` (the one-shot rule) |
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
 | Any | The provider exits | The loop ends; `PROVIDER_EXITED` with the exit code or signal |
-| Any | `Stop(Kill)` arrives | The provider's process group is killed; `KILLED` |
+| Any | `Stop { kill }` arrives | The provider's process group is killed; `KILLED` |
 | Start | The provider cannot be started | `COULD_NOT_START`, with why |
 | `Exiting` | Ten seconds pass | The provider's process group is killed |
 
@@ -182,15 +180,17 @@ already says how the earlier incarnation ended.
 A dump request is answered in every mode, since a draining agent is often the
 one someone wants to look at.
 
-Nothing a person does in a chat stops the process. A chat's stop is the
+Nothing a person does in a chat stops the process. A chat's interrupt is the
 interrupt input, which cancels the turn and leaves the agent live and idle.
-Process stops come from the daemon: `amux stop <agent> --mode
-graceful|abort|kill` sends the matching frame (graceful by default), and a
-delete sends `Abort`, because a turn allowed to finish into a directory about
-to be removed is work thrown away. If a stopped agent overruns the daemon's
+Process stops come from the daemon: a stop (`StopAgent`, `amux stop`, and the
+first step of a delete) sends `Stop` on the control socket, and the agent
+cancels its turn the provider's own way and exits. There is no "stop when
+done": the agent's own drain, finishing its turn, happens only when its daemon
+is lost, and no message asks for it. If a stopped agent overruns the daemon's
 stop deadline (30 seconds), the stop becomes a kill: the daemon sends
-`Stop(Kill)` on the control socket, and if the agent has not exited two
-seconds later, kills the agent process's own process group from outside.
+`Stop { kill: true }` on the control socket, and if the agent has not exited
+two seconds later, kills the agent process's own process group from outside.
+The kill is the daemon's own escalation and no client can ask for it.
 The process it kills is the one on the other end of the control socket, as
 the operating system names it (`SO_PEERCRED` on Linux, `LOCAL_PEEREPID` on
 macOS, the pipe's server process on Windows), so an agent adopted from an
@@ -217,7 +217,7 @@ version integer, and a frame a reader does not know is ignored.
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's part of a dump bundle, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
-| `stop` | daemon → agent | `Stop { mode }`: `STOP_MODE_GRACEFUL`, `STOP_MODE_ABORT` or `STOP_MODE_KILL`; a mode this agent cannot read is ignored, never taken as another |
+| `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill the provider's process group at once (the daemon's escalation past the stop deadline) |
 | `dump` | agent → daemon | `DumpPart`, answering a dump request |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 

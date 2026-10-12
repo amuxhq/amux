@@ -119,7 +119,7 @@ async fn agents_of_the_previous_build_work_on_after_an_update() {
         .unwrap();
     }
     for name in agents.keys() {
-        desk.run(&["stop", name, "--mode", "kill"]).await;
+        desk.run(&["stop", name]).await;
     }
 }
 
@@ -213,7 +213,7 @@ async fn a_tui_of_the_previous_build_works_on_after_an_update() {
     let mut chats = client(&desk.socket).await;
     let chat = chat(&mut chats, &agent).await;
     assert_eq!(count(&chat, "answered after the update"), 1);
-    desk.run(&["stop", "helper", "--mode", "kill"]).await;
+    desk.run(&["stop", "helper"]).await;
 }
 
 /// The build under test migrates a store the previous build created and is
@@ -320,7 +320,7 @@ async fn the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared
     for item in &before {
         assert!(after.contains(item), "{item:?} is still in the store");
     }
-    desk.run(&["stop", "headless", "--mode", "kill"]).await;
+    desk.run(&["stop", "headless"]).await;
 }
 
 /// Unloads a LaunchAgent however the test ends.
@@ -485,5 +485,5 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
     .await
     .unwrap();
     assert_eq!(agent_pid(&dir), Some(pid));
-    desk.run(&["stop", "headless", "--mode", "kill"]).await;
+    desk.run(&["stop", "headless"]).await;
 }

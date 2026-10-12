@@ -9,7 +9,7 @@ use std::time::Duration;
 use agent::ExitCause;
 use provider_fakes::{Ask, Outcome, Step, Tool, ToolClass};
 use support::*;
-use wire::{Kind, Phase, StopMode};
+use wire::{Kind, Phase};
 
 fn text(chunk: &str) -> Step {
     Step::Text {
@@ -183,7 +183,7 @@ async fn a_daemon_dialling_back_in_cancels_the_grace() {
     // been none, so any boundary here would be the drain's.
     assert_eq!(agent.log().boundaries(), Vec::<String>::new());
 
-    daemon.stop(StopMode::Graceful).await;
+    daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
@@ -221,8 +221,11 @@ async fn an_ask_nobody_can_answer_exits_at_the_drain_deadline() {
     agent.assert_released();
 }
 
+/// A stop ends the agent now, even one waiting on the person: the person
+/// stopping it has decided not to answer, so the turn is cancelled the
+/// provider's own way, the ask closes and the agent exits stopped.
 #[tokio::test(flavor = "multi_thread")]
-async fn abort_cancels_the_turn_under_an_open_ask_and_exits() {
+async fn a_stop_cancels_the_turn_under_an_open_ask_and_exits_stopped() {
     let agent = Agent::start(Setup {
         steps: vec![permission(), text("never"), Step::TurnEnd],
         ..Setup::sdk()
@@ -237,8 +240,8 @@ async fn abort_cancels_the_turn_under_an_open_ask_and_exits() {
         })
         .await;
 
-    daemon.stop(StopMode::Abort).await;
-    assert_eq!(agent.exit().await, ExitCause::Aborted);
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
     let log = agent.log();
     assert_eq!(
         log.turn_ends(),
@@ -247,45 +250,9 @@ async fn abort_cancels_the_turn_under_an_open_ask_and_exits() {
     );
     assert_eq!(
         log.boundaries().last().map(String::as_str),
-        Some("EXITED ABORTED")
+        Some("EXITED STOPPED")
     );
     assert_eq!(log.open_asks(), 0);
-    assert!(!log.has_text("never"));
-    agent.assert_released();
-}
-
-/// A person who stops an agent that is waiting on them has decided not to
-/// answer: a graceful stop cannot wait for the turn to end, because only
-/// the person stopping it could end it. Every client's stop is graceful,
-/// so if the agent waits, the daemon kills it at its stop deadline and the
-/// person's stop is recorded as a kill, the ask left open on the row, and
-/// the next incarnation's repair boundary calls it "ended unexpectedly".
-#[tokio::test(flavor = "multi_thread")]
-async fn a_graceful_stop_under_an_open_ask_closes_it_and_exits_stopped() {
-    let agent = Agent::start(Setup {
-        steps: vec![permission(), text("never"), Step::TurnEnd],
-        ..Setup::sdk()
-    })
-    .await;
-    let mut daemon = agent.dial().await;
-    agent.ready().await;
-    assert_eq!(daemon.prompt(b"p1", "clean up").await, Verdict::Accepted);
-    agent
-        .wait("the ask is open", |log| {
-            log.phase() == Some(Phase::NeedsYou)
-        })
-        .await;
-
-    daemon.stop(StopMode::Graceful).await;
-    agent
-        .wait(
-            "a graceful stop under an open ask ends the incarnation as stopped",
-            |log| log.boundaries().last().map(String::as_str) == Some("EXITED STOPPED"),
-        )
-        .await;
-    assert_eq!(agent.exit().await, ExitCause::Stopped);
-    let log = agent.log();
-    assert_eq!(log.open_asks(), 0, "the final snapshot closes the ask");
     assert!(!log.has_text("never"));
     agent.assert_released();
 }
@@ -315,7 +282,7 @@ async fn kill_ends_the_process_group_at_once_and_writes_nothing() {
         .await;
     assert!(running(&marker), "the provider is running");
 
-    daemon.stop(StopMode::Kill).await;
+    daemon.kill().await;
     assert_eq!(agent.exit().await, ExitCause::Killed);
     agent
         .until("the provider is gone", || !running(&marker))
@@ -424,7 +391,7 @@ async fn a_journal_write_that_fails_ends_the_incarnation_and_the_next_writes_its
         .await;
     let mut daemon = agent.dial().await;
     agent.ready().await;
-    daemon.stop(StopMode::Kill).await;
+    daemon.kill().await;
     assert_eq!(agent.exit().await, ExitCause::Killed);
 }
 
@@ -554,7 +521,7 @@ async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running()
         })
         .await;
 
-    daemon.stop(StopMode::Abort).await;
+    daemon.stop().await;
     let cause = agent.exit().await;
     let left = running(&format!("sleep {marker}"));
     let _ = std::process::Command::new("pkill")

@@ -10,7 +10,7 @@ use prost::Message as _;
 use store::{AgentKey, AgentRow, Marker};
 use support::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use wire::{AgentSpec, ExitCause, Lifecycle, Phase, StopMode};
+use wire::{AgentSpec, ExitCause, Lifecycle, Phase};
 
 fn spec(dir: &std::path::Path, n: u32) -> AgentSpec {
     let bytes = std::fs::read(dir.join(format!("spec.{n}"))).expect("the spec exists");
@@ -472,7 +472,7 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn stop_modes_end_the_process_and_record_why() {
+async fn a_stop_and_a_kill_end_the_process_and_record_why() {
     let install = Install::new();
     let never = install.path("never");
     let daemon = install
@@ -480,16 +480,18 @@ async fn stop_modes_end_the_process_and_record_why() {
         .await;
     let runtime = runtime(&daemon, &install);
 
+    // The stop a person makes, on an idle agent and on a working one, and
+    // the kill the stop deadline escalates to.
     for (mode, cause, name, prompt) in [
-        (StopMode::Graceful, ExitCause::Stopped, "stopped", None),
+        ("stop", ExitCause::Stopped, "stopped", None),
         (
-            StopMode::Abort,
-            ExitCause::Aborted,
-            "aborted",
+            "stop",
+            ExitCause::Stopped,
+            "stopped-working",
             Some("work until stopped"),
         ),
         (
-            StopMode::Kill,
+            "kill",
             ExitCause::Killed,
             "killed",
             Some("work until killed"),
@@ -506,7 +508,12 @@ async fn stop_modes_end_the_process_and_record_why() {
                 .await
                 .unwrap();
         }
-        let stopped = runtime.stop(id, mode).await.expect("the stop completes");
+        let stopped = if mode == "kill" {
+            runtime.kill_agent(id).await
+        } else {
+            runtime.stop(id).await
+        }
+        .expect("the stop completes");
         assert_eq!(stopped.lifecycle, Lifecycle::Exited as i32, "{mode:?}");
         assert_eq!(stopped.exit_cause(), cause, "{mode:?}");
         assert!(!node::locked(&dir), "{mode:?}: the lock is released");
@@ -527,7 +534,7 @@ async fn stop_modes_end_the_process_and_record_why() {
             "{mode:?}: an exited agent's journal is read to its end"
         );
         // Stopping an exited agent leaves it as it is.
-        let again = runtime.stop(id, StopMode::Kill).await.unwrap();
+        let again = runtime.kill_agent(id).await.unwrap();
         assert_eq!(again.exit_cause(), cause);
     }
     drop(runtime);
@@ -559,7 +566,7 @@ async fn a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary
     until("the turn to start", || working(&runtime, id))
         .await
         .unwrap();
-    let killed = runtime.stop(id, StopMode::Kill).await.unwrap();
+    let killed = runtime.kill_agent(id).await.unwrap();
     assert_eq!(killed.exit_cause(), ExitCause::Killed);
     let end = journal_end(&dir);
 
@@ -610,7 +617,7 @@ async fn a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary
         "the live incarnation's row holds no cause"
     );
 
-    let killed = runtime.stop(id, StopMode::Kill).await.unwrap();
+    let killed = runtime.kill_agent(id).await.unwrap();
     assert_eq!(
         killed.exit_cause(),
         ExitCause::Killed,
@@ -994,7 +1001,7 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
     drop(store);
 
     // The adopted agent is the registry's like any other: it stops.
-    let stopped = runtime.stop(stays, StopMode::Graceful).await.unwrap();
+    let stopped = runtime.stop(stays).await.unwrap();
     assert_eq!(stopped.exit_cause(), ExitCause::Stopped);
     drop(runtime);
     daemon.shutdown().await.unwrap();
@@ -1005,6 +1012,8 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
 /// known only by its directory and its Hello, so the daemon that adopted it
 /// must still be able to end it, or the person is told the stop failed and
 /// the live process refuses every resume as still holding the directory.
+// Freezing the agent so it cannot answer the stop is POSIX.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_stop_deadline_kills_an_agent_adopted_from_an_earlier_daemon() {
     let install = Install::new();
@@ -1033,9 +1042,19 @@ async fn the_stop_deadline_kills_an_agent_adopted_from_an_earlier_daemon() {
     let runtime = support::runtime(&daemon, &install);
     assert_eq!(daemon.sweep(install.profile).unwrap().live, vec![id]);
 
-    // The turn never ends, so the graceful stop overruns its deadline.
-    let stopped = runtime.stop(id, StopMode::Graceful).await;
-    // Let a process the kill missed finish its turn and go.
+    // A frozen agent cannot answer the stop, so it overruns its deadline
+    // and the kill, asked of the agent and then done from outside, ends it.
+    let dir = install.agent_dir(id);
+    let frozen = std::process::Command::new("pkill")
+        .args(["-STOP", "-f", &format!("agent {}", dir.display())])
+        .status()
+        .unwrap();
+    assert!(frozen.success(), "the agent process is frozen");
+    let stopped = runtime.stop(id).await;
+    // Let a process the kill missed run, finish its turn and go.
+    let _ = std::process::Command::new("pkill")
+        .args(["-CONT", "-f", &format!("agent {}", dir.display())])
+        .status();
     std::fs::write(&never, "").unwrap();
     let stopped = stopped.expect("the deadline's kill ends the adopted agent");
     assert_eq!(stopped.lifecycle, Lifecycle::Exited as i32);
@@ -1474,7 +1493,7 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
         .status()
         .unwrap();
     assert!(frozen.success(), "the agent process is frozen");
-    let stopped = runtime.stop(id, StopMode::Graceful).await.unwrap();
+    let stopped = runtime.stop(id).await.unwrap();
     assert_eq!(stopped.exit_cause(), ExitCause::Killed);
 
     runtime
@@ -1596,7 +1615,7 @@ async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the
         .status()
         .unwrap();
     assert!(frozen.success(), "the agent process is frozen");
-    let stopped = runtime.stop(id, StopMode::Graceful).await.unwrap();
+    let stopped = runtime.stop(id).await.unwrap();
     assert_eq!(stopped.exit_cause(), ExitCause::Killed);
 
     runtime
@@ -1791,8 +1810,7 @@ async fn a_persons_stop_ends_a_working_agent_as_stopped_within_seconds() {
         .unwrap();
     let started = std::time::Instant::now();
     // The stop every client sends today; the decided wire has no mode.
-    let stopped =
-        tokio::time::timeout(Duration::from_secs(8), runtime.stop(id, StopMode::Graceful)).await;
+    let stopped = tokio::time::timeout(Duration::from_secs(8), runtime.stop(id)).await;
     let took = started.elapsed();
     kill_all(&runtime).await;
     let row = runtime.agent(id).await.unwrap();
@@ -1858,7 +1876,7 @@ async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
     })
     .await
     .unwrap();
-    runtime.stop(id, StopMode::Kill).await.unwrap();
+    runtime.kill_agent(id).await.unwrap();
     runtime.resume(id, None).await.unwrap();
     kill_all(&runtime).await;
     drop(runtime);

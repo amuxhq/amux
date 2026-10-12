@@ -1692,7 +1692,6 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
         "StopAgent with a three-byte agent id",
         peer.stop_agent(wire::StopAgentRequest {
             agent_id: short.clone(),
-            mode: wire::StopMode::Kill as i32,
         })
         .await
         .map(|_| ()),

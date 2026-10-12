@@ -20,7 +20,7 @@ use tonic::{Code, Request};
 use wire::client_service_server::ClientService as _;
 use wire::{
     AgentRef, ClaudeSdkInput, EnvelopeKind, Input, Lifecycle, PromptInput, SendInputRequest,
-    SendInputResponse, SendMessageRequest, StopMode, claude_sdk_input, send_input_response, sender,
+    SendInputResponse, SendMessageRequest, claude_sdk_input, send_input_response, sender,
 };
 
 const SEGMENTS: u64 = 1 << 20;
@@ -342,6 +342,7 @@ async fn send_message_sender_is_the_caller() {
                 to: to(&recipient, &install),
                 text: "a word".into(),
                 context: None,
+                attachments: Vec::new(),
             }))
             .await
             .unwrap();
@@ -352,7 +353,7 @@ async fn send_message_sender_is_the_caller() {
         .inputs()
         .into_iter()
         .map(|handed| match handed {
-            Handed::Message(envelope) => envelope,
+            Handed::Message(envelope) => *envelope,
             Handed::Input(input) => panic!("an agent message, not {input:?}"),
         })
         .collect::<Vec<_>>();
@@ -403,6 +404,7 @@ async fn resend_with_same_id_is_one_item() {
         to: to(&recipient, &install),
         text: "can you look at the build?".into(),
         context: Some(b"build".to_vec()),
+        attachments: Vec::new(),
     };
     for _ in 0..2 {
         let sent = api
@@ -953,7 +955,7 @@ async fn an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill()
     // leaves nothing to wait on.
     tokio::time::sleep(Duration::from_millis(50)).await;
     let bound = Duration::from_millis((2 * WRITE_MS + STOP_MS) as u64 + 2_000);
-    let stopped = tokio::time::timeout(bound, runtime.stop(wedged.id, StopMode::Kill))
+    let stopped = tokio::time::timeout(bound, runtime.kill_agent(wedged.id))
         .await
         .expect("the kill returns within its deadlines");
     assert!(

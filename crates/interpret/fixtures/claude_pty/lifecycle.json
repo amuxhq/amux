@@ -1,5 +1,5 @@
 {
-  "about": "The agent process's lifecycle as steps for Claude in a terminal: the grace running out writes a daemon-lost boundary; an abort presses the interrupt key the way the interrupt input does; the agent ending the incarnation closes the open ask and writes the final boundary with its cause.",
+  "about": "The agent process's lifecycle as steps for Claude in a terminal: the grace running out writes a daemon-lost boundary; a stop presses the interrupt key the way the interrupt input does; the agent ending the incarnation closes the open ask and writes the final boundary with its cause.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -134,7 +134,7 @@
       }
     },
     {
-      "stop": "abort",
+      "stop": {},
       "expect": {
         "effects": [
           "terminal interrupt"

@@ -2935,6 +2935,9 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         RefusalReason::Unsupported => "this agent can't take it",
         RefusalReason::ClosedAsk => "the ask had already closed",
         RefusalReason::NotQueued => "it was no longer queued",
+        RefusalReason::ConversationElsewhere => {
+            "Claude's own view switched to another conversation"
+        }
         RefusalReason::Unspecified => "it was refused",
     }
     .to_owned()

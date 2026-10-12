@@ -141,8 +141,12 @@ message AgentHello {
 
 message Nudge {}
 
+// The daemon ends its agent. Without `kill`, the running turn is cancelled
+// the provider's own way and the agent exits. With it, the provider's process
+// group is killed at once and nothing more is written: the daemon's escalation
+// once a stop overruns its deadline, never a person's.
 message Stop {
-  StopMode mode = 1;
+  bool kill = 1;
 }
 
 message Verdict {

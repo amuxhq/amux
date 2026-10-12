@@ -198,7 +198,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                 shared.close_ask(&id);
             }
             "turn_end" => {
-                if let Some(turn) = shared.turn_ended(emit) {
+                if let Some(turn) = shared.turn_ended(emit, TurnOutcome::Completed) {
                     shared.item(
                         emit,
                         ItemDraft {
@@ -223,7 +223,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
         let shared = &mut state.shared;
         shared.message_accepted(&envelope.id);
         emit.effect(Effect::Inject {
-            envelope: envelope.clone(),
+            envelope: Box::new(envelope.clone()),
             via: Carrier::Stdin,
         });
         shared.item(
@@ -322,7 +322,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
                 state.shared.close_all_asks();
                 state.shared.provider_exited();
             }
-            Event::DaemonLost | Event::StopRequested(_) => {}
+            Event::DaemonLost | Event::StopRequested => {}
             Event::Git(git) => state.shared.set_git(git),
         }
         if let Some(entry) = state.shared.next_queued() {

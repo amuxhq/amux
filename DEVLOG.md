@@ -1,3 +1,9 @@
+2026-10-13 — **Agents that outlive a daemon restart keep amux's tools.** The
+daemon bound an agent's `tools.sock` only when it started the agent, so an
+agent adopted by a restarted daemon answered every fleet tool call with
+"amux daemon isn't running" until it was stopped and resumed. The sweep now
+binds the socket again for every agent it adopts, answered or not.
+
 2026-10-13 — **The agents' stop tool stops.** It interrupted the child's
 turn, which left the child's own children running. Now it calls `StopAgent`
 for the named child, as a person's stop does: the child ends now as stopped,

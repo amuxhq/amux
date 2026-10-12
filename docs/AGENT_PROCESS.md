@@ -544,7 +544,8 @@ JSON-RPC over stdio.
 The fleet tools (agents, hosts, send, spawn, stop) dial the daemon at
 `<dir>/tools.sock`, a socket the daemon listens on for this agent alone, so
 the daemon knows who is calling from the connection and nothing in a request
-claims an id. A call made while the daemon is restarting retries for five
+claims an id. A daemon that adopts a live agent after a restart binds the
+socket again. A call made while the daemon is restarting retries for five
 seconds; with no daemon it answers "amux daemon isn't running". The other two
 never reach the daemon: status answers ok and the interpreter reads the call
 from the provider's own record, and attach writes the file into `blobs/` and

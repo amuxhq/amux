@@ -1123,6 +1123,23 @@ impl ProfileRuntime {
         self.agent(id).await
     }
 
+    /// The handle for an agent an earlier daemon started, serving its
+    /// tools socket again: the agent's MCP server dials it for every fleet
+    /// tool, and the earlier daemon's listener went with that daemon. An
+    /// agent whose socket cannot be bound keeps running without its fleet
+    /// tools, as it did before, and says so in the log.
+    fn adopted_handle(&self, id: AgentId) -> Arc<AgentHandle> {
+        let dir = self.agent_dir(id);
+        let handle = AgentHandle::new(dir.clone(), None);
+        match self.bind_tools(id, &dir) {
+            Ok(tools) => handle.tasks.lock().unwrap().push(tools),
+            Err(error) => {
+                tracing::warn!(agent = %id, %error, "serving an adopted agent's tools failed");
+            }
+        }
+        handle
+    }
+
     /// Serves the client service on `<dir>/tools.sock` for the agent's MCP
     /// server. The socket is its caller's identity: whatever arrives on it
     /// is from `id`.
@@ -1436,7 +1453,7 @@ impl ProfileRuntime {
         for (id, look) in looked.agents {
             match look {
                 Look::Live(connected) => {
-                    let handle = AgentHandle::new(self.agent_dir(id), None);
+                    let handle = self.adopted_handle(id);
                     self.agents.lock().unwrap().insert(id, handle.clone());
                     let reader = self.adopt(id, &handle, *connected).await;
                     self.watch(id, handle, Some(reader));
@@ -1447,7 +1464,7 @@ impl ProfileRuntime {
                     // every journal has been read once before messages and
                     // deliveries run.
                     self.ingest(id).await?;
-                    let handle = AgentHandle::new(self.agent_dir(id), None);
+                    let handle = self.adopted_handle(id);
                     self.agents.lock().unwrap().insert(id, handle.clone());
                     self.watch(id, handle, None);
                     report.unanswered.push(id);

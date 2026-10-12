@@ -32,7 +32,9 @@ own tools never ask, whatever the kind. The server speaks MCP as
 newline-delimited JSON-RPC on stdin and stdout.
 
 Its identity is its agent's directory. The daemon listens on
-`<dir>/tools.sock` for that agent alone, and the tool server finds the socket
+`<dir>/tools.sock` for that agent alone, from the agent's start and again
+from the moment a restarted daemon adopts the still-running agent, and the
+tool server finds the socket
 by its own directory, so the daemon knows which agent is calling from the
 connection it arrived on. No environment variable or token carries an id, and
 nothing in a request can claim one. The socket serves the ordinary

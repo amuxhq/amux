@@ -1,3 +1,18 @@
+2026-10-13 — **A stop leaves nothing of the agent's commands running.**
+Claude's and Codex's tool shells each lead a session of their own, so the
+kill of the provider's process group missed them: QA saw a stopped headless
+Claude's command run on for its whole 90 seconds. Asking a provider to finish
+now takes a census of every process below it, then sends it SIGTERM (every
+provider cleans up its commands on it; headless Claude does not exit on the
+end of its input while a background shell runs); once it has exited, or at
+the ten-second deadline, whatever of the census still runs is killed, each
+process checked by its start time so a reused pid is never signalled. Codex's
+tether now kills the server's group five seconds after its SIGTERM if the
+server still runs: one with an approval open ignores SIGTERM and held its
+thread from every later incarnation. Headless Claude's `initialize` declares
+`perTaskStopAffordance`, so its interrupt spares background subagents as it
+spares background shells. The replay fixtures' initialize line follows.
+
 2026-10-13 — **The daemon tells an agent how many agents below it are
 live.** A new control frame, `Children { live }`, carries an agent's count of
 live descendants from its daemon: sent when the agent connects with any below

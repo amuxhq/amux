@@ -31,8 +31,8 @@ use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 use wire::{AgentSpec, Attachment};
 
-use crate::dir;
 use crate::terminal::{self, Keys};
+use crate::{dir, tree};
 
 /// How long output still in flight is collected after the child exits.
 const TRAILING_OUTPUT: Duration = Duration::from_millis(300);
@@ -157,6 +157,9 @@ pub struct Provider {
     dir: PathBuf,
     events: mpsc::Sender<ProviderEvent>,
     followers: Vec<Follower>,
+    /// Every process below the provider when it was asked to finish, killed
+    /// once it has exited if still running (see the tree module).
+    census: Vec<tree::Descendant>,
 }
 
 impl Provider {
@@ -258,12 +261,21 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            census: Vec::new(),
         };
         // Claude reports nothing until it is asked; its answer is what says
-        // it takes input.
+        // it takes input. amux's interrupt ends the turn and leaves
+        // background work running on every kind; Claude spares background
+        // subagents on an interrupt, as it spares background shells, only
+        // for a host that says it can stop each task on its own.
         let initialize = claude_stream::ControlRequest::new(
             "agent-initialize",
-            claude_stream::ControlRequestBody::Initialize(Default::default()),
+            claude_stream::ControlRequestBody::Initialize(
+                claude_stream::control::InitializeRequestBody {
+                    per_task_stop_affordance: Some(true),
+                    ..Default::default()
+                },
+            ),
         );
         provider
             .write_line(&claude_stream::encode(
@@ -503,6 +515,7 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            census: Vec::new(),
         })
     }
 
@@ -661,6 +674,7 @@ impl Provider {
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            census: Vec::new(),
         })
     }
 
@@ -938,10 +952,27 @@ impl Provider {
     /// Asks the provider to finish: end of input for a plain child, a
     /// terminate signal for a terminal one. Codex on a socket is sent its
     /// signal once its server has closed the agent's connection in turn.
+    /// Asks the provider to finish: the end of its input, and SIGTERM, on
+    /// which every provider cleans up the commands it runs. What runs below
+    /// it is counted first, for `finish` to end what it leaves.
     pub fn close(&mut self) {
+        if let Some(pid) = self.pid
+            && self.census.is_empty()
+        {
+            self.census = tree::descendants(pid);
+        }
         match std::mem::replace(&mut self.input, Input::Closed) {
             Input::Stdin(stdin) => {
                 tokio::spawn(async move { stdin.lock().await.take() });
+                // Headless Claude does not exit on the end of its input
+                // while a background shell runs.
+                #[cfg(unix)]
+                if let Some(pid) = self.pid {
+                    // SAFETY: kill only sends a signal.
+                    unsafe {
+                        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                    }
+                }
             }
             Input::Codex(sender) => {
                 tokio::spawn(async move {
@@ -959,8 +990,18 @@ impl Provider {
         }
     }
 
-    /// The process group, now.
+    /// The provider has exited after `close`: whatever it left running
+    /// below it is killed.
+    pub fn finish(&mut self) {
+        tree::kill(&std::mem::take(&mut self.census));
+    }
+
+    /// Everything below the provider, then its process group, now.
     pub fn kill(&mut self) {
+        if let Some(pid) = self.pid {
+            self.census.extend(tree::descendants(pid));
+        }
+        self.finish();
         if let Some(terminal) = &self.terminal {
             let _ = terminal.signal_process_group(pty_host::ProcessGroupSignal::Kill);
             return;

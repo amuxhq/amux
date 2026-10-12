@@ -15,9 +15,13 @@
 //!   kill, the daemon's escalation past its stop deadline, ends the process
 //!   group at once and writes nothing. A draining agent answers new input as
 //!   `REFUSAL_DRAINING`.
+//! - Asking the provider to finish sends it SIGTERM, on which every provider
+//!   cleans up its commands; whatever still runs below it once it has
+//!   exited is killed (see the tree module).
 //! - An agent with a parent is one-shot: at a turn end with nothing queued,
-//!   running or accepted-but-unconsumed it exits, and input arriving while
-//!   it does is refused as `REFUSAL_EXITING`.
+//!   running or accepted-but-unconsumed, and no agent below it live (the
+//!   daemon says how many are), it exits, and input arriving while it does
+//!   is refused as `REFUSAL_EXITING`.
 //! - The provider exiting ends the agent, whatever state it was in.
 
 use std::path::PathBuf;
@@ -368,6 +372,9 @@ impl<I: Interpreter> Host<I> {
             }
             ProviderEvent::Exited(code) => {
                 if let Mode::Exiting { cause, .. } = &self.mode {
+                    if let Some(provider) = &mut self.provider {
+                        provider.finish();
+                    }
                     self.done = Some(cause.clone());
                     return Ok(());
                 }

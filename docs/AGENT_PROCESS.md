@@ -139,12 +139,22 @@ action, `exit(cause)`:
    which closes every open ask and writes the final `Exited` boundary with
    the cause (an `ExitCause`) and its own words, in a step whose
    `incarnation_end` carries the same;
-2. close the provider's input: end of input for a child on pipes, a
-   terminate signal to the process group for terminal Claude;
-3. enter `Exiting` with a ten-second deadline, after which the provider's
-   process group is killed.
+2. take a census of every process below the provider, then ask it to
+   finish: end of input and SIGTERM for headless Claude, the end of its
+   connection (on which the agent sends SIGTERM) for Codex, SIGTERM to the
+   process group for terminal Claude. Every provider cleans up the commands
+   it runs on SIGTERM, and headless Claude does not exit on the end of its
+   input alone while a background shell runs;
+3. enter `Exiting` with a ten-second deadline, after which everything below
+   the provider and its process group are killed.
 
-The provider's own exit then ends the loop. Two paths skip `exit`: the
+The provider's own exit then ends the loop, after the agent kills whatever
+of the census still runs. Claude's and Codex's tool shells each lead a
+session of their own, so a kill of the provider's process group misses
+them, and by the time the provider has exited its orphans belong to init:
+the census, taken while the provider runs, is what finds them. Each process
+is remembered with its start time and killed only if that same process is
+still running ([`tree.rs`](../crates/agent/src/tree.rs)). Two paths skip `exit`: the
 provider exiting by itself (the interpreter records it as the final boundary,
 with the exit code or "killed by a signal"), and a kill, which kills the
 provider's process group at once and writes nothing.
@@ -253,8 +263,8 @@ abandoned, not joined. Before the exit is recorded, the agent feeds the
 interpreter everything the provider said first: events already queued, then
 any transcript rows a follower has not read yet.
 
-A provider's background jobs do not outlive a clean exit: Codex and headless
-Claude end them when their input closes. A provider process killed on its
+A provider's background jobs do not outlive the agent's exit: every provider
+ends them on SIGTERM, and the census kills any it left. A provider process killed on its
 own leaves them running, orphaned, and terminal Claude's `/exit` lets the
 person move the session and its jobs into Claude's own background, where
 they keep running after the pane closes. Either way the agent's list of
@@ -342,7 +352,11 @@ the agent offers.
 The interpreter writes everything after that: user messages carry a UUID
 derived from the input or envelope id, which Claude echoes on its replay of
 the message, and images a person attached go as base64 image blocks beside
-the element that names their blob. Closing the child is closing its stdin.
+the element that names their blob. Closing the child is closing its stdin
+and sending it SIGTERM. Its `initialize` declares `perTaskStopAffordance`:
+amux's interrupt ends the turn and leaves background work running on every
+kind, and Claude spares background subagents on an interrupt, as it spares
+background shells, only for a host that says it can stop each task itself.
 
 ### Codex
 
@@ -386,9 +400,11 @@ when the agent sends the server SIGTERM; Codex then finishes any running
 turn and exits. Nothing tells a socket server that the agent died, so the
 agent also starts a tether beside it: a shell in the server's process group
 reading a pipe only the agent holds. When the agent dies, however it dies,
-the pipe closes and the shell sends the server's group SIGTERM; after the
-server exits on its own, the agent lets the tether go, which ends whatever
-the server left in its group.
+the pipe closes and the shell sends the server's group SIGTERM, and, if the
+server is still running five seconds later (one with an approval open
+ignores SIGTERM, and would hold its thread from the next incarnation for
+good), SIGKILL. After the server exits on its own, the agent lets the tether
+go, which ends whatever the server left in its group.
 
 ## Git facts
 

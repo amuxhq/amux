@@ -83,11 +83,79 @@ final class TranscriptListTests: XCTestCase {
         XCTAssertEqual(model.ids, ["p0", "s1", "s2"])
         XCTAssertEqual(joined, alone - (RowGrid.afterRun - RowGrid.inRun), "the step kept the gap of a run's end")
     }
+
+    func testAFollowingListKeepsItsNewestRowAboveAStandingAreaThatGrows() {
+        // The keyboard coming up, a notice appearing above the composer, a
+        // taller card docking: the bottom inset grows while the reader
+        // follows. The newest row must stay above it, not under it.
+        let chat = StubChat(rows: (0..<40).map { row("m\($0)", UInt64($0)) }, hasOlder: false)
+        let model = ChatModel(source: chat)
+        let list = FeedCoordinator(
+            model: model, environment: environment(), reported: ReportedElements())
+        list.view.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+        list.update(
+            items: model.ids.map { .row($0) }, notices: [], environment: environment(),
+            revision: model.revision, toNewest: model.toNewest, insets: EdgeInsets())
+        list.view.layoutIfNeeded()
+        XCTAssertEqual(list.view.contentOffset.y, list.view.bottomOffset, accuracy: 0.5)
+
+        list.update(
+            items: model.ids.map { .row($0) }, notices: [], environment: environment(),
+            revision: model.revision, toNewest: model.toNewest,
+            insets: EdgeInsets(top: 0, leading: 0, bottom: 300, trailing: 0))
+        list.view.layoutIfNeeded()
+        XCTAssertEqual(
+            list.view.contentOffset.y, list.view.bottomOffset, accuracy: 0.5,
+            "the newest row stayed where it was and is now under the standing area")
+    }
+
+    func testALongReplyIsPlacedAsTallAsItsCellDrawsIt() {
+        // The turn's caption is drawn over the last lines of a long reply on
+        // the phone: the reply's row is placed at the height it was measured
+        // at, so a cell that draws taller runs under the row below it.
+        let numbers = (1...400).map(String.init).joined(separator: "\n")
+        let markdown = "Here is the list:\n\n- one thing\n- another thing, longer, that wraps onto a second line on a phone\n\nOr something else."
+        for (name, text) in [("numbers", numbers), ("markdown", markdown)] {
+            // Drawn as photographed, as the measurer measures: the row's
+            // final shape, which the live cell reaches once it has parsed.
+            do {
+                let photographed = true
+                let rows = [prose("r", 0, text), step("s", 1)]
+                let chat = StubChat(rows: rows, hasOlder: false)
+                let model = ChatModel(source: chat)
+                let list = FeedCoordinator(
+                    model: model, environment: environment(photographed: photographed),
+                    reported: ReportedElements())
+                let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+                window.addSubview(list.view)
+                window.isHidden = false
+                list.view.frame = window.bounds
+                list.update(
+                    items: model.ids.map { .row($0) }, notices: [],
+                    environment: environment(photographed: photographed), revision: model.revision,
+                    toNewest: model.toNewest, insets: EdgeInsets())
+                list.view.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: false)
+                list.view.layoutIfNeeded()
+                let placed = list.view.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))!.frame
+                guard let cell = list.view.cellForItem(at: IndexPath(item: 0, section: 0)) else {
+                    XCTFail("\(name): the reply's cell was not drawn"); continue
+                }
+                let drawn = cell.contentView.systemLayoutSizeFitting(
+                    CGSize(width: placed.width, height: UIView.layoutFittingCompressedSize.height),
+                    withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel
+                ).height
+                XCTAssertEqual(
+                    placed.height, drawn, accuracy: 1,
+                    "\(name), photographed \(photographed): the reply is placed \(placed.height) tall but its cell draws \(drawn)")
+                window.isHidden = true
+            }
+        }
+    }
 }
 
-private func environment(typeSize: DynamicTypeSize = .large) -> CellEnvironment {
+private func environment(typeSize: DynamicTypeSize = .large, photographed: Bool = true) -> CellEnvironment {
     CellEnvironment(
-        design: .app, photographed: true, reducesMotion: true, reducesTransparency: true,
+        design: .app, photographed: photographed, reducesMotion: true, reducesTransparency: true,
         hidesNeedsYouDot: false, reportsElements: false, reportedPrefix: nil,
         reportsGeometry: false, dynamicTypeSize: typeSize)
 }
@@ -97,6 +165,13 @@ private func row(_ id: String, _ order: UInt64, collapsed: Bool = false) -> Row 
         id: id, order: order, atMs: 0,
         kind: .prose(text: [.text(id)], streaming: false, workingNote: false),
         collapsed: collapsed, attention: false, decision: nil, parent: nil, run: nil)
+}
+
+private func prose(_ id: String, _ order: UInt64, _ text: String) -> Row {
+    Row(
+        id: id, order: order, atMs: 0,
+        kind: .prose(text: [.text(text)], streaming: false, workingNote: false),
+        collapsed: false, attention: false, decision: nil, parent: nil, run: nil)
 }
 
 /// A step on the rail: a finished background command.

@@ -1,3 +1,11 @@
+2026-10-12 — **Failing phone tests from the second QA round.** The agent
+list's clock is never older than the rows it shows, so an age does not read
+"0s" for minutes. An attachment that could not be stored is named and not
+silently dropped. A list that follows its newest row keeps it above a
+standing area that grows (the keyboard, a notice), so a sent prompt and its
+reply stay in view. A long reply is placed as tall as its cell draws it, so
+the turn's caption does not print over its last line.
+
 2026-10-12 — **Failing tests for the daemon and network from the second QA
 round.** A Codex server that ignores the terminate signal no longer holds
 its thread from the next incarnation: round one's resume retry assumes the

@@ -187,8 +187,12 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return .arrived(UInt32(page.count))
     }
 
+    /// What storing an attachment fails with, when it does.
+    var blobFailure: RuntimeFailure?
+
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
-        .success(BlobRef(hash: [9], name: name, mime: mime, size: UInt64(data.count)))
+        if let blobFailure { return .failure(blobFailure) }
+        return .success(BlobRef(hash: [9], name: name, mime: mime, size: UInt64(data.count)))
     }
 
     func blob(_ hash: [UInt8]) -> Data? { nil }
@@ -855,6 +859,22 @@ final class ChatModelTests: XCTestCase {
             placeholders, 2,
             "the sent text \(String(reflecting: sent?.text)) has no place for its attachments"
         )
+    }
+
+    func testAnAttachmentThatCouldNotBeStoredIsNamedAndNotSilentlyDropped() async {
+        // On a cut or lossy link the phone's attachment vanished: no chip,
+        // no retry, only "desk stopped answering; the call may or may not
+        // have arrived", which names no file and is gone at the next tap.
+        let source = FakeChat(rows: [], frame: frame())
+        source.blobFailure = RuntimeFailure("desk stopped answering; the call may or may not have arrived")
+        let model = ChatModel(source: source)
+        model.attach(Data(count: 1024), name: "mid.bin", mime: "application/octet-stream", image: false)
+        await settle()
+        model.type("what is in it?")
+        let said = (model.notice ?? "") + model.attachments.map { "\($0)" }.joined()
+        XCTAssertTrue(
+            said.contains("mid.bin"),
+            "the failed attachment left no trace naming it: notice \(String(reflecting: model.notice)), chips \(model.attachments)")
     }
 
     func testAnEmptyChatSaysItIsLoadingOnlyAfterAMoment() async throws {

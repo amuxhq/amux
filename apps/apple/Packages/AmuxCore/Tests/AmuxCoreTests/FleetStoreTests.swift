@@ -91,6 +91,19 @@ final class FleetStoreTests: XCTestCase {
         XCTAssertEqual(fleet.rows.map(\.name), ["two", "one"])
     }
 
+    func testTheListsClockIsNeverOlderThanTheRowsItShows() {
+        // Ages are read against the moment the list was last ordered. A row
+        // whose state changed after that, as every row of a list left open
+        // does, reads "0s" until the person pulls the list again: a phone left
+        // on its Agents tab said "0s" for minutes while the terminal counted.
+        let fleet = FleetStore(now: Cards.now)
+        fleet.show(Cards.view([Cards.row(1, "pa", minutesAgo: -3)]), hosts: [Cards.host()])
+        let row = fleet.rows[0]
+        XCTAssertGreaterThanOrEqual(
+            fleet.orderedAt, row.lastActivity,
+            "ages are read against \(fleet.orderedAt), before the row's own change at \(row.lastActivity), so it reads \(row.age(at: fleet.orderedAt))")
+    }
+
     func testExitedStartsFoldedAndOpensWhenAsked() {
         let fleet = FleetStore(now: Cards.now)
         fleet.show(

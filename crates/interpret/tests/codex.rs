@@ -1104,3 +1104,149 @@ fn a_parents_message_that_resumes_its_child_reaches_codex_labelled() {
         "the row keeps the words alone"
     );
 }
+
+/// Codex 0.162 sends a goal's progress (`thread/goal/updated`) several times
+/// a turn and a startup `configWarning` naming project config it ignored, as
+/// QA recorded. Neither is a row saying amux could not read it: the goal is
+/// drawn or dropped like `thread/goal/cleared`, and the warning keeps its words.
+#[test]
+fn codexs_goal_updates_and_config_warnings_are_not_unreadable_rows() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.162.1", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let warning = "Project-local config, hooks, and exec policies are disabled in the following folders until the project is trusted, but skills still load.";
+    let mut unreadable = Vec::new();
+    let mut texts = String::new();
+    for notification in [
+        json!({"method": "configWarning", "params": {"summary": warning, "details": null}}),
+        json!({"method": "thread/goal/updated", "params": {"threadId": "t1", "turnId": "turn-1",
+            "goal": {"threadId": "t1", "objective": "Create a.txt, then b.txt.", "status": "active",
+                "tokenBudget": null, "tokensUsed": 0, "timeUsedSeconds": 0,
+                "createdAt": 1791782769, "updatedAt": 1791782769}}}),
+    ] {
+        for item in Codex::step(&mut state, rpc(notification)).step.items {
+            texts.push_str(&item.text);
+            if let Ok(body) = <wire::CodexItem as prost::Message>::decode(item.body.as_slice())
+                && let Some(wire::codex_item::Kind::Unrecognized(what)) = body.kind
+            {
+                unreadable.push(what.fact_type);
+            }
+        }
+    }
+    assert!(
+        unreadable.is_empty(),
+        "Codex notifications drawn as unreadable rows: {unreadable:?}"
+    );
+    assert!(
+        texts.contains("Project-local config"),
+        "the config warning's words reach the record: {texts:?}"
+    );
+}
+
+/// Codex runs a model's command through the user's shell and asks about the
+/// wrapped form (`/bin/zsh -lc "printf '%s\\\\n' …"`), with the command the
+/// model wrote in `commandActions`, as QA recorded on Codex 0.162. Codex's
+/// own approval shows `printf '%s\n' …`; amux's ask shows the same command,
+/// not the shell wrapper with its quoting doubled.
+#[test]
+fn a_command_approval_shows_the_command_codex_shows_not_its_shell_wrapper() {
+    use prost::Message as _;
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.162.1", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let script = "printf '%s\\n' ééé && echo aaa > out.txt";
+    let stepped = Codex::step(
+        &mut state,
+        rpc(json!({
+            "id": 0,
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "kind": "command", "threadId": "t1", "turnId": "turn-1", "itemId": "exec-1",
+                "reason": "May I run the exact requested command with permission to create out.txt?",
+                "command": "/bin/zsh -lc \"printf '%s\\\\n' ééé && echo aaa > out.txt\"",
+                "cwd": "/work",
+                "commandActions": [{"type": "unknown", "command": script}],
+                "proposedExecpolicyAmendment": ["/bin/zsh", "-lc", script],
+                "availableDecisions": ["accept", {"acceptWithExecpolicyAmendment": {"execpolicy_amendment": ["/bin/zsh", "-lc", script]}}, "cancel"],
+            },
+        })),
+    );
+    let asks = stepped
+        .step
+        .snapshot
+        .map(|snapshot| {
+            wire::CodexSnapshot::decode(snapshot.body.as_slice())
+                .unwrap()
+                .asks
+        })
+        .unwrap_or_default();
+    let command = asks
+        .iter()
+        .find_map(|ask| match &ask.body {
+            Some(wire::codex_ask::Body::Command(command)) => Some(command.command.clone()),
+            _ => None,
+        })
+        .expect("a command ask");
+    assert_eq!(command, script, "the ask shows the shell wrapper");
+}
+
+/// Codex's interrupt ends the turn but not a command it runs as a unified
+/// exec process: the command's item stays in progress and completes on its
+/// own later, as QA recorded on Codex 0.162 (Codex's own view says "1
+/// background terminal running"). amux keeps that step running until Codex
+/// says it ended, rather than drawing it cancelled under "You stopped it".
+#[test]
+fn a_command_codex_keeps_running_past_an_interrupt_is_not_drawn_cancelled() {
+    use prost::Message as _;
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.162.1", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let command = json!({"type": "commandExecution", "id": "exec-1", "command": "/bin/zsh -lc 'sleep 47'",
+        "cwd": "/w", "processId": "8911", "source": "unifiedExecStartup", "status": "inProgress",
+        "commandActions": [{"type": "unknown", "command": "sleep 47"}],
+        "aggregatedOutput": null, "exitCode": null, "durationMs": null});
+    let mut states = Vec::new();
+    for message in [
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+        json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": command}}),
+        json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "items": [], "status": "interrupted", "error": null}}}),
+    ] {
+        for item in Codex::step(&mut state, rpc(message)).step.items {
+            if item.key.contains("exec-1")
+                && let Ok(body) = wire::CodexItem::decode(item.body.as_slice())
+                && let Some(wire::codex_item::Kind::Work(work)) = body.kind
+            {
+                states.push(work.state());
+            }
+        }
+    }
+    assert_eq!(
+        states.last(),
+        Some(&wire::ToolState::Running),
+        "the command Codex still runs is drawn ended at the interrupt: {states:?}"
+    );
+}

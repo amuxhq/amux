@@ -820,3 +820,34 @@ fn a_parents_message_that_resumes_its_child_reaches_claude_labelled() {
         "the row keeps the words alone"
     );
 }
+
+/// A model chosen from amux's settings goes to Claude as a `set_model`
+/// control request, and Claude replays its "Set model to" note as a local
+/// command's output, as QA recorded on Claude 2.1.296. No slash command was
+/// typed, so the note is not a slash row with an empty command (which the
+/// terminal client drew as a lone "/").
+#[test]
+fn a_model_set_from_settings_is_not_a_slash_command_with_no_name() {
+    use prost::Message as _;
+    let mut state = started();
+    let replay = stream(json!({
+        "type": "user", "isReplay": true, "session_id": "s",
+        "uuid": "5dd62009-d451-43ef-8f39-9a1c10e6248d", "parent_tool_use_id": null,
+        "message": {"role": "user", "content": "<local-command-stdout>Set model to `claude-opus-5`</local-command-stdout>"},
+    }));
+    let items = ClaudeSdk::step(&mut state, replay).step.items;
+    let nameless: Vec<_> = items
+        .iter()
+        .filter_map(|item| wire::ClaudeSdkItem::decode(item.body.as_slice()).ok())
+        .filter_map(|body| match body.kind {
+            Some(wire::claude_sdk_item::Kind::Slash(slash)) if slash.command.is_empty() => {
+                Some(slash)
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(
+        nameless.is_empty(),
+        "the model switch is a slash row with no command: {nameless:?}"
+    );
+}

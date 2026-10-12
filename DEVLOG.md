@@ -1,3 +1,24 @@
+2026-10-12 — **Failing tests for the shared views, interpreters and agent
+process from the second QA round.** The shared view: a multi-file patch ask
+names every file and its change; web fetch and search asks name their URL
+or query instead of raw JSON; a notebook edit ask shows the cell change;
+row previews read markdown as plain words; header counts leave out agents
+whose host is out of reach; file steps inside the agent's folder are named
+relative to it; an exited agent's unfinished step is not drawn running;
+read and search steps keep their failure reason and result; the review page
+reads git's quoted paths; command output keeps no colour codes and loses no
+words after a carriage return. Terminal Claude's interpreter: a `!command`
+is a shell step, slash output has no colour codes, a prompt sent with
+attachments holds them, a model set in Claude's own view shows before the
+next turn, and a background subagent's ask stays open past the main turn's
+stop. Headless Claude: a model set from settings is no nameless slash row.
+Codex: approvals show the command Codex shows, not its shell wrapper; goal
+updates and config warnings are not "Unreadable" rows; a command Codex keeps
+running past an interrupt is not drawn cancelled. The agent process: the
+plan menu Claude draws under bypass permissions names its switch; a plan
+sent back without a note types the menu's send-back entry; Codex is told
+each attached image's name; Claude may read the files amux attaches.
+
 2026-10-12 — **Failing tests for the terminal client's second QA round.** From
 the triage of two overnight runs, in `crates/tui/src/tests/round2.rs`. Each
 states the behaviour a fix must give. Words typed on home after a chat

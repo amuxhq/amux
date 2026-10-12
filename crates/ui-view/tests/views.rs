@@ -2883,3 +2883,366 @@ fn an_edit_asks_path_is_relative_to_the_agents_folder_when_the_file_is_inside_it
         );
     }
 }
+
+// Triage of QA runs 20261012-011936 and 20261012-025539: each test states
+// the behaviour a finding expected and fails today.
+
+const QA_CWD: &str = "/Users/jlw/.local/state/amux-qa/20261012-025539/t1/.testnet/net/desk/work";
+
+/// The head ask's card on a caught-up session of `kind` in `QA_CWD`.
+fn card_of(kind: Kind, claude: Vec<wire::Ask>, codex: Vec<wire::CodexAsk>) -> AskCard {
+    let mut state = SessionState::new(
+        wire::Agent {
+            cwd: QA_CWD.into(),
+            ..agent(kind)
+        },
+        CAP,
+    );
+    state.update(snapshot(
+        kind,
+        Phase::NeedsYou,
+        full_snapshot(kind, claude, codex),
+        vec![],
+    ));
+    state.update(caught_up());
+    ask_card(&state).expect("the ask is open")
+}
+
+fn claude_permission(tool: &str, input: serde_json::Value) -> wire::Ask {
+    wire::Ask {
+        key: "ask-1".into(),
+        item_key: "t1".into(),
+        body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
+            tool_name: tool.into(),
+            input_json: serde_json::to_vec(&input).unwrap(),
+            ..Default::default()
+        })),
+        ..Default::default()
+    }
+}
+
+/// A web fetch or web search ask says what it fetches or searches for, as
+/// Claude's own dialog does ("fetch content from example.com"), not the
+/// tool's raw input as JSON with the URL cut off below it.
+#[test]
+fn a_web_fetch_or_search_ask_names_its_url_or_query_not_raw_json() {
+    for (tool, input, subject) in [
+        (
+            "WebFetch",
+            serde_json::json!({"prompt": "What is the title of this page? Return the exact contents of the <title> element, and nothing else.", "url": "https://example.com"}),
+            "https://example.com",
+        ),
+        (
+            "WebSearch",
+            serde_json::json!({"query": "current Rust stable version release", "mode": "standard"}),
+            "current Rust stable version release",
+        ),
+    ] {
+        let card = card_of(
+            Kind::ClaudeSdk,
+            vec![claude_permission(tool, input)],
+            vec![],
+        );
+        let raw = matches!(&card.body, AskBody::Tool { arguments, .. } if arguments.trim_start().starts_with('{'));
+        assert!(
+            !raw && format!("{:?}", card.body).contains(subject),
+            "{tool}'s ask is its raw input: {:?}",
+            card.body
+        );
+    }
+}
+
+/// A notebook edit ask shows the cell change being approved, as Claude's
+/// own dialog does; today its body is empty because the view reads only
+/// Edit's and Write's field names.
+#[test]
+fn a_notebook_edit_ask_shows_the_cell_change() {
+    let card = card_of(
+        Kind::ClaudeSdk,
+        vec![claude_permission(
+            "NotebookEdit",
+            serde_json::json!({"notebook_path": format!("{QA_CWD}/n.ipynb"), "cell_id": "cell-0",
+                "new_source": "print(2)", "edit_mode": "replace"}),
+        )],
+        vec![],
+    );
+    let AskBody::Edit { lines, .. } = &card.body else {
+        panic!("not an edit card: {:?}", card.body);
+    };
+    assert!(
+        format!("{lines:?}").contains("print(2)"),
+        "the notebook edit's card shows no change: {lines:?}"
+    );
+}
+
+/// A Codex patch that adds one file, deletes another and moves a third
+/// names every file and what happens to it: the card does not read as the
+/// first file holding every file's lines.
+#[test]
+fn a_multi_file_patch_ask_names_every_file_and_its_change() {
+    let change =
+        |path: &str, kind: wire::FileChangeKind, patch: &str, move_to: &str| wire::FileChange {
+            path: format!("{QA_CWD}/{path}"),
+            kind: kind as i32,
+            patch: patch.into(),
+            move_to: if move_to.is_empty() {
+                String::new()
+            } else {
+                format!("{QA_CWD}/{move_to}")
+            },
+            ..Default::default()
+        };
+    let ask = wire::CodexAsk {
+        key: "patch-1".into(),
+        item_key: "t1".into(),
+        body: Some(wire::codex_ask::Body::FileChange(
+            wire::FileChangeApproval {
+                changes: vec![
+                    change("one.txt", wire::FileChangeKind::Add, "alpha\n", ""),
+                    change("gone.txt", wire::FileChangeKind::Delete, "beta\n", ""),
+                    change(
+                        "mv.txt",
+                        wire::FileChangeKind::Update,
+                        "@@ -1 +1 @@\n-gamma\n+delta\n",
+                        "moved.txt",
+                    ),
+                ],
+                ..Default::default()
+            },
+        )),
+        ..Default::default()
+    };
+    let card = card_of(Kind::Codex, vec![], vec![ask]);
+    let shown = format!("{:?}", card.body);
+    for name in ["one.txt", "gone.txt", "mv.txt", "moved.txt"] {
+        assert!(
+            shown.contains(name),
+            "the patch card never names {name}: {shown}"
+        );
+    }
+}
+
+/// A row's line is what the agent last said as words: markdown's link
+/// syntax, backticks and emphasis are read, not shown, as the chat shows them.
+#[test]
+fn a_rows_last_said_line_reads_markdown_as_plain_words() {
+    let state = session_on(
+        &fleet_entry("a", "pl1", Phase::Idle, None, 1),
+        wire::ClaudeSdkSnapshot::default(),
+        vec![said(
+            1,
+            1,
+            &format!("Updated [README.md]({QA_CWD}/README.md) so its only line is `UPDATED`."),
+            true,
+        )],
+    );
+    let said = session_line(&state, 5_000)
+        .last_said
+        .expect("an idle agent that replied has a last line");
+    assert_eq!(
+        said, "Updated README.md so its only line is UPDATED.",
+        "the row shows the markdown source"
+    );
+}
+
+/// The header's counts are of agents this machine can see as they are: an
+/// agent on a host that is away or offline is shown "host is away", so it
+/// is not counted as working or needing the person.
+#[test]
+fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
+    let mut fleet = FleetState::new();
+    fleet.update(host_entry("desk", None));
+    fleet.update(host_entry("laptop", None));
+    set_host(&mut fleet, "laptop", |entry| {
+        entry.presence = wire::Presence::Away as i32;
+    });
+    fleet.update(fleet_row("desk", "here", Phase::Working, None, 1));
+    fleet.update(fleet_row("laptop", "far-working", Phase::Working, None, 2));
+    fleet.update(fleet_row("laptop", "far-asking", Phase::NeedsYou, None, 3));
+    let view = fleet_view(&fleet, b"desk", &no_sessions(), &HashSet::new(), &|_| true);
+    let said = second_lines(&view);
+    assert_eq!(said["far-working"], SecondLine::HostAway);
+    assert_eq!(
+        (view.working, view.need_you),
+        (1, 0),
+        "the header counts agents whose rows say their host is away"
+    );
+}
+
+/// A step that edits a file inside the agent's folder names it relative to
+/// the folder, as its ask does since round one; the whole absolute path,
+/// cut at 80 columns, hides the file's name.
+#[test]
+fn a_file_step_inside_the_agents_folder_is_named_relative_to_it() {
+    let mut state = SessionState::new(
+        wire::Agent {
+            cwd: QA_CWD.into(),
+            ..agent(Kind::ClaudeSdk)
+        },
+        CAP,
+    );
+    state.update(snapshot(
+        Kind::ClaudeSdk,
+        Phase::Idle,
+        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        vec![],
+    ));
+    state.update(event(session_event::Of::Item(tool_item(
+        1,
+        "Write",
+        serde_json::json!({"file_path": format!("{QA_CWD}/notes.txt"), "content": "a\nb\nc\n"}),
+        serde_json::json!({}),
+        ToolState::Succeeded,
+    ))));
+    state.update(caught_up());
+    let paths: Vec<String> = all_rows(&state, &ChatOptions::default())
+        .into_iter()
+        .filter_map(|row| match row.kind {
+            RowKind::FileChange { files, .. } => Some(files[0].path.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        paths,
+        vec!["notes.txt".to_owned()],
+        "the step names the file by its whole path"
+    );
+}
+
+/// An agent that exited mid-step never ran the step on: its row is drawn
+/// ended, not "Running" under the exit marker.
+#[test]
+fn an_exited_agents_unfinished_step_is_not_drawn_running() {
+    let mut state = SessionState::new(
+        wire::Agent {
+            lifecycle: wire::Lifecycle::Exited as i32,
+            exit_cause: wire::ExitCause::Stopped as i32,
+            ..agent(Kind::ClaudeSdk)
+        },
+        CAP,
+    );
+    state.update(snapshot(
+        Kind::ClaudeSdk,
+        Phase::Working,
+        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        vec![],
+    ));
+    state.update(event(session_event::Of::Item(running(
+        1,
+        1,
+        "python3 -c 'import time; time.sleep(40)'",
+    ))));
+    state.update(caught_up());
+    let phases: Vec<CallPhase> = all_rows(&state, &ChatOptions::default())
+        .iter()
+        .filter_map(Row::call_phase)
+        .collect();
+    assert!(
+        !phases.contains(&CallPhase::Running),
+        "a stopped agent's step is still drawn running: {phases:?}"
+    );
+}
+
+/// A failed read or search says why it failed, and a fetch what it got, as
+/// Claude's own view does; an explore row carries only its verb and subject.
+#[test]
+fn an_explore_step_keeps_its_failure_reason_and_its_result() {
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    state.update(snapshot(
+        Kind::ClaudeSdk,
+        Phase::Idle,
+        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        vec![],
+    ));
+    let mut search = tool_item(
+        1,
+        "Grep",
+        serde_json::json!({"pattern": "needle"}),
+        serde_json::json!({}),
+        ToolState::Failed,
+    );
+    let mut fetch = tool_item(
+        2,
+        "WebFetch",
+        serde_json::json!({"url": "https://example.com", "prompt": "title?"}),
+        serde_json::json!({}),
+        ToolState::Succeeded,
+    );
+    for (item, class, outcome) in [
+        (
+            &mut search,
+            ToolClass::Search,
+            "Error: No such tool available: Grep.",
+        ),
+        (&mut fetch, ToolClass::Fetch, "Received 577 bytes (200 OK)"),
+    ] {
+        let mut body = wire::ClaudeSdkItem::decode(item.body.as_slice()).unwrap();
+        if let Some(wire::claude_sdk_item::Kind::Tool(tool)) = &mut body.kind {
+            tool.class = class as i32;
+            tool.outcome_text = outcome.into();
+        }
+        item.body = body.encode_to_vec();
+    }
+    state.update(event(session_event::Of::Item(search)));
+    state.update(event(session_event::Of::Item(fetch)));
+    state.update(caught_up());
+    let rows = format!("{:?}", all_rows(&state, &ChatOptions::default()));
+    for outcome in ["No such tool available", "Received 577 bytes"] {
+        assert!(
+            rows.contains(outcome),
+            "the explore rows drop {outcome:?}: {rows}"
+        );
+    }
+}
+
+/// Git quotes a path holding a quote, a backslash or a non-ASCII letter in
+/// its patch headers (`"a/we ird<&>\"\303\251.txt"`). The review page names
+/// the file as it is on disk, which is also the path a review comment
+/// gives the agent, not git's quoted octal form.
+#[test]
+fn the_review_document_reads_gits_quoted_paths() {
+    let patch = "diff --git \"a/we ird<&>\\\"\\303\\251.txt\" \"b/we ird<&>\\\"\\303\\251.txt\"\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ \"b/we ird<&>\\\"\\303\\251.txt\"\n@@ -0,0 +1 @@\n+hello\n";
+    let doc = review_doc(&wire::Diff::default(), patch, &[]);
+    let paths: Vec<&str> = doc.files.iter().map(|file| file.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        vec!["we ird<&>\"é.txt"],
+        "the review names the file in git's quoted form"
+    );
+}
+
+/// A command's output as a terminal shows it: colour codes are not text,
+/// and the words after a carriage return are kept, where the phone drew
+/// `[31mRED[0m` and cut `aaa\rbbb` to `aaa…`.
+#[test]
+fn command_output_keeps_no_colour_codes_and_loses_no_words_after_a_return() {
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk), CAP);
+    state.update(snapshot(
+        Kind::ClaudeSdk,
+        Phase::Idle,
+        wire::ClaudeSdkSnapshot::default().encode_to_vec(),
+        vec![],
+    ));
+    let mut item = running(1, 1, "printf");
+    let mut body = wire::ClaudeSdkItem::decode(item.body.as_slice()).unwrap();
+    if let Some(wire::claude_sdk_item::Kind::Tool(tool)) = &mut body.kind {
+        tool.state = ToolState::Succeeded as i32;
+        tool.outcome_text = "\u{1b}[31mRED\u{1b}[0m TAB\naaa\rbbb\nline 1\n".into();
+    }
+    item.body = body.encode_to_vec();
+    state.update(event(session_event::Of::Item(item)));
+    state.update(caught_up());
+    let output: Vec<String> = all_rows(&state, &ChatOptions::default())
+        .into_iter()
+        .filter_map(|row| match row.kind {
+            RowKind::Command { output_head, .. } => Some(output_head),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    let shown = output.join("\n");
+    assert!(
+        !shown.contains('\u{1b}') && !shown.contains("[31m") && shown.contains("bbb"),
+        "the output's lines carry terminal codes or lose the words after a return: {output:?}"
+    );
+}

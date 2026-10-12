@@ -148,4 +148,18 @@ mod tests {
             vec![Seen::PlanSwitch("acceptEdits")]
         );
     }
+
+    /// Claude 2.1.296 started with bypass permissions and put in plan
+    /// mode draws its plan menu with a bypass switch first, as QA recorded
+    /// it on a real agent.
+    #[test]
+    fn a_bypass_permissions_plan_menu_names_its_switch() {
+        let mut screen = Screen::new(24, 120);
+        let drawn = " \u{276f} 1. Yes, and switch to BYPASS PERMISSIONS (no further prompts) for this session \r\r\n   2. Yes, manually approve edits\r\r\n   3. Tell Claude what to change \r\r\n";
+        assert_eq!(
+            screen.watch(drawn.as_bytes()),
+            vec![Seen::PlanSwitch("bypassPermissions")],
+            "the bypass switch is not read, so the ask keeps the catalogue's accept edits and its switch answer types the manual entry"
+        );
+    }
 }

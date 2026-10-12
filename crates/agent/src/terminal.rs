@@ -296,4 +296,33 @@ mod tests {
             ]
         );
     }
+
+    /// "No, keep planning" with no note, as the terminal client sends it
+    /// (a note there goes as a prompt of its own), on Claude 2.1.296 as QA
+    /// ran it: the plan menu's third entry is typed. QA recorded no key at
+    /// all reaching Claude, whose plan menu then waited for good while amux
+    /// marked the plan sent back.
+    #[test]
+    fn a_plan_sent_back_without_a_note_types_the_menus_send_back_entry() {
+        let version = "2.1.296".parse().expect("a version");
+        let (resolved, keymap) =
+            keymap::resolve_session(&keymap::KeymapSources::default(), &version).expect("a keymap");
+        let keys = Keys {
+            version: version.to_string(),
+            resolved,
+            keymap,
+        };
+        let steps = keys
+            .steps(
+                &TerminalInput::Plan(PlanChoice::SendBack {
+                    note: String::new(),
+                }),
+                "",
+            )
+            .expect("keys for a plan sent back");
+        assert!(
+            steps.contains(&KeyStep::Write(b"3".to_vec())),
+            "no key picks the menu's send-back entry: {steps:?}"
+        );
+    }
 }

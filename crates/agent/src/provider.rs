@@ -1462,6 +1462,54 @@ mod tests {
         );
     }
 
+    /// Codex is told each attached image's name, as it is told each file's:
+    /// a bare local image by its hash path leaves the model calling them
+    /// "Image #1", "Image #2", so it cannot answer which file is which.
+    #[test]
+    fn codex_is_told_each_attached_images_name() {
+        let image = wire::Attachment {
+            of: Some(wire::attachment::Of::Image(wire::BlobRef {
+                hash: vec![0xab; 32],
+                name: "red-copy.png".into(),
+                mime: "image/png".into(),
+                size: 3,
+            })),
+        };
+        let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"which is which?","text_elements":[]}]}}"#;
+        let written =
+            super::codex_turn_input(request, &[image], Path::new("/agents/a/blobs")).unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        let texts: Vec<&str> = written["params"]["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|input| input["text"].as_str())
+            .collect();
+        assert!(
+            texts.iter().any(|text| text.contains("red-copy.png")),
+            "nothing Codex reads names the image: {texts:?}"
+        );
+    }
+
+    /// Claude may read the files amux attaches without asking: the agent's
+    /// blob folder lies outside the working folder, so without a grant
+    /// headless Claude asks permission to read a file the person just
+    /// attached, naming only its hash path.
+    #[test]
+    fn claude_may_read_the_attachments_amux_gives_it() {
+        let dir = std::env::temp_dir().join(format!("amux-triage-blobs-{}", std::process::id()));
+        let spec = wire::AgentSpec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let (args, settings) = super::claude_launch(&spec, &dir, false).unwrap();
+        let blobs = dir.join("blobs").to_string_lossy().into_owned();
+        assert!(
+            args.iter().any(|arg| arg.contains(&blobs)) || settings.contains(&blobs),
+            "neither the arguments nor the settings let Claude read {blobs}: {args:?} {settings}"
+        );
+    }
+
     #[test]
     fn base64_pads_as_the_standard_does() {
         assert_eq!(super::base64(b""), "");

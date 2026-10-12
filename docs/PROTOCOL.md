@@ -207,7 +207,9 @@ additional streams, finish and typed reset, and link close.
 
 Device QUIC has session tickets, resumption and 0-RTT disabled. It permits only
 bidirectional application streams, at most 64 concurrently. The keepalive and
-idle timeout are 20 and 60 seconds on iOS, 30 and 120 seconds elsewhere.
+idle timeout are 20 and 60 seconds on iOS, 10 and 30 seconds elsewhere, so a
+desktop notices a link that died silently within about forty seconds (the
+shorter timeout of a link's two ends applies).
 
 An SSH link reaches the far daemon through `amux relay`, a hidden command the
 SSH session runs, which joins its stdio to the profile's `link.sock`.

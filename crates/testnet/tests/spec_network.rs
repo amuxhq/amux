@@ -2630,9 +2630,9 @@ async fn a_killed_host_signed_in_to_the_relay_starts_again_on_its_port() {
     net.shutdown().await.unwrap();
 }
 
-/// How long a peer may take to notice a dead QUIC connection: its idle
-/// timeout is two minutes off the phone.
-const NOTICE_PATIENCE: Duration = Duration::from_secs(180);
+/// How long a peer may take to notice a dead QUIC connection: off the
+/// phone its keepalive and idle timeout close it within forty seconds.
+const NOTICE_PATIENCE: Duration = Duration::from_secs(60);
 
 /// How long a host may take to dial a paired peer again once the peer can
 /// be reached: a redial backs off, but not past half a minute.
@@ -2739,14 +2739,18 @@ async fn hosts_paired_by_address_link_again_after_the_lan_between_them_comes_bac
 /// and a phone keeps saying "reachable" (QA: hosts and the phone looked
 /// current for 70 s to 3 min after a total cut). The bound is desktop
 /// keepalive 10 s and idle timeout 30 s, as the phone's 20 s / 60 s are
-/// already shorter than the desktop's 30 s / 120 s.
+/// already shorter than the desktop's 30 s / 120 s. QUIC restarts the idle
+/// timer when it sends the first keepalive after the last packet it
+/// received, so a link is closed at most keepalive plus idle, forty
+/// seconds, after the cut; the window adds a few seconds for the close to
+/// reach the inventory and for the poll.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_notices_a_silently_dead_link_within_forty_seconds() {
     let mut net = paired_without_discovery().await;
 
     net.sever_link("desk", "box").unwrap();
     println!("every datagram between desk and box is dropped from now on");
-    until_link(&net, "desk", "box", false, Duration::from_secs(40)).await;
+    until_link(&net, "desk", "box", false, Duration::from_secs(45)).await;
 
     net.shutdown().await.unwrap();
 }

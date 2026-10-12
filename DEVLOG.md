@@ -1,3 +1,12 @@
+2026-10-13 — **A silently dead link is noticed within forty seconds.** A
+link whose datagrams all vanish (a cut, a sleeping machine) was noticed only
+at QUIC's two-minute idle timeout, and until then the far host's agents read
+live and answers sat unconfirmed. Off the phone the QUIC keepalive is now
+10 s and the idle timeout 30 s; since QUIC restarts the idle timer at the
+first keepalive it sends after the last packet it heard, a dead link closes
+at most forty seconds after the cut. The phone keeps its 20 s / 60 s, and a
+link takes the shorter timeout of its two ends.
+
 2026-10-13 — **Terminal Claude offers its project's own commands.** Claude
 lists a project's commands and skills only when asked from inside the
 project, and the daemon asked the host's Claude in the profile's own

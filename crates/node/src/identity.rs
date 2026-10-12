@@ -200,10 +200,16 @@ pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> 
         std::time::Duration::from_secs(20),
         std::time::Duration::from_secs(60),
     );
+    // A link that died silently (a cut cable, a sleeping laptop, a
+    // firewall eating datagrams) is noticed only at the idle timeout, and
+    // until then its host's agents read live and current. Ten seconds of
+    // keepalive under a thirty-second timeout notices within forty seconds
+    // and costs a few packets a minute. A phone keeps its longer pair for
+    // its battery; the shorter timeout of the two ends wins on a link.
     #[cfg(not(target_os = "ios"))]
     let (keep_alive, idle_timeout) = (
+        std::time::Duration::from_secs(10),
         std::time::Duration::from_secs(30),
-        std::time::Duration::from_secs(120),
     );
 
     // A launch's first flight is every host's inventory and the fleet's

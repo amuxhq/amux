@@ -176,7 +176,7 @@ A process host keeps the machine's time, so a net with one runs on wall time (`C
 clock adding one is refused. Two hosts of which one is a process pair for real, over the LAN, so both need `lan`.
 A paired host redials its peer's last working address whether or not discovery finds it, with a backoff up to
 thirty seconds: after a process host crashes and restarts, its peers dial it again once their old connections
-time out (QUIC's idle timeout, up to about two minutes), and it dials them at the addresses it stored. The gates
+time out (QUIC's idle timeout, thirty seconds between desktops), and it dials them at the addresses it stored. The gates
 carry datagrams either way, so a host that answered a pairing through one can dial back through it.
 
 ### The release feed

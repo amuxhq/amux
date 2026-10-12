@@ -375,7 +375,9 @@ refusing anyone else's resume ("thread … already has an active writer"); the
 agent asks again every quarter of a second for up to 30 seconds before it
 hands the refusal on, and a refusal handed on ends the incarnation with
 Codex's words rather than leave it starting. The thread id the server answers with is written to
-`private/provider-session`. Straight after, the interpreter names the thread
+`private/provider-session`, as is the thread a `/clear` starts (the
+interpreter's `thread/start`, ids `amux-clear-<n>`): from then on that thread
+is the agent's conversation. Straight after, the interpreter names the thread
 with the agent's name (`thread/name/set`), and names it again when the agent
 is renamed: the daemon tells a running Codex agent with a `rename` frame, and a
 resumed agent's spec carries its current name, so Codex's own app shows the

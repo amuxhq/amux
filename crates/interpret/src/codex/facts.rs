@@ -66,6 +66,28 @@ fn some_of(text: Option<&str>) -> Option<String> {
     text.and_then(some)
 }
 
+/// A command as the model wrote it. Codex runs a model's command through
+/// the user's shell and reports the wrapped form (`/bin/zsh -lc "…"`), with
+/// the quoting the wrapper needs; Codex's own view shows the script inside,
+/// and so does amux.
+fn shown_command(command: &str) -> String {
+    let Ok(words) = shell_words::split(command) else {
+        return command.to_owned();
+    };
+    match words.as_slice() {
+        [shell, flag, script]
+            if matches!(flag.as_str(), "-lc" | "-c")
+                && matches!(
+                    shell.rsplit('/').next(),
+                    Some("bash" | "zsh" | "sh" | "dash" | "ksh" | "fish")
+                ) =>
+        {
+            script.clone()
+        }
+        _ => command.to_owned(),
+    }
+}
+
 /// A web search item: what it searched for, or the page it opened or looked
 /// within.
 fn web_search(search: &WebSearchItem) -> wire::WebSearch {
@@ -464,7 +486,7 @@ impl State {
                             self.shared.message_consumed(&envelope);
                         }
                     }
-                    Request::Compact => {
+                    Request::Compact | Request::Review | Request::Clear => {
                         self.interrupt_pending = false;
                         self.shared.turn_abandoned();
                     }
@@ -483,6 +505,18 @@ impl State {
             }
         };
         match request {
+            Request::Clear => {
+                if let Ok(response) = codex_protocol::result::<ThreadResponse>(&result) {
+                    self.cleared(emit, &response);
+                }
+            }
+            Request::Review => {
+                if self.active_turn.is_none() {
+                    self.active_turn = codex_protocol::result::<TurnStartResponse>(&result)
+                        .ok()
+                        .and_then(|response| some(&response.turn.id));
+                }
+            }
             Request::Turn { consumes } => {
                 if self.active_turn.is_none() {
                     self.active_turn = codex_protocol::result::<TurnStartResponse>(&result)
@@ -519,6 +553,46 @@ impl State {
             | Request::Skills
             | Request::Jobs { .. } => {}
         }
+    }
+
+    /// `/clear`'s thread: from now on it is this agent's conversation.
+    /// The old thread's turn state and jobs stay with it.
+    fn cleared(&mut self, emit: &mut Emit, response: &ThreadResponse) {
+        let Some(id) = some(&response.thread.id) else {
+            self.shared.turn_abandoned();
+            return;
+        };
+        self.thread_id = Some(id);
+        if let Some(model) = some(&response.model) {
+            self.model = Some(model);
+        }
+        if let Some(policy) = response.approval_policy.as_ref().and_then(approval_name) {
+            self.approval = Some(policy);
+        }
+        if let Some(sandbox) = response.sandbox.as_ref().and_then(sandbox_mode) {
+            self.sandbox = Some(sandbox);
+        }
+        if let Some(reviewer) = &response.approvals_reviewer {
+            self.reviewer = some(reviewer.as_str());
+        }
+        // The new thread's first turn carries the mode and effort the
+        // agent ran with.
+        if let Some(mode) = self.collaboration.clone() {
+            self.overrides.mode = Some(mode);
+        }
+        self.overrides.effort = Some(self.effort.clone());
+        self.active_turn = None;
+        self.context_tokens = None;
+        self.background = None;
+        self.shared.set_jobs(Vec::new());
+        self.shared.turn_abandoned();
+        self.boundary(
+            emit,
+            wire::BoundaryKind::Cleared,
+            wire::IncarnationEnd::default(),
+        );
+        self.name_thread(emit);
+        self.persist_thread(emit);
     }
 
     /// A page of `model/list`: the next page is asked for while the server
@@ -562,7 +636,7 @@ impl State {
             emit,
             wire::Catalogue {
                 models: self.models.clone(),
-                commands: self.commands.clone(),
+                commands: super::offered_commands(self.commands.iter().cloned()),
                 permissions: super::offered_permissions(),
                 modes: super::offered_modes(),
             },
@@ -945,7 +1019,7 @@ impl State {
         params: CommandApprovalParams,
     ) -> (String, codex_ask::Body, Vec<CommandDecision>) {
         let item_id = params.item_id;
-        let command = params.command.unwrap_or_default();
+        let command = shown_command(&params.command.unwrap_or_default());
         let cwd = params.cwd.unwrap_or_default();
         if !self.works.contains_key(&item_id) {
             let at_ms = params.started_at_ms.unwrap_or(self.shared.now_ms());
@@ -1346,6 +1420,7 @@ impl State {
             | ServerNotification::ThreadCompacted(_)
             | ServerNotification::ThreadArchived(_)
             | ServerNotification::ThreadUnarchived(_)
+            | ServerNotification::ThreadGoalUpdated(_)
             | ServerNotification::ThreadGoalCleared(_)
             | ServerNotification::DeprecationNotice(_)
             | ServerNotification::RemoteControlStatusChanged(_)
@@ -1354,6 +1429,29 @@ impl State {
             | ServerNotification::FileChangeOutputDelta(_)
             | ServerNotification::TerminalInteraction(_) => {}
             ServerNotification::SkillsChanged(_) => self.skills_changed(emit),
+            // Configuration Codex found and did not apply: the person
+            // wants to know, in Codex's words.
+            ServerNotification::ConfigWarning(warning) => {
+                let words = match some_of(warning.details.as_deref()) {
+                    Some(details) => format!("{}\n{details}", warning.summary),
+                    None => warning.summary,
+                };
+                let key = self.local_key("warning");
+                self.emit_item(
+                    emit,
+                    ItemDraft {
+                        key,
+                        text: words.clone(),
+                        body: item_body(codex_item::Kind::Error(ApiError {
+                            error_kind: "configWarning".into(),
+                            message: words,
+                            ..Default::default()
+                        })),
+                        complete: true,
+                        ..Default::default()
+                    },
+                );
+            }
             other @ ServerNotification::ThreadClosed(_) => {
                 self.unrecognized(emit, other.method(), "a notification amux does not read")
             }
@@ -1802,7 +1900,7 @@ impl State {
                 }
                 (
                     work::Of::Command(wire::CommandWork {
-                        command: command.command.clone(),
+                        command: shown_command(&command.command),
                         cwd: command.cwd.clone(),
                         exit_code,
                         background: false,
@@ -1936,6 +2034,12 @@ impl State {
                         .unwrap_or_default(),
                 }
             }
+            // A page opened or searched within is named by its address,
+            // which is all Codex says of it.
+            (ThreadItem::WebSearch(_), _) => match &of {
+                work::Of::WebSearch(web) => web.url.clone(),
+                _ => String::new(),
+            },
             _ => prior.as_ref().map(|p| p.text.clone()).unwrap_or_default(),
         };
         if let work::Of::Command(command) = &mut of {
@@ -2092,7 +2196,12 @@ impl State {
             let meta = self.asks.remove(&ask.key);
             self.dismiss(emit, &ask, meta);
         }
-        self.settle_open(emit, outcome == TurnOutcome::Completed);
+        // Codex's interrupt ends the turn but not the commands it runs as
+        // background terminals: they run on, as after a completed turn.
+        self.settle_open(
+            emit,
+            matches!(outcome, TurnOutcome::Completed | TurnOutcome::Interrupted),
+        );
         // Codex lists what carries on in the background; with nothing
         // still running there is nothing to ask.
         if self.background.as_ref().is_some_and(|set| !set.is_empty()) {
@@ -2152,8 +2261,9 @@ impl State {
     }
 
     /// At turn end nothing streams any more. A command still running
-    /// carries on in the background when the turn completed, else it was
-    /// cut short; any other open item is finished as it stands.
+    /// carries on in the background when the turn completed or was
+    /// interrupted (a command Codex did end reports its own end), else it
+    /// was cut short; any other open item is finished as it stands.
     fn settle_open(&mut self, emit: &mut Emit, completed: bool) {
         let open = self
             .works

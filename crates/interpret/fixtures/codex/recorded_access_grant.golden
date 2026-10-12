@@ -70,11 +70,11 @@ item rs_0267f61d4441067f016ab72ec0b23887d2be569947ad83f017 reasoning open at=179
 ## 72 recorded 71: fact Rpc method=item/completed
 item rs_0267f61d4441067f016ab72ec0b23887d2be569947ad83f017 reasoning final at=1790389952736 text="" summary=[]
 ## 74 recorded 73: fact Rpc method=item/started
-item exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 work open at=1790389953856 text="" command "/bin/zsh -lc 'curl -sI https://example.com'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING
+item exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 work open at=1790389953856 text="" command "curl -sI https://example.com" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING
 ## 76 recorded 75: fact Rpc method=item/commandExecution/outputDelta
 append exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 "HTTP/2 200 \r\ndate: Sat, 26 Sep 2026 02:32:33 GMT\r\ncontent-type: text/html\r\nserver: cloudflare\r\nlast-modified: Tue, 22 Sep 2026 20:16:57 GMT\r\nallow: GET, HEAD\r\naccept-ranges: bytes\r\nage: 10311\r\ncf-cache-status: HIT\r\ncf-ray: a40edbdb69a34a6b-CPH\r\n\r\n"
 ## 78 recorded 77: fact Rpc method=item/completed
-item exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 work final at=1790389953856 text="HTTP/2 200 \r\ndate: Sat, 26 Sep 2026 02:32:33 GMT\r\ncontent-type: text/html\r\nserver: cloudflare\r\nlast-modified: Tue, 22 Sep 2026 20:16:57 GMT\r\nallow: GET, HEAD\r\naccept-ranges: bytes\r\nage: 10311\r\ncf-cache-status: HIT\r\ncf-ray: a40edbdb69a34a6b-CPH\r\n\r\n" command "/bin/zsh -lc 'curl -sI https://example.com'" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED ended=1790389953864
+item exec-8dd0f788-c801-4c7a-8196-b19a7c8aeec0 work final at=1790389953856 text="HTTP/2 200 \r\ndate: Sat, 26 Sep 2026 02:32:33 GMT\r\ncontent-type: text/html\r\nserver: cloudflare\r\nlast-modified: Tue, 22 Sep 2026 20:16:57 GMT\r\nallow: GET, HEAD\r\naccept-ranges: bytes\r\nage: 10311\r\ncf-cache-status: HIT\r\ncf-ray: a40edbdb69a34a6b-CPH\r\n\r\n" command "curl -sI https://example.com" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED ended=1790389953864
 ## 80 recorded 79: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790389953867 asks=[] thread=01a0db8e-71ec-7590-a408-1d2c490cb309 turn=01a0db8e-71f9-74c0-b70c-668aac211c6a model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=? sandbox=workspace-write reviewer=user collaboration=? context=12959/258400 plan=? usage=ok 7d:1%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 83 recorded 82: fact Rpc method=item/started

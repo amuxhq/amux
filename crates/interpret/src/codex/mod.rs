@@ -17,6 +17,13 @@
 //! carries the models with their reasoning efforts and the skills as
 //! commands. A refused or missing answer leaves its list empty.
 //!
+//! Codex's server has no slash commands: each command Codex's own view
+//! offers is client code calling a server method. The ones amux runs are
+//! [`COMMANDS`], each a request (or, for `/init`, Codex's fixed prompt);
+//! the catalogue lists them before the skills, and any other `/word` is
+//! refused rather than sent to the model as words. A skill's name after a
+//! slash goes to the model as written, as it always has.
+//!
 //! An agent message goes to Codex with `thread/inject_items`. Codex reports
 //! nothing about an injected item, so the interpreter writes the
 //! agent-message item itself. When the message leaves the pending set
@@ -30,9 +37,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 
 use codex_protocol::client::{
-    Answer, ElicitationAction, ElicitationResponse, GrantScope, InjectItemsParams, InjectedContent,
-    InjectedItem, InjectedMessage, PermissionsApprovalResponse, ThreadIdParams,
-    TurnInterruptParams, TurnStartParams, TurnSteerParams, UserInputResponse,
+    Answer, CustomReview, ElicitationAction, ElicitationResponse, GrantScope, InjectItemsParams,
+    InjectedContent, InjectedItem, InjectedMessage, PermissionsApprovalResponse, ReviewStartParams,
+    ReviewTarget, ThreadIdParams, ThreadStartParams, TurnInterruptParams, TurnStartParams,
+    TurnSteerParams, UserInputResponse,
 };
 use codex_protocol::items::{TextContent, UserInput};
 use codex_protocol::server::{
@@ -109,6 +117,81 @@ impl Arm for Drained {
 /// The Codex interpreter with a fixed consumption arm.
 pub struct CodexWith<A: Arm>(PhantomData<A>);
 
+/// The slash commands amux runs for Codex: name, description and argument
+/// hint. More of Codex's own view's commands are one entry each here and
+/// one arm in [`Command`].
+pub const COMMANDS: [(&str, &str, &str); 5] = [
+    (
+        "compact",
+        "Summarize the conversation to free up context",
+        "",
+    ),
+    ("clear", "Start a new conversation", ""),
+    (
+        "review",
+        "Review the uncommitted changes, or what the instructions say",
+        "[instructions]",
+    ),
+    ("init", "Write an AGENTS.md with instructions for Codex", ""),
+    ("plan", "Switch to plan mode", "[prompt]"),
+];
+
+/// The prompt Codex's own `/init` sends, as Codex 0.161 words it.
+const INIT_PROMPT: &str = include_str!("init_prompt.md");
+
+/// Prefix of the ids of the `thread/start` requests `/clear` sends: the
+/// thread one answers is this agent's conversation from then on, which the
+/// agent process records for its next incarnation to resume.
+pub const CLEAR_REQUEST: &str = "amux-clear-";
+
+/// A slash command typed for Codex.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Command {
+    Compact,
+    Clear,
+    Review(String),
+    Init,
+    Plan(String),
+}
+
+impl Command {
+    /// The command `text` names, if it is one amux runs. `Err` for a
+    /// `/word` amux does not run.
+    fn parse(text: &str) -> Option<Result<Self, ()>> {
+        let text = text.trim();
+        let rest = text.strip_prefix('/')?;
+        let (name, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+        let args = args.trim().to_owned();
+        Some(match name {
+            "compact" => Ok(Self::Compact),
+            "clear" => Ok(Self::Clear),
+            "review" => Ok(Self::Review(args)),
+            "init" => Ok(Self::Init),
+            "plan" => Ok(Self::Plan(args)),
+            _ => Err(()),
+        })
+    }
+}
+
+/// What a catalogue offers as commands: [`COMMANDS`], then the skills. A
+/// skill named like a command is left out, since `/name` runs the command.
+fn offered_commands(skills: impl IntoIterator<Item = OfferedCommand>) -> Vec<OfferedCommand> {
+    COMMANDS
+        .iter()
+        .map(|(name, description, hint)| OfferedCommand {
+            name: (*name).to_owned(),
+            description: (*description).to_owned(),
+            argument_hint: (*hint).to_owned(),
+            source: "codex".to_owned(),
+        })
+        .chain(
+            skills
+                .into_iter()
+                .filter(|skill| !COMMANDS.iter().any(|(name, ..)| *name == skill.name)),
+        )
+        .collect()
+}
+
 /// The interpreter for kind `codex`.
 pub type Codex = CodexWith<Probed>;
 
@@ -129,6 +212,10 @@ enum Request {
     },
     Interrupt,
     Compact,
+    /// `thread/start` for `/clear`.
+    Clear,
+    /// `review/start` for `/review`.
+    Review,
     Inject {
         #[serde(with = "serde_pb::bytes")]
         envelope_id: Vec<u8>,
@@ -320,7 +407,7 @@ pub fn host_catalogue(
 ) -> wire::Catalogue {
     wire::Catalogue {
         models: facts::offered_models(models),
-        commands: facts::offered_skills(skills),
+        commands: offered_commands(facts::offered_skills(skills)),
         permissions: offered_permissions(),
         modes: offered_modes(),
     }
@@ -435,6 +522,12 @@ pub struct State {
     plan: Option<Vec<(String, i32)>>,
     /// The plan Codex proposed last.
     proposed: Option<Proposed>,
+    /// The agent's folder, where a `/clear` starts its thread.
+    #[serde(default)]
+    cwd: String,
+    /// How many times `/clear` started a thread, which names each request.
+    #[serde(default)]
+    clears: u32,
 }
 
 fn item_body(kind: codex_item::Kind) -> Vec<u8> {
@@ -514,6 +607,8 @@ impl State {
             jobs_asked: 0,
             plan: None,
             proposed: None,
+            cwd: spec.cwd.clone(),
+            clears: 0,
         }
     }
 
@@ -795,6 +890,14 @@ impl State {
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
+            // A `/word` that is neither a command amux runs nor a skill
+            // would reach the model as words.
+            codex_input::Of::Prompt(prompt)
+                if Command::parse(&prompt.text) == Some(Err(()))
+                    && !self.names_skill(&prompt.text) =>
+            {
+                self.shared.reject(emit, &id, Refusal::Unsupported)
+            }
             codex_input::Of::Prompt(prompt) => {
                 if let Some(key) = self.plan_ask() {
                     self.shared.close_ask(&key);
@@ -868,32 +971,98 @@ impl State {
     /// input id; Codex's reflection of it is recognised and left out.
     fn submit(&mut self, emit: &mut Emit, entry: QueuedInput, mut consumes: Vec<Vec<u8>>) {
         let key = prompt_key(&entry.input_id);
-        if entry.text.trim() == "/compact" {
+        let command = Command::parse(&entry.text).and_then(Result::ok);
+        match &command {
             // Codex compacts on request rather than from a message; the
             // compaction runs as a turn of its own and reflects nothing.
-            self.shared.reflect_prompt();
-            self.request(
-                emit,
-                ClientRequest::ThreadCompactStart(ThreadIdParams {
-                    thread_id: self.thread(),
-                    extra: Default::default(),
-                }),
-                Request::Compact,
-            );
-        } else {
-            consumes.append(&mut self.parked);
-            let mut params = self.turn_params(&crate::shared::provider_text(&entry));
-            params.client_user_message_id = Some(client_message_id(&entry.input_id));
-            let request =
-                self.request_bytes(ClientRequest::TurnStart(params), Request::Turn { consumes });
-            emit.effect(if entry.attachments.is_empty() {
-                Effect::ProviderWrite(request)
-            } else {
-                Effect::CodexTurnInput {
-                    request,
-                    attachments: entry.attachments.clone(),
-                }
-            });
+            Some(Command::Compact) => {
+                self.shared.reflect_prompt();
+                self.request(
+                    emit,
+                    ClientRequest::ThreadCompactStart(ThreadIdParams {
+                        thread_id: self.thread(),
+                        extra: Default::default(),
+                    }),
+                    Request::Compact,
+                );
+            }
+            // A new thread, which becomes this agent's conversation when
+            // Codex answers; nothing is sent until then.
+            Some(Command::Clear) => {
+                self.shared.reflect_prompt();
+                self.clears += 1;
+                let named = self.permission_value().and_then(permission);
+                let params = ThreadStartParams {
+                    cwd: (!self.cwd.is_empty()).then(|| self.cwd.clone()),
+                    model: self.model.clone(),
+                    approval_policy: named.map(|named| {
+                        AskForApproval::Named(ApprovalPolicy::parse(named.approval_policy))
+                    }),
+                    approvals_reviewer: named
+                        .map(|named| ApprovalsReviewer::parse(named.approvals_reviewer)),
+                    sandbox: named.map(|named| SandboxMode::parse(named.sandbox)),
+                    ..Default::default()
+                };
+                let bytes = self.request_as(
+                    format!("{CLEAR_REQUEST}{}", self.clears),
+                    ClientRequest::ThreadStart(params),
+                    Request::Clear,
+                );
+                emit.effect(Effect::ProviderWrite(bytes));
+            }
+            // Codex's own review, which runs as a turn on the thread.
+            Some(Command::Review(instructions)) => {
+                self.shared.reflect_prompt();
+                let target = if instructions.is_empty() {
+                    ReviewTarget::UncommittedChanges(Default::default())
+                } else {
+                    ReviewTarget::Custom(CustomReview {
+                        instructions: instructions.clone(),
+                        extra: Default::default(),
+                    })
+                };
+                self.request(
+                    emit,
+                    ClientRequest::ReviewStart(ReviewStartParams {
+                        thread_id: self.thread(),
+                        target,
+                        extra: Default::default(),
+                    }),
+                    Request::Review,
+                );
+            }
+            // Plan mode from the next turn, as choosing the mode does; the
+            // words after it, if any, are that turn's prompt.
+            Some(Command::Plan(words)) if words.is_empty() => {
+                self.collaboration = Some("plan".to_owned());
+                self.overrides.mode = Some("plan".to_owned());
+                self.shared.reflect_prompt();
+                self.shared.turn_abandoned();
+            }
+            _ => {
+                let text = match &command {
+                    Some(Command::Init) => INIT_PROMPT.trim_end().to_owned(),
+                    Some(Command::Plan(words)) => {
+                        self.collaboration = Some("plan".to_owned());
+                        self.overrides.mode = Some("plan".to_owned());
+                        words.clone()
+                    }
+                    _ => crate::shared::provider_text(&entry),
+                };
+                consumes.append(&mut self.parked);
+                let mut params = self.turn_params(&text);
+                params.client_user_message_id = Some(client_message_id(&entry.input_id));
+                let request = self
+                    .request_bytes(ClientRequest::TurnStart(params), Request::Turn { consumes });
+                emit.effect(if entry.attachments.is_empty() {
+                    Effect::ProviderWrite(request)
+                } else {
+                    Effect::CodexTurnInput {
+                        request,
+                        attachments: entry.attachments.clone(),
+                    }
+                });
+            }
         }
         self.emit_item(
             emit,
@@ -907,6 +1076,26 @@ impl State {
                 ..Default::default()
             },
         );
+    }
+
+    /// Whether `text` is a slash and the name of a skill Codex offers.
+    fn names_skill(&self, text: &str) -> bool {
+        let name = text
+            .trim()
+            .trim_start_matches('/')
+            .split(char::is_whitespace)
+            .next()
+            .unwrap_or_default();
+        self.commands.iter().any(|skill| skill.name == name)
+    }
+
+    /// The permission Codex's settings make now, by its catalogue value.
+    fn permission_value(&self) -> Option<&'static str> {
+        permission_of(
+            self.approval.as_deref()?,
+            self.sandbox.as_deref()?,
+            self.reviewer.as_deref(),
+        )
     }
 
     fn turn_params(&mut self, text: &str) -> TurnStartParams {
@@ -1061,14 +1250,19 @@ impl State {
         if held.is_empty() {
             return;
         }
-        // A compaction runs as a turn that carries no input.
+        // A command that runs no turn of the person's words (a compaction,
+        // a clear, a review) carries no messages.
         let compacts = self
             .shared
             .queue()
             .entries()
             .iter()
             .find(|entry| !entry.steer)
-            .is_some_and(|entry| entry.text.trim() == "/compact");
+            .is_some_and(|entry| match Command::parse(&entry.text) {
+                Some(Ok(Command::Compact | Command::Clear | Command::Review(_))) => true,
+                Some(Ok(Command::Plan(words))) => words.is_empty(),
+                _ => false,
+            });
         let Some(entry) = (!compacts).then(|| self.shared.next_queued()).flatten() else {
             for envelope in &held {
                 self.inject(emit, envelope);

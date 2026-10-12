@@ -391,9 +391,13 @@ impl Provider {
                             let _ = initialized.send(());
                         }
                     }
-                    // The thread the server made or resumed is the session
-                    // the next incarnation resumes.
-                    Some((RequestId::String(id), Some(result))) if id == CODEX_THREAD => {
+                    // The thread the server made or resumed, or the one a
+                    // `/clear` started, is the session the next incarnation
+                    // resumes.
+                    Some((RequestId::String(id), Some(result)))
+                        if id == CODEX_THREAD
+                            || id.starts_with(interpret::codex::CLEAR_REQUEST) =>
+                    {
                         if let Ok(answer) = codex_protocol::result::<
                             codex_protocol::server::ThreadResponse,
                         >(&result)

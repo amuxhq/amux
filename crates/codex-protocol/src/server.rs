@@ -26,6 +26,7 @@ method_enum! {
         "thread/archived" => ThreadArchived(ThreadOnly),
         "thread/unarchived" => ThreadUnarchived(ThreadOnly),
         "thread/closed" => ThreadClosed(ThreadOnly),
+        "thread/goal/updated" => ThreadGoalUpdated(ThreadOnly),
         "thread/goal/cleared" => ThreadGoalCleared(ThreadOnly),
         "thread/compacted" => ThreadCompacted(TurnScoped),
         "turn/started" => TurnStarted(TurnNotification),
@@ -53,6 +54,7 @@ method_enum! {
         "remoteControl/status/changed" => RemoteControlStatusChanged(RemoteControlStatusChanged),
         "skills/changed" => SkillsChanged(Extra),
         "deprecationNotice" => DeprecationNotice(DeprecationNotice),
+        "configWarning" => ConfigWarning(DeprecationNotice),
     }
 }
 
@@ -71,6 +73,7 @@ impl ServerNotification {
             Self::ThreadArchived(n)
             | Self::ThreadUnarchived(n)
             | Self::ThreadClosed(n)
+            | Self::ThreadGoalUpdated(n)
             | Self::ThreadGoalCleared(n) => Some(&n.thread_id),
             Self::ThreadCompacted(n) => Some(&n.thread_id),
             Self::TurnStarted(n) | Self::TurnCompleted(n) => Some(&n.thread_id),
@@ -96,7 +99,8 @@ impl ServerNotification {
             | Self::AccountLoginCompleted(_)
             | Self::RemoteControlStatusChanged(_)
             | Self::SkillsChanged(_)
-            | Self::DeprecationNotice(_) => None,
+            | Self::DeprecationNotice(_)
+            | Self::ConfigWarning(_) => None,
         }
     }
 }
@@ -176,7 +180,8 @@ pub struct ThreadTokenUsageUpdated {
     pub extra: Extra,
 }
 
-/// Something the server says is going away, with what to do instead.
+/// Something the server says is going away, with what to do instead; or,
+/// as `configWarning`, configuration it found and did not apply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeprecationNotice {

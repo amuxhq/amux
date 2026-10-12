@@ -640,13 +640,30 @@ answer.
   (following `nextCursor` to the last page, leaving hidden models out) and
   `skills/list`, once per server, and asks `skills/list` again on
   `skills/changed`; the catalogue carries the models with their reasoning
-  efforts, and the skills as commands. A refused or missing answer leaves
-  its list empty.
+  efforts, and as commands the slash commands amux runs followed by the
+  skills. A refused or missing answer leaves its list empty.
+- **Slash commands.** Codex's server has no commands: each command Codex's
+  own view offers is client code calling a server method, so amux runs the
+  ones it offers itself, from a table in the interpreter (`COMMANDS`):
+
+  | Command | What amux sends |
+  |---|---|
+  | `/compact` | `thread/compact/start`, which runs as a turn of its own |
+  | `/clear` | `thread/start` (ids `amux-clear-<n>`) in the agent's folder with the model and permission in force; the thread it answers becomes the agent's conversation, marked by a cleared boundary, named, and recorded for the next incarnation to resume. The new thread's first turn carries the mode and effort the agent ran with |
+  | `/review [instructions]` | `review/start` on the thread: the uncommitted changes, or the instructions given. The review runs as a turn |
+  | `/init` | A turn with the prompt Codex's own `/init` sends (as Codex 0.161 words it), which writes an `AGENTS.md` unless one exists |
+  | `/plan [prompt]` | Plan mode from the next turn, as choosing the mode does; the words after it, if any, are that turn's prompt |
+
+  The prompt's item shows what was typed. A skill named like one of these
+  commands is left out of the catalogue, since `/name` runs the command. A
+  `/` followed by any other skill's name goes to the model as written; any other `/word` (Codex's `/new` among
+  them, which means another conversation, so another agent) is refused as
+  unsupported rather than sent to the model as words.
 - **Asks** are the server's requests:
 
   | Request | Ask |
   |---|---|
-  | `item/commandExecution/requestApproval` | Command approval, with the decisions Codex offers |
+  | `item/commandExecution/requestApproval` | Command approval, with the decisions Codex offers. Codex runs a model's command through the user's shell and asks about the wrapped form (`/bin/zsh -lc "…"`); the ask, like the command's step, shows the script inside, as Codex's own view does |
   | `item/fileChange/requestApproval` | File-change approval |
   | `item/permissions/requestApproval` | Access grant |
   | `item/tool/requestUserInput` | Question |
@@ -658,6 +675,10 @@ answer.
 - **Turns.** `turn/started` begins one and records its id; `turn/completed`
   ends it with its status (completed, interrupted or failed, with an error
   item when the turn carries one) and dismisses every ask still open. A
+  command still running when a turn completes or is interrupted carries on
+  as a background terminal (Codex's interrupt ends the turn, not its unified
+  exec commands; one Codex did end reports its own end), so it stays running
+  and the interpreter asks Codex for its background terminals. A
   prompt starts a turn with `turn/start`, and its item is written then, keyed
   by its input id; Codex's own reflection of it is left out. Send now steers
   the running turn with `turn/steer`. Both carry the input id (in hex) as
@@ -668,7 +689,7 @@ answer.
   unanswered when the turn ends, goes back to waiting in the queue. An
   interrupt is `turn/interrupt`, held until `turn/started` names the turn
   when it has not yet; a held interrupt is dropped when that `turn/start`
-  fails or Codex exits, so it never lands on a later turn. A `/compact` prompt is `thread/compact/start`.
+  fails or Codex exits, so it never lands on a later turn.
 - **Model, effort, approval.** These inputs are accepted at once and ride on
   the next `turn/start` as overrides.
 - **Other clients.** The agent is one client of its Codex server, and
@@ -686,6 +707,11 @@ answer.
   the interpreter reads only amux's.
 - **Streaming.** Agent-message, plan and reasoning deltas and command output
   are appends to their open items.
+- **Other notices.** A web search that opens a page or looks within one
+  carries the page's address, as the step's text too, since Codex says
+  nothing else about it. `configWarning` (configuration Codex found and did
+  not apply) is an error item of kind `configWarning` in Codex's words. A
+  goal's progress (`thread/goal/updated`) draws nothing, like its clearing.
 - **Agent messages** go to Codex with `thread/inject_items`. Codex reports
   nothing about an injected item, so the interpreter writes the agent-message
   item itself, at acceptance. A probe of codex-cli 0.157.0 settled when the

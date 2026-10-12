@@ -1,3 +1,16 @@
+2026-10-13 — **Codex's slash commands are amux's own table.** Codex's
+server has no commands, so `/clear` reached the model as words. The Codex
+interpreter now runs `/compact`, `/clear` (a new thread, adopted as the
+agent's conversation and resumed by the next incarnation), `/review`
+(Codex's `review/start`), `/init` (Codex's own fixed prompt) and `/plan`
+(plan mode, with any words after it as the prompt). The catalogue lists
+them before the skills, and any other `/word` is refused. A command
+approval and its step show the script inside Codex's shell wrapper, as
+Codex's own view does. A command still running at an interrupt carries on
+as a background terminal, and the interpreter asks Codex for its list. A web
+search that opens a page names the address. `configWarning` keeps its words
+as a warning item, and goal progress draws nothing, not an unreadable row.
+
 2026-10-13 — **Claude's interpreters read what Claude records, not its
 screen.** Terminal Claude: a turn starts on the prompt's transcript row,
 since keys typed into a terminal may land in one of Claude's own screens

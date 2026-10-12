@@ -170,7 +170,12 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
 
     let codex = ask(&api, here, wire::Provider::Codex).await;
     assert_eq!(values(&codex.models, |m| &m.value), ["opus", "haiku"]);
-    assert_eq!(values(&codex.commands, |c| &c.name), ["review"]);
+    // The commands amux runs for Codex, then its skills; the scripted
+    // `review` skill is named like the command, which `/review` runs.
+    assert_eq!(
+        values(&codex.commands, |c| &c.name),
+        ["compact", "clear", "review", "init", "plan"]
+    );
     assert_eq!(
         values(&codex.permissions, |p| &p.value),
         ["read-only", "default", "auto", "full-access"]

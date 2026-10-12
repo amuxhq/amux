@@ -1540,7 +1540,10 @@ impl<A: Arm> Interpreter for CodexWith<A> {
                 wire::BoundaryKind::DaemonLost,
                 wire::IncarnationEnd::default(),
             ),
-            Event::StopRequested => state.interrupt(&mut emit),
+            Event::StopRequested => {
+                state.shared.stop_requested();
+                state.interrupt(&mut emit);
+            }
             Event::Git(git) => state.shared.set_git(git),
         }
         if let Some(entry) = state.shared.next_queued() {

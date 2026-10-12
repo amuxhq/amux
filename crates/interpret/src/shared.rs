@@ -377,6 +377,10 @@ pub struct Shared<A: OpenAsk> {
     /// The hash of the catalogue last written; None until the provider
     /// says what it offers.
     catalogue: Option<Vec<u8>>,
+    /// The daemon asked this incarnation to stop: a turn cut short now
+    /// ended because the agent was stopped, not interrupted.
+    #[serde(default)]
+    stopping: bool,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -402,6 +406,7 @@ impl<A: OpenAsk> Shared<A> {
             git: None,
             jobs: None,
             catalogue: None,
+            stopping: false,
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.working_on = first_line(&entry.text);
@@ -415,6 +420,7 @@ impl<A: OpenAsk> Shared<A> {
     /// resume with a prompt, or a parent's message) joins the queue.
     pub fn reincarnate(&mut self, spec: &AgentSpec, producer_version: &str) {
         self.producer_version = producer_version.to_owned();
+        self.stopping = false;
         // A new provider process runs nothing in the background yet.
         self.set_jobs(Vec::new());
         self.now_ms = self.now_ms.max(spec.created_at_ms);
@@ -884,6 +890,12 @@ impl<A: OpenAsk> Shared<A> {
     /// item. None when no turn was running.
     pub fn turn_ended(&mut self, emit: &mut Emit, outcome: wire::TurnOutcome) -> Option<OpenTurn> {
         self.busy = false;
+        // The stop cancels the turn the way an interrupt does; the turn
+        // ended because the agent was stopped, which its parent hears.
+        let outcome = match outcome {
+            wire::TurnOutcome::Interrupted if self.stopping => wire::TurnOutcome::Stopped,
+            outcome => outcome,
+        };
         let turn = self.turn.end()?;
         emit.step.turn_end = Some(TurnEnd {
             turn_id: turn.id,
@@ -891,6 +903,12 @@ impl<A: OpenAsk> Shared<A> {
             outcome: outcome as i32,
         });
         Some(turn)
+    }
+
+    /// The daemon asked the agent to stop: the turn the kind now cancels
+    /// ends as stopped.
+    pub fn stop_requested(&mut self) {
+        self.stopping = true;
     }
 
     /// What began as a turn was a local command (terminal Claude's
@@ -1143,8 +1161,11 @@ pub fn worded(mut envelope: Envelope) -> Envelope {
 }
 
 /// A worded agent message as its recipient's model reads it, labelled with
-/// its sender and what it is: `[agent <name> finished its turn]` before a
-/// child's report, `[agent <name> stopped: <cause>]` for a failed one, and
+/// its sender and what it is: before a child's report, how its turn ended
+/// (`[agent <name> finished its turn]`, `[agent <name> was stopped before
+/// it finished]`, `[agent <name>'s turn was interrupted]` or `[agent
+/// <name>'s turn failed]`), `[agent <name> stopped: <cause>]` for a failed
+/// one, and
 /// `[message from agent <name>]` before anything else an agent sends. The
 /// provider's own channel carries only text, so without the label a model
 /// takes another agent's words for its person's. A message from no agent
@@ -1159,7 +1180,20 @@ pub(crate) fn carried(envelope: &Envelope) -> String {
         _ => return envelope.text.clone(),
     };
     match EnvelopeKind::try_from(envelope.kind).unwrap_or_default() {
-        EnvelopeKind::Finished => format!("[{from} finished its turn]\n{}", envelope.text),
+        EnvelopeKind::Finished => {
+            let ended = match envelope
+                .outcome
+                .and_then(|outcome| wire::TurnOutcome::try_from(outcome).ok())
+            {
+                Some(wire::TurnOutcome::Stopped) => {
+                    format!("{from} was stopped before it finished")
+                }
+                Some(wire::TurnOutcome::Interrupted) => format!("{from}'s turn was interrupted"),
+                Some(wire::TurnOutcome::Failed) => format!("{from}'s turn failed"),
+                _ => format!("{from} finished its turn"),
+            };
+            format!("[{ended}]\n{}", envelope.text)
+        }
         EnvelopeKind::Failed => format!("[{from} stopped: {}]", envelope.text),
         _ => format!("[message from {from}]\n{}", envelope.text),
     }

@@ -305,7 +305,10 @@ A parent hears one thing per event, from the daemon, through an outbox: the
   message, taken when the row is written, so retention removing the child's
   transcript later cannot empty a delivery still waiting for a parent on an
   away host. The row also keeps how the turn ended (completed, interrupted,
-  stopped or failed), which the envelope carries as `outcome`.
+  stopped or failed), which the envelope carries as `outcome`. A turn the
+  daemon's stop cut short (a stop, the stop tool, or a delete, which stops
+  first) ends stopped, never completed, so a deleted or stopped child never
+  reports that it finished.
 - **Failed.** When a child's process ends while a turn is open (a crash, a
   stop, a child that never came up) the daemon writes a row of kind `failed`
   whose body is the cause in words, followed by its own words when it has
@@ -344,7 +347,9 @@ was away when the child finished and that was resumed before the row reached
 it.
 
 The parent receives the report like any agent message, through its own
-carrier, labelled `[agent <name> finished its turn]` or
+carrier, labelled with how the turn ended (`[agent <name> finished its
+turn]`, `[agent <name> was stopped before it finished]`, `[agent <name>'s
+turn was interrupted]`, `[agent <name>'s turn failed]`) or
 `[agent <name> stopped: <cause>]` for every kind of agent, so its model can
 tell a child's words from its person's. The item in the parent's transcript
 keeps the words alone; its sender is on the item.

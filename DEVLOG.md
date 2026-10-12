@@ -1,3 +1,11 @@
+2026-10-13 — **A stopped or deleted child tells its parent it was
+stopped.** A child deleted mid-turn reported to its parent as "finished its
+turn" with no words, and parents told the person the work was done. Every
+interpreter now marks the turn a daemon's stop cuts short as stopped (an
+interrupt from a person stays interrupted), the outcome rides the report,
+and the parent's model reads `[agent helper was stopped before it
+finished]` (or that the turn was interrupted or failed) instead.
+
 2026-10-13 — **A call a lapsed plan cannot carry says so at once.** On an
 account whose subscription lapsed to free, every surface blamed the network:
 sends read "cannot be reached" and agents' sends said the far host was down

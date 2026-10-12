@@ -55,15 +55,9 @@ pub async fn inventory(client: &mut Client) -> Result<(Vec<HostEntry>, Vec<Agent
     bail!("the inventory ended before it caught up")
 }
 
-/// The agent a reference names: its id, or its name.
+/// The agent a reference names: any form the daemon resolves (its id, the
+/// short id `amux ls` prints, its name, or `name@host`).
 pub async fn resolve(client: &mut Client, reference: &str) -> Result<Agent> {
-    if let Ok(id) = Uuid::parse_str(reference) {
-        let (_, agents) = inventory(client).await?;
-        return agents
-            .into_iter()
-            .find(|agent| agent.agent_id == id.as_bytes())
-            .ok_or_else(|| anyhow!("no agent {id}"));
-    }
     client
         .resolve_agent(ResolveAgentRequest {
             name: reference.to_owned(),

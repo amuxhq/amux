@@ -81,13 +81,13 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | Call | Returns | Meaning |
 | --- | --- | --- |
 | `SubscribeInventory(Empty)` | stream of `InventoryEvent` | Hosts and agent rows: the current set, `CaughtUp`, then changes |
-| `ResolveAgent(ResolveAgentRequest)` | `Agent` | Fleet-wide name to row. Every other call takes an agent id. |
+| `ResolveAgent(ResolveAgentRequest)` | `Agent` | Fleet-wide reference to row: an id in any form amux prints (with or without dashes, or the short id's eight or more leading hex digits), a name, or `name@host`. Names are unique on a host, so `name@host` picks one; a bare name matching agents on two hosts is ambiguous, and the message offers those forms. Every other call takes an agent id. |
 | `Subscribe(SubscribeRequest)` | stream of `SessionEvent` | One agent: opening, snapshot, tail, then live |
 | `Fetch(FetchRequest)` | `FetchResponse` | A page of older items |
 | `Get(GetRequest)` | `Item` | One item in full |
 | `SendInput(SendInputRequest)` | `SendInputResponse` | The interpreter's verdict on one input |
-| `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
-| `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`. The agent's branch keeps the name it was made with |
+| `CreateAgent(CreateAgentRequest)` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Names are unique on a host, counting exited agents: a given name another agent on the host holds gets the next free suffix (`worker-2`), and the returned `Agent` says the name it got. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_worktree` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there |
+| `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`; a name another agent on the host holds, exited ones included, is refused `ALREADY_EXISTS` saying so. The agent's branch keeps the name it was made with |
 | `StopAgent(StopAgentRequest)` | `Empty` | Ends the agent now: its running turn is cancelled the provider's own way and it exits, resumable. There is no "stop when done". A registry act, never a chat control (the chat's is the interrupt input, which ends only the turn). Stops every descendant too, best effort |
 | `ResumeAgent(ResumeAgentRequest)` | `Agent` | Start the agent's directory again, optionally with a first prompt |
 | `DeleteAgent` | `DeleteAgentResponse` | Cascades to children; lists removed and unreachable children |

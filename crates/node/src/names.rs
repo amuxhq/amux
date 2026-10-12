@@ -45,6 +45,24 @@ pub fn assign_name(taken: &dyn Fn(&str) -> bool) -> String {
         .expect("an unbounded search finds a free name")
 }
 
+/// `name` when `taken` does not claim it, else the first of `name-2`,
+/// `name-3`, ... it does not claim, shortening `name` where the suffix would
+/// pass the longest name allowed.
+pub fn free_suffix(name: &str, taken: &dyn Fn(&str) -> bool) -> String {
+    if !taken(name) {
+        return name.to_owned();
+    }
+    (2u32..)
+        .map(|n| {
+            let suffix = format!("-{n}");
+            let room = wire::AGENT_NAME_MOST.saturating_sub(suffix.len());
+            let stem = name[..name.len().min(room)].trim_end_matches('-');
+            format!("{stem}{suffix}")
+        })
+        .find(|candidate| !taken(candidate))
+        .expect("an unbounded search finds a free name")
+}
+
 /// The names a new branch in `cwd`'s repository could not take: every local
 /// branch, and each folder a branch sits under (`a/b` rules out `a`). Empty
 /// when `cwd` is not in a repository or git cannot be run.
@@ -94,6 +112,20 @@ mod tests {
                 .iter()
                 .all(|pair| { pair.chars().all(|c| c.is_ascii_lowercase() || c == '-') })
         );
+    }
+
+    #[test]
+    fn a_taken_name_gets_the_next_free_suffix_within_the_longest_name() {
+        let taken: HashSet<&str> = ["worker", "worker-2"].into();
+        assert_eq!(free_suffix("scout", &|name| taken.contains(name)), "scout");
+        assert_eq!(
+            free_suffix("worker", &|name| taken.contains(name)),
+            "worker-3"
+        );
+        let long = "a".repeat(wire::AGENT_NAME_MOST);
+        let next = free_suffix(&long, &|name| name == long);
+        assert_eq!(next.len(), wire::AGENT_NAME_MOST);
+        assert!(next.ends_with("a-2"), "{next}");
     }
 
     #[test]

@@ -459,7 +459,7 @@ meanwhile.
 | Call | What it does |
 | --- | --- |
 | `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
-| `ResolveAgent` | A fleet-wide name to one row, `NOT_FOUND`, or `AmbiguousAgentName` with the candidates. Every other agent call takes an id. |
+| `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `AmbiguousAgentName` with the candidates when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
 | `Subscribe`, `Fetch`, `Get` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
 | `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |

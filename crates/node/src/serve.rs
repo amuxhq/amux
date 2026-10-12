@@ -42,8 +42,17 @@ pub enum ServeError {
     NoAgent,
     #[error("no agent named {0}")]
     NoAgentNamed(String),
-    #[error("{} agents are named {}", .0.candidates.len(), .0.name)]
-    Ambiguous(AmbiguousAgentName),
+    #[error(
+        "{} names more than one agent; pick one with {}",
+        .detail.name,
+        .forms.join(" or ")
+    )]
+    Ambiguous {
+        detail: AmbiguousAgentName,
+        /// A form that picks each candidate: `name@host`, or its id where
+        /// its host's name does not tell it apart.
+        forms: Vec<String>,
+    },
     #[error("the agent holds no item {0}")]
     NoItem(String),
     #[error("older history is held by the agent's host, which cannot be reached")]
@@ -58,14 +67,14 @@ impl ServeError {
     pub fn to_wire(&self) -> wire::Error {
         let code = match self {
             Self::NoAgent | Self::NoAgentNamed(_) | Self::NoItem(_) => ErrorCode::NotFound,
-            Self::Ambiguous(_) => ErrorCode::FailedPrecondition,
+            Self::Ambiguous { .. } => ErrorCode::FailedPrecondition,
             Self::OriginUnreachable => ErrorCode::Unreachable,
             Self::Store(_) => ErrorCode::Internal,
         };
         let details = match self {
-            Self::Ambiguous(ambiguous) => vec![ErrorDetail {
+            Self::Ambiguous { detail, .. } => vec![ErrorDetail {
                 r#type: AmbiguousAgentName::full_name(),
-                value: ambiguous.encode_to_vec(),
+                value: detail.encode_to_vec(),
             }],
             _ => Vec::new(),
         };
@@ -438,23 +447,105 @@ impl ProfileRuntime {
         })
     }
 
-    /// The one agent with this name across the fleet the store knows.
-    pub async fn resolve_agent(&self, name: &str) -> Result<Agent, ServeError> {
-        let mut matches: Vec<Agent> = self
-            .store
-            .lock()
-            .await
-            .agent_by_name(name)?
-            .iter()
-            .map(to_wire)
-            .collect();
+    /// The one agent a reference names, across the fleet the store knows.
+    /// A reference is any form amux prints: the agent's id with or without
+    /// dashes, the eight-character short id `amux ls` shows (any prefix of
+    /// the id at least that long), its name, or `name@host` where names on
+    /// two hosts meet. Names are unique on a host, so `name@host` picks one.
+    pub async fn resolve_agent(&self, reference: &str) -> Result<Agent, ServeError> {
+        let rows = {
+            let store = self.store.lock().await;
+            if let Ok(id) = uuid::Uuid::parse_str(reference) {
+                return store
+                    .agent_by_id(id.as_bytes())?
+                    .map(|row| to_wire(&row))
+                    .ok_or_else(|| ServeError::NoAgentNamed(reference.to_owned()));
+            }
+            let (name, host) = match reference.rsplit_once('@') {
+                Some((name, host)) => (name, Some(host)),
+                None => (reference, None),
+            };
+            let mut rows = store.agent_by_name(name)?;
+            if let Some(host) = host {
+                let host = self
+                    .resolve_host(host)
+                    .map_err(|_| ServeError::NoAgentNamed(reference.to_owned()))?;
+                rows.retain(|row| row.agent.host == host.as_bytes());
+            } else if rows.is_empty() && is_short_id(reference) {
+                let prefix = reference.to_ascii_lowercase();
+                rows = store
+                    .agents()?
+                    .into_iter()
+                    .filter(|row| {
+                        uuid::Uuid::from_slice(&row.agent.agent)
+                            .is_ok_and(|id| id.simple().to_string().starts_with(&prefix))
+                    })
+                    .collect();
+            }
+            rows
+        };
+        // One agent may be held twice (its own row and a copy); it is one
+        // agent all the same.
+        let mut matches: Vec<Agent> = Vec::new();
+        for row in &rows {
+            if !matches
+                .iter()
+                .any(|agent| agent.agent_id == row.agent.agent)
+            {
+                matches.push(to_wire(row));
+            }
+        }
         match matches.len() {
-            0 => Err(ServeError::NoAgentNamed(name.to_owned())),
+            0 => Err(ServeError::NoAgentNamed(reference.to_owned())),
             1 => Ok(matches.remove(0)),
-            _ => Err(ServeError::Ambiguous(AmbiguousAgentName {
-                name: name.to_owned(),
-                candidates: matches,
-            })),
+            _ => {
+                let forms = self.picking_forms(&matches);
+                Err(ServeError::Ambiguous {
+                    detail: AmbiguousAgentName {
+                        name: reference.to_owned(),
+                        candidates: matches,
+                    },
+                    forms,
+                })
+            }
         }
     }
+
+    /// For each of several agents, a reference that picks it alone:
+    /// `name@host` when its host's name is its own and no other candidate
+    /// shares that host, else its id.
+    fn picking_forms(&self, agents: &[Agent]) -> Vec<String> {
+        let hosts = self.published_hosts();
+        agents
+            .iter()
+            .map(|agent| {
+                let host = hosts
+                    .iter()
+                    .find(|host| host.host_id == agent.host_id)
+                    .map(|host| host.name.as_str())
+                    .filter(|name| !name.is_empty());
+                let alone_there = agents
+                    .iter()
+                    .filter(|other| other.host_id == agent.host_id)
+                    .count()
+                    == 1;
+                let named_once =
+                    |name: &str| hosts.iter().filter(|host| host.name == name).count() == 1;
+                match host {
+                    Some(host) if alone_there && named_once(host) => {
+                        format!("{}@{host}", agent.name)
+                    }
+                    _ => uuid::Uuid::from_slice(&agent.agent_id)
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
+                }
+            })
+            .collect()
+    }
+}
+
+/// Whether a reference could be a short id: at least the eight hex digits
+/// `amux ls` prints, at most a whole id.
+fn is_short_id(reference: &str) -> bool {
+    (8..=32).contains(&reference.len()) && reference.chars().all(|c| c.is_ascii_hexdigit())
 }

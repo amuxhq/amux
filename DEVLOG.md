@@ -1,3 +1,15 @@
+2026-10-13 — **Agent names are unique on a host, and every id form
+resolves.** Two agents could share a name, and then neither could be
+reached: the ambiguity refusal listed ids that nothing accepted, and `amux
+ls`'s short ids were refused too. A spawn asking for a name another agent on
+the host holds, exited ones included, now gets the next free suffix
+(`worker-2`) and learns it from the agent it gets back; a rename to a taken
+name is refused saying so. `ResolveAgent`, which the CLI and the agents'
+tools share, takes every form amux prints: the id with or without dashes,
+the short id (or any longer prefix), the name, and `name@host`. A bare name
+that agents on two hosts share is refused offering exactly the `name@host`
+forms that pick each.
+
 2026-10-13 — **The CLI says what went wrong in sentences.** `amux send` to
 an agent that refused says why in words ("worker has stopped; start it again
 with `amux resume worker <text>`") instead of the refusal's wire name.

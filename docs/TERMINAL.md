@@ -462,7 +462,7 @@ modes the agent's interface switched on.
 ## Command-line verbs
 
 Every verb takes the global `--config <path>` (or `AMUX_CONFIG`) and `--profile <label or id>`. An agent is named
-by its name or its id.
+by its name, `name@host` where agents on two hosts share a name, its id, or the short id `amux ls` prints.
 
 | Verb | What it does |
 |---|---|

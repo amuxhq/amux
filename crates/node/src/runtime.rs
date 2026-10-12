@@ -216,6 +216,8 @@ pub enum RegistryError {
     BadCwd(String),
     #[error("{}", name_words(*.0))]
     BadName(wire::AgentNameProblem),
+    #[error("another agent on this host is already named {0}; names are unique on a host")]
+    NameTaken(String),
     #[error("starting in a new worktree: {0}")]
     Worktree(#[from] git_facts::WorktreeError),
     #[error("spawning on another host goes through that host's daemon")]
@@ -238,6 +240,16 @@ pub enum RegistryError {
     Io(#[from] io::Error),
 }
 
+/// The names this host's own agents hold, exited ones included.
+fn own_names(store: &Sqlite, host: &[u8]) -> Result<HashSet<String>, StoreError> {
+    Ok(store
+        .agents()?
+        .into_iter()
+        .filter(|row| row.agent.host == host)
+        .map(|row| row.name)
+        .collect())
+}
+
 /// A refused name, as the daemon's error says it.
 fn name_words(problem: wire::AgentNameProblem) -> String {
     match problem {
@@ -256,7 +268,7 @@ impl RegistryError {
     pub fn to_wire(&self) -> wire::Error {
         let code = match self {
             Self::NotFound(_) | Self::NoSpec(_) => ErrorCode::NotFound,
-            Self::AlreadyExists(_) => ErrorCode::AlreadyExists,
+            Self::AlreadyExists(_) | Self::NameTaken(_) => ErrorCode::AlreadyExists,
             Self::Live(_) | Self::StillLocked(_) => ErrorCode::FailedPrecondition,
             Self::BadId(_) | Self::NoKind | Self::BadCwd(_) | Self::BadName(_) => {
                 ErrorCode::InvalidArgument
@@ -850,20 +862,18 @@ impl ProfileRuntime {
                 return Err(RegistryError::AlreadyExists(id));
             }
             // Chosen under the store lock, so two creates at once cannot
-            // both take the same free name.
+            // both take the same free name. Names are unique on this host,
+            // counting exited agents, which stay addressable by name: a
+            // given name already taken gets the next free suffix, and the
+            // caller learns the name from the agent it gets back.
+            let names = own_names(&store, &key.host)?;
             let name = match given {
-                Some(name) => name,
-                None => {
-                    let names: HashSet<String> = store
-                        .agents()?
-                        .into_iter()
-                        .filter(|row| row.agent.host == key.host)
-                        .map(|row| row.name.to_lowercase())
-                        .collect();
-                    crate::names::assign_name(&|candidate| {
-                        names.contains(candidate) || branches.contains(candidate)
-                    })
+                Some(name) => {
+                    crate::names::free_suffix(&name, &|candidate| names.contains(candidate))
                 }
+                None => crate::names::assign_name(&|candidate| {
+                    names.contains(candidate) || branches.contains(candidate)
+                }),
             };
             // The row comes first: a crash after it leaves a row the sweep
             // marks exited, never a directory nothing lists.
@@ -1339,6 +1349,9 @@ impl ProfileRuntime {
         let row = {
             let mut store = self.store.lock().await;
             let mut row = store.agent(&key)?.ok_or(RegistryError::NotFound(id))?;
+            if row.name != name && own_names(&store, &key.host)?.contains(name) {
+                return Err(RegistryError::NameTaken(name.to_owned()));
+            }
             row.name = name.to_owned();
             self.put_row(&mut store, &row)?;
             row

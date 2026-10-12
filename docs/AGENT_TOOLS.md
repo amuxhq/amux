@@ -93,9 +93,11 @@ Agents and hosts are separate tools so each answers one question.
 ### send
 
 Sends `text` to the agent named `to`, with an optional `context`, a thread
-label the recipient sees with the message. The name is resolved by exact
-match across the fleet, own and replica rows alike; an unknown or ambiguous
-name is refused before anything is sent. The answer is the envelope id, once
+label the recipient sees with the message. `to` is resolved as `ResolveAgent`
+resolves a reference (a name, `name@host`, or an id in any form amux prints),
+across the fleet, own and replica rows alike; an unknown name is refused
+before anything is sent, and a name agents on two hosts share is refused
+offering the `name@host` forms that pick each. The answer is the envelope id, once
 the recipient's provider has the message; [delivery](#delivery) describes
 what that means. When a message reaches an agent from another agent, the
 tool's description tells it to reply with `send` to that agent's name.

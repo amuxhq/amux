@@ -1,3 +1,9 @@
+2026-10-12 — **The native-parity QA persona leaves amux's own presentation
+alone.** It now reads how the clients present a chat before comparing, and
+records a difference only when amux loses or gets wrong what the native
+interface gives, not when amux folds, groups or words it differently by
+design.
+
 2026-10-12 — **QA testers compare with the native interfaces, stress asks,
 and drive terminal Claude from the phone.** Two new personas: one keeps
 Claude Code's or Codex's own interface beside amux's and records every

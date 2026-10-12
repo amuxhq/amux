@@ -34,5 +34,12 @@ Anything amux shows differently, leaves out, or adds without reason is what they
 - Turn state disagreeing: one says working while the other is idle, or a turn ends in one and not the other.
 - A key or action that works natively and has no amux equivalent, without amux saying so.
 
+amux presents agents its own way on purpose: it folds tool calls and their output, groups reads and searches,
+words things in its own vocabulary, and lays the phone out for a phone. A difference in presentation is not a
+disparity. Read how the clients present a chat (`docs/TERMINAL.md`, `docs/CLIENT.md`, `docs/IOS.md`) before you
+compare, and record a difference only when it changes substance: information the native view gives that amux
+loses or gets wrong even when unfolded, a different answer or outcome, a different mode, model or turn state, or
+something the native view lets you do that amux cannot.
+
 For each kind, run the same short script of turns in both views and write down every disparity you see, then decide
 which ones a native user would call wrong. Obvious disparities matter most; do not chase cosmetic spacing.

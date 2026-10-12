@@ -208,10 +208,13 @@ nothing.
   `amux-skills-<n>` after the first) and rebuilds from the answer. Notices
   that arrive while an ask is out cost one more ask after its answer. Codex
   says nothing when its models change, so they are asked once per server.
-- **Terminal Claude** cannot be asked, so it offers what its host's Claude
-  offers: the daemon hands it the models and commands of its copy for the
-  host in `AgentSpec.offered`, and it publishes them, with its own
-  permissions, when it launches.
+- **Terminal Claude** cannot be asked, so it offers what a headless Claude
+  offers in the agent's own folder: Claude lists a project's own commands
+  only when asked from inside it. The agent process asks there as it
+  launches Claude and hands the answer over as an offered fact, which
+  publishes the catalogue with terminal Claude's own permissions. When
+  Claude cannot say, the host's copy the daemon hands over in
+  `AgentSpec.offered` stands.
 
 Each snapshot also states the running model's display name: the catalogue
 entry amux chose the model as, while that entry stands for the reported
@@ -434,9 +437,10 @@ only for the permission menus the resolved keymap can type (its verified menu
 shapes); on any other menu the card offers allow once and deny.
 
 Terminal Claude offers no list of models, efforts or commands a program could
-read, so its catalogue, written when it launches, holds the models and
-commands its host's Claude offers (from `AgentSpec.offered`, empty when the
-host has no copy) and Claude's permissions, each marked not settable. It
+read, so its catalogue holds the models and commands a headless Claude offers
+in the agent's folder (asked by the agent process at launch; the host's copy
+from `AgentSpec.offered` when that fails, empty when the host has none) and
+Claude's permissions, each marked not settable. It
 takes no model or effort input: a person types `/model <name>` or `/effort <level>` as a prompt.
 The model is what Claude's newest assistant row ran, or, from `/model`'s
 output ("Set model to …") until such a row, the model it names; the effort

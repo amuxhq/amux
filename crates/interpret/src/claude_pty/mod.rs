@@ -263,7 +263,9 @@ pub struct PermissionMenus {
 pub(crate) enum AgentFact {
     /// Sent before the provider's first fact, and again after the agent
     /// process relaunches it. `send_now_refused` is why the keymap cannot
-    /// type send now for this Claude, when it cannot.
+    /// type send now for this Claude, when it cannot. `asking`: the agent
+    /// is asking Claude in its own folder what it offers, so the catalogue
+    /// waits for [`AgentFact::Offered`].
     Launch {
         #[serde(default)]
         version: String,
@@ -273,6 +275,8 @@ pub(crate) enum AgentFact {
         permission_menus: PermissionMenus,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         send_now_refused: Option<String>,
+        #[serde(default)]
+        asking: bool,
     },
     /// Claude's terminal first drew with bracketed paste on: its input is
     /// live, so a prompt can be typed. Some versions report their session
@@ -282,6 +286,13 @@ pub(crate) enum AgentFact {
     /// Claude's first screen is its folder-trust dialog; sent before
     /// [`AgentFact::Ready`].
     TrustDialog,
+    /// What Claude offers asked from the agent's own folder, which names
+    /// the project's own commands the host's copy cannot; none when Claude
+    /// could not say, and the host's copy stands.
+    Offered {
+        #[serde(with = "serde_pb::opt_msg")]
+        catalogue: Option<wire::Catalogue>,
+    },
 }
 
 impl AgentFact {
@@ -296,12 +307,14 @@ pub fn launch_fact(
     keymap: &str,
     permission_menus: &PermissionMenus,
     send_now_refused: Option<&str>,
+    asking: bool,
 ) -> Vec<u8> {
     AgentFact::Launch {
         version: version.to_owned(),
         keymap: keymap.to_owned(),
         permission_menus: permission_menus.clone(),
         send_now_refused: send_now_refused.map(str::to_owned),
+        asking,
     }
     .encode()
 }
@@ -314,6 +327,12 @@ pub fn ready_fact() -> Vec<u8> {
 /// The fact that Claude's first screen is its folder-trust dialog.
 pub fn trust_dialog_fact() -> Vec<u8> {
     AgentFact::TrustDialog.encode()
+}
+
+/// The fact that Claude, asked in the agent's folder, offers `catalogue`,
+/// or could not say.
+pub fn offered_fact(catalogue: Option<wire::Catalogue>) -> Vec<u8> {
+    AgentFact::Offered { catalogue }.encode()
 }
 
 /// What the interpreter knows about the Claude process and its session.

@@ -40,7 +40,7 @@ pub fn main(provider: &str, command: &str, out: &Path) -> i32 {
     };
     let asked = runtime.block_on(async {
         match provider_named(provider) {
-            Some(Provider::Claude) => ask_claude(command).await,
+            Some(Provider::Claude) => ask_claude(command, |_| {}).await,
             Some(Provider::Codex) => ask_codex(command).await,
             Some(Provider::Unspecified) | None => Err(format!("no provider named {provider:?}")),
         }
@@ -63,10 +63,36 @@ pub fn main(provider: &str, command: &str, out: &Path) -> i32 {
     }
 }
 
+/// What Claude offers in an agent's own folder. Claude lists a project's
+/// own commands only when asked from inside it, so terminal Claude's agent
+/// asks there, with the environment its Claude runs with, rather than take
+/// only what the daemon gathered in its own folder.
+pub(crate) async fn claude_in(spec: &wire::AgentSpec) -> Result<Catalogue, String> {
+    let asked = ask_claude(&spec.provider_command, |command| {
+        command.current_dir(&spec.cwd);
+        for key in claude::launch::CHILD_SESSION_ENV_SCRUB {
+            command.env_remove(key);
+        }
+        command.envs(&spec.provider_env);
+    });
+    match tokio::time::timeout(FOLDER_PATIENCE, asked).await {
+        Ok(asked) => asked.map(|(catalogue, _)| catalogue),
+        Err(_) => Err("Claude did not answer in time".to_owned()),
+    }
+}
+
+/// How long Claude has to answer in an agent's folder.
+const FOLDER_PATIENCE: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Headless Claude's initialize answer lists its models and commands and
 /// names the account. Claude starts no tool server and runs no hook for it.
-async fn ask_claude(command: &str) -> Result<(Catalogue, bool), String> {
-    let mut child = tokio::process::Command::new(command)
+async fn ask_claude(
+    command: &str,
+    configure: impl FnOnce(&mut tokio::process::Command),
+) -> Result<(Catalogue, bool), String> {
+    let mut child = tokio::process::Command::new(command);
+    configure(&mut child);
+    let mut child = child
         .args([
             "--print",
             "--input-format",

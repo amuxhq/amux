@@ -1,3 +1,12 @@
+2026-10-13 — **Terminal Claude offers its project's own commands.** The
+daemon gathers the host's Claude catalogue in its own folder, and Claude
+lists a project's commands only when asked from inside the project, so they
+never appeared. As terminal Claude launches, the agent asks a headless
+Claude in the agent's folder, with terminal Claude's environment, and the
+catalogue is published from that answer; the host's copy stands when Claude
+cannot say within 30 seconds. The headless fake now marks its models as
+taking auto mode when its script offers auto mode, as one Claude would.
+
 2026-10-13 — **Codex's slash commands are amux's own table.** Codex's
 server has no commands, so `/clear` reached the model as words. The Codex
 interpreter now runs `/compact`, `/clear` (a new thread, adopted as the

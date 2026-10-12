@@ -490,6 +490,11 @@ reached the owner:
   `ERROR_CODE_UNREACHABLE` naming the host by the name it was paired under,
   except for `SendInput`, which answers with a rejected verdict,
   `REFUSAL_HOST_UNREACHABLE`, so a composer treats it like any other refusal.
+  When only the relay reaches the owner and the account is on the free plan
+  (its subscription lapsed), the relay carries no calls between hosts, and
+  the call is refused at once as that: `ERROR_CODE_PAYMENT_REQUIRED` with a
+  sentence naming the lapse, and for `SendInput` the same rejected verdict
+  with that sentence as its detail.
 - **Uncertain.** The call went out and its answer did not come back: the
   link failed under it, or 30 seconds passed (enough for a spawn, which waits
   for the child's process to start on the far side). That is

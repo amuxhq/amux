@@ -50,6 +50,14 @@ pub enum ForwardError {
     /// trusted, or no channel could be opened. Nothing reached it.
     #[error("{name} cannot be reached")]
     NotSent { host: HostId, name: String },
+    /// The call never left: only the relay reaches the owner, and the
+    /// account's plan lapsed to free, on which the relay carries no calls
+    /// between hosts. Said at once, so no surface blames the network.
+    #[error(
+        "{name} can be reached only through the relay, and this account's subscription has \
+         lapsed to the free plan, which carries no calls between hosts; renew it to reach {name}"
+    )]
+    Lapsed { host: HostId, name: String },
     /// The call went out and its answer did not come back: the link failed
     /// or the answer took too long. The owner may have acted on it.
     #[error("{name} stopped answering; the call may or may not have arrived")]
@@ -63,7 +71,7 @@ impl ForwardError {
     /// the same answer it would have had from the owner directly.
     pub fn to_wire(&self) -> wire::Error {
         match self {
-            Self::NotSent { .. } | Self::Uncertain { .. } => {
+            Self::NotSent { .. } | Self::Lapsed { .. } | Self::Uncertain { .. } => {
                 wire_error(self.code(), self.to_string())
             }
             Self::Remote(error) => error.clone(),
@@ -73,6 +81,7 @@ impl ForwardError {
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::NotSent { .. } => ErrorCode::Unreachable,
+            Self::Lapsed { .. } => ErrorCode::PaymentRequired,
             Self::Uncertain { .. } => ErrorCode::Aborted,
             Self::Remote(error) => {
                 ErrorCode::try_from(error.code).unwrap_or(ErrorCode::Unspecified)
@@ -173,6 +182,21 @@ impl ProfileRuntime {
         let edge = self.edge().ok_or_else(not_sent)?;
         if !edge.is_trusted(host) {
             return Err(not_sent());
+        }
+        // On a free account the relay lists the account's hosts and opens
+        // no tunnel between them, as the host set's presence says.
+        let free = matches!(
+            edge.observed(),
+            crate::edge::Observed::Connected {
+                tier: crate::Tier::Free,
+                ..
+            }
+        );
+        if free && edge.via(host).await == crate::routing::LiveRoute::Relay {
+            return Err(ForwardError::Lapsed {
+                host,
+                name: self.host_name(host),
+            });
         }
         let client = match tokio::time::timeout(REACH_PATIENCE, edge.peer(host)).await {
             Ok(Ok(client)) => client,

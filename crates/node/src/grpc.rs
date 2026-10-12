@@ -361,6 +361,15 @@ impl ClientService for ClientApi {
                 Err(ForwardError::NotSent { .. }) => Ok(Response::new(crate::relay::rejected(
                     wire::Refusal::HostUnreachable,
                 ))),
+                // Never left either, and the lapse is why: the refusal
+                // says so, so a client holds it like any unreachable send
+                // and words the reason.
+                Err(error @ ForwardError::Lapsed { .. }) => Ok(Response::new(SendInputResponse {
+                    of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
+                        refusal: wire::Refusal::HostUnreachable as i32,
+                        detail: Some(error.to_string()),
+                    })),
+                })),
                 Err(error) => Err(status(error.to_wire())),
             };
         }

@@ -66,9 +66,11 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | --- | --- |
 | `NOT_FOUND` | No agent with that id or name, no item with that key, no blob with that hash |
 | `FAILED_PRECONDITION` | An ambiguous name (detail `AmbiguousAgentName` with the candidates) |
-| `UNREACHABLE` | Older history lives on a host that cannot be reached, and nothing is held locally |
+| `UNREACHABLE` | Older history lives on a host that cannot be reached, and nothing is held locally; a forwarded call that never left |
+| `PAYMENT_REQUIRED` | A forwarded call to a host only the relay reaches, on an account whose subscription lapsed to the free plan (gRPC `PERMISSION_DENIED`) |
+| `RESOURCE_EXHAUSTED` | An attachment over the 64 MB limit |
 | `ABORTED` | The input was handed to the agent and its answer was lost |
-| `PERMISSION_DENIED` | An agent caller sent input to an agent that is not its own direct child |
+| `PERMISSION_DENIED` | An agent caller sent input to, or stopped, an agent that is not its own direct child |
 | `RESOURCE_EXHAUSTED` | A blob could not be written, most often a full disk |
 
 `ProtocolVersionMismatch` is the one break-glass detail; see

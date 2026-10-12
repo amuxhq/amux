@@ -1,3 +1,12 @@
+2026-10-13 — **A call a lapsed plan cannot carry says so at once.** On an
+account whose subscription lapsed to free, every surface blamed the network:
+sends read "cannot be reached" and agents' sends said the far host was down
+while it was up. A forwarded call to a host only the relay reaches, on a
+free account, is now refused at once with a sentence naming the lapse:
+`PAYMENT_REQUIRED` for calls, and for a person's input the same
+host-unreachable verdict (so clients hold it like any send that never left)
+with that sentence as its detail.
+
 2026-10-13 — **A spawn on a host that runs no agents is refused in words.**
 The terminal offered the paired phone as a host, and a spawn there was
 forwarded and failed with a socket-path error from the phone's sandbox. A

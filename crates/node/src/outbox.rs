@@ -271,7 +271,9 @@ impl ProfileRuntime {
             .await;
         match sent {
             Ok(_) => Ok(()),
-            Err(ForwardError::NotSent { .. }) => Err(RelayError::Unavailable),
+            Err(ForwardError::NotSent { .. } | ForwardError::Lapsed { .. }) => {
+                Err(RelayError::Unavailable)
+            }
             Err(ForwardError::Uncertain { .. }) => Err(RelayError::Lost),
             Err(error) => match error.code() {
                 ErrorCode::NotFound => Err(RelayError::Stale),

@@ -24,10 +24,9 @@ use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use wire::client_service_client::ClientServiceClient;
 use wire::{
-    Agent, AgentRef, AmbiguousAgentName, Attachment, BlobRef, CreateAgentRequest, Empty, ExitCause,
-    HostEntry, HostRef, Input, Interrupt, Kind, Lifecycle, PromptInput, PromptSubmission,
-    ResolveAgentRequest, SendInputRequest, SendMessageRequest, Trust, attachment,
-    create_agent_request, host_ref, inventory_event, send_input_response,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, Empty, ExitCause, HostEntry, HostRef,
+    Kind, Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, SendMessageRequest,
+    StopAgentRequest, Trust, attachment, create_agent_request, host_ref, inventory_event,
 };
 
 use crate::dir;
@@ -53,8 +52,8 @@ in a terminal), claude_sdk (headless Claude) or codex. It runs on this host unle
 another trusted host, in your working directory unless you give one there. The child does \
 its work and stops; you are sent its last message when it finishes, and a later send to it \
 resumes it.";
-const STOP: &str = "Interrupt the turn one of your own child agents is running. Its history \
-stays.";
+const STOP: &str = "Stop one of your own child agents now: its turn is cancelled, it ends, \
+and so do the agents it started. Its history stays, and a later send to it resumes it.";
 const STATUS: &str = "Say what you are working on, so people and other agents can find the \
 right collaborator. Null clears it.";
 const ATTACH: &str = "Attach a file from this host to your reply. Returns an amux attachment \
@@ -383,35 +382,25 @@ impl Server {
         .to_string())
     }
 
-    /// Only a direct child: the daemon checks the lineage and refuses the
-    /// rest.
+    /// A real stop, as a person's: the child ends now and the daemon stops
+    /// its descendants on every host with it. Only a direct child: the
+    /// daemon checks the lineage and refuses the rest. Answers once the
+    /// child has ended.
     async fn stop(&self, arguments: &Value) -> Answer {
         let name = required(arguments, "name")?;
         let child = self.resolve(&name).await?;
-        let request = SendInputRequest {
+        let request = StopAgentRequest {
             agent_id: child.agent_id.clone(),
-            input: Some(Input::new(
-                uuid::Uuid::new_v4().as_bytes().to_vec(),
-                interrupt_input(child.kind()),
-            )),
         };
-        let response = self
-            .daemon_once(format!("the stop for {name}"), |mut client| {
-                let request = request.clone();
-                async move { client.send_input(request).await }
-            })
-            .await
-            .map_err(|refusal| refusal.or_else(|status| refused(&status, &name)))?;
-        match response.of {
-            Some(send_input_response::Of::Rejected(rejected)) => {
-                let why = rejected
-                    .detail
-                    .clone()
-                    .unwrap_or_else(|| word(rejected.refusal().as_str_name(), "REFUSAL_"));
-                Err(format!("{name} did not stop: {why}").into())
-            }
-            _ => Ok("{}".to_owned()),
-        }
+        self.daemon_once(format!("the stop for {name}"), |mut client| {
+            let request = request.clone();
+            async move { client.stop_agent(request).await }
+        })
+        .await
+        .map_err(|refusal| {
+            refusal.or_else(|status| Refusal(format!("{name} did not stop: {}", plain(&status))))
+        })?;
+        Ok("{}".to_owned())
     }
 
     async fn resolve(&self, name: &str) -> Result<Agent, Refusal> {
@@ -614,37 +603,14 @@ fn lost(status: &Status) -> bool {
             .is_some_and(|source| source.is::<tonic::transport::Error>())
 }
 
-/// A daemon refusal as the model reads it; an unknown or ambiguous name
-/// says which.
+/// A daemon refusal as the model reads it. The daemon's own words say
+/// which name was unknown, or for a name agents on two hosts share, the
+/// `name@host` forms that pick each.
 fn refused(status: &Status, name: &str) -> Refusal {
-    if status.code() == Code::NotFound {
-        return Refusal(format!("no agent named {name}"));
-    }
-    match ambiguous(status) {
-        Some(ambiguous) if !ambiguous.candidates.is_empty() => Refusal(format!(
-            "{name} names several agents: {}",
-            ambiguous
-                .candidates
-                .iter()
-                .map(|agent| format!("{} ({})", agent.name, interpret::to_hex(&agent.agent_id)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
+    match (status.code(), status.message()) {
+        (Code::NotFound, "") => Refusal(format!("no agent named {name}")),
         _ => Refusal(plain(status)),
     }
-}
-
-/// The candidates an ambiguous name matched, from the status's details: an
-/// encoded Error whose details name their message types.
-fn ambiguous(status: &Status) -> Option<AmbiguousAgentName> {
-    use prost::{Message as _, Name as _};
-
-    wire::Error::decode(status.details())
-        .ok()?
-        .details
-        .into_iter()
-        .find(|detail| detail.r#type == AmbiguousAgentName::full_name())
-        .and_then(|detail| AmbiguousAgentName::decode(detail.value.as_slice()).ok())
 }
 
 fn plain(status: &Status) -> String {
@@ -700,20 +666,6 @@ fn exit_words(agent: &Agent) -> Option<String> {
 /// The kind an agent named in a spawn call.
 fn kind_named(word: &str) -> Option<Kind> {
     SPAWNABLE.into_iter().find(|kind| kind_word(*kind) == word)
-}
-
-fn interrupt_input(kind: Kind) -> wire::KindInput {
-    match kind {
-        Kind::Codex => wire::KindInput::Codex(wire::CodexInput {
-            of: Some(wire::codex_input::Of::Interrupt(Interrupt {})),
-        }),
-        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Interrupt(Interrupt {})),
-        }),
-        _ => wire::KindInput::ClaudePty(wire::ClaudePtyInput {
-            of: Some(wire::claude_pty_input::Of::Interrupt(Interrupt {})),
-        }),
-    }
 }
 
 fn required(arguments: &Value, name: &str) -> Result<String, Refusal> {

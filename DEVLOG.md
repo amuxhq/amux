@@ -1,3 +1,12 @@
+2026-10-13 — **The agents' stop tool stops.** It interrupted the child's
+turn, which left the child's own children running. Now it calls `StopAgent`
+for the named child, as a person's stop does: the child ends now as stopped,
+the stop cascades to its descendants on every host, and the tool answers once
+the child has ended. A later send to the child resumes it. There is no
+separate interrupt tool. Refusals from resolving a name (an unknown name, or
+one agents on two hosts share) now reach the model in the daemon's own words,
+which offer the `name@host` forms.
+
 2026-10-13 — **An agent's tools socket stops only the caller's children.**
 `StopAgent` arriving on an agent's tools socket is checked against the
 parent edge, as `SendInput` already was, so the stop tool can be a real stop

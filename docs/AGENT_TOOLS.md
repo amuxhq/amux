@@ -4,7 +4,7 @@
 
 Every agent, of every kind, gets the same seven tools from amux's MCP tool
 server. With them an agent can list the fleet and its hosts, message another
-agent, start a child of any kind on any paired host, interrupt its own
+agent, start a child of any kind on any paired host, stop its own
 children, say what it is working on, and show a person a file it made. The
 daemon sets every message's sender and every child's parent from who called,
 and it has no kind-specific code for any of it: the recipient's own agent
@@ -61,15 +61,17 @@ may have taken the call, and that the call was not made again.
 | `hosts` | none | `{"hosts": [...]}`, the trusted hosts | the same inventory |
 | `send` | `to`, `text`, `context?` | `{"id": "<envelope id>"}` once the recipient has the message | `ResolveAgent`, then `SendMessage` |
 | `spawn` | `kind`, `prompt`, `name?`, `cwd?`, `host?` | `{"name", "id"}` of the child | `CreateAgent` |
-| `stop` | `name` | `{}` | `ResolveAgent`, then `SendInput` with an interrupt |
+| `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `StopAgent` |
 | `status` | `working_on`: a string, or null | `ok` | nothing |
 | `attach` | `path`, `name?` | the attachment element | nothing |
 
 A refusal comes back as the tool's error text, in words a model can act on:
-`no agent named <name>`, `<name> names several agents: <name> (<id>), …`,
+`no agent named <name>`, `<name> names more than one agent; pick one with
+<name>@<host> or <name>@<host>` (agents on two hosts sharing a name),
 `rejected: exited` (a `send` to an exited agent that is not the sender's
-child), `<name> did not stop: <why>` (a `stop` the child refused, such as
-`exiting`), `<host> cannot be reached`, or the daemon's own message.
+child), `<name> did not stop: <why>` (a `stop` the daemon refused, such as
+one aimed at an agent that is not the caller's child), `<host> cannot be
+reached`, or the daemon's own message.
 
 ### agents
 
@@ -117,15 +119,14 @@ child's parent; the request cannot name any other parent.
 
 ### stop
 
-Interrupts the turn one of the caller's own direct children is running. The
-daemon checks the lineage and refuses any other agent with
-`PERMISSION_DENIED`. The interrupt is the kind's own `Interrupt` input, so the
-turn is cancelled the provider's way. It is the one input an agent sends; an
-agent reaches another agent's queue only by messaging it. The child's history
-stays and its
-process is not stopped by the call; a child then exits by its own one-shot
-rule once nothing is left for it. A child that has already finished has
-nothing to interrupt and answers that it did not stop.
+Stops one of the caller's own direct children, exactly as a person's stop
+does: `StopAgent` on the tools socket. The daemon checks the lineage and
+refuses any other agent with `PERMISSION_DENIED`. The child's turn is
+cancelled the provider's own way, the child ends as stopped, and the stop
+cascades to its descendants on every host (see [families](#families)). The
+child's history stays, and a later `send` to it resumes it. There is no
+separate interrupt tool: an agent reaches another agent's queue only by
+messaging it.
 
 ### status
 
@@ -277,8 +278,7 @@ incarnation.
 
 **Stop and delete.** The `stop` tool reaches direct children only. Stopping
 an agent, by the tool or by a person, stops its whole family the same way:
-each child is stopped in the same mode, on its own host through that host's
-daemon, and stops its own children in turn. The children's stops run beside
+each child is stopped on its own host through that host's daemon, and stops its own children in turn. The children's stops run beside
 the parent's and nothing waits for them; a child whose host cannot be reached
 is left running. A resumed parent hears nothing extra about them. Deleting an agent
 deletes its children too, best effort: a child on another host is deleted
@@ -367,7 +367,7 @@ ordinary peer calls; nothing about them is specific to messaging.
   The forwarded call waits up to 30 seconds, which covers the child's start
   there.
 - **Stop.** The lineage check runs against the child's replica row, which
-  carries the same parent edge, and the interrupt is then forwarded to the
+  carries the same parent edge, and the stop is then forwarded to the
   child's host.
 - **Reports to a parent.** A deliveries row for a parent on another host is
   sent to that host's daemon as a message from the child. An answer of not

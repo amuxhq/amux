@@ -1,3 +1,9 @@
+2026-10-13 — **A plan sent back without a note reaches terminal Claude.**
+The plan menu's program typed the note whenever the answer kept planning,
+and an empty note failed to encode, so nothing was typed while amux marked
+the plan sent back and Claude's menu waited for good. Without a note only
+the menu's send-back entry is typed.
+
 2026-10-13 — **Attachments the model can tell apart, and read without
 asking.** Codex is told each attached image's name: its element goes before
 the local image, as a file's element does, where a bare image left the model

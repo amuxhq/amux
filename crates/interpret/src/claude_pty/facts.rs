@@ -1192,6 +1192,11 @@ impl State {
         // Claude answers a message from its socket in a turn of its own.
         self.shared.turn_started();
         for body in peer_message_bodies(text) {
+            // The files the message carries were handed over as elements
+            // naming this host's copies; as positioned text the body reads
+            // as the message was queued.
+            let body = attachments::parse(&body).positioned.text;
+            let body = body.trim();
             // Claude shows the text it was handed; a body of the words
             // alone, without amux's label, is the same message.
             if let Some(at) = self

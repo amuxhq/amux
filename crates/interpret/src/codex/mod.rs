@@ -986,6 +986,7 @@ impl State {
             ItemDraft {
                 key: agent_message_key(&envelope.id),
                 text: envelope.text.clone(),
+                attachments: envelope.attachments.clone(),
                 input_id: envelope.id.clone(),
                 body: item_body(codex_item::Kind::AgentMessage(agent_message_body(
                     &envelope,
@@ -1020,7 +1021,10 @@ impl State {
         let message = InjectedMessage {
             role: "user".into(),
             content: vec![InjectedContent::InputText(TextContent {
-                text: crate::shared::carried(envelope),
+                text: crate::shared::with_elements(
+                    &crate::shared::carried(envelope),
+                    &envelope.attachments,
+                ),
                 extra: Default::default(),
             })],
             extra: Default::default(),

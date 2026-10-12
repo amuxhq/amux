@@ -1,3 +1,12 @@
+2026-10-13 — **Agents send files as attachments.** The send tool moves each
+attachment element the model wrote out of the text into the message's
+attachments, and the recipient's agent process writes them with paths on its
+own host, exactly as a person's prompt: headless Claude's user message and
+terminal Claude's messaging socket carry the elements with local paths, and
+the recipient's transcript item keeps the attachments so clients draw them.
+Codex's injection, written by its interpreter, names each file by hash and
+name without a path.
+
 2026-10-13 — **A file one agent sends another arrives as a file.** A file
 forwarded between agents travelled as the attachment element's text, naming
 a path on the sender's host that a recipient on another machine cannot

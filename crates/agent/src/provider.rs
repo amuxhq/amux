@@ -678,7 +678,10 @@ impl Provider {
                 via: interpret::Carrier::Stdin,
             } => {
                 let uuid = interpret::claude_sdk::client_uuid(&envelope.id);
-                self.user_message(&uuid, &envelope.text, &[]).await
+                // Files another agent sent were brought into this agent's
+                // blobs by its daemon, so their elements name paths here.
+                self.user_message(&uuid, &envelope.text, &envelope.attachments)
+                    .await
             }
             Effect::CodexTurnInput {
                 request,
@@ -711,7 +714,10 @@ impl Provider {
             Effect::Inject {
                 envelope,
                 via: interpret::Carrier::MessagingSocket,
-            } => self.message_terminal(&envelope.text).await,
+            } => {
+                let text = self.with_attachments(&envelope.text, &envelope.attachments);
+                self.message_terminal(&text).await
+            }
             other => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 format!("this agent cannot carry out {other:?} yet"),

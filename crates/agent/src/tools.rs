@@ -306,15 +306,20 @@ impl Server {
         let text = required(arguments, "text")?;
         let context = arguments["context"].as_str().map(|context| context.into());
         let recipient = self.resolve(&to).await?;
+        // A file the model attached (the attach tool's element) travels as
+        // an attachment, not as text naming a path on this host: the
+        // recipient's host fetches its bytes and its agent reads them at a
+        // path of its own.
+        let positioned = attachments::parse(&text).positioned;
         let request = SendMessageRequest {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             to: Some(AgentRef {
                 host_id: recipient.host_id,
                 agent_id: recipient.agent_id,
             }),
-            text,
+            text: positioned.text,
             context,
-            attachments: Vec::new(),
+            attachments: positioned.attachments,
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {

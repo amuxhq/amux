@@ -101,7 +101,10 @@ label the recipient sees with the message. `to` is resolved as `ResolveAgent`
 resolves a reference (a name, `name@host`, or an id in any form amux prints),
 across the fleet, own and replica rows alike; an unknown name is refused
 before anything is sent, and a name agents on two hosts share is refused
-offering the `name@host` forms that pick each. The answer is the envelope id, once
+offering the `name@host` forms that pick each. An attachment element in
+`text` (what `attach` answered) travels as an attachment: the recipient's
+host fetches the file, and the recipient reads it at a path on its own host
+([attachments](ATTACHMENTS.md)). The answer is the envelope id, once
 the recipient's provider has the message; [delivery](#delivery) describes
 what that means. When a message reaches an agent from another agent, the
 tool's description tells it to reply with `send` to that agent's name.

@@ -1219,6 +1219,7 @@ impl State {
             ItemDraft {
                 key: agent_message_key(&envelope.id),
                 text: envelope.text.clone(),
+                attachments: envelope.attachments.clone(),
                 input_id: envelope.id.clone(),
                 body: item_body(claude_pty_item::Kind::AgentMessage(agent_message_body(
                     &envelope,

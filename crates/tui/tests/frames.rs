@@ -844,3 +844,336 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
         .expect("the net shuts down")
         .unwrap();
 }
+
+// --- the client closing, and a chat closing under the person ----------------
+
+/// A served net of idle headless Claude agents on desk, and a client of desk.
+async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tui::TuiConfig) {
+    let mut topology = Topology::new().host("desk");
+    for name in names {
+        topology = topology.agent(
+            AgentDecl::new(name, "desk")
+                .kind(FakeKind::ClaudeSdk)
+                .steps(vec![text("Ready."), Step::TurnEnd])
+                .prompt("go"),
+        );
+    }
+    let net = Net::start(topology).await.unwrap();
+    for name in names {
+        net.settle(name).await.unwrap();
+    }
+    let client: std::sync::Arc<dyn client::Client> =
+        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let config = tui::TuiConfig {
+        working_dir: "/".into(),
+        leader: 'a',
+        theme: theme(),
+        initial_chat: None,
+        attach: false,
+        version: String::new(),
+        local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
+        layout: None,
+        reports: None,
+        chat_in: tui::setup::ChatIn::Amux,
+        defaults: tui::setup::Defaults::default(),
+    };
+    (net, client, config)
+}
+
+/// A client of desk whose fleet lists every one of `ids`.
+async fn app_listing(
+    client: std::sync::Arc<dyn client::Client>,
+    config: tui::TuiConfig,
+    ids: &[&[u8]],
+) -> tui::App {
+    let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
+        .await
+        .unwrap();
+    let app = tui::App::new(client, fleet, config);
+    let mut changed = app.fleet.changed();
+    while ids.iter().any(|id| app.fleet.state().find(id).is_none()) {
+        tokio::time::timeout(PATIENCE, changed.changed())
+            .await
+            .expect("the fleet lists the agents")
+            .unwrap();
+    }
+    app
+}
+
+fn press(app: &mut tui::App, code: crossterm::event::KeyCode) {
+    app.key(crossterm::event::KeyEvent::from(code));
+}
+
+/// A draft is the person's work and outlives the client: closing the
+/// terminal client (or detaching) and opening it again finds the unsent
+/// words in the agent's composer. Kept on this device, never synced. They
+/// were held only in the client's memory and lost.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_outlives_the_terminal_client_closing() {
+    let (net, client, config) = desk_of(&["worker"]).await;
+    let worker = net.agent("worker").unwrap().id;
+    let mut app = app_listing(client.clone(), config.clone(), &[worker.as_bytes()]).await;
+    open_chat(&mut app, worker.as_bytes()).await;
+    for c in "important unsent draft".chars() {
+        press(&mut app, crossterm::event::KeyCode::Char(c));
+    }
+    drop(app);
+
+    let mut app = app_listing(client, config, &[worker.as_bytes()]).await;
+    open_chat(&mut app, worker.as_bytes()).await;
+    assert_eq!(
+        app.chat.as_ref().unwrap().view.editor.text(),
+        "important unsent draft",
+        "the draft did not outlive the client"
+    );
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// When a chat closes under the person (its agent deleted elsewhere), the
+/// rest of what they are typing never acts on home: "fix x" then Enter
+/// opened the window to end the focused agent and confirmed it. Home holds
+/// keys for the same half second an ask does; after that its keys work.
+#[tokio::test(flavor = "multi_thread")]
+async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent() {
+    use crossterm::event::KeyCode;
+    let (net, client, config) = desk_of(&["doomed", "healthy"]).await;
+    let doomed = net.agent("doomed").unwrap().id;
+    let healthy = net.agent("healthy").unwrap().id;
+    let mut app = app_listing(
+        client.clone(),
+        config,
+        &[doomed.as_bytes(), healthy.as_bytes()],
+    )
+    .await;
+    // Home's focus on healthy, as the person left it.
+    press(&mut app, KeyCode::Char('/'));
+    for c in "healthy".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Down);
+    open_chat(&mut app, doomed.as_bytes()).await;
+
+    client
+        .delete_agent(wire::DeleteAgentRequest {
+            agent_id: doomed.as_bytes().to_vec(),
+        })
+        .await
+        .unwrap();
+    tokio::time::timeout(PATIENCE, async {
+        while app.chat.is_some() {
+            app.housekeep();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the deleted agent's chat closes");
+    for c in "fix x".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    let ended = |app: &tui::App| {
+        app.fleet
+            .state()
+            .find(healthy.as_bytes())
+            .is_none_or(|agent| agent.lifecycle() != wire::Lifecycle::Live)
+    };
+    let mut changed = app.fleet.changed();
+    let stopped_by_typing = tokio::time::timeout(Duration::from_secs(3), async {
+        while !ended(&app) {
+            changed.changed().await.unwrap();
+        }
+    })
+    .await
+    .is_ok();
+    assert!(
+        !stopped_by_typing,
+        "the words typed as the chat closed ended healthy"
+    );
+    // After half a second with no key, home's keys act again.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    press(&mut app, KeyCode::Char('x'));
+    press(&mut app, KeyCode::Enter);
+    tokio::time::timeout(PATIENCE, async {
+        while !ended(&app) {
+            changed.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("x then Enter on home ends the focused agent");
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// The whole screen as text, one row a line.
+fn screen_text(buffer: &Buffer) -> String {
+    (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Raw attach asked for from inside a chat on another host's agent says
+/// why in words that fit the chat: the notice was home's ("enter opens
+/// its chat"), and in the chat Enter sends the draft.
+#[tokio::test(flavor = "multi_thread")]
+async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
+    let net = Net::start(
+        topology().agent(
+            AgentDecl::new("far", "desk")
+                .kind(FakeKind::ClaudePty)
+                .steps(vec![text("Ready."), Step::TurnEnd])
+                .prompt("go"),
+        ),
+    )
+    .await
+    .unwrap();
+    net.settle("far").await.unwrap();
+    let far = net.agent("far").unwrap().id;
+    let client: std::sync::Arc<dyn client::Client> =
+        std::sync::Arc::new(client::InProcess::new(net.client("laptop").unwrap()));
+    let config = tui::TuiConfig {
+        working_dir: "/".into(),
+        leader: 'a',
+        theme: theme(),
+        initial_chat: None,
+        attach: true,
+        version: String::new(),
+        local_host: net.host("laptop").unwrap().host_id.as_bytes().to_vec(),
+        layout: None,
+        reports: None,
+        chat_in: tui::setup::ChatIn::Amux,
+        defaults: tui::setup::Defaults::default(),
+    };
+    let mut app = app_listing(client, config, &[far.as_bytes()]).await;
+    open_chat(&mut app, far.as_bytes()).await;
+    app.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('a'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    press(&mut app, crossterm::event::KeyCode::Char('a'));
+    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+    terminal.draw(|frame| app.draw(frame)).unwrap();
+    let screen = screen_text(terminal.backend().buffer());
+    assert!(
+        screen.contains("another machine"),
+        "the chat says the terminal is elsewhere:\n{screen}"
+    );
+    assert!(
+        !screen.contains("enter opens its chat"),
+        "inside far's chat the notice says Enter opens the chat:\n{screen}"
+    );
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// desk's client with `name`'s chat open, `name` a terminal-less agent on
+/// laptop, the two linked.
+async fn far_chat(name: &str) -> (Net, tui::App) {
+    let net = Net::start(
+        topology().agent(
+            AgentDecl::new(name, "laptop")
+                .kind(FakeKind::ClaudeSdk)
+                .steps(vec![text("Ready."), Step::TurnEnd])
+                .prompt("go"),
+        ),
+    )
+    .await
+    .unwrap();
+    net.settle(name).await.unwrap();
+    let id = net.agent(name).unwrap().id;
+    let client: std::sync::Arc<dyn client::Client> =
+        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let config = tui::TuiConfig {
+        working_dir: "/".into(),
+        leader: 'a',
+        theme: theme(),
+        initial_chat: None,
+        attach: false,
+        version: String::new(),
+        local_host: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
+        layout: None,
+        reports: None,
+        chat_in: tui::setup::ChatIn::Amux,
+        defaults: tui::setup::Defaults::default(),
+    };
+    let mut app = app_listing(client, config, &[id.as_bytes()]).await;
+    open_chat(&mut app, id.as_bytes()).await;
+    (net, app)
+}
+
+/// Every screen `app` draws for `patience`, housekeeping between.
+async fn screens_for(app: &mut tui::App, patience: Duration) -> Vec<String> {
+    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+    let mut screens = Vec::new();
+    let until = tokio::time::Instant::now() + patience;
+    while tokio::time::Instant::now() < until {
+        app.housekeep();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        screens.push(screen_text(terminal.backend().buffer()));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    screens
+}
+
+/// Unlinking the agent's host is not the agent ceasing to exist: a chat
+/// open on laptop's agent when desk and laptop were unlinked closed with
+/// "the chat closed: no agent with that id", while laptop still ran it
+/// with an approval open.
+#[tokio::test(flavor = "multi_thread")]
+async fn unlinking_the_agents_host_never_says_there_is_no_such_agent() {
+    let (mut net, mut app) = far_chat("cx3").await;
+    net.remove_link("desk", "laptop").await.unwrap();
+    let screens = screens_for(&mut app, Duration::from_secs(5)).await;
+    if let Some(screen) = screens
+        .iter()
+        .find(|screen| screen.contains("no agent with that id"))
+    {
+        panic!("unlinking laptop said cx3 does not exist:\n{screen}");
+    }
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// A chat open on an agent deleted from its own host says it was deleted
+/// (or closes): it said "exited · aborted" and "Enter resumes", and Enter
+/// answered "could not resume: no agent <uuid>".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_on_an_agent_deleted_on_its_far_host_never_offers_to_resume_it() {
+    let (mut net, mut app) = far_chat("i1").await;
+    net.delete("i1").await.unwrap();
+    let screens = screens_for(&mut app, Duration::from_secs(5)).await;
+    let last = screens.last().cloned().unwrap_or_default();
+    assert!(
+        app.chat.is_none() || last.contains("deleted"),
+        "five seconds after i1 was deleted its chat neither closed nor said so:\n{last}"
+    );
+    if let Some(screen) = screens
+        .iter()
+        .find(|screen| screen.contains("Enter resumes"))
+    {
+        panic!("the deleted i1's chat offered to resume it:\n{screen}");
+    }
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}

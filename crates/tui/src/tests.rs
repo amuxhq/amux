@@ -960,8 +960,8 @@ fn detached_keeps_the_rows_and_disables_send() {
     assert!(screen.contains("studio away · not current"), "{screen}");
     assert!(screen.contains("studio is away"), "{screen}");
     assert!(screen.contains("reply number 5"), "{screen}");
-    assert!(screen.contains("Draft kept · sending waits"), "{screen}");
-    assert!(view.key(&state, key(KeyCode::Enter), theme()).is_empty());
+    // What Enter does here is decided elsewhere: the prompt is held to send
+    // when the host is back (round2::a_prompt_sent_while_the_host_is_away_…).
     assert_eq!(view.editor.text(), "still typing");
 }
 
@@ -3944,36 +3944,64 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
 
 // --- keys pressed just as an ask appears --------------------------------------
 
-/// For about half a second after an ask appears, keys still go to the draft:
-/// a person typing as it opens has not read it, so a digit among their words
-/// is part of the draft, not an answer. After the window a digit answers.
-///
-/// The ask is first drawn at `at` and the first digit is pressed then; the
-/// second is pressed 600 ms later, after another frame.
+/// An ask arms only after half a second with no key pressed: every key,
+/// before or after the ask is drawn, restarts the window. A person typing
+/// steadily as an ask opens has not read it, so their digits and their
+/// Enter stay the draft's; once they have stopped for half a second, a
+/// digit answers. (Round one's window ran from the ask's first draw, so a
+/// tester typing a key every 300 ms to 1.5 s answered asks with the digits
+/// of a sentence.)
 #[test]
-fn keys_typed_as_an_ask_appears_go_to_the_draft_for_half_a_second() {
+fn keys_typed_steadily_as_an_ask_appears_stay_in_the_draft_until_half_a_second_of_quiet() {
     let idle = chat(vec![]);
     let (asking, at) = fixtures::Named::ClaudePermissionAsk.state();
-    let mut view = ChatView::new(b"agent".to_vec(), at, false);
-    typed(&mut view, &idle, "I have ");
+    let mut view = ChatView::new(b"agent".to_vec(), at - 900, false);
+    // Typing before the ask, one key every 300 ms.
+    for (i, c) in "I h".chars().enumerate() {
+        view.key_at(
+            &idle,
+            key(KeyCode::Char(c)),
+            theme(),
+            at - 900 + 300 * i as i64,
+        );
+    }
     draw(&mut view, &asking, at, W, H, theme());
-    let effects = view.key_at(&asking, key(KeyCode::Char('1')), theme(), at);
+    // Still typing across the ask's opening, every 300 ms: at its draw,
+    // then 300, 600 and 900 ms after it, so the last two are past half a
+    // second from the draw but never half a second after a key.
+    let mut answered = Vec::new();
+    for (i, c) in ['a', '2', '3', '1'].into_iter().enumerate() {
+        let now = at + 300 * i as i64;
+        draw(&mut view, &asking, now, W, H, theme());
+        answered.extend(
+            view.key_at(&asking, key(KeyCode::Char(c)), theme(), now)
+                .into_iter()
+                .filter(|effect| matches!(effect, ChatEffect::Answer(_))),
+        );
+    }
+    let now = at + 1_200;
+    draw(&mut view, &asking, now, W, H, theme());
+    answered.extend(
+        view.key_at(&asking, key(KeyCode::Enter), theme(), now)
+            .into_iter()
+            .filter(|effect| matches!(effect, ChatEffect::Answer(_))),
+    );
     assert!(
-        !effects
-            .iter()
-            .any(|effect| matches!(effect, ChatEffect::Answer(_))),
-        "a digit typed as the ask appeared answered it: {effects:?}"
+        answered.is_empty(),
+        "keys typed every 300 ms answered the ask: {answered:?}"
     );
     assert_eq!(
         view.editor.text(),
-        "I have 1",
-        "a key typed as the ask appeared lands in the draft"
+        "I ha231",
+        "the keys typed across the ask's opening are the draft's"
     );
-    draw(&mut view, &asking, at + 600, W, H, theme());
-    let effects = view.key_at(&asking, key(KeyCode::Char('1')), theme(), at + 600);
+    // Half a second of quiet: the ask is armed and a digit answers.
+    let now = at + 1_200 + 500;
+    draw(&mut view, &asking, now, W, H, theme());
+    let effects = view.key_at(&asking, key(KeyCode::Char('1')), theme(), now);
     assert!(
         matches!(effects.as_slice(), [ChatEffect::Answer(_)]),
-        "after the window a digit answers: {effects:?}"
+        "after half a second with no key a digit answers: {effects:?}"
     );
 }
 

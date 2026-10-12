@@ -1,3 +1,19 @@
+2026-10-13 — **Failing terminal-client and client-library tests for the
+second QA round's decisions.** An ask now waits for half a second with no
+key pressed before it takes keys, restarting on every key; round one's test,
+which let a digit 600 ms after the ask answer it, becomes one where keys
+typed every 300 ms stay in the draft. A prompt or answer refused because the
+host could not be reached is held and sent again with its id once the host
+is back. /model, /effort and /rename are the client's own and never reach
+the agent, and Codex refuses a slash command it does not offer in the
+composer. On home `x` stops a live agent and deletes only an exited one, the
+`s` key goes, the stop window names the turn it cuts, and Ctrl+X reads
+"interrupt". Words typed as a chat closes end no other agent. Drafts outlive
+the client. Plus: an empty multi-select submits, an away host for a new
+agent says why, Up recalls the last prompt, leader o opens the newest fold, a
+file over the attachment limit is refused naming it, and the attach,
+reconnect, unlink and deleted-agent messages say what happened.
+
 2026-10-12 — **Failing phone tests from the second QA round.** The agent
 list's clock is never older than the rows it shows, so an age does not read
 "0s" for minutes. An attachment that could not be stored is named and not

@@ -557,4 +557,30 @@ mod tests {
         let headless = attacher.refusal(&agent([7; 16], Kind::ClaudeSdk)).unwrap();
         assert!(headless.contains("open its chat"), "{headless}");
     }
+
+    /// An exited agent has no terminal to attach to: the refusal says it
+    /// is stopped in words, as the other refusals do, before any socket is
+    /// tried. Attaching to one printed the socket's path and "No such file
+    /// or directory (os error 2)".
+    #[test]
+    fn a_stopped_agents_terminal_is_refused_in_words_before_any_socket() {
+        let attacher = Attacher::new(&profile(), LeaderKey::default()).unwrap();
+        for kind in [Kind::ClaudePty, Kind::Codex] {
+            let stopped = Agent {
+                agent_id: vec![1; 16],
+                host_id: vec![7; 16],
+                kind: kind as i32,
+                name: "pt".into(),
+                lifecycle: wire::Lifecycle::Exited as i32,
+                ..Agent::default()
+            };
+            let refusal = attacher.refusal(&stopped);
+            assert!(
+                refusal
+                    .as_deref()
+                    .is_some_and(|why| why.contains("stopped")),
+                "attaching to the stopped {kind:?} agent pt is not refused as stopped: {refusal:?}"
+            );
+        }
+    }
 }

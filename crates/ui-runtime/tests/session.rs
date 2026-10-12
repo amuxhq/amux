@@ -903,3 +903,67 @@ async fn a_return_whose_held_rows_fit_releases_them_without_a_fetch() {
     assert_eq!(keys(&session), ["k3", "k4", "k5"]);
     assert!(!feed.is_closed());
 }
+
+// --- decided: sends the host never received are held -------------------------
+
+/// Decided: an input the runtime refused before it was written, because the
+/// agent's host could not be reached, certainly never left. The client
+/// library holds it as pending (visible, with Cancel), and once the host is
+/// reachable again sends it once more under the same id. Today it becomes a
+/// rejection and nothing sends it again. Covers a prompt and an ask answer;
+/// a stop is held the same way once it goes through the library.
+#[tokio::test]
+async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_again_with_its_id() {
+    for act in ["prompt", "answer"] {
+        let clock = ManualClock::new(0);
+        let (session, mut calls, feed) = open_caught_up(&clock, 2).await;
+        let _sending = tokio::spawn({
+            let session = session.clone();
+            async move {
+                match act {
+                    "prompt" => {
+                        session.send_prompt("hello", Vec::new()).await;
+                    }
+                    _ => {
+                        let _ = session.answer(answering(KIND)).await;
+                    }
+                }
+            }
+        });
+        let (request, reply) = calls.send_input().await;
+        let id = request.input.unwrap().input_id;
+        reply
+            .send(Ok(rejected(wire::Refusal::HostUnreachable)))
+            .ok();
+        // The verdict lands; the input is held, not rejected.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let held = session.state().input_state(&id);
+        assert!(
+            !matches!(held, Some(InputState::Rejected(_))),
+            "{act}: an input that never left was rejected: {held:?}"
+        );
+        // The host comes back: the chat reconnects and catches up.
+        let feed = reconnect(&clock, &session, &mut calls, feed).await;
+        feed.send(snapshot(KIND, 3, &[]));
+        feed.send(ev(text_item(KIND, 2, 2, "row 2")));
+        feed.send(caught_up(3));
+        until(session.changed(), || {
+            session.state().caught_up().then_some(())
+        })
+        .await;
+        let again = tokio::time::timeout(std::time::Duration::from_secs(1), calls.next()).await;
+        match again {
+            Ok(Call::SendInput(request, reply)) => {
+                assert_eq!(
+                    request.input.unwrap().input_id,
+                    id,
+                    "{act}: the held input is sent again under its own id"
+                );
+                reply.send(Ok(accepted(false))).ok();
+            }
+            Ok(other) => panic!("{act}: expected the held input again, got {other:?}"),
+            Err(_) => panic!("{act}: the held input was never sent again once the host was back"),
+        }
+        drop(feed);
+    }
+}

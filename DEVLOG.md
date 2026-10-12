@@ -1,3 +1,12 @@
+2026-10-13 — **QA testers are told the settled behaviour and how slowly
+they type.** Testers kept reporting decided behaviour: a phone listing only
+the agents of hosts it is paired with, agents ending after a test net's
+20-second grace, amux's own presentation of tool calls. `qa/SETTLED.md`
+lists, as behaviour, what is decided once the current fixes land, and goes
+into every tester's prompt. The agent guide says a tester's key landing on
+an ask that opened while it typed, more than half a second after its
+previous key, is an artefact of its pace.
+
 2026-10-13 — **The QA launcher shuts every net down, and a tester's `ctl`
 finds its net from any folder.** In the second overnight run one `ctl down`
 outlasted the launcher's three-minute wait; the timeout went uncaught, the

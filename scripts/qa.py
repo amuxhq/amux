@@ -146,7 +146,7 @@ def settings(run: Path, folder: Path) -> dict:
 
 def prompt(run: Path, folder: Path, persona: Path, phone: bool) -> str:
     parts = [(QA / "PROMPT.md").read_text(), "\n---\n\n# Your persona\n\n", persona.read_text()]
-    for name in ("ATTACKS.md", "AGENTS-GUIDE.md"):
+    for name in ("ATTACKS.md", "AGENTS-GUIDE.md", "SETTLED.md"):
         parts += ["\n---\n\n", (QA / name).read_text()]
     phone_line = ("You hold a phone: `testnet ctl phone open` installs and launches the app on the "
                   "simulator leased to you. Whatever your persona, create at least one terminal Claude "

@@ -145,6 +145,7 @@ The prompt is assembled from the committed `qa/` folder:
 | `qa/personas/*.md` | One persona per file: who the person is, their goal, their machines and network, what would make them unhappy. |
 | `qa/ATTACKS.md` | Attack moves with `ctl` recipes, and the screenshot checklist. |
 | `qa/AGENTS-GUIDE.md` | Wording that reliably makes Claude and Codex agents do each thing a tester needs. |
+| `qa/SETTLED.md` | Behaviour that is decided and not a finding, as amux behaves once the current fixes land. Update it when a decision is made. |
 | `qa/FINDING.md` | The finding template a capture starts from. |
 | `qa/LEDGER.md` | The ledger's format and how testers use it. |
 | `qa/TRIAGE.md` | From finding to test, for the triager. |

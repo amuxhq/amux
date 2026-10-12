@@ -94,7 +94,8 @@ how many times you saw it and what changed between them.
 
 Your judgement decides what is a finding. Use the docs only afterwards, to
 label it: it contradicts the docs (quote the promise), it is documented but
-surprising, or it is undocumented.
+surprising, or it is undocumented. What `SETTLED.md` describes is decided:
+report only where amux behaves otherwise.
 
 ## 11. When to stop
 

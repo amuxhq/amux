@@ -550,6 +550,32 @@ public enum ChatWords {
         }
     }
 
+    /// What stopping an agent cuts, as the stop confirm asks it: "desk-1 is
+    /// working and has 2 background jobs and 1 sub-agent. Stop anyway?" Nil
+    /// when a stop cuts nothing under way, for the plain confirm.
+    public static func stopCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
+        var held: [String] = []
+        if jobs > 0 {
+            held.append(jobs == 1 ? String(localized: "1 background job") : String(localized: "\(jobs) background jobs"))
+        }
+        if subAgents > 0 {
+            held.append(subAgents == 1 ? String(localized: "1 sub-agent") : String(localized: "\(subAgents) sub-agents"))
+        }
+        let has = held.joined(separator: String(localized: " and "))
+        switch phase {
+        case .working?:
+            return has.isEmpty
+                ? String(localized: "\(name) is working. Stop anyway?")
+                : String(localized: "\(name) is working and has \(has). Stop anyway?")
+        case .needsYou?:
+            return has.isEmpty
+                ? String(localized: "\(name) needs you mid-turn. Stop anyway?")
+                : String(localized: "\(name) needs you mid-turn and has \(has). Stop anyway?")
+        default:
+            return has.isEmpty ? nil : String(localized: "\(name) has \(has). Stop anyway?")
+        }
+    }
+
     /// The exited agent's head in the composer.
     public static func exited(_ cause: ExitCause) -> String {
         switch cause {

@@ -1,3 +1,22 @@
+2026-10-13 — **The phone stops, interrupts and deletes as decided, and keeps its drafts.**
+On the phone, a live agent's menu now offers Stop Agent and never Delete
+Agent: stopping ends the agent but keeps it, resumable, and only an exited
+agent can be deleted. Stopping asks first, and when the stop cuts something
+the question says what: "desk-1 is working and has 2 background jobs and 1
+sub-agent. Stop anyway?" The counts come from the agent's fleet row, which now
+carries how many agents run below it on every host and how many background
+jobs it has, so a child on a host the phone is not paired with is counted too.
+The square button under a working turn, and the ask card's way out of a turn,
+now read Interrupt, since they end the turn and leave the agent running.
+
+A half-typed message on the phone used to be lost when its chat closed after
+five minutes away or when the app was reopened. Drafts are now kept on the
+phone for each account and agent, and never sent to other devices. A file over
+the 64 MB attachment limit is refused before it is read, in words naming the
+file and the limit, and an attachment that fails to upload is named with the
+reason rather than disappearing. A question whose options carry code previews
+shows the first one straight away, since a phone has nothing to hover with.
+
 2026-10-13 — **Chat rows, asks and home rows say what happened, in the person's words.**
 Several things both clients draw from the shared views were wrong or hard to
 read; the views now hand both clients the corrected facts.

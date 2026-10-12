@@ -2772,13 +2772,19 @@ public struct FleetCard: Codable, Hashable, Sendable {
     /// The whole family below and including this agent: what a folded
     /// family stands for when a client counts its fleet.
     public var members: UInt32
+    /// Live agents below this one on every host its host knows of, as its
+    /// row reports them: what a stop or delete would cut. It counts children
+    /// on hosts this client cannot see, which `members` leaves out.
+    public var descendants: UInt32
+    /// Jobs its provider runs in the background, as its row reports them.
+    public var backgroundJobs: UInt32
     /// The branch of the folder the agent started in, as of its last turn
     /// end; None on a detached head or outside a repository.
     public var branch: String?
     /// How it ended, once it has.
     public var exitCause: ExitCause?
 
-    public init(agent: AgentKey, name: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, branch: String?, exitCause: ExitCause?) {
+    public init(agent: AgentKey, name: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, branch: String?, exitCause: ExitCause?) {
         self.agent = agent
         self.name = name
         self.kind = kind
@@ -2790,6 +2796,8 @@ public struct FleetCard: Codable, Hashable, Sendable {
         self.children = children
         self.familyAttention = familyAttention
         self.members = members
+        self.descendants = descendants
+        self.backgroundJobs = backgroundJobs
         self.branch = branch
         self.exitCause = exitCause
     }
@@ -2806,6 +2814,8 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case children
         case familyAttention = "family_attention"
         case members
+        case descendants
+        case backgroundJobs = "background_jobs"
         case branch
         case exitCause = "exit_cause"
     }

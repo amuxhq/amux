@@ -406,6 +406,7 @@ public final class RuntimeCoordinator {
             profilesMoved()
         }
         registry.leave(account)
+        DraftShelf(account: account).forgetAll()
         _ = await runtime.deleteProfile(entry.profile)
         profilesMoved()
     }

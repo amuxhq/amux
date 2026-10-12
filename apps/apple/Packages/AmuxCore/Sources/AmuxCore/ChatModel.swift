@@ -161,8 +161,15 @@ public final class ChatModel {
     /// Bumped whenever the list should go to its newest row: a swap, a send,
     /// or the reader asking.
     public private(set) var toNewest = 0
-    public var draft = ""
-    public private(set) var attachments: [DraftAttachment] = []
+    public var draft = "" {
+        didSet { if draft != oldValue { keepDraft() } }
+    }
+    public private(set) var attachments: [DraftAttachment] = [] {
+        didSet { if attachments != oldValue { keepDraft() } }
+    }
+    /// Told the draft as it stands each time it changes, so it can be kept
+    /// past the session and the app: the phone's drafts live on the device.
+    @ObservationIgnored public var keeping: (@MainActor (Draft) -> Void)?
     /// Attachments still being stored.
     public private(set) var uploading = 0
     /// A send or resume on its way.
@@ -766,6 +773,16 @@ public final class ChatModel {
         attachments = []
     }
 
+    /// Puts back a draft kept from an earlier session, ahead of anything
+    /// typed since.
+    public func reopen(_ kept: Draft) {
+        restore(kept)
+    }
+
+    private func keepDraft() {
+        keeping?(composed)
+    }
+
     private func restore(_ sent: Draft) {
         let words = sent.words
         if draft.isEmpty {
@@ -776,8 +793,27 @@ public final class ChatModel {
         attachments = (sent.attachments ?? []) + attachments
     }
 
-    /// Stores a photo or file and adds it to the draft once it is stored.
+    /// The most an attachment may hold, in bytes: 64 MiB of its content,
+    /// worded "64 MB". The hosts refuse more; the phone says so before it
+    /// uploads anything. A copy of `wire::ATTACHMENT_SIZE_LIMIT`, because the
+    /// bridge carries values and no constants: the two change together.
+    public static let attachmentLimit = 64 * 1024 * 1024
+
+    /// Whether an attachment this large may be stored. One over the limit is
+    /// refused here, in words naming the file and the limit, so nothing is
+    /// read or uploaded for it.
+    @discardableResult
+    public func admits(name: String, size: Int) -> Bool {
+        guard size > Self.attachmentLimit else { return true }
+        notice = String(localized: "\(name) is not attached because it is over the 64 MB limit for attachments.")
+        return false
+    }
+
+    /// Stores a photo or file and adds it to the draft once it is stored. One
+    /// that cannot be stored is named in the notice with the reason, so it
+    /// never leaves the draft without a word.
     public func attach(_ data: Data, name: String, mime: String, image: Bool) {
+        guard admits(name: name, size: data.count) else { return }
         uploading += 1
         notice = nil
         Task {
@@ -785,7 +821,8 @@ public final class ChatModel {
             uploading -= 1
             switch stored {
             case .success(let blob): attachments.append(image ? .image(blob) : .file(blob))
-            case .failure(let failure): notice = failure.description
+            case .failure(let failure):
+                notice = String(localized: "\(name) is not attached: \(failure.description)")
             }
         }
     }
@@ -949,14 +986,18 @@ public final class ChatModel {
         notice = nil
         let source = self.source
         Task {
-            switch await body(source) {
+            let outcome = await body(source)
+            woke()
+            switch outcome {
             case .done?: done?()
             case .rejected(let reason)?: notice = Self.notSent(reason)
             case .failed(let reason)?: notice = reason
-            case .notConfirmed?: notice = Self.notConfirmed
+            case .notConfirmed?:
+                // An answer the card itself now says was not confirmed, with
+                // Resend and Discard, is not said a second time above it.
+                if case .notConfirmed? = ask?.state {} else { notice = Self.notConfirmed }
             case nil: notice = Self.closed
             }
-            woke()
         }
     }
 

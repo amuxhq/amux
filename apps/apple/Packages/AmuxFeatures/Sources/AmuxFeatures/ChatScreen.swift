@@ -10,12 +10,23 @@ public struct ChatSubject: Equatable, Sendable {
     public let directory: String
     /// How this phone reaches the agent's host.
     public let reach: Reach
+    /// Live agents below this one on every host its host knows of, as its
+    /// fleet row counts them: children on hosts this phone is not paired
+    /// with included.
+    public let descendants: Int
+    /// Jobs its provider runs in the background, as its fleet row counts them.
+    public let backgroundJobs: Int
 
-    public init(name: String, host: String, directory: String, reach: Reach) {
+    public init(
+        name: String, host: String, directory: String, reach: Reach, descendants: Int = 0,
+        backgroundJobs: Int = 0
+    ) {
         self.name = name
         self.host = host
         self.directory = directory
         self.reach = reach
+        self.descendants = descendants
+        self.backgroundJobs = backgroundJobs
     }
 
     public var reachable: Bool { reach.online }
@@ -67,6 +78,8 @@ public enum ChatAction: Equatable, Sendable {
 /// What the chat has open over itself; one at a time.
 public enum ChatOverlay: String, Equatable, Sendable {
     case rename
+    /// Stopping the agent, with what the stop cuts named first.
+    case stop
     case delete
     /// The model, effort and permission mode.
     case settings
@@ -106,10 +119,11 @@ public struct ChatScreen: View {
         _showing = State(initialValue: showing)
     }
 
-    /// Everyone below this agent in its family, on any host: a delete takes
-    /// them all with it.
+    /// Everyone below this agent in its family, on any host: a stop or a
+    /// delete takes them all with it. The fleet row counts them on hosts this
+    /// phone cannot see; the family this phone lists is the floor.
     private var descendants: Int {
-        family?.children.reduce(0) { $0 + Int($1.members) } ?? 0
+        max(subject.descendants, family?.children.reduce(0) { $0 + Int($1.members) } ?? 0)
     }
 
     public var body: some View {
@@ -297,14 +311,17 @@ public struct ChatScreen: View {
                 actions(.copyAddress)
             },
         ]
+        // A live agent is stopped, which keeps it to resume; only an exited
+        // one is deleted, so nothing live is ever removed from here.
         if running {
-            items.append(MenuItem(title: String(localized: "Stop Agent"), systemImage: "stop.circle") {
-                actions(.stopAgent)
-            })
+            items.append(MenuItem(
+                title: String(localized: "Stop Agent"), systemImage: "stop.circle", destructive: true
+            ) { showing = .stop })
+        } else {
+            items.append(MenuItem(
+                title: String(localized: "Delete Agent"), systemImage: "trash", destructive: true
+            ) { showing = .delete })
         }
-        items.append(MenuItem(
-            title: String(localized: "Delete Agent"), systemImage: "trash", destructive: true
-        ) { showing = .delete })
         return MenuButton(
             name: String(localized: "More"), identifier: "chat.more", items: items,
             opened: { putDown += 1 }
@@ -494,6 +511,18 @@ public struct ChatStanding: View {
                 RenameCard(current: subject.name, cancel: { showing = nil }) { name in
                     showing = nil
                     actions(.rename(name))
+                }
+            case .stop?:
+                StopCard(
+                    name: subject.name,
+                    cuts: ChatWords.stopCuts(
+                        name: subject.name, phase: model.frame?.phase,
+                        jobs: max(subject.backgroundJobs, model.overview?.jobs.count ?? 0),
+                        subAgents: descendants),
+                    cancel: { showing = nil }
+                ) {
+                    showing = nil
+                    actions(.stopAgent)
                 }
             case .delete?:
                 DeleteCard(name: subject.name, descendants: descendants, cancel: { showing = nil }) {
@@ -704,7 +733,43 @@ private struct RenameCard: View {
     }
 }
 
-/// Deleting the agent, with what that does named first.
+/// Stopping the agent: a stop is always now, so when it cuts a turn,
+/// background jobs or sub-agents the confirm says which, and otherwise asks
+/// plainly.
+private struct StopCard: View {
+    @Environment(\.design) private var design
+    let name: String
+    /// What the stop cuts, as a question, or nil when it cuts nothing under way.
+    let cuts: String?
+    let cancel: () -> Void
+    let confirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(String(localized: "Stop \(name)?"))
+                .designFont(.screenTitle, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+            if let cuts {
+                Text(cuts)
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.ink.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .identified("chat.stop.cuts", label: cuts)
+            }
+            Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay. Resume starts it again."))
+            ButtonPair {
+                choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.stop.cancel", action: cancel)
+                choiceButton(String(localized: "Stop"), kind: .destructive, id: "chat.stop.confirm", action: confirm)
+            }
+        }
+        .padding(16)
+        .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
+        .identified("chat.stop.card", label: cuts ?? String(localized: "Stop \(name)?"))
+    }
+}
+
+/// Deleting an exited agent, with what that does named first.
 private struct DeleteCard: View {
     @Environment(\.design) private var design
     let name: String
@@ -718,7 +783,6 @@ private struct DeleteCard: View {
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
             Consequence("checkmark", kept: true, String(localized: "Its edits stay. Nothing is reverted."))
-            Consequence("xmark", kept: false, String(localized: "Its session ends. Unfinished work stops."))
             Consequence("xmark", kept: false, String(localized: "The chat is deleted on every device."))
             if descendants == 1 {
                 Consequence("xmark", kept: false, String(localized: "Its child agent is deleted too."))

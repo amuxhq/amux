@@ -37,6 +37,12 @@ pub struct FleetCard {
     /// The whole family below and including this agent: what a folded
     /// family stands for when a client counts its fleet.
     pub members: u32,
+    /// Live agents below this one on every host its host knows of, as its
+    /// row reports them: what a stop or delete would cut. It counts children
+    /// on hosts this client cannot see, which `members` leaves out.
+    pub descendants: u32,
+    /// Jobs its provider runs in the background, as its row reports them.
+    pub background_jobs: u32,
 }
 
 /// Home's sections, computed once for every client. Empty sections are
@@ -423,6 +429,8 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         children: fleet.families().children(&at).count() as u32,
         family_attention: fleet.family_attention(&at).unwrap_or(Attention::Exited),
         members: fleet.family(&at).len() as u32,
+        descendants: agent.descendants,
+        background_jobs: agent.background_jobs,
         agent: at,
     }
 }

@@ -916,6 +916,8 @@ def manage_agent(journey: PhoneJourney) -> list[str]:
     # Stopped: exited on the desk with its history kept, and resumable.
     journey.tap("chat.more")
     journey.choose("Stop Agent")
+    journey.wait_for("chat.stop.confirm")
+    journey.tap("chat.stop.confirm")
     stopped = journey.wait_inventory(
         "desk", lambda agents: (listed(agents, agent_id) or {}).get("lifecycle") == EXITED, "stopped"
     )

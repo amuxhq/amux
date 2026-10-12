@@ -83,9 +83,17 @@ only what changed. A chat is a `ChatModel` over an open `Chat`:
 - The whole list is read again only when a change batch says it was reloaded,
   which is what a Reset's swap and the reload of a head that moved on do: the
   rows on screen stay until the rebuilt transcript replaces them.
-- It keeps the draft, attachments, the head ask's unsent answers and a review
-  in progress for as long as the chat is open, so leaving the page loses none
-  of them.
+- It keeps the head ask's unsent answers and a review in progress for as
+  long as the chat is open, so leaving the page loses none of them. The
+  draft and its attachments last longer: `DraftShelf` keeps each one on the
+  phone, per account and agent, as it changes, so a draft outlives its
+  chat's session and the app being closed. Drafts never leave the device,
+  and removing an account from the phone forgets its drafts.
+- An attachment is checked against the stated limit, 64 MB of content
+  (`wire::ATTACHMENT_SIZE_LIMIT`, copied as `ChatModel.attachmentLimit`),
+  before anything is read or uploaded, and one over it is refused in words
+  naming the file and the limit. One that fails to store is named with the
+  reason in the chat's notice.
 
 A bundle keeps every chat a page shows open, plus chats viewed in the last
 five minutes, plus a chat a push is bringing current.

@@ -45,6 +45,8 @@ public final class StoreBundle {
     @ObservationIgnored private var viewed: [AgentKey: Date] = [:]
     /// How long a chat nobody shows stays open after it was last viewed.
     @ObservationIgnored public let sessionRetention: Duration
+    /// This account's drafts, kept on the phone past every session.
+    @ObservationIgnored public let drafts: DraftShelf
     /// Opens a session; the profile's unless a test hands one in.
     @ObservationIgnored private let opener: (@MainActor (AgentKey) throws(RuntimeFailure) -> OpenChat)?
     @ObservationIgnored public let now: @MainActor () -> Date
@@ -71,6 +73,7 @@ public final class StoreBundle {
         opener: (@MainActor (AgentKey) throws(RuntimeFailure) -> OpenChat)? = nil
     ) {
         self.account = account
+        self.drafts = DraftShelf(account: account)
         self.now = clock
         self.sessionRetention = sessionRetention
         self.opener = opener
@@ -241,6 +244,9 @@ public final class StoreBundle {
         if let open = models[agent] { return open.model }
         let chat = try openChat(agent) { [weak self] in self?.models[agent]?.model.woke() }
         let model = ChatModel(source: chat)
+        let shelf = drafts
+        if let kept = shelf.draft(for: agent) { model.reopen(kept) }
+        model.keeping = { shelf.keep($0, for: agent) }
         models[agent] = (chat, model)
         return model
     }

@@ -159,7 +159,7 @@ public struct AskCardView: View {
             MenuButton(
                 name: String(localized: "More"), identifier: "ask.more",
                 items: [MenuItem(
-                    title: String(localized: "Stop the turn"), systemImage: "stop.circle",
+                    title: String(localized: "Interrupt"), systemImage: "stop.circle",
                     destructive: true
                 ) { act(.stop) }]
             ) {
@@ -441,7 +441,7 @@ private struct AskBodyView: View {
             }
         case .unanswerable(let reason):
             why(reason.isEmpty
-                ? String(localized: "The agent is showing a menu this build can’t read. Attach from a terminal to answer it, or stop the turn.")
+                ? String(localized: "The agent is showing a menu this build can’t read. Attach from a terminal to answer it, or interrupt the turn.")
                 : reason)
         }
     }
@@ -505,7 +505,7 @@ private struct AskBodyView: View {
         case .link(_, _, let url):
             linkChoices(url)
         case .unanswerable:
-            choiceButton(String(localized: "Stop the turn"), kind: .outline, id: "ask.stop") {
+            choiceButton(String(localized: "Interrupt"), kind: .outline, id: "ask.stop") {
                 act(.stop)
             }
         case .command, .edit, .tool:
@@ -1196,6 +1196,18 @@ struct QuestionCard: View {
 
     private var hasPreviews: Bool { questions.contains { $0.options.contains { !$0.preview.isEmpty } } }
 
+    /// Whose preview the question shows: the option last touched, else the
+    /// first that has one. A phone has no hover, so waiting for a touch would
+    /// hide every preview until something was already picked.
+    private func previewed(_ question: QuestionView, at index: Int) -> Int? {
+        let highlight = highlighted.indices.contains(index) ? highlighted[index].map(Int.init) : nil
+        if let highlight, question.options.indices.contains(highlight),
+           !question.options[highlight].preview.isEmpty {
+            return highlight
+        }
+        return question.options.firstIndex { !$0.preview.isEmpty }
+    }
+
     /// One tap answers only one pick-one question with no previews, while
     /// its note is not being written.
     private var tapAnswers: Bool {
@@ -1209,19 +1221,26 @@ struct QuestionCard: View {
             .foregroundStyle(design.ink.color)
             .fixedSize(horizontal: false, vertical: true)
             .identified("ask.question", label: question.question)
-        let highlight = highlighted.indices.contains(index) ? highlighted[index] : nil
-        if let highlight, question.options.indices.contains(Int(highlight)),
-           !question.options[Int(highlight)].preview.isEmpty {
-            Text(question.options[Int(highlight)].preview)
-                .designFont(.monoSmall, design)
-                .foregroundStyle(design.ink.color)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous)
-                        .fill(design.sunken.color)
-                }
-                .identified("ask.preview")
+        if let shown = previewed(question, at: index) {
+            let option = question.options[shown]
+            VStack(alignment: .leading, spacing: 4) {
+                // Named, because before a pick it is the first option's,
+                // which nothing else on the card says.
+                Text(option.label)
+                    .designFont(.caption, design)
+                    .foregroundStyle(design.inkMuted.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(option.preview)
+                    .designFont(.monoSmall, design)
+                    .foregroundStyle(design.ink.color)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous)
+                            .fill(design.sunken.color)
+                    }
+            }
+            .identified("ask.preview", label: option.label)
         }
         VStack(spacing: 6) {
             ForEach(Array(question.options.enumerated()), id: \.offset) { position, option in

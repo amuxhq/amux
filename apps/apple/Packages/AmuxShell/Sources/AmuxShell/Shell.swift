@@ -433,11 +433,16 @@ private struct ChatPage: View {
         let row = stores.fleet.row(agent)
         let host = stores.fleet.host(agent.hostId)
         let name = row?.name ?? model?.frame?.name ?? agent.description
+        // The card counts what a stop cuts on hosts this phone cannot see; a
+        // folded family's member has one though home lists no row for it.
+        let card = row?.card ?? stores.profile?.card(agent)
         return ChatSubject(
             name: name.isEmpty ? agent.description : name,
             host: host?.name ?? row?.hostName ?? "",
             directory: row?.workingDirectory ?? "",
-            reach: host?.reach ?? row?.hostReach ?? .offline)
+            reach: host?.reach ?? row?.hostReach ?? .offline,
+            descendants: Int(card?.descendants ?? 0),
+            backgroundJobs: Int(card?.backgroundJobs ?? 0))
     }
 
     private func act(_ action: ChatAction) {
@@ -474,6 +479,11 @@ private struct ChatPage: View {
     private func attach(file url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        // A file over the limit is refused by its size, before it is read.
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           model?.admits(name: url.lastPathComponent, size: size) == false {
+            return
+        }
         guard let data = try? Data(contentsOf: url) else { return }
         let type = UTType(filenameExtension: url.pathExtension)
         model?.attach(

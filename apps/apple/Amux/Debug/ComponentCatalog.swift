@@ -580,9 +580,17 @@ enum ComponentCatalog {
             }),
             chat("rename", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) },
                  showing: .rename, settlesLate: true),
-            chat("delete", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) }, showing: .delete),
+            chat("stop", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) }, showing: .stop),
+            chat("stop-cuts", chat: {
+                ScriptedChat(
+                    rows: F.conversation, frame: ScriptedChat.frame(phase: .working),
+                    strip: ScriptedChat.strip(background: 2))
+            }, family: F.family, showing: .stop),
+            chat("delete", chat: {
+                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended)))
+            }, showing: .delete),
             chat("delete-family", chat: {
-                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame())
+                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended)))
             }, family: F.family, showing: .delete),
             chat("settings", chat: {
                 ScriptedChat(
@@ -1085,18 +1093,18 @@ enum CatalogFixtures {
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
         name: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
-        members: 1, branch: nil, exitCause: .finished)
+        members: 1, descendants: 0, backgroundJobs: 0, branch: nil, exitCause: .finished)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
                       name: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
-                      members: 1, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, branch: nil, exitCause: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
                       name: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
-                      members: 1, branch: nil, exitCause: nil),
+                      members: 1, descendants: 0, backgroundJobs: 0, branch: nil, exitCause: nil),
         ],
         attention: .needsYou, needYou: 1, parent: nil)
 }

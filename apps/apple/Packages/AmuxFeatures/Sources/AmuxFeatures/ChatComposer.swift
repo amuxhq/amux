@@ -268,7 +268,8 @@ struct ComposerBox: View {
             .disabled(!enabled)
             .identified("chat.resume", label: "Resume", enabled: enabled)
         } else if !model.hasDraft && working {
-            round("stop.fill", label: String(localized: "Stop"), id: "chat.stop", enabled: true) {
+            // It ends the turn, not the agent: Stop is the menu's, and ends it.
+            round("stop.fill", label: String(localized: "Interrupt"), id: "chat.stop", enabled: true) {
                 model.interrupt()
             }
         } else {

@@ -1139,14 +1139,16 @@
       {"literal": "\"permission-create\"", "context": "ask(\"permission-create\", height: 420, F.card(.claudeSdk, .edit(", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"crates/amux-ui/src/pairing/refusals/every_reason_a_pairing_is_refused.rs\"", "context": "path: \"crates/amux-ui/src/pairing/refusals/every_reason_a_pairing_is_refused.rs\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"//! Every reason a pairing is refused.\"", "context": ".line(PatchLine(kind: .added, text: \"//! Every reason a pairing is refused.\", number: 1)),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"pub use super::Code;\"", "context": ".line(PatchLine(kind: .added, text: \"pub use super::Code;\", number: 2)),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
+      {"literal": "\"pub use super::Code;\"", "context": ".line(PatchLine(kind: .added, text: \"pub use super::Code;\", number: 2)),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"stop\"", "context": "chat(\"stop\", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) }, showing: .stop),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"stop-cuts\"", "context": "chat(\"stop-cuts\", chat: {", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift": [
       {"literal": "\"arrow.up.circle\"", "context": "Image(systemName: \"arrow.up.circle\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"ask.sending\"", "context": ".identified(\"ask.sending\", label: ChatWords.headline(card))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask\"", "context": ".identified(\"ask\", label: ChatWords.headline(card), value: stateName)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.more\"", "context": "name: String(localized: \"More\"), identifier: \"ask.more\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"stop.circle\"", "context": "title: String(localized: \"Stop the turn\"), systemImage: \"stop.circle\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"stop.circle\"", "context": "title: String(localized: \"Interrupt\"), systemImage: \"stop.circle\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"ellipsis\"", "context": "Image(systemName: \"ellipsis\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"ask.rejected\"", "context": ".identified(\"ask.rejected\", label: why)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.resend\"", "context": "choiceButton(String(localized: \"Resend\"), kind: .primary, id: \"ask.resend\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1160,7 +1162,7 @@
       {"literal": "\"−\\(counts.removed)\"", "context": "Text(verbatim: \"−\\(counts.removed)\").foregroundStyle(design.removed.color)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"ask.subject\"", "context": ".identified(\"ask.subject\", label: text)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.diff\"", "context": "id: \"ask.diff\", value: wholeDiff ? \"open\" : \"folded\") { wholeDiff.toggle() }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ask.stop\"", "context": "choiceButton(String(localized: \"Stop the turn\"), kind: .outline, id: \"ask.stop\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"ask.stop\"", "context": "choiceButton(String(localized: \"Interrupt\"), kind: .outline, id: \"ask.stop\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.choice.\\(index)\"", "context": "ChoiceRow(title: row.title, detail: row.detail, id: \"ask.choice.\\(index)\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.choice.\\(primary)\"", "context": "choiceButton(ChatWords.button(card.choices[primary]), kind: .primary, id: \"ask.choice.\\(primary)\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.choice.\\(deny)\"", "context": "choiceButton(ChatWords.button(card.choices[deny]), kind: .outline, id: \"ask.choice.\\(deny)\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1189,7 +1191,7 @@
       {"literal": "\"ask.field.\\(entry.name).problem\"", "context": ".identified(\"ask.field.\\(entry.name).problem\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.step.review\"", "context": ".identified(\"ask.step.review\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.question\"", "context": ".identified(\"ask.question\", label: question.question)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ask.preview\"", "context": ".identified(\"ask.preview\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"ask.preview\"", "context": ".identified(\"ask.preview\", label: option.label)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.next\"", "context": "kind: .primary, id: \"ask.next\", enabled: answered(index)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.option.\\(position)\"", "context": ".identified(\"ask.option.\\(position)\", label: option.label, value: selected ? \"selected\" : nil)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ask.other\"", "context": ".identified(\"ask.other\", value: question.secret ? nil : others[index])", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1231,8 +1233,8 @@
       {"literal": "\"\\(model.dictation.phase)\"", "context": ".identified(\"chat.dictation\", label: sentence, value: \"\\(model.dictation.phase)\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.attaching\"", "context": ".identified(\"chat.attaching\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.resume\"", "context": ".identified(\"chat.resume\", label: \"Resume\", enabled: enabled)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"stop.fill\"", "context": "round(\"stop.fill\", label: String(localized: \"Stop\"), id: \"chat.stop\", enabled: true) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.stop\"", "context": "round(\"stop.fill\", label: String(localized: \"Stop\"), id: \"chat.stop\", enabled: true) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"stop.fill\"", "context": "round(\"stop.fill\", label: String(localized: \"Interrupt\"), id: \"chat.stop\", enabled: true) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.stop\"", "context": "round(\"stop.fill\", label: String(localized: \"Interrupt\"), id: \"chat.stop\", enabled: true) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"arrow.up\"", "context": "\"arrow.up\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"chat.send\"", "context": "id: \"chat.send\", enabled: model.canSend", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.activity\"", "context": ".identified(\"chat.activity\", label: ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1288,7 +1290,7 @@
       {"literal": "\"live\"", "context": "value: detached ? \"detached\" : (subject.reachable ? \"live\" : \"away\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"+\\(changes.added)\"", "context": "Text(verbatim: \"+\\(changes.added)\").foregroundStyle(design.added.color)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"doc.on.doc\"", "context": "MenuItem(title: String(localized: \"Copy Address\"), systemImage: \"doc.on.doc\") {", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"stop.circle\"", "context": "items.append(MenuItem(title: String(localized: \"Stop Agent\"), systemImage: \"stop.circle\") {", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
+      {"literal": "\"stop.circle\"", "context": "title: String(localized: \"Stop Agent\"), systemImage: \"stop.circle\", destructive: true", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"chat.more\"", "context": "name: String(localized: \"More\"), identifier: \"chat.more\", items: items,", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"ellipsis\"", "context": "GlassIcon(glyph: \"ellipsis\", size: 36)", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"chat.paging\"", "context": "notices.append(FeedNotice(id: \"chat.paging\", text: String(localized: \"Loading older messages…\"), value: \"fetching\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1315,7 +1317,11 @@
       {"literal": "\"list.bullet.rectangle\"", "context": "MenuItem(title: String(localized: \"Overview\"), systemImage: \"list.bullet.rectangle\") {", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"chat.landing.\\(index)\"", "context": "id: \"chat.landing.\\(index)\", text: prompt.text,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"sign-in\"", "context": "kind: \"sign-in\", title: ChatWords.needsSignIn(kind),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.rename.problem\"", "context": ".identified(\"chat.rename.problem\", value: problem.rawValue)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"chat.rename.problem\"", "context": ".identified(\"chat.rename.problem\", value: problem.rawValue)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.stop.cuts\"", "context": ".identified(\"chat.stop.cuts\", label: cuts)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.stop.cancel\"", "context": "choiceButton(String(localized: \"Cancel\"), kind: .outline, id: \"chat.stop.cancel\", action: cancel)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.stop.confirm\"", "context": "choiceButton(String(localized: \"Stop\"), kind: .destructive, id: \"chat.stop.confirm\", action: confirm)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"chat.stop.card\"", "context": ".identified(\"chat.stop.card\", label: cuts ?? String(localized: \"Stop \\(name)?\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift": [
       {"literal": "\"%.1fs\"", "context": "return String(format: \"%.1fs\", Double(ms) / 1_000)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
@@ -1470,6 +1476,11 @@
       {"literal": "\"chat.overview.server.\\(server.name)\"", "context": ".identified(\"chat.overview.server.\\(server.name)\", label: ChatWords.failed(server))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.overview.usage.\\(index).detail.volatile\"", "context": ".reported(\"chat.overview.usage.\\(index).detail.volatile\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.overview.usage.\\(index)\"", "context": "\"chat.overview.usage.\\(index)\", label: label, value: ChatWords.used(window))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+    ],
+    "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Drafts.swift": [
+      {"literal": "\"amux/drafts\"", "context": ".appendingPathComponent(\"amux/drafts\", isDirectory: true)", "reason": "File or directory name on disk, not interface copy.", "count": 1},
+      {"literal": "\"\\(Self.hex(agent.host))-\\(Self.hex(agent.agent)).json\"", "context": "folder.appendingPathComponent(\"\\(Self.hex(agent.host))-\\(Self.hex(agent.agent)).json\")", "reason": "File or directory name on disk, not interface copy.", "count": 1},
+      {"literal": "\"%02x\"", "context": "bytes.map { String(format: \"%02x\", $0) }.joined()", "reason": "Format string for hex digits, not interface copy.", "count": 1}
     ]
   }
 }

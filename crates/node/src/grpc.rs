@@ -527,6 +527,7 @@ impl ClientService for ClientApi {
         request: Request<PutBlobRequest>,
     ) -> Result<Response<BlobRef>, Status> {
         let request = request.into_inner();
+        crate::blobs::within_limit(&request).map_err(|error| status(error.to_wire()))?;
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             return forwarded(&runtime, host, |mut client| async move {

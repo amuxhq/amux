@@ -524,7 +524,10 @@ agent's own host, named by its SHA-256, and returns the `BlobRef`. An
 attachment is at most `wire::ATTACHMENT_SIZE_LIMIT` (64 MiB, which clients
 word "64 MB") of its own bytes; `wire::CHANNEL_MESSAGE_SIZE_LIMIT`, the cap
 on any one RPC message, is 1 MiB above it so a file at the limit still fits
-in one `PutBlobRequest` with its framing. The client
+in one `PutBlobRequest` with its framing. Clients check the limit before
+uploading; the daemon refuses a larger one `RESOURCE_EXHAUSTED` in words
+naming the limit ("big.bin is … bytes, over the 64 MB limit for an
+attachment"), before forwarding it anywhere. The client
 then sends the input whose `Attachment` carries that reference. The same bytes
 twice are one file. Only a person can call it; an agent writes its own blobs
 directly into its directory.

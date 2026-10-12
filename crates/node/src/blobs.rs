@@ -39,6 +39,11 @@ pub enum BlobError {
     NotOwn,
     #[error("a blob hash is 32 bytes, not {0}")]
     BadHash(usize),
+    #[error(
+        "{name} is {size} bytes, over the {} MB limit for an attachment",
+        wire::ATTACHMENT_SIZE_LIMIT / (1024 * 1024)
+    )]
+    TooLarge { name: String, size: usize },
     #[error("the agent holds no blob {0}")]
     NoBlob(String),
     #[error("a diff needs a base")]
@@ -63,6 +68,7 @@ impl BlobError {
             Self::NoAgent | Self::NoBlob(_) => ErrorCode::NotFound,
             Self::NotOwn | Self::Git(_) => ErrorCode::FailedPrecondition,
             Self::BadHash(_) | Self::NoBase => ErrorCode::InvalidArgument,
+            Self::TooLarge { .. } => ErrorCode::ResourceExhausted,
             Self::Write(error) if is_full(error) => ErrorCode::ResourceExhausted,
             Self::Write(_) | Self::Read(_) | Self::Mismatch(_) | Self::Store(_) => {
                 ErrorCode::Internal
@@ -76,6 +82,23 @@ impl BlobError {
     }
 }
 
+/// Refuses an attachment over [`wire::ATTACHMENT_SIZE_LIMIT`], naming the
+/// limit. Clients check first; this is the daemon's own word on it, before
+/// the bytes go anywhere.
+pub(crate) fn within_limit(request: &PutBlobRequest) -> Result<(), BlobError> {
+    if request.bytes.len() > wire::ATTACHMENT_SIZE_LIMIT {
+        return Err(BlobError::TooLarge {
+            name: if request.name.is_empty() {
+                "the attachment".to_owned()
+            } else {
+                request.name.clone()
+            },
+            size: request.bytes.len(),
+        });
+    }
+    Ok(())
+}
+
 fn is_full(error: &io::Error) -> bool {
     matches!(
         error.kind(),
@@ -87,6 +110,7 @@ impl ProfileRuntime {
     /// Writes a person's attachment into the named own agent's directory
     /// and returns its reference. The same bytes twice are one file.
     pub async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, BlobError> {
+        within_limit(&request)?;
         let row = self.blob_owner(&request.agent_id).await?;
         if row.agent.host != self.host().as_bytes() {
             return Err(BlobError::NotOwn);

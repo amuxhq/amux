@@ -1,3 +1,9 @@
+2026-10-13 — **The daemon enforces the attachment limit.** A file of 64 MB
+or more failed with "h2 protocol error", blaming the local runtime. The
+channel now carries a file at the limit, and the daemon refuses one over
+`wire::ATTACHMENT_SIZE_LIMIT` (64 MiB, worded "64 MB") in a sentence naming
+the limit, before writing it or forwarding it to the agent's host.
+
 2026-10-13 — **A silently dead link is noticed within forty seconds.** A
 link whose datagrams all vanish (a cut, a sleeping machine) was noticed only
 at QUIC's two-minute idle timeout, and until then the far host's agents read

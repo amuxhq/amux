@@ -194,100 +194,200 @@ fn a_session_grows_a_net_drives_it_and_keeps_the_evidence() {
     assert!(finding.join("finding.md").is_file(), "the evidence stays");
 }
 
-#[test]
-fn a_finding_may_name_the_earlier_one_it_duplicates() {
-    let run = tempfile::tempdir().expect("a run folder");
-    std::fs::write(run.path().join("ledger.jsonl"), "").expect("a ledger");
-    let ledger = |tester: &str, args: &[&str]| {
-        let folder = run.path().join(tester);
-        std::fs::create_dir_all(folder.join("findings/lost-row")).expect("a finding folder");
-        std::fs::write(
-            folder.join("findings/lost-row/finding.md"),
-            "# A row goes missing\n\n- **Severity:** wrong state\n",
-        )
-        .expect("a finding");
-        Command::new(env!("CARGO_BIN_EXE_testnet"))
-            .args(["ctl", "ledger"])
-            .args(args)
-            .current_dir(&folder)
-            .env("AMUX_QA_RUN", run.path())
-            .env("AMUX_QA_TESTER", tester)
-            .env_remove("AMUX_QA_SCOPE")
-            .output()
-            .expect("testnet runs")
-    };
+/// A finding.md filled in as the template asks.
+fn filled(title: &str, severity: &str) -> String {
+    format!(
+        "# {title}\n\n- **Tester:** t1\n- **Persona:** commuter\n- **Severity:** {severity}\n\
+         - **Label:** undocumented\n- **Surfaces:** terminal and host record disagree\n\
+         - **Topology:** desk and laptop linked\n\n## What I did\n\n1. ctl send desk worker hi\n\n\
+         ## What I expected\n\nThe row stays.\n\n## What I saw\n\nThe row went.\n\n## Repro\n\n\
+         Seen twice.\n\n## Suspected stage\n\n## Note at capture\n\nlost\n"
+    )
+}
 
-    assert!(ledger("t1", &["finding", "lost-row"]).status.success());
-    let unknown = ledger(
-        "t2",
-        &["finding", "lost-row", "--duplicate-of", "t9/lost-row"],
-    );
+/// `ctl ledger` as tester `tester` of the run in `run`, from its folder,
+/// with `finding` as findings/NAME/finding.md first when given.
+fn ledger(run: &Path, tester: &str, finding: Option<(&str, &str)>, args: &[&str]) -> Output {
+    let folder = run.join(tester);
+    if let Some((name, text)) = finding {
+        std::fs::create_dir_all(folder.join("findings").join(name)).expect("a finding folder");
+        std::fs::write(folder.join("findings").join(name).join("finding.md"), text)
+            .expect("a finding");
+    }
+    std::fs::create_dir_all(&folder).expect("the tester's folder");
+    Command::new(env!("CARGO_BIN_EXE_testnet"))
+        .args(["ctl", "ledger"])
+        .args(args)
+        .current_dir(&folder)
+        .env("AMUX_QA_RUN", run)
+        .env("AMUX_QA_TESTER", tester)
+        .env_remove("AMUX_QA_SCOPE")
+        .env_remove("TESTNET_FOLDER")
+        .output()
+        .expect("testnet runs")
+}
+
+fn refusal(output: &Output) -> String {
     assert!(
-        !unknown.status.success(),
-        "a duplicate of nothing is refused"
+        !output.status.success(),
+        "expected a refusal, got: {}",
+        String::from_utf8_lossy(&output.stdout)
     );
-    assert!(
-        String::from_utf8_lossy(&unknown.stderr).contains("t1/lost-row"),
-        "the refusal names the findings there are"
-    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn a_finding_names_the_earlier_one_it_duplicates_or_says_it_is_new() {
+    let run = tempfile::tempdir().expect("a run folder");
+    let run = run.path();
+    std::fs::write(run.join("ledger.jsonl"), "").expect("a ledger");
+    let lost = filled("A row goes missing after a restart", "wrong state");
+
+    // The run's first finding needs no word on whether it is new.
     assert!(
         ledger(
-            "t2",
-            &["finding", "lost-row", "--duplicate-of", "t1/lost-row"]
+            run,
+            "t1",
+            Some(("lost-row", &lost)),
+            &["finding", "lost-row"]
         )
         .status
         .success()
     );
-    // A finding whose severity was never filled in has none, not the
-    // template comment that lists every severity.
-    let unfilled = run.path().join("t3/findings/vague");
-    std::fs::create_dir_all(&unfilled).expect("a finding folder");
-    std::fs::write(
-        unfilled.join("finding.md"),
-        "# Vague\n\n- **Severity:** <!-- one of: data loss, broken flow, wrong state, visual, wording -->\n",
-    )
-    .expect("a finding");
-    let recorded = Command::new(env!("CARGO_BIN_EXE_testnet"))
-        .args(["ctl", "--json", "ledger", "finding", "vague"])
-        .current_dir(run.path().join("t3"))
-        .env("AMUX_QA_RUN", run.path())
-        .env("AMUX_QA_TESTER", "t3")
-        .output()
-        .expect("testnet runs");
-    let entry: serde_json::Value =
-        serde_json::from_slice(&recorded.stdout).expect("the entry as JSON");
-    assert_eq!(entry["severity"], "", "{entry}");
-    // One written past the template, with no title or severity line, is
-    // refused rather than listed blank.
-    let shapeless = run.path().join("t4/findings/notes");
-    std::fs::create_dir_all(&shapeless).expect("a finding folder");
-    std::fs::write(
-        shapeless.join("finding.md"),
-        "The row went missing.
-",
-    )
-    .expect("a finding");
-    let refused = Command::new(env!("CARGO_BIN_EXE_testnet"))
-        .args(["ctl", "ledger", "finding", "notes"])
-        .current_dir(run.path().join("t4"))
-        .env("AMUX_QA_RUN", run.path())
-        .env("AMUX_QA_TESTER", "t4")
-        .output()
-        .expect("testnet runs");
-    assert!(!refused.status.success(), "a shapeless finding is refused");
+    // Recorded once only.
+    let again = refusal(&ledger(run, "t1", None, &["finding", "lost-row"]));
+    assert!(again.contains("already in the ledger"), "{again}");
+
+    // From then on a finding says which it is, and the refusal lists the
+    // run's findings, the most alike first.
+    let unsaid = refusal(&ledger(
+        run,
+        "t2",
+        Some(("gone", &filled("The row goes missing", "wrong state"))),
+        &["finding", "gone"],
+    ));
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("`# title` line"),
-        "{}",
-        String::from_utf8_lossy(&refused.stderr)
-    );
-    let read = said(&ledger("t2", &["read"]));
-    assert!(
-        read.contains("t1/lost-row — A row goes missing\n"),
-        "{read}"
+        unsaid.contains("--duplicate-of") && unsaid.contains("--new"),
+        "{unsaid}"
     );
     assert!(
-        read.contains("t2/lost-row — A row goes missing (duplicates t1/lost-row)"),
+        unsaid.contains("t1/lost-row  [wrong state]  A row goes missing after a restart"),
+        "{unsaid}"
+    );
+    let unknown = refusal(&ledger(
+        run,
+        "t2",
+        None,
+        &["finding", "gone", "--duplicate-of", "t9/lost-row"],
+    ));
+    assert!(unknown.contains("t1/lost-row"), "{unknown}");
+    let marked = ledger(
+        run,
+        "t2",
+        None,
+        &["finding", "gone", "--duplicate-of", "t1/lost-row"],
+    );
+    assert!(marked.status.success());
+    assert!(
+        said(&marked).contains("a duplicate of t1/lost-row — A row goes missing after a restart"),
+        "the tester sees what it marked its finding a copy of: {}",
+        said(&marked)
+    );
+    // A duplicate names the original, not another copy.
+    let chained = refusal(&ledger(
+        run,
+        "t3",
+        Some(("gone", &filled("Row missing", "wrong state"))),
+        &["finding", "gone", "--duplicate-of", "t2/gone"],
+    ));
+    assert!(chained.contains("--duplicate-of t1/lost-row"), "{chained}");
+    assert!(
+        ledger(
+            run,
+            "t3",
+            Some(("slow", &filled("Typing lags a second", "visual"))),
+            &["finding", "slow", "--new"],
+        )
+        .status
+        .success()
+    );
+
+    let findings = said(&ledger(run, "t4", None, &["findings"]));
+    assert!(
+        findings.contains("2 findings so far in this run (1 more seen again)"),
+        "{findings}"
+    );
+    assert!(
+        findings.contains(
+            "t1/lost-row  [wrong state]  A row goes missing after a restart\n    seen again by t2/gone\n"
+        ),
+        "{findings}"
+    );
+    assert!(
+        findings.contains("t3/slow  [visual]  Typing lags a second"),
+        "{findings}"
+    );
+    let read = said(&ledger(run, "t4", None, &["read"]));
+    assert!(
+        read.contains("t2/gone — The row goes missing (duplicates t1/lost-row)"),
         "{read}"
+    );
+}
+
+#[test]
+fn a_finding_that_skips_the_template_is_refused_with_what_it_lacks() {
+    let run = tempfile::tempdir().expect("a run folder");
+    let run = run.path();
+    std::fs::write(run.join("ledger.jsonl"), "").expect("a ledger");
+
+    let drifted = refusal(&ledger(
+        run,
+        "t1",
+        Some(("rank", &filled("Rows reorder", "high"))),
+        &["finding", "rank"],
+    ));
+    assert!(
+        drifted.contains("data loss, broken flow, wrong state, visual, wording")
+            && drifted.contains("\"high\""),
+        "a severity outside the five words is refused, naming them: {drifted}"
+    );
+
+    // The template as capture wrote it, its title the folder's name and
+    // nothing filled in.
+    let template = include_str!("../../../qa/FINDING.md")
+        .replace("{{name}}", "notes")
+        .replace("{{tester}}", "t1")
+        .replace("{{note}}", "something");
+    let unfilled = refusal(&ledger(
+        run,
+        "t1",
+        Some(("notes", &template)),
+        &["finding", "notes"],
+    ));
+    for lack in [
+        "still the folder's name",
+        "comments --> deleted",
+        "`- **Severity:**` filled in",
+        "`- **Surfaces:**` filled in",
+        "the `## What I saw` section written",
+    ] {
+        assert!(unfilled.contains(lack), "{lack:?} is named: {unfilled}");
+    }
+
+    let shapeless = refusal(&ledger(
+        run,
+        "t1",
+        Some(("prose", "The row went missing.\n")),
+        &["finding", "prose"],
+    ));
+    assert!(
+        shapeless.contains("a `# ` title") && shapeless.contains("its `## What I saw` section"),
+        "{shapeless}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(run.join("ledger.jsonl")).expect("the ledger"),
+        "",
+        "nothing refused is recorded"
     );
 }
 

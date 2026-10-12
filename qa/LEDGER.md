@@ -10,20 +10,33 @@ written only through `testnet ctl ledger`; never edit the file by hand.
 ## Using it
 
 1. **Read it first.** `ctl ledger read` prints every entry, oldest first. See what others have claimed and found.
+   `ctl ledger findings` lists the run's findings alone, each once, with who saw it again beneath it; your prompt
+   starts with the list as it stood when you began.
 2. **Claim ground nobody has covered.** Go where the ledger is thin. Say what you are taking, specifically enough
    that someone else can tell whether they would overlap:
    `ctl ledger claim pairing a process host and a phone over a flapping LAN`.
-3. **Keep reading it as you go,** before each new line of attack. If someone has already found a symptom you are
-   seeing, the credit is theirs: move on, or, if your evidence adds something (another way in, a cheaper repro),
-   record it as a duplicate (step 5).
+3. **Keep reading it as you go,** before each new line of attack and before you record a finding. If someone has
+   already found a symptom you are seeing, the credit is theirs: move on, or, if your evidence adds something
+   (another way in, a cheaper repro), record it as a duplicate (step 5).
 4. **Record hunches as ideas.** Something that looked wrong but that you could not capture or have no time for:
    `ctl ledger idea the phone's working count seems one behind after a resume`. Anyone may pick it up.
 5. **Record each finding** once its folder is filled in: `ctl capture NAME` while the problem is on screen, fill in
-   `findings/NAME/finding.md`, then `ctl ledger finding NAME`. It records the finding's folder, its title (the
-   first `# ` heading) and its severity (the `- **Severity:**` line), so fill those in first. When the ledger
-   already holds the same symptom, say so: `ctl ledger finding NAME --duplicate-of t2/lost-row`, naming the earlier
-   finding as `ctl ledger read` shows it (`TESTER/NAME`). You judge what counts as the same symptom. A duplicate
-   keeps its evidence for triage but is not new, and a run stops after a wave that finds nothing new.
+   `findings/NAME/finding.md` from the template ([`FINDING.md`](FINDING.md)), then `ctl ledger finding NAME`. It
+   records the finding's folder, its title (the first `# ` heading) and its severity (the `- **Severity:**`
+   line). It refuses, saying what is missing, a finding whose title is still the folder's name, whose lines or
+   sections are unfilled (only "Suspected stage" may stay empty), which keeps a template comment, or whose
+   severity is not exactly one of `data loss`, `broken flow`, `wrong state`, `visual` or `wording`. A folder is
+   recorded once.
+
+   Once the run has any finding, say which yours is. When one in `ctl ledger findings` shows the same symptom,
+   name it: `ctl ledger finding NAME --duplicate-of t2/lost-row` (`TESTER/NAME`, as the list shows it). When none
+   does, `ctl ledger finding NAME --new`. Without either, it is refused with the run's findings most like your
+   title first. You judge what counts as the same symptom; a duplicate names the original, never another
+   duplicate. A duplicate keeps its evidence for triage but is not new, and a run stops after a wave that finds
+   nothing new.
+
+   Only this run counts. A symptom a finding of an earlier run showed is new here: after a round of fixes, seeing it
+   again is a regression worth reporting.
 6. **Close with your sign-off** when everything left on your list is something you cannot do:
    `ctl ledger done covered X, Y and Z; verdict: not ready for the commuter, a prompt sent while the relay drops
    is lost; could not try two phones at once, I hold one simulator`. Say what you covered, your verdict for
@@ -46,7 +59,7 @@ And by kind:
 | --- | --- |
 | `claim` | `text`: the ground taken. |
 | `idea` | `text`: the hunch. |
-| `finding` | `finding`: the path of the finding's folder; `title`; `severity`; `duplicate_of`, only on a duplicate: the earlier finding as `TESTER/NAME`. |
+| `finding` | `finding`: the path of the finding's folder; `title`; `severity`, one of the five words; `duplicate_of`, only on a duplicate: the original finding as `TESTER/NAME`. |
 | `done` | `summary`: what was covered, the verdict for the persona, and what could not be done and why. |
 
 ```json

@@ -1,3 +1,17 @@
+2026-10-13 — **A QA finding says whether it is new, and follows the
+template.** The second run's stop rule, a wave that finds nothing new,
+never fired: at least 44 findings repeated an earlier symptom unmarked,
+some marks named the wrong finding, severities drifted ("high", sentences),
+template comments and folder-name titles were accepted, and three folders
+were recorded twice. `ctl ledger findings` lists the run's findings, each
+once, with who saw it again; each tester's prompt starts with that list.
+Once the run has a finding, `ctl ledger finding` needs `--new` or
+`--duplicate-of` the original, and its refusal lists the findings most like
+the new title. It refuses a severity outside the five words, an unfilled
+line or section, a leftover comment or a folder-name title, naming each,
+and a folder already recorded. Earlier runs never count: a repeat after a
+fix round is a regression to report.
+
 2026-10-13 — **QA testers are told the settled behaviour and how slowly
 they type.** Testers kept reporting decided behaviour: a phone listing only
 the agents of hosts it is paired with, agents ending after a test net's

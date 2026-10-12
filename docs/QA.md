@@ -40,13 +40,22 @@ Testers attach files in the terminal client the way a person does, through the M
 Each paste puts back the clipboard's text afterwards, but an image or file copied on the Mac during a run is
 replaced, so leave the clipboard alone while one runs.
 
-Each wave starts its testers at once. A tester with a phone runs entirely inside its own simulator lease (the
-`iphone` pool), held for the tester's whole life, so two phone testers never share a device. When a wave ends the
-next starts with fresh personas; the run stops when a whole wave adds no new finding, when `--waves` is reached,
-or on Ctrl-C, which stops every tester and shuts every net down. A finding its tester recorded as a duplicate of
-an earlier one (`ctl ledger finding NAME --duplicate-of TESTER/NAME`) keeps its evidence but is not new, so a wave
-of duplicates ends the run. `ledger finding` refuses a `finding.md` that has lost the template's `# title` line or
-its `- **Severity:**` line, which the summary lists and counts it by.
+Each wave starts its testers at once, each told the run's findings so far. A tester with a phone runs entirely
+inside its own simulator lease (the `iphone` pool), held for the tester's whole life, so two phone testers never
+share a device. When a wave's testers have ended, their nets are shut down with `ctl down`; a net whose shutdown
+fails or takes over five minutes is killed (its tmux server and every process whose command line lies in the
+tester's folder), and the summary says so. The next wave starts with fresh personas; the run stops when a whole
+wave adds no new finding, when `--waves` is reached, or on Ctrl-C, which stops every tester and shuts every net
+down. However the run ends, the summary is written.
+
+Whether a finding is new is the tester's call, made against the run's own list. `ctl ledger findings` lists the
+run's findings, each once, with who saw it again; once the run has any, `ctl ledger finding NAME` is refused
+until the tester says `--new` or names the original with `--duplicate-of TESTER/NAME`, and the refusal lists the
+findings most like the new one's title first. A duplicate keeps its evidence but is not new, so a wave of
+duplicates ends the run. Only the run counts: a symptom an earlier run found is new again, since after a round of
+fixes it is a regression. `ledger finding` also refuses, naming what is missing, a `finding.md` whose title is
+still its folder's name, whose lines or sections are unfilled, which keeps a template comment, or whose severity
+is not exactly one of the five words the summary counts by, and it records a folder only once.
 
 While a wave runs the launcher samples memory every five seconds, in two ways:
 
@@ -108,7 +117,7 @@ Each tester's folder holds:
 
 | Path | Contents |
 | --- | --- |
-| `prompt.md` | The prompt it was started with: the base prompt, its persona, the attack moves, the guide to talking to agents, and the run's facts. |
+| `prompt.md` | The prompt it was started with: the base prompt, its persona, the attack moves, the guide to talking to agents, the settled behaviour, and the run's facts with its findings so far. |
 | `settings.json` | Its permissions. |
 | `transcript.jsonl` | Its own transcript, as Claude Code streams it. |
 | `launcher.err` | Whatever the tester's process wrote to its error stream, such as a lease it waited for. |

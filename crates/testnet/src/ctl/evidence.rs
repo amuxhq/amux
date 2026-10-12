@@ -23,21 +23,150 @@ pub const TESTER_ENV: &str = "AMUX_QA_TESTER";
 pub enum LedgerCommand {
     /// Every entry so far, oldest first.
     Read,
+    /// The run's findings so far, each once, with the later findings
+    /// recorded as its duplicates beneath it. Read it before you record one.
+    Findings,
     /// Say what ground you are taking, so others go elsewhere.
     Claim { text: Vec<String> },
     /// A hunch with no evidence yet, for whoever has time.
     Idea { text: Vec<String> },
-    /// Record a finding you captured (findings/NAME in your folder).
+    /// Record a finding you captured (findings/NAME in your folder), once
+    /// its finding.md is filled in.
+    ///
+    /// Once the run has any finding, say which this is: --duplicate-of the
+    /// earlier finding that shows the same symptom, or --new when none
+    /// does. A duplicate keeps its evidence but does not count as new.
     Finding {
         name: String,
-        /// The earlier finding in the ledger whose symptom this is, as
-        /// `ledger read` names it (TESTER/NAME). A duplicate keeps its
-        /// evidence but does not count as new.
-        #[arg(long, value_name = "TESTER/NAME")]
+        /// The earlier finding whose symptom this is, as `ledger findings`
+        /// names it (TESTER/NAME).
+        #[arg(long, value_name = "TESTER/NAME", conflicts_with = "new")]
         duplicate_of: Option<String>,
+        /// No finding in `ledger findings` shows this symptom.
+        #[arg(long)]
+        new: bool,
     },
-    /// Your closing summary: what you covered, what you would try next.
+    /// Your closing sign-off: what you covered, your verdict for your
+    /// persona, and what you could not do and why.
     Done { summary: Vec<String> },
+}
+
+/// The words a finding's severity is given in, worst first.
+pub const SEVERITIES: [&str; 5] = [
+    "data loss",
+    "broken flow",
+    "wrong state",
+    "visual",
+    "wording",
+];
+
+/// The template's lines a finding must fill in, and its sections that must
+/// say something; "Suspected stage" may stay empty when the tester cannot
+/// tell.
+const FIELDS: [&str; 5] = ["Persona", "Severity", "Label", "Surfaces", "Topology"];
+const SECTIONS: [&str; 4] = ["What I did", "What I expected", "What I saw", "Repro"];
+
+/// What a filled-in `finding.md` records in the ledger.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Checked {
+    pub title: String,
+    pub severity: String,
+}
+
+/// Checks a `finding.md` against the template: a title of its own, the
+/// header lines filled in with a severity from [`SEVERITIES`], the sections
+/// written, and no template comment left behind. Answers everything that
+/// is missing at once, so one refusal is enough to fix it.
+pub fn check_finding(text: &str, folder: &str) -> Result<Checked, Vec<String>> {
+    let mut missing = Vec::new();
+    let title = text
+        .lines()
+        .find_map(|line| line.strip_prefix("# "))
+        .map(str::trim)
+        .unwrap_or("")
+        .to_owned();
+    if title.is_empty() {
+        missing.push("a `# ` title on the first line, saying the symptom in a sentence".to_owned());
+    } else if title == folder || title == "{{name}}" {
+        missing.push(format!(
+            "a title of its own: `# {title}` is still the folder's name; say the symptom in a sentence"
+        ));
+    }
+    let commented: Vec<String> = text
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains("<!--") || line.contains("-->"))
+        .map(|(at, _)| (at + 1).to_string())
+        .collect();
+    if !commented.is_empty() {
+        missing.push(format!(
+            "the template's <!-- comments --> deleted (line {})",
+            commented.join(", ")
+        ));
+    }
+    let mut severity = String::new();
+    for field in FIELDS {
+        let prefix = format!("- **{field}:**");
+        match text.lines().find_map(|line| line.strip_prefix(&prefix)) {
+            None => missing.push(format!("its `{prefix}` line")),
+            Some(value) => {
+                let value = uncommented(value);
+                if value.is_empty() {
+                    missing.push(format!("`{prefix}` filled in"));
+                } else if field == "Severity" {
+                    let word = value.to_lowercase();
+                    if SEVERITIES.contains(&word.as_str()) {
+                        severity = word;
+                    } else {
+                        missing.push(format!(
+                            "a severity that is one of {}, alone on its line (it says {value:?})",
+                            SEVERITIES.join(", ")
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    for section in SECTIONS {
+        match section_body(text, section) {
+            None => missing.push(format!("its `## {section}` section")),
+            Some(body) if uncommented(&body).is_empty() => {
+                missing.push(format!("the `## {section}` section written"))
+            }
+            Some(_) => {}
+        }
+    }
+    if missing.is_empty() {
+        Ok(Checked { title, severity })
+    } else {
+        Err(missing)
+    }
+}
+
+/// Text with any template comment taken out, trimmed.
+fn uncommented(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("<!--") {
+        out.push_str(&rest[..start]);
+        rest = rest[start..]
+            .find("-->")
+            .map_or("", |end| &rest[start + end + 3..]);
+    }
+    out.push_str(rest);
+    out.trim().to_owned()
+}
+
+/// The text under a `## ` heading, up to the next one.
+fn section_body(text: &str, heading: &str) -> Option<String> {
+    let mut lines = text.lines();
+    lines.find(|line| line.trim_end() == format!("## {heading}"))?;
+    Some(
+        lines
+            .take_while(|line| !line.starts_with("## "))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 pub(crate) fn capture(folder: &Folder, name: &str, note: Option<&str>) -> Result<Outcome, String> {
@@ -337,6 +466,14 @@ fn ledger_file() -> Result<PathBuf, String> {
         .ok_or_else(|| format!("no QA run: {RUN_ENV} names none, so there is no ledger"))
 }
 
+fn ledger_entries() -> Result<Vec<Value>, String> {
+    let text = std::fs::read_to_string(ledger_file()?).unwrap_or_default();
+    Ok(text
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect())
+}
+
 /// How the ledger names a finding to people: its tester and its folder's
 /// name, which is where it lives in the run folder (`<run>/TESTER/findings/NAME`).
 fn finding_handle(entry: &Value) -> Option<String> {
@@ -346,6 +483,80 @@ fn finding_handle(entry: &Value) -> Option<String> {
         entry["tester"].as_str().unwrap_or("?"),
         path.file_name()?.to_string_lossy()
     ))
+}
+
+/// One finding the run holds, new or a duplicate.
+struct Found {
+    handle: String,
+    title: String,
+    severity: String,
+    duplicate_of: Option<String>,
+}
+
+fn found(entries: &[Value]) -> Vec<Found> {
+    entries
+        .iter()
+        .filter(|entry| entry["kind"] == "finding")
+        .filter_map(|entry| {
+            Some(Found {
+                handle: finding_handle(entry)?,
+                title: entry["title"].as_str().unwrap_or("").to_owned(),
+                severity: entry["severity"].as_str().unwrap_or("").to_owned(),
+                duplicate_of: entry["duplicate_of"].as_str().map(str::to_owned),
+            })
+        })
+        .collect()
+}
+
+/// The run's findings as `ledger findings` lists them: each new one once,
+/// with the handles recorded as its duplicates under it.
+fn describe_findings(all: &[Found], order: &[&Found]) -> String {
+    let mut out = String::new();
+    for finding in order {
+        out.push_str(&format!(
+            "{}  [{}]  {}\n",
+            finding.handle,
+            if finding.severity.is_empty() {
+                "no severity"
+            } else {
+                &finding.severity
+            },
+            finding.title
+        ));
+        let copies: Vec<&str> = all
+            .iter()
+            .filter(|other| other.duplicate_of.as_deref() == Some(finding.handle.as_str()))
+            .map(|other| other.handle.as_str())
+            .collect();
+        if !copies.is_empty() {
+            out.push_str(&format!("    seen again by {}\n", copies.join(", ")));
+        }
+    }
+    out
+}
+
+/// The words of a title that say what it is about.
+fn words(text: &str) -> std::collections::BTreeSet<String> {
+    const SMALL: [&str; 24] = [
+        "the", "and", "for", "but", "not", "its", "it's", "with", "from", "that", "this", "when",
+        "while", "after", "into", "than", "then", "are", "was", "has", "have", "does", "still",
+        "one",
+    ];
+    text.split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .map(str::to_lowercase)
+        .filter(|word| word.chars().count() > 2 && !SMALL.contains(&word.as_str()))
+        .collect()
+}
+
+/// The run's new findings, the most like `title` first.
+fn closest<'a>(news: &[&'a Found], title: &str) -> Vec<&'a Found> {
+    let mine = words(title);
+    let mut ranked: Vec<(usize, &Found)> = news
+        .iter()
+        .map(|finding| (mine.intersection(&words(&finding.title)).count(), *finding))
+        .collect();
+    ranked.sort_by_key(|(shared, _)| std::cmp::Reverse(*shared));
+    ranked.into_iter().map(|(_, finding)| finding).collect()
 }
 
 fn append(kind: &str, fields: Value) -> Result<Value, String> {
@@ -372,7 +583,7 @@ fn append(kind: &str, fields: Value) -> Result<Value, String> {
 }
 
 pub(crate) fn ledger(folder: &Folder, command: LedgerCommand) -> Result<Outcome, String> {
-    let words = |text: Vec<String>| -> Result<String, String> {
+    let words_of = |text: Vec<String>| -> Result<String, String> {
         let text = text.join(" ");
         if text.trim().is_empty() {
             Err("say what, in words".to_owned())
@@ -382,11 +593,7 @@ pub(crate) fn ledger(folder: &Folder, command: LedgerCommand) -> Result<Outcome,
     };
     match command {
         LedgerCommand::Read => {
-            let text = std::fs::read_to_string(ledger_file()?).unwrap_or_default();
-            let entries: Vec<Value> = text
-                .lines()
-                .filter_map(|line| serde_json::from_str(line).ok())
-                .collect();
+            let entries = ledger_entries()?;
             let mut out = String::new();
             for entry in &entries {
                 let what = entry["text"]
@@ -426,88 +633,129 @@ pub(crate) fn ledger(folder: &Folder, command: LedgerCommand) -> Result<Outcome,
             }
             Ok(Outcome::new(out, Value::Array(entries)))
         }
+        LedgerCommand::Findings => {
+            let all = found(&ledger_entries()?);
+            let news: Vec<&Found> = all.iter().filter(|f| f.duplicate_of.is_none()).collect();
+            let text = if news.is_empty() {
+                "no findings yet in this run".to_owned()
+            } else {
+                format!(
+                    "{} so far in this run{}; a finding showing one of these symptoms is \
+                     recorded with --duplicate-of TESTER/NAME\n{}",
+                    count(news.len(), "finding"),
+                    match all.len() - news.len() {
+                        0 => String::new(),
+                        copies => format!(" ({} more seen again)", copies),
+                    },
+                    describe_findings(&all, &news)
+                )
+            };
+            let value = news
+                .iter()
+                .map(|f| json!({"finding": f.handle, "title": f.title, "severity": f.severity}))
+                .collect();
+            Ok(Outcome::new(text, Value::Array(value)))
+        }
         LedgerCommand::Claim { text } => {
-            let entry = append("claim", json!({"text": words(text)?}))?;
+            let entry = append("claim", json!({"text": words_of(text)?}))?;
             Ok(Outcome::new("claimed", entry))
         }
         LedgerCommand::Idea { text } => {
-            let entry = append("idea", json!({"text": words(text)?}))?;
+            let entry = append("idea", json!({"text": words_of(text)?}))?;
             Ok(Outcome::new("idea recorded", entry))
         }
-        LedgerCommand::Finding { name, duplicate_of } => {
-            let dir = folder.dir.join("findings").join(&name);
-            if !dir.join("finding.md").is_file() {
-                return Err(format!(
-                    "no finding at {}: `ctl capture {name}` first",
-                    dir.display()
-                ));
-            }
-            let finding = std::fs::read_to_string(dir.join("finding.md")).unwrap_or_default();
-            let title = finding
-                .lines()
-                .find_map(|line| line.strip_prefix("# "))
-                .map(str::trim)
-                .unwrap_or("")
-                .to_owned();
-            // The ledger lists a finding by its title and counts it by its
-            // severity; one written past the template's shape would be
-            // listed blank and counted as unlabelled.
-            if title.is_empty()
-                || !finding
-                    .lines()
-                    .any(|line| line.starts_with("- **Severity:**"))
-            {
-                return Err(format!(
-                    "{} must keep the template's shape: a `# title` line and a \
-                     `- **Severity:**` line",
-                    dir.join("finding.md").display()
-                ));
-            }
-            // An unfilled template still holds its comment, which lists every
-            // severity; that is no severity at all.
-            let severity = finding
-                .lines()
-                .find_map(|line| line.strip_prefix("- **Severity:**"))
-                .map(|text| match text.find("<!--") {
-                    Some(start) => {
-                        let end = text[start..]
-                            .find("-->")
-                            .map_or(text.len(), |end| start + end + 3);
-                        format!("{}{}", &text[..start], &text[end..])
-                    }
-                    None => text.to_owned(),
-                })
-                .map(|text| text.trim().to_owned())
-                .unwrap_or_default();
-            let mut fields = json!({"finding": dir, "title": title, "severity": severity});
-            if let Some(earlier) = duplicate_of {
-                let text = std::fs::read_to_string(ledger_file()?).unwrap_or_default();
-                let known: Vec<String> = text
-                    .lines()
-                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-                    .filter_map(|entry| finding_handle(&entry))
-                    .collect();
-                if !known.contains(&earlier) {
-                    return Err(format!(
-                        "the ledger has no finding {earlier}; its findings are: {}",
-                        if known.is_empty() {
-                            "none yet".to_owned()
-                        } else {
-                            known.join(", ")
-                        }
-                    ));
-                }
-                fields["duplicate_of"] = Value::String(earlier);
-            }
-            let entry = append("finding", fields)?;
-            Ok(Outcome::new(
-                format!("finding {} recorded", dir.display()),
-                entry,
-            ))
-        }
+        LedgerCommand::Finding {
+            name,
+            duplicate_of,
+            new,
+        } => record_finding(folder, &name, duplicate_of, new),
         LedgerCommand::Done { summary } => {
-            let entry = append("done", json!({"summary": words(summary)?}))?;
+            let entry = append("done", json!({"summary": words_of(summary)?}))?;
             Ok(Outcome::new("closing summary recorded", entry))
         }
     }
+}
+
+fn record_finding(
+    folder: &Folder,
+    name: &str,
+    duplicate_of: Option<String>,
+    new: bool,
+) -> Result<Outcome, String> {
+    let dir = folder.dir.join("findings").join(name);
+    let file = dir.join("finding.md");
+    if !file.is_file() {
+        return Err(format!(
+            "no finding at {}: `ctl capture {name}` first",
+            dir.display()
+        ));
+    }
+    let text = std::fs::read_to_string(&file).map_err(|error| error.to_string())?;
+    let checked = check_finding(&text, name).map_err(|missing| {
+        format!(
+            "{} is not filled in yet (reference/qa/FINDING.md says how); it needs:\n  {}",
+            file.display(),
+            missing.join("\n  ")
+        )
+    })?;
+    let entries = ledger_entries()?;
+    if let Some(earlier) = entries
+        .iter()
+        .find(|entry| entry["kind"] == "finding" && entry["finding"] == json!(dir))
+    {
+        return Err(format!(
+            "{} is already in the ledger, recorded at {}; a finding is recorded once \
+             (capture again under a new name for another symptom)",
+            finding_handle(earlier).unwrap_or_default(),
+            earlier["time"].as_str().unwrap_or("?")
+        ));
+    }
+    let all = found(&entries);
+    let news: Vec<&Found> = all.iter().filter(|f| f.duplicate_of.is_none()).collect();
+    let mut fields = json!({"finding": dir, "title": checked.title, "severity": checked.severity});
+    let said = match duplicate_of {
+        Some(earlier) => {
+            let Some(original) = all.iter().find(|f| f.handle == earlier) else {
+                return Err(format!(
+                    "the ledger has no finding {earlier}; the run's findings are:\n{}",
+                    if news.is_empty() {
+                        "  none yet\n".to_owned()
+                    } else {
+                        describe_findings(&all, &news)
+                    }
+                ));
+            };
+            if let Some(root) = &original.duplicate_of {
+                return Err(format!(
+                    "{earlier} is itself recorded as a duplicate of {root}; name the original: \
+                     --duplicate-of {root}"
+                ));
+            }
+            fields["duplicate_of"] = Value::String(earlier.clone());
+            format!(
+                "finding {} recorded as a duplicate of {earlier} — {}",
+                dir.display(),
+                original.title
+            )
+        }
+        None if !new && !news.is_empty() => {
+            let ranked = closest(&news, &checked.title);
+            return Err(format!(
+                "the run has {} already; say whether this is one of them: \
+                 --duplicate-of TESTER/NAME when one shows the same symptom, or --new when none \
+                 does. The most like \"{}\" first:\n{}(all of them, with who saw each again: \
+                 `testnet ctl ledger findings`)",
+                count(news.len(), "finding"),
+                checked.title,
+                describe_findings(&all, &ranked[..ranked.len().min(8)])
+            ));
+        }
+        None => format!("finding {} recorded as new", dir.display()),
+    };
+    let entry = append("finding", fields)?;
+    Ok(Outcome::new(said, entry))
+}
+
+fn count(number: usize, noun: &str) -> String {
+    format!("{number} {noun}{}", if number == 1 { "" } else { "s" })
 }

@@ -9,14 +9,16 @@ when phone testers run, launches each fresh binary once, and checks the
 operator's Claude and Codex logins with one small real agent each. It then
 makes the run folder under ~/.local/state/amux-qa/<run>/, holding
 `reference/` (the docs and the QA guides), `ledger.jsonl` and a folder per
-tester, and starts the testers a wave at a time. A phone tester runs inside
-a simulator lease for its whole life. A wave ends when its testers do; the
-next starts with fresh personas, until a wave records no new finding (one
-its tester marked a duplicate of an earlier one does not count), `--waves`
-is reached, or Ctrl-C, which stops every tester and shuts every net down.
-While a wave runs it samples memory: how far the machine's use rises over
-its level when the wave began, and each tester's own peak. A summary is
-printed and kept in the run folder.
+tester, and starts the testers a wave at a time, each told the run's
+findings so far. A phone tester runs inside a simulator lease for its whole
+life. A wave ends when its testers do and their nets are shut down (a net
+that will not go down is killed); the next starts with fresh personas,
+until a wave records no new finding (one its tester marked a duplicate of
+an earlier one does not count), `--waves` is reached, or Ctrl-C, which
+stops every tester and shuts every net down. While a wave runs it samples
+memory: how far the machine's use rises over its level when the wave began,
+and each tester's own peak. However the run ends, a summary is printed and
+kept in the run folder.
 
 Real providers are used throughout; see docs/QA.md.
 """
@@ -161,11 +163,34 @@ def prompt(run: Path, folder: Path, persona: Path, phone: bool) -> str:
 - Your folder, where you work and where `testnet ctl` keeps your net: `{folder}`.
 - The run folder, with every tester's folder in it: `{run}`.
 - The docs: `{run}/reference/docs` (start at README.md); the QA guides: `{run}/reference/qa`.
-- The ledger: `testnet ctl ledger read`.
+- The ledger: `testnet ctl ledger read`; the run's findings so far: `testnet ctl ledger findings`.
 - {phone_line}
 - Run `testnet ctl --help`, and `--help` on any command, before guessing a flag.
+
+## Found in this run before you started
+
+Each is credited to whoever found it first. Seeing one of these symptoms
+again is not new: record it with `--duplicate-of`, or better, go where
+nobody has looked. The list grows while you work: `testnet ctl ledger
+findings` shows it as it stands.
+
+{found_so_far(run)}
 """)
     return "".join(parts)
+
+
+def found_so_far(run: Path) -> str:
+    """The run's new findings, one line each, for a tester's prompt."""
+    new, _ = findings(ledger(run))
+    if not new:
+        return "Nothing yet."
+    return "\n".join(f"- {handle(entry)} [{entry.get('severity') or 'no severity'}]: {entry.get('title', '')}"
+                     for entry in new)
+
+
+def handle(entry: dict) -> str:
+    """How the ledger names a finding: TESTER/NAME."""
+    return f"{entry.get('tester')}/{Path(entry.get('finding', '')).name}"
 
 
 class Tester:

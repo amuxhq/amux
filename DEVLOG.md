@@ -1,3 +1,8 @@
+2026-10-13 — **An agent's tools socket stops only the caller's children.**
+`StopAgent` arriving on an agent's tools socket is checked against the
+parent edge, as `SendInput` already was, so the stop tool can be a real stop
+without letting an agent stop agents it did not start.
+
 2026-10-13 — **Agent names are unique on a host, and every id form
 resolves.** Two agents could share a name, and then neither could be
 reached: the ambiguity refusal listed ids that nothing accepted, and `amux

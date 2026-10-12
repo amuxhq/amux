@@ -21,6 +21,7 @@ use node::harness::{Advertisement, LiveRoute};
 use support::*;
 use testnet::{Net, RELAY_HOST, Topology, holds_for, until};
 use wire::begin_pair_request;
+use wire::client_service_server::ClientService as _;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tcp() {
@@ -2741,4 +2742,162 @@ async fn a_host_notices_a_silently_dead_link_within_forty_seconds() {
     until_link(&net, "desk", "box", false, Duration::from_secs(40)).await;
 
     net.shutdown().await.unwrap();
+}
+
+fn sdk_prompt(text: &str) -> wire::Input {
+    wire::Input::new(
+        uuid::Uuid::new_v4().as_bytes().to_vec(),
+        wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: text.to_owned(),
+                attachments: Vec::new(),
+            })),
+        },
+    )
+}
+
+/// A call to an agent on a host the account's lapse put out of reach is
+/// answered at once with the lapse as its reason, never a bare "cannot be
+/// reached", so every client, the CLI and an agent's tools can say why.
+/// QA: on a lapsed account every surface blamed the network, and agents'
+/// sends reported the far host could not be reached while it was up.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once() {
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(relay_host("desk", "ada"))
+        .host_decl(relay_host("laptop", "ada"))
+        .agent(
+            testnet::AgentDecl::new("w", "laptop")
+                .prompt("Wait.")
+                .steps(vec![
+                    provider_fakes::script::Step::Text {
+                        chunks: vec!["Ready.".into()],
+                    },
+                    provider_fakes::script::Step::TurnEnd,
+                ]),
+        );
+    let mut net = Net::start(topology).await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    net.trust("desk", "laptop").await.unwrap();
+    let laptop = host_id(&net, "laptop");
+    until_via(&net, "desk", "laptop", LiveRoute::Relay).await;
+    net.settle("w").await.unwrap();
+    let key = net.agent("w").unwrap().key();
+    until("the desk to hold w's row", || {
+        let (net, key) = (&net, &key);
+        async move {
+            let held = net
+                .runtime("desk")
+                .unwrap()
+                .store()
+                .await
+                .agent(key)
+                .unwrap();
+            held.map(|_| ()).ok_or_else(|| "not yet".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    net.set_tier("ada", testnet::TierDecl::Free).await.unwrap();
+    let mut fleet = net.observe_inventory("desk").await.unwrap();
+    row_until(
+        &mut fleet,
+        laptop,
+        "the laptop away on a free account",
+        |row| row.presence() == wire::Presence::Away,
+    )
+    .await;
+
+    let request = wire::SendInputRequest {
+        agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
+        input: Some(sdk_prompt("Are you there?")),
+    };
+    let started = std::time::Instant::now();
+    let answer = tokio::time::timeout(
+        Duration::from_secs(5),
+        net.client("desk")
+            .unwrap()
+            .send_input(tonic::Request::new(request)),
+    )
+    .await;
+    let took = started.elapsed();
+    net.shutdown().await.unwrap();
+    println!("the desk's send to w answered after {took:?}: {answer:?}");
+    let answer = answer.expect("the send is answered at once, not after a deadline");
+    // The reason may come as a typed error (payment required) or as a
+    // refusal whose words or kind name the lapse; either names it.
+    let words = match &answer {
+        Err(status) => {
+            use prost::Message as _;
+            let code = wire::Error::decode(status.details())
+                .ok()
+                .map(|error| error.code());
+            format!("{code:?} {}", status.message())
+        }
+        Ok(response) => format!("{:?}", response.get_ref()),
+    }
+    .to_lowercase();
+    assert!(
+        ["paymentrequired", "lapse", "subscription", "free plan"]
+            .iter()
+            .any(|word| words.contains(word)),
+        "the refusal does not name the lapse: {answer:?}"
+    );
+}
+
+/// The stated attachment limit is 64 MB of the attachment's own bytes:
+/// one at the limit stores through a client's own socket (the channel's
+/// message limit sits above it, with room for the request's framing), and
+/// one over it is refused in plain words naming the limit. QA: a 64 MB
+/// file failed with "h2 protocol error", blaming the runtime.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_naming_the_limit() {
+    let net = Net::start(
+        Topology::new().host("desk").agent(
+            testnet::AgentDecl::new("w", "desk")
+                .prompt("Wait.")
+                .steps(vec![
+                    provider_fakes::script::Step::Text {
+                        chunks: vec!["Ready.".into()],
+                    },
+                    provider_fakes::script::Step::TurnEnd,
+                ]),
+        ),
+    )
+    .await
+    .unwrap();
+    net.settle("w").await.unwrap();
+    let socket = node::profile_dir(
+        &net.host("desk").unwrap().data_dir,
+        net.host("desk").unwrap().profile,
+    )
+    .join(node::PROFILE_SOCKET);
+    let mut client = wire::client_service_client(testnet::local_channel(&socket).await.unwrap());
+    const LIMIT: usize = 64 * 1024 * 1024;
+    let put = |size: usize| wire::PutBlobRequest {
+        agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
+        name: "big.bin".into(),
+        mime: "application/octet-stream".into(),
+        bytes: vec![7; size],
+    };
+    let at_limit = client.put_blob(put(LIMIT)).await;
+    let over = client.put_blob(put(LIMIT + 1)).await;
+    drop(client);
+    net.shutdown().await.unwrap();
+    println!(
+        "at the limit: {:?}; over it: {:?}",
+        at_limit.as_ref().map(|blob| blob.get_ref().size),
+        over.as_ref().map(|blob| blob.get_ref().size)
+    );
+    assert!(
+        at_limit.is_ok(),
+        "an attachment of exactly 64 MB did not store: {:?}",
+        at_limit.err()
+    );
+    let refusal = over.expect_err("an attachment over 64 MB is refused");
+    assert!(
+        refusal.message().contains("64 MB"),
+        "the refusal does not name the limit: {refusal:?}"
+    );
 }

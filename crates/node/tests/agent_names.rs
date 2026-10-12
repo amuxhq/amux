@@ -171,37 +171,111 @@ async fn an_assigned_name_avoids_other_agents_and_the_repositorys_branches() {
     daemon.shutdown().await.unwrap();
 }
 
-/// Two agents may carry one name. The refusal that says a name is
-/// ambiguous lists each candidate's id, and that id must then pick it: an
-/// agent's send and stop tools and the CLI resolve through here, and a lead
-/// with twin children was told their ids and then "no agent named <id>"
-/// for each (QA: twin children could be neither messaged nor stopped).
+/// Names are unique on a host, counting exited agents, which stay
+/// resumable and addressable by name: a spawn asking for a taken name gets
+/// the next free suffix (worker-2, worker-3) and is told the name it got,
+/// as a spawn already returns its agent. QA: a lead spawned two children
+/// called worker and could then message and stop neither.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_id_the_ambiguous_name_refusal_lists_resolves_to_that_agent() {
+async fn a_spawn_with_a_taken_name_gets_the_next_free_suffix_counting_exited_agents() {
     let install = Install::new();
     let daemon = install
         .start("boot-1", install.launch("idle", vec![]))
         .await;
     let runtime = runtime(&daemon, &install);
-    for _ in 0..2 {
-        runtime
-            .spawn(create(&install.work, "worker", None), None)
-            .await
-            .unwrap();
-    }
-    let refusal = runtime.resolve_agent("worker").await.unwrap_err();
-    println!("the refusal: {refusal:?}");
-    let node::ServeError::Ambiguous(ambiguous) = refusal else {
-        panic!("two agents named worker are ambiguous: {refusal:?}");
-    };
-    let picked = &ambiguous.candidates[1];
-    let id = interpret::to_hex(&picked.agent_id);
-    let resolved = runtime.resolve_agent(&id).await;
+    let first = runtime
+        .spawn(create(&install.work, "worker", None), None)
+        .await
+        .unwrap();
+    kill_all(&runtime).await;
+    assert!(
+        runtime.live().is_empty(),
+        "the first worker exited and stays listed"
+    );
+    let second = runtime
+        .spawn(create(&install.work, "worker", None), None)
+        .await
+        .unwrap();
+    let third = runtime
+        .spawn(create(&install.work, "worker", None), None)
+        .await
+        .unwrap();
     kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
-    let resolved = resolved.unwrap_or_else(|error| {
-        panic!("the id {id} the refusal listed does not pick its agent: {error:?}")
-    });
-    assert_eq!(resolved.agent_id, picked.agent_id);
+    let names = [&first.name, &second.name, &third.name];
+    println!("spawned as {names:?}");
+    assert_eq!(
+        names,
+        [
+            &"worker".to_owned(),
+            &"worker-2".to_owned(),
+            &"worker-3".to_owned()
+        ],
+        "a taken name, an exited agent's included, gets the next free suffix"
+    );
+}
+
+/// A rename to a name another agent on the host holds is refused with the
+/// reason; a person renaming an agent must not make two agents answer to
+/// one name.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rename_to_a_taken_name_is_refused() {
+    let install = Install::new();
+    let daemon = install
+        .start("boot-1", install.launch("idle", vec![]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    runtime
+        .spawn(create(&install.work, "alpha", None), None)
+        .await
+        .unwrap();
+    let beta = runtime
+        .spawn(create(&install.work, "beta", None), None)
+        .await
+        .unwrap();
+    let renamed = runtime.rename(id_of(&beta), "alpha").await;
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    println!("renaming beta to alpha: {renamed:?}");
+    assert!(
+        renamed.is_err(),
+        "beta was renamed to alpha, a name another agent holds: {renamed:?}"
+    );
+}
+
+/// Every id form amux prints picks its agent, at the one resolution an
+/// agent's send and stop tools and the CLI share: the full id with
+/// dashes, without them (as the ambiguity refusal printed it), and the
+/// eight-character short id `amux ls` prints. QA: ids the refusal listed
+/// were then refused as "no agent named <id>".
+#[tokio::test(flavor = "multi_thread")]
+async fn every_id_form_amux_prints_resolves_to_its_agent() {
+    let install = Install::new();
+    let daemon = install
+        .start("boot-1", install.launch("idle", vec![]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let agent = runtime
+        .spawn(create(&install.work, "worker", None), None)
+        .await
+        .unwrap();
+    let id = id_of(&agent);
+    let simple = id.simple().to_string();
+    let forms = [id.to_string(), simple.clone(), simple[..8].to_owned()];
+    let mut refused = Vec::new();
+    for form in &forms {
+        match runtime.resolve_agent(form).await {
+            Ok(found) if found.agent_id == agent.agent_id => {}
+            other => refused.push((form.clone(), format!("{other:?}"))),
+        }
+    }
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    assert!(
+        refused.is_empty(),
+        "id forms amux prints do not pick their agent: {refused:?}"
+    );
 }

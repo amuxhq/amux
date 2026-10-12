@@ -1,3 +1,22 @@
+2026-10-13 — **Failing daemon, network and CLI tests for the second QA
+round's decisions.** Names are unique per host counting exited agents: a
+spawn with a taken name gets the next suffix, a rename to a taken name is
+refused, every id form amux prints resolves, and `name@host` resolves across
+hosts with the refusal offering those forms. A person's stop ends a working
+agent as stopped within seconds, and an agent's stop tool stops its child
+and the child's descendants. A resume keeps the permission and effort the
+agent last ran with. A sub-agent waits for its running child and reports its
+result up. A child deleted mid-turn tells its parent it was stopped. The
+agent row counts descendants and background jobs. A spawn on a host that
+runs no agents is refused in plain words. A file one agent sends another
+arrives on the recipient's own host. A call to a host only a lapsed account
+reached names the lapse. An attachment at the stated limit stores and one
+over it is refused naming the limit. Terminal Claude offers its project's
+commands. The CLI words refusals as sentences and does not blame its own
+daemon for an unanswered pairing address, and leaving a raw attach gives
+the shell its screen back. The new `cli_words` target joins the
+desktop CLI suite in the test catalogue.
+
 2026-10-13 — **Failing interpreter, agent and view tests for the second QA
 round's decisions.** Terminal Claude: a turn starts on the transcript's
 prompt row, not when amux types; a permission amux cycles is in the snapshot

@@ -442,3 +442,101 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
     drop((api, runtime));
     daemon.shutdown().await.unwrap();
 }
+
+/// Terminal Claude offers the commands of the project it runs in: Claude
+/// lists a project's own commands only when asked from that project's
+/// folder, so what the agent offers is gathered there, not in the daemon's
+/// own directory. The fake stands in for that by playing the project's
+/// script when asked from inside the project.
+/// QA: a project's own slash commands never appeared in terminal Claude's
+/// command list.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    use wire::{CreateAgentRequest, Kind, session_event};
+
+    let host = Host::new(&Script {
+        commands: vec![command("review")],
+        ..Script::default()
+    });
+    let project = host.install.path("project");
+    std::fs::create_dir_all(project.join(".claude/commands")).unwrap();
+    std::fs::write(
+        project.join(".claude/commands/deploy.md"),
+        "Deploy this project.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.join(".claude/fake-script.json"),
+        serde_json::to_string(&Script {
+            commands: vec![command("review"), command("deploy")],
+            ..Script::default()
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    // Claude as the host runs it: inside a project, the project's script.
+    let claude = host.install.path("claude-in-folder");
+    let fake = std::path::Path::new(&host.launch().claude_command).to_owned();
+    std::fs::write(
+        &claude,
+        format!(
+            "#!/bin/sh\nif [ -f .claude/fake-script.json ]; then\n  {SCRIPT_ENV}=\"$(pwd)/.claude/fake-script.json\"\n  export {SCRIPT_ENV}\nfi\nexec '{}' \"$@\"\n",
+            fake.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut launch = host.launch();
+    launch.claude_command = claude.to_string_lossy().into_owned();
+    let daemon = host.install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &host.install);
+    let api = node::ClientApi::new(&runtime, None);
+
+    let agent = runtime
+        .spawn(
+            CreateAgentRequest {
+                agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+                name: Some("terminal".into()),
+                cwd: project.to_string_lossy().into_owned(),
+                agent: wire::create_agent_request::Agent::defaults(Kind::ClaudePty),
+                ..CreateAgentRequest::default()
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let mut subscription = runtime.subscribe(&agent.agent_id, 10).await.unwrap();
+    let mut seen = Vec::new();
+    let named = |seen: &[wire::SessionEvent]| {
+        seen.iter().find_map(|event| match &event.of {
+            Some(session_event::Of::Snapshot(snapshot)) => snapshot.catalogue.clone(),
+            _ => None,
+        })
+    };
+    read_until(&mut subscription, &mut seen, "a catalogue", |seen| {
+        named(seen).is_some()
+    })
+    .await;
+    let blob = api
+        .get_blob(tonic::Request::new(GetBlobRequest {
+            agent_id: agent.agent_id.clone(),
+            hash: named(&seen).unwrap(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let offered = Catalogue::decode(blob.bytes.as_slice()).unwrap();
+
+    drop(subscription);
+    kill_all(&runtime).await;
+    drop((api, runtime));
+    daemon.shutdown().await.unwrap();
+    let names = values(&offered.commands, |command| &command.name);
+    assert!(
+        names.contains(&"deploy"),
+        "the project's own command is not offered; the catalogue was gathered outside the project: {names:?}"
+    );
+}

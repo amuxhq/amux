@@ -2,9 +2,9 @@ version = 1
 
 [[suite]]
 name = "desktop-cli-system"
-contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, closes pairing mode however amux pair ends, serves the cloud relay, writes its login units, routes stop and update through the supervisor, and keeps overlapping releases working across an update; a terminal test whose wait fails ends instead of hanging."
+contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, closes pairing mode however amux pair ends, words its refusals as sentences, serves the cloud relay, writes its login units, routes stop and update through the supervisor, and keeps overlapping releases working across an update; a terminal test whose wait fails ends instead of hanging."
 paths = ["crates/amux/tests"]
-recipe = "just test-crate amux -- --bins --test agent_process --test attach --test codex_attach --test overlap --test pairing --test process --test relay --test supervise_cli --test term_fails_fast"
+recipe = "just test-crate amux -- --bins --test agent_process --test attach --test cli_words --test codex_attach --test overlap --test pairing --test process --test relay --test supervise_cli --test term_fails_fast"
 boundary = "System composition"
 oracle = "Exact process output, exit status, login-unit goldens, journaled items, process and lock ownership, and the chat read back over the profile socket."
 real = ["built amux binary", "processes and process groups", "PTYs", "Unix sockets", "loopback QUIC and TLS", "temporary files"]
@@ -16,7 +16,7 @@ evidence = ""
 update = "AMUX_UPDATE_GOLDENS=1 just test-crate amux -- --test supervise_cli, then review the login-unit diff."
 cargo = [
   { package = "amux", kind = "bin", targets = ["amux"], features = ["bundled"] },
-  { package = "amux", targets = ["agent_process", "attach", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli", "term_fails_fast"], features = ["bundled"] },
+  { package = "amux", targets = ["agent_process", "attach", "cli_words", "codex_attach", "overlap", "pairing", "process", "relay", "supervise_cli", "term_fails_fast"], features = ["bundled"] },
 ]
 
 [[suite]]

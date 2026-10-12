@@ -1310,3 +1310,523 @@ async fn stopping_a_parent_stops_every_descendant_on_every_host() {
     );
     net.shutdown().await.unwrap();
 }
+
+fn tool(name: &str, input: serde_json::Value, wait_for: Option<&str>) -> Step {
+    Step::Tool(provider_fakes::script::Tool {
+        name: Some(name.to_owned()),
+        class: provider_fakes::script::ToolClass::Consequential,
+        input: Some(input),
+        outcome: Default::default(),
+        wait_for: wait_for.map(Into::into),
+    })
+}
+
+async fn until_exited(net: &Net, host: &str, agent: &str) {
+    until(&format!("{agent} to exit on {host}"), || async move {
+        let now = lifecycle(net, host, agent).await;
+        (now == Some(Lifecycle::Exited))
+            .then_some(())
+            .ok_or_else(|| format!("{agent} {now:?}"))
+    })
+    .await
+    .unwrap();
+}
+
+async fn until_live(net: &Net, host: &str, agent: &str) {
+    until(&format!("{agent} to be live on {host}"), || async move {
+        let now = lifecycle(net, host, agent).await;
+        (now == Some(Lifecycle::Live))
+            .then_some(())
+            .ok_or_else(|| format!("{agent} {now:?}"))
+    })
+    .await
+    .unwrap();
+}
+
+/// Names are unique on a host, not across hosts: the desk and the server
+/// may each run a worker. A bare name that matches agents on two hosts is
+/// picked with `name@host`, and the refusal for the bare name offers
+/// exactly those forms. QA: the refusal offered ids, which every command
+/// and tool then refused, so a lead could reach neither of its workers.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_name_on_two_hosts_resolves_as_name_at_host_and_the_refusal_offers_those_forms() {
+    let net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("server")
+            .link("desk", "server")
+            .agent(
+                AgentDecl::new("worker", "desk")
+                    .prompt("Wait.")
+                    .steps(says("Ready.")),
+            )
+            .agent(
+                AgentDecl::new("other", "server")
+                    .prompt("Wait.")
+                    .steps(says("Ready.")),
+            ),
+    )
+    .await
+    .unwrap();
+    net.settle("worker").await.unwrap();
+    net.settle("other").await.unwrap();
+    let other = net.agent("other").unwrap().id;
+    net.runtime("server")
+        .unwrap()
+        .rename(other, "worker")
+        .await
+        .unwrap();
+    until("the desk to hold the server's agent as worker", || {
+        let net = &net;
+        async move {
+            let name = row(net, "desk", "other").await.map(|row| row.name);
+            (name.as_deref() == Some("worker"))
+                .then_some(())
+                .ok_or_else(|| format!("{name:?}"))
+        }
+    })
+    .await
+    .unwrap();
+
+    let desk = net.runtime("desk").unwrap();
+    let picked = desk.resolve_agent("worker@server").await;
+    let bare = desk.resolve_agent("worker").await;
+    drop(desk);
+    net.shutdown().await.unwrap();
+    println!("worker@server: {picked:?}");
+    println!("worker: {bare:?}");
+    let refusal = bare
+        .expect_err("worker names an agent on each host")
+        .to_string();
+    assert!(
+        refusal.contains("worker@desk") && refusal.contains("worker@server"),
+        "the refusal does not offer the name@host forms that pick each agent: {refusal}"
+    );
+    let picked = picked.unwrap_or_else(|error| panic!("worker@server picks nothing: {error:?}"));
+    assert_eq!(picked.agent_id, other.as_bytes().to_vec());
+}
+
+/// A one-shot sub-agent exits only once its turn has ended, its queue is
+/// empty and no child it spawned is still running. Here the middle agent
+/// ends its first turn while its scout still works; it stays, the scout's
+/// report starts its next turn, and it reports up to the lead. QA: the
+/// middle agent exited at once, the scout's report had nowhere to go, and
+/// the lead waited forever.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sub_agent_waits_for_its_running_child_and_reports_its_result_up() {
+    let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
+    net.settle("lead").await.unwrap();
+    net.spawn_child(
+        "lead",
+        child(
+            "mid",
+            "server",
+            vec![
+                waits("mid-go"),
+                text("Started the scout."),
+                Step::TurnEnd,
+                text("The scout reported; all done."),
+                Step::TurnEnd,
+            ],
+        ),
+    )
+    .await
+    .unwrap();
+    net.spawn_child(
+        "mid",
+        child(
+            "scout",
+            "phone",
+            vec![waits("scout-go"), text("Scout done."), Step::TurnEnd],
+        ),
+    )
+    .await
+    .unwrap();
+    until_live(&net, "phone", "scout").await;
+    net.open_gate("mid-go").unwrap();
+    net.turn_ended("mid", 1).await.unwrap();
+    net.open_gate("scout-go").unwrap();
+    let reached = until("the lead to hear mid report the scout's result", || {
+        let net = &net;
+        async move {
+            let got = received(net, "lead").await;
+            got.iter()
+                .any(|item| item.text.contains("all done"))
+                .then_some(())
+                .ok_or_else(|| {
+                    format!(
+                        "lead received {:?}",
+                        got.iter().map(|item| &item.text).collect::<Vec<_>>()
+                    )
+                })
+        }
+    })
+    .await;
+    let mid = row(&net, "server", "mid").await.unwrap();
+    println!(
+        "mid ended {:?}: {:?}",
+        Lifecycle::try_from(mid.lifecycle),
+        wire::ExitCause::try_from(mid.exit_cause)
+    );
+    net.shutdown().await.unwrap();
+    reached.expect(
+        "mid exited while its scout still ran, and the scout's result never reached the lead",
+    );
+}
+
+/// A child's report says how its turn ended. A child deleted in the
+/// middle of its turn tells its parent it was stopped before it finished,
+/// never that it finished. QA: deleted and denied children reported
+/// "finished" with no words, and parents told the person the work was
+/// done.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_child_deleted_mid_turn_tells_its_parent_it_was_stopped() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("server")
+            .link("desk", "server")
+            .agent(lead()),
+    )
+    .await
+    .unwrap();
+    net.settle("lead").await.unwrap();
+    net.spawn_child(
+        "lead",
+        child(
+            "helper",
+            "server",
+            vec![waits("never"), text("Suite green."), Step::TurnEnd],
+        ),
+    )
+    .await
+    .unwrap();
+    until("helper to be working", || {
+        let net = &net;
+        async move {
+            let phase = row(net, "server", "helper").await.map(|row| row.phase);
+            (phase == Some(Phase::Working as i32))
+                .then_some(())
+                .ok_or_else(|| format!("{phase:?}"))
+        }
+    })
+    .await
+    .unwrap();
+    net.delete("helper").await.unwrap();
+    until("helper's report to reach lead", || {
+        let net = &net;
+        async move {
+            let got = received(net, "lead").await;
+            (!got.is_empty())
+                .then_some(())
+                .ok_or_else(|| "nothing yet".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    taken(&net, "lead", "").await;
+    let lines: Vec<String> = net
+        .provider_input("lead")
+        .unwrap()
+        .into_iter()
+        .filter(|line| line.contains("helper"))
+        .collect();
+    net.shutdown().await.unwrap();
+    println!("what lead's Claude read of helper: {lines:?}");
+    assert!(
+        lines.iter().any(|line| line.contains("stopped")),
+        "the deleted child's report does not say it was stopped: {lines:?}"
+    );
+}
+
+/// The fleet's agent row counts what a stop would cut: live descendants
+/// on every host the agent's host knows, and background jobs. Both
+/// clients' stop and delete confirms name them ("lead is working and has
+/// 1 background job and 2 sub-agents. Stop anyway?"); the phone, which
+/// sees only its paired host's agents, cannot count them itself. QA: a
+/// delete removed a child on another host and nothing said so.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_agent_row_counts_live_descendants_and_background_jobs() {
+    let mut net = Net::start(
+        three_hosts().agent(
+            AgentDecl::new("lead", "desk")
+                .prompt("Plan the release survey.")
+                .steps(vec![
+                    tool(
+                        "Bash",
+                        serde_json::json!({"command": "make survey", "run_in_background": true}),
+                        Some("build"),
+                    ),
+                    text("A build runs in the background."),
+                    Step::TurnEnd,
+                ]),
+        ),
+    )
+    .await
+    .unwrap();
+    net.settle("lead").await.unwrap();
+    let busy = || vec![waits("release"), text("Done."), Step::TurnEnd];
+    net.spawn_child("lead", child("notes", "desk", busy()))
+        .await
+        .unwrap();
+    net.spawn_child("lead", child("helper", "server", busy()))
+        .await
+        .unwrap();
+    until_live(&net, "desk", "notes").await;
+    until_live(&net, "server", "helper").await;
+    until("lead's background job to be listed", || {
+        let net = &net;
+        async move {
+            let at = net.agent("lead").unwrap().clone();
+            let cut = net
+                .runtime("desk")
+                .unwrap()
+                .store()
+                .await
+                .cut(&at.key(), 0)
+                .unwrap();
+            let jobs = cut
+                .snapshot
+                .map(|snapshot| {
+                    wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice())
+                        .unwrap()
+                        .background_jobs
+                        .map(|jobs| jobs.jobs.len())
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0);
+            (jobs == 1)
+                .then_some(())
+                .ok_or_else(|| format!("{jobs} jobs"))
+        }
+    })
+    .await
+    .unwrap();
+    let lead = net
+        .runtime("desk")
+        .unwrap()
+        .resolve_agent("lead")
+        .await
+        .unwrap();
+    net.shutdown().await.unwrap();
+    let shown = format!("{lead:?}");
+    println!("lead's row: {shown}");
+    assert!(
+        shown.contains("descendants: 2"),
+        "lead's row does not count its two live sub-agents: {shown}"
+    );
+    assert!(
+        shown.contains("background_jobs: 1"),
+        "lead's row does not count its background job: {shown}"
+    );
+}
+
+/// An agents' `stop` tool stops: the child ends as stopped, as a person's
+/// stop ends it, and the stop cascades to the child's own descendants on
+/// every host. QA and the decision: the tool interrupted the child's turn,
+/// which left its own children running.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_stop_tool_stops_its_child_and_the_childs_descendants() {
+    let mut net = Net::start(
+        three_hosts().agent(
+            AgentDecl::new("lead", "desk")
+                .prompt("Plan the release survey.")
+                .steps(vec![
+                    text("I will have a helper run the suite."),
+                    Step::TurnEnd,
+                    tool(
+                        "mcp__amux__stop",
+                        serde_json::json!({"name": "helper"}),
+                        None,
+                    ),
+                    text("Stopped the helper."),
+                    Step::TurnEnd,
+                ]),
+        ),
+    )
+    .await
+    .unwrap();
+    net.settle("lead").await.unwrap();
+    let busy = || vec![waits("release"), text("Done."), Step::TurnEnd];
+    net.spawn_child("lead", child("helper", "server", busy()))
+        .await
+        .unwrap();
+    net.spawn_child("helper", child("scout", "phone", busy()))
+        .await
+        .unwrap();
+    until_live(&net, "server", "helper").await;
+    until_live(&net, "phone", "scout").await;
+    net.send("lead", "Stop the helper.").await.unwrap();
+    net.turn_ended("lead", 2).await.unwrap();
+    until_exited(&net, "server", "helper").await;
+    let helper = row(&net, "server", "helper").await.unwrap();
+    let scout = row(&net, "phone", "scout").await.unwrap();
+    net.shutdown().await.unwrap();
+    let ended = [
+        (
+            "helper",
+            Lifecycle::try_from(helper.lifecycle).ok(),
+            wire::ExitCause::try_from(helper.exit_cause).ok(),
+        ),
+        (
+            "scout",
+            Lifecycle::try_from(scout.lifecycle).ok(),
+            wire::ExitCause::try_from(scout.exit_cause).ok(),
+        ),
+    ];
+    println!("after lead's stop tool: {ended:?}");
+    assert!(
+        ended.iter().all(
+            |(_, lifecycle, cause)| *lifecycle == Some(Lifecycle::Exited)
+                && *cause == Some(wire::ExitCause::Stopped)
+        ),
+        "the stop tool did not stop the child and its descendants: {ended:?}"
+    );
+}
+
+/// A host that runs no agents (the phone announces no kinds) is never
+/// asked to start one: a spawn naming it is refused in plain words.
+/// QA: the terminal offered the phone as a host and starting there failed
+/// with a socket-path error from the phone's sandbox.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_spawn_on_a_host_that_runs_no_agents_is_refused_in_plain_words() {
+    let mut net = Net::start_with(
+        three_hosts().agent(lead()),
+        testnet::NetOptions {
+            edge: Some(Arc::new(|host, edge| {
+                if host == "phone" {
+                    edge.kinds = Vec::new();
+                }
+            })),
+            ..testnet::NetOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+    net.settle("lead").await.unwrap();
+    let spawned = net
+        .spawn_child("lead", child("helper", "phone", says("Ready.")))
+        .await;
+    net.shutdown().await.unwrap();
+    println!("a spawn on the phone: {spawned:?}");
+    let refusal = spawned
+        .expect_err("the phone runs no agents, so a spawn there is refused")
+        .to_string();
+    assert!(
+        refusal.contains("phone") && refusal.contains("run"),
+        "the refusal does not say the phone runs no agents: {refusal}"
+    );
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// A file one agent passes to another arrives as a file, wherever the
+/// recipient runs: the send tool moves the attachment out of the text,
+/// the recipient's host fetches its bytes from the sender's host, and the
+/// recipient reads it from a path on its own host, exactly as a person's
+/// attachment. QA: the element travelled as text naming the sender host's
+/// path, which an agent on another machine cannot open.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_one_agent_sends_another_arrives_on_the_recipients_own_host() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("server")
+            .link("desk", "server")
+            .agent(
+                AgentDecl::new("scribe", "desk")
+                    .prompt("Wait.")
+                    .steps(says("Ready.")),
+            ),
+    )
+    .await
+    .unwrap();
+    net.settle("scribe").await.unwrap();
+    let bytes = b"release notes: ship on friday\n".to_vec();
+    let put = |agent: Uuid| wire::PutBlobRequest {
+        agent_id: agent.as_bytes().to_vec(),
+        name: "notes.txt".into(),
+        mime: "text/plain".into(),
+        bytes: bytes.clone(),
+    };
+    let blob = net
+        .client("desk")
+        .unwrap()
+        .put_blob(Request::new(put(net.agent("scribe").unwrap().id)))
+        .await
+        .unwrap()
+        .into_inner();
+    let hash = hex(&blob.hash);
+    let sender_path = net.agent_dir("scribe").unwrap().join("blobs").join(&hash);
+    let element = format!(
+        "<amux-attachment kind=\"file\" hash=\"sha256:{hash}\" name=\"notes.txt\" mime=\"text/plain\" size=\"{}\" path=\"{}\"/>",
+        bytes.len(),
+        sender_path.display()
+    );
+    net.spawn(
+        AgentDecl::new("lead", "desk")
+            .prompt("Plan the release survey.")
+            .steps(vec![
+                text("I will have a helper read the notes."),
+                Step::TurnEnd,
+                tool(
+                    "mcp__amux__send",
+                    serde_json::json!({"to": "helper", "text": format!("Please read {element}")}),
+                    None,
+                ),
+                text("Sent the notes."),
+                Step::TurnEnd,
+            ]),
+    )
+    .await
+    .unwrap();
+    net.settle("lead").await.unwrap();
+    net.client("desk")
+        .unwrap()
+        .put_blob(Request::new(put(net.agent("lead").unwrap().id)))
+        .await
+        .unwrap();
+    net.spawn_child(
+        "lead",
+        child(
+            "helper",
+            "server",
+            vec![waits("hold"), text("Read them."), Step::TurnEnd],
+        ),
+    )
+    .await
+    .unwrap();
+    until_live(&net, "server", "helper").await;
+    net.send("lead", "Pass the notes on.").await.unwrap();
+    net.turn_ended("lead", 2).await.unwrap();
+    let helper_dir = net.agent_dir("helper").unwrap();
+    let delivered = until("helper's provider to read the notes", || {
+        let net = &net;
+        async move {
+            let lines: Vec<String> = net
+                .provider_input("helper")
+                .unwrap()
+                .into_iter()
+                .filter(|line| line.contains("notes.txt"))
+                .collect();
+            (!lines.is_empty())
+                .then_some(lines)
+                .ok_or_else(|| "nothing yet".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    let local = helper_dir.join("blobs").join(&hash);
+    let held = local.exists();
+    net.shutdown().await.unwrap();
+    println!("what helper's Claude read: {delivered:?}; its copy held: {held}");
+    assert!(
+        delivered
+            .iter()
+            .any(|line| line.contains(&*local.to_string_lossy())),
+        "the file reached the other host's agent naming the sender host's path, not one on its own host: {delivered:?}"
+    );
+    assert!(held, "the recipient's host holds no copy of the file");
+}

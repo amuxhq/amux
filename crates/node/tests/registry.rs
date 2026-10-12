@@ -1749,3 +1749,129 @@ async fn a_restarted_daemon_serves_the_tools_of_the_agents_it_adopts() {
         "the adopting daemon serves the adopted agent's tools.sock"
     );
 }
+
+fn sdk_input(of: wire::claude_sdk_input::Of) -> wire::Input {
+    wire::Input::new(
+        uuid::Uuid::new_v4().as_bytes().to_vec(),
+        wire::ClaudeSdkInput { of: Some(of) },
+    )
+}
+
+/// A person's Stop is "stop now": the turn is cancelled the provider's own
+/// way and the agent exits as stopped within seconds, whatever its turn
+/// was doing. Every client sends the same stop; there is no "stop when
+/// done". Today the stop waits for the running command, and only the stop
+/// deadline's kill ends it, recorded as killed (QA: a stop mid-command
+/// read "ended unexpectedly" after half a minute).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_persons_stop_ends_a_working_agent_as_stopped_within_seconds() {
+    let install = Install::new();
+    let never = install.path("never");
+    let command = provider_fakes::script::Step::Tool(provider_fakes::script::Tool {
+        name: None,
+        class: provider_fakes::script::ToolClass::Consequential,
+        input: None,
+        outcome: Default::default(),
+        wait_for: Some(never),
+    });
+    let daemon = install
+        .start("boot-1", install.launch("long-command", vec![command]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let agent = runtime
+        .spawn(
+            create(&install.work, "builder", Some("run the long build")),
+            None,
+        )
+        .await
+        .unwrap();
+    let id = id_of(&agent);
+    until("the command to run", || working(&runtime, id))
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    // The stop every client sends today; the decided wire has no mode.
+    let stopped =
+        tokio::time::timeout(Duration::from_secs(8), runtime.stop(id, StopMode::Graceful)).await;
+    let took = started.elapsed();
+    kill_all(&runtime).await;
+    let row = runtime.agent(id).await.unwrap();
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    println!(
+        "the stop answered after {took:?}: {stopped:?}; the row ended {:?}",
+        row.exit_cause()
+    );
+    assert!(
+        matches!(&stopped, Ok(Ok(_))),
+        "a person's stop of a working agent did not end it within seconds: {stopped:?}"
+    );
+    assert_eq!(row.exit_cause(), ExitCause::Stopped);
+}
+
+/// A resumed agent carries on with the settings it last ran with, not the
+/// ones it was created with: a permission and an effort chosen in the chat
+/// survive a stop and a resume (QA: a resume silently went back to plan
+/// mode and to the creation model).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
+    let install = Install::new();
+    let daemon = install
+        .start("boot-1", install.launch("idle", vec![]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let agent = runtime
+        .spawn(create(&install.work, "settled", None), None)
+        .await
+        .unwrap();
+    let id = id_of(&agent);
+    for of in [
+        wire::claude_sdk_input::Of::Permission(wire::SetPermission {
+            value: "acceptEdits".into(),
+        }),
+        wire::claude_sdk_input::Of::Effort(wire::SetEffort {
+            effort: Some("high".into()),
+        }),
+    ] {
+        let answer = runtime
+            .send_input(&wire::SendInputRequest {
+                agent_id: agent.agent_id.clone(),
+                input: Some(sdk_input(of)),
+            })
+            .await
+            .unwrap();
+        assert!(
+            matches!(answer.of, Some(wire::send_input_response::Of::Accepted(_))),
+            "{answer:?}"
+        );
+    }
+    until("the snapshot to hold the new settings", || async {
+        let cut = runtime.store().await.cut(&key(&runtime, id), 0).unwrap();
+        let body = cut
+            .snapshot
+            .map(|snapshot| wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap())
+            .unwrap_or_default();
+        (body.permission.as_deref() == Some("acceptEdits")
+            && body.effort.as_deref() == Some("high"))
+        .then_some(())
+        .ok_or_else(|| format!("permission {:?}, effort {:?}", body.permission, body.effort))
+    })
+    .await
+    .unwrap();
+    runtime.stop(id, StopMode::Kill).await.unwrap();
+    runtime.resume(id, None).await.unwrap();
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    let config = spec(&install.agent_dir(id), 2).config.unwrap_or_default();
+    println!("the resumed incarnation's config: {config:?}");
+    assert_eq!(
+        config.permission.as_deref(),
+        Some("acceptEdits"),
+        "the resume went back to the permission the agent was created with"
+    );
+    assert!(
+        format!("{config:?}").contains("effort: Some(\"high\")"),
+        "the resume dropped the effort the agent last ran with: {config:?}"
+    );
+}

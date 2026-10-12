@@ -146,3 +146,37 @@ async fn headless_claude_has_no_terminal_and_is_pointed_at_its_chat() {
     assert!(said.contains("has no terminal"), "{said}");
     assert!(said.contains("open its chat"), "{said}");
 }
+
+/// Leaving a raw attach gives the shell its own screen back: the attach
+/// draws the agent's terminal on the alternate screen and leaves it on the
+/// way out, so the agent's screen is not left in the shell's scrollback.
+/// QA: after a detach the agent's last frame stayed in the shell.
+#[tokio::test]
+async fn leaving_a_raw_attach_gives_the_shell_its_own_screen_back() {
+    const ENTER: &str = "\x1b[?1049h";
+    const LEAVE: &str = "\x1b[?1049l";
+    let desk = desk(vec![text("hello from the agent"), Step::TurnEnd]);
+    desk.run(&["server", "start"]).await;
+    let scout = create(&desk, "claude_pty", "scout").await;
+    let chats = client(&desk.socket).await;
+    until("the first turn", || {
+        let mut chats = chats.clone();
+        let scout = &scout;
+        async move { says(&chat(&mut chats, scout).await, "hello from the agent", 1) }
+    })
+    .await
+    .unwrap();
+
+    say("$ amux attach scout, then <leader> d");
+    let mut term = Term::attach(&desk, "scout", 30, 100);
+    term.drawn("hello from the agent").await;
+    term.type_keys(DETACH).await;
+    let said = term.exits().await;
+    let entered = said.find(ENTER);
+    let left = said.rfind(LEAVE);
+    assert!(
+        entered.is_some_and(|entered| left.is_some_and(|left| left > entered)),
+        "the attach did not draw on the alternate screen and leave it on exit \
+         (entered at {entered:?}, left at {left:?}): {said:?}"
+    );
+}

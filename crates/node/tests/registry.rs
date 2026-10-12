@@ -1505,3 +1505,247 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
     });
     assert_eq!(turns, 2, "the resumed incarnation ran its prompt");
 }
+
+/// The same kill, but the Codex server never finishes on the terminate
+/// signal: real Codex with a command approval open goes on waiting for it,
+/// so the tether's SIGTERM leaves it holding the thread for good. When the
+/// agent process dies without its own orderly exit (the daemon's kill
+/// escalation, a resume reaping a dying agent, a crash), nothing ever
+/// sends that server SIGKILL, and every later resume is refused with
+/// "thread … already has an active writer" (QA: a Codex agent waiting on an
+/// approval when its daemon died could never be resumed). Formerly the
+/// server stood behind for a moment: the server is in a process group of its own,
+/// is told to finish by its tether once the agent dies, and, like real
+/// Codex, can take seconds to exit, staying its thread's writer until it
+/// does. A resume in that moment must wait for the old server (or retry
+/// past it), not race it: the next incarnation resumes the thread, takes
+/// its prompt and comes to rest. Real Codex refuses the racing resume with
+/// "thread … already has an active writer", and the agent then sat at
+/// starting forever.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the_next_incarnation()
+{
+    let install = Install::new();
+    let log = install.path("codex-input.jsonl");
+    let mut launch = install.launch("lingering", vec![]);
+    // Every Codex server the agent starts answers a prompt and then, asked
+    // to finish, stays its thread's writer for two minutes, longer than any
+    // wait here: it does not finish on the terminate signal alone.
+    let script = provider_fakes::script::Script {
+        steps: vec![text("answered"), wire_turn_end()],
+        exit_ms: 120_000,
+        ..provider_fakes::script::Script::default()
+    };
+    let script_path = install.path("lingering.json");
+    std::fs::write(&script_path, serde_json::to_string(&script).unwrap()).unwrap();
+    launch.provider_env.insert(
+        provider_fakes::script::SCRIPT_ENV.to_owned(),
+        script_path.to_string_lossy().into_owned(),
+    );
+    launch.provider_env.insert(
+        provider_fakes::INPUT_LOG_ENV.to_owned(),
+        log.to_string_lossy().into_owned(),
+    );
+    // The agent will not answer its stop: the daemon kills it at once.
+    launch.stop_deadline_ms = 500;
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let id = id_of(
+        &runtime
+            .spawn(
+                wire::CreateAgentRequest {
+                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
+                    ..create(&install.work, "codex", Some("first"))
+                },
+                None,
+            )
+            .await
+            .unwrap(),
+    );
+    let dir = install.agent_dir(id);
+    let at_rest = |incarnation: u32| {
+        let runtime = runtime.clone();
+        move || {
+            let runtime = runtime.clone();
+            async move {
+                let row = runtime.agent(id).await.map_err(|error| error.to_string())?;
+                (row.incarnation == incarnation
+                    && row.lifecycle == Lifecycle::Live as i32
+                    && row.phase == Phase::Idle as i32)
+                    .then_some(())
+                    .ok_or_else(|| {
+                        format!(
+                            "incarnation {}, {:?}, {:?}",
+                            row.incarnation,
+                            row.lifecycle(),
+                            row.phase()
+                        )
+                    })
+            }
+        }
+    };
+    until("the first incarnation at rest", at_rest(1))
+        .await
+        .unwrap();
+
+    // A frozen agent cannot answer the stop, so the deadline's kill ends
+    // it, as when a stop overruns; its Codex server is told to finish.
+    let frozen = std::process::Command::new("pkill")
+        .args(["-STOP", "-f", &format!("agent {}", dir.display())])
+        .status()
+        .unwrap();
+    assert!(frozen.success(), "the agent process is frozen");
+    let stopped = runtime.stop(id, StopMode::Graceful).await.unwrap();
+    assert_eq!(stopped.exit_cause(), ExitCause::Killed);
+
+    runtime
+        .resume(
+            id,
+            Some(wire::Bootstrap {
+                of: Some(wire::bootstrap::Of::Prompt(submission(b"p1", "carry on"))),
+            }),
+        )
+        .await
+        .expect("the resume is accepted");
+    let rested = until(
+        "the resumed incarnation to resume its thread, take its prompt and rest",
+        at_rest(2),
+    )
+    .await;
+    let input = std::fs::read_to_string(&log).unwrap_or_default();
+    let resumes = input.matches("\"thread/resume\"").count();
+    let turns = input.matches("\"turn/start\"").count();
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    rested.unwrap_or_else(|stuck| {
+        panic!(
+            "the old Codex server, told only to terminate, still held the thread: {stuck:?}; \
+             Codex read {resumes} thread/resume and {turns} turn/start"
+        )
+    });
+    assert_eq!(turns, 2, "the resumed incarnation ran its prompt");
+}
+
+/// A child agent ends after its one turn, as finished. When its daemon is
+/// gone past the grace and the child drains, the turn it was draining
+/// through still ends the child's work: its report reaches the parent as
+/// finished, so its row must say finished too, not "while the daemon was
+/// away" (QA: a child the parent heard finish was listed as lost). This is
+/// wrong at the production grace too, for a child still working when the
+/// grace runs out.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_child_that_finishes_its_turn_while_its_daemon_is_away_ends_finished() {
+    let install = Install::new();
+    let gate = install.path("gate");
+    let never = install.path("never");
+    let short = |mut launch: node::Launch| {
+        launch.agent.grace_secs = 1;
+        launch.agent.drain_secs = 5;
+        launch
+    };
+    let held = short(install.launch("held", vec![wait_for(&never)]));
+    let gated = short(install.launch(
+        "gated",
+        vec![wait_for(&gate), text("done"), wire_turn_end()],
+    ));
+    let daemon = install.start("boot-1", held.clone()).await;
+    let runtime = runtime(&daemon, &install);
+    let parent = id_of(
+        &runtime
+            .spawn(create(&install.work, "parent", Some("hold")), None)
+            .await
+            .unwrap(),
+    );
+    runtime.set_launch(gated);
+    let child = id_of(
+        &runtime
+            .spawn(create(&install.work, "child", Some("work")), Some(parent))
+            .await
+            .unwrap(),
+    );
+    until("the child's turn to start", || working(&runtime, child))
+        .await
+        .unwrap();
+
+    let gone = std::sync::Arc::downgrade(&runtime);
+    drop(runtime);
+    drop(daemon);
+    until("the crashed daemon to let go", || async {
+        gone.upgrade()
+            .map_or(Ok(()), |_| Err("the runtime is still held"))
+    })
+    .await
+    .unwrap();
+    let dir = install.agent_dir(child);
+    until("the child to lose its daemon", || {
+        std::future::ready(lost_its_daemon(&dir))
+    })
+    .await
+    .unwrap();
+    // The child's work finishes with no daemon running.
+    std::fs::write(&gate, "").unwrap();
+    until("the child to exit with no daemon", || {
+        std::future::ready(
+            (!agent_dir::locked(&dir))
+                .then_some(())
+                .ok_or("its process still holds the directory"),
+        )
+    })
+    .await
+    .unwrap();
+
+    let daemon = install.start("boot-1", held).await;
+    let runtime = support::runtime(&daemon, &install);
+    let row = runtime.agent(child).await.unwrap();
+    let cause = row.exit_cause();
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    assert_eq!(
+        cause,
+        ExitCause::Finished,
+        "a child whose turn ended while its daemon was away finished its work"
+    );
+}
+
+/// An agent's amux tools reach the daemon through `<dir>/tools.sock`, which
+/// the daemon serves for that agent alone. A daemon that adopts a live agent
+/// after a restart must serve it again, or every fleet tool call the agent
+/// makes answers "amux daemon isn't running" until the agent is stopped and
+/// resumed (QA: Codex agents that outlived a daemon restart lost amux's
+/// tools).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restarted_daemon_serves_the_tools_of_the_agents_it_adopts() {
+    let install = Install::new();
+    let launch = install.launch("idle", vec![]);
+    let daemon = install.start("boot-1", launch.clone()).await;
+    let runtime = runtime(&daemon, &install);
+    let id = id_of(
+        &runtime
+            .spawn(create(&install.work, "stays", None), None)
+            .await
+            .unwrap(),
+    );
+    let tools = install.agent_dir(id).join(agent_dir::TOOLS_SOCK);
+    assert!(
+        listens(&tools).await,
+        "the spawning daemon serves its tools"
+    );
+
+    drop(runtime);
+    drop(daemon);
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = support::runtime(&daemon, &install);
+    let report = daemon.sweep(install.profile).unwrap().clone();
+    assert_eq!(report.live, vec![id], "the live agent was adopted");
+    let served = listens(&tools).await;
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    assert!(
+        served,
+        "the adopting daemon serves the adopted agent's tools.sock"
+    );
+}

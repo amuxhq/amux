@@ -2723,3 +2723,22 @@ async fn hosts_paired_by_address_link_again_after_the_lan_between_them_comes_bac
 
     net.shutdown().await.unwrap();
 }
+
+/// A paired host whose link goes silently dead (every datagram dropped, no
+/// close) is shown away within about half a minute, not after QUIC's
+/// two-minute idle timeout: until then every client keeps showing the far
+/// host's agents as live and current, answers sent to it sit unconfirmed,
+/// and a phone keeps saying "reachable" (QA: hosts and the phone looked
+/// current for 70 s to 3 min after a total cut). The bound is desktop
+/// keepalive 10 s and idle timeout 30 s, as the phone's 20 s / 60 s are
+/// already shorter than the desktop's 30 s / 120 s.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_notices_a_silently_dead_link_within_forty_seconds() {
+    let mut net = paired_without_discovery().await;
+
+    net.sever_link("desk", "box").unwrap();
+    println!("every datagram between desk and box is dropped from now on");
+    until_link(&net, "desk", "box", false, Duration::from_secs(40)).await;
+
+    net.shutdown().await.unwrap();
+}

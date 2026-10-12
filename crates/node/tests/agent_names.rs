@@ -170,3 +170,38 @@ async fn an_assigned_name_avoids_other_agents_and_the_repositorys_branches() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+/// Two agents may carry one name. The refusal that says a name is
+/// ambiguous lists each candidate's id, and that id must then pick it: an
+/// agent's send and stop tools and the CLI resolve through here, and a lead
+/// with twin children was told their ids and then "no agent named <id>"
+/// for each (QA: twin children could be neither messaged nor stopped).
+#[tokio::test(flavor = "multi_thread")]
+async fn an_id_the_ambiguous_name_refusal_lists_resolves_to_that_agent() {
+    let install = Install::new();
+    let daemon = install
+        .start("boot-1", install.launch("idle", vec![]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    for _ in 0..2 {
+        runtime
+            .spawn(create(&install.work, "worker", None), None)
+            .await
+            .unwrap();
+    }
+    let refusal = runtime.resolve_agent("worker").await.unwrap_err();
+    println!("the refusal: {refusal:?}");
+    let node::ServeError::Ambiguous(ambiguous) = refusal else {
+        panic!("two agents named worker are ambiguous: {refusal:?}");
+    };
+    let picked = &ambiguous.candidates[1];
+    let id = interpret::to_hex(&picked.agent_id);
+    let resolved = runtime.resolve_agent(&id).await;
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+    let resolved = resolved.unwrap_or_else(|error| {
+        panic!("the id {id} the refusal listed does not pick its agent: {error:?}")
+    });
+    assert_eq!(resolved.agent_id, picked.agent_id);
+}

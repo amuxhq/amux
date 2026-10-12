@@ -1,3 +1,13 @@
+2026-10-12 — **Failing tests for the daemon and network from the second QA
+round.** A Codex server that ignores the terminate signal no longer holds
+its thread from the next incarnation: round one's resume retry assumes the
+old server exits, and one with an approval open never does. A child that
+finishes its turn while its daemon is away ends finished, not lost. A
+restarted daemon serves the tools of the agents it adopts. An id that the
+ambiguous-name refusal lists resolves to that agent. A host notices a
+silently dead link within forty seconds, where QUIC's desktop idle timeout
+takes two minutes.
+
 2026-10-12 — **Failing tests for the shared views, interpreters and agent
 process from the second QA round.** The shared view: a multi-file patch ask
 names every file and its change; web fetch and search asks name their URL

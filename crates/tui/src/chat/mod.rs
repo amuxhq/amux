@@ -138,6 +138,15 @@ pub enum ChatEffect {
     Rename(String),
 }
 
+/// Why a file was not attached: it is over the limit, said in the unit a
+/// person reads (the limit is 64 MiB of the file's own bytes).
+fn too_large_words(name: &str) -> String {
+    format!(
+        "{name} is too large to attach: files can be at most {} MB",
+        wire::ATTACHMENT_SIZE_LIMIT / (1024 * 1024)
+    )
+}
+
 /// Why a slash command was not sent: the agent does not run it, and what it
 /// does run.
 fn refused_command_words(state: &SessionState, command: &str, offered: &[String]) -> String {
@@ -364,6 +373,12 @@ pub struct ChatView {
     /// The head ask's key and when it was first drawn, for the time it
     /// leaves keys with the draft.
     ask_drawn: Option<(String, i64)>,
+    /// Files on their way into the draft, by name: a prompt sent before
+    /// they land waits for them.
+    attaching: Vec<String>,
+    /// Enter was pressed while files were attaching: the draft goes once
+    /// the last of them is in.
+    send_when_attached: bool,
     /// When the last timed key was pressed: an ask arms only after
     /// [`ASK_ARMS_MS`] with no key.
     last_key_at: Option<i64>,
@@ -443,6 +458,8 @@ impl ChatView {
             epoch: 0,
             opened_at_ms: now_ms,
             ask_drawn: None,
+            attaching: Vec::new(),
+            send_when_attached: false,
             last_key_at: None,
             ask_armed: None,
             laid: Laid::default(),
@@ -955,6 +972,16 @@ impl ChatView {
             return vec![];
         }
         match state.composer() {
+            // A prompt never goes without a file still on its way into it.
+            Composer::Send | Composer::Holds(_) | Composer::Resume
+                if !self.attaching.is_empty() =>
+            {
+                self.send_when_attached = true;
+                vec![ChatEffect::Notice(format!(
+                    "Sends once {} is attached",
+                    self.attaching.join(", ")
+                ))]
+            }
             // Not current, the client library holds what is sent and sends
             // it once the chat is current again.
             Composer::Send | Composer::Holds(_) => {
@@ -1780,18 +1807,30 @@ impl ChatView {
     /// is stored and attached.
     pub fn paste(&mut self, content: ClipboardContent) -> Result<Option<ChatEffect>, String> {
         match content {
-            ClipboardContent::Image { mime, bytes } => Ok(Some(ChatEffect::Attach {
-                name: "clipboard.png".into(),
-                mime,
-                bytes,
-            })),
+            ClipboardContent::Image { mime, bytes } => {
+                let name = "clipboard.png".to_owned();
+                if bytes.len() > wire::ATTACHMENT_SIZE_LIMIT {
+                    return Err(too_large_words(&name));
+                }
+                self.attaching.push(name.clone());
+                Ok(Some(ChatEffect::Attach { name, mime, bytes }))
+            }
             ClipboardContent::Path(path) => {
                 let name = path
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
+                // Refused before it is read or sent: the daemon would refuse
+                // it after the whole upload.
+                let size = std::fs::metadata(&path)
+                    .map_err(|error| format!("{name} could not be read: {error}"))?
+                    .len();
+                if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+                    return Err(too_large_words(&name));
+                }
                 let bytes = std::fs::read(&path)
                     .map_err(|error| format!("{name} could not be read: {error}"))?;
+                self.attaching.push(name.clone());
                 Ok(Some(ChatEffect::Attach {
                     mime: mime_of(&name).to_owned(),
                     name,
@@ -1807,13 +1846,45 @@ impl ChatView {
     }
 
     /// A stored blob, attached at the cursor as an image or a file.
-    pub fn attach_blob(&mut self, blob: wire::BlobRef) {
+    /// A file stored for the draft: its chip goes in. When Enter waited
+    /// for it and it was the last on its way, the draft is sent now.
+    pub fn attach_blob(&mut self, state: &SessionState, blob: wire::BlobRef) -> Vec<ChatEffect> {
+        self.landed(&blob.name);
         let of = if blob.mime.starts_with("image/") {
             attachment::Of::Image(blob)
         } else {
             attachment::Of::File(blob)
         };
         self.editor.attach(Attachment { of: Some(of) });
+        if self.attaching.is_empty() && std::mem::take(&mut self.send_when_attached) {
+            return self.submit(state);
+        }
+        vec![]
+    }
+
+    /// A file could not be stored: it is not in the draft, a send waiting
+    /// for it waits no longer, and why stays on the composer's edge until
+    /// the draft changes.
+    pub fn attach_failed(&mut self, name: &str, why: &str) {
+        self.landed(name);
+        self.send_when_attached = false;
+        self.not_sent = Some(format!("could not attach {name}: {why}"));
+    }
+
+    fn landed(&mut self, name: &str) {
+        match self.attaching.iter().position(|pending| pending == name) {
+            Some(at) => {
+                self.attaching.remove(at);
+            }
+            None => {
+                self.attaching.pop();
+            }
+        }
+    }
+
+    /// The files still on their way into the draft.
+    pub fn attaching(&self) -> &[String] {
+        &self.attaching
     }
 
     /// `<leader> r` with a review already in the draft: back to its page.

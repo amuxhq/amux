@@ -6,7 +6,8 @@ amux has two rich clients, the terminal client ([TERMINAL.md](TERMINAL.md)) and 
 ([IOS.md](IOS.md)). Both are thin shells over one Rust library: a pure model of an open chat and of the fleet,
 a driver that owns the streams and does every piece of I/O, and a set of views that turn the model into plain
 content values. Each client composes those values in its own layout and owns only what is ephemeral: panes,
-scroll position, focus, drafts and which rows are expanded.
+scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to its own machine's
+daemon (`SaveDraft`, `GetDraft`) so a draft outlives the client; they never leave that machine.
 
 Three rules shape the library:
 

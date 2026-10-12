@@ -902,15 +902,17 @@ fn leader_o_with_nothing_focused_opens_the_newest_fold() {
     );
 }
 
-/// Decided: an attachment larger than 64 MB (ATTACHMENT_SIZE_LIMIT) is
-/// refused before upload in plain words naming the limit; it went up and
-/// failed with "h2 protocol error".
+/// Decided: an attachment larger than the limit (ATTACHMENT_SIZE_LIMIT,
+/// 64 MiB of the file's bytes, worded "64 MB") is refused before upload in
+/// plain words naming the limit; it went up and failed with "h2 protocol
+/// error". 64 MiB and one byte is the first size refused.
 #[test]
 fn a_file_over_the_attachment_limit_is_refused_naming_the_limit() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("t65m.bin");
     let file = std::fs::File::create(&path).unwrap();
-    file.set_len(64_000_001).unwrap();
+    file.set_len(wire::ATTACHMENT_SIZE_LIMIT as u64 + 1)
+        .unwrap();
     drop(file);
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let result = view.paste(ClipboardContent::Path(path));

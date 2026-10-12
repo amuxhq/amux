@@ -1,3 +1,13 @@
+2026-10-13 — **The terminal attaches up to 64 MB, waits for a file still attaching, and keeps drafts across closing.**
+A file over the attachment limit was uploaded and then failed with a raw
+error; it is now refused before upload in words naming the limit ("files can
+be at most 64 MB"; the limit is 64 MiB of content). Enter while a file is
+still attaching waits for it, says so, and sends once it lands, instead of
+sending the prompt without it. A failed attachment says why above the
+composer. Every draft in the client, held prompts' words included, is handed
+to this machine's daemon when the client closes and read back when a chat
+opens, so detaching no longer loses it.
+
 2026-10-13 — **A conversation switched away in terminal Claude's own view says so, with a way back.**
 When someone resumes another conversation inside terminal Claude's own
 screen, the agent's conversation has left that process and prompts are

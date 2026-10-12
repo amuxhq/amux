@@ -170,6 +170,9 @@ pub enum AppEvent {
     Opened {
         agent: AgentKey,
         result: Result<Arc<Session>, String>,
+        /// The draft this machine kept for the agent, from an earlier
+        /// client.
+        kept: Option<wire::ComposerDraft>,
     },
     Notice(String, Tone),
     /// Put words back in the composer of this agent's chat, saying why
@@ -183,6 +186,12 @@ pub enum AppEvent {
     Attached {
         agent_id: Vec<u8>,
         blob: wire::BlobRef,
+    },
+    /// A file could not be stored for the draft.
+    AttachFailed {
+        agent_id: Vec<u8>,
+        name: String,
+        why: String,
     },
     /// An agent created with its first prompt: its chat opens, or home
     /// stays and says it started.
@@ -302,6 +311,38 @@ fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str>
         Some("headless Claude has no terminal")
     } else {
         None
+    }
+}
+
+/// A composer's words and attachments, as the daemon keeps them.
+fn composer_draft(editor: &crate::editor::Editor) -> wire::ComposerDraft {
+    wire::ComposerDraft {
+        text: editor.text().to_owned(),
+        attachments: editor.attachments().to_vec(),
+    }
+}
+
+/// Saves drafts with this machine's daemon; a failure loses only what a
+/// client kept in memory anyway.
+async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::ComposerDraft)>) {
+    for (agent_id, draft) in drafts {
+        let request = wire::SaveDraftRequest {
+            agent_id,
+            draft: Some(draft),
+        };
+        // Nowhere to say it as the client closes; the draft was only ever
+        // in this client's memory before.
+        let _ = client.save_draft(request).await;
+    }
+}
+
+impl Drop for App {
+    /// A client dropped without quitting (a test, an embedding) still
+    /// hands its drafts on, where a runtime is there to send them.
+    fn drop(&mut self) {
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(self.keep_drafts());
+        }
     }
 }
 
@@ -440,7 +481,11 @@ impl App {
 
     pub fn event(&mut self, event: AppEvent) -> Flow {
         match event {
-            AppEvent::Opened { agent, result } => {
+            AppEvent::Opened {
+                agent,
+                result,
+                kept,
+            } => {
                 if self.opening.as_ref() != Some(&agent) {
                     if result.is_ok() {
                         self.fleet.close(&agent);
@@ -458,8 +503,12 @@ impl App {
                             self.config.attach && terminal_elsewhere(entry, &self.config).is_none()
                         });
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
-                        if let Some(draft) = self.drafts.remove(&agent) {
-                            view.editor = draft;
+                        match (self.drafts.remove(&agent), kept) {
+                            (Some(draft), _) => view.editor = draft,
+                            // A draft this machine kept from an earlier
+                            // client comes back from its daemon.
+                            (None, Some(kept)) => view.editor.set(&kept.text, kept.attachments),
+                            (None, None) => {}
                         }
                         view.leader = self.config.leader;
                         view.local = agent.host == self.config.local_host;
@@ -500,13 +549,35 @@ impl App {
                 }
             }
             AppEvent::Attached { agent_id, blob } => {
+                let effects = match self
+                    .chat
+                    .as_mut()
+                    .filter(|chat| chat.view.agent_id == agent_id)
+                {
+                    Some(chat) => {
+                        let state = chat.session.state();
+                        chat.view.attach_blob(&state, blob)
+                    }
+                    None => Vec::new(),
+                };
+                // A send that waited for the file goes now.
+                for effect in effects {
+                    self.chat_effect(effect);
+                }
+            }
+            AppEvent::AttachFailed {
+                agent_id,
+                name,
+                why,
+            } => {
                 if let Some(chat) = self
                     .chat
                     .as_mut()
                     .filter(|chat| chat.view.agent_id == agent_id)
                 {
-                    chat.view.attach_blob(blob);
+                    chat.view.attach_failed(&name, &why);
                 }
+                self.notice(format!("could not attach {name}: {why}"), Tone::Warn);
             }
             AppEvent::Review {
                 agent_id,
@@ -594,6 +665,7 @@ impl App {
         }
         self.opening = Some(agent.clone());
         let fleet = self.fleet.clone();
+        let client = self.client.clone();
         self.spawn(async move {
             let window = Window {
                 tail: PAGE,
@@ -603,7 +675,19 @@ impl App {
                 .open(&agent, window)
                 .await
                 .map_err(|error| error.to_string());
-            Some(AppEvent::Opened { agent, result })
+            let request = wire::GetDraftRequest {
+                agent_id: agent.agent.clone(),
+            };
+            let kept = client
+                .get_draft(request)
+                .await
+                .ok()
+                .filter(|draft| !draft.text.is_empty() || !draft.attachments.is_empty());
+            Some(AppEvent::Opened {
+                agent,
+                result,
+                kept,
+            })
         });
     }
 
@@ -616,11 +700,62 @@ impl App {
         }
     }
 
-    /// Keeps a closing chat's draft for when it opens again.
+    /// Keeps a closing chat's draft for when it opens again, here and with
+    /// this machine's daemon, so it outlives this client.
     fn keep_draft(&mut self, chat: OpenChat) {
+        let draft = composer_draft(&chat.view.editor);
+        let client = self.client.clone();
+        let agent_id = chat.agent.agent.clone();
+        self.spawn(async move {
+            save_drafts(client, vec![(agent_id, draft)]).await;
+            None
+        });
         if !chat.view.editor.is_empty() {
             self.drafts.insert(chat.agent, chat.view.editor);
         }
+    }
+
+    /// Every draft this client holds, for its daemon to keep as the client
+    /// closes: the open chat's, those of chats left, and, in each agent's,
+    /// the words of prompts held for an unreachable host, which go back to
+    /// the draft rather than being lost with the client.
+    fn drafts_to_keep(&mut self) -> Vec<(Vec<u8>, wire::ComposerDraft)> {
+        let mut editors: HashMap<AgentKey, crate::editor::Editor> =
+            std::mem::take(&mut self.drafts);
+        if let Some(chat) = &self.chat {
+            editors.insert(chat.agent.clone(), chat.view.editor.clone());
+        }
+        for session in self.fleet.sessions() {
+            let held: Vec<(String, Vec<Attachment>)> = session
+                .state()
+                .held()
+                .filter_map(|sent| match &sent.what {
+                    InputWhat::Prompt { text, attachments } => {
+                        Some((text.clone(), attachments.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            if held.is_empty() {
+                continue;
+            }
+            let key = ui_state::agent_key(session.state().agent());
+            let editor = editors.entry(key).or_default();
+            for (text, attachments) in held {
+                editor.restore(&text, attachments);
+            }
+        }
+        editors
+            .into_iter()
+            .map(|(agent, editor)| (agent.agent, composer_draft(&editor)))
+            .collect()
+    }
+
+    /// Hands every draft to this machine's daemon; awaited as the client
+    /// quits.
+    pub fn keep_drafts(&mut self) -> impl std::future::Future<Output = ()> + Send + 'static {
+        let drafts = self.drafts_to_keep();
+        save_drafts(self.client.clone(), drafts)
     }
 
     fn field_text(&self) -> bool {
@@ -1151,10 +1286,11 @@ impl App {
                 self.spawn(async move {
                     Some(match session.put_blob(&name, &mime, bytes).await {
                         Ok(blob) => AppEvent::Attached { agent_id, blob },
-                        Err(error) => AppEvent::Notice(
-                            format!("could not attach {name}: {error}"),
-                            Tone::Warn,
-                        ),
+                        Err(error) => AppEvent::AttachFailed {
+                            agent_id,
+                            name,
+                            why: error.to_string(),
+                        },
                     })
                 });
             }

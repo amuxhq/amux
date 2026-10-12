@@ -224,8 +224,11 @@ client asks for older rows by itself when fewer than a page (40 rows) is held ab
 **Attachments.** Ctrl+V reads the clipboard: an image or a copied file is stored with the agent and inserted at the
 cursor as a chip in the person's own words (`[screenshot.png · 240 KB]`); text is pasted. A paste of eight lines or
 more, or of 1000 characters or more, becomes a pasted-text chip (`[pasted-1 · 23 lines]`). A chip keeps a space
-after itself; one Backspace removes a chip with its attachment. [ATTACHMENTS.md](ATTACHMENTS.md) covers what happens
-to attachments after that.
+after itself; one Backspace removes a chip with its attachment. A file over 64 MB (64 MiB of its own bytes) is
+refused before anything is read or sent, in words naming the limit. Enter while a file is still attaching sends
+nothing yet: the prompt goes, with the file, once the file is in (`Sends once big.bin is attached`), and a file that
+could not be stored says so on the composer's edge until the draft changes. [ATTACHMENTS.md](ATTACHMENTS.md) covers
+what happens to attachments after that.
 
 ### Asks
 

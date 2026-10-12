@@ -942,12 +942,15 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
         })
     );
     typed(&mut view, &state, "see ");
-    view.attach_blob(wire::BlobRef {
-        hash: vec![7; 32],
-        name: "shot.png".into(),
-        mime: "image/png".into(),
-        size: 9,
-    });
+    view.attach_blob(
+        &state,
+        wire::BlobRef {
+            hash: vec![7; 32],
+            name: "shot.png".into(),
+            mime: "image/png".into(),
+            size: 9,
+        },
+    );
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     assert!(
         text(&buffer).contains("see [shot.png · 9 B]"),

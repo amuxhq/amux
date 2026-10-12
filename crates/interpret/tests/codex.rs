@@ -1250,3 +1250,221 @@ fn a_command_codex_keeps_running_past_an_interrupt_is_not_drawn_cancelled() {
         "the command Codex still runs is drawn ended at the interrupt: {states:?}"
     );
 }
+
+// --- Codex's slash commands: amux runs the ones it has a request for and
+// refuses the rest, rather than sending them to the model as words.
+
+/// Codex with thread t1 open and no turn running.
+fn idle_codex() -> State {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.162.1", "turns": []}, "model": "m"}}),
+        ),
+    );
+    state
+}
+
+/// What sending `text` as a prompt wrote to Codex, and the replies to it.
+fn slash(state: &mut State, id: &[u8], text: &str) -> (Vec<Value>, Vec<String>) {
+    let stepped = Codex::step(state, prompt(id, text));
+    let replies = stepped
+        .effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Reply { verdict, .. } => Some(format!("{verdict:?}")),
+            _ => None,
+        })
+        .collect();
+    (writes(&stepped.effects), replies)
+}
+
+/// The words a turn/start write sends Codex.
+fn turn_text(write: &Value) -> String {
+    write["params"]["input"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|input| input["text"].as_str())
+        .collect()
+}
+
+/// `/clear` starts a new Codex thread, and that thread becomes this agent's
+/// conversation: the next prompt's turn runs on it.
+#[test]
+fn clear_starts_a_codex_thread_the_agent_then_works_in() {
+    let mut state = idle_codex();
+    let (written, replies) = slash(&mut state, b"c1", "/clear");
+    let start = written
+        .iter()
+        .find(|write| write["method"] == "thread/start")
+        .unwrap_or_else(|| {
+            panic!("/clear starts no thread: wrote {written:?}, replies {replies:?}")
+        });
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": start["id"], "result": {"thread": {"id": "t2", "cliVersion": "0.162.1", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let (written, _) = slash(&mut state, b"p1", "hello");
+    let turn = written
+        .iter()
+        .find(|write| write["method"] == "turn/start")
+        .expect("the prompt starts a turn");
+    assert_eq!(
+        turn["params"]["threadId"], "t2",
+        "the turn runs on the old thread"
+    );
+}
+
+/// `/review` asks Codex for its own review, not a turn with those words.
+#[test]
+fn review_runs_codexs_review() {
+    let mut state = idle_codex();
+    let (written, replies) = slash(&mut state, b"r1", "/review");
+    assert!(
+        written
+            .iter()
+            .any(|write| write["method"] == "review/start"),
+        "/review is not Codex's review: wrote {written:?}, replies {replies:?}"
+    );
+}
+
+/// `/init` sends Codex the fixed prompt that writes the repository's agent
+/// instructions, not the bare word.
+#[test]
+fn init_sends_codex_its_fixed_prompt() {
+    let mut state = idle_codex();
+    let (written, replies) = slash(&mut state, b"i1", "/init");
+    let texts: Vec<String> = written
+        .iter()
+        .filter(|write| write["method"] == "turn/start")
+        .map(turn_text)
+        .collect();
+    assert!(
+        texts.len() == 1 && texts[0].trim() != "/init" && texts[0].len() > 20,
+        "/init does not send the fixed prompt: turns {texts:?}, replies {replies:?}"
+    );
+}
+
+/// `/plan` puts the thread in plan mode, as choosing the mode does: no
+/// turn carries the word, and the next turn runs in plan.
+#[test]
+fn plan_sets_the_collaboration_mode() {
+    let mut state = idle_codex();
+    let (written, _) = slash(&mut state, b"m1", "/plan");
+    let sent_as_words = written
+        .iter()
+        .any(|write| write["method"] == "turn/start" && turn_text(write).contains("/plan"));
+    let (written, _) = slash(&mut state, b"p1", "make a plan");
+    let mode = written
+        .iter()
+        .find(|write| write["method"] == "turn/start")
+        .map(|turn| turn["params"]["collaborationMode"]["mode"].clone());
+    assert!(
+        !sent_as_words && mode == Some(json!("plan")),
+        "/plan sent as words: {sent_as_words}; the next turn's mode: {mode:?}"
+    );
+}
+
+/// A slash command amux has no request for (`/new`, or a word Codex does
+/// not know) is refused, not sent to the model as a prompt.
+#[test]
+fn a_slash_command_amux_cannot_run_on_codex_is_refused() {
+    for text in ["/new", "/frobnicate now"] {
+        let mut state = idle_codex();
+        let (written, replies) = slash(&mut state, b"x1", text);
+        assert!(
+            written.is_empty() && replies.iter().any(|reply| reply.contains("Rejected")),
+            "{text} is not refused: wrote {written:?}, replies {replies:?}"
+        );
+    }
+}
+
+/// Codex's catalogue lists the commands amux runs for it, then its skills.
+#[test]
+fn codexs_catalogue_lists_the_commands_amux_runs() {
+    let catalogue = last_catalogue("offered").expect("a catalogue");
+    let names: Vec<&str> = catalogue
+        .commands
+        .iter()
+        .map(|command| command.name.trim_start_matches('/'))
+        .collect();
+    for command in ["compact", "clear", "review", "init", "plan"] {
+        assert!(
+            names.contains(&command),
+            "the catalogue does not list /{command}: {names:?}"
+        );
+    }
+    assert!(!names.contains(&"new"), "{names:?}");
+}
+
+/// Codex's interrupt ends the turn but its unified-exec commands run on as
+/// background terminals. amux asks Codex for its background terminals when
+/// the interrupted turn ends, so the list names the command.
+#[test]
+fn an_interrupt_lists_the_commands_codex_keeps_running() {
+    let mut state = idle_codex();
+    let command = json!({"type": "commandExecution", "id": "exec-1", "command": "/bin/zsh -lc 'sleep 47'",
+        "cwd": "/w", "processId": "8911", "source": "unifiedExecStartup", "status": "inProgress",
+        "commandActions": [{"type": "unknown", "command": "sleep 47"}],
+        "aggregatedOutput": null, "exitCode": null, "durationMs": null});
+    let mut written = Vec::new();
+    for event in [
+        prompt(b"p1", "sleep for a while"),
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": command}}),
+        ),
+        Event::Input(wire::Input::new(
+            b"i1".to_vec(),
+            wire::CodexInput {
+                of: Some(wire::codex_input::Of::Interrupt(wire::Interrupt {})),
+            },
+        )),
+        rpc(
+            json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "items": [], "status": "interrupted", "error": null}}}),
+        ),
+    ] {
+        written.extend(writes(&Codex::step(&mut state, event).effects));
+    }
+    let methods: Vec<&Value> = written.iter().map(|write| &write["method"]).collect();
+    assert!(
+        methods
+            .iter()
+            .any(|method| *method == "thread/backgroundTerminals/list"),
+        "nothing asks Codex what it still runs after the interrupt: {methods:?}"
+    );
+}
+
+/// A web search that opens a page names the page's address, which is all
+/// Codex says about it.
+#[test]
+fn a_web_search_that_opens_a_page_shows_its_address() {
+    let mut state = idle_codex();
+    let mut texts = Vec::new();
+    for message in [
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+        json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1", "item": {
+            "type": "webSearch", "id": "ws-1", "query": "",
+            "action": {"type": "openPage", "url": "https://docs.rs/tokio/latest/tokio/"}}}}),
+    ] {
+        for item in Codex::step(&mut state, rpc(message)).step.items {
+            texts.push(format!("{} {item:?}", item.text));
+        }
+    }
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("https://docs.rs/tokio/latest/tokio/")),
+        "the step does not name the page it opened: {texts:?}"
+    );
+}

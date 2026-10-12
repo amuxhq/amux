@@ -757,6 +757,7 @@ impl Engine {
                         self.pump().await;
                     }
                 }
+                Step::Spawn { command } => crate::script::spawn_detached(&command),
                 Step::Pause { ms } => {
                     let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
                     while tokio::time::Instant::now() < until && self.cut.is_none() && !self.closed

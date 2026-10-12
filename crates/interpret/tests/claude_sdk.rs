@@ -851,3 +851,173 @@ fn a_model_set_from_settings_is_not_a_slash_command_with_no_name() {
         "the model switch is a slash row with no command: {nameless:?}"
     );
 }
+
+/// The background jobs a headless Claude snapshot lists, by id.
+fn listed_jobs(stepped: &interpret::Stepped) -> Option<Vec<String>> {
+    use prost::Message as _;
+    stepped.step.snapshot.as_ref().map(|snapshot| {
+        wire::ClaudeSdkSnapshot::decode(&snapshot.body[..])
+            .unwrap()
+            .background_jobs
+            .unwrap_or_default()
+            .jobs
+            .into_iter()
+            .map(|job| format!("{job:?}"))
+            .collect()
+    })
+}
+
+/// A subagent that starts in the foreground and is then sent to the
+/// background: Claude says so only on `task_updated`, as a patch with
+/// `is_backgrounded`. It is a background job from then on, as one started
+/// in the background is.
+#[test]
+fn a_task_backgrounded_after_it_started_is_a_background_job() {
+    let mut state = started();
+    let mut last = None;
+    let shown = ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "assistant", "uuid": "a1", "session_id": "s", "message": {
+            "id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
+            "content": [{"type": "tool_use", "id": "toolu_agent", "name": "Agent",
+                "input": {"description": "Watch the build", "prompt": "Watch it.", "subagent_type": "general-purpose"}}]}}),
+        ),
+    );
+    last = listed_jobs(&shown).or(last);
+    let launched = ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "task_started", "uuid": "t1", "session_id": "s",
+            "task_id": "task_a", "tool_use_id": "toolu_agent", "description": "Watch the build",
+            "task_type": "local_agent", "is_backgrounded": false}),
+        ),
+    );
+    last = listed_jobs(&launched).or(last);
+    let backgrounded = ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "task_updated", "uuid": "t2", "session_id": "s",
+            "task_id": "task_a", "patch": {"is_backgrounded": true}}),
+        ),
+    );
+    let jobs = listed_jobs(&backgrounded).or(last);
+    assert!(
+        jobs.as_ref().is_some_and(|jobs| jobs.len() == 1),
+        "the subagent sent to the background is not a background job: {jobs:?}"
+    );
+}
+
+/// Claude lists its own ambient work (`ambient: true`) among its background
+/// tasks; it is nothing the person started and is not a background job.
+#[test]
+fn ambient_background_tasks_are_not_background_jobs() {
+    let mut state = started();
+    let changed = ClaudeSdk::step(
+        &mut state,
+        stream(
+            json!({"type": "system", "subtype": "background_tasks_changed", "uuid": "b1", "session_id": "s",
+            "tasks": [
+                {"task_id": "shell_1", "task_type": "local_bash", "description": "npm run watch"},
+                {"task_id": "ambient_1", "task_type": "local_agent", "description": "Memory consolidation", "ambient": true},
+            ]}),
+        ),
+    );
+    let jobs = listed_jobs(&changed).expect("a snapshot");
+    assert!(
+        jobs.len() == 1 && !jobs.iter().any(|job| job.contains("Memory consolidation")),
+        "Claude's ambient task is listed as a background job: {jobs:?}"
+    );
+}
+
+/// A built-in command headless Claude runs itself (here /status, which it
+/// cannot run headless) answers with an assistant message from the
+/// `<synthetic>` model, then replays the command, as QA recorded on Claude
+/// 2.1.296. The answer is the command's output, not a reply from the model.
+#[test]
+fn a_built_in_commands_synthetic_answer_is_its_output_not_a_reply() {
+    use prost::Message as _;
+    let mut state = started();
+    let answer = stream(
+        json!({"type": "assistant", "uuid": "a1", "session_id": "s", "parent_tool_use_id": null,
+        "message": {"id": "22ba356d-b576-4393-a5dd-81ee0957d8d7", "type": "message", "role": "assistant",
+            "model": "<synthetic>", "stop_reason": "end_turn", "stop_sequence": null,
+            "usage": {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+            "content": [{"type": "text", "text": "/status isn't available in this environment."}]}}),
+    );
+    let replay = stream(json!({"type": "user", "isReplay": true, "session_id": "s",
+        "uuid": "7fc0c5f3-5bf5-4e92-87e9-107fbd4e586f", "parent_tool_use_id": null,
+        "timestamp": "2026-10-12T06:27:05.984Z",
+        "message": {"role": "user", "content": "<command-name>/status</command-name>\n            <command-message>status</command-message>\n            <command-args></command-args>"}}));
+    let items: Vec<wire::Item> = [answer, replay]
+        .into_iter()
+        .flat_map(|event| ClaudeSdk::step(&mut state, event).step.items)
+        .collect();
+    let replies: Vec<String> = items
+        .iter()
+        .filter_map(|item| {
+            wire::ClaudeSdkItem::decode(item.body.as_slice())
+                .ok()
+                .map(|body| (item, body))
+        })
+        .filter(|(_, body)| matches!(body.kind, Some(wire::claude_sdk_item::Kind::Message(_))))
+        .map(|(item, _)| item.text.clone())
+        .collect();
+    assert!(
+        replies.is_empty(),
+        "the built-in command's answer is drawn as a reply from the model: {replies:?}"
+    );
+}
+
+/// amux's attach tool answers with the attachment's element, naming the
+/// blob by hash and its path on this host, as QA recorded on headless
+/// Claude. The tool's step carries the attachment, not the element's text
+/// with the host's path.
+#[test]
+fn the_attach_tools_answer_is_an_attachment_not_its_element() {
+    let (element, attachment) = attached_chart();
+    let mut state = started();
+    let mut items = Vec::new();
+    for event in [
+        stream(
+            json!({"type": "assistant", "uuid": "a1", "session_id": "s", "message": {
+            "id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
+            "content": [{"type": "tool_use", "id": "toolu_attach", "name": "mcp__amux__attach",
+                "input": {"path": "/w/chart.png"}}]}}),
+        ),
+        stream(
+            json!({"type": "user", "uuid": "u1", "session_id": "s", "parent_tool_use_id": null,
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_attach",
+                "content": [{"type": "text", "text": element}]}]},
+            "tool_use_result": [{"type": "text", "text": element}]}),
+        ),
+    ] {
+        items.extend(ClaudeSdk::step(&mut state, event).step.items);
+    }
+    let shown: Vec<String> = items
+        .iter()
+        .map(|item| format!("{} {item:?}", item.text))
+        .collect();
+    let decoded: Vec<String> = items
+        .iter()
+        .filter_map(|item| {
+            use prost::Message as _;
+            wire::ClaudeSdkItem::decode(item.body.as_slice())
+                .ok()
+                .map(|body| format!("{body:?}"))
+        })
+        .collect();
+    assert!(
+        !decoded
+            .iter()
+            .chain(&shown)
+            .any(|text| text.contains("amux-attachment") || text.contains("/home/me/agents")),
+        "the attach step shows the element and the host's path: {decoded:?}"
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| item.attachments == vec![attachment.clone()]),
+        "the attach step does not carry the attachment: {shown:?}"
+    );
+}

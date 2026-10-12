@@ -1,3 +1,21 @@
+2026-10-13 — **Failing interpreter, agent and view tests for the second QA
+round's decisions.** Terminal Claude: a turn starts on the transcript's
+prompt row, not when amux types; a permission amux cycles is in the snapshot
+at once; effort comes from assistant rows; a plan ask under bypass
+permissions switches to bypass (from launch flags and the catalogue, replacing
+the screen-reading test, since screen reading goes); a prompt is refused
+while Claude's own view shows another conversation; a finished background
+subagent leaves the list. Headless Claude: backgrounded and ambient tasks,
+built-in commands' synthetic answers as output, the attach tool's answer as
+an attachment, and stopping each task on its own declared at initialize.
+Codex: amux's command table (/clear, /review, /init, /plan, refusing the
+rest), its catalogue, re-listing background commands on interrupt, and an
+opened page's address. Shared view: the client's own commands listed once,
+a failed patch, direction controls in names, reply-instead, a working Codex
+row's command, revoked hosts, and Codex's per-file grant. The agent process:
+a stop mid-command ends stopped at once and leaves no command running; the
+fake providers gain a step that starts a detached shell of its own session.
+
 2026-10-13 — **Failing terminal-client and client-library tests for the
 second QA round's decisions.** An ask now waits for half a second with no
 key pressed before it takes keys, restarting on every key; round one's test,

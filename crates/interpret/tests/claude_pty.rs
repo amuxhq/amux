@@ -373,11 +373,17 @@ fn a_failed_report_is_worded_for_the_parents_provider() {
 /// The plan ask the interpreter opens on a recorded plan approval, with the
 /// launch's Claude version and what the host's Claude offers changed.
 fn plan_ask_on(version: &str, offered: Option<wire::Catalogue>) -> wire::PlanAsk {
+    plan_ask_launched(version, |spec| spec.offered = offered)
+}
+
+/// The plan ask the interpreter opens on a recorded plan approval, with the
+/// launch's Claude version and its spec changed by `launched`.
+fn plan_ask_launched(version: &str, launched: impl FnOnce(&mut wire::AgentSpec)) -> wire::PlanAsk {
     use prost::Message as _;
     let mut script =
         interpret::fixture_script::<ClaudePty>(&fixtures().join("recorded_plan_auto.json"))
             .unwrap();
-    script.spec.offered = offered;
+    launched(&mut script.spec);
     let (mut state, _) = ClaudePty::initial(&script.spec, &script.producer);
     for (_, event) in script.events {
         let Some(mut event) = event else { continue };
@@ -482,6 +488,24 @@ fn a_plan_ask_where_claude_offers_no_auto_mode_switches_to_accept_edits() {
     assert!(
         format!("{plan:?}").contains("\"acceptEdits\""),
         "the ask names acceptEdits as the permission its switch moves to: {plan:?}"
+    );
+}
+
+/// Claude 2.1.296 started with bypass permissions draws its plan menu with
+/// "Yes, and switch to BYPASS PERMISSIONS" first, as QA recorded on a real
+/// agent. Nothing reads that menu off the screen: the switch's target
+/// follows from the launch flags, so the ask names bypassPermissions even
+/// where the host's Claude offers auto mode.
+#[test]
+fn a_plan_ask_on_claude_launched_with_bypass_permissions_switches_to_bypass() {
+    let plan = plan_ask_launched("2.1.296", |spec| {
+        spec.offered = Some(offers_auto());
+        spec.provider_args = vec!["--permission-mode".into(), "bypassPermissions".into()];
+    });
+    println!("plan ask: {plan:?} {:?}", choices(&plan));
+    assert_eq!(
+        plan.switch_permission, "bypassPermissions",
+        "the ask's switch is not the one Claude launched with bypass permissions draws"
     );
 }
 
@@ -772,5 +796,268 @@ fn a_background_subagents_ask_stays_open_past_the_main_turns_stop() {
     assert!(
         asks > 0 && phase != wire::Phase::Idle,
         "the subagent's ask is not open once the main turn stops: phase {phase:?}, {asks} asks; every snapshot (phase, asks): {seen:?}"
+    );
+}
+
+// --- terminal Claude's turn, permission, effort and conversation follow its
+// own records: the transcript rows and the hooks, never its screen.
+
+fn hook(json: serde_json::Value) -> Event {
+    Event::Fact(interpret::Fact {
+        channel: interpret::Channel::Hook,
+        payload: json.to_string().into_bytes(),
+    })
+}
+
+fn transcript_row(json: serde_json::Value) -> Event {
+    Event::Fact(interpret::Fact {
+        channel: interpret::Channel::Transcript,
+        payload: json.to_string().into_bytes(),
+    })
+}
+
+fn prompt_input(id: &str, text: &str) -> Event {
+    let input = ClaudePty::fixture_input(
+        id.as_bytes().to_vec(),
+        &interpret::FixtureInput::Prompt { text: text.into() },
+    )
+    .expect("a terminal prompt");
+    Event::Input(input)
+}
+
+fn decoded(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudePtySnapshot)> {
+    use prost::Message as _;
+    stepped.step.snapshot.as_ref().map(|snapshot| {
+        (
+            snapshot.phase(),
+            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap(),
+        )
+    })
+}
+
+/// Terminal Claude on 2.1.296, launched by amux, its terminal live and its
+/// session s1 started: the state and the last snapshot it gave.
+fn started_claude() -> (
+    interpret::claude_pty::State,
+    (wire::Phase, wire::ClaudePtySnapshot),
+) {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        ..Default::default()
+    };
+    let (mut state, step) = ClaudePty::initial(&spec, "test");
+    let mut last = step.snapshot.as_ref().map(|snapshot| {
+        use prost::Message as _;
+        (
+            snapshot.phase(),
+            wire::ClaudePtySnapshot::decode(snapshot.body.as_slice()).unwrap(),
+        )
+    });
+    let launch = serde_json::json!({
+        "type": "launch", "version": "2.1.296", "keymap": "claude-2.1",
+        "permission_menus": {"per_suggestion": [1], "folded": [2]},
+    });
+    for event in [
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: launch.to_string().into_bytes(),
+        }),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::ready_fact(),
+        }),
+        hook(serde_json::json!({
+            "hook_event_name": "SessionStart", "source": "startup", "session_id": "s1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "model": "claude-opus-5-5",
+        })),
+    ] {
+        last = decoded(&ClaudePty::step(&mut state, event)).or(last);
+    }
+    (state, last.expect("a snapshot"))
+}
+
+/// The user-prompt row Claude writes when it takes a typed prompt.
+fn typed_row(uuid: &str, text: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "user", "uuid": uuid, "timestamp": "2026-10-12T08:00:00.000Z",
+        "sessionId": "s1", "isSidechain": false, "userType": "external",
+        "origin": {"kind": "human"}, "promptSource": "typed",
+        "message": {"role": "user", "content": text},
+    })
+}
+
+/// amux types a prompt into terminal Claude; the turn starts when Claude's
+/// transcript records the prompt, not when the keys are written. A prompt
+/// typed into one of Claude's own screens is never recorded, and the agent
+/// must not read as working on it.
+#[test]
+fn a_typed_prompt_starts_the_turn_on_its_transcript_row_not_on_the_keys() {
+    let (mut state, (idle, _)) = started_claude();
+    let typed = ClaudePty::step(&mut state, prompt_input("p1", "hello"));
+    assert!(
+        typed.effects.iter().any(|effect| matches!(
+            effect,
+            Effect::Terminal(interpret::claude_pty::TerminalInput::Prompt { .. })
+        )),
+        "the prompt is typed: {:?}",
+        typed.effects
+    );
+    let after_keys = decoded(&typed).map_or(idle, |(phase, _)| phase);
+    let recorded = ClaudePty::step(&mut state, transcript_row(typed_row("u1", "hello")));
+    let after_row = decoded(&recorded).map_or(after_keys, |(phase, _)| phase);
+    assert_eq!(
+        (after_keys, after_row),
+        (wire::Phase::Idle, wire::Phase::Working),
+        "the turn starts when the keys are written, before Claude records the prompt"
+    );
+}
+
+/// amux cycles terminal Claude's permission from default: it knows the
+/// cycle order, so the snapshot names accept edits at once, without reading
+/// Claude's footer. Claude's own record of the mode comes only with the next
+/// prompt.
+#[test]
+fn a_permission_amux_cycles_is_in_the_snapshot_at_once() {
+    let (mut state, (_, before)) = started_claude();
+    let mut last = before;
+    for event in [
+        transcript_row(serde_json::json!({
+            "type": "permission-mode", "permissionMode": "default", "sessionId": "s1",
+        })),
+        Event::Input(wire::Input::new(
+            b"k1".to_vec(),
+            wire::ClaudePtyInput {
+                of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+                    wire::CyclePermissionMode {},
+                )),
+            },
+        )),
+    ] {
+        if let Some((_, snapshot)) = decoded(&ClaudePty::step(&mut state, event)) {
+            last = snapshot;
+        }
+    }
+    assert_eq!(
+        last.permission.as_deref(),
+        Some("acceptEdits"),
+        "the snapshot does not name the permission amux moved Claude to"
+    );
+}
+
+/// Claude's assistant rows carry the turn's effort (`"effort": "high"`) and
+/// the model asked for: the snapshot names the effort from them.
+#[test]
+fn the_effort_comes_from_claudes_assistant_rows() {
+    let (mut state, (_, before)) = started_claude();
+    let mut last = before;
+    for event in [
+        transcript_row(typed_row("u1", "hello")),
+        transcript_row(serde_json::json!({
+            "type": "assistant", "uuid": "a1", "parentUuid": "u1",
+            "timestamp": "2026-10-12T08:00:01.000Z", "sessionId": "s1",
+            "isSidechain": false, "userType": "external",
+            "effort": "high", "requestedModel": "claude-opus-5-5",
+            "message": {
+                "id": "msg_1", "type": "message", "role": "assistant",
+                "model": "claude-opus-5-5",
+                "content": [{"type": "text", "text": "hi"}],
+                "stop_reason": null,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        })),
+    ] {
+        if let Some((_, snapshot)) = decoded(&ClaudePty::step(&mut state, event)) {
+            last = snapshot;
+        }
+    }
+    assert!(
+        format!("{last:?}").contains("\"high\""),
+        "the snapshot does not name the effort Claude recorded: {last:?}"
+    );
+}
+
+/// `/resume` typed in Claude's own view moves it to another conversation:
+/// SessionStart says `resume` with that session's id. That conversation is
+/// not this agent's, so a prompt through amux is refused rather than typed
+/// into it.
+#[test]
+fn a_prompt_is_refused_while_claude_shows_a_conversation_that_is_not_this_agents() {
+    let (mut state, _) = started_claude();
+    ClaudePty::step(
+        &mut state,
+        hook(serde_json::json!({
+            "hook_event_name": "SessionStart", "source": "resume", "session_id": "other",
+            "prompt_id": "p9", "transcript_path": "/claude/projects/w/other.jsonl",
+            "cwd": "/w", "model": "claude-opus-5-5",
+        })),
+    );
+    let stepped = ClaudePty::step(&mut state, prompt_input("p1", "hello"));
+    let typed = stepped.effects.iter().any(|effect| {
+        matches!(
+            effect,
+            Effect::Terminal(interpret::claude_pty::TerminalInput::Prompt { .. })
+        )
+    });
+    let replies: Vec<String> = stepped
+        .effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Reply { verdict, .. } => Some(format!("{verdict:?}")),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !typed && replies.iter().any(|reply| reply.contains("Rejected")),
+        "the prompt went into a conversation that is not this agent's: typed {typed}, replies {replies:?}"
+    );
+}
+
+/// A subagent Claude ran in the background is listed at the main turn's
+/// Stop; when it finishes, Claude's SubagentStop hook names it, and the
+/// background list drops it then rather than at some later turn's end.
+#[test]
+fn a_finished_background_subagent_leaves_the_background_list() {
+    let (mut state, _) = started_claude();
+    let common = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
+            "cwd": "/w", "prompt_id": "p1", "permission_mode": "default",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        hook(value)
+    };
+    let mut listed = Vec::new();
+    for event in [
+        common(
+            serde_json::json!({"hook_event_name": "Stop", "stop_hook_active": false,
+            "last_assistant_message": "Started a subagent.",
+            "background_tasks": [{"id": "a7aebc", "type": "subagent", "status": "running",
+                "description": "Run a 60-second sleep", "agent_type": "general-purpose"}]}),
+        ),
+        common(
+            serde_json::json!({"hook_event_name": "SubagentStop", "stop_hook_active": false,
+            "agent_id": "a7aebc", "agent_type": "general-purpose",
+            "agent_transcript_path": "/claude/projects/w/s1/subagents/agent-a7aebc.jsonl",
+            "last_assistant_message": "Slept."}),
+        ),
+    ] {
+        if let Some((_, snapshot)) = decoded(&ClaudePty::step(&mut state, event)) {
+            listed.push(snapshot.background_jobs.unwrap_or_default().jobs.len());
+        }
+    }
+    assert_eq!(
+        listed.first().copied(),
+        Some(1),
+        "the Stop hook lists the subagent: {listed:?}"
+    );
+    assert_eq!(
+        listed.last().copied(),
+        Some(0),
+        "the finished subagent stays in the background list: {listed:?}"
     );
 }

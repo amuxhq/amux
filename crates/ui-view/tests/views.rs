@@ -3246,3 +3246,399 @@ fn command_output_keeps_no_colour_codes_and_loses_no_words_after_a_return() {
         "the output's lines carry terminal codes or lose the words after a return: {output:?}"
     );
 }
+
+// Phase two of the same triage: behaviour settled since, each test failing
+// today for the reason its finding gives.
+
+/// A Codex session in `QA_CWD`, caught up, with these items.
+fn codex_session(phase: Phase, items: Vec<Item>) -> SessionState {
+    let mut state = SessionState::new(
+        wire::Agent {
+            cwd: QA_CWD.into(),
+            phase: phase as i32,
+            ..agent(Kind::Codex)
+        },
+        CAP,
+    );
+    state.update(snapshot(Kind::Codex, phase, vec![], vec![]));
+    for item in items {
+        state.update(event(session_event::Of::Item(item)));
+    }
+    state.update(caught_up());
+    state
+}
+
+fn codex_item(order: u64, kind: wire::codex_item::Kind) -> Item {
+    Item {
+        key: format!("k{order}"),
+        order,
+        revision: 1,
+        kind: Kind::Codex as i32,
+        body: wire::CodexItem { kind: Some(kind) }.encode_to_vec(),
+        at_ms: order as i64 * 1000,
+        ..Item::default()
+    }
+}
+
+/// A patch refused in Codex's own view fails without writing its file, as
+/// QA recorded on Codex 0.162 ("Failed to apply patch"). Its step does not
+/// say the file was created.
+#[test]
+fn a_patch_that_failed_does_not_say_it_created_its_file() {
+    let patch = codex_item(
+        1,
+        wire::codex_item::Kind::Work(wire::Work {
+            of: Some(wire::work::Of::FileChange(wire::FileChangeWork {
+                changes: vec![wire::FileChange {
+                    path: format!("{QA_CWD}/second.txt"),
+                    kind: wire::FileChangeKind::Add as i32,
+                    patch: "second\n".into(),
+                    ..Default::default()
+                }],
+            })),
+            state: ToolState::Failed as i32,
+            class: ToolClass::Consequential as i32,
+            ..Default::default()
+        }),
+    );
+    let state = codex_session(Phase::Idle, vec![patch]);
+    let rows: Vec<String> = all_rows(
+        &state,
+        &ChatOptions {
+            tools: ToolRows::ShowAll,
+        },
+    )
+    .into_iter()
+    .filter(|row| matches!(row.kind, RowKind::FileChange { .. }))
+    .map(|row| format!("{:?}", row.kind))
+    .collect();
+    assert!(
+        !rows.is_empty() && rows.iter().all(|row| !row.contains("Created")),
+        "the failed patch's step reads as a created file: {rows:?}"
+    );
+}
+
+/// Right-to-left and other direction controls in a name are shown as
+/// visible marks or removed: an attached `invoice\u{202E}fdp.exe` must not
+/// read as `invoiceexe.pdf`, on an agent's row or anywhere its name goes.
+#[test]
+fn direction_controls_in_names_are_not_drawn_as_direction_changes() {
+    let bidi = |text: &str| {
+        text.chars().any(|c| {
+            matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}' | '\u{061C}')
+        })
+    };
+    let file = wire::Attachment {
+        of: Some(wire::attachment::Of::File(wire::BlobRef {
+            hash: vec![7; 32],
+            name: "invoice\u{202E}fdp.exe".into(),
+            mime: "application/octet-stream".into(),
+            size: 16,
+        })),
+    };
+    let reply = Item {
+        attachments: vec![file],
+        ..said(1, 1, "\u{FFFC}", true)
+    };
+    let state = session_on(
+        &fleet_entry("a", "h1", Phase::Idle, None, 1),
+        wire::ClaudeSdkSnapshot::default(),
+        vec![reply],
+    );
+    let said = session_line(&state, 5_000).last_said.unwrap_or_default();
+
+    let mut fleet = FleetState::new();
+    fleet.update(host_entry("a", None));
+    fleet.update(listed(wire::Agent {
+        name: "build\u{202E}gol".into(),
+        ..fleet_entry("a", "named", Phase::Idle, None, 1)
+    }));
+    let view = fleet_view(&fleet, b"a", &no_sessions(), &HashSet::new(), &|_| true);
+    let names: Vec<String> = view
+        .sections
+        .iter()
+        .flat_map(|section| &section.rows)
+        .map(|row| row.card.name.clone())
+        .collect();
+    assert!(
+        !bidi(&said) && !names.iter().any(|name| bidi(name)),
+        "a direction control is drawn as one: row line {said:?}, names {names:?}"
+    );
+}
+
+/// "Reply instead" on a Codex question ends the turn so the words can go
+/// as the next prompt; nobody stopped the agent, so the chat does not say
+/// "You stopped it" there.
+#[test]
+fn a_turn_ended_by_reply_instead_is_not_drawn_as_stopped() {
+    let question = codex_item(
+        1,
+        wire::codex_item::Kind::Ask(wire::AskItem {
+            ask: Some(wire::ask_item::Ask::Question(wire::QuestionAsk {
+                questions: vec![wire::Question {
+                    header: "Colour".into(),
+                    question: "Which colour?".into(),
+                    options: vec![
+                        wire::QuestionOption {
+                            label: "Red".into(),
+                            ..Default::default()
+                        },
+                        wire::QuestionOption {
+                            label: "Blue".into(),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })),
+            closed: Some(wire::AskClosed {
+                outcome: wire::AskOutcome::Replied as i32,
+                reply: "green".into(),
+                ..Default::default()
+            }),
+        }),
+    );
+    let turn = codex_item(
+        2,
+        wire::codex_item::Kind::Turn(wire::Turn {
+            turn_id: 1,
+            outcome: wire::TurnOutcome::Interrupted as i32,
+            started_at_ms: 500,
+            ..Default::default()
+        }),
+    );
+    let state = codex_session(Phase::Working, vec![question, turn]);
+    let kinds: Vec<String> = all_rows(&state, &ChatOptions::default())
+        .into_iter()
+        .map(|row| format!("{:?}", row.kind))
+        .collect();
+    assert!(
+        !kinds.iter().any(|kind| kind == "Stopped"),
+        "the reply instead reads as the person stopping the agent: {kinds:?}"
+    );
+}
+
+/// A working Codex agent's row names the command it runs, even once Codex
+/// has written a reasoning item after it, rather than saying "Working"
+/// twice.
+#[test]
+fn a_working_codex_row_names_its_command_past_a_reasoning_item() {
+    let command = codex_item(
+        1,
+        wire::codex_item::Kind::Work(wire::Work {
+            of: Some(wire::work::Of::Command(wire::CommandWork {
+                command: "cargo watch".into(),
+                ..Default::default()
+            })),
+            state: ToolState::Running as i32,
+            class: ToolClass::Consequential as i32,
+            ..Default::default()
+        }),
+    );
+    let reasoning = codex_item(
+        2,
+        wire::codex_item::Kind::Reasoning(wire::Reasoning {
+            complete: true,
+            summary: vec!["Waiting for the build".into()],
+        }),
+    );
+    let state = codex_session(Phase::Working, vec![command, reasoning]);
+    let step = session_line(&state, 5_000).step;
+    assert!(
+        step.as_ref()
+            .and_then(|line| line.step.as_deref())
+            .is_some_and(|said| said.contains("cargo watch")),
+        "the row does not name the running command: {step:?}"
+    );
+}
+
+/// A host that unpaired this machine no longer trusts it and will not
+/// come back on its own: its agents' rows say so, not that the host is
+/// away, which reads as something to wait out.
+#[test]
+fn agents_on_a_host_that_no_longer_trusts_this_machine_do_not_read_away() {
+    let mut fleet = FleetState::new();
+    fleet.update(host_entry("desk", None));
+    fleet.update(host_entry("laptop", None));
+    set_host(&mut fleet, "laptop", |entry| {
+        entry.presence = wire::Presence::Away as i32;
+        entry.revoked = Some(true);
+    });
+    fleet.update(fleet_row("laptop", "far", Phase::Working, None, 1));
+    let view = fleet_view(&fleet, b"desk", &no_sessions(), &HashSet::new(), &|_| true);
+    let said = second_lines(&view);
+    assert_ne!(
+        said["far"],
+        SecondLine::HostAway,
+        "the agent of a host that revoked this machine reads as merely away"
+    );
+}
+
+/// Codex's "don't ask again" on a patch approval covers the files in the
+/// patch, as Codex's own view says ("for these files"); the next patch
+/// asks again. The choice names those files rather than promising the
+/// whole session.
+#[test]
+fn codexs_dont_ask_again_on_a_patch_names_the_files_it_covers() {
+    let ask = wire::CodexAsk {
+        key: "patch-1".into(),
+        item_key: "t1".into(),
+        body: Some(wire::codex_ask::Body::FileChange(
+            wire::FileChangeApproval {
+                changes: vec![wire::FileChange {
+                    path: format!("{QA_CWD}/old.txt"),
+                    kind: wire::FileChangeKind::Update as i32,
+                    patch: "@@ -1 +1 @@\n-a\n+b\n".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )),
+        decisions: vec![
+            wire::Decision::Approve as i32,
+            wire::Decision::ApproveSession as i32,
+            wire::Decision::Deny as i32,
+        ],
+    };
+    let card = card_of(Kind::Codex, vec![], vec![ask]);
+    let outcomes: Vec<String> = card
+        .choices
+        .iter()
+        .map(|choice| format!("{:?}", choice.outcome))
+        .collect();
+    assert!(
+        !outcomes.iter().any(|outcome| outcome == "AllowForSession")
+            && outcomes.iter().any(|outcome| outcome.contains("old.txt")),
+        "the patch's don't-ask-again choice promises the session, not these files: {outcomes:?}"
+    );
+}
+
+// --- the client's own commands: /model, /effort and /rename run in the
+// client, are listed once for every kind, and win over a provider's
+// command of the same name.
+
+/// How many times each name appears in the settings' command list.
+fn command_counts(view: &SettingsView) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for command in &view.commands {
+        *counts.entry(command.name.clone()).or_default() += 1;
+    }
+    counts
+}
+
+/// A command as the provider lists it, told apart from the client's own.
+fn providers_command(name: &str) -> wire::OfferedCommand {
+    wire::OfferedCommand {
+        name: name.into(),
+        description: "the provider's own".into(),
+        ..Default::default()
+    }
+}
+
+/// Every kind whose catalogue offers more than one model, with efforts,
+/// lists /model, /effort and /rename once each, the client's entry taking
+/// the place of a provider's of the same name (headless Claude lists all
+/// three itself).
+#[test]
+fn the_clients_own_commands_are_listed_once_for_every_kind() {
+    let models = || {
+        vec![
+            offered("opus", &["low", "high"], Some("high")),
+            offered("sonnet", &["low", "high"], Some("low")),
+        ]
+    };
+    for (kind, provider) in [
+        (
+            Kind::ClaudeSdk,
+            vec![
+                providers_command("model"),
+                providers_command("effort"),
+                providers_command("rename"),
+                providers_command("compact"),
+            ],
+        ),
+        (Kind::ClaudePty, vec![providers_command("compact")]),
+        (Kind::Codex, vec![providers_command("compact")]),
+    ] {
+        let view = settings_offering(kind, vec![], models(), provider);
+        let counts = command_counts(&view);
+        let clients: Vec<(&str, usize, bool)> = ["model", "effort", "rename"]
+            .into_iter()
+            .map(|name| {
+                let providers = view.commands.iter().any(|command| {
+                    command.name == name && command.description == "the provider's own"
+                });
+                (name, counts.get(name).copied().unwrap_or(0), providers)
+            })
+            .collect();
+        assert_eq!(
+            clients,
+            vec![
+                ("model", 1, false),
+                ("effort", 1, false),
+                ("rename", 1, false)
+            ],
+            "{kind:?}: (command, times listed, the provider's entry kept)"
+        );
+    }
+}
+
+/// With one model offered and no efforts, there is nothing to pick: /model
+/// and /effort are not listed, and /rename still is.
+#[test]
+fn model_and_effort_are_listed_only_when_there_is_a_choice() {
+    for kind in [Kind::ClaudeSdk, Kind::ClaudePty, Kind::Codex] {
+        let view = settings_offering(kind, vec![], vec![offered("opus", &[], None)], vec![]);
+        let counts = command_counts(&view);
+        let listed: Vec<(&str, usize)> = ["model", "effort", "rename"]
+            .into_iter()
+            .map(|name| (name, counts.get(name).copied().unwrap_or(0)))
+            .collect();
+        assert_eq!(
+            listed,
+            vec![("model", 0), ("effort", 0), ("rename", 1)],
+            "{kind:?}: (command, times listed)"
+        );
+    }
+}
+
+/// Codex's list is the commands amux runs for it, its skills, and the
+/// client's own; nothing it would refuse (`/status`, `/new`).
+#[test]
+fn codexs_commands_are_amuxs_table_its_skills_and_the_clients_own() {
+    let catalogue = ["compact", "clear", "review", "init", "plan", "autopilot"]
+        .into_iter()
+        .map(command)
+        .collect();
+    let view = settings_offering(
+        Kind::Codex,
+        vec![],
+        vec![
+            offered("gpt-6", &["low", "high"], Some("low")),
+            offered("gpt-6-mini", &["low"], Some("low")),
+        ],
+        catalogue,
+    );
+    let mut names: Vec<&str> = view
+        .commands
+        .iter()
+        .map(|command| command.name.as_str())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        vec![
+            "autopilot",
+            "clear",
+            "compact",
+            "effort",
+            "init",
+            "model",
+            "plan",
+            "rename",
+            "review"
+        ],
+        "Codex's command list"
+    );
+}

@@ -27,6 +27,32 @@ pub const PLAYBACK_ENV: &str = "AMUX_FAKE_PLAYBACK";
 /// its host writes to, so a test can see exactly what the provider got.
 pub const INPUT_LOG_ENV: &str = "AMUX_FAKE_INPUT_LOG";
 
+/// Start `sh -c command` in a session of its own and leave it running.
+pub fn spawn_detached(command: &str) {
+    let mut shell = std::process::Command::new("sh");
+    shell
+        .args(["-c", command])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        // SAFETY: setsid is async-signal-safe and touches nothing shared.
+        unsafe {
+            shell.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    if let Err(error) = shell.spawn() {
+        eprintln!("spawn {command}: {error}");
+    }
+}
+
 /// Append one host line to the input log, when the environment names one.
 pub fn log_input(line: &str) {
     use std::io::Write as _;
@@ -188,6 +214,11 @@ pub enum Step {
     WaitFor { path: PathBuf },
     /// Stay busy for this long, as a model at work does.
     Pause { ms: u64 },
+    /// Start `sh -c command` as a session of its own, as Claude's and
+    /// Codex's tool shells are, and go on without waiting for it: what a
+    /// long command leaves running under the provider, out of reach of a
+    /// kill of the provider's own process group.
+    Spawn { command: String },
     /// Finish the turn successfully.
     TurnEnd,
     /// Exit the provider process with this code, mid-turn or not.

@@ -515,3 +515,59 @@ fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
     );
     agent.assert_released();
 }
+
+/// A person's stop is always stop now: the running turn is cancelled the
+/// provider's own way and the agent exits as stopped within seconds, even
+/// in the middle of a command, and nothing of that command outlives it.
+/// Claude's and Codex's tool shells each lead a session of their own, so a
+/// kill of the provider's process group misses them: QA saw a stopped
+/// headless Claude's command run on for its whole 90 seconds, writing
+/// files, and the stop itself take 30 seconds to report a kill.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running() {
+    let marker = format!("600.{}", uuid::Uuid::new_v4().as_u128() % 1_000_000_000);
+    let agent = Agent::start(Setup {
+        steps: vec![
+            Step::Spawn {
+                command: format!("exec sleep {marker}"),
+            },
+            Step::Tool(Tool {
+                name: None,
+                class: ToolClass::Consequential,
+                input: None,
+                outcome: Outcome::default(),
+                wait_for: Some(agent_release()),
+            }),
+            text("never"),
+            Step::TurnEnd,
+        ],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "build it").await, Verdict::Accepted);
+    agent
+        .until("the command is running", || {
+            running(&format!("sleep {marker}"))
+        })
+        .await;
+
+    daemon.stop(StopMode::Abort).await;
+    let cause = agent.exit().await;
+    let left = running(&format!("sleep {marker}"));
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", &format!("sleep {marker}")])
+        .status();
+    assert!(
+        !left,
+        "the stopped agent's command is still running: a session leader of its own escapes the provider's process group"
+    );
+    assert_eq!(
+        (cause, agent.log().boundaries().last().cloned()),
+        (ExitCause::Stopped, Some("EXITED STOPPED".to_owned())),
+        "a person's stop of a working agent ends it as stopped"
+    );
+    assert!(!agent.log().has_text("never"));
+}

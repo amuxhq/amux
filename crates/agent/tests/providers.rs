@@ -1136,12 +1136,13 @@ async fn windows_refuses_terminal_claude_and_names_the_platform() {
     );
 }
 
-/// Terminal Claude's Shift+Tab, typed while it is idle, changes its
-/// permission at once on its own screen (the footer reads `accept edits
-/// on`), but Claude records the change in its transcript and hooks only
-/// with the next prompt. Cut from the `mode_cycle` recording (Claude Code
-/// 2.1.251) before that prompt: the snapshot must name the new permission
-/// from the screen alone, as the composer's edge shows it.
+/// A permission cycle amux types into terminal Claude while it is idle
+/// changes Claude's permission at once, but Claude records the change in
+/// its transcript and hooks only with the next prompt. Cut from the
+/// `mode_cycle` recording (Claude Code 2.1.251) before that prompt: the
+/// snapshot names the permission amux itself requested, at once, as the
+/// composer's edge shows it. (A cycle made in Claude's own view shows only
+/// with Claude's next permission-mode row; amux reads no screen.)
 // Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
@@ -1167,7 +1168,7 @@ fn terminal_claude_reports_a_permission_cycled_while_idle_before_the_next_prompt
         assert_eq!(
             agent.log().permission().as_deref(),
             Some("acceptEdits"),
-            "the footer said accept edits on before the provider ended"
+            "the snapshot does not name the permission amux requested"
         );
     });
 }
@@ -1235,4 +1236,26 @@ fn terminal_claude_never_starts_auto_mode_for_a_plan_approved_accepting_edits() 
         daemon.stop(StopMode::Graceful).await;
         assert_eq!(agent.exit().await, ExitCause::Stopped);
     });
+}
+
+/// Headless Claude spares its background subagents on an interrupt, as it
+/// spares background shells, only when its host declares at initialize that
+/// it can stop each background task on its own. amux's interrupt ends the
+/// turn and leaves background work running on every kind, so the agent
+/// declares it.
+#[tokio::test(flavor = "multi_thread")]
+async fn headless_claude_is_told_at_initialize_that_amux_stops_each_task_on_its_own() {
+    let agent = Agent::start(Setup::sdk()).await;
+    let _daemon = agent.dial().await;
+    agent.ready().await;
+    let initialize = agent
+        .provider_input()
+        .into_iter()
+        .find(|line| line["request"]["subtype"] == "initialize")
+        .expect("the agent initializes Claude");
+    assert_eq!(
+        initialize["request"]["perTaskStopAffordance"],
+        serde_json::json!(true),
+        "the initialize request declares no per-task stop: {initialize}"
+    );
 }

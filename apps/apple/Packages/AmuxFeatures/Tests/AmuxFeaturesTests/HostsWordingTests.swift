@@ -32,7 +32,18 @@ final class HostsWordingTests: XCTestCase {
         let relayed = host(reach: .online(.relay), platform: nil)
         XCTAssertEqual(tab([relayed]).0.status(relayed, relayed.group), "via relay")
         let away = host(reach: .away(.plain))
-        XCTAssertEqual(tab([away]).0.status(away, away.group), "Mac Studio · away")
+        XCTAssertEqual(tab([away]).0.status(away, away.group), "Mac Studio · away on the free plan")
+    }
+
+    /// A host is away only when the relay alone sees it on the free plan,
+    /// which relays nothing between hosts: every place that says it is away
+    /// names the plan as the reason.
+    func testAnAwayHostNamesTheFreePlan() {
+        let away = host(reach: .away(.plain))
+        XCTAssertEqual(HostPage.reach(away), "Away · the free plan does not relay between hosts")
+        XCTAssertEqual(
+            ChatSubject(name: "a", host: "studio", directory: "~/src", reach: .away(.plain)).place,
+            "studio · away on the free plan")
     }
 
     /// An offline row says the one cause this phone knows, most telling first.
@@ -70,7 +81,7 @@ final class HostsWordingTests: XCTestCase {
         XCTAssertNil(view.caption(.throughTheRelay, offers: false))
         XCTAssertEqual(
             view.caption(.away, offers: false),
-            "The relay can see these. Reaching them from anywhere needs a subscription.")
+            "The relay can see these. The free plan does not relay between hosts, so reaching them needs a subscription.")
         XCTAssertEqual(
             view.caption(.offline, offers: false),
             "Agents on an offline host report their state as unknown.")

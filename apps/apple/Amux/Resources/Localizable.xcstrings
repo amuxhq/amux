@@ -361,6 +361,18 @@
         }
       }
     },
+    "%@ is away because the free plan does not relay between hosts. This chat fills in once it can be reached.": {
+      "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is away because the free plan does not relay between hosts. This chat fills in once it can be reached."
+          }
+        }
+      }
+    },
     "%@ is away · subscribe to reach your agents from anywhere": {
       "comment": "English app copy. Substituted values appear as %@. The one line above the agents list when a host the relay can see cannot be reached. Used in AgentsHome.swift.",
       "extractionState": "manual",
@@ -885,6 +897,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ · away"
+          }
+        }
+      }
+    },
+    "%@ · away on the free plan": {
+      "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · away on the free plan"
           }
         }
       }
@@ -2137,14 +2161,14 @@
         }
       }
     },
-    "Away · seen by the relay and not reachable from here": {
+    "Away · the free plan does not relay between hosts": {
       "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Away · seen by the relay and not reachable from here"
+            "value": "Away · the free plan does not relay between hosts"
           }
         }
       }
@@ -6733,14 +6757,14 @@
         }
       }
     },
-    "The relay can see these. Reaching them from anywhere needs a subscription.": {
-      "comment": "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+    "The relay can see these. The free plan does not relay between hosts, so reaching them needs a subscription.": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The relay can see these. Reaching them from anywhere needs a subscription."
+            "value": "The relay can see these. The free plan does not relay between hosts, so reaching them needs a subscription."
           }
         }
       }
@@ -8149,6 +8173,18 @@
         }
       }
     },
+    "away on the free plan": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "away on the free plan"
+          }
+        }
+      }
+    },
     "away, cannot start here": {
       "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState": "manual",
@@ -9373,18 +9409,6 @@
         }
       }
     },
-    "seen by the relay and not reachable from here": {
-      "comment": "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "seen by the relay and not reachable from here"
-          }
-        }
-      }
-    },
     "selected": {
       "comment": "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Accounts.swift.",
       "extractionState": "manual",
@@ -9681,6 +9705,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "the dump was empty"
+          }
+        }
+      }
+    },
+    "the free plan does not relay between hosts": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the free plan does not relay between hosts"
           }
         }
       }

@@ -1,3 +1,16 @@
+2026-10-13 — **The phone names the free plan where a host is away.** A host
+reads away only when the relay alone sees it on a free account, whose relay
+opens no connection between hosts, and the terminal now says so. The phone
+said "away" or "seen by the relay and not reachable from here". Its host
+page now reads "Away · the free plan does not relay between hosts", the
+Hosts row "away on the free plan" (and says the reason to VoiceOver), the
+Away group's caption names the plan before the subscription, the chat's
+header "Studio · away on the free plan", and an empty chat on such a host
+"Studio is away because the free plan does not relay between hosts". The
+composer's one-line placeholder and the short state words on fleet rows
+stay as they were. Wording tests cover the page, row, caption and header;
+the `chat.away` baseline was re-recorded.
+
 2026-10-13 — **The phone's home row counts an agent's background jobs.**
 The terminal's home row now leads an idle or working agent's second line
 with how many jobs it runs in the background; the phone's row said

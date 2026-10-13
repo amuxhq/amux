@@ -189,7 +189,7 @@ public struct HostsTab: View {
         // this account cannot open a tunnel to one; the offer to pay for that
         // belongs where somebody is trying to use one, not on a list.
         case .away:
-            return "The relay can see these. Reaching them from anywhere needs a subscription."
+            return "The relay can see these. The free plan does not relay between hosts, so reaching them needs a subscription."
         // Two known facts that together point away from the machine: its
         // advertisement is on this network and no link to it stands. Said only
         // where both are true of something on the list.
@@ -415,7 +415,7 @@ public struct HostsTab: View {
         switch reach {
         case .onThisNetwork: parts.append("direct")
         case .throughTheRelay: parts.append("via relay")
-        case .away: parts.append("away")
+        case .away: parts.append("away on the free plan")
         case .offline:
             if host.reach == .away(.revoked) {
                 parts.append("no longer trusts this phone")
@@ -455,7 +455,7 @@ public struct HostsTab: View {
         case .throughTheRelay: parts.append("reachable through the relay")
         case .away:
             parts.append("away")
-            parts.append("seen by the relay and not reachable from here")
+            parts.append("the free plan does not relay between hosts")
         case .offline:
             if host.reach == .away(.revoked) {
                 parts.append("it no longer trusts this phone, pair again to reach it")

@@ -196,7 +196,9 @@ public struct HostPage: View {
         switch view.group {
         case .onThisNetwork: return String(localized: "Reachable on this network, direct")
         case .throughTheRelay: return String(localized: "Reachable through the relay")
-        case .away: return String(localized: "Away · seen by the relay and not reachable from here")
+        // The daemon lists a host away only when the relay alone sees it and
+        // the account is on the free plan, which relays nothing between hosts.
+        case .away: return String(localized: "Away · the free plan does not relay between hosts")
         case .offline:
             switch view.reach {
             case .away(.revoked): return String(localized: "Offline · it no longer trusts this phone")

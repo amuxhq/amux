@@ -69,6 +69,17 @@ public enum ShellAction: Equatable, Sendable {
     case shareUsage(Bool)
     /// Write this phone's diagnostic dump and offer it to share.
     case exportDump
+    /// Ask the account service what the account on screen buys now: the app
+    /// came back to the front, or You is on screen. A subscription bought or
+    /// lapsed elsewhere reaches the phone only by asking.
+    case checkSubscription
+}
+
+/// When the shell reads what the account buys: on coming to the front, and
+/// on You.
+private struct SubscriptionLook: Equatable {
+    let active: Bool
+    let onYou: Bool
 }
 
 /// Leaves the app for a page somewhere else: a billing portal, the App Store's
@@ -123,6 +134,7 @@ public struct Shell: View {
     /// listed here: recording it as the shell appeared changed the shell's
     /// state while it was first being built, and built the home twice.
     @State private var visited: Set<Tab> = []
+    @Environment(\.scenePhase) private var scenePhase
 
     public init(
         router: Router,
@@ -204,6 +216,17 @@ public struct Shell: View {
         .reported("shell", value: router.tab.rawValue)
         .simultaneousGesture(backGesture)
         .onChange(of: router.tab) { left, _ in visited.insert(left) }
+        // What the account buys is read again as the app comes to the front
+        // and as You comes on screen, and again every so often while You
+        // stays there; the composition spaces the reads out.
+        .task(id: SubscriptionLook(active: scenePhase == .active, onYou: router.tab == .you)) {
+            guard scenePhase == .active else { return }
+            repeat {
+                actions(.checkSubscription)
+                guard router.tab == .you else { return }
+                try? await Task.sleep(for: .seconds(EntitlementWatch.spacing))
+            } while !Task.isCancelled
+        }
     }
 
     /// Whether a tab has been reached for: the one on screen, or any that

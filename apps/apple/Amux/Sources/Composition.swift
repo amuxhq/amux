@@ -31,6 +31,8 @@ final class Composition {
     let deletion = DeletionStore()
     /// The account somebody is being asked about taking off this phone.
     let removal = RemovalStore()
+    /// Keeps what the account on screen buys as amux.sh says it is now.
+    private let subscription: EntitlementWatch
     /// What the app is wearing. Nothing means whatever the phone is set to,
     /// which is what most people want and what the app starts as.
     var appearance: Appearance?
@@ -99,6 +101,11 @@ final class Composition {
             runtime?.discovered(found)
         }
         runtime.discovery = discovery
+        let cloudService = cloud
+        subscription = EntitlementWatch(
+            registry: accounts,
+            read: { id in try? await cloudService.entitlement(id) },
+            relink: { [weak runtime] id in await runtime?.refreshEntitlement(for: id) ?? false })
         // Once a sign-in's own access token has expired, the app borrows one
         // from the runtime whose profile holds the account's refresh token.
         let lend: @Sendable (AccountId) async -> String? = { [weak runtime] account in
@@ -246,6 +253,8 @@ final class Composition {
             Task { await deletion.delete(with: cloud, forgetting: { [weak self] in self?.forget($0) }) }
         case .exportDump:
             Task { await exportDump() }
+        case .checkSubscription:
+            Task { await subscription.look() }
         }
     }
 
@@ -305,18 +314,14 @@ final class Composition {
 
     /// Reads what the account service says this account may do, after
     /// something changed what that is.
+    ///
+    /// Forced: a purchase has just changed the answer, and the relay link,
+    /// which learns what the account buys only when it next renews its
+    /// credential, should not wait minutes for it.
     @discardableResult
     private func refreshEntitlement() async -> Bool {
-        guard let id = accounts.selected else { return false }
-        guard let entitlement = try? await cloud.entitlement(id) else { return false }
-        guard let accepted = accounts.accept(entitlement, for: id) else { return false }
-        accounts.entitlement(accepted, for: id)
-        paywall.entitled(accepted)
-        // The relay link learns what the account buys only when it next
-        // renews its credential; a purchase should not wait minutes for it.
-        if await runtime.refreshEntitlement(for: id) {
-            await accounts.stores?.refreshAccount()
-        }
+        guard await subscription.look(force: true) else { return false }
+        paywall.entitled(accounts.selectedAccount?.entitlement ?? .none)
         return true
     }
 

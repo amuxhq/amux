@@ -161,6 +161,14 @@ exist, their addresses and whether they are signed in are the registry's to
 say. A profile alone holds and spends its account's refresh token; the app
 borrows a bearer from it for its own calls to amux.sh.
 
+What the account buys changes away from the phone: bought on amux.sh,
+cancelled in the App Store, lapsed. `EntitlementWatch` asks amux.sh again as
+the app comes to the front, as You comes on screen and every 30 seconds while
+You stays there, and at once after a purchase. When the answer changed, or
+disagrees with what the relay link last said, the profile's relay link is
+asked to read it too, rather than carrying the old answer until its
+credential next renews.
+
 ## Signing in
 
 Sign-in is an authorization code with PKCE in the system browser

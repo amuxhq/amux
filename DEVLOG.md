@@ -1,3 +1,18 @@
+2026-10-13 — **The phone follows what the account buys while it stays
+open.** You kept saying "Included with this account" after the account
+lapsed, and "Not subscribed" after it was bought again, until the app was
+reopened: the phone read the account service only when signing in and
+after a purchase. A new `EntitlementWatch` reads it as the app comes to
+the front, as You comes on screen and every 30 seconds while You stays
+there, no more often than that unless a purchase forces it. When the
+answer changed, or disagrees with the relay link's own word, the
+profile's relay link is asked to read it too, so the home's gate follows
+as well rather than waiting for the link's credential to renew. Unit
+tests cover a lapse and a purchase reaching the account on screen, the
+spacing, an unchanged answer leaving the link alone, and no answer
+keeping the last one. The shell's trigger is not under a test: it needs a
+scene phase and a tab change in a running app.
+
 2026-10-13 — **A host that dropped the phone offers pairing again.** After
 a host unpaired the phone, the host's page on the phone offered only a red
 Revoke, and "Last try" showed the dial's raw error with an address and a

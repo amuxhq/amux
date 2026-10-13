@@ -175,7 +175,8 @@ The composer takes a draft at any time. Enter sends while the chat is current an
 agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
 its first prompt (an empty Enter just resumes). A prompt to an idle agent shows at once in the feed, and one to a
 busy agent at once in the queue. A draft typed while the host is away stays in the composer, and a draft left in a
-chat for home or another chat waits in its composer until the chat opens again. A prompt the agent
+chat for home or another chat waits in its composer until the chat opens again; one cleared before leaving stays
+cleared, even before this machine's daemon has forgotten its copy, and quitting waits until it has. A prompt the agent
 refuses, an exited agent's included, comes back into the composer with the reason, worded from the typed reason
 the view hands over, the same as the phone's; one whose connection dropped before a reply waits in the
 queue as `may not have arrived`, to resend or discard, and nothing is resent by itself.

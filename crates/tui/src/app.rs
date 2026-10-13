@@ -278,7 +278,9 @@ pub struct App {
     offers_asked: HashSet<OfferAsked>,
     /// Drafts left in chats that are not open, by agent: a half-written
     /// prompt is the person's work, and it waits in the composer for the
-    /// chat's return, as on the phone.
+    /// chat's return, as on the phone. An emptied draft stays as an empty
+    /// one: it outranks the daemon's copy, which the save may not have
+    /// emptied yet, and the save as the client quits sends it again.
     drafts: HashMap<AgentKey, crate::editor::Editor>,
     /// A chat closed under the person: home takes no key until
     /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
@@ -701,7 +703,9 @@ impl App {
     }
 
     /// Keeps a closing chat's draft for when it opens again, here and with
-    /// this machine's daemon, so it outlives this client.
+    /// this machine's daemon, so it outlives this client. An empty one is
+    /// kept too, so the chat reopens empty and the quit's save, which is
+    /// waited for, empties the daemon's copy even if this save has not.
     fn keep_draft(&mut self, chat: OpenChat) {
         let draft = composer_draft(&chat.view.editor);
         let client = self.client.clone();
@@ -710,9 +714,7 @@ impl App {
             save_drafts(client, vec![(agent_id, draft)]).await;
             None
         });
-        if !chat.view.editor.is_empty() {
-            self.drafts.insert(chat.agent, chat.view.editor);
-        }
+        self.drafts.insert(chat.agent, chat.view.editor);
     }
 
     /// Every draft this client holds, for its daemon to keep as the client

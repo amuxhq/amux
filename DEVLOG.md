@@ -1,3 +1,11 @@
+2026-10-13 — **A draft cleared in the terminal stays cleared.** Closing a
+chat whose draft the person had cleared sent the daemon an empty draft from
+a task nobody waited for, and kept nothing in the client. Reopening the chat
+at once could bring back the daemon's old words, and quitting from home did
+not wait for the emptying. The client now keeps an emptied draft as an empty
+one: the chat reopens empty, and the save as the client quits, which is
+waited for, empties the daemon's copy too.
+
 2026-10-13 — **A held stop sent again at a listing's end stops reading
 held.** A held stop that went again when a listing ended with its host
 online left the held list without its agent being reported as changed, so

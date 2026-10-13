@@ -933,6 +933,198 @@ async fn a_draft_outlives_the_terminal_client_closing() {
         .unwrap();
 }
 
+/// A client of the daemon whose saves of an emptied draft never land while
+/// `hold` is set: the clearing a person did is still on its way.
+struct SlowClearing {
+    inner: std::sync::Arc<dyn client::Client>,
+    hold: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait::async_trait]
+impl client::Client for SlowClearing {
+    async fn save_draft(&self, request: wire::SaveDraftRequest) -> Result<(), client::RpcError> {
+        let empty = request
+            .draft
+            .as_ref()
+            .is_none_or(|draft| draft.text.is_empty() && draft.attachments.is_empty());
+        if empty && self.hold.load(std::sync::atomic::Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
+        self.inner.save_draft(request).await
+    }
+    async fn get_draft(
+        &self,
+        request: wire::GetDraftRequest,
+    ) -> Result<wire::ComposerDraft, client::RpcError> {
+        self.inner.get_draft(request).await
+    }
+    async fn subscribe_inventory(
+        &self,
+    ) -> Result<client::EventStream<wire::InventoryEvent>, client::RpcError> {
+        self.inner.subscribe_inventory().await
+    }
+    async fn resolve_agent(
+        &self,
+        request: wire::ResolveAgentRequest,
+    ) -> Result<wire::Agent, client::RpcError> {
+        self.inner.resolve_agent(request).await
+    }
+    async fn subscribe(
+        &self,
+        request: wire::SubscribeRequest,
+    ) -> Result<client::EventStream<wire::SessionEvent>, client::RpcError> {
+        self.inner.subscribe(request).await
+    }
+    async fn fetch(
+        &self,
+        request: wire::FetchRequest,
+    ) -> Result<wire::FetchResponse, client::RpcError> {
+        self.inner.fetch(request).await
+    }
+    async fn get(&self, request: wire::GetRequest) -> Result<wire::Item, client::RpcError> {
+        self.inner.get(request).await
+    }
+    async fn send_input(
+        &self,
+        request: wire::SendInputRequest,
+    ) -> Result<wire::SendInputResponse, client::RpcError> {
+        self.inner.send_input(request).await
+    }
+    async fn create_agent(
+        &self,
+        request: wire::CreateAgentRequest,
+    ) -> Result<wire::Agent, client::RpcError> {
+        self.inner.create_agent(request).await
+    }
+    async fn rename_agent(
+        &self,
+        request: wire::RenameAgentRequest,
+    ) -> Result<wire::Agent, client::RpcError> {
+        self.inner.rename_agent(request).await
+    }
+    async fn stop_agent(&self, request: wire::StopAgentRequest) -> Result<(), client::RpcError> {
+        self.inner.stop_agent(request).await
+    }
+    async fn resume_agent(
+        &self,
+        request: wire::ResumeAgentRequest,
+    ) -> Result<wire::Agent, client::RpcError> {
+        self.inner.resume_agent(request).await
+    }
+    async fn delete_agent(
+        &self,
+        request: wire::DeleteAgentRequest,
+    ) -> Result<wire::DeleteAgentResponse, client::RpcError> {
+        self.inner.delete_agent(request).await
+    }
+    async fn send_message(
+        &self,
+        request: wire::SendMessageRequest,
+    ) -> Result<wire::SendMessageResponse, client::RpcError> {
+        self.inner.send_message(request).await
+    }
+    async fn put_blob(
+        &self,
+        request: wire::PutBlobRequest,
+    ) -> Result<wire::BlobRef, client::RpcError> {
+        self.inner.put_blob(request).await
+    }
+    async fn get_blob(
+        &self,
+        request: wire::GetBlobRequest,
+    ) -> Result<wire::GetBlobResponse, client::RpcError> {
+        self.inner.get_blob(request).await
+    }
+    async fn diff(&self, request: wire::DiffRequest) -> Result<wire::Diff, client::RpcError> {
+        self.inner.diff(request).await
+    }
+    async fn get_catalogue(
+        &self,
+        request: wire::GetCatalogueRequest,
+    ) -> Result<wire::CatalogueBlob, client::RpcError> {
+        self.inner.get_catalogue(request).await
+    }
+    async fn list_repositories(
+        &self,
+        request: wire::ListRepositoriesRequest,
+    ) -> Result<wire::ListRepositoriesResponse, client::RpcError> {
+        self.inner.list_repositories(request).await
+    }
+    async fn dump(&self, request: wire::DumpRequest) -> Result<wire::DumpReport, client::RpcError> {
+        self.inner.dump(request).await
+    }
+}
+
+/// A draft the person cleared stays cleared while the daemon's copy is
+/// still being emptied: reopening the chat at once finds the composer
+/// empty, not the words this machine kept before, and quitting from home
+/// waits for the emptying. The empty save went from a task nobody waited
+/// on, and nothing here remembered the clearing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let (net, daemon, config) = desk_of(&["worker"]).await;
+    let worker = net.agent("worker").unwrap().id;
+    let stale = || wire::GetDraftRequest {
+        agent_id: worker.as_bytes().to_vec(),
+    };
+    daemon
+        .save_draft(wire::SaveDraftRequest {
+            agent_id: worker.as_bytes().to_vec(),
+            draft: Some(wire::ComposerDraft {
+                text: "kept from before".into(),
+                attachments: Vec::new(),
+            }),
+        })
+        .await
+        .unwrap();
+    let slow = std::sync::Arc::new(SlowClearing {
+        inner: daemon.clone(),
+        hold: std::sync::atomic::AtomicBool::new(true),
+    });
+    let client: std::sync::Arc<dyn client::Client> = slow.clone();
+    let mut app = app_listing(client, config, &[worker.as_bytes()]).await;
+    let home = |app: &mut tui::App| {
+        app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        press(app, KeyCode::Char('s'));
+        assert!(app.chat.is_none(), "home");
+    };
+    open_chat(&mut app, worker.as_bytes()).await;
+    assert_eq!(
+        app.chat.as_ref().unwrap().view.editor.text(),
+        "kept from before"
+    );
+    app.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    assert!(app.chat.as_ref().unwrap().view.editor.is_empty(), "cleared");
+    home(&mut app);
+
+    open_chat(&mut app, worker.as_bytes()).await;
+    assert_eq!(
+        app.chat.as_ref().unwrap().view.editor.text(),
+        "",
+        "the cleared draft came back from the daemon's old copy"
+    );
+    home(&mut app);
+
+    // Quitting from home waits for the emptying, whatever became of the
+    // saves sent as the chat closed.
+    slow.hold.store(false, std::sync::atomic::Ordering::SeqCst);
+    tokio::time::timeout(PATIENCE, app.keep_drafts())
+        .await
+        .expect("the quit's save lands");
+    let left = daemon.get_draft(stale()).await.unwrap();
+    assert!(
+        left.text.is_empty(),
+        "the daemon still keeps {:?} after the client quit",
+        left.text
+    );
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
 /// When a chat closes under the person (its agent deleted elsewhere), the
 /// rest of what they are typing never acts on home: "fix x" then Enter
 /// opened the window to end the focused agent and confirmed it. Home holds

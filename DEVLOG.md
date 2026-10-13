@@ -1,3 +1,8 @@
+2026-10-13 — **An agent stops only its own children.** On an agent's tools
+socket the daemon checked the lineage of inputs but not of stops, and the
+stop tool is becoming a real stop: a stop from an agent now goes only to its
+own direct children, on any host, as its inputs do.
+
 2026-10-13 — **Files one agent sends another travel as attachments.** The
 send tool passed the attach tool's element on as text, naming the file by
 the sender host's path, which an agent on another host cannot open. The

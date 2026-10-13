@@ -185,18 +185,13 @@ impl ClientApi {
             .ok_or_else(|| Status::unavailable("the profile is no longer running"))
     }
 
-    /// On an agent's tools socket, input goes only to the caller's own
-    /// direct children: an agent acts on the agents it started, and reaches
-    /// any other only by messaging it.
-    async fn lineage(
-        &self,
-        runtime: &ProfileRuntime,
-        request: &SendInputRequest,
-    ) -> Result<(), Status> {
+    /// On an agent's tools socket, input and stops go only to the caller's
+    /// own direct children: an agent acts on the agents it started, and
+    /// reaches any other only by messaging it.
+    async fn lineage(&self, runtime: &ProfileRuntime, target: &[u8]) -> Result<(), Status> {
         let Some(caller) = self.caller else {
             return Ok(());
         };
-        let target = &request.agent_id;
         agent_id(target)?;
         // The child may live on another host: its replica row carries the
         // same parent edge.
@@ -214,7 +209,7 @@ impl ClientApi {
         }
         Err(status(wire_error(
             ErrorCode::PermissionDenied,
-            "an agent sends input only to its own children",
+            "an agent acts only on its own children",
         )))
     }
 }
@@ -338,7 +333,7 @@ impl ClientService for ClientApi {
     ) -> Result<Response<SendInputResponse>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
-        self.lineage(&runtime, &request).await?;
+        self.lineage(&runtime, &request.agent_id).await?;
         let shape = request.input.as_ref().and_then(InputShape::of);
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             let forwarded = runtime
@@ -436,6 +431,7 @@ impl ClientService for ClientApi {
     ) -> Result<Response<Empty>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
+        self.lineage(&runtime, &request.agent_id).await?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
             return forwarded(&runtime, host, |mut client| async move {
                 client.stop_agent(request).await

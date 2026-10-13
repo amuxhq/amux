@@ -217,6 +217,13 @@ pub enum AppEvent {
         key: crate::chat::FetchKey,
         diff: Diff,
     },
+    /// A save of an agent's held prompts to the draft this machine keeps
+    /// ended: kept when it landed, to be made again when it did not.
+    HeldSaved {
+        agent: AgentKey,
+        ids: Vec<ui_state::InputId>,
+        saved: bool,
+    },
     /// What a host offers for a provider, for a new agent there.
     HostOffer {
         host: Vec<u8>,
@@ -287,6 +294,9 @@ pub struct App {
     /// back to the draft if the client closes first, and a client killed
     /// without quitting has no chance to put it there then.
     held_kept: HashMap<AgentKey, Vec<ui_state::InputId>>,
+    /// Saves of held prompts on their way to this machine's daemon, by
+    /// agent; one that fails leaves here unkept and is made again.
+    held_saving: HashMap<AgentKey, Vec<ui_state::InputId>>,
     /// A chat closed under the person: home takes no key until
     /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
     /// rest of what they were typing never acts on another agent. The last
@@ -417,6 +427,7 @@ impl App {
             host_offers: HashMap::new(),
             drafts: HashMap::new(),
             held_kept: HashMap::new(),
+            held_saving: HashMap::new(),
             home_held: None,
             offers_asked: HashSet::new(),
             events,
@@ -512,6 +523,16 @@ impl App {
 
     pub fn event(&mut self, event: AppEvent) -> Flow {
         match event {
+            AppEvent::HeldSaved { agent, ids, saved } => {
+                if self.held_saving.get(&agent) == Some(&ids) {
+                    self.held_saving.remove(&agent);
+                }
+                if saved && ids.is_empty() {
+                    self.held_kept.remove(&agent);
+                } else if saved {
+                    self.held_kept.insert(agent, ids);
+                }
+            }
             AppEvent::Opened {
                 agent,
                 result,
@@ -800,9 +821,9 @@ impl App {
     /// Keeps each agent's held prompts in the draft this machine's daemon
     /// keeps, from the moment they are held until they leave, so a client
     /// that dies without quitting still hands them back to the draft. Saved
-    /// only when what is held changes; the quit's save covers the typing.
+    /// only when what is held changes, and counted kept only once the daemon
+    /// took it; the quit's save covers the typing.
     fn keep_held_drafts(&mut self) {
-        let mut saves = Vec::new();
         let mut seen = HashSet::new();
         for session in self.fleet.sessions() {
             let state = session.state();
@@ -815,6 +836,7 @@ impl App {
                 .held_kept
                 .get(&key)
                 .map_or(ids.is_empty(), |kept| *kept == ids)
+                || self.held_saving.get(&key) == Some(&ids)
             {
                 continue;
             }
@@ -825,22 +847,24 @@ impl App {
             for (_, text, attachments) in held {
                 editor.restore(&text, attachments);
             }
-            saves.push((key.agent.clone(), composer_draft(&editor)));
-            if ids.is_empty() {
-                self.held_kept.remove(&key);
-            } else {
-                self.held_kept.insert(key, ids);
-            }
+            let request = wire::SaveDraftRequest {
+                agent_id: key.agent.clone(),
+                draft: Some(composer_draft(&editor)),
+            };
+            self.held_saving.insert(key.clone(), ids.clone());
+            let client = self.client.clone();
+            self.spawn(async move {
+                let saved = client.save_draft(request).await.is_ok();
+                Some(AppEvent::HeldSaved {
+                    agent: key,
+                    ids,
+                    saved,
+                })
+            });
         }
         // A session gone (its agent exited or deleted) holds nothing more.
         self.held_kept.retain(|key, _| seen.contains(key));
-        if !saves.is_empty() {
-            let client = self.client.clone();
-            self.spawn(async move {
-                save_drafts(client, saves).await;
-                None
-            });
-        }
+        self.held_saving.retain(|key, _| seen.contains(key));
     }
 
     /// Hands every draft to this machine's daemon; awaited as the client

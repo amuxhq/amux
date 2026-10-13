@@ -935,17 +935,29 @@ async fn a_draft_outlives_the_terminal_client_closing() {
 
 /// A client of the daemon whose saves of an emptied draft never land while
 /// `hold` is set: the clearing a person did is still on its way. It notes
-/// the agent of every draft saved.
+/// the agent of every draft saved, and refuses the first save of a draft
+/// reading `refuse_once`, as a daemon briefly away would.
 struct SlowClearing {
     inner: std::sync::Arc<dyn client::Client>,
     hold: std::sync::atomic::AtomicBool,
     saved: std::sync::Mutex<Vec<Vec<u8>>>,
+    refuse_once: std::sync::Mutex<Option<String>>,
 }
 
 #[async_trait::async_trait]
 impl client::Client for SlowClearing {
     async fn save_draft(&self, request: wire::SaveDraftRequest) -> Result<(), client::RpcError> {
         self.saved.lock().unwrap().push(request.agent_id.clone());
+        let text = request.draft.as_ref().map(|draft| draft.text.clone());
+        {
+            let mut refuse = self.refuse_once.lock().unwrap();
+            if refuse.is_some() && *refuse == text {
+                *refuse = None;
+                return Err(client::RpcError::Transport(
+                    "the daemon is restarting".into(),
+                ));
+            }
+        }
         let empty = request
             .draft
             .as_ref()
@@ -1085,6 +1097,7 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
         inner: daemon.clone(),
         hold: std::sync::atomic::AtomicBool::new(true),
         saved: Default::default(),
+        refuse_once: Default::default(),
     });
     let client: std::sync::Arc<dyn client::Client> = slow.clone();
     let mut app = app_listing(client, config, &[worker.as_bytes()]).await;
@@ -1142,6 +1155,7 @@ async fn a_deleted_agents_chat_keeps_no_draft() {
         inner: daemon.clone(),
         hold: std::sync::atomic::AtomicBool::new(false),
         saved: Default::default(),
+        refuse_once: Default::default(),
     });
     let client: std::sync::Arc<dyn client::Client> = recording.clone();
     let mut app = app_listing(client, config, &[doomed.as_bytes()]).await;
@@ -1341,6 +1355,14 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
 /// desk's client with `name`'s chat open, `name` a terminal-less agent on
 /// laptop, the two linked.
 async fn far_chat(name: &str) -> (Net, tui::App) {
+    far_chat_via(name, |client| client).await
+}
+
+/// [`far_chat`], its client reaching the daemon through `via`.
+async fn far_chat_via(
+    name: &str,
+    via: impl FnOnce(std::sync::Arc<dyn client::Client>) -> std::sync::Arc<dyn client::Client>,
+) -> (Net, tui::App) {
     let net = Net::start(
         topology().agent(
             AgentDecl::new(name, "laptop")
@@ -1355,6 +1377,7 @@ async fn far_chat(name: &str) -> (Net, tui::App) {
     let id = net.agent(name).unwrap().id;
     let client: std::sync::Arc<dyn client::Client> =
         std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let client = via(client);
     let config = tui::TuiConfig {
         working_dir: "/".into(),
         leader: 'a',
@@ -1456,6 +1479,56 @@ async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
     .expect("the held prompt is kept as the draft while the client runs");
     assert_eq!(kept.text, "race A");
     // Closed abruptly: no quit, no drop.
+    std::mem::forget(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// A held prompt whose save this machine's daemon refused (it was briefly
+/// away) is saved again: it counted as kept once the save was sent, so a
+/// client killed after that lost the prompt.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_held_prompt_whose_save_was_refused_is_saved_again() {
+    use crossterm::event::KeyCode;
+    let (net, mut app) = far_chat_via("far", |inner| {
+        std::sync::Arc::new(SlowClearing {
+            inner,
+            hold: false.into(),
+            saved: Default::default(),
+            refuse_once: Some("race A".to_owned()).into(),
+        })
+    })
+    .await;
+    let id = net.agent("far").unwrap().id;
+    let daemon: std::sync::Arc<dyn client::Client> =
+        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    net.refuse_calls("desk", "laptop", true).unwrap();
+    for c in "race A".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    tokio::time::timeout(PATIENCE, async {
+        loop {
+            app.housekeep();
+            while let Ok(event) = app.receiver.try_recv() {
+                app.event(event);
+            }
+            let draft = daemon
+                .get_draft(wire::GetDraftRequest {
+                    agent_id: id.as_bytes().to_vec(),
+                })
+                .await
+                .unwrap();
+            if draft.text == "race A" {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the refused save of the held prompt is made again");
     std::mem::forget(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())
         .await

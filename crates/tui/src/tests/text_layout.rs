@@ -544,3 +544,32 @@ fn a_question_card_draws_inline_code_without_backticks() {
         );
     }
 }
+
+/// Settled: an agent whose only work is in the background reads as idle,
+/// and its row counts its background jobs. After an interrupt left a Codex
+/// command running, the chat said "1 background job" and the home row
+/// said nothing at all.
+#[test]
+fn an_idle_rows_background_jobs_are_counted_on_it() {
+    let mut fleet = FleetState::new();
+    inventory(
+        &mut fleet,
+        host(b"a", "studio", wire::Trust::Trusted, wire::Presence::Online),
+    );
+    let wire::inventory_event::Of::Agent(mut agent) = agent_row(b"p", "cx-cmd", Phase::Idle, None)
+    else {
+        unreachable!()
+    };
+    agent.background_jobs = 1;
+    inventory(&mut fleet, wire::inventory_event::Of::Agent(agent.clone()));
+    let mut view = FleetView::default();
+    let screen = fleet_screen_at(&mut view, &fleet, 80, 24);
+    assert!(
+        screen.contains("1 background job"),
+        "the row does not count its background job:\n{screen}"
+    );
+    agent.background_jobs = 2;
+    inventory(&mut fleet, wire::inventory_event::Of::Agent(agent));
+    let screen = fleet_screen_at(&mut view, &fleet, 80, 24);
+    assert!(screen.contains("2 background jobs"), "{screen}");
+}

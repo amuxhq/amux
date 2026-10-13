@@ -2177,6 +2177,22 @@ fn second_words(
             theme.warning(),
         ));
     }
+    // Work it runs in the background, which leaves it idle, is counted
+    // first, so a long line cannot cut the count off.
+    let jobs = row.card.background_jobs;
+    if jobs > 0
+        && matches!(
+            line,
+            SecondLine::LastSaid(_) | SecondLine::Step(_) | SecondLine::Blank
+        )
+    {
+        let count = format!("{jobs} background job{}", if jobs == 1 { "" } else { "s" });
+        return Some(match line {
+            SecondLine::LastSaid(said) => (format!("{count} · {said}"), theme.muted()),
+            SecondLine::Step(step) => (format!("{count} · {}", step_words(step)), theme.muted()),
+            _ => (format!("{count} running"), theme.muted()),
+        });
+    }
     Some(match line {
         // What it asks is the most important line on home.
         SecondLine::Ask(ask) => (ask_words(ask), theme.text()),

@@ -1,3 +1,14 @@
+2026-10-13 — **Home's row counts an agent's background jobs.** After an
+interrupt left a Codex command running, the chat said "1 background job"
+and Codex's own view "1 background terminal running", while the home
+row said nothing: the host's row carried the count (`background_jobs`,
+from the same snapshot the chat reads) but the terminal's home never drew
+it. An idle or working row now leads its second line with the count ("1
+background job · done", "2 background jobs running" when there is
+nothing else to say); a row asking something keeps its ask. The phone's
+fleet row does not draw the count either. A layout test draws an idle
+row with one and with two jobs.
+
 2026-10-13 — **A refused `/rename` keeps the name and says why whole.** In
 a chat, `/rename ünï` cleared the composer, went to the host, and came
 back as "could not rename: an agent's name is lowercase letters, digits

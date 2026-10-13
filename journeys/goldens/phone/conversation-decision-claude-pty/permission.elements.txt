@@ -6,19 +6,19 @@ chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
 chat.back | Back |  | 16,68,42,46
 chat.title | decision-pty | decision-pty | 51,72,156,38
 chat.more | More |  | 344,69,44,44
-ask | Wants to run a command | open | 12,578,378,252
-ask.more | More |  | 338,586,44,44
-ask.subject | deploy --check |  | 28,634,346,40
-ask.choice.1 | Allow access for this session in /private/tmp/amux-phone-journey/net/desk/work |  | 28,686,346,76
+ask | Wants to run a command | open | 12,574,378,256
+ask.more | More |  | 338,582,44,44
+ask.subject | deploy --check |  | 28,630,346,40
+ask.choice.1 | Allow access for this session in /private/tmp/amux-phone-journey/net/desk/work |  | 28,682,346,76
 ask.choice.0 | Allow |  | 28,770,169,44
 ask.deny | Deny… |  | 205,770,169,44
  | Back |  | 16,68,42,46
  | decision-pty, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
- | Wants to run a command |  | 62,598,189,20
- | More |  | 338,586,44,44
- | deploy --check |  | 28,634,346,40
- | Allow access for this session, in /private/tmp/amux-phone-journey/net/desk/work |  | 28,686,346,76
+ | Wants to run a command |  | 62,594,189,20
+ | More |  | 338,582,44,44
+ | deploy --check |  | 28,630,346,40
+ | Allow access for this session, in /private/tmp/amux-phone-journey/net/desk/work |  | 28,682,346,76
  | Allow |  | 28,770,169,44
  | Deny… |  | 205,770,169,44
  | Started |  | 18,132,366,34

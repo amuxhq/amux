@@ -13,7 +13,7 @@ chat.field | Queue a message |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | gpt-fake · medium · Custom · Plan |  | 71,779,201,44
 chat.dictate | Dictate | idle | 287,779,44,44
-chat.stop | Stop |  | 335,779,44,44
+chat.stop | Interrupt |  | 335,779,44,44
  | Back |  | 16,68,42,46
  | planner-codex, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
@@ -21,7 +21,7 @@ chat.stop | Stop |  | 335,779,44,44
  | Attach |  | 23,779,44,44
  | gpt-fake,  · Custom · Plan |  | 71,779,201,44
  | Dictate |  | 287,779,44,44
- | Stop |  | 335,779,44,44
+ | Interrupt |  | 335,779,44,44
  | Started |  | 18,132,366,34
  | Move the journal. |  | 18,166,366,40
  | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 18,217,366,160

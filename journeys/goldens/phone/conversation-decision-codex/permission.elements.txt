@@ -2,27 +2,27 @@ shell |  | agents | 0,62,402,778
 chat |  | decision-codex | 0,62,402,778
 chat.row.boundary | Started |  | 18,132,366,34
 chat.row.prompt | Check the deployment once. |  | 18,166,366,40
-chat.row.command | Wants to run, /bin/zsh -lc 'deploy --check' |  | 18,217,366,20
+chat.row.command | Wants to run, deploy --check |  | 18,217,366,20
 chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
 chat.back | Back |  | 16,68,42,46
 chat.title | decision-codex | decision-codex | 51,72,156,38
 chat.more | More |  | 344,69,44,44
-ask | Wants to run a command | open | 12,555,378,275
-ask.more | More |  | 338,563,44,44
-ask.subject | /bin/zsh -lc 'deploy --check' |  | 28,611,346,40
-ask.choice.1 | Allow for this session |  | 28,712,346,50
+ask | Wants to run a command | open | 12,551,378,279
+ask.more | More |  | 338,559,44,44
+ask.subject | deploy --check |  | 28,607,346,40
+ask.choice.1 | Allow for this session |  | 28,708,346,50
 ask.choice.0 | Allow |  | 28,770,169,44
 ask.deny | Deny… |  | 205,770,169,44
  | Back |  | 16,68,42,46
  | decision-codex, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
- | Wants to run a command |  | 62,575,189,20
- | More |  | 338,563,44,44
- | /bin/zsh -lc 'deploy --check' |  | 28,611,346,40
- | The script asks before running this. · in /tmp/amux-phone-journey/net/desk/work |  | 28,663,302,37
- | Allow for this session |  | 28,712,346,50
+ | Wants to run a command |  | 62,571,189,20
+ | More |  | 338,559,44,44
+ | deploy --check |  | 28,607,346,40
+ | The script asks before running this. · in /tmp/amux-phone-journey/net/desk/work |  | 28,659,302,37
+ | Allow for this session |  | 28,708,346,50
  | Allow |  | 28,770,169,44
  | Deny… |  | 205,770,169,44
  | Started |  | 18,132,366,34
  | Check the deployment once. |  | 18,166,366,40
- | Wants to run, /bin/zsh -lc 'deploy --check' |  | 18,217,366,20
+ | Wants to run, deploy --check |  | 18,217,366,20

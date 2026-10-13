@@ -9,7 +9,7 @@ chat.header | desk · away | detached | 18,64,147,54
 chat.back | Back |  | 16,68,42,46
 chat.title | bystander | bystander | 51,72,102,38
 chat.more | More |  | 344,69,44,44
-chat.field | desk is out of reach · your draft is kept |  | 28,750,346,24
+chat.field | desk is out of reach · sends when back |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,139,44
 chat.dictate | Dictate | idle | 287,779,44,44

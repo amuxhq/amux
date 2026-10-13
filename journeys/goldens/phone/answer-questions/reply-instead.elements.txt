@@ -12,19 +12,19 @@ chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
 chat.back | Back |  | 16,68,42,46
 chat.title | asker | asker | 51,72,156,38
 chat.more | More |  | 344,69,44,44
-ask | Question | open | 12,616,378,214
-ask.more | More |  | 338,624,44,44
-ask.reply.back | Back |  | 334,660,46,42
-ask.reply.text |  | Let me see both palettes on the desk first. | 28,701,346,59
+ask | Question | open | 12,614,378,216
+ask.more | More |  | 338,622,44,44
+ask.reply.back | Back |  | 334,658,46,42
+ask.reply.text |  | Let me see both palettes on the desk first. | 28,699,346,59
 ask.reply.send | Send reply |  | 28,770,346,44
  | Back |  | 16,68,42,46
  | asker, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
- | Question |  | 62,636,70,20
- | More |  | 338,624,44,44
- | Reply in your own words |  | 28,674,180,17
- | Back |  | 334,660,46,42
- | Reply in your own words | Let me see both palettes on the desk first. | 40,711,322,39
+ | Question |  | 62,634,70,20
+ | More |  | 338,622,44,44
+ | Reply in your own words |  | 28,672,180,17
+ | Back |  | 334,658,46,42
+ | Reply in your own words | Let me see both palettes on the desk first. | 40,709,322,39
  | Send reply |  | 28,770,346,44
  | Started |  | 18,132,366,34
  | Add a settings screen. |  | 18,166,366,40

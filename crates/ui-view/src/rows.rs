@@ -1331,7 +1331,10 @@ fn codex_work(
     let decision = decision_view(work.decision.as_ref(), &state.agent_state().permissions);
     let view = call_phase(state, held, work.state, decision.as_ref());
     let failed = view == CallPhase::Failed;
-    let duration_ms = duration(held.item.at_ms, work.ended_at_ms);
+    let duration_ms = duration(
+        work.started_at_ms.unwrap_or(held.item.at_ms),
+        work.ended_at_ms,
+    );
     let kind = match (&work.of, explore_verb(work.class)) {
         (Some(Of::Command(command)), Some(verb)) => RowKind::Explore {
             verb,

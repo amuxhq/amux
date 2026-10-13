@@ -1875,6 +1875,9 @@ fn describe_work(work: &Work) -> String {
             if decision.elsewhere { " elsewhere" } else { "" }
         ));
     }
+    if let Some(started) = work.started_at_ms {
+        text.push_str(&format!(" started={started}"));
+    }
     if let Some(ended) = work.ended_at_ms {
         text.push_str(&format!(" ended={ended}"));
     }

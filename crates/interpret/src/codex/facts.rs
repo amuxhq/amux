@@ -2061,6 +2061,11 @@ impl State {
         } else {
             None
         };
+        // Codex announces a call before any approval it waits for, and its
+        // duration is the run alone: the run began that long before the end.
+        let started_at_ms = ended_at_ms
+            .zip(duration_ms)
+            .map(|(ended, duration)| (ended - duration).max(at_ms));
         self.works.insert(
             id.to_owned(),
             WorkState {
@@ -2071,6 +2076,7 @@ impl State {
                     class: class as i32,
                     decision,
                     ended_at_ms,
+                    started_at_ms,
                 }),
                 text,
                 turn: prior.map_or_else(|| turn.to_owned(), |prior| prior.turn),

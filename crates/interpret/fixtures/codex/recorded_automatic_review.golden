@@ -51,7 +51,7 @@ item review:1db1dab2-2fed-4674-872a-20952bdfa1db verdict final at=1790390025310 
 item review:1db1dab2-2fed-4674-872a-20952bdfa1db verdict final at=1790390025310 text="" APPROVED:approved risk=low on=exec-b283e140-65f5-4684-9498-73e4c2de1ce0 "The user explicitly authorized the exact touch command, whic…"
 item exec-b283e140-65f5-4684-9498-73e4c2de1ce0 work open at=1790390025311 text="" command "touch reviewed.txt" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_AUTO_APPROVED
 ## 54 recorded 53: fact Rpc method=item/completed
-item exec-b283e140-65f5-4684-9498-73e4c2de1ce0 work final at=1790390025311 text="" command "touch reviewed.txt" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_AUTO_APPROVED ended=1790390027376
+item exec-b283e140-65f5-4684-9498-73e4c2de1ce0 work final at=1790390025311 text="" command "touch reviewed.txt" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_AUTO_APPROVED started=1790390027376 ended=1790390027376
 ## 56 recorded 55: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790390027381 asks=[] thread=01a0db8f-a479-7e43-9452-28faa90c6a6b turn=01a0db8f-a486-78c1-aca4-c8854f13418e model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=on-request sandbox=read-only reviewer=auto_review collaboration=? context=13054/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 58 recorded 57: fact Rpc method=account/rateLimits/updated

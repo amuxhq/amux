@@ -1021,3 +1021,52 @@ fn the_attach_tools_answer_is_an_attachment_not_its_element() {
         "the attach step does not carry the attachment: {shown:?}"
     );
 }
+
+/// A command that waited a minute for the person's approval and then ran
+/// briefly: its time runs from the allow, when it began running, not from
+/// the call, which came before the ask.
+#[test]
+fn a_commands_time_starts_after_the_approval_it_waited_for() {
+    use prost::Message as _;
+    let mut state = started();
+    let command = json!({"command": "curl -sI https://example.com"});
+    let allow = ClaudeSdk::fixture_input(
+        b"a1".to_vec(),
+        &interpret::FixtureInput::Answer {
+            ask: "req-1".into(),
+            answer: json!({"allow": {}}),
+        },
+    )
+    .expect("an answer");
+    let mut items = Vec::new();
+    for event in [
+        Event::Tick { at_ms: 1_000 },
+        stream(json!({"type": "assistant", "uuid": "m1", "message": {"id": "m1",
+            "model": "claude-opus-5-5", "role": "assistant",
+            "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": command}]}})),
+        stream(json!({"type": "control_request", "request_id": "req-1", "request": {
+            "subtype": "can_use_tool", "tool_name": "Bash", "input": command,
+            "tool_use_id": "t1", "permission_suggestions": []}})),
+        Event::Tick { at_ms: 61_000 },
+        Event::Input(allow),
+        Event::Tick { at_ms: 61_200 },
+        stream(json!({"type": "user", "uuid": "u1", "message": {"role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "HTTP/2 200"}]}})),
+    ] {
+        items.extend(ClaudeSdk::step(&mut state, event).step.items);
+    }
+    let call = items
+        .iter()
+        .rev()
+        .filter(|item| item.key == "t1")
+        .find_map(|item| match wire::ClaudeSdkItem::decode(item.body.as_slice()).ok()?.kind {
+            Some(wire::claude_sdk_item::Kind::Tool(tool)) => Some(tool),
+            _ => None,
+        })
+        .expect("the call's row");
+    assert_eq!(
+        (call.started_at_ms, call.ended_at_ms),
+        (Some(61_000), Some(61_200)),
+        "the command's time counts the wait for approval"
+    );
+}

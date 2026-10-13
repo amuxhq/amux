@@ -69,7 +69,7 @@ item msg_071944380520314b016ac5c0efbb5487d29f05a37bdeff2356 working_note final a
 ## 66 recorded 65: fact Rpc method=item/started
 item exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 work open at=1791344880634 text="" command "cat README.md" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING read
 ## 67 recorded 66: fact Rpc method=item/completed
-item exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 work final at=1791344880634 text="CURRENT\n" command "cat README.md" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED read ended=1791344880634
+item exec-727c560d-d90d-46a1-b4eb-707329c9d3c3 work final at=1791344880634 text="CURRENT\n" command "cat README.md" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED read started=1791344880634 ended=1791344880634
 ## 69 recorded 68: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1791344880638 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=01a11479-9d93-7370-983a-6db72e75ab63 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=plan approval=on-request sandbox=read-only reviewer=user collaboration=plan context=17068/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 70 recorded 69: fact Rpc method=account/rateLimits/updated
@@ -174,13 +174,13 @@ effect reply stdin-10 accepted
 item exec-1ce5edf9-a814-458c-a852-ef3356c960e7 work open at=1791344885521 text="" command "printf 'UPDATED\\n' > README.md" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED
 snapshot WORKING queue=[] working_on=- at=1791344885571 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=01a11479-b3f7-7e91-8338-0b6d2950d347 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request sandbox=read-only reviewer=user collaboration=default context=17158/258400 plan=? usage=ok 7d:0%(ok) credits=62500 servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 170 recorded 169: fact Rpc method=item/completed
-item exec-1ce5edf9-a814-458c-a852-ef3356c960e7 work final at=1791344885521 text="" command "printf 'UPDATED\\n' > README.md" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1791344885620
+item exec-1ce5edf9-a814-458c-a852-ef3356c960e7 work final at=1791344885521 text="" command "printf 'UPDATED\\n' > README.md" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED started=1791344885620 ended=1791344885620
 ## 172 recorded 171: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1791344885624 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=01a11479-b3f7-7e91-8338-0b6d2950d347 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request sandbox=read-only reviewer=user collaboration=default context=19344/258400 plan=? usage=ok 7d:0%(ok) credits=62500 servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 175 recorded 174: fact Rpc method=item/started
 item exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 work open at=1791344887575 text="" command "cat README.md" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING read
 ## 177 recorded 176: fact Rpc method=item/completed
-item exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 work final at=1791344887575 text="UPDATED\n" command "cat README.md" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED read ended=1791344887575
+item exec-3cc584d3-fa57-4d55-b4d0-2cd7605b17f4 work final at=1791344887575 text="UPDATED\n" command "cat README.md" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED read started=1791344887575 ended=1791344887575
 ## 179 recorded 178: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1791344887579 asks=[] thread=01a11479-98c6-7920-a1cc-1589acc2902a turn=01a11479-b3f7-7e91-8338-0b6d2950d347 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request sandbox=read-only reviewer=user collaboration=default context=19430/258400 plan=? usage=ok 7d:0%(ok) credits=62500 servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY,codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 182 recorded 181: fact Rpc method=item/started

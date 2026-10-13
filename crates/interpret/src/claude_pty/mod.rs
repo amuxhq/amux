@@ -13,7 +13,9 @@
 //! open, SubagentStop ends a background subagent, and a Notification
 //! announces a dialog only the terminal can answer. PreToolUse and
 //! PostToolUse only mark a call running, for the activity line while its
-//! row is on the way; they never make a row.
+//! row is on the way; they never make a row. PostToolUse's duration says
+//! when the call began running, after any wait for approval, which the
+//! call's row time includes.
 //!
 //! Terminal Claude has no protocol for asks, so this is the one interpreter
 //! that infers them, and every inference rule lives in this module:
@@ -370,6 +372,10 @@ struct Tool {
     background: bool,
     decision: Option<Decision>,
     ended_at_ms: Option<i64>,
+    /// When the call began running, after any wait for approval: its
+    /// PostToolUse hook's time less the duration Claude gives.
+    #[serde(default)]
+    started_at_ms: Option<i64>,
     /// The assistant message the call's row belongs to.
     message_id: String,
     /// Its tool result row arrived.
@@ -598,6 +604,10 @@ pub struct State {
     /// since (a reply typed the moment the interruption landed).
     interruption: Option<String>,
     running: Vec<Running>,
+    /// When calls whose PostToolUse hook came before their row began
+    /// running, by tool-use id, until the row lands.
+    #[serde(default)]
+    ran_from: BTreeMap<String, i64>,
     /// The text of each prompt typed through amux and not yet reflected,
     /// by input id: a prompt Claude folds into a running turn is reflected
     /// by its text alone.
@@ -659,6 +669,7 @@ impl State {
             local_turn: false,
             interruption: None,
             running: Vec::new(),
+            ran_from: BTreeMap::new(),
             submitted: Vec::new(),
             announced_plans: Vec::new(),
             bang: None,
@@ -822,7 +833,7 @@ impl State {
             ended_at_ms: tool.ended_at_ms,
             created,
             line,
-            started_at_ms: None,
+            started_at_ms: tool.started_at_ms,
         }));
         if body == tool.emitted {
             return;

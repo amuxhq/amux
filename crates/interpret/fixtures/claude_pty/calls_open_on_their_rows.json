@@ -1,5 +1,5 @@
 {
-  "about": "The transcript is the source of rows. A tool call opens, running, on its tool_use row, below the text that introduced it, and its tool_result row lands the outcome; PreToolUse and PostToolUse hooks make no row, whichever side of the row they land, and only name the running call in the snapshot. A permission card opens on its hook before the gated call's row, which Claude writes at the decision, then points at that row and lands the decision on it.",
+  "about": "The transcript is the source of rows. A tool call opens, running, on its tool_use row, below the text that introduced it, and its tool_result row lands the outcome; PreToolUse and PostToolUse hooks make no row, whichever side of the row they land, and only name the running call in the snapshot; PostToolUse's duration gives the call the time it began running, after any approval, drawn again only when its result came first. A permission card opens on its hook before the gated call's row, which Claude writes at the decision, then points at that row and lands the decision on it.",
   "spec": {
     "created_at_ms": 1800000000000
   },
@@ -296,8 +296,11 @@
         }
       },
       "expect": {
-        "items": []
-      }
+        "items": [
+          "t2"
+        ]
+      },
+      "note": "a hook makes no row; one that comes after its call's result gives that row the time the call began running"
     },
     {
       "tick": 1800000005000
@@ -433,8 +436,11 @@
         }
       },
       "expect": {
-        "items": []
-      }
+        "items": [
+          "t3"
+        ]
+      },
+      "note": "a hook makes no row; one that comes after its call's result gives that row the time the call began running"
     },
     {
       "fact": {

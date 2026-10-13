@@ -4613,6 +4613,11 @@ pub struct Work {
     pub decision: ::core::option::Option<ToolDecision>,
     #[prost(int64, optional, tag = "10")]
     pub ended_at_ms: ::core::option::Option<i64>,
+    /// When the work began running, after any approval, where Codex gives its
+    /// duration. Its time is ended_at_ms minus this, else minus the item's
+    /// at_ms.
+    #[prost(int64, optional, tag = "11")]
+    pub started_at_ms: ::core::option::Option<i64>,
     #[prost(oneof = "work::Of", tags = "1, 2, 3, 4, 5, 6")]
     pub of: ::core::option::Option<work::Of>,
 }

@@ -21,10 +21,10 @@ snapshot WORKING queue=[] working_on=- at=1788074794392 asks=[] session=f6fef710
 ## 43 recorded 41: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01Egc5HsizMsVn1xBhztAhiU
 snapshot WORKING queue=[] working_on=- at=1788074794407 asks=[] session=f6fef710-9678-4718-b315-d6dde1ac6d23 model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=49611 tasks=? background=?
 ## 45 recorded 43: fact Transcript type=assistant uuid=9469b1c1-d28d-4a71-8c6c-28658c858a73
-item toolu_01Egc5HsizMsVn1xBhztAhiU tool final at=1788074794534 text="" ToolSearch TOOL_STATE_RUNNING search input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
+item toolu_01Egc5HsizMsVn1xBhztAhiU tool final at=1788074794534 text="" ToolSearch TOOL_STATE_RUNNING search started=1788074794534 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
 snapshot WORKING queue=[] working_on=- at=1788074794478 asks=[] session=f6fef710-9678-4718-b315-d6dde1ac6d23 model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=50392 tasks=? background=?
 ## 46 recorded 44: fact Transcript type=user uuid=8e194933-7efd-4b89-a49e-a8a2b8b489b4
-item toolu_01Egc5HsizMsVn1xBhztAhiU tool final at=1788074794534 text="" ToolSearch TOOL_STATE_SUCCEEDED search ended=1788074794575 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
+item toolu_01Egc5HsizMsVn1xBhztAhiU tool final at=1788074794534 text="" ToolSearch TOOL_STATE_SUCCEEDED search started=1788074794534 ended=1788074794575 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
 ## 49 recorded 47: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_012mL17q3UZCtEJ343VAWHka
 item toolu_012mL17q3UZCtEJ343VAWHka plan final at=1788074796223 text="# Context\n\nThe user asked to change README.md's only line from `CURRENT` to `UPDATED`. This is a trivial, explicitly-specified text change.\n\n# Plan\n\n- Edit `README.md`, replacing its sole line's content `CURRENT` with `UPDATED`.\n\n# Verification\n\n- Read README.md after the edit to confirm it contains `UPDATED` and not `CURRENT`.\n" PLAN_VERDICT_UNDECIDED
 snapshot WORKING queue=[] working_on=- at=1788074796223 asks=[] session=f6fef710-9678-4718-b315-d6dde1ac6d23 model=claude-sonnet-5 model_name="Sonnet 5" mode=plan context=50392 tasks=? background=? running=toolu_012mL17q3UZCtEJ343VAWHka ExitPlanMode since=1788074796223

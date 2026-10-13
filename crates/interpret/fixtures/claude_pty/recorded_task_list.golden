@@ -21,9 +21,9 @@ snapshot WORKING queue=[] working_on=- at=1790386576208 asks=[] session=bf8b2931
 item 68fa42d7-c859-4afd-8213-7b6a74e8a80b thinking final at=1790386576269 text=""
 snapshot WORKING queue=[] working_on=- at=1790386576399 asks=[] session=bf8b2931-3680-4250-9331-a7190453fe89 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36221 tasks=? background=?
 ## 46 recorded 44: fact Transcript type=assistant uuid=7a0a8edb-b7a7-412b-9f3e-730b270f100e
-item toolu_01Tmg9854UcvaHTAXtXVEBrK tool final at=1790386576739 text="" ToolSearch TOOL_STATE_RUNNING search input="{\"max_results\":5,\"query\":\"select:TaskCreate,TaskUpdate\"}"
+item toolu_01Tmg9854UcvaHTAXtXVEBrK tool final at=1790386576739 text="" ToolSearch TOOL_STATE_RUNNING search started=1790386576739 input="{\"max_results\":5,\"query\":\"select:TaskCreate,TaskUpdate\"}"
 ## 47 recorded 45: fact Transcript type=user uuid=0a6703b1-dbc8-4bc3-9881-699995a3a38f
-item toolu_01Tmg9854UcvaHTAXtXVEBrK tool final at=1790386576739 text="" ToolSearch TOOL_STATE_SUCCEEDED search ended=1790386576781 input="{\"max_results\":5,\"query\":\"select:TaskCreate,TaskUpdate\"}"
+item toolu_01Tmg9854UcvaHTAXtXVEBrK tool final at=1790386576739 text="" ToolSearch TOOL_STATE_SUCCEEDED search started=1790386576739 ended=1790386576781 input="{\"max_results\":5,\"query\":\"select:TaskCreate,TaskUpdate\"}"
 ## 73 recorded 71: fact Transcript type=assistant uuid=42194556-0da4-4d4a-bb89-3942d514553b
 item 42194556-0da4-4d4a-bb89-3942d514553b thinking final at=1790386578402 text=""
 snapshot WORKING queue=[] working_on=- at=1790386579182 asks=[] session=bf8b2931-3680-4250-9331-a7190453fe89 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=38289 tasks=? background=?

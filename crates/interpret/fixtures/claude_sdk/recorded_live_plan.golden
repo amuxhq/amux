@@ -83,10 +83,10 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1791344089668 asks=[f31eebce-6515-43
 ## 200 recorded 199: input stdin-5
 effect write "{\"response\":{\"request_id\":\"f31eebce-6515-4397-a5e0-52b8da38cdc5\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"UPDATED\",\"old_string\":\"CURRENT\",\"replace_all\":false}},\"subtype\":\"success\"},\"type\":\"control_response\"}"
 effect reply stdin-5 accepted
-item toolu_01TNhCXvsRc7iT2ozHYy5bNt tool final at=1791344089043 text="" Edit TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED input="{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"UPDATED\",\"old_st…"
+item toolu_01TNhCXvsRc7iT2ozHYy5bNt tool final at=1791344089043 text="" Edit TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED started=1791344089752 input="{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"UPDATED\",\"old_st…"
 snapshot WORKING queue=[] working_on=- at=1791344089752 asks=[] session=513299b0-01fe-4d8c-9f53-1db4e708a4fa model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=16707/? tasks=? active=[] usage=ok 5h:6%(ok) 7d:35%(?) servers=HEALTH_STATE_HEALTHY[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
 ## 204 recorded 203: fact Stream type=user uuid=6e204f6f-4eaf-4b3c-b23e-1930995c8fdb
-item toolu_01TNhCXvsRc7iT2ozHYy5bNt tool final at=1791344089043 text="" Edit TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED ended=1791344089761 line=1 input="{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"UPDATED\",\"old_st…" out="The file <MACHINE_PATH> has been updated successfully. (file…"
+item toolu_01TNhCXvsRc7iT2ozHYy5bNt tool final at=1791344089043 text="" Edit TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED started=1791344089752 ended=1791344089761 line=1 input="{\"file_path\":\"<MACHINE_PATH>\",\"new_string\":\"UPDATED\",\"old_st…" out="The file <MACHINE_PATH> has been updated successfully. (file…"
 ## 206 recorded 205: fact Stream type=system subtype=status uuid=88fdc157-164f-4d48-ab79-9c9809dba96c
 item 88fdc157-164f-4d48-ab79-9c9809dba96c status final at=1791344089763 text="" SDK_STATUS_REQUESTING requesting
 ## 208 recorded 207: fact Stream type=stream_event uuid=dc21a71d-d301-43bf-8c90-e15f59129e90

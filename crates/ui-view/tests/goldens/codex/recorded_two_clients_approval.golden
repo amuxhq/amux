@@ -46,17 +46,17 @@
   ask none
   composer Send activity=Some(Running { key: "exec-3f43165f-2bc7-4008-a351-7c18aab425cf" }) queue=[] underway=[] refused=[]
 ## 65 recorded 64: fact Rpc method=item/completed
-  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(43) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, sub…
+  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, suba…
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 70 recorded 69: fact Rpc method=item/started
-  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(43) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagent…
+  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents…
   row    6 msg_02fafd3bec891489016ac4591e827887d29adb58a7d27afa4f Prose { text: [], streaming: true, working_note: false }
 ## 72 recorded 71: fact Rpc method=item/agentMessage/delta
   row    6 msg_02fafd3bec891489016ac4591e827887d29adb58a7d27afa4f Prose { text: [Text("DONE")], streaming: true, working_note: false }
 ## 74 recorded 73: fact Rpc method=item/completed
   row    6 msg_02fafd3bec891489016ac4591e827887d29adb58a7d27afa4f Prose { text: [Text("DONE")], streaming: false, working_note: false }
 ## 81 recorded 80: fact Rpc method=turn/completed
-  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(43) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagent…
+  row    5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents…
   row    7 turn:1 TurnEnd { duration_ms: Some(6151), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
@@ -64,7 +64,7 @@
      2 prompt:7031 Prompt { text: [Text("Run this exact shell command and no substitute: /usr/bin/touch <MACHINE_PATH> Then say DONE.")], steered: false }
      3 rs_02fafd3bec891489016ac4591a528c87d2abc434ae381c68a0 Thinking { text: "", open: false, duration_ms: Some(1852) }
      4 msg_02fafd3bec891489016ac4591afed887d2a4e7aa3f50341516 Prose { text: [Text("I’ll run the exact command you provided.")], streaming: false, working_note: true }
-     5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(43) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagent…
+     5 exec-3f43165f-2bc7-4008-a351-7c18aab425cf Command { command: "/usr/bin/touch <MACHINE_PATH>", state: Succeeded, exit_code: Some(0), output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[exec-3f43165f-2bc7-4008-a351-7c18aab425cf..exec-3f43165f-2bc7-4008-a351-7c18aab425cf x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents…
      6 msg_02fafd3bec891489016ac4591e827887d29adb58a7d27afa4f Prose { text: [Text("DONE")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(6151), cost_usd: None, failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

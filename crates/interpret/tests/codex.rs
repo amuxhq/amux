@@ -1469,3 +1469,55 @@ fn a_web_search_that_opens_a_page_shows_its_address() {
         "the step does not name the page it opened: {texts:?}"
     );
 }
+
+/// A command that waited a minute for the person's approval and then ran
+/// briefly: Codex's duration is its run alone, so its time starts that
+/// long before it completed, not when Codex announced it, before the ask.
+#[test]
+fn a_commands_time_starts_after_the_approval_it_waited_for() {
+    use prost::Message as _;
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    let item = |status: &str, duration: Value| {
+        json!({"type": "commandExecution", "id": "cmd-1", "command": "curl -sI https://example.com",
+            "cwd": "/work", "commandActions": [], "status": status, "exitCode": 0,
+            "durationMs": duration})
+    };
+    let mut items = Vec::new();
+    for event in [
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.160.0", "turns": []}, "model": "m"}}),
+        ),
+        prompt(b"p1", "fetch it"),
+        rpc(
+            json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1"}}}),
+        ),
+        rpc(
+            json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1",
+            "startedAtMs": 1_000, "item": item("inProgress", Value::Null)}}),
+        ),
+        rpc(
+            json!({"method": "item/completed", "params": {"threadId": "t1", "turnId": "turn-1",
+            "startedAtMs": 1_000, "completedAtMs": 61_200, "item": item("completed", json!(194))}}),
+        ),
+    ] {
+        items.extend(Codex::step(&mut state, event).step.items);
+    }
+    let work = items
+        .iter()
+        .rev()
+        .filter(|item| item.key == "cmd-1")
+        .find_map(|item| match wire::CodexItem::decode(item.body.as_slice()).ok()?.kind {
+            Some(wire::codex_item::Kind::Work(work)) => Some(work),
+            _ => None,
+        })
+        .expect("the command's row");
+    assert_eq!(
+        (work.started_at_ms, work.ended_at_ms),
+        (Some(61_200 - 194), Some(61_200)),
+        "the command's time counts the wait for approval"
+    );
+}

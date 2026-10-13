@@ -21,10 +21,10 @@ snapshot WORKING queue=[] working_on=- at=1790386604586 asks=[] session=8c0153e6
 item b6a68cb2-7864-41a8-9b95-d1cf54fd77eb thinking final at=1790386604654 text=""
 snapshot WORKING queue=[] working_on=- at=1790386604675 asks=[] session=8c0153e6-15e8-477c-8270-625157d1302f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36207 tasks=? background=?
 ## 45 recorded 43: fact Transcript type=assistant uuid=329d8b11-3dba-45b4-bed9-1d0b1a16cff1
-item toolu_01HGR4w5xbprSyoZpRZAoEus tool final at=1790386604914 text="" Read TOOL_STATE_RUNNING read input="{\"file_path\":\"<MACHINE_PATH>\"}"
+item toolu_01HGR4w5xbprSyoZpRZAoEus tool final at=1790386604914 text="" Read TOOL_STATE_RUNNING read started=1790386604914 input="{\"file_path\":\"<MACHINE_PATH>\"}"
 ## 46 recorded 44: fact Transcript type=user uuid=b68b7313-b85f-429e-8261-5e132c7ad77f
 effect blob 0dbc894f 99 bytes
-item toolu_01HGR4w5xbprSyoZpRZAoEus tool final at=1790386604914 text="" Read TOOL_STATE_SUCCEEDED read ended=1790386604994 image=image/png:99:0dbc894f input="{\"file_path\":\"<MACHINE_PATH>\"}"
+item toolu_01HGR4w5xbprSyoZpRZAoEus tool final at=1790386604914 text="" Read TOOL_STATE_SUCCEEDED read started=1790386604914 ended=1790386604994 image=image/png:99:0dbc894f input="{\"file_path\":\"<MACHINE_PATH>\"}"
 ## 55 recorded 53: fact Hook hook_event_name=Stop
 snapshot WORKING queue=[] working_on=- at=1790386606542 asks=[] session=8c0153e6-15e8-477c-8270-625157d1302f model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36207 tasks=? background=[]
 ## 59 recorded 57: fact Transcript type=assistant uuid=74af71bc-1cea-40cd-905e-1216d8aaf986

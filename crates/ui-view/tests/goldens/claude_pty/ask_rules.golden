@@ -21,6 +21,8 @@
   row    3 t1 Command { command: "rm -rf build", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(40) } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 11 fact {"channel":"hook","json":{"duration_ms":40,"hook_event_name":"PostToolUse","tool_input":{"command":"rm -rf build"},"tool_name":"Bash","tool_response":{"stdout":""},"tool_use_id":"t1"}}
+  row    3 t1 Command { command: "rm -rf build", state: Succeeded, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(40) } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Allowed, granted: None, note: None, elsewhere: true }
 ## 12 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write"}}
   ask ask:2 -> "" 1/1 Open
     choices AllowOnce*, Deny { stops: true }+note

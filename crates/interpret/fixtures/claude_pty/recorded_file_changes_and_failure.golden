@@ -28,9 +28,9 @@ snapshot WORKING queue=[] working_on=- at=1790386591133 asks=[] session=25684f7a
 item b0b4f4f4-706e-43ad-b644-230ec57ba06b thinking final at=1790386591270 text=""
 snapshot WORKING queue=[] working_on=- at=1790386591276 asks=[] session=25684f7a-23c0-4c0b-99b6-86b602773586 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36582 tasks=? background=?
 ## 60 recorded 58: fact Transcript type=assistant uuid=6dfd4dba-af2c-431e-a225-a29a7037f907
-item toolu_01FJjmDBCY6HDDDbVQ3CHCss tool final at=1790386591633 text="" Read TOOL_STATE_RUNNING read input="{\"file_path\":\"<MACHINE_PATH>\"}"
+item toolu_01FJjmDBCY6HDDDbVQ3CHCss tool final at=1790386591633 text="" Read TOOL_STATE_RUNNING read started=1790386591633 input="{\"file_path\":\"<MACHINE_PATH>\"}"
 ## 61 recorded 59: fact Transcript type=user uuid=042a6a79-cbbe-4c50-aa97-7eb7ad9c6fc7
-item toolu_01FJjmDBCY6HDDDbVQ3CHCss tool final at=1790386591633 text="" Read TOOL_STATE_SUCCEEDED read ended=1790386591685 input="{\"file_path\":\"<MACHINE_PATH>\"}" out="1\tCURRENT\n2\t"
+item toolu_01FJjmDBCY6HDDDbVQ3CHCss tool final at=1790386591633 text="" Read TOOL_STATE_SUCCEEDED read started=1790386591633 ended=1790386591685 input="{\"file_path\":\"<MACHINE_PATH>\"}" out="1\tCURRENT\n2\t"
 ## 65 recorded 63: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_012R6FqWBi8NJXv2M4XPgTYu
 snapshot WORKING queue=[] working_on=- at=1790386592660 asks=[] session=25684f7a-23c0-4c0b-99b6-86b602773586 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36582 tasks=? background=? running=toolu_012R6FqWBi8NJXv2M4XPgTYu Write since=1790386592660
 ## 67 recorded 65: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_012R6FqWBi8NJXv2M4XPgTYu
@@ -39,9 +39,9 @@ snapshot WORKING queue=[] working_on=- at=1790386592691 asks=[] session=25684f7a
 item a166af93-b071-4ec3-a472-13dcd72d496b thinking final at=1790386592719 text=""
 snapshot WORKING queue=[] working_on=- at=1790386592822 asks=[] session=25684f7a-23c0-4c0b-99b6-86b602773586 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36743 tasks=? background=?
 ## 70 recorded 68: fact Transcript type=assistant uuid=db6c15b0-cf16-48ed-9519-5bf35e0d130d
-item toolu_012R6FqWBi8NJXv2M4XPgTYu tool final at=1790386593185 text="" Write TOOL_STATE_RUNNING input="{\"content\":\"REPLACED\",\"file_path\":\"<MACHINE_PATH>\"}"
+item toolu_012R6FqWBi8NJXv2M4XPgTYu tool final at=1790386593185 text="" Write TOOL_STATE_RUNNING started=1790386593185 input="{\"content\":\"REPLACED\",\"file_path\":\"<MACHINE_PATH>\"}"
 ## 72 recorded 70: fact Transcript type=user uuid=3bc34769-2eae-4647-bd07-6c71d2b31680
-item toolu_012R6FqWBi8NJXv2M4XPgTYu tool final at=1790386593185 text="" Write TOOL_STATE_SUCCEEDED ended=1790386593248 updated line=1 input="{\"content\":\"REPLACED\",\"file_path\":\"<MACHINE_PATH>\"}" out="The file /private<MACHINE_PATH> has been updated successfull…"
+item toolu_012R6FqWBi8NJXv2M4XPgTYu tool final at=1790386593185 text="" Write TOOL_STATE_SUCCEEDED started=1790386593185 ended=1790386593248 updated line=1 input="{\"content\":\"REPLACED\",\"file_path\":\"<MACHINE_PATH>\"}" out="The file /private<MACHINE_PATH> has been updated successfull…"
 ## 76 recorded 74: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01NgKbJgjWP2HSRNH9ffGnoB
 snapshot WORKING queue=[] working_on=- at=1790386594253 asks=[] session=25684f7a-23c0-4c0b-99b6-86b602773586 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36743 tasks=? background=? running=toolu_01NgKbJgjWP2HSRNH9ffGnoB Bash since=1790386594253
 ## 78 recorded 76: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01NgKbJgjWP2HSRNH9ffGnoB
@@ -50,9 +50,9 @@ snapshot WORKING queue=[] working_on=- at=1790386594393 asks=[] session=25684f7a
 item e27a2974-aaec-4834-bf51-0d2a63b93473 thinking final at=1790386594314 text=""
 snapshot WORKING queue=[] working_on=- at=1790386594470 asks=[] session=25684f7a-23c0-4c0b-99b6-86b602773586 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36953 tasks=? background=?
 ## 81 recorded 79: fact Transcript type=assistant uuid=3c6997c2-722b-46bf-a00e-6eedc6e66be4
-item toolu_01NgKbJgjWP2HSRNH9ffGnoB tool final at=1790386594784 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"mv config.txt moved.txt\",\"description\":\"Move con…"
+item toolu_01NgKbJgjWP2HSRNH9ffGnoB tool final at=1790386594784 text="" Bash TOOL_STATE_RUNNING started=1790386594784 input="{\"command\":\"mv config.txt moved.txt\",\"description\":\"Move con…"
 ## 83 recorded 81: fact Transcript type=user uuid=0e326cfe-40c9-4063-9046-fe001a2d3558
-item toolu_01NgKbJgjWP2HSRNH9ffGnoB tool final at=1790386594784 text="" Bash TOOL_STATE_SUCCEEDED ended=1790386594945 input="{\"command\":\"mv config.txt moved.txt\",\"description\":\"Move con…" out="(Bash completed with no output)"
+item toolu_01NgKbJgjWP2HSRNH9ffGnoB tool final at=1790386594784 text="" Bash TOOL_STATE_SUCCEEDED started=1790386594784 ended=1790386594945 input="{\"command\":\"mv config.txt moved.txt\",\"description\":\"Move con…" out="(Bash completed with no output)"
 ## 87 recorded 85: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01S6s6y1T4QecL8TWjDQdvTE
 snapshot WORKING queue=[] working_on=- at=1790386595740 asks=[] session=25684f7a-23c0-4c0b-99b6-86b602773586 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=36953 tasks=? background=? running=toolu_01S6s6y1T4QecL8TWjDQdvTE Bash since=1790386595740
 ## 89 recorded 87: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01S6s6y1T4QecL8TWjDQdvTE
@@ -61,9 +61,9 @@ snapshot WORKING queue=[] working_on=- at=1790386595788 asks=[] session=25684f7a
 item c1e947b7-f0fd-4b43-a6ee-6571cccbd507 thinking final at=1790386595905 text=""
 snapshot WORKING queue=[] working_on=- at=1790386595905 asks=[] session=25684f7a-23c0-4c0b-99b6-86b602773586 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=37118 tasks=? background=?
 ## 92 recorded 90: fact Transcript type=assistant uuid=36c95e0f-4e1d-4788-8821-cc56fc6dbff6
-item toolu_01S6s6y1T4QecL8TWjDQdvTE tool final at=1790386596258 text="" Bash TOOL_STATE_RUNNING input="{\"command\":\"rm moved.txt\",\"description\":\"Remove moved.txt\"}"
+item toolu_01S6s6y1T4QecL8TWjDQdvTE tool final at=1790386596258 text="" Bash TOOL_STATE_RUNNING started=1790386596258 input="{\"command\":\"rm moved.txt\",\"description\":\"Remove moved.txt\"}"
 ## 93 recorded 91: fact Transcript type=user uuid=69248f41-5a0e-4c89-8ed0-1bd8969736d3
-item toolu_01S6s6y1T4QecL8TWjDQdvTE tool final at=1790386596258 text="" Bash TOOL_STATE_SUCCEEDED ended=1790386596340 input="{\"command\":\"rm moved.txt\",\"description\":\"Remove moved.txt\"}" out="(Bash completed with no output)"
+item toolu_01S6s6y1T4QecL8TWjDQdvTE tool final at=1790386596258 text="" Bash TOOL_STATE_SUCCEEDED started=1790386596258 ended=1790386596340 input="{\"command\":\"rm moved.txt\",\"description\":\"Remove moved.txt\"}" out="(Bash completed with no output)"
 ## 97 recorded 95: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_018cH8azshatUkXvdDF85BWn
 snapshot WORKING queue=[] working_on=- at=1790386597400 asks=[] session=25684f7a-23c0-4c0b-99b6-86b602773586 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" mode=bypassPermissions context=37118 tasks=? background=? running=toolu_018cH8azshatUkXvdDF85BWn Bash since=1790386597400
 ## 99 recorded 97: fact Transcript type=assistant uuid=9cbe6bef-ed22-4696-ac84-014103c40973

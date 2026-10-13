@@ -65,6 +65,10 @@ message Work {
   ToolClass class = 8;
   ToolDecision decision = 9;
   optional int64 ended_at_ms = 10;
+  // When the work began running, after any approval, where Codex gives its
+  // duration. Its time is ended_at_ms minus this, else minus the item's
+  // at_ms.
+  optional int64 started_at_ms = 11;
 }
 
 message CommandWork {

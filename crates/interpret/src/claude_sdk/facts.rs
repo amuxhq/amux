@@ -869,6 +869,7 @@ impl State {
             background: false,
             decision: None,
             ended_at_ms: None,
+            started_at_ms: None,
             parent_key: parent.to_owned(),
             task: None,
             images: Vec::new(),

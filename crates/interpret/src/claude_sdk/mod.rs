@@ -111,6 +111,10 @@ struct Tool {
     background: bool,
     decision: Option<ToolDecisionState>,
     ended_at_ms: Option<i64>,
+    /// When the call began running: the moment it was allowed, when it
+    /// waited for the person's approval.
+    #[serde(default)]
+    started_at_ms: Option<i64>,
     parent_key: String,
     hidden: bool,
     /// The task this call started and Claude reports on: a subagent, or a
@@ -869,7 +873,12 @@ impl State {
                 Decided::Tool(_) if tool.question => {
                     tool.asked.get_or_insert_with(ask_item::dismissed);
                 }
-                Decided::Tool(decision) => tool.decision = Some(decision),
+                Decided::Tool(decision) => {
+                    if decision.outcome == DecisionOutcome::Allowed as i32 {
+                        tool.started_at_ms.get_or_insert(self.shared.now_ms());
+                    }
+                    tool.decision = Some(decision)
+                }
                 Decided::Plan(verdict) => tool.plan = Some(verdict),
                 Decided::Question(closed) => tool.asked = Some(closed),
             }
@@ -989,7 +998,7 @@ impl State {
             ended_at_ms: tool.ended_at_ms,
             created,
             line,
-            started_at_ms: None,
+            started_at_ms: tool.started_at_ms,
         }));
         if body == tool.emitted {
             return;

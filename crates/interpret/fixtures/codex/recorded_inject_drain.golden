@@ -37,7 +37,7 @@ pending [stdin-5]
 ## 40 recorded 39: fact Rpc "{\"id\":\"amux-2\",\"result\":{}}"
 pending []
 ## 42 recorded 41: fact Rpc method=item/completed
-item exec-32e2c946-1085-4a47-b87a-6983eff4a55a work final at=1790387843567 text="" command "sleep 5" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED ended=1790387848442
+item exec-32e2c946-1085-4a47-b87a-6983eff4a55a work final at=1790387843567 text="" command "sleep 5" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED started=1790387843567 ended=1790387848442
 ## 44 recorded 43: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790387848455 asks=[] thread=01a0db6e-5eb0-71e0-ae6c-0293baf2bb48 turn=01a0db6e-5ec8-7cf2-93dc-c5c5dd8fe6bd model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never sandbox=workspace-write reviewer=user collaboration=? context=12538/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 46 recorded 45: fact Rpc method=account/rateLimits/updated

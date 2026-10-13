@@ -382,6 +382,9 @@ pub(crate) fn describe_tool(tool: &ToolCall) -> String {
             if decision.elsewhere { " elsewhere" } else { "" }
         ));
     }
+    if let Some(started) = tool.started_at_ms {
+        text.push_str(&format!(" started={started}"));
+    }
     if let Some(ended) = tool.ended_at_ms {
         text.push_str(&format!(" ended={ended}"));
     }

@@ -26,7 +26,7 @@ item exec-f10ce098-5709-429d-8b03-34a205ab390e work open at=1788037202024 text="
 ## 28 recorded 27: fact Rpc method=item/tool/call
 effect write "{\"id\":0,\"result\":{\"contentItems\":[{\"text\":\"This client hosts no dynamic tools.\",\"type\":\"inputText\"}],\"success\":false}}"
 ## 30 recorded 29: fact Rpc method=item/completed
-item exec-f10ce098-5709-429d-8b03-34a205ab390e work final at=1788037202024 text="" mcp ·send args="{\"text\":\"CODEX_SPEC_SENT\",\"to\":\"probe\"}" result="[{\"text\":\"sent\",\"type\":\"inputText\"}]" TOOL_STATE_SUCCEEDED ended=1788037202025
+item exec-f10ce098-5709-429d-8b03-34a205ab390e work final at=1788037202024 text="" mcp ·send args="{\"text\":\"CODEX_SPEC_SENT\",\"to\":\"probe\"}" result="[{\"text\":\"sent\",\"type\":\"inputText\"}]" TOOL_STATE_SUCCEEDED started=1788037202025 ended=1788037202025
 ## 32 recorded 31: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1788037202026 asks=[] thread=01a04f52-6f34-7792-a9e1-75b0b63e14dd turn=01a04f52-6f4d-7353-ad8f-9fcfa95dd6f4 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=user collaboration=? context=14644/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 34 recorded 33: fact Rpc method=account/rateLimits/updated

@@ -62,7 +62,7 @@ item msg_079a4a6430ea5e73016ab729060c0c87d2a6482aa392d60126 working_note final a
 ## 62 recorded 61: fact Rpc method=item/started
 item exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861 work open at=1790388488213 text="" command "cat config.txt" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING read
 ## 64 recorded 63: fact Rpc method=item/completed
-item exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861 work final at=1790388488213 text="VALUE=1\n" command "cat config.txt" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED read ended=1790388488213
+item exec-04fc10c0-1c2a-47f2-b330-a59bbe7c8861 work final at=1790388488213 text="VALUE=1\n" command "cat config.txt" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED read started=1790388488213 ended=1790388488213
 ## 66 recorded 65: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790388488217 asks=[] thread=01a0db78-34e9-7932-b7d9-1855751185f3 turn=01a0db78-3506-7c92-90b6-57e72f6a3468 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never sandbox=workspace-write reviewer=user collaboration=? context=12564/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 68 recorded 67: fact Rpc method=account/rateLimits/updated
@@ -70,13 +70,13 @@ snapshot WORKING queue=[] working_on=- at=1790388488218 asks=[] thread=01a0db78-
 ## 70 recorded 69: fact Rpc method=item/started
 item exec-cb55466e-35bc-4581-9e00-9023c4cb14ba work open at=1790388491946 text="" command "ls" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING list
 ## 72 recorded 71: fact Rpc method=item/completed
-item exec-cb55466e-35bc-4581-9e00-9023c4cb14ba work final at=1790388491946 text="config.txt\nold.txt\nsquare.png\n" command "ls" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED list ended=1790388491946
+item exec-cb55466e-35bc-4581-9e00-9023c4cb14ba work final at=1790388491946 text="config.txt\nold.txt\nsquare.png\n" command "ls" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED list started=1790388491946 ended=1790388491946
 ## 74 recorded 73: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790388491949 asks=[] thread=01a0db78-34e9-7932-b7d9-1855751185f3 turn=01a0db78-3506-7c92-90b6-57e72f6a3468 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never sandbox=workspace-write reviewer=user collaboration=? context=12884/258400 plan=? usage=ok 7d:1%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 78 recorded 77: fact Rpc method=item/started
 item exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 work open at=1790388495021 text="" command "grep -n VALUE config.txt" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING search
 ## 80 recorded 79: fact Rpc method=item/completed
-item exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 work final at=1790388495021 text="1:VALUE=1\n" command "grep -n VALUE config.txt" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED search ended=1790388495021
+item exec-3942aaf0-5ac6-4fc8-9c51-bd46974af751 work final at=1790388495021 text="1:VALUE=1\n" command "grep -n VALUE config.txt" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED search started=1790388495021 ended=1790388495021
 ## 82 recorded 81: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790388495024 asks=[] thread=01a0db78-34e9-7932-b7d9-1855751185f3 turn=01a0db78-3506-7c92-90b6-57e72f6a3468 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never sandbox=workspace-write reviewer=user collaboration=? context=13001/258400 plan=? usage=ok 7d:1%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 86 recorded 85: fact Rpc method=item/started

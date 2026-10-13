@@ -15,10 +15,10 @@
   row    3 t1 Command { command: "deploy --check", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "t1" }) queue=[] underway=[] refused=[]
 ## 12 fact {"channel":"transcript","json":{"message":{"content":[{"content":"ok","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:01.900Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":"ok"},"type":"user","uuid":"r1"}}
-  row    3 t1 Command { command: "deploy --check", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(1000) } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+  row    3 t1 Command { command: "deploy --check", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(800) } run[t1..t1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"transcript","json":{"durationMs":2090,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:02.100Z","type":"system","uuid":"d1"}}
-  row    3 t1 Command { command: "deploy --check", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(1000) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+  row    3 t1 Command { command: "deploy --check", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(800) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   row    4 turn:1 TurnEnd { duration_ms: Some(2090), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 input {"id":"p2","prompt":{"text":"Sign in to the tracker."}}
@@ -57,7 +57,7 @@
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 u1 Prompt { text: [Text("Check the deployment once.")], steered: false }
-     3 t1 Command { command: "deploy --check", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(1000) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     3 t1 Command { command: "deploy --check", state: Succeeded, exit_code: None, output_head: ["ok"], more_lines: 0, output_trimmed: false, output_tail: ["ok"], duration_ms: Some(800) } run[t1..t1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
      4 turn:1 TurnEnd { duration_ms: Some(2090), cost_usd: None, failed: false }
      5 ask:ask:1 Ask(Unanswerable { reason: "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.", resolution: Cancelled })
      6 u2 Prompt { text: [Text("Sign in to the tracker.")], steered: false }

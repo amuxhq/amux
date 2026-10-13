@@ -23,7 +23,7 @@ item t1 tool final at=1800000000900 text="" Bash TOOL_STATE_RUNNING input="{\"co
 ## 10 fact {"channel":"hook","json":{"duration_ms":2000,"hook_event_name":"PostToolUse","tool_input":{"command":"cargo test"},"tool_name":"Bash","tool_response":{"stderr":"","stdout":"ok"},"tool_use_id":"t1"}}
 snapshot WORKING queue=[] working_on=- at=1800000003000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"content":"ok","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:03.001Z","toolUseResult":{"interrupted":false,"stderr":"","stdout":"ok"},"type":"user","uuid":"r1"}}
-item t1 tool final at=1800000000900 text="" Bash TOOL_STATE_SUCCEEDED ended=1800000003001 input="{\"command\":\"cargo test\"}" out="ok"
+item t1 tool final at=1800000000900 text="" Bash TOOL_STATE_SUCCEEDED started=1800000001000 ended=1800000003001 input="{\"command\":\"cargo test\"}" out="ok"
 ## 12 tick 1800000004000
 ## 13 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"file_path":"src/lib.rs"},"name":"Read","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:03.900Z","type":"assistant","uuid":"a3"}}
 item t2 tool final at=1800000003900 text="" Read TOOL_STATE_RUNNING read input="{\"file_path\":\"src/lib.rs\"}"
@@ -33,6 +33,7 @@ snapshot WORKING queue=[] working_on=- at=1800000004000 asks=[] session=s1 model
 item t2 tool final at=1800000003900 text="" Read TOOL_STATE_SUCCEEDED read ended=1800000004010 input="{\"file_path\":\"src/lib.rs\"}" out="1\tfn main() {}"
 snapshot WORKING queue=[] working_on=- at=1800000004000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 16 fact {"channel":"hook","json":{"duration_ms":3,"hook_event_name":"PostToolUse","tool_input":{"file_path":"src/lib.rs"},"tool_name":"Read","tool_response":{"type":"text"},"tool_use_id":"t2"}}
+item t2 tool final at=1800000003900 text="" Read TOOL_STATE_SUCCEEDED read started=1800000003997 ended=1800000004010 input="{\"file_path\":\"src/lib.rs\"}" out="1\tfn main() {}"
 ## 17 tick 1800000005000
 ## 18 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write","tool_use_id":"t3"}}
 snapshot WORKING queue=[] working_on=- at=1800000005000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=? running=t3 Write since=1800000005000
@@ -46,6 +47,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000007000 asks=[ask:1->t3 permis
 item t3 tool final at=1800000007000 text="" Write TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000007050 created input="{\"content\":\"x\",\"file_path\":\"notes.md\"}" out="File created successfully at: notes.md"
 snapshot WORKING queue=[] working_on=- at=1800000007000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 23 fact {"channel":"hook","json":{"duration_ms":40,"hook_event_name":"PostToolUse","tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write","tool_response":{"type":"create"},"tool_use_id":"t3"}}
+item t3 tool final at=1800000007000 text="" Write TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere started=1800000007000 ended=1800000007050 created input="{\"content\":\"x\",\"file_path\":\"notes.md\"}" out="File created successfully at: notes.md"
 ## 24 fact {"channel":"hook","json":{"background_tasks":[],"hook_event_name":"Stop"}}
 snapshot WORKING queue=[] working_on=- at=1800000007000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 ## 25 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Done.","type":"text"}],"id":"m4","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:07.200Z","type":"assistant","uuid":"a5"}}

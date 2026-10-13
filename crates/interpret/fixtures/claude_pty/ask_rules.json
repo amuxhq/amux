@@ -201,9 +201,11 @@
         }
       },
       "expect": {
-        "items": []
+        "items": [
+          "t1"
+        ]
       },
-      "note": "a hook makes no row"
+      "note": "a hook makes no row; one that comes after its call's result gives that row the time the call began running"
     },
     {
       "fact": {

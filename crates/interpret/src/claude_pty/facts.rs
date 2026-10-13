@@ -301,8 +301,17 @@ impl State {
                 self.pre_tool_use(call)
             }
             Payload::PermissionRequest(request) => self.permission_request(request),
-            Payload::PostToolUse(PostToolUse { tool_use_id, .. })
-            | Payload::PostToolUseFailure(PostToolUseFailure { tool_use_id, .. }) => {
+            Payload::PostToolUse(PostToolUse {
+                tool_use_id,
+                duration_ms,
+                ..
+            }) => {
+                self.call_ended(tool_use_id);
+                if let Some(duration) = duration_ms {
+                    self.ran_for(emit, tool_use_id, *duration);
+                }
+            }
+            Payload::PostToolUseFailure(PostToolUseFailure { tool_use_id, .. }) => {
                 self.call_ended(tool_use_id)
             }
             Payload::Notification(notification) => self.notification(emit, notification),
@@ -724,6 +733,26 @@ impl State {
         self.running.retain(|running| running.id != id);
     }
 
+    /// A call's PostToolUse hook says how long it ran: it began running
+    /// that long before now, after any wait for the person's approval,
+    /// which its row's time includes. Claude writes the call's result row
+    /// after the hook, and that row carries the time; only a result that
+    /// came first is drawn again for it.
+    fn ran_for(&mut self, emit: &mut Emit, id: &str, duration_ms: u64) {
+        let started = self.shared.now_ms() - i64::try_from(duration_ms).unwrap_or(i64::MAX);
+        match self.tools.get_mut(id) {
+            Some(tool) => {
+                tool.started_at_ms = Some(started.max(tool.at_ms));
+                if tool.finished {
+                    self.emit_tool(emit, id);
+                }
+            }
+            None => {
+                self.ran_from.insert(id.to_owned(), started);
+            }
+        }
+    }
+
     // --- tools -----------------------------------------------------------
 
     /// A call's tool_use row: the call opens, running.
@@ -774,6 +803,9 @@ impl State {
                         .is_ok_and(|input| input.run_in_background),
                     decision: None,
                     ended_at_ms: None,
+                    started_at_ms: self.ran_from.remove(id).map(|started| {
+                        started.max(at_ms.unwrap_or_else(|| self.shared.now_ms()))
+                    }),
                     message_id: message_id.to_owned(),
                     finished: false,
                     hidden,

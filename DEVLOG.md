@@ -1,3 +1,18 @@
+2026-10-13 — **A command's time starts after its approval, on every
+kind.** The chat counts a command's time from when it began running, after
+any approval it waited for, but no interpreter filled in when that was, so
+a terminal Claude command that waited a minute for an Allow read "1m 9s"
+beside a turn that worked 2 seconds. Terminal Claude's PostToolUse hook
+carries the run's duration: the call's start is that long before the hook,
+and the result row that follows carries it (a hook that comes after the
+result draws the row again; it still makes no row of its own). Headless
+Claude's call starts at the allow amux sends. Codex announces a command
+before its approval and gives the run's duration on completion: its Work
+gains `started_at_ms`, the end less that duration, and the shared view
+times Codex work from it. A recorded Codex automatic review, whose approval
+took two seconds, now shows the command's own time. An interpreter test per
+kind pins a minute's wait.
+
 2026-10-13 — **The phone's slash commands run again.** Every draft that
 began with "/" on the phone (`/model`, `/rename`, `/clear`, `/compact`)
 was refused with "This chat is closed.", on a live agent. The C library

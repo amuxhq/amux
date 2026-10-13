@@ -25,6 +25,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:1->t1 permis
 item t1 tool final at=1800000600100 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere ended=1800000600140 input="{\"command\":\"rm -rf build\"}"
 snapshot WORKING queue=[] working_on=- at=1800000600100 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 11 fact {"channel":"hook","json":{"duration_ms":40,"hook_event_name":"PostToolUse","tool_input":{"command":"rm -rf build"},"tool_name":"Bash","tool_response":{"stdout":""},"tool_use_id":"t1"}}
+item t1 tool final at=1800000600100 text="" Bash TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED elsewhere started=1800000600100 ended=1800000600140 input="{\"command\":\"rm -rf build\"}"
 ## 12 fact {"channel":"hook","json":{"hook_event_name":"PermissionRequest","permission_suggestions":[],"tool_input":{"content":"x","file_path":"notes.md"},"tool_name":"Write"}}
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000600100 asks=[ask:2->- permission:Write deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 13 fact {"channel":"transcript","json":{"message":{"content":[{"id":"t2","input":{"content":"x","file_path":"notes.md"},"name":"Write","type":"tool_use"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:10:00.200Z","type":"assistant","uuid":"a2"}}

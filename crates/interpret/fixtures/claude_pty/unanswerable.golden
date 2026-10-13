@@ -35,7 +35,7 @@ item a1b message final at=1800000000101 text="Filing it now."
 snapshot NEEDS_YOU queue=[] working_on=- at=1800000030000 asks=[ask:1->ask:ask:1 unanswerable:Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent.] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 ## 17 fact {"channel":"transcript","json":{"message":{"content":[{"content":"{\"number\": 42}","is_error":false,"tool_use_id":"t1","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:30.000Z","toolUseResult":{"number":42},"type":"user","uuid":"r1"}}
 item ask:ask:1 ask final at=1800000000200 text="" unanswerable "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." ASK_OUTCOME_DISMISSED
-item t1 tool final at=1800000000100 text="" github·create_issue TOOL_STATE_SUCCEEDED ended=1800000030000 input="{\"title\":\"Crash on launch\"}" out="{\"number\": 42}"
+item t1 tool final at=1800000000100 text="" github·create_issue TOOL_STATE_SUCCEEDED started=1800000001000 ended=1800000030000 input="{\"title\":\"Crash on launch\"}" out="{\"number\": 42}"
 snapshot WORKING queue=[] working_on=- at=1800000030000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 ## 18 tick 1800000030100
 ## 19 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"PreToolUse","permission_mode":"default","session_id":"s1","tool_input":{"account":"work"},"tool_name":"mcp__docs__sign_in","tool_use_id":"t2","transcript_path":"/t/s1.jsonl"}}

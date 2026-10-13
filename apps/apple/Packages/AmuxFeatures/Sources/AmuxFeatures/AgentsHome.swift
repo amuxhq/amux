@@ -371,7 +371,9 @@ public struct AgentsHome: View {
         // else the row would say; the chat has its Cancel.
         let second = row.card.stopHeld
             ? (text: String(localized: "Stop held · sends when \(row.hostName) is back"), ink: FleetWords.Ink.warning)
-            : FleetWords.secondLine(row.secondLine, kind: row.card.kind, now: model.orderedAt)
+            : FleetWords.secondLine(
+                row.secondLine, kind: row.card.kind, now: model.orderedAt,
+                backgroundJobs: row.card.backgroundJobs)
         let content = AgentRowView(
             row: row, state: state, host: PlaceNames.host(row.hostName), now: model.orderedAt,
             second: second)
@@ -439,7 +441,10 @@ public struct AgentsHome: View {
         var parts = [row.name]
         if let branch = row.branch { parts.append(String(localized: "on \(branch)")) }
         if let said = state.spoken { parts.append(said) }
-        if let second = FleetWords.secondLine(row.secondLine, kind: row.card.kind, now: model.orderedAt) {
+        if let second = FleetWords.secondLine(
+            row.secondLine, kind: row.card.kind, now: model.orderedAt,
+            backgroundJobs: row.card.backgroundJobs
+        ) {
             parts.append(second.text)
         }
         if row.speaksForAMember { parts.append("an agent it started needs you") }

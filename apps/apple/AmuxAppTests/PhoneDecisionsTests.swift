@@ -365,6 +365,31 @@ final class PhoneDecisionsTests: XCTestCase {
 
     // MARK: - Home and new agent
 
+    /// An idle agent whose only work is in the background says how many
+    /// jobs run there on its home row, as the terminal's row does.
+    func testAHomeRowCountsItsBackgroundJobs() async throws {
+        let card = FleetCard(
+            agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
+            name: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
+            host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
+            members: 1, descendants: 0, backgroundJobs: 2, stopHeld: false, branch: nil, exitCause: nil)
+        let fleet = FleetStore()
+        fleet.show(
+            FleetView(
+                sections: [FleetSection(kind: .live, families: 1, foldedByDefault: false, rows: [
+                    FleetRow(card: card, depth: 0, expanded: false, secondLine: .lastSaid("Started the dev server."), loud: nil),
+                ])],
+                needYou: 0, working: 0),
+            hosts: [])
+        try host(AgentsHome(model: fleet, accounts: AccountRegistry(), hosts: HostsStore()) { _ in })
+        await spin()
+        let row = try XCTUnwrap(
+            probe.elements.first { $0.identifier.hasPrefix("home.row.") }, "the agent's row is not drawn")
+        XCTAssertTrue(
+            (row.label ?? "").contains("2 background jobs · Started the dev server."),
+            "the row does not count its background jobs: \(row.label ?? "")")
+    }
+
     /// A reopened app draws its home before its saved hosts are read; it must
     /// not say nothing is paired until it knows.
     func testHomeSaysNothingIsPairedOnlyOnceItHasReadItsHosts() async throws {

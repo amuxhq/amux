@@ -17,9 +17,24 @@ public enum FleetWords {
     /// Nil when there is nothing to say (starting, or nothing known yet),
     /// and for what the row's state word already says: that its host is
     /// away, or that it exited with no cause.
+    ///
+    /// Jobs the agent runs in the background leave it idle, so an idle or
+    /// working line leads with how many there are, ahead of anything a
+    /// long line could cut off.
     public static func secondLine(
-        _ line: SecondLine, kind: Kind, now: Date
+        _ line: SecondLine, kind: Kind, now: Date, backgroundJobs: UInt32 = 0
     ) -> (text: String, ink: Ink)? {
+        if backgroundJobs > 0 {
+            let count = backgroundJobs == 1
+                ? String(localized: "1 background job")
+                : String(localized: "\(backgroundJobs) background jobs")
+            switch line {
+            case .lastSaid(let said) where !said.isEmpty: return ("\(count) · \(said)", .quiet)
+            case .step(let step): return ("\(count) · \(self.step(step))", .quiet)
+            case .lastSaid, .blank: return (String(localized: "\(count) running"), .quiet)
+            default: break
+            }
+        }
         switch line {
         case .ask(let ask): return (self.ask(ask), .ask)
         case .step(let step): return (self.step(step), .quiet)

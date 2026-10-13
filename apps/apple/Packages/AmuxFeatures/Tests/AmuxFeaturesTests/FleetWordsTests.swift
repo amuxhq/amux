@@ -34,6 +34,22 @@ final class FleetWordsTests: XCTestCase {
             .ask)
     }
 
+    /// Background jobs lead an idle or working line, as the terminal's row
+    /// counts them, and never displace an ask.
+    func testBackgroundJobsLeadTheLine() {
+        func with(_ line: SecondLine, _ jobs: UInt32) -> String? {
+            FleetWords.secondLine(line, kind: .codex, now: now, backgroundJobs: jobs)?.text
+        }
+        XCTAssertEqual(with(.lastSaid("Started the server."), 1), "1 background job · Started the server.")
+        XCTAssertEqual(with(.blank, 3), "3 background jobs running")
+        let thinking = Activity(kind: .thinking, sinceMs: 0, elapsedMs: 0)
+        XCTAssertEqual(
+            with(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)), 2),
+            "2 background jobs · \(said(.step(AmuxValues.ActivityLine(activity: thinking, step: nil)))!)")
+        XCTAssertEqual(with(.ask(AskSummary(subject: .plan, count: 1)), 2), "Has a plan for you to decide")
+        XCTAssertEqual(with(.lastSaid("Done."), 0), "Done.")
+    }
+
     func testAWorkingAgentNamesItsStep() {
         let running = Activity(kind: .running(key: "s1"), sinceMs: 0, elapsedMs: 0)
         XCTAssertEqual(said(.step(AmuxValues.ActivityLine(activity: running, step: "npm test\nmore"))), "npm test")

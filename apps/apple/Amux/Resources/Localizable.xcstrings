@@ -733,6 +733,18 @@
         }
       }
     },
+    "%@ running": {
+      "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ running"
+          }
+        }
+      }
+    },
     "%@ sign-in expired": {
       "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/FleetWords.swift.",
       "extractionState": "manual",

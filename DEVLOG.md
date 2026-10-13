@@ -1,3 +1,13 @@
+2026-10-13 — **The phone's home row counts an agent's background jobs.**
+The terminal's home row now leads an idle or working agent's second line
+with how many jobs it runs in the background; the phone's row said
+nothing, so an agent idle with a dev server still running read as done.
+The phone's row now says the same from the same fleet row field: "2
+background jobs · <what it last said>", "· <its step>" while working, or
+"2 background jobs running" with nothing else to say. An ask still takes
+the line. A phone test draws a home row with two background jobs and finds
+the count; unit tests cover the words.
+
 2026-10-13 — **The phone follows what the account buys while it stays
 open.** You kept saying "Included with this account" after the account
 lapsed, and "Not subscribed" after it was bought again, until the app was

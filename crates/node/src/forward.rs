@@ -8,13 +8,10 @@
 use std::future::Future;
 use std::time::Duration;
 
-use store::{AgentKey, AgentRow, StoreError};
+use store::{AgentRow, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
-use wire::{
-    Agent, AmbiguousHostName, DeleteAgentRequest, DeleteAgentResponse, ErrorCode, ErrorDetail,
-    HostEntry, Trust,
-};
+use wire::{AmbiguousHostName, ErrorCode, ErrorDetail, HostEntry, Trust};
 
 use crate::HostId;
 use crate::grpc::wire_error;
@@ -163,12 +160,6 @@ impl ProfileRuntime {
         self.store.lock().await.agent_by_id(agent_id)
     }
 
-    /// Whether a call to `host` can leave now: why not, as a call to it
-    /// would fail before it went out. Nothing is asked of the host.
-    pub(crate) async fn reachable(&self, host: HostId) -> Result<(), ForwardError> {
-        self.peer_client(host).await.map(drop)
-    }
-
     /// A client for `host`, or why no call to it can leave.
     async fn peer_client(&self, host: HostId) -> Result<crate::PeerClient, ForwardError> {
         let not_sent = || ForwardError::NotSent {
@@ -230,45 +221,6 @@ impl ProfileRuntime {
                     .find(|(id, name, _)| *id == host && !name.is_empty())
             })
             .map_or_else(|| format!("host {host}"), |(_, name, _)| name)
-    }
-
-    /// The cascade's step for a child on another host: the delete is
-    /// forwarded to the child's host, which deletes the child's own
-    /// children in turn. A child already gone there counts as deleted; any
-    /// other failure is the caller's to fail the delete with.
-    pub(crate) async fn delete_remote_child(
-        &self,
-        child: AgentKey,
-        wire: Agent,
-        response: &mut DeleteAgentResponse,
-    ) -> Result<(), ForwardError> {
-        let Ok(host) = Uuid::from_slice(&child.host) else {
-            return Ok(());
-        };
-        let request = DeleteAgentRequest {
-            agent_id: child.agent.clone(),
-        };
-        match self
-            .on_peer(host, |mut client| async move {
-                client.delete_agent(request).await
-            })
-            .await
-        {
-            Ok(answer) => {
-                response.removed_children.push(wire);
-                response.removed_children.extend(answer.removed_children);
-                Ok(())
-            }
-            // Already gone on its host.
-            Err(error) if error.code() == ErrorCode::NotFound => {
-                response.removed_children.push(wire);
-                Ok(())
-            }
-            Err(error) => {
-                tracing::warn!(%host, %error, "a cascaded delete could not reach the child's host");
-                Err(error)
-            }
-        }
     }
 
     /// A host by the name a person uses for it, among this host and the

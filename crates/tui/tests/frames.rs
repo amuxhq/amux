@@ -1038,7 +1038,7 @@ impl client::Client for SlowClearing {
     async fn delete_agent(
         &self,
         request: wire::DeleteAgentRequest,
-    ) -> Result<wire::DeleteAgentResponse, client::RpcError> {
+    ) -> Result<(), client::RpcError> {
         self.inner.delete_agent(request).await
     }
     async fn send_message(

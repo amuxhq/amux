@@ -2,9 +2,10 @@
 //! by the host's name, the parent's host forwards the create there, and
 //! every host's fleet groups the family from the replica rows it holds.
 //! Stop and send are checked against the parent edge wherever the child
-//! lives; a cascade delete reaches every child through its own host, and
-//! deletes nothing while part of the family is out of reach; and the
-//! deliveries outbox carries a
+//! lives. Each host enforces the family rule for its own agents from the
+//! parent's row as it holds it: a parent that exited stops its children, a
+//! parent gone from its host's caught-up listing deletes them, and a parent
+//! merely out of reach does neither. The deliveries outbox carries a
 //! child's finished and failed messages over the peer link, exactly once,
 //! to the incarnation that was waiting for them.
 
@@ -16,8 +17,8 @@ use std::time::Duration;
 use node::SourceVerdict;
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Script, Step};
-use store::{AgentKey, AgentRow};
-use testnet::{AgentDecl, Net, NetError, PATIENCE, Topology, holds_for, observe, until};
+use store::AgentRow;
+use testnet::{AgentDecl, Net, PATIENCE, Topology, holds_for, observe, until};
 use tonic::{Code, Request};
 use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
@@ -515,29 +516,19 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     net.shutdown().await.unwrap();
 }
 
-/// Deleting a parent whose family reaches a host that cannot be reached
-/// fails at once, naming that host, and deletes nothing: it said "Deleted
-/// lead" and left the far children running with no parent. That holds when
-/// the parent's host still lists the far child, and when it no longer does
-/// (the hosts unlinked), since the parent's host remembers the children it
-/// started elsewhere. Once the host is back, the delete takes the whole
-/// family through each child's own host.
+/// A parent stopped while its far child's host is away: nothing reaches
+/// the child then, and it carries on. Once its host is back and has caught
+/// up with the parent's host, the listing says the parent exited and the
+/// child's own host stops it. The stop to an away host used to be sent once
+/// and lost.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_delete_whose_family_reaches_an_unreachable_host_deletes_nothing() {
+async fn a_far_child_whose_parent_stopped_while_its_host_was_away_stops_on_return() {
     let mut net = Net::start(
         Topology::new()
             .host("desk")
-            .host("server")
             .host("laptop")
-            .link("desk", "server")
             .link("desk", "laptop")
             .agent(lead()),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "lead",
-        child("helper", "server", vec![waits("never"), Step::TurnEnd]),
     )
     .await
     .unwrap();
@@ -547,170 +538,36 @@ async fn a_delete_whose_family_reaches_an_unreachable_host_deletes_nothing() {
     )
     .await
     .unwrap();
-    let helper = net.agent("helper").unwrap().clone();
-    until("desk to hold both children", || {
-        let net = &net;
-        async move {
-            let held = (
-                row(net, "desk", "helper").await.is_some(),
-                row(net, "desk", "scout").await.is_some(),
-            );
-            (held == (true, true))
-                .then_some(())
-                .ok_or_else(|| format!("helper, scout held: {held:?}"))
-        }
-    })
-    .await
-    .unwrap();
-
-    let refused = |error: NetError| match error {
-        NetError::Refused(status) => *status,
-        other => panic!("the delete failed otherwise: {other}"),
-    };
-    // Severed: desk still lists scout.
+    until_live(&net, "laptop", "scout").await;
     net.sever_link("desk", "laptop").unwrap();
     net.wait_link("desk", "laptop", false).await.unwrap();
-    let status = refused(net.delete_family("lead").await.unwrap_err());
-    println!("delete lead, laptop severed: {}", status.message());
-    assert!(
-        status.message().contains("laptop"),
-        "the refusal does not name laptop: {}",
-        status.message()
-    );
-    assert!(row(&net, "desk", "lead").await.is_some(), "lead is kept");
-    assert!(
-        net.runtime("server")
-            .unwrap()
-            .store()
-            .await
-            .agent(&helper.key())
-            .unwrap()
-            .is_some(),
-        "helper is kept"
-    );
-    assert_eq!(
-        lifecycle(&net, "laptop", "scout").await,
-        Some(Lifecycle::Live),
-        "scout runs on"
-    );
-
-    // Unlinked: desk no longer lists scout, and still knows of it.
-    net.restore_link("desk", "laptop").await.unwrap();
-    net.wait_link("desk", "laptop", true).await.unwrap();
-    net.remove_link("desk", "laptop").await.unwrap();
-    until("desk to forget scout", || {
-        let net = &net;
-        async move {
-            row(net, "desk", "scout")
-                .await
-                .is_none()
-                .then_some(())
-                .ok_or_else(|| "desk still lists scout".to_owned())
-        }
-    })
-    .await
-    .unwrap();
-    let status = refused(net.delete_family("lead").await.unwrap_err());
-    println!("delete lead, laptop unlinked: {}", status.message());
-    assert!(
-        status.message().contains("laptop"),
-        "the refusal does not name laptop: {}",
-        status.message()
-    );
-    assert!(
-        row(&net, "desk", "lead").await.is_some(),
-        "lead is deleted with scout out of reach"
-    );
-    assert_eq!(
-        lifecycle(&net, "laptop", "scout").await,
-        Some(Lifecycle::Live),
-        "scout runs on"
-    );
-    net.shutdown().await.unwrap();
-}
-
-/// A parent's host keeps knowing the far child it started after a stop: the
-/// stop reached the child while its host's listing held it, and forgot it
-/// was forwarded, so once the hosts unlinked a delete of the parent saw no
-/// child, said it deleted the family, and left the child behind.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_stopped_parent_keeps_its_far_child_for_the_delete() {
-    let mut net = Net::start(
-        Topology::new()
-            .host("desk")
-            .host("laptop")
-            .link("desk", "laptop")
-            .agent(lead()),
-    )
-    .await
-    .unwrap();
-    net.spawn_child(
-        "lead",
-        child("scout", "laptop", vec![waits("never"), Step::TurnEnd]),
-    )
-    .await
-    .unwrap();
-    until("desk to hold scout", || {
-        let net = &net;
-        async move {
-            row(net, "desk", "scout")
-                .await
-                .is_some()
-                .then_some(())
-                .ok_or_else(|| "desk does not list scout".to_owned())
-        }
-    })
-    .await
-    .unwrap();
     net.stop("lead").await.unwrap();
-    until("scout to stop with its parent", || {
-        let net = &net;
-        async move {
-            let at = lifecycle(net, "laptop", "scout").await;
-            (at == Some(Lifecycle::Exited))
-                .then_some(())
-                .ok_or_else(|| format!("scout is {at:?}"))
-        }
-    })
-    .await
-    .unwrap();
-    net.remove_link("desk", "laptop").await.unwrap();
-    until("desk to forget scout", || {
-        let net = &net;
-        async move {
-            row(net, "desk", "scout")
-                .await
-                .is_none()
-                .then_some(())
-                .ok_or_else(|| "desk still lists scout".to_owned())
-        }
-    })
-    .await
-    .unwrap();
-    let status = match net.delete_family("lead").await {
-        Err(NetError::Refused(status)) => *status,
-        other => panic!("the delete with scout out of reach did {other:?}"),
-    };
-    println!("delete stopped lead, laptop unlinked: {}", status.message());
-    assert!(
-        status.message().contains("laptop"),
-        "the refusal does not name laptop: {}",
-        status.message()
+    until_exited(&net, "desk", "lead").await;
+    assert_eq!(
+        lifecycle(&net, "laptop", "scout").await,
+        Some(Lifecycle::Live),
+        "scout runs on while laptop cannot hear of the stop"
     );
-    assert!(row(&net, "desk", "lead").await.is_some(), "lead is kept");
-    assert!(
-        lifecycle(&net, "laptop", "scout").await.is_some(),
-        "scout is kept"
+    println!("lead stopped with laptop away: scout runs on");
+
+    net.restore_link("desk", "laptop").await.unwrap();
+    until_exited(&net, "laptop", "scout").await;
+    let scout = row(&net, "laptop", "scout").await.unwrap();
+    println!(
+        "laptop back: scout ended {:?}",
+        wire::ExitCause::try_from(scout.exit_cause)
     );
+    assert_eq!(scout.exit_cause, wire::ExitCause::Stopped as i32);
     net.shutdown().await.unwrap();
 }
 
-/// A far child deleted on its own host is forgotten by its parent's host
-/// as well: the parent's host kept it as a child it had started, so once
-/// the hosts unlinked a delete of the parent was refused for a child that
-/// no longer existed.
+/// A parent deleted while its far child's host is away. Its child on its
+/// own host follows at once, by the same rule; the far child carries on
+/// until its host is back and caught up, where the parent is listed no
+/// more, and then its own host stops and deletes it. A delete used to be
+/// refused outright while part of the family was out of reach.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_far_child_deleted_on_its_own_does_not_hold_up_its_parents_delete() {
+async fn a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted_on_return() {
     let mut net = Net::start(
         Topology::new()
             .host("desk")
@@ -722,29 +579,54 @@ async fn a_far_child_deleted_on_its_own_does_not_hold_up_its_parents_delete() {
     .unwrap();
     net.spawn_child(
         "lead",
+        child("notes", "desk", vec![waits("never"), Step::TurnEnd]),
+    )
+    .await
+    .unwrap();
+    net.spawn_child(
+        "lead",
         child("scout", "laptop", vec![waits("never"), Step::TurnEnd]),
     )
     .await
     .unwrap();
-    until("desk to hold scout", || {
-        let net = &net;
-        async move {
-            row(net, "desk", "scout")
-                .await
-                .is_some()
-                .then_some(())
-                .ok_or_else(|| "desk does not list scout".to_owned())
-        }
-    })
-    .await
-    .unwrap();
+    until_live(&net, "desk", "notes").await;
+    until_live(&net, "laptop", "scout").await;
+    let notes = net.agent("notes").unwrap().key();
     let scout = net.agent("scout").unwrap().key();
-    net.delete_family("scout").await.unwrap();
-    until("desk to drop scout", || {
-        let (net, scout) = (&net, &scout);
+    net.sever_link("desk", "laptop").unwrap();
+    net.wait_link("desk", "laptop", false).await.unwrap();
+
+    net.delete("lead").await.expect("the delete is not refused");
+    until("notes to follow lead on desk", || {
+        let (net, notes) = (&net, &notes);
         async move {
             let held = net
                 .runtime("desk")
+                .unwrap()
+                .store()
+                .await
+                .agent(notes)
+                .unwrap();
+            held.is_none()
+                .then_some(())
+                .ok_or_else(|| "desk still holds notes".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        lifecycle(&net, "laptop", "scout").await,
+        Some(Lifecycle::Live),
+        "scout runs on while laptop cannot hear of the delete"
+    );
+    println!("lead deleted with laptop away: notes deleted on desk, scout runs on");
+
+    net.restore_link("desk", "laptop").await.unwrap();
+    until("laptop to delete scout", || {
+        let (net, scout) = (&net, &scout);
+        async move {
+            let held = net
+                .runtime("laptop")
                 .unwrap()
                 .store()
                 .await
@@ -752,23 +634,184 @@ async fn a_far_child_deleted_on_its_own_does_not_hold_up_its_parents_delete() {
                 .unwrap();
             held.is_none()
                 .then_some(())
-                .ok_or_else(|| "desk still lists scout".to_owned())
+                .ok_or_else(|| format!("laptop holds scout as {:?}", held.map(|row| row.lifecycle)))
         }
     })
     .await
     .unwrap();
-    net.remove_link("desk", "laptop").await.unwrap();
-    let deleted = net.delete_family("lead").await;
-    println!("delete lead after scout was deleted: {deleted:?}");
+    println!("laptop back: scout stopped and deleted there");
+    net.shutdown().await.unwrap();
+}
+
+/// A host still catching up with the parent's host never deletes a child
+/// on a listing that predates it. Here laptop is following desk again, its
+/// listing taken and its CaughtUp held back, when lead starts on desk and
+/// spawns scout on laptop: the listing lacks lead, yet scout is not judged
+/// by it, and lead's row arrives on the live stream after. Scout finishes
+/// its task and lead hears it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_child_made_while_its_host_catches_up_is_not_deleted_by_the_older_listing() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop"),
+    )
+    .await
+    .unwrap();
+    let desk = net.host("desk").unwrap().host_id;
+    let (held_tx, held_rx) = tokio::sync::oneshot::channel::<()>();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+    let armed = std::sync::Mutex::new(Some((held_tx, release_rx)));
+    net.runtime("laptop")
+        .unwrap()
+        .set_inventory_hook(Some(Arc::new(move |host, event: &InventoryEvent| {
+            if host == desk
+                && matches!(event.of, Some(inventory_event::Of::CaughtUp(_)))
+                && let Some((held, release)) = armed.lock().unwrap().take()
+            {
+                let _ = held.send(());
+                return SourceVerdict::Hold(Box::pin(async move {
+                    let _ = release.await;
+                }));
+            }
+            SourceVerdict::Keep
+        })));
+    net.sever_link("desk", "laptop").unwrap();
+    net.wait_link("desk", "laptop", false).await.unwrap();
+    net.restore_link("desk", "laptop").await.unwrap();
+    tokio::time::timeout(PATIENCE, held_rx)
+        .await
+        .expect("laptop to take desk's listing")
+        .unwrap();
+    println!("laptop has desk's listing and holds its CaughtUp");
+
+    net.spawn(lead()).await.unwrap();
+    net.spawn_child(
+        "lead",
+        child(
+            "scout",
+            "laptop",
+            vec![waits("finish"), text("Survey done."), Step::TurnEnd],
+        ),
+    )
+    .await
+    .unwrap();
+    release_tx.send(()).unwrap();
+    until("laptop to hold lead's row", || {
+        let net = &net;
+        async move {
+            row(net, "laptop", "lead")
+                .await
+                .is_some()
+                .then_some(())
+                .ok_or_else(|| "laptop does not hold lead".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        lifecycle(&net, "laptop", "scout").await,
+        Some(Lifecycle::Live),
+        "laptop judged scout by a listing taken before it was made"
+    );
+    net.open_gate("finish").unwrap();
+    until("lead to hear from scout", || {
+        let net = &net;
+        async move {
+            let got = received(net, "lead").await;
+            (!got.is_empty())
+                .then_some(())
+                .ok_or_else(|| "nothing yet".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    let got = received(&net, "lead").await;
+    let scout = row(&net, "laptop", "scout").await;
+    println!(
+        "lead heard {:?}; scout ended {:?}",
+        got.iter().map(|item| &item.text).collect::<Vec<_>>(),
+        scout
+            .as_ref()
+            .map(|row| wire::ExitCause::try_from(row.exit_cause))
+    );
     assert!(
-        deleted.is_ok(),
-        "a delete was refused for a child that no longer exists: {deleted:?}"
+        got.iter().any(|item| item.text.contains("Survey done.")),
+        "scout did not finish its task: {got:?}"
+    );
+    assert_eq!(
+        scout.map(|row| row.exit_cause),
+        Some(wire::ExitCause::Finished as i32),
+        "scout was stopped or deleted"
     );
     net.shutdown().await.unwrap();
 }
 
-/// A child's finished message waits in its host's outbox while its parent's
-/// host is away, and arrives once when it returns. A row for a parent
+/// Unpairing the parent's host leaves its far child running: a host that
+/// is no longer paired says nothing of the parent. The report the child
+/// owes the parent can never be delivered, so its host drops it.
+#[tokio::test(flavor = "multi_thread")]
+async fn unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop")
+            .agent(lead()),
+    )
+    .await
+    .unwrap();
+    net.spawn_child(
+        "lead",
+        child(
+            "scout",
+            "laptop",
+            vec![waits("finish"), text("Survey done."), Step::TurnEnd],
+        ),
+    )
+    .await
+    .unwrap();
+    until_live(&net, "laptop", "scout").await;
+    net.sever_link("desk", "laptop").unwrap();
+    net.wait_link("desk", "laptop", false).await.unwrap();
+    net.open_gate("finish").unwrap();
+    until("scout's finished report to wait on laptop", || {
+        let net = &net;
+        async move {
+            let rows = outbox(net, "laptop").await;
+            (rows == 1)
+                .then_some(())
+                .ok_or_else(|| format!("{rows} outbox rows"))
+        }
+    })
+    .await
+    .unwrap();
+    println!("desk away: scout finished, its report waits on laptop");
+
+    net.remove_link("desk", "laptop").await.unwrap();
+    until("laptop to drop the report owed to desk", || {
+        let net = &net;
+        async move {
+            let rows = outbox(net, "laptop").await;
+            (rows == 0)
+                .then_some(())
+                .ok_or_else(|| format!("{rows} outbox rows"))
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        row(&net, "laptop", "scout").await.is_some(),
+        "laptop deleted scout when it unpaired from desk"
+    );
+    assert!(received(&net, "lead").await.is_empty());
+    println!("unpaired: the report is dropped and scout is kept");
+    net.shutdown().await.unwrap();
+}
+
+/// A child whose parent's host is away carries on: its finished message
+/// waits in its host's outbox, and arrives once when the host returns. A row for a parent
 /// incarnation that has since ended is dropped instead; and the parent's
 /// own daemon drops a message for any incarnation but the current one.
 #[tokio::test(flavor = "multi_thread")]
@@ -1012,7 +1055,7 @@ async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_liv
     )
     .await
     .unwrap();
-    // The cascade may end helper while lead is between its stop and its
+    // The family rule may end helper while lead is between its stop and its
     // resume; desk then turns the row away as for a stopped parent and it
     // waits for the outbox's next pass. Server cannot hear the resume that
     // would wake it (its follower is held), so the pass is run here.
@@ -1298,21 +1341,25 @@ async fn cross_host_family_journey() {
     .unwrap();
     say("6. helper exits; lead sends a follow-up: server resumes helper (incarnation 2) with it; lead hears finished again".into());
 
-    // Cascade delete.
-    let answer = net.delete_family("lead").await.unwrap();
-    assert_eq!(answer.removed_children.len(), 1);
-    assert!(
-        net.runtime("server")
-            .unwrap()
-            .store()
-            .await
-            .agent(&AgentKey::new(
-                helper.host_id.as_bytes().to_vec(),
-                helper.id.as_bytes().to_vec()
-            ))
-            .unwrap()
-            .is_none()
-    );
+    // The delete acts on lead; helper follows on server.
+    net.delete("lead").await.unwrap();
+    until("server to delete helper", || {
+        let (net, helper) = (&net, &helper);
+        async move {
+            let held = net
+                .runtime("server")
+                .unwrap()
+                .store()
+                .await
+                .agent(&helper.key())
+                .unwrap();
+            held.is_none()
+                .then_some(())
+                .ok_or_else(|| "server still holds helper".to_owned())
+        }
+    })
+    .await
+    .unwrap();
     phone
         .observe_until(
             |events| {
@@ -1377,17 +1424,16 @@ async fn a_headless_claude_parent_reads_which_child_finished() {
     net.shutdown().await.unwrap();
 }
 
-/// Stopping a parent stops its whole family, as deleting it does: every
-/// descendant, on its own host or another, is asked to stop, and a child
-/// on a host the stop cannot reach is left as it is. Each child here is
-/// mid-turn when its parent stops; the stop cancels that turn and ends the
-/// incarnation as stopped, where a child left running would end it as
-/// finished by the one-shot rule.
+/// Stopping a parent stops its whole family: each descendant's own host
+/// stops it once it sees its parent's row say exited, on the parent's own
+/// host as on another, and that stop is a row its own children's hosts
+/// see in turn. Each child here is mid-turn on a gate that never opens;
+/// only a stop ends it, as stopped.
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_a_parent_stops_every_descendant_on_every_host() {
     let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
     net.settle("lead").await.unwrap();
-    let busy = || vec![waits("release"), text("Survey part done."), Step::TurnEnd];
+    let busy = || vec![waits("never"), text("Survey part done."), Step::TurnEnd];
     net.spawn_child("lead", child("notes", "desk", busy()))
         .await
         .unwrap();
@@ -1426,9 +1472,8 @@ async fn stopping_a_parent_stops_every_descendant_on_every_host() {
     })
     .await
     .unwrap();
-    println!("lead stopped; releasing its descendants' turns");
+    println!("lead stopped");
 
-    net.open_gate("release").unwrap();
     let mut causes = Vec::new();
     for (name, host) in family {
         until(&format!("{name} to exit on {host}"), || {
@@ -1898,8 +1943,7 @@ async fn the_agent_row_counts_live_descendants_and_background_jobs() {
 }
 
 /// An agents' `stop` tool stops: the child ends as stopped, as a person's
-/// stop ends it, and the stop cascades to the child's own descendants on
-/// every host. QA and the decision: the tool interrupted the child's turn,
+/// stop ends it, and the child's own descendants follow on every host. QA and the decision: the tool interrupted the child's turn,
 /// which left its own children running.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agents_stop_tool_stops_its_child_and_the_childs_descendants() {
@@ -1935,7 +1979,7 @@ async fn an_agents_stop_tool_stops_its_child_and_the_childs_descendants() {
     net.send("lead", "Stop the helper.").await.unwrap();
     net.turn_ended("lead", 2).await.unwrap();
     until_exited(&net, "server", "helper").await;
-    // The cascade starts each descendant's stop without waiting for it.
+    // Scout's host stops it once it sees helper's exit.
     until_exited(&net, "phone", "scout").await;
     let helper = row(&net, "server", "helper").await.unwrap();
     let scout = row(&net, "phone", "scout").await.unwrap();

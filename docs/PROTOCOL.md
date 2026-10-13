@@ -465,7 +465,7 @@ meanwhile.
 | `Subscribe`, `Fetch`, `Get` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
 | `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
 | `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
-| `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way) and, like a delete, cascades to children. |
+| `RenameAgent`, `StopAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. A stop ends the agent now (its turn cancelled the provider's own way); a delete stops it if live and removes it. Both act on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
 | `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
 | `PutBlob`, `GetBlob`, `Diff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
@@ -561,6 +561,48 @@ differs from `ClientService` in these ways:
 - `ListRepositories` answers for this host only.
 - `Dump` answers with this host's part of the caller's report, a `DumpPart`,
   since the caller is on another machine.
+
+### The family rule
+
+A host enforces family rules only for its own agents, from the parent's row as
+it holds it (an own row, or a replica kept by the inventory stream), and only
+on what that row actually says (`ParentSays` and `parent_changed` in
+`crates/node/src/runtime.rs`):
+
+- **The parent's row says it exited**, whatever the cause: the child is
+  stopped.
+- **The parent is gone from its host's listing**: the child is stopped and
+  deleted. A parent's absence counts only when the host said so: an
+  `AgentRemoved` on its inventory stream, or a listing read to `CaughtUp`
+  that no longer has it. A row not yet replicated is not a deleted one.
+- **Anything else does nothing**: the parent's host out of reach, this host
+  still catching up with it, or the hosts unpaired. The child carries on, and
+  the report it owes its parent waits in the
+  [deliveries outbox](AGENT_TOOLS.md#completion-and-exit) until the parent's
+  host is reachable again. Unpairing drops the reports owed to that host's
+  agents, which can never be delivered.
+
+A child on the parent's own host follows the same path: there the parent's
+row is a local one. The rule is checked when a parent's row changes (an own
+agent exits or is deleted or removed by retention; a replica row arrives
+saying the agent has just exited, or is removed), and when this host finishes
+catching up with a peer after a (re)connect, which settles every own agent
+whose parent lives there against that complete listing: whatever happened
+while the hosts were apart is acted on then. Only agents that existed before
+that listing was asked for are judged by it; a child made since may belong to
+a parent the listing predates, and the live stream speaks for that parent
+(`inventory_caught_up` in `crates/node/src/sources.rs`).
+
+A create names its parent (the caller, or for a create forwarded from another
+host, the parent that host stamped). If this host already sees that parent as
+exited, or as deleted (its own agent with no row), the create is refused as
+`FAILED_PRECONDITION`. The parent check and the child's row are written under
+one hold of the store, so a parent that ends after the check finds the child
+and stops it. Another host's row counts here only once that host's listing
+has caught up, since a row kept from before may be stale.
+
+A stop's or delete's answer covers the named agent only; it never confirms the
+children, which may be on hosts that are away.
 
 ### The tools socket
 

@@ -19,12 +19,12 @@ use tonic::{Code, Request, Response, Status};
 use uuid::Uuid;
 use wire::client_service_server::ClientService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, DiffRequest,
-    DumpReport, DumpRequest, Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest,
-    GetBlobResponse, GetRequest, InventoryEvent, Item, ListRepositoriesRequest,
-    ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageRequest,
-    SendMessageResponse, SessionEvent, StopAgentRequest, SubscribeRequest,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DiffRequest, DumpReport, DumpRequest,
+    Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse, GetRequest,
+    InventoryEvent, Item, ListRepositoriesRequest, ListRepositoriesResponse, PutBlobRequest,
+    RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent, StopAgentRequest,
+    SubscribeRequest,
 };
 
 use crate::blobs::BlobError;
@@ -516,24 +516,19 @@ impl ClientService for ClientApi {
     async fn delete_agent(
         &self,
         request: Request<DeleteAgentRequest>,
-    ) -> Result<Response<DeleteAgentResponse>, Status> {
+    ) -> Result<Response<Empty>, Status> {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            let key = store::AgentKey::new(host.as_bytes().to_vec(), request.agent_id.clone());
-            let deleted = forwarded(&runtime, host, |mut client| async move {
+            return forwarded(&runtime, host, |mut client| async move {
                 client.delete_agent(request).await
             })
-            .await?;
-            // Gone at once: no parent's delete here looks for it again,
-            // whenever its host's word of the removal arrives.
-            runtime.forget_forwarded(&key);
-            return Ok(deleted);
+            .await;
         }
         runtime
             .delete(agent_id(&request.agent_id)?)
             .await
-            .map(Response::new)
+            .map(|()| Response::new(Empty {}))
             .map_err(|error| status(error.to_wire()))
     }
 

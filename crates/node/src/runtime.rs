@@ -32,8 +32,8 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
     Agent, AgentHello, AgentRef, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest, CtlFrame,
-    DeleteAgentResponse, DumpPart, EnvelopeKind, ErrorCode, ExitCause, Kind, Lifecycle,
-    RemovalReason, Rename, SendInputResponse, Stop, ctl_frame, inventory_event, session_event,
+    DumpPart, EnvelopeKind, ErrorCode, ExitCause, Kind, Lifecycle, RemovalReason, Rename,
+    SendInputResponse, Stop, ctl_frame, inventory_event, session_event,
 };
 
 use crate::fanout::Fanout;
@@ -233,17 +233,10 @@ pub enum RegistryError {
     HostName(#[from] crate::forward::HostNameError),
     #[error(transparent)]
     Forwarded(#[from] crate::forward::ForwardError),
-    /// A delete refused before it touched anything: part of the family is
-    /// on a host it cannot reach, and deleting the rest would leave that
-    /// part running with no parent.
-    #[error("nothing was deleted: {agent} is part of this family, and {why}")]
-    FamilyUnreachable {
-        /// The descendant out of reach, by name.
-        agent: String,
-        why: crate::forward::ForwardError,
-    },
-    #[error("agent {0} is stopping and starts no more agents")]
-    ParentStopping(AgentId),
+    /// A create whose parent this host already sees as exited or deleted:
+    /// the child would only be stopped again by the family rule.
+    #[error("agent {0} has ended and starts no more agents")]
+    ParentEnded(AgentId),
     #[error("agent {0} did not start within the start deadline")]
     StartTimeout(AgentId),
     #[error("agent {0} did not stop within the stop deadline")]
@@ -323,7 +316,7 @@ impl RegistryError {
                 ErrorCode::InvalidArgument
             }
             Self::OtherHost => ErrorCode::Unimplemented,
-            Self::KindNotRun { .. } | Self::ParentStopping(_) => ErrorCode::FailedPrecondition,
+            Self::KindNotRun { .. } | Self::ParentEnded(_) => ErrorCode::FailedPrecondition,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
                 git_facts::WorktreeError::BranchExists(_)
@@ -336,7 +329,6 @@ impl RegistryError {
             Self::Store(_) | Self::Io(_) => ErrorCode::Internal,
             Self::HostName(error) => return error.to_wire(),
             Self::Forwarded(error) => return error.to_wire(),
-            Self::FamilyUnreachable { why, .. } => why.code(),
         };
         crate::grpc::wire_error(code, self.to_string())
     }
@@ -416,8 +408,6 @@ pub struct ProfileRuntime {
     /// One operation at a time per agent: spawn, resume, stop and delete
     /// each finish before the next starts.
     operations: Mutex<HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>>,
-    /// Each parent's barrier between its stop and its children's creation.
-    births: Mutex<HashMap<AgentId, Arc<Births>>>,
     pub(crate) retention: watch::Sender<Retention>,
     pub(crate) reports: PathBuf,
     pub(crate) daemon_log: Option<PathBuf>,
@@ -454,92 +444,15 @@ enum Stopping {
     Kill,
 }
 
-/// The barrier between an agent's stop (or delete) and the creation of
-/// its children. A stop lists the children it cascades to; a child whose
-/// row were written after that listing would escape it and keep running.
-/// So a creation for a parent holds `creating` shared from its check to
-/// its child's start, and a stop marks the parent `stopping` and then
-/// takes `creating` alone once before it lists: every creation already
-/// past its check has its child listed, and every later one sees the mark
-/// and is refused.
-#[derive(Default)]
-struct Births {
-    creating: Arc<tokio::sync::RwLock<()>>,
-    /// Stops and deletes of the parent under way.
-    stopping: std::sync::atomic::AtomicUsize,
-    /// Children made on other hosts at this daemon's asking, which this
-    /// host's store may not list yet, or no longer lists once their host
-    /// is unlinked.
-    forwarded: Mutex<Vec<ForwardedChild>>,
-}
-
-/// A child made on another host at this daemon's asking: its key, and its
-/// name and its host's as they were when it was made, to name it by when
-/// its host can no longer be reached.
-#[derive(Clone)]
-struct ForwardedChild {
-    key: AgentKey,
-    name: String,
-    host_name: String,
-}
-
-/// A child of an agent being deleted: as its parent's host lists it, or
-/// known only from having been made elsewhere at this daemon's asking.
-enum Child {
-    Listed(Box<AgentRow>),
-    Forwarded(ForwardedChild),
-}
-
-impl Child {
-    fn key(&self) -> &AgentKey {
-        match self {
-            Child::Listed(row) => &row.agent,
-            Child::Forwarded(child) => &child.key,
-        }
-    }
-
-    /// As the delete's answer lists it.
-    fn wire(&self) -> Agent {
-        match self {
-            Child::Listed(row) => to_wire(row),
-            Child::Forwarded(child) => Agent {
-                agent_id: child.key.agent.clone(),
-                host_id: child.key.host.clone(),
-                name: child.name.clone(),
-                ..Default::default()
-            },
-        }
-    }
-
-    /// The child by name.
-    fn words(&self) -> String {
-        match self {
-            Child::Listed(row) => row.name.clone(),
-            Child::Forwarded(child) => child.name.clone(),
-        }
-    }
-
-    /// Why the child's host cannot be reached, naming the host as it was
-    /// known when the child was made: a host since unlinked has no name
-    /// here any more.
-    fn unreachable(&self, why: crate::forward::ForwardError) -> RegistryError {
-        use crate::forward::ForwardError;
-        let why = match (self, why) {
-            (Child::Forwarded(child), ForwardError::NotSent { host, .. })
-                if !child.host_name.is_empty() =>
-            {
-                ForwardError::NotSent {
-                    host,
-                    name: child.host_name.clone(),
-                }
-            }
-            (_, why) => why,
-        };
-        RegistryError::FamilyUnreachable {
-            agent: self.words(),
-            why,
-        }
-    }
+/// What a parent's row, as this host holds it, says its children here must
+/// do. See [`ProfileRuntime::parent_changed`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ParentSays {
+    /// The parent exited, whatever the cause: its children stop.
+    Exited,
+    /// The parent is gone from its host for good: its children are
+    /// stopped and deleted.
+    Deleted,
 }
 
 /// An agent whose changes are not published while a delete removes it,
@@ -580,17 +493,6 @@ impl Drop for Muted<'_> {
             let store = me.store.lock().await;
             let _ = me.publish_row(&store, &key);
         });
-    }
-}
-
-/// A parent marked stopping, until this is dropped.
-struct BirthsClosed {
-    births: Arc<Births>,
-}
-
-impl Drop for BirthsClosed {
-    fn drop(&mut self) {
-        self.births.stopping.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -807,7 +709,6 @@ impl ProfileRuntime {
             store: tokio::sync::Mutex::new(store),
             agents: Mutex::new(HashMap::new()),
             operations: Mutex::new(HashMap::new()),
-            births: Mutex::new(HashMap::new()),
             retention: watch::Sender::new(Retention::default()),
             reports,
             daemon_log,
@@ -994,52 +895,6 @@ impl ProfileRuntime {
             .clone()
     }
 
-    fn births(&self, id: AgentId) -> Arc<Births> {
-        self.births.lock().unwrap().entry(id).or_default().clone()
-    }
-
-    /// Forgets a far child its parent's host started, once the child is
-    /// gone for good: deleted, from this host or its own, or no longer
-    /// listed by its host. A parent's delete would otherwise look for it
-    /// and refuse while its host is out of reach. Its host being untrusted
-    /// is not that: the child lives on, and the delete must still find it.
-    pub(crate) fn forget_forwarded(&self, child: &AgentKey) {
-        for births in self.births.lock().unwrap().values() {
-            births
-                .forwarded
-                .lock()
-                .unwrap()
-                .retain(|forwarded| &forwarded.key != child);
-        }
-    }
-
-    /// Marks `id` as stopping and waits out every creation of a child of
-    /// its already under way; until the mark is dropped, a creation for it
-    /// is refused. See [`Births`].
-    async fn close_births(&self, id: AgentId) -> BirthsClosed {
-        let births = self.births(id);
-        births.stopping.fetch_add(1, Ordering::SeqCst);
-        // The guard before the wait: a stop dropped while it waits lifts
-        // its mark, or the parent would refuse every spawn until restart.
-        let closed = BirthsClosed { births };
-        drop(closed.births.creating.write().await);
-        closed
-    }
-
-    /// Lets a creation for `parent` go on, held until its child has
-    /// started, or refuses it when the parent is stopping. See [`Births`].
-    async fn open_birth(
-        &self,
-        parent: AgentId,
-    ) -> Result<tokio::sync::OwnedRwLockReadGuard<()>, RegistryError> {
-        let births = self.births(parent);
-        let open = births.creating.clone().read_owned().await;
-        if births.stopping.load(Ordering::SeqCst) > 0 {
-            return Err(RegistryError::ParentStopping(parent));
-        }
-        Ok(open)
-    }
-
     // --- spawn and resume ------------------------------------------------
 
     /// Creates an agent: its row, its directory and `spec.1`, its tools
@@ -1055,10 +910,6 @@ impl ProfileRuntime {
             0 => Uuid::new_v4(),
             16 => Uuid::from_slice(&request.agent_id).expect("sixteen bytes"),
             n => return Err(RegistryError::BadId(n)),
-        };
-        let _birth = match caller {
-            Some(parent) => Some(self.open_birth(parent).await?),
-            None => None,
         };
         if self.target_host(&request)? != self.host {
             return Err(RegistryError::OtherHost);
@@ -1136,6 +987,16 @@ impl ProfileRuntime {
             if store.agent(&key)?.is_some() {
                 return Err(RegistryError::AlreadyExists(id));
             }
+            // Checked under the same lock as the row is written: a parent
+            // that ends after this sees the child and stops it, so none
+            // slips between the check and the family rule.
+            if let Some(parent) = &parent
+                && self.parent_ended(&store, parent)?.is_some()
+            {
+                return Err(RegistryError::ParentEnded(
+                    Uuid::from_slice(&parent.agent_id).unwrap_or_default(),
+                ));
+            }
             // Chosen under the store lock, so two creates at once cannot
             // both take the same free name. Names are unique on this host,
             // counting exited agents, which stay addressable by name: a
@@ -1166,7 +1027,15 @@ impl ProfileRuntime {
             let made = self.worktrees.make(Path::new(&chosen), &name).await?;
             request.cwd = made.path.to_string_lossy().into_owned();
             let mut store = self.store.lock().await;
-            self.put_row(&mut store, &row_for(&name, &request.cwd))?;
+            let row = row_for(&name, &request.cwd);
+            self.put_row(&mut store, &row)?;
+            // The worktree took a while; a parent that ended meanwhile is
+            // followed now rather than leave the worktree behind.
+            if let Some(parent) = &parent
+                && let Some(says) = self.parent_ended(&store, parent)?
+            {
+                self.follow(id, says);
+            }
             Some(made.base_branch)
         } else {
             None
@@ -1289,10 +1158,6 @@ impl ProfileRuntime {
         {
             self.runs_kind(capabilities, &entry.name, kind)?;
         }
-        let birth = match caller {
-            Some(parent) => Some((parent, self.open_birth(parent).await?)),
-            None => None,
-        };
         let mut request = request;
         if let Some(caller) = caller {
             request.parent = Some(AgentRef {
@@ -1304,26 +1169,11 @@ impl ProfileRuntime {
         if request.agent_id.is_empty() {
             request.agent_id = Uuid::new_v4().as_bytes().to_vec();
         }
-        let child = self
+        Ok(self
             .on_peer(host, |mut client| async move {
                 client.create_agent(request).await
             })
-            .await?;
-        // The child's row reaches this host's store when its host's
-        // inventory does; until then a stop of the parent finds it here.
-        if let Some((parent, _open)) = birth {
-            let host_name = self.host_name(host);
-            self.births(parent)
-                .forwarded
-                .lock()
-                .unwrap()
-                .push(ForwardedChild {
-                    key: AgentKey::new(child.host_id.clone(), child.agent_id.clone()),
-                    name: child.name.clone(),
-                    host_name,
-                });
-        }
-        Ok(child)
+            .await?)
     }
 
     /// Refuses a kind `capabilities` do not list, in words naming `host`.
@@ -1557,22 +1407,18 @@ impl ProfileRuntime {
     /// provider's own way and the agent exits, resumable. A stop that
     /// overruns the stop deadline kills. An exited agent is left as it is.
     ///
-    /// Stopping an agent stops its whole family, as deleting it does: each
-    /// child is stopped, on this host or forwarded to its own, which stops
-    /// that child's children in turn. The children's stops run beside this
-    /// one and nothing waits for them, so a child whose host cannot be
-    /// reached, or whose stop fails, is left as it is.
+    /// The stop acts on this agent alone. Its children, on this host or
+    /// another, follow by the family rule once their host sees it exited
+    /// (see [`Self::parent_changed`]).
     pub async fn stop(&self, id: AgentId) -> Result<Agent, RegistryError> {
-        let _closed = self.close_births(id).await;
-        self.stop_children(id).await;
         let operation = self.operation(id);
         let _operation = operation.lock().await;
         self.stop_locked(id).await
     }
 
     /// Kills a live agent's process group at once, writing nothing more,
-    /// as the stop deadline does; its children are left as they are. For
-    /// tearing a runtime down: no client call reaches it.
+    /// as the stop deadline does. For tearing a runtime down: no client
+    /// call reaches it.
     pub async fn kill_agent(&self, id: AgentId) -> Result<Agent, RegistryError> {
         let operation = self.operation(id);
         let _operation = operation.lock().await;
@@ -1581,72 +1427,6 @@ impl ProfileRuntime {
         };
         self.kill_locked(id, &handle).await?;
         self.agent(id).await
-    }
-
-    /// [`Self::stop`] behind a named future type, so a stop can start its
-    /// children's stops on tasks of their own.
-    fn stop_boxed(
-        self: Arc<Self>,
-        id: AgentId,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Agent, RegistryError>> + Send>> {
-        Box::pin(async move { self.stop(id).await })
-    }
-
-    /// Stops each of the agent's children, as its host's store lists them
-    /// and as made on other hosts at this daemon's asking.
-    async fn stop_children(&self, id: AgentId) {
-        let key = self.key(id);
-        let listed = match self.store.lock().await.agents_of_parent(&key) {
-            Ok(children) => children,
-            Err(error) => {
-                tracing::warn!(agent = %id, %error, "a stop could not list the agent's children");
-                return;
-            }
-        };
-        let mut children: Vec<AgentKey> = listed.into_iter().map(|row| row.agent).collect();
-        {
-            // One the store lists now is stopped from the listing. Its
-            // forwarded identity stays: the listing can lose it (the hosts
-            // unlink) while the child lives on, and a delete must still
-            // find it.
-            let births = self.births(id);
-            let forwarded = births.forwarded.lock().unwrap();
-            let unlisted: Vec<AgentKey> = forwarded
-                .iter()
-                .map(|child| child.key.clone())
-                .filter(|key| !children.contains(key))
-                .collect();
-            children.extend(unlisted);
-        }
-        for child in children {
-            let me = self.me.clone();
-            tokio::spawn(async move {
-                let Some(runtime) = me.upgrade() else { return };
-                let Ok(child_id) = Uuid::from_slice(&child.agent) else {
-                    return;
-                };
-                if child.host == runtime.host.as_bytes() {
-                    if let Err(error) = runtime.clone().stop_boxed(child_id).await {
-                        tracing::warn!(child = %child_id, %error, "a cascaded stop failed");
-                    }
-                    return;
-                }
-                let Ok(host) = Uuid::from_slice(&child.host) else {
-                    return;
-                };
-                let request = wire::StopAgentRequest {
-                    agent_id: child.agent.clone(),
-                };
-                if let Err(error) = runtime
-                    .on_peer(host, |mut client| async move {
-                        client.stop_agent(request).await
-                    })
-                    .await
-                {
-                    tracing::warn!(%host, %error, "a cascaded stop could not reach the child's host");
-                }
-            });
-        }
     }
 
     async fn stop_locked(&self, id: AgentId) -> Result<Agent, RegistryError> {
@@ -1703,69 +1483,11 @@ impl ProfileRuntime {
         Ok(())
     }
 
-    /// Deletes an agent: stops its process if live, deletes its children
-    /// on this host the same way and forwards the delete of each child on
-    /// another host to that host, then removes its rows and its directory.
-    ///
-    /// A family part of which is on a host that cannot be reached is not
-    /// deleted at all: the delete fails at once, naming the descendant and
-    /// its host, rather than leave that part running with no parent. A far
-    /// child is known from this host's listing of it and, as a stop knows
-    /// it, from this daemon having made it, which outlasts the listing when
-    /// the hosts are unlinked.
-    pub async fn delete(&self, id: AgentId) -> Result<DeleteAgentResponse, RegistryError> {
-        let mut response = DeleteAgentResponse::default();
-        self.delete_into(id, &mut response).await?;
-        Ok(response)
-    }
-
-    /// The agent's children: its host's listing of them, and the ones made
-    /// on other hosts at this daemon's asking that the listing lacks, as
-    /// rows where the listing has them.
-    async fn children_of(&self, id: AgentId) -> Result<Vec<Child>, RegistryError> {
-        let key = self.key(id);
-        let listed = self.store.lock().await.agents_of_parent(&key)?;
-        let mut children: Vec<Child> = listed
-            .into_iter()
-            .map(|row| Child::Listed(Box::new(row)))
-            .collect();
-        let forwarded = self.births(id).forwarded.lock().unwrap().clone();
-        for child in forwarded {
-            if !children.iter().any(|known| known.key() == &child.key) {
-                children.push(Child::Forwarded(child));
-            }
-        }
-        Ok(children)
-    }
-
-    /// Fails with the first descendant of `id` whose host cannot be
-    /// reached: its children on other hosts must be reachable, and its
-    /// children here are asked the same of theirs. A far child's own
-    /// descendants are its host's to check when the delete reaches it.
-    async fn family_reachable(&self, id: AgentId) -> Result<(), RegistryError> {
-        for child in self.children_of(id).await? {
-            let key = child.key();
-            if key.host == self.host.as_bytes() {
-                if let Ok(child_id) = Uuid::from_slice(&key.agent) {
-                    Box::pin(self.family_reachable(child_id)).await?;
-                }
-                continue;
-            }
-            let Ok(host) = Uuid::from_slice(&key.host) else {
-                continue;
-            };
-            if let Err(why) = self.reachable(host).await {
-                return Err(child.unreachable(why));
-            }
-        }
-        Ok(())
-    }
-
-    async fn delete_into(
-        &self,
-        id: AgentId,
-        response: &mut DeleteAgentResponse,
-    ) -> Result<(), RegistryError> {
+    /// Deletes an agent: stops its process if live, then removes its rows
+    /// and its directory. Its children, on this host or another, follow by
+    /// the family rule once their host sees it gone (see
+    /// [`Self::parent_changed`]).
+    pub async fn delete(&self, id: AgentId) -> Result<(), RegistryError> {
         let operation = self.operation(id);
         let _operation = operation.lock().await;
         let key = self.key(id);
@@ -1776,9 +1498,8 @@ impl ProfileRuntime {
         // would offer to resume an agent about to be removed. Nothing about
         // the agent is published until its removal is; a delete that fails
         // publishes the row as it then stands.
-        self.family_reachable(id).await?;
         let mut muted = Muted::new(self, key.clone());
-        let deleted = self.delete_muted(id, key.clone(), response).await;
+        let deleted = self.delete_muted(id, key.clone()).await;
         muted.settled = true;
         drop(muted);
         if deleted.is_err() {
@@ -1788,39 +1509,8 @@ impl ProfileRuntime {
         deleted
     }
 
-    async fn delete_muted(
-        &self,
-        id: AgentId,
-        key: AgentKey,
-        response: &mut DeleteAgentResponse,
-    ) -> Result<(), RegistryError> {
-        let _closed = self.close_births(id).await;
+    async fn delete_muted(&self, id: AgentId, key: AgentKey) -> Result<(), RegistryError> {
         self.stop_locked(id).await?;
-
-        // The far children first: one that fails (its host went away
-        // since the check, or its own family is out of reach) fails the
-        // delete with this agent and its children here still in place.
-        let (far, here): (Vec<Child>, Vec<Child>) = self
-            .children_of(id)
-            .await?
-            .into_iter()
-            .partition(|child| child.key().host != self.host.as_bytes());
-        for child in far {
-            self.delete_remote_child(child.key().clone(), child.wire(), response)
-                .await
-                .map_err(|why| match why {
-                    crate::forward::ForwardError::Remote(_) => RegistryError::Forwarded(why),
-                    why => child.unreachable(why),
-                })?;
-        }
-        for child in here {
-            let Ok(child_id) = Uuid::from_slice(&child.key().agent) else {
-                continue;
-            };
-            Box::pin(self.delete_into(child_id, response)).await?;
-            response.removed_children.push(child.wire());
-        }
-
         // Rows first: a crash between the two leaves a directory with no
         // row, which the next sweep removes.
         {
@@ -1835,6 +1525,7 @@ impl ProfileRuntime {
                     reason: RemovalReason::Deleted as i32,
                 })));
             self.recount_from(&mut store, parent)?;
+            self.parent_changed(&store, &key, ParentSays::Deleted)?;
         }
         match std::fs::remove_dir_all(self.agent_dir(id)) {
             Ok(()) => {}
@@ -1842,9 +1533,81 @@ impl ProfileRuntime {
             Err(error) => return Err(error.into()),
         }
         self.operations.lock().unwrap().remove(&id);
-        self.births.lock().unwrap().remove(&id);
         self.forget_draft(id.as_bytes());
         Ok(())
+    }
+
+    // --- the family rule -------------------------------------------------
+
+    /// Applies the family rule to this host's own children of `parent`,
+    /// whose row has just changed as `says`. A host enforces the rule only
+    /// for its own agents and only on what the parent's row says: exited
+    /// stops each live child, deleted deletes each child (stopping it
+    /// first). A parent that is merely out of reach says neither, so its
+    /// children carry on and their reports wait in the outbox. Each act
+    /// runs on a task of its own, once the caller lets go of the store.
+    pub(crate) fn parent_changed(
+        &self,
+        store: &Sqlite,
+        parent: &AgentKey,
+        says: ParentSays,
+    ) -> Result<(), StoreError> {
+        for child in store.agents_of_parent(parent)? {
+            if child.agent.host != self.host.as_bytes()
+                || (says == ParentSays::Exited && child.lifecycle != Lifecycle::Live as i32)
+            {
+                continue;
+            }
+            if let Ok(id) = Uuid::from_slice(&child.agent.agent) {
+                self.follow(id, says);
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether `parent` has already ended as this host sees it: exited by
+    /// its row, or deleted. Another host's row counts only once that host's
+    /// listing has caught up, since a row kept from before may be stale;
+    /// and a missing row means deleted only for this host's own agents,
+    /// since another host's row may simply not have arrived yet.
+    fn parent_ended(
+        &self,
+        store: &Sqlite,
+        parent: &AgentRef,
+    ) -> Result<Option<ParentSays>, StoreError> {
+        let key = AgentKey::new(parent.host_id.clone(), parent.agent_id.clone());
+        let own = key.host == self.host.as_bytes();
+        if !own && !Uuid::from_slice(&key.host).is_ok_and(|host| self.host_ready(host)) {
+            return Ok(None);
+        }
+        Ok(match store.agent(&key)? {
+            Some(row) if row.lifecycle == Lifecycle::Exited as i32 => Some(ParentSays::Exited),
+            None if own => Some(ParentSays::Deleted),
+            _ => None,
+        })
+    }
+
+    /// Stops or deletes one of this host's own agents because its parent's
+    /// row said so.
+    pub(crate) fn follow(&self, child: AgentId, says: ParentSays) {
+        let me = self.me.clone();
+        let mut read = self.journals_read.subscribe();
+        tokio::spawn(async move {
+            // Not before the start's sweep has adopted every running agent:
+            // a stop then would find no process to end.
+            let _ = read.wait_for(|read| *read).await;
+            let Some(runtime) = me.upgrade() else { return };
+            let done = match says {
+                ParentSays::Exited => runtime.stop(child).await.map(drop),
+                ParentSays::Deleted => runtime.delete(child).await,
+            };
+            match done {
+                Ok(()) | Err(RegistryError::NotFound(_)) => {}
+                Err(error) => {
+                    tracing::warn!(%child, %error, ?says, "following its parent failed");
+                }
+            }
+        });
     }
 
     /// Renames an agent. The row takes the name now and the next
@@ -2537,6 +2300,7 @@ impl ProfileRuntime {
             detail: row.exit_detail.clone(),
         };
         self.put_row(store, &row)?;
+        self.parent_changed(store, &row.agent, ParentSays::Exited)?;
         store.remove_notifications(&row.agent.agent)?;
         let Some(parent) = &row.parent else {
             return Ok(());

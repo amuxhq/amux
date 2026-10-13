@@ -1746,10 +1746,7 @@ impl client::Client for DiffHost {
     ) -> Result<wire::Agent, client::RpcError> {
         unimplemented!()
     }
-    async fn delete_agent(
-        &self,
-        _: wire::DeleteAgentRequest,
-    ) -> Result<wire::DeleteAgentResponse, client::RpcError> {
+    async fn delete_agent(&self, _: wire::DeleteAgentRequest) -> Result<(), client::RpcError> {
         unimplemented!()
     }
     async fn send_message(

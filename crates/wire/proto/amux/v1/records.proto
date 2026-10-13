@@ -199,7 +199,7 @@ enum ExitCause {
   EXIT_CAUSE_UNSPECIFIED = 0;
   // A child's turn ended with nothing queued: the one-shot rule.
   EXIT_CAUSE_FINISHED = 1;
-  // Stopped by a person, a parent's stop or a cascade: the turn was
+  // Stopped by a person, a parent's stop or its parent exiting: the turn was
   // cancelled the provider's own way, then the agent exited.
   EXIT_CAUSE_STOPPED = 2;
   EXIT_CAUSE_KILLED = 3;

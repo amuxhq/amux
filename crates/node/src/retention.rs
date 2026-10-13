@@ -18,7 +18,7 @@ use uuid::Uuid;
 use wire::{AgentRemoved, RemovalReason, inventory_event};
 
 use crate::install::REPLICAS;
-use crate::runtime::{ProfileRuntime, RegistryError};
+use crate::runtime::{ParentSays, ProfileRuntime, RegistryError};
 use crate::serve::inventory;
 
 /// The retention sweeps run so far.
@@ -56,6 +56,8 @@ impl ProfileRuntime {
                             reason: RemovalReason::Retention as i32,
                         },
                     )));
+                // Gone for good, as a delete is: its children here follow.
+                self.parent_changed(&store, key, ParentSays::Deleted)?;
             }
             sweep
         };

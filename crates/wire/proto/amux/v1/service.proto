@@ -200,8 +200,9 @@ service ClientService {
   rpc StopAgent(StopAgentRequest) returns (Empty);
   // Spawn the directory again.
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
-  // Cascades to children.
-  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
+  // Removes the agent for good, stopping it first when it is live. Its
+  // children, on any host, follow on their own hosts by the family rule.
+  rpc DeleteAgent(DeleteAgentRequest) returns (Empty);
   // Also called by the tool server with the agent's identity. The daemon
   // stamps the sender from the caller and never from the request.
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
@@ -243,7 +244,7 @@ service PeerService {
   rpc RenameAgent(RenameAgentRequest) returns (Agent);
   rpc StopAgent(StopAgentRequest) returns (Empty);
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);
-  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
+  rpc DeleteAgent(DeleteAgentRequest) returns (Empty);
   rpc SendMessage(Envelope) returns (SendMessageResponse);
   rpc PutBlob(PutBlobRequest) returns (BlobRef);
   rpc GetBlob(GetBlobRequest) returns (GetBlobResponse);
@@ -399,12 +400,6 @@ message ResumeAgentRequest {
 
 message DeleteAgentRequest {
   bytes agent_id = 1;
-}
-
-// A delete either removes the whole family or fails before removing any
-// of it, so the answer lists only what it removed.
-message DeleteAgentResponse {
-  repeated Agent removed_children = 1;
 }
 
 // A message to an agent. `id` is the caller's, so the recipient's daemon

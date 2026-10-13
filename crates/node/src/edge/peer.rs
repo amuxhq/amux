@@ -14,12 +14,11 @@ use tonic::{Request, Response, Status};
 use wire::client_service_server::ClientService;
 use wire::peer_service_server::PeerService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, DiffRequest,
-    DumpPart, DumpRequest, Empty, Envelope, FetchRequest, FetchResponse, GetBlobRequest,
-    GetBlobResponse, GetRequest, InventoryEvent, Item, ListRepositoriesRequest,
-    ListRepositoriesResponse, PeerSubscribeRequest, PutBlobRequest, RenameAgentRequest,
-    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageResponse, SessionEvent,
-    StopAgentRequest, peer_subscribe_request,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DiffRequest, DumpPart, DumpRequest,
+    Empty, Envelope, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse, GetRequest,
+    InventoryEvent, Item, ListRepositoriesRequest, ListRepositoriesResponse, PeerSubscribeRequest,
+    PutBlobRequest, RenameAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
+    SendMessageResponse, SessionEvent, StopAgentRequest, peer_subscribe_request,
 };
 
 use crate::HostId;
@@ -220,7 +219,7 @@ impl PeerService for PeerApi {
     async fn delete_agent(
         &self,
         request: Request<DeleteAgentRequest>,
-    ) -> Result<Response<DeleteAgentResponse>, Status> {
+    ) -> Result<Response<Empty>, Status> {
         caller(&request)?;
         self.own(&request.get_ref().agent_id).await?;
         self.client.delete_agent(request).await

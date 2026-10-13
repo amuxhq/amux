@@ -70,8 +70,12 @@ you are testing still behaves otherwise, that difference is a finding.
   on an exited agent: the phone's menu says Stop Agent for a live one, and the
   terminal's `[x]` stops a live agent and deletes an exited one, each with a
   confirmation. `amux delete` on a live agent stops it first.
-- Stopping a parent stops all its descendants, on every host it can reach. A
-  resumed parent gets no extra report about them.
+- Stopping a parent stops all its descendants, and deleting it deletes them,
+  on every host, including one that is away at the time: that host stops or
+  deletes them once it is back and has caught up. The stop or delete itself
+  is never refused because part of the family is out of reach, and its
+  answer speaks only for the agent named. A crashed parent's children are
+  stopped too. A resumed parent gets no extra report about them.
 - An agent's own `stop` tool really stops the agent it names. A message to a
   stopped child resumes it.
 - An agent whose only remaining work is in the background reads as idle. The
@@ -81,8 +85,11 @@ you are testing still behaves otherwise, that difference is a finding.
 
 - A child agent that has started a child of its own stays until that child
   has finished and reported, then reports up as usual.
-- A child whose parent is gone finishes its task and exits. Its report is
-  lost.
+- A child whose parent's host is away, or still catching up, carries on: it
+  finishes its task and its report waits on its host until the parent's
+  host is back.
+- A child whose parent's host has been unpaired carries on and finishes its
+  task; its report is dropped, since it can never be delivered.
 
 ## Names
 

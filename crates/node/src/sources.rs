@@ -50,7 +50,7 @@ use wire::{
 
 use crate::HostId;
 use crate::routing::LiveRoute;
-use crate::runtime::ProfileRuntime;
+use crate::runtime::{ParentSays, ProfileRuntime};
 use crate::serve::{event, inventory};
 
 /// How often a follower looks at whether its host has a route, and at
@@ -330,7 +330,9 @@ impl ProfileRuntime {
     }
 
     /// Drops every replica of a host the profile no longer trusts: its
-    /// entry leaves the host set, and its agents go with it.
+    /// entry leaves the host set, and its agents go with it. This host's
+    /// own agents whose parent lives there carry on; the reports they owe
+    /// it go with the outbox's next pass.
     async fn drop_untrusted_replicas(&self) {
         let Some(edge) = self.edge() else { return };
         let trusted: HashSet<Vec<u8>> = edge
@@ -350,6 +352,8 @@ impl ProfileRuntime {
                 tracing::warn!(%error, "dropping an untrusted host's replica failed");
             }
         }
+        // The outbox drops what is owed to agents there.
+        self.deliveries_due.notify_one();
     }
 
     /// The host's session ended: no source of it may absorb anything more,
@@ -407,10 +411,26 @@ impl ProfileRuntime {
     /// when the inventory catches up, and an agent it no longer lists is
     /// dropped then, source and all. `resume` is the session of a stream
     /// that lagged: its sources stay current across the fresh listing.
-    async fn begin_following(&self, host: HostId, resume: Option<u64>) -> u64 {
+    ///
+    /// Also answers this host's own agents whose parent lives on `host`, as
+    /// they are now: the host's listing is asked for after them, so it can
+    /// judge their parents (see [`Self::inventory_caught_up`]).
+    async fn begin_following(&self, host: HostId, resume: Option<u64>) -> (u64, HashSet<AgentKey>) {
         let host_bytes = host.as_bytes().to_vec();
         let store = self.store.lock().await;
         let rows = store.agents().unwrap_or_default();
+        let own = self.host().as_bytes().to_vec();
+        let children = rows
+            .iter()
+            .filter(|row| {
+                row.agent.host == own
+                    && row
+                        .parent
+                        .as_ref()
+                        .is_some_and(|parent| parent.host == host_bytes)
+            })
+            .map(|row| row.agent.clone())
+            .collect();
         let mut sources = self.sources.lock().unwrap();
         let session = resume.unwrap_or_else(|| {
             sources.next_session += 1;
@@ -433,18 +453,27 @@ impl ProfileRuntime {
         }
         drop(sources);
         drop(store);
-        session
+        (session, children)
     }
 
     /// The host's inventory reached CaughtUp: record its generation, write
     /// what it lists and drop what it no longer does, all under one store
     /// lock, then mark the host ready.
+    ///
+    /// The listing is the host's whole fleet, so it also settles the family
+    /// rule for this host's own agents whose parent lives there, whatever
+    /// happened while the hosts were apart: a parent listed as exited stops
+    /// its children here, and one no longer listed deletes them. Only
+    /// `children`, the agents that existed before the listing was asked
+    /// for, are judged by it: a child made since may belong to a parent the
+    /// listing predates, and the live stream speaks for that parent.
     async fn inventory_caught_up(
         &self,
         host: HostId,
         session: u64,
         generation: Option<u64>,
         listed: Vec<Agent>,
+        children: &HashSet<AgentKey>,
     ) -> Result<u64, StoreError> {
         let host_bytes = host.as_bytes().to_vec();
         let mut store = self.store.lock().await;
@@ -475,9 +504,34 @@ impl ProfileRuntime {
         }
         for key in &unlisted {
             self.drop_replica(&mut store, key, RemovalReason::NoLongerListed)?;
+            // A parent held here and listed no more is gone for good, so
+            // every child here follows, however recently it was made.
+            self.parent_changed(&store, key, ParentSays::Deleted)?;
         }
         for agent in &listed {
             self.put_replica_row(&mut store, agent)?;
+        }
+        for child in children {
+            let Some(row) = store.agent(child)? else {
+                continue;
+            };
+            let Some(parent) = row.parent.as_ref() else {
+                continue;
+            };
+            let Ok(id) = Uuid::from_slice(&child.agent) else {
+                continue;
+            };
+            match listed.iter().find(|agent| agent.agent_id == parent.agent) {
+                None if !unlisted.contains(parent) => self.follow(id, ParentSays::Deleted),
+                None => {}
+                Some(parent)
+                    if parent.lifecycle == wire::Lifecycle::Exited as i32
+                        && row.lifecycle == wire::Lifecycle::Live as i32 =>
+                {
+                    self.follow(id, ParentSays::Exited)
+                }
+                Some(_) => {}
+            }
         }
         {
             let mut sources = self.sources.lock().unwrap();
@@ -488,6 +542,34 @@ impl ProfileRuntime {
         // Deliveries to a parent on that host may have waited for it.
         self.deliveries_due.notify_one();
         Ok(session)
+    }
+
+    /// A row the host's live stream says changed: written, and when it says
+    /// the agent has just exited, its children here follow. Only a change
+    /// to exited counts, not a row that already said so, so a child its
+    /// person resumed under an exited parent is not stopped again by every
+    /// later change to the parent's row (a recount, a rename).
+    fn replica_changed(&self, store: &mut store::Sqlite, agent: &Agent) -> Result<(), StoreError> {
+        let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
+        let exited = wire::Lifecycle::Exited as i32;
+        let was_exited = store
+            .agent(&key)?
+            .is_some_and(|was| was.lifecycle == exited && was.incarnation == agent.incarnation);
+        self.put_replica_row(store, agent)?;
+        if agent.lifecycle == exited && !was_exited {
+            self.parent_changed(store, &key, ParentSays::Exited)?;
+        }
+        Ok(())
+    }
+
+    /// An agent the host's live stream says is gone for good, deleted or
+    /// removed by its retention: its row goes, and its children here
+    /// follow, whether or not this host ever held its row.
+    fn replica_removed(&self, store: &mut store::Sqlite, key: &AgentKey) -> Result<(), StoreError> {
+        if store.agent(key)?.is_some() {
+            self.drop_replica(store, key, RemovalReason::NoLongerListed)?;
+        }
+        self.parent_changed(store, key, ParentSays::Deleted)
     }
 
     fn put_replica_row(&self, store: &mut store::Sqlite, agent: &Agent) -> Result<(), StoreError> {
@@ -540,7 +622,6 @@ impl ProfileRuntime {
         // removed by retention there; one whose host is untrusted is not.
         if reason == RemovalReason::NoLongerListed {
             self.forget_draft(&key.agent);
-            self.forget_forwarded(key);
         }
         self.fanout.close(key);
         self.fanout
@@ -991,7 +1072,7 @@ async fn follow_once(
     };
     // The sources open their channel while the inventory's opens, not
     // after it: over a relay each takes two round trips.
-    let session = match runtime.upgrade() {
+    let (session, children) = match runtime.upgrade() {
         Some(me) => me.begin_following(host, resume).await,
         None => return NOT_CAUGHT_UP,
     };
@@ -1052,7 +1133,13 @@ async fn follow_once(
             return NOT_CAUGHT_UP;
         };
         if let Err(error) = me
-            .inventory_caught_up(host, session, generation, listed.into_values().collect())
+            .inventory_caught_up(
+                host,
+                session,
+                generation,
+                listed.into_values().collect(),
+                &children,
+            )
             .await
         {
             tracing::warn!(%host, %error, "reconciling the host's inventory failed");
@@ -1080,21 +1167,14 @@ async fn follow_once(
             }
             Some(inventory_event::Of::Agent(agent)) => {
                 let mut store = me.store.lock().await;
-                me.put_replica_row(&mut store, &agent)
+                me.replica_changed(&mut store, &agent)
             }
             Some(inventory_event::Of::AgentRemoved(removed)) => {
                 let mut store = me.store.lock().await;
-                let key = AgentKey::new(removed.host_id, removed.agent_id);
-                match store.agent(&key) {
-                    Ok(Some(_)) => me.drop_replica(&mut store, &key, RemovalReason::NoLongerListed),
-                    // A child started from here that this host never
-                    // listed is gone all the same.
-                    Ok(None) => {
-                        me.forget_forwarded(&key);
-                        Ok(())
-                    }
-                    Err(error) => Err(error),
-                }
+                me.replica_removed(
+                    &mut store,
+                    &AgentKey::new(removed.host_id, removed.agent_id),
+                )
             }
             // What it missed is in the fresh listing, which reconciles
             // the rows at its CaughtUp.

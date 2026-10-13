@@ -389,17 +389,13 @@ pub async fn stop(client: &mut Client, reference: &str) -> Result<()> {
 
 pub async fn delete(client: &mut Client, reference: &str) -> Result<()> {
     let agent = resolve(client, reference).await?;
-    let response = client
+    client
         .delete_agent(DeleteAgentRequest {
             agent_id: agent.agent_id.clone(),
         })
         .await
-        .map_err(crate::plain)?
-        .into_inner();
+        .map_err(crate::plain)?;
     println!("Deleted {}.", agent.name);
-    for child in &response.removed_children {
-        println!("Deleted its child {}.", child.name);
-    }
     Ok(())
 }
 

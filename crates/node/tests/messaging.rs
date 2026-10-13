@@ -201,8 +201,10 @@ async fn send_input_returns_the_interpreters_verdict_or_answers_for_an_exited_ag
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_sends_input_only_to_its_own_children() {
     let install = Install::new();
-    let caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
+    let mut caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
     caller.register_offline(&install);
+    // Live: an exited parent's child is stopped by the family rule.
+    caller.go_live();
     let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
     child.parent = Some(caller.key(&install));
     child.register_offline(&install);

@@ -806,7 +806,7 @@ pub enum ExitCause {
     Unspecified = 0,
     /// A child's turn ended with nothing queued: the one-shot rule.
     Finished = 1,
-    /// Stopped by a person, a parent's stop or a cascade: the turn was
+    /// Stopped by a person, a parent's stop or its parent exiting: the turn was
     /// cancelled the provider's own way, then the agent exited.
     Stopped = 2,
     Killed = 3,
@@ -5962,23 +5962,6 @@ impl ::prost::Name for DeleteAgentRequest {
         "/amux.v1.DeleteAgentRequest".into()
     }
 }
-/// A delete either removes the whole family or fails before removing any
-/// of it, so the answer lists only what it removed.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteAgentResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub removed_children: ::prost::alloc::vec::Vec<Agent>,
-}
-impl ::prost::Name for DeleteAgentResponse {
-    const NAME: &'static str = "DeleteAgentResponse";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.DeleteAgentResponse".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.DeleteAgentResponse".into()
-    }
-}
 /// A message to an agent. `id` is the caller's, so the recipient's daemon
 /// can dedupe a resend against the recipient's items; the tool server mints
 /// one per send. Who it is from is the caller: a person on a client socket,
@@ -6979,14 +6962,12 @@ pub mod client_service_client {
                 .insert(GrpcMethod::new("amux.v1.ClientService", "ResumeAgent"));
             self.inner.unary(req, path, codec).await
         }
-        /// Cascades to children.
+        /// Removes the agent for good, stopping it first when it is live. Its
+        /// children, on any host, follow on their own hosts by the family rule.
         pub async fn delete_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteAgentRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteAgentResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -7289,14 +7270,12 @@ pub mod client_service_server {
             &self,
             request: tonic::Request<super::ResumeAgentRequest>,
         ) -> std::result::Result<tonic::Response<super::Agent>, tonic::Status>;
-        /// Cascades to children.
+        /// Removes the agent for good, stopping it first when it is live. Its
+        /// children, on any host, follow on their own hosts by the family rule.
         async fn delete_agent(
             &self,
             request: tonic::Request<super::DeleteAgentRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteAgentResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         /// Also called by the tool server with the agent's identity. The daemon
         /// stamps the sender from the caller and never from the request.
         async fn send_message(
@@ -7884,7 +7863,7 @@ pub mod client_service_server {
                         T: ClientService,
                     > tonic::server::UnaryService<super::DeleteAgentRequest>
                     for DeleteAgentSvc<T> {
-                        type Response = super::DeleteAgentResponse;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8653,10 +8632,7 @@ pub mod peer_service_client {
         pub async fn delete_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteAgentRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteAgentResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -8900,10 +8876,7 @@ pub mod peer_service_server {
         async fn delete_agent(
             &self,
             request: tonic::Request<super::DeleteAgentRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteAgentResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
         async fn send_message(
             &self,
             request: tonic::Request<super::Envelope>,
@@ -9436,7 +9409,7 @@ pub mod peer_service_server {
                         T: PeerService,
                     > tonic::server::UnaryService<super::DeleteAgentRequest>
                     for DeleteAgentSvc<T> {
-                        type Response = super::DeleteAgentResponse;
+                        type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

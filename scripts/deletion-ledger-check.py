@@ -595,6 +595,17 @@ ROWS = [
             r"RelayError::Forbidden",
             r"(entry|agent|removed)\.host_id == host_bytes",
         ],
+    ),    Row(
+        "pushed family stops and deletes",
+        "a parent's host sending stops and cascading deletes to its children on other hosts, the in-memory list of children it made elsewhere, the delete refused while part of the family is out of reach, the stop's barrier against children being created, and the delete answer listing removed children",
+        [
+            r"ForwardedChild|forget_forwarded",
+            r"delete_remote_child|stop_children|stop_boxed",
+            r"family_reachable|FamilyUnreachable",
+            r"ParentStopping|is stopping and starts no more agents",
+            r"close_births|open_birth|BirthsClosed",
+            r"DeleteAgentResponse|removed_children|delete_family",
+        ],
     ),
 ]
 

@@ -31,8 +31,8 @@ use wire::client_service_server::ClientService as _;
 use wire::profile_service_client::ProfileServiceClient;
 use wire::{
     AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Input, PromptInput,
-    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input, create_agent_request,
+    CreateAgentRequest, DeleteAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input,
+    claude_sdk_input, codex_input, create_agent_request,
 };
 
 use crate::binaries::Binaries;
@@ -1263,24 +1263,15 @@ impl Net {
         Ok((hash, catalogue))
     }
 
-    /// Deletes the agent on its own host.
+    /// Deletes the agent on its own host, as a person does there. Its
+    /// children follow on their own hosts by the family rule, after this
+    /// returns; the net forgets only this agent.
     pub async fn delete(&mut self, name: &str) -> Result<Ack, NetError> {
-        let answer = self.delete_family(name).await?;
-        Ok(self.ack(format!(
-            "{name} deleted with {} children",
-            answer.removed_children.len()
-        )))
-    }
-
-    /// Deletes the agent on its own host, as a person does there, and
-    /// answers what the cascade removed. The net
-    /// forgets every agent the cascade removed.
-    pub async fn delete_family(&mut self, name: &str) -> Result<DeleteAgentResponse, NetError> {
         let agent = self.agent(name)?.clone();
         let request = DeleteAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
         };
-        let answer = match self.process(&agent.host)?.cloned() {
+        match self.process(&agent.host)?.cloned() {
             Some(process) => {
                 process
                     .client()
@@ -1298,14 +1289,9 @@ impl Net {
                     .await
             }
         }
-        .map_err(|status| NetError::Refused(Box::new(status)))?
-        .into_inner();
+        .map_err(|status| NetError::Refused(Box::new(status)))?;
         self.agents.remove(name);
-        for child in &answer.removed_children {
-            self.agents
-                .retain(|_, known| known.id.as_bytes() != child.agent_id.as_slice());
-        }
-        Ok(answer)
+        Ok(self.ack(format!("{name} deleted")))
     }
 
     /// The client service a person reaches on `host`: the same calls a

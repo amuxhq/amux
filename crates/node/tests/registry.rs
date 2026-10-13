@@ -711,8 +711,12 @@ async fn resume_writes_the_next_spec_and_waits_for_a_dying_process() {
     daemon.shutdown().await.unwrap();
 }
 
+/// A delete stops the agent first and removes it; its children on this
+/// host follow by the family rule, stopped and deleted once its row is
+/// gone. A child on another host is that host's to follow: this host
+/// leaves its row alone.
 #[tokio::test(flavor = "multi_thread")]
-async fn delete_aborts_first_and_cascades_to_children() {
+async fn delete_aborts_first_and_its_children_here_follow() {
     let install = Install::new();
     let never = install.path("never");
     let daemon = install
@@ -742,7 +746,7 @@ async fn delete_aborts_first_and_cascades_to_children() {
             .await
             .unwrap(),
     );
-    // A child on another host: listed, but out of this daemon's reach.
+    // A child on another host, as a replica row.
     let remote = AgentKey::new(vec![7; 16], uuid::Uuid::new_v4().as_bytes().to_vec());
     {
         let mut row = AgentRow::new(remote.clone(), wire::Kind::Codex, "/");
@@ -764,38 +768,23 @@ async fn delete_aborts_first_and_cascades_to_children() {
         );
     }
 
-    // Deleting the family would leave the far child running with no
-    // parent: nothing is deleted, and the refusal names it.
-    let refused = runtime
-        .delete(parent)
-        .await
-        .expect_err("a family with a child out of reach is not deleted");
-    println!("delete refused: {refused}");
-    assert!(
-        matches!(refused, RegistryError::FamilyUnreachable { .. })
-            && refused.to_wire().code == wire::ErrorCode::Unreachable as i32,
-        "{refused:?}"
-    );
-    for id in [parent, child] {
-        assert!(install.agent_dir(id).exists(), "nothing is removed");
-        assert_eq!(
-            runtime.agent(id).await.unwrap().lifecycle,
-            Lifecycle::Live as i32,
-            "nothing is stopped"
-        );
-    }
-    runtime.store().await.delete_agent(&remote).unwrap();
-
-    let response = runtime.delete(parent).await.expect("the delete completes");
-    println!("delete response: {response:#?}");
-    assert_eq!(
-        response
-            .removed_children
-            .iter()
-            .map(|agent| agent.agent_id.clone())
-            .collect::<Vec<_>>(),
-        vec![child.as_bytes().to_vec()]
-    );
+    runtime.delete(parent).await.expect("the delete completes");
+    // Its draft is the last thing a delete lets go of.
+    until("the child to follow its parent", || {
+        let runtime = &runtime;
+        async move {
+            match runtime.agent(child).await {
+                Err(RegistryError::NotFound(_))
+                    if runtime.draft(child.as_bytes()).text.is_empty() =>
+                {
+                    Ok(())
+                }
+                other => Err(format!("the child is {other:?}")),
+            }
+        }
+    })
+    .await
+    .unwrap();
     for id in [parent, child] {
         assert!(!install.agent_dir(id).exists(), "the directory is removed");
         assert!(matches!(
@@ -808,6 +797,10 @@ async fn delete_aborts_first_and_cascades_to_children() {
             "a deleted agent's draft is forgotten"
         );
     }
+    assert!(
+        runtime.store().await.agent(&remote).unwrap().is_some(),
+        "another host's child is its own host's to follow"
+    );
     assert_eq!(runtime.draft(bystander.as_bytes()).text, "unsent");
     assert_eq!(
         runtime.agent(bystander).await.unwrap().lifecycle,
@@ -829,14 +822,11 @@ async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> std::task:
         .await
 }
 
-/// A child its parent asks for while the parent is being stopped never
-/// outlives the stop. The stop lists the parent's children before it ends
-/// the parent, so a child whose row was written after that listing would
-/// escape the cascade and keep running. Holding the store puts the stop's
-/// listing first and the child's creation after it, on one thread, so the
-/// overlap happens every run: the creation is refused, and says why.
+/// A parent this host already sees as exited starts no more children: the
+/// create is refused and says why, rather than start a child the family
+/// rule would only stop again.
 #[tokio::test]
-async fn a_child_asked_for_while_its_parent_stops_is_refused() {
+async fn a_spawn_for_an_exited_parent_is_refused() {
     let install = Install::new();
     let never = install.path("never");
     let daemon = install
@@ -852,45 +842,22 @@ async fn a_child_asked_for_while_its_parent_stops_is_refused() {
     until("the turn to start", || working(&runtime, parent))
         .await
         .unwrap();
+    runtime.stop(parent).await.unwrap();
 
-    let spawned = {
-        let store = runtime.store().await;
-        let mut stop = std::pin::pin!(runtime.stop(parent));
-        assert!(
-            poll_once(&mut stop).await.is_pending(),
-            "the stop waits for the store to list the children"
-        );
-        let mut spawn = std::pin::pin!(runtime.spawn(
+    let refusal = runtime
+        .spawn(
             create(&install.work, "late-child", Some("hold")),
-            Some(parent)
-        ));
-        let early = poll_once(&mut spawn).await;
-        drop(store);
-        // Both go on together: the store passes to the stop first.
-        let (stopped, spawned) = tokio::join!(stop, async move {
-            match early {
-                std::task::Poll::Ready(spawned) => spawned,
-                std::task::Poll::Pending => spawn.await,
-            }
-        });
-        stopped.expect("the stop completes");
-        spawned
-    };
-
-    let refusal = match spawned {
-        Ok(child) => panic!(
-            "a child was made for a stopping parent and is {:?}",
-            runtime.agent(id_of(&child)).await.unwrap().lifecycle()
-        ),
-        Err(refusal) => refusal,
-    };
+            Some(parent),
+        )
+        .await
+        .expect_err("a child was made for an exited parent");
     assert!(
-        matches!(refusal, RegistryError::ParentStopping(id) if id == parent),
+        matches!(refusal, RegistryError::ParentEnded(id) if id == parent),
         "{refusal:?}"
     );
     assert_eq!(
         refusal.to_string(),
-        format!("agent {parent} is stopping and starts no more agents"),
+        format!("agent {parent} has ended and starts no more agents"),
     );
 
     kill_all(&runtime).await;
@@ -898,13 +865,13 @@ async fn a_child_asked_for_while_its_parent_stops_is_refused() {
     daemon.shutdown().await.unwrap();
 }
 
-/// A stop dropped while it waits for a child's creation to finish (its
-/// caller went away) leaves the parent as it was: a later child is made.
-/// The stop marked the parent stopping before that wait, and the mark is
-/// lifted only by a guard built after it, so the dropped stop kept the
-/// parent refusing every spawn until the daemon restarted.
+/// A child its parent asks for while the parent is being stopped never
+/// outlives the stop: the create checks the parent and writes the child's
+/// row under one hold of the store, so either the parent's exit is already
+/// there and the create is refused, or the child's row is, and the exit
+/// stops it. Holding the store lines both up behind it every run.
 #[tokio::test]
-async fn a_stop_dropped_mid_way_leaves_its_parent_able_to_spawn() {
+async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
     let install = Install::new();
     let never = install.path("never");
     let daemon = install
@@ -921,36 +888,52 @@ async fn a_stop_dropped_mid_way_leaves_its_parent_able_to_spawn() {
         .await
         .unwrap();
 
-    {
-        // A child's creation under way, held at the store, keeps the
-        // stop waiting for it; then the stop's caller goes away.
+    let (stopped, spawned) = {
         let store = runtime.store().await;
+        let mut stop = std::pin::pin!(runtime.stop(parent));
+        let early_stop = poll_once(&mut stop).await;
         let mut spawn = std::pin::pin!(runtime.spawn(
-            create(&install.work, "first-child", Some("hold")),
+            create(&install.work, "late-child", Some("hold")),
             Some(parent)
         ));
-        assert!(poll_once(&mut spawn).await.is_pending());
-        let mut stop = Box::pin(runtime.stop(parent));
-        assert!(
-            poll_once(&mut stop).await.is_pending(),
-            "the stop waits for the creation under way"
-        );
-        drop(stop);
+        let early_spawn = poll_once(&mut spawn).await;
         drop(store);
-        spawn.await.expect("the creation under way completes");
-    }
-
-    let later = runtime
-        .spawn(
-            create(&install.work, "later-child", Some("hold")),
-            Some(parent),
+        tokio::join!(
+            async move {
+                match early_stop {
+                    std::task::Poll::Ready(stopped) => stopped,
+                    std::task::Poll::Pending => stop.await,
+                }
+            },
+            async move {
+                match early_spawn {
+                    std::task::Poll::Ready(spawned) => spawned,
+                    std::task::Poll::Pending => spawn.await,
+                }
+            }
         )
-        .await;
-    assert!(
-        later.is_ok(),
-        "a parent whose stop was dropped refuses spawns: {:?}",
-        later.err()
-    );
+    };
+    stopped.expect("the stop completes");
+    match spawned {
+        Err(refusal) => assert!(
+            matches!(refusal, RegistryError::ParentEnded(id) if id == parent),
+            "{refusal:?}"
+        ),
+        Ok(child) => {
+            let child = id_of(&child);
+            until("the late child to stop with its parent", || {
+                let runtime = &runtime;
+                async move {
+                    let lifecycle = runtime.agent(child).await.unwrap().lifecycle;
+                    (lifecycle == Lifecycle::Exited as i32)
+                        .then_some(())
+                        .ok_or_else(|| format!("lifecycle {lifecycle}"))
+                }
+            })
+            .await
+            .unwrap();
+        }
+    }
 
     kill_all(&runtime).await;
     drop(runtime);
@@ -981,33 +964,22 @@ async fn a_delete_dropped_mid_way_leaves_its_agents_changes_published() {
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
 
     {
-        // A child's creation under way keeps the delete waiting once it
-        // has muted the parent; then the delete's caller goes away.
-        let store = runtime.store().await;
-        let mut spawn = std::pin::pin!(runtime.spawn(
-            create(&install.work, "first-child", Some("hold")),
-            Some(parent)
-        ));
-        assert!(poll_once(&mut spawn).await.is_pending());
-        drop(store);
-        let mut spawn_on = poll_once(&mut spawn).await;
-        assert!(spawn_on.is_pending(), "the creation waits for its child");
+        // The first poll takes the delete past its check of the row, which
+        // finds the store free, and mutes the agent. Holding the store then
+        // keeps it from removing the row, whether or not the stop has
+        // finished; then the delete's caller goes away.
         let mut delete = Box::pin(runtime.delete(parent));
+        assert!(poll_once(&mut delete).await.is_pending());
+        let store = runtime.store().await;
         for _ in 0..8 {
             assert!(
                 poll_once(&mut delete).await.is_pending(),
-                "the delete waits for the creation under way"
+                "the delete waits for the store"
             );
             tokio::task::yield_now().await;
         }
         drop(delete);
-        if spawn_on.is_pending() {
-            spawn_on = std::task::Poll::Ready(spawn.await);
-        }
-        let std::task::Poll::Ready(child) = spawn_on else {
-            unreachable!()
-        };
-        child.expect("the creation under way completes");
+        drop(store);
     }
 
     runtime.rename(parent, "renamed-parent").await.unwrap();

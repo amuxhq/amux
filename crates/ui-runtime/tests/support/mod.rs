@@ -13,8 +13,8 @@ use async_trait::async_trait;
 use client::{Client, EventStream, RpcError};
 use tokio::sync::{mpsc, oneshot};
 use wire::{
-    Agent, Attachment, BlobRef, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Diff,
-    DiffRequest, DumpReport, DumpRequest, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest,
+    Agent, Attachment, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DiffRequest,
+    DumpReport, DumpRequest, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest,
     GetBlobResponse, GetRequest, InventoryEvent, Item, Kind, Lifecycle, ListRepositoriesRequest,
     ListRepositoriesResponse, Phase, PutBlobRequest, QueuedInput, RenameAgentRequest,
     ResolveAgentRequest, ResumeAgentRequest, SendInputRequest, SendInputResponse,
@@ -151,7 +151,7 @@ impl Client for FakeRuntime {
         self.call(|reply| Call::Resume(request, reply)).await
     }
 
-    async fn delete_agent(&self, _: DeleteAgentRequest) -> Result<DeleteAgentResponse, RpcError> {
+    async fn delete_agent(&self, _: DeleteAgentRequest) -> Result<(), RpcError> {
         unimplemented!("delete_agent")
     }
 

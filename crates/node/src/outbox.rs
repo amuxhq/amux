@@ -6,7 +6,9 @@
 //! turn end, or when a child's process goes without one. The drain hands
 //! each row to the parent through the parent's lane and deletes it once the
 //! parent has accepted; a row whose parent has moved to another incarnation
-//! is dropped, because a resumed parent is not waiting for anything. The
+//! is dropped, because a resumed parent is not waiting for anything, and so
+//! is a row for a parent on a host this one is no longer paired with. A
+//! parent's host that is only out of reach keeps its rows waiting. The
 //! drain first runs only after every own journal has been read to its end
 //! once after start, so the lane's lookup for an earlier acceptance never
 //! runs against a store that is behind it.
@@ -182,6 +184,15 @@ impl ProfileRuntime {
         let Ok(parent_id) = Uuid::from_slice(&row.parent.agent) else {
             return Ok(Outcome::Kept);
         };
+        // A parent on a host this one is no longer paired with can never be
+        // reached again: the report goes. The child itself carries on.
+        if row.parent.host != self.host().as_bytes()
+            && let (Some(edge), Ok(host)) = (self.edge(), Uuid::from_slice(&row.parent.host))
+            && !edge.is_trusted(host)
+        {
+            self.store.lock().await.remove_delivery(&row)?;
+            return Ok(Outcome::Stale);
+        }
         let (parent, child) = {
             let mut store = self.store.lock().await;
             let Some(parent) = store.agent(&row.parent)? else {
@@ -192,8 +203,9 @@ impl ProfileRuntime {
                     );
                     return Ok(Outcome::Kept);
                 }
-                // The parent was deleted and its children with it, or the
-                // cascade failed; nothing is waiting for this.
+                // Held once and gone now: the parent was deleted (its
+                // children follow it) or its host unpaired. Nothing is
+                // waiting for this.
                 store.remove_delivery(&row)?;
                 return Ok(Outcome::Stale);
             };

@@ -169,8 +169,8 @@ the chat is open. The phone reads them through `amux_session_blob`.
 There is no expiry and there are no reference counts. A blob lives and dies
 with the directory it sits in:
 
-- An own agent's blobs go when the agent is deleted (`DeleteAgent`, which
-  cascades to its children), or when own retention removes the agent: exited
+- An own agent's blobs go when the agent is deleted (`DeleteAgent`; its
+  children follow by the family rule), or when own retention removes the agent: exited
   agents are removed whole, least recently active first, when the profile's
   own rows pass `retention.own_budget_mib`.
 - A patch written by `Diff` goes into the requesting agent's directory and

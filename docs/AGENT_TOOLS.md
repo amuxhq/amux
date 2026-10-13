@@ -132,7 +132,7 @@ Stops one of the caller's own direct children, exactly as a person's stop
 does: `StopAgent` on the tools socket. The daemon checks the lineage and
 refuses any other agent with `PERMISSION_DENIED`. The child's turn is
 cancelled the provider's own way, the child ends as stopped, and the stop
-cascades to its descendants on every host (see [families](#families)). The
+child's own descendants follow on their hosts (see [families](#families)). The
 child's history stays, and a later `send` to it resumes it. There is no
 separate interrupt tool: an agent reaches another agent's queue only by
 messaging it.
@@ -286,7 +286,7 @@ tells it which of its own children are live, in which incarnation (the
 `children` control frame), and it waits for each incarnation's last report:
 a mid-way report from a child that waits on its own child, or the report of
 an earlier child, never stands in for it. An unreachable child's host leaves it
-waiting, and stopping it (or a stop cascading from above) ends it. Input
+waiting, and stopping it (or its own parent's exit) ends it. Input
 that arrives while it exits is answered `REFUSAL_EXITING`. Its transcript
 and its parent edge stay.
 
@@ -298,22 +298,24 @@ as for a live child. Any other sender is told the child has exited. A person
 resuming the child from the fleet or with `amux resume` starts the same next
 incarnation.
 
-**Stop and delete.** The `stop` tool reaches direct children only. Stopping
-an agent, by the tool or by a person, stops its whole family the same way:
-each child is stopped on its own host through that host's daemon, and stops its own children in turn. The children's stops run beside
-the parent's and nothing waits for them; a child whose host cannot be reached
-is left running. A resumed parent hears nothing extra about them. A `spawn`
-an agent makes while it is being stopped or deleted is refused ("agent … is
-stopping and starts no more agents"); one already under way when the stop
-began finishes first and its child is stopped with the rest, so no child
-outlives the stop by being made during it. Deleting an agent
-deletes its children too: a child on another host is deleted through that
-host's daemon, which deletes that child's own family. When part of the
-family is on a host that cannot be reached, the delete fails at once,
-naming the descendant and the host, and deletes nothing, rather than leave
-that part running with no parent. A far child is known from its parent's
-host listing it and, as a stop knows it, from that daemon having made it,
-so unlinking the hosts does not hide it.
+**Stop and delete.** The `stop` tool reaches direct children only. A stop
+or a delete, by the tool or by a person, acts on the agent it names; its
+family follows by one rule, which each host enforces for its own agents from
+the parent's row as that host holds it. A parent whose row says it exited,
+however it ended (stopped, crashed, or finished), stops its children; a parent
+gone from its host's caught-up listing (deleted, or removed by retention)
+stops and deletes them. Each child's stop is a row change its own children's
+hosts see in turn, so the whole family follows, a child on the parent's own
+host by exactly the same path. A child whose host is away hears nothing until
+it is back and has caught up with the parent's host, and then follows; a
+child whose parent's host is merely out of reach, or no longer paired, carries
+on, and its report waits for the parent's host (or, once unpaired, is
+dropped). A resumed parent hears nothing extra about stopped children. A
+`spawn` an agent makes once its host sees it as exited is refused ("agent …
+has ended and starts no more agents"); one made just as it stops is stopped as
+soon as the child's host sees the stop, since the parent check and the child's
+row are written together. [The protocol](PROTOCOL.md#the-family-rule) gives
+the rule's exact terms.
 
 **In the clients.** The fleet groups each family under its head and ranks it
 by its loudest member (`ui_view::fleet_view`); a family can be expanded to
@@ -356,8 +358,8 @@ lifecycle or incarnation change, a paired host coming into reach. While rows
 wait it retries every 30 seconds. For each row it:
 
 - drops it when the parent's incarnation has moved on, because a resumed
-  parent is a later incarnation that is not waiting for anything, or when the
-  parent has been deleted;
+  parent is a later incarnation that is not waiting for anything, when the
+  parent has been deleted, or when the parent's host is no longer paired;
 - keeps it while the parent has exited (a later resume makes it stale) or
   its host is away;
 - otherwise sends it as an `Envelope` from the child, of kind `finished` (the
@@ -407,11 +409,15 @@ ordinary peer calls; nothing about them is specific to messaging.
   there.
 - **Stop.** The lineage check runs against the child's replica row, which
   carries the same parent edge, and the stop is then forwarded to the
-  child's host.
+  child's host. A stop or delete of a parent is never sent to its children:
+  each child's host sees the parent's row change and follows by the
+  [family rule](PROTOCOL.md#the-family-rule), whenever it next hears from
+  the parent's host.
 - **Reports to a parent.** A deliveries row for a parent on another host is
   sent to that host's daemon as a message from the child. An answer of not
   found means the parent or its incarnation is gone, and the row is dropped;
-  an unreachable host keeps the row until the host is back.
+  an unreachable host keeps the row until the host is back, and a host no
+  longer paired has its rows dropped.
 
 [The protocol](PROTOCOL.md) describes the peer calls, the one-hop forwarding
 rule and the links underneath.
@@ -427,5 +433,7 @@ rule and the links underneath.
   children.
 - [`crates/testnet/tests/spec_families.rs`](../crates/testnet/tests/spec_families.rs):
   families across three hosts: spawning by host name, lineage-checked stop
-  and send, cascade delete with an unreachable child, rows waiting for an
-  away parent, and duplicate sends yielding one item.
+  and send, the family rule (a far child following a stop or delete made
+  while its host was away, a child made during a catch-up not judged by the
+  older listing, unpairing dropping owed reports), rows waiting for an away
+  parent, and duplicate sends yielding one item.

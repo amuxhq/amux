@@ -238,7 +238,7 @@ impl ClientService for Fleet {
     async fn delete_agent(
         &self,
         _: Request<wire::DeleteAgentRequest>,
-    ) -> Result<Response<wire::DeleteAgentResponse>, Status> {
+    ) -> Result<Response<wire::Empty>, Status> {
         Err(Status::unimplemented("delete"))
     }
     async fn put_blob(

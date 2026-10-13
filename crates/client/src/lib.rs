@@ -18,12 +18,12 @@ use tonic::{Code, Request, Status};
 use wire::client_service_client::ClientServiceClient;
 use wire::client_service_server::ClientService;
 use wire::{
-    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, DeleteAgentResponse, Diff, DiffRequest,
-    DumpReport, DumpRequest, Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest,
-    GetBlobResponse, GetRequest, InventoryEvent, Item, ListRepositoriesRequest,
-    ListRepositoriesResponse, PutBlobRequest, RenameAgentRequest, ResolveAgentRequest,
-    ResumeAgentRequest, SendInputRequest, SendInputResponse, SendMessageRequest,
-    SendMessageResponse, SessionEvent, StopAgentRequest, SubscribeRequest,
+    Agent, BlobRef, CreateAgentRequest, DeleteAgentRequest, Diff, DiffRequest, DumpReport,
+    DumpRequest, Empty, ErrorCode, FetchRequest, FetchResponse, GetBlobRequest, GetBlobResponse,
+    GetRequest, InventoryEvent, Item, ListRepositoriesRequest, ListRepositoriesResponse,
+    PutBlobRequest, RenameAgentRequest, ResolveAgentRequest, ResumeAgentRequest, SendInputRequest,
+    SendInputResponse, SendMessageRequest, SendMessageResponse, SessionEvent, StopAgentRequest,
+    SubscribeRequest,
 };
 
 /// A server stream. An `Err` item or the end of the stream both mean the
@@ -111,10 +111,7 @@ pub trait Client: Send + Sync + 'static {
     async fn rename_agent(&self, request: RenameAgentRequest) -> Result<Agent, RpcError>;
     async fn stop_agent(&self, request: StopAgentRequest) -> Result<(), RpcError>;
     async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError>;
-    async fn delete_agent(
-        &self,
-        request: DeleteAgentRequest,
-    ) -> Result<DeleteAgentResponse, RpcError>;
+    async fn delete_agent(&self, request: DeleteAgentRequest) -> Result<(), RpcError>;
     async fn send_message(
         &self,
         request: SendMessageRequest,
@@ -207,11 +204,9 @@ macro_rules! client_impl {
                 Ok($call!(self, resume_agent, request).await?.into_inner())
             }
 
-            async fn delete_agent(
-                &self,
-                request: DeleteAgentRequest,
-            ) -> Result<DeleteAgentResponse, RpcError> {
-                Ok($call!(self, delete_agent, request).await?.into_inner())
+            async fn delete_agent(&self, request: DeleteAgentRequest) -> Result<(), RpcError> {
+                $call!(self, delete_agent, request).await?;
+                Ok(())
             }
 
             async fn send_message(

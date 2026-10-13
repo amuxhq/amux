@@ -1387,3 +1387,63 @@ fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
     }
     assert_eq!(seen, ["acceptEdits", "plan", "auto"]);
 }
+
+fn typed_prompts(stepped: &interpret::Stepped) -> usize {
+    stepped
+        .effects
+        .iter()
+        .filter(|effect| {
+            matches!(
+                effect,
+                Effect::Terminal(interpret::claude_pty::TerminalInput::Prompt { .. })
+            )
+        })
+        .count()
+}
+
+fn turn_duration_row(uuid: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "system", "subtype": "turn_duration", "uuid": uuid,
+        "timestamp": "2026-10-12T08:00:05.000Z", "sessionId": "s1",
+        "isSidechain": false, "userType": "external", "durationMs": 5000,
+        "messageCount": 2, "isMeta": false,
+    })
+}
+
+/// A prompt amux typed is in flight until Claude records it, even though
+/// the agent is not yet working on it: the next prompt waits in the queue
+/// behind it rather than being typed after it, where Claude would take both
+/// as one prompt.
+#[test]
+fn a_prompt_waits_behind_a_typed_prompt_claude_has_not_recorded() {
+    let (mut state, _) = started_claude();
+    let first = ClaudePty::step(&mut state, prompt_input("p1", "first"));
+    assert_eq!(
+        typed_prompts(&first),
+        1,
+        "the first prompt is typed at once"
+    );
+
+    let second = ClaudePty::step(&mut state, prompt_input("p2", "second"));
+    let tick = ClaudePty::step(&mut state, Event::Tick { at_ms: 1_000 });
+    assert_eq!(
+        typed_prompts(&second) + typed_prompts(&tick),
+        0,
+        "the second prompt is typed while the first is unrecorded"
+    );
+    assert_eq!(
+        state.shared().queue().entries().len(),
+        1,
+        "the second prompt waits"
+    );
+
+    let recorded = ClaudePty::step(&mut state, transcript_row(typed_row("u1", "first")));
+    assert_eq!(typed_prompts(&recorded), 0, "the first prompt's turn runs");
+
+    let ended = ClaudePty::step(&mut state, transcript_row(turn_duration_row("t1")));
+    assert_eq!(
+        typed_prompts(&ended),
+        1,
+        "the second goes once the turn ends"
+    );
+}

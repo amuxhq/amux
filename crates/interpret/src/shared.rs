@@ -678,11 +678,27 @@ impl<A: OpenAsk> Shared<A> {
         });
     }
 
-    /// The provider takes the next prompt: started, no turn, no ask, and
-    /// no steered prompt still waiting to be reflected (the provider may run
-    /// it as a turn of its own, which a new submission must not overtake).
+    /// The provider takes the next prompt: started, no turn, no ask, no
+    /// steered prompt still waiting to be reflected (the provider may run
+    /// it as a turn of its own, which a new submission must not overtake),
+    /// and no typed prompt still unrecorded (keys typed after it would join
+    /// it as one prompt).
     fn ready(&self) -> bool {
-        self.started && !self.busy && self.asks.is_empty() && !self.queue.has_steered()
+        self.started
+            && !self.busy
+            && self.asks.is_empty()
+            && !self.queue.has_steered()
+            && !self.typed_unrecorded()
+    }
+
+    /// A submitted prompt the provider has not recorded yet, where its
+    /// record and not the submission starts the turn (terminal Claude). It
+    /// is in flight although no turn runs. One typed while one of Claude's
+    /// own screens is open is never recorded: it stays in flight, and what
+    /// is queued waits behind it, until a prompt row, a slash command or
+    /// the provider's exit takes it.
+    pub fn typed_unrecorded(&self) -> bool {
+        self.turn_on_reflection && !self.submitted.is_empty()
     }
 
     /// A person's prompt from any client. Submitted now when the provider
@@ -961,10 +977,14 @@ impl<A: OpenAsk> Shared<A> {
         self.turn.end()
     }
 
-    /// A one-shot agent may exit: no turn running, nothing queued, no
-    /// accepted agent message waiting to be consumed.
+    /// A one-shot agent may exit: no turn running, nothing queued, no typed
+    /// prompt waiting to be recorded, no accepted agent message waiting to
+    /// be consumed.
     pub fn quiescent(&self) -> bool {
-        !self.busy && self.queue.is_empty() && self.pending_messages.is_empty()
+        !self.busy
+            && self.queue.is_empty()
+            && !self.typed_unrecorded()
+            && self.pending_messages.is_empty()
     }
 
     // --- working_on ------------------------------------------------------

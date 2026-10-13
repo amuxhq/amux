@@ -1347,6 +1347,10 @@ impl Interpreter for ClaudeSdk {
         state.shared.pending_messages().iter().cloned().collect()
     }
 
+    fn typed_unrecorded(state: &Self::State) -> bool {
+        state.shared.typed_unrecorded()
+    }
+
     fn unknown_snapshot() -> Vec<u8> {
         unknown::claude_sdk().encode_to_vec()
     }

@@ -51,6 +51,7 @@ no ids (they arrive on inputs and facts) and does no I/O. It implements
 | `redact(target)` | Removes secrets from a body, a facts-ring entry, a checkpoint, a spec, a step or an inventory row, keeping its structure |
 | `unknown_snapshot()` | The snapshot body with every field unknown |
 | `pending_messages(state)` | Agent messages the provider accepted and has not consumed yet; a one-shot agent waits for this to be empty |
+| `typed_unrecorded(state)` | A prompt typed that the provider has not recorded yet, where the record starts the turn (terminal Claude); a one-shot agent waits for it too |
 | `describe_item`, `describe_snapshot`, `fixture_input`, `recording` | What the golden harness needs to render bodies, build authored inputs and read recorded corpora |
 
 An `Event` is a provider `Fact`, a person's `Input`, an agent message with
@@ -106,8 +107,8 @@ The kind-neutral part every interpreter composes is `interpret::Shared`
 open asks, the set of accepted but unconsumed agent messages, `working_on`,
 the turn counter, the prompts awaiting their reflection, the items still
 open, and the last snapshot. A person's prompt goes to the provider at once
-when it is ready (started, no turn running, no ask open) and nothing waits
-ahead of it, and is answered accepted; otherwise it waits in the queue,
+when it is ready (started, no turn running, no ask open, no typed prompt
+still waiting for the provider to record it) and nothing waits ahead of it, and is answered accepted; otherwise it waits in the queue,
 answered accepted and queued, and goes when the provider next becomes ready.
 `Shared` also derives the phase: needs you whenever an ask is open; starting
 until the provider accepts input; working while a turn runs; idle otherwise.
@@ -355,7 +356,14 @@ transcript row, in transcript order:
   awaiting reflection, and its turn starts with that row: keys typed into a
   terminal may land in one of Claude's own screens and never reach the
   conversation, so until Claude records the prompt the agent is not
-  working.
+  working. The prompt is still in flight, though: the next queued prompt
+  waits until the row lands and its turn ends (typed straight after it,
+  Claude would take both as one prompt), and a one-shot agent does not exit
+  on it. A prompt lost to one of Claude's own screens is never recorded: it
+  stays sent, the agent stays idle, and what is queued waits behind it, with
+  no timer to release it. The next prompt row (one typed in Claude's own
+  view), a slash command, the provider's exit or a stop clears it; a
+  one-shot child in that state stays idle until one of those comes.
 - An assistant row's blocks become message, thinking and tool-call items,
   keyed by the row's uuid (`<uuid>#<index>` for the second block on).
 - A `tool_use` block opens a call, running, keyed by its tool-use id. The

@@ -681,17 +681,22 @@ impl<I: Interpreter> Host<I> {
         Ok(())
     }
 
-    /// Nothing runs, nothing is queued, no accepted agent message waits to
-    /// be consumed, and every child has sent its last report: a child's
+    /// Nothing runs, nothing is queued, nothing handed to the provider
+    /// waits for it, and every child has sent its last report: a child's
     /// report starts the next turn, which reports up as usual.
     fn quiescent(&self) -> bool {
-        self.phase == Phase::Idle && self.queue_empty && self.done_with_children()
+        self.phase == Phase::Idle && self.queue_empty && self.nothing_pending()
     }
 
-    /// No accepted agent message waits to be consumed and no child's last
-    /// report is still to come.
-    fn done_with_children(&self) -> bool {
-        self.awaited.none() && I::pending_messages(&self.state).is_empty()
+    /// No accepted agent message waits to be consumed, no typed prompt
+    /// waits for the provider to record it, and no child's last report is
+    /// still to come. A prompt typed into one of terminal Claude's own
+    /// screens is never recorded, so a one-shot child stays, idle, until a
+    /// later prompt row takes it, a stop ends it or its daemon is lost.
+    fn nothing_pending(&self) -> bool {
+        self.awaited.none()
+            && I::pending_messages(&self.state).is_empty()
+            && !I::typed_unrecorded(&self.state)
     }
 
     /// Whether the incarnation exits after a turn end in `step`: a
@@ -711,7 +716,7 @@ impl<I: Interpreter> Host<I> {
                     || (self.spec.parent.is_some()
                         && phase == Phase::Idle
                         && queue_empty
-                        && self.done_with_children())
+                        && self.nothing_pending())
             }
             Mode::Draining { .. } | Mode::Exiting { .. } => true,
         }

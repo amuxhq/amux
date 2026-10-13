@@ -538,3 +538,42 @@ async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running()
     );
     assert!(!agent.log().has_text("never"));
 }
+
+/// A one-shot terminal Claude types its queued follow-up as its turn ends,
+/// and until Claude records that prompt the agent reads idle with nothing
+/// queued. The prompt is still in flight: the child runs it before it
+/// exits, rather than ending finished with the prompt lost.
+#[cfg(unix)]
+#[test]
+fn a_one_shot_terminal_child_runs_the_follow_up_it_typed_as_its_turn_ended() {
+    terminal_test(async {
+        let agent = Agent::start(Setup {
+            kind: Kind::ClaudePty,
+            parent: true,
+            initial_prompt: Some("first"),
+            steps: vec![
+                text("one"),
+                Step::WaitFor {
+                    path: agent_release(),
+                },
+                Step::TurnEnd,
+                text("two"),
+                Step::TurnEnd,
+            ],
+            ..Setup::sdk()
+        })
+        .await;
+        let mut daemon = agent.dial().await;
+        agent
+            .wait("the first turn is under way", |log| log.has_text("one"))
+            .await;
+        assert_eq!(daemon.prompt(b"p2", "second").await, Verdict::Queued);
+
+        agent.release();
+        assert_eq!(agent.exit().await, ExitCause::Finished);
+        let log = agent.log();
+        assert!(log.has_text("two"), "the follow-up ran before the exit");
+        assert_eq!(log.turn_ends(), 2);
+        agent.assert_released();
+    });
+}

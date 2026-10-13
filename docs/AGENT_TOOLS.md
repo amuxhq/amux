@@ -276,7 +276,8 @@ task, and no rollback is needed. A child that never comes up exits, and the
 parent hears that it failed.
 
 **One-shot.** An agent with a parent exits when a turn ends with nothing
-queued, nothing running, no accepted message still pending and no child of
+queued, nothing running, no accepted message still pending, no prompt typed
+into terminal Claude still waiting for Claude to record it, and no child of
 its still to send its last report; its exit cause is `FINISHED`, which its
 journal's last step records, and that turn's report is marked `last`. A
 sub-agent whose own child still works therefore stays: each report the

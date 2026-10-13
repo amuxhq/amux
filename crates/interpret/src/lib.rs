@@ -84,6 +84,11 @@ pub trait Interpreter {
     /// the provider, in id order.
     fn pending_messages(state: &Self::State) -> Vec<Vec<u8>>;
 
+    /// A prompt was typed that the provider has not recorded, where its
+    /// record starts the turn: in flight, though the phase reads idle and
+    /// nothing is queued, so a one-shot agent waits for it too.
+    fn typed_unrecorded(state: &Self::State) -> bool;
+
     /// Reads an item body for goldens and invariants.
     fn describe_item(body: &[u8]) -> ItemView;
 

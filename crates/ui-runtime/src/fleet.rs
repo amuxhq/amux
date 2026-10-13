@@ -128,13 +128,14 @@ impl Inner {
         let request = StopAgentRequest {
             agent_id: agent.agent.clone(),
         };
+        let listing = self.model().state.listings();
         match self.client.stop_agent(request).await {
             Ok(()) => {
                 self.apply(FleetMsg::DropStop(agent));
                 Ok(Stop::Stopped)
             }
             Err(error) if never_left(&error) => {
-                self.apply(FleetMsg::HoldStop(agent));
+                self.apply(FleetMsg::HoldStop { agent, listing });
                 Ok(Stop::Held)
             }
             Err(error) => {

@@ -303,7 +303,7 @@ host did. It also holds the sessions:
 | `close(agent)` | The chat left the screen. The last close narrows a live agent's session back to its few rows and drops an exited agent's. Every `open` is paired with a `close`. |
 | `set_foreground(foreground)` | The phone leaving or returning to the foreground: every session's stream is dropped, or reopened with a tail. |
 | `sessions()` | Every session held, for a dump. |
-| `stop(agent)` | A person's stop. One whose host cannot be reached (`UNAVAILABLE` or `UNREACHABLE`: the daemon wrote nothing) never left: it is held, `FleetState::stop_held` and the card's `stop_held` say so, and it goes when the agent's host is seen away and back. `Stop::Held` says it was held. Rename and delete are never held. |
+| `stop(agent)` | A person's stop. One whose host cannot be reached (`UNAVAILABLE` or `UNREACHABLE`: the daemon wrote nothing) never left: it is held, `FleetState::stop_held` and the card's `stop_held` say so, and it goes the next time the agent's host is listed online, the failed call counting as the host away even while its row still read online (as when this client's own daemon restarts). `Stop::Held` says it was held. Rename and delete are never held. |
 | `cancel_stop(agent)` | Takes a held stop back. |
 
 **The trace.** Each driver keeps a bounded trace (between 200 and `TRACE_EVENTS` = 400 events, memory only) of

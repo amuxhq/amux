@@ -152,3 +152,112 @@ fn a_relist_after_reconnect_drops_what_was_not_listed_again() {
     assert_eq!(names, ["loner", "parent"]);
     assert!(fleet.host(b"b").is_none());
 }
+
+fn online(id: &str) -> FleetMsg {
+    ev(inventory_event::Of::Host(HostEntry {
+        host_id: id.as_bytes().to_vec(),
+        name: id.into(),
+        presence: wire::Presence::Online as i32,
+        ..HostEntry::default()
+    }))
+}
+
+/// A stop that could not reach a host this client still read as online,
+/// as when its own daemon restarts, is held; the stream that reopens names
+/// the host online again with no away in between, and the stop goes.
+#[test]
+fn a_stop_held_while_its_host_read_online_goes_when_the_host_is_listed_again() {
+    let mut fleet = FleetState::new();
+    for msg in [
+        online("a"),
+        agent(row("a", "worker", Phase::Working, None)),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+    let listing = fleet.listings();
+    fleet.update(FleetMsg::HoldStop {
+        agent: at("a", "worker"),
+        listing,
+    });
+    assert!(fleet.stop_held(&at("a", "worker")));
+    assert!(fleet.take_released_stops().is_empty());
+    for msg in [
+        FleetMsg::Connection(Connection::Reconnecting),
+        FleetMsg::Connection(Connection::Live),
+        online("a"),
+        agent(row("a", "worker", Phase::Working, None)),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+    assert_eq!(fleet.take_released_stops(), [at("a", "worker")]);
+    assert!(!fleet.stop_held(&at("a", "worker")));
+}
+
+/// The stream can reopen and list the host online before the failed stop
+/// is held: that listing already said the host is back, and the stop goes
+/// at once. One held mid-listing goes when the listing ends.
+#[test]
+fn a_stop_held_after_its_host_was_listed_again_goes_at_once() {
+    let mut fleet = FleetState::new();
+    for msg in [
+        online("a"),
+        agent(row("a", "worker", Phase::Working, None)),
+        agent(row("a", "other", Phase::Working, None)),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+    let left = fleet.listings();
+    for msg in [
+        FleetMsg::Connection(Connection::Reconnecting),
+        FleetMsg::Connection(Connection::Live),
+        online("a"),
+        agent(row("a", "worker", Phase::Working, None)),
+        agent(row("a", "other", Phase::Working, None)),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+    fleet.update(FleetMsg::HoldStop {
+        agent: at("a", "worker"),
+        listing: left,
+    });
+    assert_eq!(fleet.take_released_stops(), [at("a", "worker")]);
+    assert!(!fleet.stop_held(&at("a", "worker")));
+
+    let left = fleet.listings();
+    fleet.update(FleetMsg::Connection(Connection::Reconnecting));
+    fleet.update(FleetMsg::Connection(Connection::Live));
+    fleet.update(online("a"));
+    fleet.update(FleetMsg::HoldStop {
+        agent: at("a", "other"),
+        listing: left,
+    });
+    assert!(fleet.stop_held(&at("a", "other")));
+    fleet.update(agent(row("a", "other", Phase::Working, None)));
+    fleet.update(caught_up());
+    assert_eq!(fleet.take_released_stops(), [at("a", "other")]);
+}
+
+/// A stop that failed under the newest listing waits for the next word of
+/// its host, so a host that cannot take it is not asked again and again.
+#[test]
+fn a_stop_held_under_the_newest_listing_waits_for_its_host() {
+    let mut fleet = FleetState::new();
+    for msg in [
+        online("a"),
+        agent(row("a", "worker", Phase::Working, None)),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+    let listing = fleet.listings();
+    fleet.update(FleetMsg::HoldStop {
+        agent: at("a", "worker"),
+        listing,
+    });
+    assert!(fleet.take_released_stops().is_empty());
+    assert!(fleet.stop_held(&at("a", "worker")));
+}

@@ -81,8 +81,13 @@ pub enum FleetMsg {
     Event(Box<InventoryEvent>),
     Connection(Connection),
     /// This client's stop of the agent never left: its host could not be
-    /// reached. It is held, and goes when the host is back.
-    HoldStop(AgentKey),
+    /// reached. It is held, and goes when the host is back. `listing` is
+    /// [`FleetState::listings`] as the stop's call left: a listing finished
+    /// since then is word that the host is back.
+    HoldStop {
+        agent: AgentKey,
+        listing: u64,
+    },
     /// The person cancelled a held stop, or it went.
     DropStop(AgentKey),
 }
@@ -111,9 +116,10 @@ pub struct FleetState {
     /// next CaughtUp.
     relisted: Option<(BTreeSet<HostId>, BTreeSet<AgentKey>)>,
     /// Stops this client holds because the agent's host could not be
-    /// reached, each with whether the host has been seen out of reach since:
-    /// the stop goes again once it is seen back.
-    held_stops: BTreeMap<AgentKey, bool>,
+    /// reached: each goes again once the host is next listed online.
+    held_stops: BTreeSet<AgentKey>,
+    /// Listings finished: every CaughtUp, the first included.
+    listings: u64,
     /// Held stops whose host is back, for the driver to send again.
     released_stops: Vec<AgentKey>,
 }
@@ -160,7 +166,19 @@ impl FleetState {
 
     /// Whether this client holds a stop of the agent until its host is back.
     pub fn stop_held(&self, agent: &AgentKey) -> bool {
-        self.held_stops.contains_key(agent)
+        self.held_stops.contains(agent)
+    }
+
+    /// How many listings of the inventory have finished, the first
+    /// included; a stop's call notes it as it leaves.
+    pub fn listings(&self) -> u64 {
+        self.listings
+    }
+
+    fn host_online(&self, host: &[u8]) -> bool {
+        self.hosts
+            .get(host)
+            .is_some_and(|host| host.presence() == wire::Presence::Online)
     }
 
     /// The held stops whose host is back since this was last asked: each is
@@ -224,17 +242,22 @@ impl FleetState {
     pub fn update(&mut self, msg: FleetMsg) -> Vec<AgentKey> {
         let mut changed = BTreeSet::new();
         match msg {
-            FleetMsg::HoldStop(agent) => {
-                let away = self
-                    .agents
-                    .get(&agent)
-                    .and_then(|row| self.hosts.get(&row.host_id))
-                    .is_none_or(|host| host.presence() != wire::Presence::Online);
-                self.held_stops.insert(agent.clone(), away);
+            // The call failed for want of the host, so the host counts as
+            // away from then on whatever its row reads: this client's own
+            // daemon restarting fails the call while the host still reads
+            // online, and the reopened stream may only ever say online.
+            // A listing finished since the call left already said it is
+            // back, and the stop goes at once.
+            FleetMsg::HoldStop { agent, listing } => {
+                if listing != self.listings && self.caught_up && self.host_online(&agent.host) {
+                    self.released_stops.push(agent.clone());
+                } else {
+                    self.held_stops.insert(agent.clone());
+                }
                 changed.insert(agent);
             }
             FleetMsg::DropStop(agent) => {
-                if self.held_stops.remove(&agent).is_some() {
+                if self.held_stops.remove(&agent) {
                     changed.insert(agent);
                 }
             }
@@ -262,23 +285,11 @@ impl FleetState {
                             changed.insert(agent.clone());
                         }
                         let online = host.presence() == wire::Presence::Online;
-                        let mut back = Vec::new();
-                        for (agent, away) in self
-                            .held_stops
-                            .iter_mut()
-                            .filter(|(agent, _)| agent.host == host.host_id)
-                        {
-                            if !online {
-                                *away = true;
-                            } else if *away {
-                                back.push(agent.clone());
-                            }
-                        }
-                        for agent in back {
-                            self.held_stops.remove(&agent);
-                            self.released_stops.push(agent);
-                        }
+                        let host_id = host.host_id.clone();
                         self.hosts.insert(host.host_id.clone(), host);
+                        if online {
+                            self.release_stops(|agent| agent.host == host_id);
+                        }
                     }
                     inventory_event::Of::HostRemoved(removed) => {
                         self.hosts.remove(&removed.host_id);
@@ -312,6 +323,7 @@ impl FleetState {
                     }
                     inventory_event::Of::CaughtUp(_) => {
                         self.caught_up = true;
+                        self.listings += 1;
                         if let Some((hosts, agents)) = self.relisted.take() {
                             self.hosts.retain(|host, _| hosts.contains(host));
                             let gone: Vec<AgentKey> = self
@@ -324,11 +336,34 @@ impl FleetState {
                                 self.put(at, None, &mut changed);
                             }
                         }
+                        // A stop held after this listing's host row went by
+                        // goes once the listing ends.
+                        let online: BTreeSet<HostId> = self
+                            .hosts
+                            .keys()
+                            .filter(|host| self.host_online(host))
+                            .cloned()
+                            .collect();
+                        self.release_stops(|agent| online.contains(&agent.host));
                     }
                 }
             }
         }
         changed.into_iter().collect()
+    }
+
+    /// Hands the held stops `which` picks to the driver to send again.
+    fn release_stops(&mut self, which: impl Fn(&AgentKey) -> bool) {
+        let back: Vec<AgentKey> = self
+            .held_stops
+            .iter()
+            .filter(|agent| which(agent))
+            .cloned()
+            .collect();
+        for agent in back {
+            self.held_stops.remove(&agent);
+            self.released_stops.push(agent);
+        }
     }
 
     /// Replaces or removes one row, keeping the parent edges, and marks the

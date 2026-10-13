@@ -1,3 +1,14 @@
+2026-10-13 — **A held stop goes when its host is next listed online.** A
+stop whose host could not be reached is held and goes again when the host
+is back, but the fleet only counted the host as away if its row already
+read away when the stop failed. When this client's own daemon restarted,
+the call failed while the cached host still read online, and the reopened
+inventory said online with no away in between, so the stop was held for
+good. A failed call now counts as the host away: the stop goes at the next
+host row that reads online, or the next listing's end with the host
+online, and at once if a listing finished between the call leaving and
+its failure being held.
+
 2026-10-13 — **A sub-agent waits for each child's report, not for a count
 of them.** A one-shot sub-agent whose children have all ended exits once the
 reports it waited for have come, but it compared the most children live at

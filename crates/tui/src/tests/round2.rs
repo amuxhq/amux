@@ -392,7 +392,11 @@ fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
         .find(|row| row.name == "alpha")
         .map(ui_state::agent_key)
         .expect("alpha");
-    fleet.update(ui_state::FleetMsg::HoldStop(alpha.clone()));
+    let listing = fleet.listings();
+    fleet.update(ui_state::FleetMsg::HoldStop {
+        agent: alpha.clone(),
+        listing,
+    });
     let mut home = crate::home::Home::default();
     home_at(&mut home, &fleet, W, H);
     focus(&mut home, &fleet, "alpha");

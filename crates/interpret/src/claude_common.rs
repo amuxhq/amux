@@ -1227,18 +1227,17 @@ pub(crate) fn launch_arg(args: &[String], flag: &str) -> Option<String> {
 }
 
 /// The permission launch arguments start Claude in, when they name one.
+/// `--dangerously-skip-permissions` wins over any mode, as on Claude's own
+/// command line; otherwise the last `--permission-mode` does, since amux
+/// appends the chosen permission after one the person passed.
 pub(crate) fn launched_permission(args: &[String]) -> Option<String> {
-    args.iter().enumerate().find_map(|(at, arg)| {
-        if arg == "--dangerously-skip-permissions" {
-            return Some(NEVER_ASK.to_owned());
-        }
-        if let Some(mode) = arg.strip_prefix("--permission-mode=") {
-            return Some(mode.to_owned());
-        }
-        (arg == "--permission-mode")
-            .then(|| args.get(at + 1).cloned())
-            .flatten()
-    })
+    if args
+        .iter()
+        .any(|arg| arg == "--dangerously-skip-permissions")
+    {
+        return Some(NEVER_ASK.to_owned());
+    }
+    launch_arg(args, "--permission-mode")
 }
 
 /// Text a terminal program wrote, without its colour and cursor codes:
@@ -1428,6 +1427,37 @@ mod tests {
             Some("haiku")
         );
         assert_eq!(launch_arg(&args(&["--effort", "high"]), "--model"), None);
+    }
+
+    /// amux appends the chosen permission after any `--permission-mode`
+    /// the person passed, and Claude starts in the last one named.
+    #[test]
+    fn a_repeated_permission_mode_reads_as_its_last_value() {
+        let args = |of: &[&str]| of.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            launched_permission(&args(&[
+                "--permission-mode",
+                "plan",
+                "--permission-mode",
+                "acceptEdits"
+            ]))
+            .as_deref(),
+            Some("acceptEdits")
+        );
+        assert_eq!(
+            launched_permission(&args(&[
+                "--permission-mode=plan",
+                "--permission-mode",
+                "auto"
+            ]))
+            .as_deref(),
+            Some("auto")
+        );
+        assert_eq!(
+            launched_permission(&args(&["--dangerously-skip-permissions"])).as_deref(),
+            Some(NEVER_ASK)
+        );
+        assert_eq!(launched_permission(&args(&["--model", "opus"])), None);
     }
 
     /// The cell source the host read rides into the card's input; the

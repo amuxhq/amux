@@ -5,8 +5,8 @@ import Foundation
 /// A subscription changes away from the phone: bought on amux.sh, cancelled
 /// in the App Store's settings, lapsed at the end of a period. The phone
 /// learns of it only by asking, so it asks whenever somebody comes back to
-/// the app and, while You is on screen, every `spacing`. Asking more often
-/// than that is not done: You and the home read the same answer, and a
+/// the app and whenever You comes on screen. A look within `spacing` of the
+/// last one asks nothing: You and the home read the same answer, and a
 /// person flicking between tabs is not a reason to call amux.sh each time.
 @MainActor
 public final class EntitlementWatch {

@@ -75,13 +75,6 @@ public enum ShellAction: Equatable, Sendable {
     case checkSubscription
 }
 
-/// When the shell reads what the account buys: on coming to the front, and
-/// on You.
-private struct SubscriptionLook: Equatable {
-    let active: Bool
-    let onYou: Bool
-}
-
 /// Leaves the app for a page somewhere else: a billing portal, the App Store's
 /// own subscriptions page, a way to reach a person.
 ///
@@ -217,15 +210,12 @@ public struct Shell: View {
         .simultaneousGesture(backGesture)
         .onChange(of: router.tab) { left, _ in visited.insert(left) }
         // What the account buys is read again as the app comes to the front
-        // and as You comes on screen, and again every so often while You
-        // stays there; the composition spaces the reads out.
-        .task(id: SubscriptionLook(active: scenePhase == .active, onYou: router.tab == .you)) {
-            guard scenePhase == .active else { return }
-            repeat {
-                actions(.checkSubscription)
-                guard router.tab == .you else { return }
-                try? await Task.sleep(for: .seconds(EntitlementWatch.spacing))
-            } while !Task.isCancelled
+        // and as You comes on screen; the composition spaces the reads out.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .active { actions(.checkSubscription) }
+        }
+        .onChange(of: router.tab) { _, tab in
+            if tab == .you && scenePhase == .active { actions(.checkSubscription) }
         }
     }
 

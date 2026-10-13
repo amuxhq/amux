@@ -168,8 +168,8 @@ borrows a bearer from it for its own calls to amux.sh.
 
 What the account buys changes away from the phone: bought on amux.sh,
 cancelled in the App Store, lapsed. `EntitlementWatch` asks amux.sh again as
-the app comes to the front, as You comes on screen and every 30 seconds while
-You stays there, and at once after a purchase. When the answer changed, or
+the app comes to the front and as You comes on screen, no more than once in
+any 30 seconds, and at once after a purchase. When the answer changed, or
 disagrees with what the relay link last said, the profile's relay link is
 asked to read it too, rather than carrying the old answer until its
 credential next renews.

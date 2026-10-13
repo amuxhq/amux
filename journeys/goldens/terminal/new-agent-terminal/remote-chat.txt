@@ -1,5 +1,5 @@
 
-  desk-notes │ /tmp/journey/aj-xxxxxxxx/net/laptop/work · desk                               [Diff] │ [Home]
+  desk-notes │ /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                 [Diff] │ [Home]
 
 
 
@@ -31,4 +31,4 @@
   │ › Message desk-notes                                                                                   │
   ╰────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-  its terminal is on another machine; enter opens its chat
+  its terminal is on another machine; its chat opens instead

@@ -31,4 +31,4 @@
   │ › Message planner-codex                                                                                │
   ╰──────────────────────────────────────────────────────────────────── gpt-fake (medium) · custom · plan ─╯
 
-  enter queue   ctrl+x stop   shift+tab mode   ctrl+a more
+  enter queue   ctrl+x interrupt   shift+tab mode   ctrl+a more

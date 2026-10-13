@@ -23,7 +23,7 @@
 
   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ● Wants to run                                                                                         │
-  │ /bin/zsh -lc 'deploy --check'                                                                          │
+  │ deploy --check                                                                                         │
   │ The script asks before running this.                                                                   │
   │                                                                                                        │
   │ › 1. Yes                                                                                               │
@@ -31,4 +31,4 @@
   │   3. No  esc                                                                                           │
   ╰──────────────────────────────────────────────────────────────────────────────────── gpt-fake (medium) ─╯
 
-  enter choose   ctrl+x stop   ctrl+a more
+  enter choose   ctrl+x interrupt   ctrl+a more

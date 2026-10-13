@@ -31,4 +31,4 @@
   │   3. No, and stop  esc · tab to add a note                                                             │
   ╰─────────────────────────────────────────────────────────────────────────────────────────────── Fake 1 ─╯
 
-  enter choose   ctrl+x stop   ctrl+a more
+  enter choose   ctrl+x interrupt   ctrl+a more

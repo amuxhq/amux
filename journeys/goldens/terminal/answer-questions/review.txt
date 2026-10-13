@@ -31,4 +31,4 @@
   │ › Send answers                                                                                         │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter send   ←/→ questions   ctrl+x stop   ctrl+a more
+  enter send   ←/→ questions   ctrl+x interrupt   ctrl+a more

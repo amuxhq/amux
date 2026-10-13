@@ -31,4 +31,4 @@
   │   Decline  esc                                                                                         │
   ╰──────────────────────────────────────────────────────────────────────────────────── gpt-fake (medium) ─╯
 
-  enter choose   ctrl+x stop   ctrl+a more
+  enter choose   ctrl+x interrupt   ctrl+a more

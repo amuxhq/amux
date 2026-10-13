@@ -618,6 +618,15 @@ async fn a_fleet_of_every_standing_matches_its_golden() {
                 .prompt("Migrate the store."),
         );
     let mut net = Net::start(topology).await.unwrap();
+    // Home orders rows by when each agent entered its phase. The net's
+    // daemons run on its driven clock but the agent processes on the wall
+    // clock, and an agent stamps a phase with the later of its own time and
+    // its creation time on its daemon. Moved well ahead of the wall clock
+    // here, every agent started below is stamped with its creation time, in
+    // the order it was made, after the agents above (stamped on the wall
+    // clock) however long the run takes; still under a minute, so every
+    // age reads "now".
+    net.advance(Duration::from_secs(20)).unwrap();
     // Each starts once the one before it has settled: started together,
     // their first turns race and so would the rows.
     let idle = [

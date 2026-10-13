@@ -13,7 +13,6 @@
 
 
 
-
                                               Nothing here yet.
 
 
@@ -27,8 +26,9 @@
 
 
 
-  ╭─ not sent: its host can't be reached ──────────────────────────────────────────────────────────────────╮
-  │ › Rotate the backup keys.                                                                              │
+    Rotate the backup keys.                                                       sends when cabin is back
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message backups                                                                                      │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  ctrl+j newline   shift+tab permission   ctrl+a more
+  shift+tab permission   ctrl+a more

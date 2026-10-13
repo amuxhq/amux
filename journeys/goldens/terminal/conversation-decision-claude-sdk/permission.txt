@@ -31,4 +31,4 @@
   │   3. No  esc · tab to add a note                                                                       │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter choose   ctrl+x stop   ctrl+a more
+  enter choose   ctrl+x interrupt   ctrl+a more

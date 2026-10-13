@@ -1052,6 +1052,8 @@ mod tests {
 
     /// A paste arrives byte for byte, line endings and all, however long:
     /// a pane whose program reads raw input keeps exactly what was pasted.
+    /// It drives a real tmux, which Windows does not have.
+    #[cfg(unix)]
     #[test]
     fn a_paste_keeps_its_line_endings_and_any_length() {
         let dir = tempfile::tempdir().expect("a folder");

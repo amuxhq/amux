@@ -9,18 +9,18 @@ chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
 chat.back | Back |  | 16,68,42,46
 chat.title | planner-codex | planner-codex | 51,72,156,38
 chat.more | More |  | 344,69,44,44
-ask | Plan ready | open | 12,714,378,116
-ask.more | More |  | 338,722,44,44
+ask | Plan ready | open | 12,702,378,128
+ask.more | More |  | 338,710,44,44
 ask.approve | Approve |  | 28,770,169,44
 ask.choice.1 | Send back… |  | 205,770,169,44
  | Back |  | 16,68,42,46
  | planner-codex, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
- | Plan ready |  | 62,734,79,20
- | More |  | 338,722,44,44
+ | Plan ready |  | 62,722,79,20
+ | More |  | 338,710,44,44
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
- | Started |  | 18,132,366,34
- | Move the journal. |  | 18,166,366,40
  | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 18,217,366,160
  | Worked <t> |  | 48,387,72,16
+ | Started |  | 18,132,366,34
+ | Move the journal. |  | 18,166,366,40

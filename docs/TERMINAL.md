@@ -168,13 +168,15 @@ Enter on a row opens its chat. From top to bottom:
   resumes`), a usage limit reached (`5-hour limit reached · resets 23:24`, in the warning ink; sending stays
   open). One blank line below it, the key line: `shift+tab permission · ctrl+a more` at rest
   (`shift+tab mode` for an agent with modes), `enter queue · ctrl+x
-  stop` added while the agent works, `enter resume` once it has exited, `Draft kept · sending waits` while the
-  host is away. What everyone knows (Enter sends, pasting attaches) is not said.
+  interrupt` added while the agent works, `enter resume` once it has exited, `enter holds it · it sends when the
+  host is back` while the host is away (or once caught up, once amux is back, once this machine signs in). What everyone knows (Enter sends, pasting attaches) is not said.
 
 The composer takes a draft at any time. Enter sends while the chat is current and the agent is live; while the
 agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
 its first prompt (an empty Enter just resumes). A prompt to an idle agent shows at once in the feed, and one to a
-busy agent at once in the queue. A draft typed while the host is away stays in the composer, and a draft left in a
+busy agent at once in the queue. A prompt sent while the chat is not current (the host away, the chat catching up,
+this machine's daemon reconnecting) is held: it shows pending in the queue, `sends when desk is back`, with
+`[Cancel]`, and goes by itself under its own id once the host can be reached. A draft left in a
 chat for home or another chat waits in its composer until the chat opens again; one cleared before leaving stays
 cleared, even before this machine's daemon has forgotten its copy, and quitting waits until it has. A prompt the agent
 refuses, an exited agent's included, comes back into the composer with the reason, worded from the typed reason

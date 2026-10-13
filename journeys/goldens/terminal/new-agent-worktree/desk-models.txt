@@ -22,13 +22,13 @@
 
 
 
-                                    ╭─ Model ──────────────────╮
-                                    │   1. Opus 4.1            │
-                                    │   2. Fable 5             │
-                                    │ › 3. opus ✓              │
-                                    ╰──────────────────────────╯
+                         ╭─ Model ──────────────────╮
+                         │   1. Opus 4.1            │
+                         │   2. Fable 5             │
+                         │ › 3. opus ✓              │
+                         ╰──────────────────────────╯
   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ › What should the new agent work on?                                                                   │
-  ╰──────────────── + Name │ Claude · opus (high) · ask │ /tmp/journey/aj-xxxxxxxx/net/laptop/work │ desk ─╯
+  ╰───── + Name │ Claude · opus (high) · ask │ /tmp/journey/aj-xxxxxxxx/net/desk/repositories/site │ desk ─╯
 
   enter pick   ↑↓ move   esc back

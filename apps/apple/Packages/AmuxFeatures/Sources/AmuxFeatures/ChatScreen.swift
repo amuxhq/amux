@@ -614,8 +614,9 @@ public struct ChatStanding: View {
                 composerStack
             case nil:
                 if let ask = model.ask, ask.state != .dismissed {
-                    AskCardView(card: ask, questions: keeping(ask), form: formKeeping(ask), act: answer)
-                        .frame(maxHeight: askRoom)
+                    HeightCap(cap: askRoom) {
+                        AskCardView(card: ask, questions: keeping(ask), form: formKeeping(ask), act: answer)
+                    }
                 } else {
                     if let ask = model.ask { AskCardView(card: ask, questions: keeping(ask), form: formKeeping(ask), act: answer) }
                     composerStack
@@ -941,5 +942,28 @@ private struct PlaceSheet: View {
                 .foregroundStyle(design.ink.color)
                 .textSelection(.enabled)
         }
+    }
+}
+
+/// Lays its one subview out at its own height, never taller than `cap`.
+/// A frame with a maximum height grows to that maximum when it is offered
+/// more and centres what it holds, so a short docked card would float above
+/// the bottom with the feed pushed up behind it; this offers the subview at
+/// most `cap` and takes only the height it asks for.
+struct HeightCap: Layout {
+    let cap: CGFloat?
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let subview = subviews.first else { return .zero }
+        return subview.sizeThatFits(capped(proposal))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        guard let cap else { return proposal }
+        return ProposedViewSize(width: proposal.width, height: min(proposal.height ?? cap, cap))
     }
 }

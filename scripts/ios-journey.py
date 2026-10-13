@@ -676,6 +676,23 @@ def never_sent(chat: dict, text: str) -> None:
         raise RuntimeError(f"the host received {text!r}")
 
 
+def is_held(drawn: dict, text: str) -> bool:
+    """`text` is a prompt the client library holds for its host: in the
+    queue, pending, with what it waits for."""
+    return any(
+        name.startswith("chat.underway.")
+        and element.get("label") == text
+        and (element.get("value") or "").startswith("held · sends when ")
+        for name, element in drawn.items()
+    )
+
+
+def current(drawn: dict, agent: str) -> bool:
+    """The chat is current: the empty composer offers to message the agent,
+    not to hold what is sent."""
+    return drawn.get("chat.field", {}).get("label") == f"Message {agent}"
+
+
 def queued(drawn: dict) -> list[tuple[str, str]]:
     """The prompts waiting under the feed, oldest first: each one's words
     and how it waits."""
@@ -754,28 +771,19 @@ def send_while_away(journey: PhoneJourney) -> list[str]:
     # The cabin goes out of reach: its daemon stops, its agent kept.
     journey.request({"StopDaemon": {"host": "cabin"}})
     journey.wait(lambda drawn: labelled(drawn, "out of reach"), "the cabin out of reach")
-    journey.type("chat.field", BACKUP)
-    drawn = journey.wait(lambda drawn: drawn.get("chat.field", {}).get("value") == BACKUP, "the draft written")
-    if drawn.get("chat.send", {}).get("enabled"):
-        raise RuntimeError("the phone offers to send to a cabin out of reach")
-    away = reopen(journey, backups, lambda drawn: drawn.get("chat.field", {}).get("value") == BACKUP)
-    if away.get("chat.send", {}).get("enabled"):
-        raise RuntimeError("the phone offers to send to a cabin out of reach")
+    # Send stays open: the client library holds the prompt, pending with
+    # Cancel, until the cabin can be reached.
+    send(journey, BACKUP)
+    journey.wait(lambda drawn: is_held(drawn, BACKUP) and not drawn.get("chat.field", {}).get("value"), "the prompt held")
+    reopen(journey, backups, lambda drawn: is_held(drawn, BACKUP))
     journey.screen("away")
-    time.sleep(2)
 
-    # The cabin back: it never received the draft, and now it can go.
+    # The cabin back: the held prompt goes by itself.
     journey.request({"RestartDaemon": {"host": "cabin"}})
-    returned = journey.request({"Chat": {"host": "cabin", "agent": "backups"}}, "while-away")
-    never_sent(returned, BACKUP)
     journey.wait(
-        lambda drawn: drawn.get("chat.send", {}).get("enabled") is True
-        and drawn.get("chat.field", {}).get("value") == BACKUP
-        and not labelled(drawn, "out of reach"),
-        "the cabin back with the draft kept",
+        lambda drawn: labelled(drawn, BACKUP_DONE) and "chat.row.turn-end" in drawn and not is_held(drawn, BACKUP),
+        "the reply",
     )
-    journey.tap("chat.send")
-    journey.wait(lambda drawn: labelled(drawn, BACKUP_DONE) and "chat.row.turn-end" in drawn, "the reply")
     heard = journey.wait_chat(
         "cabin", "backups", lambda chat: chat["phase"] == "IDLE" and len(prompts(chat, BACKUP)) == 1, "sent"
     )
@@ -784,9 +792,8 @@ def send_while_away(journey: PhoneJourney) -> list[str]:
     reopen(journey, backups, lambda drawn: labelled(drawn, BACKUP_DONE) and "chat.row.turn-end" in drawn)
     journey.screen("sent", volatile=("chat.row.turn-end",))
     return [
-        "with the cabin out of reach, the draft stayed in the composer, the phone would not send it, "
-        "and the cabin never received it",
-        f"with the cabin back, the draft sent and the cabin holds {BACKUP!r} once",
+        "with the cabin out of reach, Send held the prompt, pending until the cabin is back, and it stayed held across leaving the chat",
+        f"with the cabin back, the held prompt went by itself and the cabin holds {BACKUP!r} once",
         control,
     ]
 
@@ -946,7 +953,16 @@ def manage_agent(journey: PhoneJourney) -> list[str]:
     reopen(journey, agent_id, lambda drawn: replies(drawn, READY) == 2 and "chat.row.turn-end" in drawn)
     journey.screen("resumed", volatile=("chat.row.turn-end",))
 
-    # Deleted, explicitly: gone from the fleet and from the desk.
+    # Deleted, explicitly: only an exited agent offers it, so stopped
+    # again first, then gone from the fleet and from the desk.
+    journey.tap("chat.more")
+    journey.choose("Stop Agent")
+    journey.wait_for("chat.stop.confirm")
+    journey.tap("chat.stop.confirm")
+    journey.wait_inventory(
+        "desk", lambda agents: (listed(agents, agent_id) or {}).get("lifecycle") == EXITED, "stopped-again"
+    )
+    journey.wait(lambda drawn: labelled(drawn, "Exited"), "the chat saying it exited again")
     journey.tap("chat.more")
     journey.choose("Delete Agent")
     journey.wait_for("chat.delete.confirm")
@@ -960,7 +976,7 @@ def manage_agent(journey: PhoneJourney) -> list[str]:
         "Stop Agent: the desk lists it exited, with its prompt and reply kept",
         control,
         "a message from the exited composer resumed the same id, and each prompt is in the desk's chat once",
-        "Delete Agent: gone from the fleet and from the desk",
+        "stopped again, Delete Agent: gone from the fleet and from the desk",
     ]
 
 
@@ -1133,8 +1149,7 @@ def leave_and_recover(journey: PhoneJourney) -> list[str]:
     away = time.monotonic()
 
     # Opened again, the app paints the chat from its own store: the cached
-    # tail, the desk out of reach, a composer that keeps a draft and will
-    # not send it.
+    # tail, the desk out of reach, and a composer that keeps a draft.
     journey.relaunch()
     journey.tap("tab.agents")
     journey.wait_for(f"home.row.{keeper}")
@@ -1146,8 +1161,8 @@ def leave_and_recover(journey: PhoneJourney) -> list[str]:
         raise RuntimeError("the cached chat shows a turn the phone never received")
     journey.type("chat.field", DRAFT)
     drawn = journey.wait(lambda drawn: drawn.get("chat.field", {}).get("value") == DRAFT, "the draft written")
-    if drawn.get("chat.send", {}).get("enabled"):
-        raise RuntimeError("the phone offers to send to a desk out of reach")
+    if current(drawn, "keeper"):
+        raise RuntimeError("the chat reads current with the desk out of reach")
     detached = reopen(journey, keeper, lambda drawn: drawn.get("chat.field", {}).get("value") == DRAFT)
     if not labelled(detached, "out of reach") or labelled(detached, SECOND):
         raise RuntimeError("the chat opened again is not the cached tail out of reach")
@@ -1155,20 +1170,19 @@ def leave_and_recover(journey: PhoneJourney) -> list[str]:
     journey.observations["seconds-out-of-reach"] = round(time.monotonic() - away, 1)
 
     # The desk comes back: the missed turn appends once, and the chat says
-    # it is current (the draft can go) only once it has.
+    # it is current only once it has.
     journey.request({"RestartDaemon": {"host": "desk"}})
     deadline = time.monotonic() + 60
     while True:
         drawn = journey.elements()
-        sendable = drawn.get("chat.send", {}).get("enabled") is True
-        if sendable and not labelled(drawn, SECOND):
-            raise RuntimeError("the phone was ready to send before the missed turn arrived")
-        if sendable:
+        if current(drawn, "keeper") and not labelled(drawn, SECOND):
+            raise RuntimeError("the chat read current before the missed turn arrived")
+        if current(drawn, "keeper"):
             break
         if time.monotonic() > deadline:
             raise RuntimeError("the chat did not come back after the desk did")
         time.sleep(0.1)
-    journey.actions.append("reached the missed turn, then a composer ready to send")
+    journey.actions.append("reached the missed turn, then a current chat")
     if replies(drawn, SECOND) != 1 or drawn.get("chat.field", {}).get("value") != DRAFT:
         raise RuntimeError("the missed turn did not append once with the draft kept")
     journey.tap("chat.send")
@@ -1198,9 +1212,9 @@ def leave_and_recover(journey: PhoneJourney) -> list[str]:
     journey.screen("after-reset", volatile=("chat.row.turn-end",))
     return [
         "opened again with the desk out of reach, the app painted the cached chat from its own store, "
-        "without the turn it never received, and would not send",
+        "without the turn it never received, and did not read current",
         "the draft typed while out of reach was kept",
-        "when the desk came back the missed turn appeared once, and only then was the draft ready to send",
+        "when the desk came back the missed turn appeared once, and only then did the chat read current",
         f"the kept draft reached the desk once and was answered",
         control,
         "rows stayed on screen through the desk's rewind and Reset, and the chat reads the agent exited",
@@ -1292,29 +1306,29 @@ def keep_authority(journey: PhoneJourney) -> list[str]:
     journey.tap("tab.agents")
     journey.tap(f"home.row.{guarded}")
     journey.wait(lambda drawn: "chat.field" in drawn and labelled(drawn, "this phone is signed out"), "the chat naming the sign-out")
-    journey.type("chat.field", held)
-    drawn = journey.wait(lambda drawn: drawn.get("chat.field", {}).get("value") == held, "the draft written")
-    if drawn.get("chat.send", {}).get("enabled"):
-        raise RuntimeError("the phone offers to send while signed out")
+    # Send holds the message, pending until the phone can reach the desk.
+    send(journey, held)
+    journey.wait(lambda drawn: is_held(drawn, held), "the message held")
     time.sleep(2)
-    # The draft is kept across leaving the chat; read with the keyboard down.
+    # It stays held across leaving the chat; read with the keyboard down.
     journey.tap("chat.back")
     journey.wait(lambda drawn: "chat.field" not in drawn, "the fleet")
     journey.tap(f"home.row.{guarded}")
-    journey.wait(lambda drawn: drawn.get("chat.field", {}).get("value") == held, "the draft kept")
+    journey.wait(lambda drawn: is_held(drawn, held), "the message still held")
     journey.screen("blocked")
     blocked = journey.request({"Chat": {"host": "desk", "agent": "guarded"}}, "while-signed-out")
     never_received(blocked, held)
     control = negative_control(never_received, blocked, asked)
 
-    # Signed in again: the chat is current and the held message goes once.
+    # Signed in again: the chat is current and the held message goes by
+    # itself, once.
     journey.app({"kind": "connect", "relay": relay, "token": "refresh-ada", "user": "ada"})
     journey.wait(
-        lambda drawn: not labelled(drawn, "this phone is signed out") and drawn.get("chat.send", {}).get("enabled") is True,
-        "the chat current again, the draft ready to send",
+        lambda drawn: not labelled(drawn, "this phone is signed out")
+        and labelled(drawn, "The relay carries us again.")
+        and not is_held(drawn, held),
+        "the reply after signing in",
     )
-    journey.tap("chat.send")
-    journey.wait(lambda drawn: labelled(drawn, "The relay carries us again."), "the reply after signing in")
     after = journey.wait_chat(
         "desk", "guarded", lambda chat: chat["phase"] == "IDLE" and len(prompts(chat, held)) == 1, "sent-after-sign-in"
     )
@@ -1328,9 +1342,9 @@ def keep_authority(journey: PhoneJourney) -> list[str]:
     return [
         "a second account opened on its own profile, with an empty fleet that knows no desk",
         f"through the relay the desk received {asked!r} once and answered",
-        "signed out, the phone named its own sign-out in the hosts tab and the chat, kept the draft and would not send it; the desk never received it",
+        "signed out, the phone named its own sign-out in the hosts tab and the chat, and held the message, across leaving the chat; the desk never received it",
         control,
-        f"signed in again, the chat was current and {held!r} reached the desk once and was answered",
+        f"signed in again, the held {held!r} went by itself, reached the desk once and was answered",
     ]
 
 

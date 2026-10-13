@@ -1,0 +1,34 @@
+
+  site-redesign-2 │ site-redesign-2 /tmp/journey/aj-xxxxxxxx/net/desk/data/worktrees/s…  1 │ [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  started ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+    Redesign it again.                                                                               hh:mm
+
+
+    Working in the new worktree.
+
+    Worked <t>
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message site-redesign-2                                                                              │
+  ╰─────────────────────────────────────────────────────────────────────────────────────── Fable 5 (high) ─╯
+
+  shift+tab permission   ctrl+a more

@@ -1,30 +1,30 @@
 shell |  | agents | 0,62,402,778
 chat |  | decision-sdk | 0,62,402,778
-chat.row.boundary | Started |  | 18,176,366,58
-chat.row.prompt | Check the deployment once. |  | 18,234,366,106
+chat.row.boundary | Started |  | 18,108,366,58
+chat.row.prompt | Check the deployment once. |  | 18,166,366,106
 chat.row.command | <volatile>
 chat.row.meta.volatile | <volatile>
-chat.row.prose | The deploy check passed. | final | 18,448,366,90
-chat.prose.render |  | rendered | 18,448,366,90
+chat.row.prose | The deploy check passed. | final | 18,461,366,90
+chat.prose.render |  | rendered | 18,461,366,90
 chat.row.turn-end | <volatile>
-chat.header | /t/a/n/d/work · desk | live | 18,64,298,98
-chat.back | Back |  | 16,90,42,46
-chat.title | decision-sdk | decision-sdk | 51,72,252,82
-chat.more | More |  | 344,91,44,44
-chat.field | Message decision-sdk |  | 28,727,346,47
+chat.header | /t/a/n/d/work · desk | live | 18,64,262,66
+chat.back | Back |  | 16,74,42,46
+chat.title | decision-sdk | decision-sdk | 51,72,216,50
+chat.more | More |  | 344,75,44,44
+chat.field | Message decision-sdk |  | 28,627,346,47
+chat.model | claude-fake-1 · medium |  | 28,684,325,90
 chat.attach | Attach | closed | 23,779,44,44
-chat.model | claude-fake-1 · medium |  | 71,779,199,44
 chat.dictate | Dictate | idle | 287,779,44,44
 chat.send | Send |  | 335,779,44,44 (disabled)
- | Back |  | 16,90,42,46
- | decision-sdk, /t/a/n/d/work · desk |  | 51,72,252,82
- | More |  | 344,91,44,44
+ | Back |  | 16,74,42,46
+ | decision-sdk, /t/a/n/d/work · desk |  | 51,72,216,50
+ | More |  | 344,75,44,44
+ | claude-fake-1 · medium |  | 28,684,325,90
  | Attach |  | 23,779,44,44
- | claude-fake-1 |  | 71,779,199,44
  | Dictate |  | 287,779,44,44
  | Send |  | 335,779,44,44 (disabled)
- | Started |  | 18,176,366,58
- | Check the deployment once. |  | 18,234,366,106
- | Allowed, deploy --check, <t>, deploy check: ok |  | 18,352,366,82
- | The deploy check passed. |  | 18,448,366,90
- | Worked <t> · $0.00 |  | 48,546,335,40
+ | Started |  | 18,108,366,58
+ | Check the deployment once. |  | 18,166,366,106
+ | Allowed, deploy --check, <t>, deploy check: ok |  | 18,284,366,163
+ | The deploy check passed. |  | 18,461,366,90
+ | Worked <t> · $0.00 |  | 48,559,335,40

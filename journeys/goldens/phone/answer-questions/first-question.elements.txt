@@ -1,19 +1,20 @@
 shell |  | agents | 0,62,402,778
 chat |  | asker | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Add a settings screen. |  | 18,166,366,40
-chat.row.question | Asking, 3 questions |  | 18,217,366,20
+chat.row.boundary | Started |  | 18,60,366,34
+chat.row.prompt | Add a settings screen. |  | 18,93,366,40
+chat.row.question | Asking, 3 questions |  | 18,145,366,20
 chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
 chat.back | Back |  | 16,68,42,46
 chat.title | asker | asker | 51,72,156,38
 chat.more | More |  | 344,69,44,44
-ask | 3 questions | open | 12,282,378,548
-ask.more | More |  | 338,290,44,44
-ask.step.0 |  | open | 28,338,63,44
-ask.step.1 |  | open | 97,338,55,44
-ask.step.2 |  | open | 158,338,58,44
-ask.step.review |  |  | 222,338,65,44
-ask.question | How should the settings screen be laid out? |  | 28,394,317,20
+ask | 3 questions | open | 12,179,378,651
+ask.more | More |  | 338,187,44,44
+ask.step.0 |  | open | 28,235,63,44
+ask.step.1 |  | open | 97,235,55,44
+ask.step.2 |  | open | 158,235,58,44
+ask.step.review |  |  | 222,235,65,44
+ask.question | How should the settings screen be laid out? |  | 28,291,317,20
+ask.preview | Sidebar |  | 28,323,346,91
 ask.option.0 | Sidebar |  | 28,425,346,80
 ask.option.1 | Stacked |  | 28,512,346,80
 ask.option.other |  |  | 28,598,346,48
@@ -24,13 +25,17 @@ ask.reply | Reply instead |  | 28,770,114,44
  | Back |  | 16,68,42,46
  | asker, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
- | 3 questions |  | 62,302,87,20
- | More |  | 338,290,44,44
- | Layout |  | 28,338,63,44
- | Entry |  | 97,338,55,44
- | Order |  | 158,338,58,44
- | Review |  | 222,338,65,44
- | How should the settings screen be laid out? |  | 28,394,317,20
+ | 3 questions |  | 62,199,87,20
+ | More |  | 338,187,44,44
+ | Layout |  | 28,235,63,44
+ | Entry |  | 97,235,55,44
+ | Order |  | 158,235,58,44
+ | Review |  | 222,235,65,44
+ | How should the settings screen be laid out? |  | 28,291,317,20
+ | Sidebar |  | 28,323,51,16
+ | Relay    │ Address  relay.amux.dev
+Theme    │ Keepalive <t>
+Keys     │ |  | 38,352,265,51
  | Sidebar, Sections on the left, the chosen one on the right. |  | 28,425,346,80
  | Stacked, One scrolling page, a heading per section. |  | 28,512,346,80
  | Something else… |  | 28,598,346,48
@@ -38,6 +43,6 @@ ask.reply | Reply instead |  | 28,770,114,44
  | Skip |  | 28,714,169,44
  | Next |  | 205,714,169,44 (disabled)
  | Reply instead |  | 28,782,114,20
- | Started |  | 18,132,366,34
- | Add a settings screen. |  | 18,166,366,40
- | Asking, 3 questions |  | 18,217,366,20
+ | Started |  | 18,60,366,34
+ | Add a settings screen. |  | 18,93,366,40
+ | Asking, 3 questions |  | 18,145,366,20

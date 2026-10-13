@@ -25,7 +25,7 @@ version = 1
 id = "stale-replica-open"
 source = "worked failure"
 section = "Replication and the client model"
-claim = "Opening a chat against a replica an hour stale: the source asks after its cursor with a cap, a gap beyond the cap answers Reset with a fresh tail and CaughtUp, a gap within it answers the delta; a chat opened before the source answers paints the stale rows unmarked and swaps the new block in at CaughtUp; with the origin asleep it paints the held rows and Detached, send disabled and the draft kept."
+claim = "Opening a chat against a replica an hour stale: the source asks after its cursor with a cap, a gap beyond the cap answers Reset with a fresh tail and CaughtUp, a gap within it answers the delta; a chat opened before the source answers paints the stale rows unmarked and swaps the new block in at CaughtUp; with the origin asleep it paints the held rows and Detached, and a send is held by the client library until the chat is current."
 tests = [
   "testnet/spec_replication::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
   "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
@@ -34,7 +34,8 @@ tests = [
   "ui-state/spec::open::a_subscribe_to_an_away_host_paints_held_rows_then_detached",
   "ui-runtime/session::an_away_host_paints_its_held_rows_then_detached_with_send_disabled",
   "swift:AmuxCoreTests/ChatModelTests/testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow",
-  "swift:AmuxCoreTests/ChatModelTests/testTheDraftIsKeptWhileCatchingUpAndSendsOnlyWhenCaughtUpAndLive",
+  "swift:AmuxCoreTests/ChatModelTests/testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold",
+  "ui-state/spec::inputs::a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up",
   "tui/lib::tests::detached_keeps_the_rows_and_disables_send",
 ]
 
@@ -537,7 +538,8 @@ tests = [
   "ui-state/spec::open::detached_clears_caught_up_and_keeps_the_rows",
   "ui-runtime/session::an_away_host_paints_its_held_rows_then_detached_with_send_disabled",
   "ui-runtime/session::a_send_that_raced_the_exit_is_rejected_and_the_composer_offers_resume",
-  "swift:AmuxCoreTests/ChatModelTests/testTheDraftIsKeptWhileCatchingUpAndSendsOnlyWhenCaughtUpAndLive",
+  "swift:AmuxCoreTests/ChatModelTests/testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold",
+  "ui-state/spec::inputs::a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up",
   "tui/lib::tests::detached_keeps_the_rows_and_disables_send",
 ]
 
@@ -927,7 +929,7 @@ claim = "One host set from the inventory: trusted hosts with presence and discov
 tests = [
   "testnet/spec_inventory::a_trusted_host_stays_in_every_snapshot_while_unreachable",
   "testnet/spec_inventory::discovery_candidates_appear_only_from_the_same_scope",
-  "node/lib::discovery::tests::txt_encoding_carries_version_host_id_and_scope",
+  "node/lib::discovery::tests::txt_encoding_carries_version_host_id_name_and_scope",
 ]
 
 [[contract]]

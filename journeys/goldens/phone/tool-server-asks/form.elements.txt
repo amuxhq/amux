@@ -18,7 +18,7 @@ ask.choice.1 | Decline |  | 205,770,169,44
  | Back |  | 16,68,42,46
  | filer, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
- | linear needs details |  | 62,486,145,20
+ | linear needs details |  | 62,487,145,20
  | More |  | 338,474,44,44
  | Linear needs a few details before it can create the issue. |  | 28,522,313,37
  | Title * |  | 28,571,40,18

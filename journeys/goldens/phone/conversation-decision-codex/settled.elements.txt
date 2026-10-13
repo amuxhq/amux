@@ -2,7 +2,7 @@ shell |  | agents | 0,62,402,778
 chat |  | decision-codex | 0,62,402,778
 chat.row.boundary | Started |  | 18,132,366,34
 chat.row.prompt | Check the deployment once. |  | 18,166,366,40
-chat.row.command | Allowed, /bin/zsh -lc 'deploy --check', <t> |  | 18,217,366,40
+chat.row.command | Allowed, deploy --check, <t> |  | 18,217,366,40
 chat.row.meta.volatile | <volatile>
 chat.row.prose | The deploy check passed. | final | 18,271,366,20
 chat.prose.render |  | rendered | 18,271,366,20
@@ -25,6 +25,6 @@ chat.send | Send |  | 335,779,44,44 (disabled)
  | Send |  | 335,779,44,44 (disabled)
  | Started |  | 18,132,366,34
  | Check the deployment once. |  | 18,166,366,40
- | Allowed, /bin/zsh -lc 'deploy --check', <t>, deploy check: ok |  | 18,217,366,40
+ | Allowed, deploy --check, <t>, deploy check: ok |  | 18,217,366,40
  | The deploy check passed. |  | 18,271,366,20
  | Worked <t> |  | 48,299,72,16

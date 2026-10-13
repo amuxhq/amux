@@ -86,7 +86,7 @@ impl Folder {
     }
 
     /// A session in `dir`, run from there.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn at(dir: &Path) -> Self {
         Self {
             dir: dir.to_path_buf(),

@@ -1,20 +1,20 @@
 shell |  | agents | 0,62,402,778
 chat |  | asker | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Add a settings screen. |  | 18,166,366,40
-chat.row.question | Asking, 3 questions |  | 18,217,366,20
+chat.row.boundary | Started |  | 18,43,366,34
+chat.row.prompt | Add a settings screen. |  | 18,77,366,40
+chat.row.question | Asking, 3 questions |  | 18,128,366,20
 chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
 chat.back | Back |  | 16,68,42,46
 chat.title | asker | asker | 51,72,156,38
 chat.more | More |  | 344,69,44,44
-ask | 3 questions | open | 12,182,378,648
-ask.more | More |  | 338,190,44,44
-ask.step.0 |  | answered | 28,238,63,44
-ask.step.1 |  | open | 97,238,55,44
-ask.step.2 |  | open | 158,238,58,44
-ask.step.review |  |  | 222,238,65,44
-ask.question | How should the settings screen be laid out? |  | 28,294,317,20
-ask.preview |  |  | 28,326,346,88
+ask | 3 questions | open | 12,162,378,668
+ask.more | More |  | 338,170,44,44
+ask.step.0 |  | answered | 28,218,63,44
+ask.step.1 |  | open | 97,218,55,44
+ask.step.2 |  | open | 158,218,58,44
+ask.step.review |  |  | 222,218,65,44
+ask.question | How should the settings screen be laid out? |  | 28,274,317,20
+ask.preview | Stacked |  | 28,306,346,107
 ask.option.0 | Sidebar |  | 28,425,346,80
 ask.option.1 | Stacked | selected | 28,512,346,80
 ask.option.other |  |  | 28,598,346,48
@@ -25,17 +25,18 @@ ask.reply | Reply instead |  | 28,770,114,44
  | Back |  | 16,68,42,46
  | asker, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
- | 3 questions |  | 62,202,87,20
- | More |  | 338,190,44,44
- | Layout |  | 28,238,63,44
- | Entry |  | 97,238,55,44
- | Order |  | 158,238,58,44
- | Review |  | 222,238,65,44
- | How should the settings screen be laid out? |  | 28,294,317,20
+ | 3 questions |  | 62,183,87,20
+ | More |  | 338,170,44,44
+ | Layout |  | 28,218,63,44
+ | Entry |  | 97,218,55,44
+ | Order |  | 158,218,58,44
+ | Review |  | 222,218,65,44
+ | How should the settings screen be laid out? |  | 28,274,317,20
+ | Stacked |  | 28,306,51,16
  | Relay ──────────
   Address  relay.amux.dev
 Theme ──────────
-  Palette  terminal |  | 28,326,346,88
+  Palette  terminal |  | 38,336,195,68
  | Sidebar, Sections on the left, the chosen one on the right. |  | 28,425,346,80
  | Stacked, One scrolling page, a heading per section. |  | 28,512,346,80
  | Something else… |  | 28,598,346,48
@@ -43,6 +44,6 @@ Theme ──────────
  | Skip |  | 28,714,169,44
  | Next |  | 205,714,169,44
  | Reply instead |  | 28,782,114,20
- | Started |  | 18,132,366,34
- | Add a settings screen. |  | 18,166,366,40
- | Asking, 3 questions |  | 18,217,366,20
+ | Started |  | 18,43,366,34
+ | Add a settings screen. |  | 18,77,366,40
+ | Asking, 3 questions |  | 18,128,366,20

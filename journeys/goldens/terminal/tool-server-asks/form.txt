@@ -31,4 +31,4 @@
   │   Decline  esc                                                                                         │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter answer   tab next   esc clear   ctrl+x stop
+  enter answer   tab next   esc clear   ctrl+x interrupt

@@ -31,4 +31,4 @@
   │ › Keep this draft through the outage.                                                                  │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  Draft kept · sending waits
+  enter holds it   it sends when the host is back

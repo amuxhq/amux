@@ -964,18 +964,16 @@ def send_rejected(journey: TerminalJourney) -> list[str]:
     journey.type(pane, NOT_SENT)
     journey.wait_terms(pane, NOT_SENT)
     journey.keys(pane, "Enter")
-    journey.wait_terms(pane, NOT_SENT, "sends when cabin is back")
+    # The failed call takes the cabin's route down, so the cabin reads as
+    # away at once rather than staying listed while nothing reaches it.
+    journey.wait_terms(pane, "cabin away", NOT_SENT, "sends when cabin is back")
     journey.frame(pane, "not-sent")
     time.sleep(2)
     refused = journey.chat("cabin", "backups", "refused")
     never_sent(refused, NOT_SENT)
-    # The prompt is held until the cabin next reads as reachable. A call
-    # that cannot be made in earnest means the link is gone, so the cabin
-    # drops away and comes back; the held prompt then goes by itself.
+    # Once calls reach the cabin again it reads as reachable, and the held
+    # prompt goes by itself.
     journey.request({"RefuseCalls": {"a": "laptop", "b": "cabin", "refuse": False}})
-    journey.request({"Sever": {"a": "cabin", "b": "laptop"}})
-    journey.wait_terms(pane, "cabin away", NOT_SENT, "sends when cabin is back")
-    journey.request({"Restore": {"a": "cabin", "b": "laptop"}})
     journey.wait(pane, lambda frame: at_rest(frame, NOT_SENT, BACKUP_DONE) and "sends when" not in frame, "the reply")
     heard = journey.wait_chat("cabin", "backups", lambda chat: chat["phase"] == "IDLE" and len(prompts(chat, NOT_SENT)) == 1, "sent")
     reflected_once(heard, NOT_SENT)
@@ -983,7 +981,7 @@ def send_rejected(journey: TerminalJourney) -> list[str]:
     journey.frame(pane, "sent")
     journey.quit_client(pane)
     return [
-        "a send that could not leave the laptop was held, to send when the cabin is back",
+        "a send that could not leave the laptop was held, to send when the cabin is back, and the cabin read as away",
         "the cabin never received it",
         f"once the cabin was back the held prompt went by itself, and the cabin holds {NOT_SENT!r} once",
         control,

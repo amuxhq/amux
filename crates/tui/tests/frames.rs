@@ -1449,7 +1449,7 @@ async fn unlinking_the_agents_host_never_says_there_is_no_such_agent() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
     use crossterm::event::KeyCode;
-    let (net, mut app) = far_chat("far").await;
+    let (mut net, mut app) = far_chat("far").await;
     let id = net.agent("far").unwrap().id;
     let daemon: std::sync::Arc<dyn client::Client> =
         std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
@@ -1463,7 +1463,7 @@ async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
         })
         .await
         .unwrap();
-    net.refuse_calls("desk", "laptop", true).unwrap();
+    net.refuse_calls("desk", "laptop", true).await.unwrap();
     for c in "race A".chars() {
         press(&mut app, KeyCode::Char(c));
     }
@@ -1495,13 +1495,76 @@ async fn a_held_prompt_is_in_the_kept_draft_before_the_client_quits() {
         .unwrap();
 }
 
+/// A send that no call channel to its host could carry is held, and the
+/// host reads as away: the failed call takes its route down, so presence
+/// says what a call would find. When calls open again the host reads
+/// online, and that alone releases the held prompt, which goes by itself.
+/// Before, the link stayed listed, the host never stopped reading online,
+/// and the prompt waited for good.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does() {
+    use crossterm::event::KeyCode;
+    let (mut net, mut app) = far_chat("far").await;
+    net.refuse_calls("desk", "laptop", true).await.unwrap();
+    for c in "race A".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+    let away = tokio::time::timeout(PATIENCE, async {
+        loop {
+            app.housekeep();
+            while let Ok(event) = app.receiver.try_recv() {
+                app.event(event);
+            }
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let screen = screen_text(terminal.backend().buffer());
+            let held = app.chat.as_ref().unwrap().session.state().held().count();
+            if held == 1 && screen.contains("laptop away") {
+                return screen;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the prompt is held and the laptop reads away");
+    println!("{away}");
+
+    net.refuse_calls("desk", "laptop", false).await.unwrap();
+    tokio::time::timeout(PATIENCE, async {
+        loop {
+            app.housekeep();
+            while let Ok(event) = app.receiver.try_recv() {
+                app.event(event);
+            }
+            if app.chat.as_ref().unwrap().session.state().held().count() == 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the held prompt goes once calls reach the laptop");
+    let screens = screens_for(&mut app, Duration::from_secs(2)).await;
+    let last = screens.last().cloned().unwrap_or_default();
+    assert!(
+        last.contains("race A") && !last.contains("sends when"),
+        "the prompt shows as sent:\n{last}"
+    );
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
 /// A held prompt whose save this machine's daemon refused (it was briefly
 /// away) is saved again: it counted as kept once the save was sent, so a
 /// client killed after that lost the prompt.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_held_prompt_whose_save_was_refused_is_saved_again() {
     use crossterm::event::KeyCode;
-    let (net, mut app) = far_chat_via("far", |inner| {
+    let (mut net, mut app) = far_chat_via("far", |inner| {
         std::sync::Arc::new(SlowClearing {
             inner,
             hold: false.into(),
@@ -1513,7 +1576,7 @@ async fn a_held_prompt_whose_save_was_refused_is_saved_again() {
     let id = net.agent("far").unwrap().id;
     let daemon: std::sync::Arc<dyn client::Client> =
         std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
-    net.refuse_calls("desk", "laptop", true).unwrap();
+    net.refuse_calls("desk", "laptop", true).await.unwrap();
     for c in "race A".chars() {
         press(&mut app, KeyCode::Char(c));
     }
@@ -1553,12 +1616,12 @@ async fn a_held_prompt_whose_save_was_refused_is_saved_again() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_held_prompt_whose_agent_exits_while_its_chat_is_closed_stays_in_the_draft() {
     use crossterm::event::KeyCode;
-    let (net, mut app) = far_chat("far").await;
+    let (mut net, mut app) = far_chat("far").await;
     let id = net.agent("far").unwrap().id;
     let key = app.chat.as_ref().unwrap().agent.clone();
     let daemon: std::sync::Arc<dyn client::Client> =
         std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
-    net.refuse_calls("desk", "laptop", true).unwrap();
+    net.refuse_calls("desk", "laptop", true).await.unwrap();
     for c in "race A".chars() {
         press(&mut app, KeyCode::Char(c));
     }
@@ -1580,7 +1643,7 @@ async fn a_held_prompt_whose_agent_exits_while_its_chat_is_closed_stays_in_the_d
     app.close_chat();
 
     net.stop("far").await.unwrap();
-    net.refuse_calls("desk", "laptop", false).unwrap();
+    net.refuse_calls("desk", "laptop", false).await.unwrap();
     tokio::time::timeout(PATIENCE, async {
         loop {
             app.housekeep();

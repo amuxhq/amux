@@ -125,7 +125,7 @@
       "stage": 17,
       "clients": ["terminal"],
       "topology": "journeys/topologies/terminal-flows.json",
-      "claim": "With the laptop unable to open a call to the agent's host while the chat stays live, a prompt that never left is held, shown pending until the host is back, and the host never receives it. Once the host is back the held prompt goes by itself, and the host holds it once."
+      "claim": "With the laptop unable to open a call to the agent's host while its link stays listed, a prompt that never left is held, shown pending until the host is back, and the host never receives it; the failed call takes the host's route down, so it reads as away. Once calls reach the host again it reads as back, the held prompt goes by itself, and the host holds it once."
     },
     {
       "id": "send-may-not-have-arrived",

@@ -211,6 +211,16 @@ idle timeout are 20 and 60 seconds on iOS, 10 and 30 seconds elsewhere, so a
 desktop notices a link that died silently within about forty seconds (the
 shorter timeout of a link's two ends applies).
 
+A host's presence says whether a call to it can get through, so a call that
+cannot open a channel on a route still listed does not wait for that timeout.
+On the host's own direct or SSH link it closes the link, as the idle timeout
+would, and redialling and discovery bring it back as they do any lost link. On
+the relay, or on a link through another host, the route is marked down for that
+host and a fresh call channel is tried in the background, one second after and
+doubling to thirty; the first that opens, or any call that gets through, brings
+the route back. Either way the host reads as offline until a call can reach it,
+and a client releases what it held for the host when it reads as online again.
+
 An SSH link reaches the far daemon through `amux relay`, a hidden command the
 SSH session runs, which joins its stdio to the profile's `link.sock`.
 

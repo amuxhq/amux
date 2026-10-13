@@ -2947,3 +2947,125 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
         "the refusal does not name the limit: {refusal:?}"
     );
 }
+
+/// Presence says whether a call can get through. A host whose route stays
+/// listed while no call channel opens on it (a hiccup shorter than the
+/// link's idle timeout, a relay listing a host it opens no tunnel to) is
+/// taken down by the first call that fails: the desk reads the laptop as
+/// offline at once, over a direct link (closed, as its idle timeout would)
+/// and over the relay (marked down and retried). Once calls open again the
+/// laptop reads online, which is what releases a client's held sends, and
+/// the same send goes through.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_no_call_can_reach_reads_offline_until_one_can() {
+    for relayed in [false, true] {
+        let mut topology = Topology::new().agent(
+            testnet::AgentDecl::new("w", "laptop")
+                .prompt("Wait.")
+                .steps(vec![
+                    provider_fakes::script::Step::Text {
+                        chunks: vec!["Ready.".into()],
+                    },
+                    provider_fakes::script::Step::TurnEnd,
+                ]),
+        );
+        topology = if relayed {
+            topology
+                .relay(&["ada"])
+                .host_decl(relay_host("desk", "ada"))
+                .host_decl(relay_host("laptop", "ada"))
+        } else {
+            topology.host("desk").host("laptop").link("desk", "laptop")
+        };
+        let mut net = Net::start(topology).await.unwrap();
+        if relayed {
+            net.trust("laptop", "desk").await.unwrap();
+            net.trust("desk", "laptop").await.unwrap();
+        }
+        let route = if relayed {
+            LiveRoute::Relay
+        } else {
+            LiveRoute::Direct
+        };
+        let laptop = host_id(&net, "laptop");
+        until_via(&net, "desk", "laptop", route).await;
+        net.settle("w").await.unwrap();
+        let key = net.agent("w").unwrap().key();
+        until("the desk to hold w's row", || {
+            let (net, key) = (&net, &key);
+            async move {
+                let held = net
+                    .runtime("desk")
+                    .unwrap()
+                    .store()
+                    .await
+                    .agent(key)
+                    .unwrap();
+                held.map(|_| ()).ok_or_else(|| "not yet".to_owned())
+            }
+        })
+        .await
+        .unwrap();
+        let mut fleet = net.observe_inventory("desk").await.unwrap();
+        row_until(
+            &mut fleet,
+            laptop,
+            "the laptop online",
+            testnet::observe::host_online,
+        )
+        .await;
+
+        let agent_id = net.agent("w").unwrap().id.as_bytes().to_vec();
+        let send = |text: &str| wire::SendInputRequest {
+            agent_id: agent_id.clone(),
+            input: Some(sdk_prompt(text)),
+        };
+        net.refuse_calls("desk", "laptop", true).await.unwrap();
+        let refused = net
+            .client("desk")
+            .unwrap()
+            .send_input(tonic::Request::new(send("Are you there?")))
+            .await
+            .expect("the send is answered")
+            .into_inner();
+        assert!(
+            matches!(
+                &refused.of,
+                Some(wire::send_input_response::Of::Rejected(rejected))
+                    if rejected.refusal() == wire::Refusal::HostUnreachable
+            ),
+            "a send no call channel opens for is refused as unreachable: {refused:?}"
+        );
+        let away = row_until(&mut fleet, laptop, "the laptop offline", |row| {
+            row.presence() == wire::Presence::Offline
+        })
+        .await;
+        println!(
+            "relayed {relayed}: a refused call takes the laptop {:?}",
+            away.presence()
+        );
+
+        net.refuse_calls("desk", "laptop", false).await.unwrap();
+        let back = row_until(
+            &mut fleet,
+            laptop,
+            "the laptop online again",
+            testnet::observe::host_online,
+        )
+        .await;
+        assert_eq!(back.via(), route.to_wire(), "back on the route it had");
+        let sent = net
+            .client("desk")
+            .unwrap()
+            .send_input(tonic::Request::new(send("Are you there?")))
+            .await
+            .expect("the send is answered")
+            .into_inner();
+        assert!(
+            matches!(sent.of, Some(wire::send_input_response::Of::Accepted(_))),
+            "once calls open again the send goes through: {sent:?}"
+        );
+        println!("relayed {relayed}: calls open again, the laptop is online and takes the send");
+        net.shutdown().await.unwrap();
+    }
+}

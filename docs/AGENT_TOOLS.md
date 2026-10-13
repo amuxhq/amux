@@ -345,9 +345,12 @@ was away when the child finished and that was resumed before the row reached
 it.
 
 The parent receives the report like any agent message, through its own
-carrier, labelled `[agent <name> finished its turn]` or
+carrier, labelled `[agent <name> finished its turn]` (or, by how the turn
+ended, `was stopped before it finished`, `was interrupted before it finished
+its turn` or `failed before it finished its turn`) or
 `[agent <name> stopped: <cause>]` for every kind of agent, so its model can
-tell a child's words from its person's. The item in the parent's transcript
+tell a child's words from its person's. A turn a stop cuts short ends
+stopped, whatever the provider calls its end. The item in the parent's transcript
 keeps the words alone; its sender is on the item.
 
 ## Across hosts

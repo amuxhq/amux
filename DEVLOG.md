@@ -1,3 +1,10 @@
+2026-10-13 — **A stopped child's report says it was stopped.** A child
+deleted mid-turn reported "[agent helper finished its turn]" with no words,
+and its parent told the person the work was done. A turn a stop cuts short
+now ends with the outcome stopped, whatever the provider calls its end, and
+the parent's interpreter words a report by its outcome: stopped,
+interrupted or failed before it finished, or finished its turn.
+
 2026-10-13 — **Terminal Claude offers its project's own commands.** The
 daemon gathers the host's Claude catalogue in its own folder, and Claude
 lists a project's commands only when asked from inside the project, so they

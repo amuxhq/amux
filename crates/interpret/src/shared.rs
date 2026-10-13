@@ -384,6 +384,10 @@ pub struct Shared<A: OpenAsk> {
     /// prompt does (terminal Claude, where keys typed may never arrive).
     #[serde(default)]
     turn_on_reflection: bool,
+    /// The agent is being stopped: the turn the stop cuts short ends
+    /// stopped, however the provider words its end.
+    #[serde(default)]
+    stopping: bool,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -410,6 +414,7 @@ impl<A: OpenAsk> Shared<A> {
             jobs: None,
             catalogue: None,
             turn_on_reflection: false,
+            stopping: false,
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.working_on = first_line(&entry.text);
@@ -900,6 +905,12 @@ impl<A: OpenAsk> Shared<A> {
     /// item. None when no turn was running.
     pub fn turn_ended(&mut self, emit: &mut Emit, outcome: wire::TurnOutcome) -> Option<OpenTurn> {
         self.busy = false;
+        let stopping = std::mem::take(&mut self.stopping);
+        let outcome = match outcome {
+            wire::TurnOutcome::Completed => outcome,
+            _ if stopping => wire::TurnOutcome::Stopped,
+            _ => outcome,
+        };
         let turn = self.turn.end()?;
         emit.step.turn_end = Some(TurnEnd {
             turn_id: turn.id,
@@ -919,8 +930,14 @@ impl<A: OpenAsk> Shared<A> {
 
     /// The provider is gone: no turn runs and nothing is submitted. A turn
     /// cut short has no TurnEnd; the daemon reports the incarnation failed.
+    /// The agent is being stopped: a turn running now ends stopped.
+    pub fn stop_requested(&mut self) {
+        self.stopping = self.busy;
+    }
+
     pub fn provider_exited(&mut self) -> Option<OpenTurn> {
         self.started = false;
+        self.stopping = false;
         // A clean exit stops its jobs; a provider killed alone may orphan
         // them, but nothing reports on them any more either way.
         self.set_jobs(Vec::new());
@@ -1165,7 +1182,8 @@ pub fn worded(mut envelope: Envelope) -> Envelope {
 
 /// A worded agent message as its recipient's model reads it, labelled with
 /// its sender and what it is: `[agent <name> finished its turn]` before a
-/// child's report, `[agent <name> stopped: <cause>]` for a failed one, and
+/// child's report (or how else its turn ended: stopped, interrupted or
+/// failed before it finished), `[agent <name> stopped: <cause>]` for a failed one, and
 /// `[message from agent <name>]` before anything else an agent sends. The
 /// provider's own channel carries only text, so without the label a model
 /// takes another agent's words for its person's. A message from no agent
@@ -1180,7 +1198,17 @@ pub(crate) fn carried(envelope: &Envelope) -> String {
         _ => return envelope.text.clone(),
     };
     match EnvelopeKind::try_from(envelope.kind).unwrap_or_default() {
-        EnvelopeKind::Finished => format!("[{from} finished its turn]\n{}", envelope.text),
+        EnvelopeKind::Finished => {
+            let ended = match envelope.outcome.map(wire::TurnOutcome::try_from) {
+                Some(Ok(wire::TurnOutcome::Stopped)) => "was stopped before it finished",
+                Some(Ok(wire::TurnOutcome::Interrupted)) => {
+                    "was interrupted before it finished its turn"
+                }
+                Some(Ok(wire::TurnOutcome::Failed)) => "failed before it finished its turn",
+                _ => "finished its turn",
+            };
+            format!("[{from} {ended}]\n{}", envelope.text)
+        }
         EnvelopeKind::Failed => format!("[{from} stopped: {}]", envelope.text),
         _ => format!("[message from {from}]\n{}", envelope.text),
     }

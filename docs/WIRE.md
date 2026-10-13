@@ -67,7 +67,7 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | `NOT_FOUND` | No agent with that id or name, no item with that key, no blob with that hash |
 | `FAILED_PRECONDITION` | An ambiguous name (detail `AmbiguousAgentName` with the candidates) |
 | `UNREACHABLE` | Older history lives on a host that cannot be reached, and nothing is held locally; a forwarded call that never left |
-| `PAYMENT_REQUIRED` | A forwarded call to a host only the relay reaches, on an account whose subscription lapsed to the free plan (gRPC `PERMISSION_DENIED`) |
+| `PAYMENT_REQUIRED` | A forwarded call to a host only the relay reaches, on an account whose subscription lapsed to the free plan (gRPC `PERMISSION_DENIED`); a stop is answered `UNREACHABLE` in the same words instead, so clients hold it |
 | `RESOURCE_EXHAUSTED` | An attachment over the 64 MB limit |
 | `ABORTED` | The input was handed to the agent and its answer was lost |
 | `PERMISSION_DENIED` | An agent caller sent input to, or stopped, an agent that is not its own direct child |

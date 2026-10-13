@@ -2839,7 +2839,36 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
     )
     .await;
     let took = started.elapsed();
+    // A stop never leaves either: it is answered as unreachable, so a
+    // client holds it as it holds the send, in words that name the lapse.
+    let stop = tokio::time::timeout(
+        Duration::from_secs(5),
+        net.client("desk")
+            .unwrap()
+            .stop_agent(tonic::Request::new(wire::StopAgentRequest {
+                agent_id: net.agent("w").unwrap().id.as_bytes().to_vec(),
+            })),
+    )
+    .await
+    .expect("the stop is answered at once, not after a deadline");
     net.shutdown().await.unwrap();
+    println!("the desk's stop of w: {stop:?}");
+    let stop = stop.expect_err("a stop to a host out of reach is not done");
+    let stop_error = {
+        use prost::Message as _;
+        wire::Error::decode(stop.details()).expect("a typed error")
+    };
+    assert_eq!(
+        stop_error.code(),
+        wire::ErrorCode::Unreachable,
+        "a stop that never left is held like an unreachable one: {stop_error:?}"
+    );
+    assert!(
+        ["lapse", "subscription", "free plan"]
+            .iter()
+            .any(|word| stop_error.message.to_lowercase().contains(word)),
+        "the stop's reason does not name the lapse: {stop_error:?}"
+    );
     println!("the desk's send to w answered after {took:?}: {answer:?}");
     let answer = answer.expect("the send is answered at once, not after a deadline");
     // The reason may come as a typed error (payment required) or as a

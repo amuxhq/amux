@@ -455,10 +455,22 @@ impl ClientService for ClientApi {
         )
         .await?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            return forwarded(&runtime, host, |mut client| async move {
-                client.stop_agent(request).await
-            })
-            .await;
+            let stopped = runtime
+                .on_peer(host, |mut client| async move {
+                    client.stop_agent(request).await
+                })
+                .await;
+            return match stopped {
+                Ok(empty) => Ok(Response::new(empty)),
+                // Never left, and the lapse is why: answered as unreachable
+                // in the lapse's words, so a client holds the stop as it
+                // holds a send and says the reason.
+                Err(error @ ForwardError::Lapsed { .. }) => Err(status(wire_error(
+                    ErrorCode::Unreachable,
+                    error.to_string(),
+                ))),
+                Err(error) => Err(status(error.to_wire())),
+            };
         }
         runtime
             .stop(agent_id(&request.agent_id)?)

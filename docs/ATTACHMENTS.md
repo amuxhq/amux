@@ -198,16 +198,19 @@ that provider reads (`crates/agent/src/provider.rs`):
 **Between agents.** An agent message carries attachments as a prompt does:
 `SendMessageRequest` and `Envelope` hold positioned text and the ordered
 attachments. The `send` tool moves each element the model wrote (the
-`attach` tool's) out of the text into the list. Before the recipient's
-daemon hands the message to its agent, it puts each file's bytes into the
-recipient's own blobs: copied from the sending agent's directory when both
-run on that host, else fetched with `GetBlob` from the sender's host and
-checked against the hash; a file that cannot be brought refuses the message
-in words. The recipient's agent process then writes the elements with paths
-on its own host, exactly as for a person's prompt: headless Claude's user
-message and terminal Claude's messaging socket carry them with paths. Codex's
-injection is written by its interpreter, which does not know where the agent
-keeps its blobs, so its elements name each file by hash and name only.
+`attach` tool's) out of the text into the list, since an element names the
+file by its path on the sender's host. Before the recipient's daemon hands
+the message to its agent, it puts each file's bytes into the recipient's own
+blobs: copied from the sending agent's directory when both run on that host,
+else fetched with `GetBlob` from the sender's host and checked against the
+hash; a file that cannot be brought refuses the message in words. The
+recipient's interpreter hands the attachments on with the message, and its
+agent process writes each element at its place with the path of the
+recipient's own copy, exactly as for a person's prompt: in the user message
+for headless Claude, in the text on the messaging socket for terminal Claude,
+and in the injected message's text for Codex. The message's item, in the
+sender's chat and in the recipient's, carries the attachments rather than
+their elements.
 
 ## The review document
 

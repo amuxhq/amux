@@ -1572,6 +1572,54 @@ mod tests {
         );
     }
 
+    /// A file another agent sent reaches Codex as its element at its place
+    /// in the injected message, naming the copy in this agent's blobs: the
+    /// sender's path is on another host.
+    #[test]
+    fn codex_reads_an_agents_file_at_its_path_here() {
+        let file = wire::Attachment {
+            of: Some(wire::attachment::Of::File(wire::BlobRef {
+                hash: vec![0xcd; 32],
+                name: "notes.txt".into(),
+                mime: "text/plain".into(),
+                size: 4,
+            })),
+        };
+        let request = serde_json::json!({
+            "id": "amux-2",
+            "method": "thread/inject_items",
+            "params": {
+                "threadId": "t1",
+                "items": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{
+                        "type": "input_text",
+                        "text": format!(
+                            "[message from agent lead]\nPlease read {}",
+                            attachments::PLACEHOLDER
+                        ),
+                    }],
+                }],
+            },
+        });
+        let written = super::codex_turn_input(
+            request.to_string().as_bytes(),
+            &[file],
+            Path::new("/agents/helper/blobs"),
+        )
+        .unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        let text = written["params"]["items"][0]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        assert!(
+            text.starts_with("[message from agent lead]\nPlease read <amux-attachment")
+                && text.contains(&format!("/agents/helper/blobs/{}", "cd".repeat(32))),
+            "the injected message does not name the file here: {text}"
+        );
+    }
+
     /// Claude may read the files amux attaches without asking: the agent's
     /// blob folder lies outside the working folder, so without a grant
     /// headless Claude asks permission to read a file the person just

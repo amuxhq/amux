@@ -1,3 +1,12 @@
+2026-10-13 — **Codex reads another agent's file at its path here, once.**
+The merged halves both wrote Codex's injected message for an agent message
+with files: its interpreter wrote each element without a path, and the
+agent process then formatted the same text again looking for placeholders
+the interpreter had already replaced. The interpreter now leaves the
+placeholders and the agent process alone writes each element with the path
+of the copy in this agent's blobs, as it does for headless and terminal
+Claude. A unit test pins the injected message's text.
+
 2026-10-13 — **The daemon and agents halves of the second QA round, merged.**
 Both halves fixed four things the other also fixed; where their code met,
 one version stays. An agent's stop on its tools socket is refused in words

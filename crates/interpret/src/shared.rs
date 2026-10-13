@@ -1217,27 +1217,6 @@ pub(crate) fn carried(envelope: &Envelope) -> String {
     }
 }
 
-/// Positioned text with each attachment's element written at its
-/// placeholder, naming the file by hash and name but no path: for a
-/// carrier the interpreter writes itself, which cannot know where the agent
-/// keeps its blobs. Text with no attachments is returned as it is.
-pub(crate) fn with_elements(text: &str, attachments: &[Attachment]) -> String {
-    if attachments.is_empty() {
-        return text.to_owned();
-    }
-    let mut attachments = attachments.iter();
-    let mut out = String::new();
-    for (index, prose) in text.split(attachments::PLACEHOLDER).enumerate() {
-        if index > 0
-            && let Some(attachment) = attachments.next()
-        {
-            out.push_str(&attachments::element(attachment, None));
-        }
-        out.push_str(prose);
-    }
-    out
-}
-
 /// What a provider reads for a queued input: its words, labelled as
 /// [`carried`] labels a message when another agent sent them. A queued
 /// input from an agent is a parent's message that resumed its recipient;

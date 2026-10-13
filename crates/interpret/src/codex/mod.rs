@@ -1210,10 +1210,7 @@ impl State {
         let message = InjectedMessage {
             role: "user".into(),
             content: vec![InjectedContent::InputText(TextContent {
-                text: crate::shared::with_elements(
-                    &crate::shared::carried(envelope),
-                    &envelope.attachments,
-                ),
+                text: crate::shared::carried(envelope),
                 extra: Default::default(),
             })],
             extra: Default::default(),

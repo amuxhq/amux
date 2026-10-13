@@ -536,6 +536,11 @@ impl ProfileRuntime {
                 tracing::warn!(%error, "removing a dropped replica's directory failed");
             }
         }
+        // An agent its host no longer lists is gone for good, deleted or
+        // removed by retention there; one whose host is untrusted is not.
+        if reason == RemovalReason::NoLongerListed {
+            self.forget_draft(&key.agent);
+        }
         self.fanout.close(key);
         self.fanout
             .publish_inventory(inventory(inventory_event::Of::AgentRemoved(AgentRemoved {

@@ -1,3 +1,15 @@
+2026-10-13 — **A deleted agent's draft goes with it.** A chat that closed
+because its agent was deleted handed its draft back to this machine's
+daemon as it closed, and again as the client quit, so the daemon kept words
+for an agent that no longer existed. The terminal client now drops the
+draft of a chat closed by its agent's deletion, and keeps none at quit for
+an agent a current fleet no longer lists. The daemon forgot the draft of
+the agent a delete named, but not of the children the delete cascaded to;
+it now forgets each deleted agent's draft, and those of agents removed by
+retention, here or on the host that ran them (a replica its host stopped
+listing). A terminal-client frame test pins the client half; the registry's
+cascade-delete test pins the daemon half.
+
 2026-10-13 — **A child made while its parent stops is stopped too, or
 refused.** A stop listed the parent's children before it ended the parent,
 and a child the parent was spawning at that moment could be written after

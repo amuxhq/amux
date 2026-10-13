@@ -934,15 +934,18 @@ async fn a_draft_outlives_the_terminal_client_closing() {
 }
 
 /// A client of the daemon whose saves of an emptied draft never land while
-/// `hold` is set: the clearing a person did is still on its way.
+/// `hold` is set: the clearing a person did is still on its way. It notes
+/// the agent of every draft saved.
 struct SlowClearing {
     inner: std::sync::Arc<dyn client::Client>,
     hold: std::sync::atomic::AtomicBool,
+    saved: std::sync::Mutex<Vec<Vec<u8>>>,
 }
 
 #[async_trait::async_trait]
 impl client::Client for SlowClearing {
     async fn save_draft(&self, request: wire::SaveDraftRequest) -> Result<(), client::RpcError> {
+        self.saved.lock().unwrap().push(request.agent_id.clone());
         let empty = request
             .draft
             .as_ref()
@@ -1081,6 +1084,7 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
     let slow = std::sync::Arc::new(SlowClearing {
         inner: daemon.clone(),
         hold: std::sync::atomic::AtomicBool::new(true),
+        saved: Default::default(),
     });
     let client: std::sync::Arc<dyn client::Client> = slow.clone();
     let mut app = app_listing(client, config, &[worker.as_bytes()]).await;
@@ -1118,6 +1122,67 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
         "the daemon still keeps {:?} after the client quit",
         left.text
     );
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// A chat that closes because its agent was deleted keeps no draft: the
+/// words in its composer went back to this machine's daemon as the chat
+/// closed, and again as the client quit, for an agent that no longer
+/// exists.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_deleted_agents_chat_keeps_no_draft() {
+    use crossterm::event::KeyCode;
+    let (net, daemon, config) = desk_of(&["doomed"]).await;
+    let doomed = net.agent("doomed").unwrap().id;
+    let recording = std::sync::Arc::new(SlowClearing {
+        inner: daemon.clone(),
+        hold: std::sync::atomic::AtomicBool::new(false),
+        saved: Default::default(),
+    });
+    let client: std::sync::Arc<dyn client::Client> = recording.clone();
+    let mut app = app_listing(client, config, &[doomed.as_bytes()]).await;
+    open_chat(&mut app, doomed.as_bytes()).await;
+    for c in "half a thought".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+
+    daemon
+        .delete_agent(wire::DeleteAgentRequest {
+            agent_id: doomed.as_bytes().to_vec(),
+        })
+        .await
+        .unwrap();
+    tokio::time::timeout(PATIENCE, async {
+        while app.chat.is_some() {
+            app.housekeep();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the deleted agent's chat closes");
+    tokio::time::timeout(PATIENCE, app.keep_drafts())
+        .await
+        .expect("the quit's save lands");
+
+    assert!(
+        !recording
+            .saved
+            .lock()
+            .unwrap()
+            .contains(&doomed.as_bytes().to_vec()),
+        "the deleted agent's draft was saved"
+    );
+    let left = daemon
+        .get_draft(wire::GetDraftRequest {
+            agent_id: doomed.as_bytes().to_vec(),
+        })
+        .await
+        .unwrap();
+    assert!(left.text.is_empty(), "the daemon keeps {:?}", left.text);
     drop(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())
         .await

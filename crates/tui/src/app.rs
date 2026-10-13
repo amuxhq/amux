@@ -338,6 +338,15 @@ async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::Compos
     }
 }
 
+/// Why the open chat can no longer be served.
+struct ChatGone {
+    /// In the person's terms.
+    why: String,
+    /// Its agent was deleted, rather than its host unlinked or its session
+    /// ended.
+    deleted: bool,
+}
+
 impl Drop for App {
     /// A client dropped without quitting (a test, an embedding) still
     /// hands its drafts on, where a runtime is there to send them.
@@ -702,6 +711,15 @@ impl App {
         }
     }
 
+    /// Back to the fleet from a chat whose agent was deleted: its draft
+    /// goes with it, kept neither here nor with the daemon.
+    fn close_deleted_chat(&mut self) {
+        if let Some(chat) = self.chat.take() {
+            self.fleet.close(&chat.agent);
+            self.drafts.remove(&chat.agent);
+        }
+    }
+
     /// Keeps a closing chat's draft for when it opens again, here and with
     /// this machine's daemon, so it outlives this client. An empty one is
     /// kept too, so the chat reopens empty and the quit's save, which is
@@ -726,6 +744,14 @@ impl App {
             std::mem::take(&mut self.drafts);
         if let Some(chat) = &self.chat {
             editors.insert(chat.agent.clone(), chat.view.editor.clone());
+        }
+        // A chat left before its agent was deleted keeps no draft: a fleet
+        // that is current and no longer lists the agent says it is gone.
+        {
+            let fleet = self.fleet.state();
+            if fleet.caught_up() && fleet.connection() == ui_state::Connection::Live {
+                editors.retain(|agent, _| fleet.agent(agent).is_some());
+            }
         }
         for session in self.fleet.sessions() {
             let held: Vec<(String, Vec<Attachment>)> = session
@@ -1354,7 +1380,7 @@ impl App {
     /// Why the open chat can no longer be served, in the person's terms:
     /// its agent deleted, or its host no longer linked to this machine (the
     /// runtime says only that it knows no such agent). None while it can.
-    fn chat_gone(&self) -> Option<String> {
+    fn chat_gone(&self) -> Option<ChatGone> {
         let chat = self.chat.as_ref()?;
         let fleet = self.fleet.state();
         let ended = chat.session.ended();
@@ -1377,24 +1403,29 @@ impl App {
         let not_found = ended
             .as_ref()
             .is_some_and(|error| error.code() == Some(wire::ErrorCode::NotFound));
-        Some(match ended {
+        let (why, deleted) = match ended {
             _ if !linked && (dropped || not_found) => {
-                format!("{host} is no longer linked to this machine")
+                (format!("{host} is no longer linked to this machine"), false)
             }
-            _ if dropped || not_found => format!("{} was deleted", state.agent().name),
-            Some(error) => error.to_string(),
+            _ if dropped || not_found => (format!("{} was deleted", state.agent().name), true),
+            Some(error) => (error.to_string(), false),
             None => return None,
-        })
+        };
+        Some(ChatGone { why, deleted })
     }
 
     /// What the loop does before each frame: a deleted agent's open chat
     /// closes to the fleet, and the changed files its overview lists are
     /// fetched when it asks.
     pub fn housekeep(&mut self) {
-        if let Some(why) = self.chat_gone() {
-            self.close_chat();
+        if let Some(gone) = self.chat_gone() {
+            if gone.deleted {
+                self.close_deleted_chat();
+            } else {
+                self.close_chat();
+            }
             self.home_held = Some(now_ms());
-            self.notice(format!("the chat closed: {why}"), Tone::Warn);
+            self.notice(format!("the chat closed: {}", gone.why), Tone::Warn);
             return;
         }
         self.ask_host_offers();

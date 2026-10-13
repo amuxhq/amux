@@ -1079,6 +1079,12 @@ impl ProfileRuntime {
         self.drafts.lock().unwrap().get(agent_id)
     }
 
+    /// Forgets the draft of an agent gone for good: deleted or removed by
+    /// retention, on this host or on another.
+    pub(crate) fn forget_draft(&self, agent_id: &[u8]) {
+        self.drafts.lock().unwrap().forget(agent_id);
+    }
+
     /// Keeps an agent's unsent draft for this machine's clients; an empty
     /// one forgets it.
     pub fn save_draft(&self, agent_id: &[u8], draft: &wire::ComposerDraft) {
@@ -1524,7 +1530,6 @@ impl ProfileRuntime {
     pub async fn delete(&self, id: AgentId) -> Result<DeleteAgentResponse, RegistryError> {
         let mut response = DeleteAgentResponse::default();
         self.delete_into(id, &mut response).await?;
-        self.drafts.lock().unwrap().forget(id.as_bytes());
         Ok(response)
     }
 
@@ -1605,6 +1610,7 @@ impl ProfileRuntime {
         }
         self.operations.lock().unwrap().remove(&id);
         self.births.lock().unwrap().remove(&id);
+        self.forget_draft(id.as_bytes());
         Ok(())
     }
 

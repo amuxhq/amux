@@ -754,6 +754,15 @@ async fn delete_aborts_first_and_cascades_to_children() {
             .await
             .unwrap();
     }
+    for id in [parent, child, bystander] {
+        runtime.save_draft(
+            id.as_bytes(),
+            &wire::ComposerDraft {
+                text: "unsent".into(),
+                attachments: Vec::new(),
+            },
+        );
+    }
 
     let response = runtime.delete(parent).await.expect("the delete completes");
     println!("delete response: {response:#?}");
@@ -780,7 +789,12 @@ async fn delete_aborts_first_and_cascades_to_children() {
             Err(RegistryError::NotFound(_))
         ));
         assert!(!runtime.live().contains(&id));
+        assert!(
+            runtime.draft(id.as_bytes()).text.is_empty(),
+            "a deleted agent's draft is forgotten"
+        );
     }
+    assert_eq!(runtime.draft(bystander.as_bytes()).text, "unsent");
     assert!(runtime.store().await.agent(&remote).unwrap().is_some());
     assert_eq!(
         runtime.agent(bystander).await.unwrap().lifecycle,

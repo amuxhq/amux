@@ -46,6 +46,7 @@ impl ProfileRuntime {
                 launch.tail_rows,
             )?;
             for key in &sweep.removed {
+                self.forget_draft(&key.agent);
                 self.fanout.close(key);
                 self.fanout
                     .publish_inventory(inventory(inventory_event::Of::AgentRemoved(

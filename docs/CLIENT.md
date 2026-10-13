@@ -7,7 +7,10 @@ amux has two rich clients, the terminal client ([TERMINAL.md](TERMINAL.md)) and 
 a driver that owns the streams and does every piece of I/O, and a set of views that turn the model into plain
 content values. Each client composes those values in its own layout and owns only what is ephemeral: panes,
 scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to its own machine's
-daemon (`SaveDraft`, `GetDraft`) so a draft outlives the client; they never leave that machine.
+daemon (`SaveDraft`, `GetDraft`) so a draft outlives the client; they never leave that machine. A deleted
+agent's draft goes with it: the daemon forgets it when the agent is deleted (its children too) or removed by
+retention, here or on the host that ran it, and the terminal client saves nothing for a chat that closed because
+its agent was deleted.
 
 Three rules shape the library:
 

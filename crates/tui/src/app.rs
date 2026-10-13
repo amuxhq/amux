@@ -297,6 +297,11 @@ pub struct App {
     /// Saves of held prompts on their way to this machine's daemon, by
     /// agent; one that fails leaves here unkept and is made again.
     held_saving: HashMap<AgentKey, Vec<ui_state::InputId>>,
+    /// By agent, the prompts last seen on their way back to its draft:
+    /// held for an unreachable host, or refused while its chat was closed.
+    /// When the fleet drops the session holding them (its agent exited or
+    /// left), their words go into the agent's draft here.
+    returning: HashMap<AgentKey, Vec<(ui_state::InputId, String, Vec<Attachment>)>>,
     /// A chat closed under the person: home takes no key until
     /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
     /// rest of what they were typing never acts on another agent. The last
@@ -342,8 +347,24 @@ fn composer_draft(editor: &crate::editor::Editor) -> wire::ComposerDraft {
 /// The prompts `state` holds for an unreachable host: id, words and
 /// attachments.
 fn held_prompts(state: &SessionState) -> Vec<(ui_state::InputId, String, Vec<Attachment>)> {
+    returning_prompts(state, false)
+}
+
+/// The prompts of `state` whose words go back to the agent's draft: those
+/// held for an unreachable host, and, for a chat that is not open, those
+/// the agent refused, which come back into the composer as it opens.
+fn returning_prompts(
+    state: &SessionState,
+    refused: bool,
+) -> Vec<(ui_state::InputId, String, Vec<Attachment>)> {
     state
-        .held()
+        .inputs()
+        .iter()
+        .filter(|sent| match sent.state {
+            ui_state::InputState::Held => true,
+            ui_state::InputState::Rejected(_) => refused,
+            _ => false,
+        })
         .filter_map(|sent| match &sent.what {
             InputWhat::Prompt { text, attachments } => {
                 Some((sent.id.clone(), text.clone(), attachments.clone()))
@@ -428,6 +449,7 @@ impl App {
             drafts: HashMap::new(),
             held_kept: HashMap::new(),
             held_saving: HashMap::new(),
+            returning: HashMap::new(),
             home_held: None,
             offers_asked: HashSet::new(),
             events,
@@ -766,6 +788,17 @@ impl App {
     /// kept too, so the chat reopens empty and the quit's save, which is
     /// waited for, empties the daemon's copy even if this save has not.
     fn keep_draft(&mut self, chat: OpenChat) {
+        // Refused prompts its composer took back are in the editor now:
+        // forgotten, so they neither come back again nor count as words
+        // still on their way back to the draft.
+        let taken: Vec<ui_state::InputId> = ui_view::refused_prompts(&chat.session.state())
+            .into_iter()
+            .map(|refused| refused.input_id)
+            .filter(|id| chat.view.took_back(id))
+            .collect();
+        for id in taken {
+            chat.session.discard(&id);
+        }
         // Its held prompts go in the daemon's copy too, as they did while
         // the chat was open, but not in the composer it reopens with.
         let mut kept = chat.view.editor.clone();
@@ -800,13 +833,14 @@ impl App {
                 editors.retain(|agent, _| fleet.agent(agent).is_some());
             }
         }
+        let open = self.chat.as_ref().map(|chat| chat.agent.clone());
         for session in self.fleet.sessions() {
             let state = session.state();
-            let held = held_prompts(&state);
+            let key = ui_state::agent_key(state.agent());
+            let held = returning_prompts(&state, open.as_ref() != Some(&key));
             if held.is_empty() {
                 continue;
             }
-            let key = ui_state::agent_key(state.agent());
             let editor = editors.entry(key).or_default();
             for (_, text, attachments) in held {
                 editor.restore(&text, attachments);
@@ -825,12 +859,20 @@ impl App {
     /// took it; the quit's save covers the typing.
     fn keep_held_drafts(&mut self) {
         let mut seen = HashSet::new();
+        let open = self.chat.as_ref().map(|chat| chat.agent.clone());
         for session in self.fleet.sessions() {
             let state = session.state();
             let key = ui_state::agent_key(state.agent());
-            let held = held_prompts(&state);
+            // A refused prompt comes back into an open chat's composer at
+            // once; a closed chat's waits for it to open, in the draft.
+            let held = returning_prompts(&state, open.as_ref() != Some(&key));
             drop(state);
             seen.insert(key.clone());
+            if held.is_empty() {
+                self.returning.remove(&key);
+            } else {
+                self.returning.insert(key.clone(), held.clone());
+            }
             let ids: Vec<ui_state::InputId> = held.iter().map(|(id, ..)| id.clone()).collect();
             if self
                 .held_kept
@@ -862,7 +904,34 @@ impl App {
                 })
             });
         }
-        // A session gone (its agent exited or deleted) holds nothing more.
+        // A session gone (its agent exited or deleted) holds nothing more:
+        // what it held or had refused goes back to the agent's draft, and
+        // the draft is kept with it.
+        let dropped: Vec<AgentKey> = self
+            .returning
+            .keys()
+            .filter(|key| !seen.contains(*key))
+            .cloned()
+            .collect();
+        for key in dropped {
+            let Some(words) = self.returning.remove(&key) else {
+                continue;
+            };
+            // A deleted agent keeps no draft.
+            if self.fleet.state().agent(&key).is_none() {
+                continue;
+            }
+            let editor = self.drafts.entry(key.clone()).or_default();
+            for (_, text, attachments) in words {
+                editor.restore(&text, attachments);
+            }
+            let draft = composer_draft(editor);
+            let client = self.client.clone();
+            self.spawn(async move {
+                save_drafts(client, vec![(key.agent, draft)]).await;
+                None
+            });
+        }
         self.held_kept.retain(|key, _| seen.contains(key));
         self.held_saving.retain(|key, _| seen.contains(key));
     }

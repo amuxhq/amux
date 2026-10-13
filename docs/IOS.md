@@ -90,7 +90,9 @@ only what changed. A chat is a `ChatModel` over an open `Chat`:
   chat's session and the app being closed. A prompt held for a host that
   cannot be reached is kept in the draft too, ahead of what is typed, from
   the moment it is held until it is released and sent, so a phone that
-  closes first finds its words back in the composer. Drafts never leave the device,
+  closes first finds its words back in the composer. A chat holding one
+  stays open past its retention until it goes, as only the open chat takes
+  it back out of the kept draft. Drafts never leave the device,
   and removing an account from the phone forgets its drafts. Deleting an
   agent from the phone forgets its draft, and nothing typed into its chat
   while the page leaves is kept. An agent deleted elsewhere leaves its draft

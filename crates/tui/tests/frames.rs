@@ -1536,6 +1536,90 @@ async fn a_held_prompt_whose_save_was_refused_is_saved_again() {
         .unwrap();
 }
 
+/// A prompt held for a chat that is closed goes back to the draft when its
+/// agent exits before the host takes it: the session holding it is dropped
+/// with the exited agent, or its resend is refused as exited. Either way the
+/// draft this machine keeps was written again without it, and the prompt
+/// was lost.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_held_prompt_whose_agent_exits_while_its_chat_is_closed_stays_in_the_draft() {
+    use crossterm::event::KeyCode;
+    let (net, mut app) = far_chat("far").await;
+    let id = net.agent("far").unwrap().id;
+    let key = app.chat.as_ref().unwrap().agent.clone();
+    let daemon: std::sync::Arc<dyn client::Client> =
+        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    net.refuse_calls("desk", "laptop", true).unwrap();
+    for c in "race A".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    tokio::time::timeout(PATIENCE, async {
+        loop {
+            app.housekeep();
+            while let Ok(event) = app.receiver.try_recv() {
+                app.event(event);
+            }
+            if app.chat.as_ref().unwrap().session.state().held().count() == 1 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the prompt is held");
+    app.close_chat();
+
+    net.stop("far").await.unwrap();
+    net.refuse_calls("desk", "laptop", false).unwrap();
+    tokio::time::timeout(PATIENCE, async {
+        loop {
+            app.housekeep();
+            while let Ok(event) = app.receiver.try_recv() {
+                app.event(event);
+            }
+            let holds = app
+                .fleet
+                .session(&key)
+                .is_some_and(|session| session.state().held().count() > 0);
+            let exited = app
+                .fleet
+                .state()
+                .agent(&key)
+                .is_some_and(|entry| entry.lifecycle() == wire::Lifecycle::Exited);
+            if exited && !holds {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the agent exits and nothing is held any more");
+    for _ in 0..10 {
+        app.housekeep();
+        while let Ok(event) = app.receiver.try_recv() {
+            app.event(event);
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    app.keep_drafts().await;
+    let kept = daemon
+        .get_draft(wire::GetDraftRequest {
+            agent_id: id.as_bytes().to_vec(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        kept.text, "race A",
+        "the held prompt went back to the draft"
+    );
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
 /// A chat open on an agent deleted from its own host says it was deleted
 /// (or closes): it said "exited · aborted" and "Enter resumes", and Enter
 /// answered "could not resume: no agent <uuid>".

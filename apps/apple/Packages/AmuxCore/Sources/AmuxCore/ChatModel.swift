@@ -196,6 +196,9 @@ public final class ChatModel {
     /// The prompts the chat holds for a host that cannot be reached, oldest
     /// first, each as the draft it came from.
     @ObservationIgnored private var heldDrafts: [(id: [UInt8], draft: Draft)] = []
+    /// Whether the chat holds a prompt for a host that cannot be reached:
+    /// its words are in the kept draft until it goes.
+    public var holdsPrompts: Bool { !heldDrafts.isEmpty }
     /// Attachments still being stored.
     public private(set) var uploading = 0
     /// A send or resume on its way.

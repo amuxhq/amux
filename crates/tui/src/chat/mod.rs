@@ -579,6 +579,11 @@ impl ChatView {
     }
 
     /// Whether a text field has the keys and holds something, for Ctrl+C.
+    /// Whether a refused prompt's words have gone back to this composer.
+    pub(crate) fn took_back(&self, input_id: &[u8]) -> bool {
+        self.rejected_seen.contains(input_id)
+    }
+
     pub fn field_text(&self, state: &SessionState) -> bool {
         if self.review_open {
             return self.review.as_ref().is_some_and(ReviewPage::editing);

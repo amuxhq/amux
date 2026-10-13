@@ -179,7 +179,10 @@ chat for home or another chat waits in its composer until the chat opens again; 
 cleared, even before this machine's daemon has forgotten its copy, and quitting waits until it has. A prompt the agent
 refuses, an exited agent's included, comes back into the composer with the reason, worded from the typed reason
 the view hands over, the same as the phone's; one whose connection dropped before a reply waits in the
-queue as `may not have arrived`, to resend or discard, and nothing is resent by itself.
+queue as `may not have arrived`, to resend or discard, and nothing is resent by itself. A prompt held while its
+host is away is in the draft this machine's daemon keeps from the moment it is held; one held for a chat that is not
+open goes back to that chat's draft if its resend is refused or its agent exits first, and comes back into the
+composer when the chat opens.
 
 Scrolled back, a control floats at the bottom centre of the feed, `↓ Jump to Bottom  ctrl+end`, or `↓ 3 new` when
 rows arrived meanwhile; clicking it or Ctrl+End returns to the newest. Because the client reads the mouse, the

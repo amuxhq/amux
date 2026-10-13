@@ -705,6 +705,68 @@ async fn a_stopped_parent_keeps_its_far_child_for_the_delete() {
     net.shutdown().await.unwrap();
 }
 
+/// A far child deleted on its own host is forgotten by its parent's host
+/// as well: the parent's host kept it as a child it had started, so once
+/// the hosts unlinked a delete of the parent was refused for a child that
+/// no longer existed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_far_child_deleted_on_its_own_does_not_hold_up_its_parents_delete() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop")
+            .agent(lead()),
+    )
+    .await
+    .unwrap();
+    net.spawn_child(
+        "lead",
+        child("scout", "laptop", vec![waits("never"), Step::TurnEnd]),
+    )
+    .await
+    .unwrap();
+    until("desk to hold scout", || {
+        let net = &net;
+        async move {
+            row(net, "desk", "scout")
+                .await
+                .is_some()
+                .then_some(())
+                .ok_or_else(|| "desk does not list scout".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    let scout = net.agent("scout").unwrap().key();
+    net.delete_family("scout").await.unwrap();
+    until("desk to drop scout", || {
+        let (net, scout) = (&net, &scout);
+        async move {
+            let held = net
+                .runtime("desk")
+                .unwrap()
+                .store()
+                .await
+                .agent(scout)
+                .unwrap();
+            held.is_none()
+                .then_some(())
+                .ok_or_else(|| "desk still lists scout".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    net.remove_link("desk", "laptop").await.unwrap();
+    let deleted = net.delete_family("lead").await;
+    println!("delete lead after scout was deleted: {deleted:?}");
+    assert!(
+        deleted.is_ok(),
+        "a delete was refused for a child that no longer exists: {deleted:?}"
+    );
+    net.shutdown().await.unwrap();
+}
+
 /// A child's finished message waits in its host's outbox while its parent's
 /// host is away, and arrives once when it returns. A row for a parent
 /// incarnation that has since ended is dropped instead; and the parent's

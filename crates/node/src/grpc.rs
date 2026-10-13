@@ -520,10 +520,15 @@ impl ClientService for ClientApi {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            return forwarded(&runtime, host, |mut client| async move {
+            let key = store::AgentKey::new(host.as_bytes().to_vec(), request.agent_id.clone());
+            let deleted = forwarded(&runtime, host, |mut client| async move {
                 client.delete_agent(request).await
             })
-            .await;
+            .await?;
+            // Gone at once: no parent's delete here looks for it again,
+            // whenever its host's word of the removal arrives.
+            runtime.forget_forwarded(&key);
+            return Ok(deleted);
         }
         runtime
             .delete(agent_id(&request.agent_id)?)

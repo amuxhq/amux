@@ -998,6 +998,21 @@ impl ProfileRuntime {
         self.births.lock().unwrap().entry(id).or_default().clone()
     }
 
+    /// Forgets a far child its parent's host started, once the child is
+    /// gone for good: deleted, from this host or its own, or no longer
+    /// listed by its host. A parent's delete would otherwise look for it
+    /// and refuse while its host is out of reach. Its host being untrusted
+    /// is not that: the child lives on, and the delete must still find it.
+    pub(crate) fn forget_forwarded(&self, child: &AgentKey) {
+        for births in self.births.lock().unwrap().values() {
+            births
+                .forwarded
+                .lock()
+                .unwrap()
+                .retain(|forwarded| &forwarded.key != child);
+        }
+    }
+
     /// Marks `id` as stopping and waits out every creation of a child of
     /// its already under way; until the mark is dropped, a creation for it
     /// is refused. See [`Births`].

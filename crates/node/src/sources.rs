@@ -540,6 +540,7 @@ impl ProfileRuntime {
         // removed by retention there; one whose host is untrusted is not.
         if reason == RemovalReason::NoLongerListed {
             self.forget_draft(&key.agent);
+            self.forget_forwarded(key);
         }
         self.fanout.close(key);
         self.fanout
@@ -1086,7 +1087,12 @@ async fn follow_once(
                 let key = AgentKey::new(removed.host_id, removed.agent_id);
                 match store.agent(&key) {
                     Ok(Some(_)) => me.drop_replica(&mut store, &key, RemovalReason::NoLongerListed),
-                    Ok(None) => Ok(()),
+                    // A child started from here that this host never
+                    // listed is gone all the same.
+                    Ok(None) => {
+                        me.forget_forwarded(&key);
+                        Ok(())
+                    }
                     Err(error) => Err(error),
                 }
             }

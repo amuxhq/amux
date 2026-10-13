@@ -1611,8 +1611,9 @@ impl Home {
         // Too long for the edge: the folder shortens in the middle first,
         // then the name at its end, since the model and the permission are
         // what the person is about to start the agent with. Still too long,
-        // the mode drops, then the model, then the permission (ctrl+s or
-        // shift+tab still reach them).
+        // the mode drops, then the model, then the permission (ctrl+s
+        // still reaches them), but never what Shift+Tab steps: a key whose
+        // effect nothing shows is a setting changed blind.
         for shortened in [Setting::Folder, Setting::Name] {
             let over = measure(&groups).saturating_sub(room);
             if over == 0 {
@@ -1631,8 +1632,13 @@ impl Home {
                 }
             }
         }
+        let stepped = if setup.cycles() == "mode" {
+            Setting::Mode
+        } else {
+            Setting::Permission
+        };
         for dropped in [Setting::Mode, Setting::Model, Setting::Permission] {
-            if measure(&groups) > room {
+            if dropped != stepped && measure(&groups) > room {
                 for group in &mut groups {
                     group.retain(|(item, _)| *item != dropped);
                 }

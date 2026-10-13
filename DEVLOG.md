@@ -1,3 +1,12 @@
+2026-10-13 — **A new agent's edge shows what Shift+Tab turned on.** On the
+new-agent screen at 80 columns in a deep folder, Shift+Tab turned Codex's
+plan mode on and the edge still read "Codex · read only": too long for
+the edge, it dropped the mode first, so the agent started planning with
+nothing having said so. The edge still sheds settings when it must, but
+never the one Shift+Tab steps (the mode for Codex, the permission for
+Claude); the model goes instead. A test draws a new Codex agent's edge at
+80 columns in a deep folder, plan off, on and off again.
+
 2026-10-13 — **A child started on another host with no folder starts where
 that host's agents work.** An agent's spawn tool naming another host and
 no folder started the child in the home folder of the user that host's

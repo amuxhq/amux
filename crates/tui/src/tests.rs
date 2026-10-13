@@ -2692,6 +2692,66 @@ fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_colum
     );
 }
 
+/// What Shift+Tab steps shows on a new agent's edge however narrow the
+/// edge is: at 80 columns in a deep folder, Codex's plan mode went on with
+/// nothing on the edge saying so, and the agent started planning.
+#[test]
+fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
+    let fleet = home_fleet();
+    let place = crate::home::Place {
+        working_dir: "~/.local/state/amux-qa/20261013-043305/t8/.testnet/net/desk/work",
+        ..*HOME_PLACE
+    };
+    let mut home = crate::home::Home::default();
+    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let setup = home.open_setup(&place).unwrap();
+    setup.pick(crate::setup::Item::Kind, "1");
+    setup.offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
+    setup.pick(crate::setup::Item::Permission, "read-only");
+    let edge_of = |home: &mut crate::home::Home| {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, H)).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                home.draw(
+                    frame,
+                    area,
+                    &fleet,
+                    &HashMap::new(),
+                    None,
+                    now(),
+                    theme(),
+                    &place,
+                );
+            })
+            .unwrap();
+        let screen = text(terminal.backend().buffer());
+        screen
+            .lines()
+            .find(|line| line.contains("╰") && line.contains("Codex"))
+            .unwrap_or_else(|| panic!("no edge on\n{screen}"))
+            .to_owned()
+    };
+    assert!(
+        !edge_of(&mut home).contains("plan"),
+        "{}",
+        edge_of(&mut home)
+    );
+    home.key(&fleet, key(KeyCode::BackTab), false);
+    let edge = edge_of(&mut home);
+    assert!(
+        edge.contains("plan") && edge.contains("read only"),
+        "the edge does not show the plan mode Shift+Tab turned on: {edge}"
+    );
+    home.key(&fleet, key(KeyCode::BackTab), false);
+    assert!(
+        !edge_of(&mut home).contains("plan"),
+        "{}",
+        edge_of(&mut home)
+    );
+}
+
 /// What a host offers for Claude, as headless Claude says.
 fn claude_offer() -> wire::Catalogue {
     let permission = |value: &str, display_name: &str| wire::OfferedPermission {

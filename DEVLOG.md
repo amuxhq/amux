@@ -1,3 +1,5 @@
+2026-10-13 — **Keep a far child's identity through its parent's stop.** A stop of a parent dropped the children it had started on other hosts from its memory whenever its host's listing held them at that moment. If the hosts then unlinked, the listing lost the child too, and a delete of the parent saw no child at all: it reported success and left the child behind. The stop now reaches listed children from the listing without forgetting them, so the delete still finds the child and refuses while its host is out of reach.
+
 2026-10-13 — **The phone names the free plan where a host is away.** A host
 reads away only when the relay alone sees it on a free account, whose relay
 opens no connection between hosts, and the terminal now says so. The phone

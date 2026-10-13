@@ -1546,11 +1546,18 @@ impl ProfileRuntime {
         };
         let mut children: Vec<AgentKey> = listed.into_iter().map(|row| row.agent).collect();
         {
+            // One the store lists now is stopped from the listing. Its
+            // forwarded identity stays: the listing can lose it (the hosts
+            // unlink) while the child lives on, and a delete must still
+            // find it.
             let births = self.births(id);
-            let mut forwarded = births.forwarded.lock().unwrap();
-            // One the store lists now is stopped from the listing.
-            forwarded.retain(|child| !children.contains(&child.key));
-            children.extend(forwarded.iter().map(|child| child.key.clone()));
+            let forwarded = births.forwarded.lock().unwrap();
+            let unlisted: Vec<AgentKey> = forwarded
+                .iter()
+                .map(|child| child.key.clone())
+                .filter(|key| !children.contains(key))
+                .collect();
+            children.extend(unlisted);
         }
         for child in children {
             let me = self.me.clone();

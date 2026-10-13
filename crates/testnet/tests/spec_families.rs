@@ -629,6 +629,82 @@ async fn a_delete_whose_family_reaches_an_unreachable_host_deletes_nothing() {
     net.shutdown().await.unwrap();
 }
 
+/// A parent's host keeps knowing the far child it started after a stop: the
+/// stop reached the child while its host's listing held it, and forgot it
+/// was forwarded, so once the hosts unlinked a delete of the parent saw no
+/// child, said it deleted the family, and left the child behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_parent_keeps_its_far_child_for_the_delete() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop")
+            .agent(lead()),
+    )
+    .await
+    .unwrap();
+    net.spawn_child(
+        "lead",
+        child("scout", "laptop", vec![waits("never"), Step::TurnEnd]),
+    )
+    .await
+    .unwrap();
+    until("desk to hold scout", || {
+        let net = &net;
+        async move {
+            row(net, "desk", "scout")
+                .await
+                .is_some()
+                .then_some(())
+                .ok_or_else(|| "desk does not list scout".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    net.stop("lead").await.unwrap();
+    until("scout to stop with its parent", || {
+        let net = &net;
+        async move {
+            let at = lifecycle(net, "laptop", "scout").await;
+            (at == Some(Lifecycle::Exited))
+                .then_some(())
+                .ok_or_else(|| format!("scout is {at:?}"))
+        }
+    })
+    .await
+    .unwrap();
+    net.remove_link("desk", "laptop").await.unwrap();
+    until("desk to forget scout", || {
+        let net = &net;
+        async move {
+            row(net, "desk", "scout")
+                .await
+                .is_none()
+                .then_some(())
+                .ok_or_else(|| "desk still lists scout".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    let status = match net.delete_family("lead").await {
+        Err(NetError::Refused(status)) => *status,
+        other => panic!("the delete with scout out of reach did {other:?}"),
+    };
+    println!("delete stopped lead, laptop unlinked: {}", status.message());
+    assert!(
+        status.message().contains("laptop"),
+        "the refusal does not name laptop: {}",
+        status.message()
+    );
+    assert!(row(&net, "desk", "lead").await.is_some(), "lead is kept");
+    assert!(
+        lifecycle(&net, "laptop", "scout").await.is_some(),
+        "scout is kept"
+    );
+    net.shutdown().await.unwrap();
+}
+
 /// A child's finished message waits in its host's outbox while its parent's
 /// host is away, and arrives once when it returns. A row for a parent
 /// incarnation that has since ended is dropped instead; and the parent's

@@ -1638,13 +1638,20 @@ pub(crate) fn replaced_lines(input: &Value) -> Vec<EditLine> {
         .unwrap_or_else(|| vec![input.clone()]);
     let mut lines = Vec::new();
     for edit in &edits {
+        let deletes = edit.get("edit_mode").and_then(Value::as_str) == Some("delete");
         for (name, kind) in [
             ("old_string", LineKind::Removed),
             ("new_string", LineKind::Added),
             ("content", LineKind::Added),
-            // A notebook edit's new cell source.
+            // A notebook edit's cell as it stands, which the host read from
+            // the notebook when Claude asked (Claude names only the cell),
+            // then its new source unless the cell is being deleted.
+            ("old_source", LineKind::Removed),
             ("new_source", LineKind::Added),
         ] {
+            if deletes && name == "new_source" {
+                continue;
+            }
             lines.extend(field(edit, name).lines().map(|text| {
                 EditLine::Line(PatchLine {
                     number: None,

@@ -28,8 +28,8 @@ use crate::claude_common::{
     AnsweredResult, BackgroundInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, Verdict,
     apply_task_tool, auto_models, blocks_text, claude_limit, compact_json, job_kind, message_text,
     offered_commands, offered_models, permission_scopes, plan_ask, plan_mode_write, question_ask,
-    question_ask_text, split_tool_name, tool_class, tool_result_images, tool_result_text,
-    without_image_bytes,
+    question_ask_text, shown_input, split_tool_name, tool_class, tool_result_images,
+    tool_result_text, without_image_bytes,
 };
 use crate::shared::json_as_written;
 use crate::{
@@ -1259,7 +1259,9 @@ impl State {
                 (
                     wire::ask::Body::Permission(PermissionAsk {
                         tool_name: tool.clone(),
-                        input_json: input.to_string().into_bytes(),
+                        input_json: shown_input(input, &asked.extensions)
+                            .to_string()
+                            .into_bytes(),
                         scopes: permission_scopes(&suggestions),
                         reason,
                         description: written_opt(asked.description.as_deref())

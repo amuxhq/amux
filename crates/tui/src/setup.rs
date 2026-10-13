@@ -766,6 +766,16 @@ impl Picker {
         self.shape != Shape::List || self.choices.len() >= FILTERS_FROM
     }
 
+    /// Why the host would refuse the name typed in a name field; an empty
+    /// field names the agent automatically.
+    fn name_problem(&self) -> Option<wire::AgentNameProblem> {
+        let typed = self.field.text().trim();
+        if self.shape != Shape::Text || typed.is_empty() {
+            return None;
+        }
+        wire::agent_name_problem(typed)
+    }
+
     /// The choices the filter keeps, and what is typed as the last.
     fn shown(&self) -> Vec<Choice> {
         if self.shape == Shape::Text {
@@ -830,6 +840,9 @@ impl Picker {
         if self.shape == Shape::Text {
             return match key.code {
                 KeyCode::Esc => Pick::Close,
+                // A name the host would refuse is not taken: the field
+                // stays open beside its reason.
+                KeyCode::Enter if self.name_problem().is_some() => Pick::None,
                 KeyCode::Enter => Pick::Value(self.field.text().trim().to_owned()),
                 _ => {
                     if !ctrl || matches!(key.code, KeyCode::Char('a' | 'e' | 'k' | 'u' | 'w')) {
@@ -909,12 +922,17 @@ impl Picker {
             } else {
                 cursor = Some((at + self.field.cursor_chars(), 0));
                 push(&mut field, self.field.text(), theme.text(), wide);
-                if self.shape == Shape::Text {
-                    name_problem(&mut field, self.field.text(), theme);
-                }
             }
             lines.push(field);
             rows.push(None);
+            // The reason on a line of its own, so a narrow flyover does
+            // not cut it.
+            if let Some(problem) = self.name_problem() {
+                let mut why = Line::from(Span::raw("  "));
+                push(&mut why, crate::words::name_problem(problem), theme.warning(), wide);
+                lines.push(why);
+                rows.push(None);
+            }
         }
         if self.shape == Shape::Text {
             return (lines, rows, cursor);
@@ -1007,6 +1025,7 @@ impl Picker {
     /// The keys while it is open, as (key, action) pairs.
     pub fn hints(&self) -> Vec<(&'static str, &'static str)> {
         match self.shape {
+            Shape::Text if self.name_problem().is_some() => vec![("esc", "back")],
             Shape::Text => vec![("enter", "save"), ("esc", "back")],
             Shape::Typed => vec![
                 ("enter", "pick"),
@@ -1165,6 +1184,16 @@ impl Form {
     /// Starts the agent, or with no folder yet, has the person type one.
     fn start(&mut self, setup: &mut Setup) -> FormOutcome {
         self.apply(setup);
+        // A name the host would refuse is fixed here, not after the prompt.
+        if setup
+            .name
+            .as_deref()
+            .is_some_and(|name| wire::agent_name_problem(name).is_some())
+        {
+            self.field = Field::Name;
+            self.typing = true;
+            return FormOutcome::None;
+        }
         if setup.folder.is_empty() {
             self.field = Field::Folder;
             self.typing = true;

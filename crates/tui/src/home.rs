@@ -1609,17 +1609,24 @@ impl Home {
                 + 3 * groups.len().saturating_sub(1)
         };
         // Too long for the edge: the folder shortens in the middle first,
-        // since the model and the permission are what the person is about
-        // to start the agent with. Still too long, the mode drops, then the
-        // model, then the permission (ctrl+s or shift+tab still reach
-        // them).
-        let over = measure(&groups).saturating_sub(room);
-        if over > 0 {
+        // then the name at its end, since the model and the permission are
+        // what the person is about to start the agent with. Still too long,
+        // the mode drops, then the model, then the permission (ctrl+s or
+        // shift+tab still reach them).
+        for shortened in [Setting::Folder, Setting::Name] {
+            let over = measure(&groups).saturating_sub(room);
+            if over == 0 {
+                break;
+            }
             for group in &mut groups {
                 for (item, words) in group.iter_mut() {
-                    if *item == Setting::Folder {
+                    if *item == shortened {
                         let keep = text::str_width(words).saturating_sub(over).max(12);
-                        *words = text::ellipsize_middle(words, keep);
+                        *words = if shortened == Setting::Folder {
+                            text::ellipsize_middle(words, keep)
+                        } else {
+                            text::ellipsize(words, keep)
+                        };
                     }
                 }
             }

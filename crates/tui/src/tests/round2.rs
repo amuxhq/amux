@@ -1066,3 +1066,52 @@ fn a_chat_reconnecting_to_its_own_daemon_does_not_blame_the_agents_host() {
         "this machine's daemon is what went away, but the chat blames desk:\n{screen}"
     );
 }
+
+/// Enter on a new agent's name with a problem keeps the name field open
+/// with the reason, rather than taking the name and failing only once the
+/// prompt is sent. A long name the host takes shortens on the edge before
+/// the model and permission leave it.
+#[test]
+fn an_invalid_new_agent_name_is_refused_on_the_spot() {
+    let fleet = home_fleet();
+    let mut home = crate::home::Home::default();
+    home_at(&mut home, &fleet, 80, 24);
+    home.key(&fleet, key(KeyCode::Char('n')), false);
+    home_at(&mut home, &fleet, 80, 24);
+    home.key(&fleet, ctrl('s'), false);
+    home.key(&fleet, key(KeyCode::Char('n')), false);
+    for c in "my agent/x".chars() {
+        home.key(&fleet, key(KeyCode::Char(c)), false);
+    }
+    home.key(&fleet, key(KeyCode::Enter), false);
+    let screen = home_at(&mut home, &fleet, 80, 24);
+    let name = home
+        .open_setup(&HOME_PLACE)
+        .and_then(|setup| setup.name.clone());
+    assert_eq!(name, None, "the invalid name was taken:\n{screen}");
+    assert!(
+        screen.contains("╭─ Name") && screen.contains("a-z, 0-9"),
+        "the name field closed or gave no reason:\n{screen}"
+    );
+
+    // A valid name long enough to crowd the edge.
+    home.key(&fleet, ctrl('u'), false);
+    for c in "a-very-long-agent-name-that-fills-most-of-the-edge".chars() {
+        home.key(&fleet, key(KeyCode::Char(c)), false);
+    }
+    home.key(&fleet, key(KeyCode::Enter), false);
+    let screen = home_at(&mut home, &fleet, 80, 24);
+    let edge = screen
+        .lines()
+        .find(|line| line.contains('╰') && line.contains('│'))
+        .unwrap_or_else(|| panic!("no edge:\n{screen}"));
+    let setup = home.open_setup(&HOME_PLACE).expect("the new agent's setup");
+    assert_eq!(
+        setup.name.as_deref(),
+        Some("a-very-long-agent-name-that-fills-most-of-the-edge")
+    );
+    assert!(
+        edge.contains("opus") && edge.contains('…'),
+        "the name pushed the model off the edge instead of shortening: {edge:?}"
+    );
+}

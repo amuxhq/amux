@@ -1,3 +1,14 @@
+2026-10-13 — **A new agent's invalid name is refused where it is typed.**
+The terminal client's new-agent name field showed why a name would be
+refused (cut off at 80 columns) yet offered "enter save" and took it; the
+start failed only after the whole prompt was typed and sent. Enter on a
+name the host would refuse now keeps the field open, the key line drops
+"enter save", and the reason sits on its own line below the field, whole.
+The settings form's Start goes back to its name field the same way. A long
+name the host takes shortens at its end on the composer's edge, after the
+folder, before the model or permission leave it. A home test types an
+invalid name and then a long valid one.
+
 2026-10-13 — **An agent that never says what it works on reads as on its
 newest prompt.** An agent that never called the status tool kept the first
 line of its first prompt as what it worked on, for good: `amux ls` and the

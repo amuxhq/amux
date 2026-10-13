@@ -1111,6 +1111,99 @@ fn wrapped_choice_rows(card: &AskCard, width: usize) -> usize {
         .sum()
 }
 
+/// `source` with its inline code (`` `like this` ``) unmarked, and where
+/// that code stands in what is left, by byte range. A backtick with no
+/// partner is kept as it is.
+fn inline_code(source: &str) -> (String, Vec<std::ops::Range<usize>>) {
+    let mut plain = String::with_capacity(source.len());
+    let mut code = Vec::new();
+    let mut rest = source;
+    while let Some(at) = rest.find('`') {
+        plain.push_str(&rest[..at]);
+        let fence_len = rest[at..].len() - rest[at..].trim_start_matches('`').len();
+        let fence = &rest[at..at + fence_len];
+        let after = &rest[at + fence_len..];
+        match after.find(fence).filter(|&end| end > 0) {
+            Some(end) => {
+                let start = plain.len();
+                plain.push_str(&after[..end]);
+                code.push(start..plain.len());
+                rest = &after[end + fence_len..];
+            }
+            None => {
+                plain.push_str(fence);
+                rest = after;
+            }
+        }
+    }
+    plain.push_str(rest);
+    (plain, code)
+}
+
+/// The piece `from..to` of `plain` as runs, the code in `code`'s style and
+/// the rest in `ink`.
+fn styled_runs(
+    plain: &str,
+    ranges: &[std::ops::Range<usize>],
+    from: usize,
+    to: usize,
+    ink: Style,
+    code: Style,
+) -> Vec<(String, Style)> {
+    let mut runs: Vec<(String, Style)> = Vec::new();
+    let mut at = from;
+    while at < to {
+        let inside = ranges.iter().find(|range| range.contains(&at));
+        let (end, style) = match inside {
+            Some(range) => (range.end.min(to), code),
+            None => (
+                ranges
+                    .iter()
+                    .map(|range| range.start)
+                    .filter(|&start| start > at)
+                    .min()
+                    .unwrap_or(to)
+                    .min(to),
+                ink,
+            ),
+        };
+        runs.push((plain[at..end].to_owned(), style));
+        at = end;
+    }
+    runs
+}
+
+/// An agent's words on one line, its inline code drawn as code.
+fn code_runs(source: &str, ink: Style, code: Style) -> Vec<(String, Style)> {
+    let (plain, ranges) = inline_code(source);
+    styled_runs(&plain, &ranges, 0, plain.len(), ink, code)
+}
+
+/// An agent's words wrapped at `width`, its inline code drawn as code
+/// without the backticks, as its prose is.
+fn code_wrap(source: &str, width: usize, ink: Style, code: Style) -> Vec<Vec<(String, Style)>> {
+    let (plain, ranges) = inline_code(source);
+    let mut cursor = 0;
+    text::wrap(&plain, width.max(1))
+        .into_iter()
+        .map(|part| match plain[cursor..].find(part.as_str()) {
+            Some(found) => {
+                let start = cursor + found;
+                cursor = start + part.len();
+                styled_runs(&plain, &ranges, start, cursor, ink, code)
+            }
+            None => vec![(part, ink)],
+        })
+        .collect()
+}
+
+/// Pushes runs onto `line`, clipped at `width`.
+fn push_runs(line: &mut Line<'static>, runs: Vec<(String, Style)>, width: usize) {
+    for (words, style) in runs {
+        push(line, words, style, width);
+    }
+}
+
 /// The end of `words` in at most `max` columns, "…" where it is cut.
 fn text_tail(words: &str, max: usize) -> String {
     if text::str_width(words) <= max {
@@ -1896,9 +1989,14 @@ impl AskUi {
             // highlighted one's lines brighten.
             for (at, question) in questions.iter().enumerate() {
                 let lit = self.selected == at;
-                for (i, part) in text::wrap(&question.question, width.saturating_sub(2).max(1))
-                    .into_iter()
-                    .enumerate()
+                for (i, part) in code_wrap(
+                    &question.question,
+                    width.saturating_sub(2),
+                    if lit { theme.text() } else { theme.faint() },
+                    theme.code(),
+                )
+                .into_iter()
+                .enumerate()
                 {
                     let mut row = Line::default();
                     push(
@@ -1907,12 +2005,7 @@ impl AskUi {
                         theme.attention(),
                         width,
                     );
-                    push(
-                        &mut row,
-                        part,
-                        if lit { theme.text() } else { theme.faint() },
-                        width,
-                    );
+                    push_runs(&mut row, part, width);
                     out.spots
                         .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
                     out.lines.push(row);
@@ -2001,11 +2094,11 @@ impl AskUi {
 
         let question = &questions[self.step];
         let rows = QuestionRows::of(question, card);
-        let asked =
-            out.lines.len()..out.lines.len() + text::wrap(&question.question, width.max(1)).len();
-        for part in text::wrap(&question.question, width.max(1)) {
+        let asked_rows = code_wrap(&question.question, width, theme.text(), theme.code());
+        let asked = out.lines.len()..out.lines.len() + asked_rows.len();
+        for part in asked_rows {
             let mut line = Line::default();
-            push(&mut line, part, theme.text(), width);
+            push_runs(&mut line, part, width);
             out.lines.push(line);
         }
         // A form's field: required, and what it is for.
@@ -2075,7 +2168,7 @@ impl AskUi {
             let cut = over.min(asked.len().saturating_sub(QUESTION_LEAST));
             if cut > 0 {
                 let last = asked.end - cut - 1;
-                let kept = text::wrap(&question.question, width.max(1))
+                let kept = text::wrap(&inline_code(&question.question).0, width.max(1))
                     .get(last - asked.start)
                     .cloned()
                     .unwrap_or_default();
@@ -2409,10 +2502,13 @@ impl AskUi {
                 );
             }
             let indent = text::line_width(&row);
-            push(
+            push_runs(
                 &mut row,
-                option.label.clone(),
-                if lit { theme.bright() } else { theme.text() },
+                code_runs(
+                    &option.label,
+                    if lit { theme.bright() } else { theme.text() },
+                    theme.code(),
+                ),
                 width,
             );
             // "recommended" after the label where it fits, else under it.
@@ -2439,14 +2535,24 @@ impl AskUi {
             let description = option.description.trim();
             if descriptions && !description.is_empty() {
                 let used = text::line_width(&row);
-                if used + 3 + text::str_width(description) <= width {
-                    push(&mut row, format!(" · {description}"), theme.faint(), width);
+                if used + 3 + text::str_width(&inline_code(description).0) <= width {
+                    push(&mut row, " · ", theme.faint(), width);
+                    push_runs(
+                        &mut row,
+                        code_runs(description, theme.faint(), theme.code()),
+                        width,
+                    );
                     out.lines.push(row);
                 } else {
                     out.lines.push(row);
-                    for part in text::wrap(description, width.saturating_sub(indent).max(1)) {
+                    for part in code_wrap(
+                        description,
+                        width.saturating_sub(indent),
+                        theme.faint(),
+                        theme.code(),
+                    ) {
                         let mut more = Line::from(Span::raw(" ".repeat(indent)));
-                        push(&mut more, part, theme.faint(), width);
+                        push_runs(&mut more, part, width);
                         out.spots
                             .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
                         out.lines.push(more);

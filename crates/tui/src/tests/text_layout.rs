@@ -462,3 +462,85 @@ fn a_refused_rename_keeps_its_reason_and_way_out_at_80_columns() {
         "the reason is cut mid-word at 80 columns:\n{narrow}"
     );
 }
+
+/// A question card from Codex with an agent's inline code (`q1/README.md`)
+/// in its question and options' words.
+fn code_question() -> AskCard {
+    let option = |label: &str, description: &str| ui_view::OptionView {
+        label: label.into(),
+        description: description.into(),
+        preview: String::new(),
+        recommended: false,
+    };
+    AskCard {
+        kind: Kind::Codex,
+        key: "ask".into(),
+        item_key: "k".into(),
+        position: 1,
+        count: 1,
+        body: ui_view::AskBody::Question(vec![ui_view::QuestionView {
+            header: "Exact target".into(),
+            question: "`q1/README.md` is absent; `../plan1/README.md` has two lines \
+                       (`UPDATED`, `done`). Which should be used?"
+                .into(),
+            multi_select: false,
+            options: vec![
+                option(
+                    "Create it",
+                    "Create the missing file with exactly one line: `UPDATED`.",
+                ),
+                option("Use `../plan1`", "Edit the other file instead."),
+            ],
+            allow_other: true,
+            secret: false,
+        }]),
+        choices: vec![],
+        question_note: false,
+        question_skip: false,
+        question_reply: true,
+        stops_turn: true,
+        state: CardState::Open,
+    }
+}
+
+/// A question card draws an agent's inline code as code, as its prose is
+/// drawn: the backticks around file names showed as literal characters in
+/// the question and in every option.
+#[test]
+fn a_question_card_draws_inline_code_without_backticks() {
+    let card = code_question();
+    let mut ask = crate::chat::ask::AskUi::default();
+    ask.sync(&card);
+    for width in [72, 40] {
+        let lines = ask.box_lines(&card, width, theme());
+        let screen: Vec<String> = lines
+            .lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect();
+        let screen = screen.join("\n");
+        assert!(
+            !screen.contains('`'),
+            "backticks drawn at {width}:\n{screen}"
+        );
+        for words in ["q1/README.md", "UPDATED", "../plan1"] {
+            assert!(screen.contains(words), "{words} lost at {width}:\n{screen}");
+        }
+        let code = lines
+            .lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .find(|span| span.content.contains("q1/README.md"))
+            .expect("the file name is drawn");
+        assert_eq!(
+            code.style,
+            theme().code(),
+            "the file name is not drawn as code"
+        );
+    }
+}

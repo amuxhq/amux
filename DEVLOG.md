@@ -1,3 +1,13 @@
+2026-10-13 — **A question card draws inline code as code.** Codex's
+question cards showed the backticks around file names literally, in the
+question and in every option, while the same words in the agent's prose
+and plan were drawn as markdown. The terminal's question card now draws
+inline code in the question, the options' labels and their descriptions
+(and the review's questions) in the code colour, without the backticks;
+a lone backtick stays as typed. The phone draws the question with plain
+text and has the same gap. A layout test draws a Codex question with
+file names at 72 and 40 columns.
+
 2026-10-13 — **A Codex command stopped while it waited for approval never
 ran.** Stopping a Codex agent with a command approval open recorded the
 command as a background terminal: the stop interrupts the turn first, and

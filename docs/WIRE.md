@@ -402,7 +402,10 @@ step's `TurnEnd` was marked `last` (the child exits after that turn), and every
 failed one. Each child incarnation ends with exactly one last report: an
 incarnation that exits without having sent one (its turn open, or ended
 idle, as a stopped sub-agent waiting on its own child is) sends a failed one.
-A sub-agent waiting on its children waits for each one's last report. A
+A report's `from_incarnation` names the child incarnation it is from. A
+sub-agent waiting on its children waits for each incarnation's last report,
+matching reports to incarnations, so it does not matter whether a report or
+its daemon's word that the incarnation is live comes first. A
 message's `attachments` reference blobs in the sender's directory on the
 sender's host; the envelope carries them as the request gave them. The recipient's daemon dedupes by
 `id` against the recipient's items, so a resend after a lost answer is one

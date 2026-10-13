@@ -57,6 +57,10 @@ message Envelope {
   // was the incarnation's last. A parent waiting on its children waits for
   // each incarnation's last report, not merely for one.
   bool last = 11;
+  // On a child's report: the child's own incarnation it is from, so its
+  // parent matches the report to that incarnation whichever comes first,
+  // the report or the daemon's word that the incarnation is live.
+  uint32 from_incarnation = 12;
 }
 
 message Sender {

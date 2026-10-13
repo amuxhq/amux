@@ -872,6 +872,18 @@ async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
             detail: None,
         })]
     );
+    // Each report names the child incarnation it is from, and is that
+    // incarnation's last: the parent matches it whichever comes first, the
+    // report or its daemon's word of the incarnation.
+    let reports = parent
+        .inputs()
+        .into_iter()
+        .filter_map(|handed| match handed {
+            Handed::Message(envelope) => Some((envelope.from_incarnation, envelope.last)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(reports, vec![(1, true), (1, true)]);
     // The row says which one finished its work.
     assert_eq!(
         runtime.agent(finished.id).await.unwrap().exit_cause(),

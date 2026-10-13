@@ -738,6 +738,7 @@ fn agent_message(body: &Value) -> Result<Envelope, String> {
         attachments: Vec::new(),
         outcome: None,
         last: false,
+        from_incarnation: 0,
     })
 }
 

@@ -178,6 +178,11 @@ pub struct Envelope {
     /// each incarnation's last report, not merely for one.
     #[prost(bool, tag = "11")]
     pub last: bool,
+    /// On a child's report: the child's own incarnation it is from, so its
+    /// parent matches the report to that incarnation whichever comes first,
+    /// the report or the daemon's word that the incarnation is live.
+    #[prost(uint32, tag = "12")]
+    pub from_incarnation: u32,
 }
 impl ::prost::Name for Envelope {
     const NAME: &'static str = "Envelope";

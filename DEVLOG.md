@@ -1,3 +1,14 @@
+2026-10-13 — **A child's report names the incarnation it is from.** A
+sub-agent waits for the last report of every child incarnation its daemon
+names live, but reports carried no child incarnation. A child resumed by its
+parent's message could send its last report before the daemon's frame
+naming its new incarnation arrived (the frame goes from a task of its own);
+the report found the old incarnation already done and changed nothing, the
+frame then made the new incarnation owed, and the parent waited for a
+report it had already taken. Reports now carry `from_incarnation`, and the
+sub-agent keeps one entry per child incarnation that a report or a frame
+can create in either order.
+
 2026-10-13 — **A sub-agent waits for each child's last report.** The
 earlier fix told children apart, but a child that waits on its own child
 reports mid-way and again at its end, and a sub-agent could take the mid-way

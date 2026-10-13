@@ -213,7 +213,10 @@ and any while it drains or exits. Its parent's report of that turn is the
 incarnation's last. An incarnation that exits without one, its turn open or
 ended idle (a sub-agent stopped while it waits for its own child), gets a
 failed report from its daemon instead, so every child incarnation ends with
-exactly one last report. A waiting sub-agent counts on that, not on how many
+exactly one last report, which names the child incarnation it is from. A
+waiting sub-agent matches reports to incarnations, so a report that comes
+before the daemon names its incarnation (a resumed child's, say) is kept for
+it. It counts on that, not on how many
 agents are live below it: one child's report can start a turn that spawns
 the next before the daemon says the first has gone, and a child with its own
 child reports mid-way and again at its end.

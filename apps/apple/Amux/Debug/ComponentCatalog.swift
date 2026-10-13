@@ -68,10 +68,11 @@ enum ComponentCatalog {
 
     private static func row(
         _ id: String, height: CGFloat = 110, expanded: Bool = false,
-        readiness: Bool = false, _ rows: Row...
+        readiness: Bool = false, size: DynamicTypeSize = .large, _ rows: Row...
     ) -> ComponentExample {
         ComponentExample(
             id: "row.\(id)", family: .rows, canvas: CGSize(width: 390, height: height),
+            dynamicTypeSize: size,
             readinessIdentifier: readiness ? "chat.prose.render" : nil,
             readinessValue: readiness ? "rendered" : nil
         ) {
@@ -119,6 +120,12 @@ enum ComponentCatalog {
                 FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 9, removed: 14, line: nil),
                 FileRow(path: "crates/amux-ui/spec/pairing_copy.rs", change: .created(lines: 38), added: 38, removed: 0, line: nil),
                 FileRow(path: "crates/amux-ui/src/old.rs", change: .moved(to: "crates/amux-ui/src/codes.rs"), added: 0, removed: 0, line: nil),
+                FileRow(path: "crates/amux-ui/src/unused.rs", change: .deleted, added: 0, removed: 12, line: nil),
+            ], state: .succeeded))),
+            // Each file's verb, path and counts stacked, the name kept whole.
+            row("file-change-large-text", height: 1100, size: .accessibility3, r("f2", 10, .fileChange(files: [
+                FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 9, removed: 14, line: nil),
+                FileRow(path: "crates/amux-ui/spec/pairing_copy.txt", change: .created(lines: 1), added: 1, removed: 0, line: nil),
                 FileRow(path: "crates/amux-ui/src/unused.rs", change: .deleted, added: 0, removed: 12, line: nil),
             ], state: .succeeded))),
             row("command", height: 150, r("x1", 11, .command(
@@ -230,10 +237,12 @@ enum ComponentCatalog {
     // MARK: - Asks
 
     private static func ask(
-        _ id: String, height: CGFloat = 420, preset: AskPreset? = nil, _ card: AskCard
+        _ id: String, height: CGFloat = 420, preset: AskPreset? = nil, size: DynamicTypeSize = .large,
+        _ card: AskCard
     ) -> ComponentExample {
         ComponentExample(
             id: "ask.\(id)", family: .asks, canvas: CGSize(width: 390, height: height),
+            dynamicTypeSize: size,
             readinessIdentifier: nil, readinessValue: nil
         ) {
             AskCardView(card: card, preset: preset) { _ in }
@@ -285,22 +294,22 @@ enum ComponentCatalog {
                     Choice(outcome: .deny(stops: false), primary: false, takesNote: false),
                     Choice(outcome: .denyAndStop, primary: false, takesNote: false),
                 ], count: 2)),
-            ask("question-single", height: 440, F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
-            ask("question-multi", height: 460, preset: .highlighted(0), F.card(.claudeSdk, .question([F.platformQuestion]), [])),
-            ask("questions-step", height: 440, F.card(.codex, .question(F.threeQuestions), [])),
+            ask("question-single", height: 500, F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
+            ask("question-multi", height: 520, preset: .highlighted(0), F.card(.claudeSdk, .question([F.platformQuestion]), [])),
+            ask("questions-step", height: 640, F.card(.codex, .question(F.threeQuestions), [])),
             ask("questions-review", height: 520, preset: .reviewing([.picked([0, 1]), .picked([1]), .typed("Only failures, with the host id")]),
                 F.card(.codex, .question(F.threeQuestions), [])),
             ask("questions-skipped", height: 560, preset: .reviewing([.picked([0, 1]), .picked([]), .typed("Only failures, with the host id")]),
                 F.card(.codex, .question(F.threeQuestions), [])),
-            ask("question-note", height: 560, preset: .questionNote("Keep the old strings for one release"),
+            ask("question-note", height: 620, preset: .questionNote("Keep the old strings for one release"),
                 F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
-            ask("question-reply", height: 360, preset: .replying("Hold off; I want to read the diff first."),
+            ask("question-reply", height: 420, preset: .replying("Hold off; I want to read the diff first."),
                 F.card(.codex, .question(F.threeQuestions), [])),
-            ask("question-terminal", height: 440, F.card(.claudePty, .question([F.redactionQuestion]), [])),
-            ask("question-previews", height: 520, preset: .highlighted(0), F.card(.claudeSdk, .question([F.previewQuestion]), [])),
-            ask("question-other", height: 460, preset: .other("Put it in amux-wire next to the codes"),
+            ask("question-terminal", height: 500, F.card(.claudePty, .question([F.redactionQuestion]), [])),
+            ask("question-previews", height: 580, preset: .highlighted(0), F.card(.claudeSdk, .question([F.previewQuestion]), [])),
+            ask("question-other", height: 520, preset: .other("Put it in amux-wire next to the codes"),
                 F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
-            ask("question-secret", height: 360, preset: .other("hunter2"), F.card(.codex, .question([F.secretQuestion]), [])),
+            ask("question-secret", height: 420, preset: .other("hunter2"), F.card(.codex, .question([F.secretQuestion]), [])),
             ask("plan", height: 260, preset: .autoAccept, F.card(.claudeSdk, .plan(body: F.planBody, title: F.planTitle), [
                 Choice(outcome: .approvePlan(mode: "auto", modeName: "Auto"), primary: true, takesNote: false),
                 Choice(outcome: .approvePlan(mode: "", modeName: ""), primary: false, takesNote: false),
@@ -336,6 +345,30 @@ enum ComponentCatalog {
                 command: "cargo test -p amux-ui", cwd: "", reason: "", description: ""),
                 F.sdkPermissionChoices, state: .dismissed)),
             ask("unanswerable", height: 300, F.card(.claudePty, .unanswerable(reason: ""), [])),
+            // At accessibility text sizes: nothing overprints, every button
+            // is whole, and a choice that does not fit beside another goes
+            // under it.
+            ask("permission-command-large-text", height: 1500, size: .accessibility3, F.card(.claudeSdk, .command(
+                command: "cargo test -p amux-ui", cwd: "~/src/amux", reason: "",
+                description: "Run the spec suite"), F.sdkPermissionChoices)),
+            ask("codex-command-large-text", height: 2600, size: .accessibility3, F.card(.codex, .command(
+                command: "curl -s localhost:8080/health", cwd: "~/src/amux", reason: "Check the dev server",
+                description: ""), [
+                    Choice(outcome: .allowOnce, primary: true, takesNote: false),
+                    Choice(outcome: .allowForSession, primary: false, takesNote: false),
+                    Choice(outcome: .allowSimilar(prefix: ["curl", "-s"]), primary: false, takesNote: false),
+                    Choice(outcome: .deny(stops: false), primary: false, takesNote: false),
+                ])),
+            ask("question-large-text", height: 2600, size: .accessibility5,
+                F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
+            ask("plan-large-text", height: 900, size: .accessibility3, F.card(.claudeSdk, .plan(body: F.planBody, title: F.planTitle), [
+                Choice(outcome: .approvePlan(mode: "auto", modeName: "Auto"), primary: true, takesNote: false),
+                Choice(outcome: .approvePlan(mode: "", modeName: ""), primary: false, takesNote: false),
+                Choice(outcome: .sendBack, primary: false, takesNote: true),
+            ])),
+            ask("not-confirmed-large-text", height: 900, size: .accessibility3, F.card(.claudeSdk, .command(
+                command: "cargo test -p amux-ui", cwd: "", reason: "", description: ""),
+                F.sdkPermissionChoices, state: .notConfirmed)),
         ]
     }()
 
@@ -346,11 +379,12 @@ enum ComponentCatalog {
         strip: ScriptedChat.Surroundings = ScriptedChat.strip(model: "opus 4.6", effort: "high"), draft: String = "",
         settings: SettingsView? = nil, showing: ChatOverlay? = nil, children: [FleetCard] = [],
         dockExpanded: Bool = false, refusedWords: [[UInt8]: String] = [:], settlesLate: Bool = false,
-        subject: ChatSubject = CatalogFixtures.subject, setUp: @escaping @MainActor (ChatModel) -> Void = { _ in }
+        subject: ChatSubject = CatalogFixtures.subject, size: DynamicTypeSize = .large,
+        setUp: @escaping @MainActor (ChatModel) -> Void = { _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "composer.\(id)", family: .composer, canvas: CGSize(width: 390, height: height),
-            settlesLate: settlesLate
+            dynamicTypeSize: size, settlesLate: settlesLate
         ) {
             let source = ScriptedChat(
                 rows: rows, frame: frame, strip: strip, settings: settings, images: CatalogFixtures.images)
@@ -372,6 +406,9 @@ enum ComponentCatalog {
         typealias F = CatalogFixtures
         return [
             composer("empty", height: 160, frame: ScriptedChat.frame(phase: .idle)),
+            // The model's words on a line of their own, whole.
+            composer("chip-large-text", height: 420, frame: ScriptedChat.frame(kind: .claudeSdk, phase: .idle),
+                     strip: ScriptedChat.strip(model: "claude-fennel-v1", effort: "high"), size: .accessibility3),
             composer("draft", height: 220, frame: ScriptedChat.frame(phase: .idle),
                      draft: "Please tighten the retry path and keep the error visible.", settlesLate: true) {
                 $0.attach(F.photoData, name: "screen.jpg", mime: "image/jpeg", image: true)
@@ -502,10 +539,12 @@ enum ComponentCatalog {
         _ id: String, height: CGFloat = 844, readiness: (String, String)? = nil,
         chat: @escaping @MainActor () -> ScriptedChat, subject: ChatSubject = CatalogFixtures.subject,
         family: FamilyHeader? = nil, showing: ChatOverlay? = nil, settlesLate: Bool = false,
+        size: DynamicTypeSize = .large,
         setUp: @escaping @MainActor (ChatModel, ScriptedChat) -> Void = { _, _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "chat.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
+            dynamicTypeSize: size,
             readinessIdentifier: readiness?.0, readinessValue: readiness?.1, settlesLate: settlesLate
         ) {
             let source = chat()
@@ -520,6 +559,11 @@ enum ComponentCatalog {
         typealias F = CatalogFixtures
         return [
             chat("conversation", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6")) }),
+            // The header pill stops growing past the largest ordinary size;
+            // the step rows stack their verb, file and counts.
+            chat("conversation-large-text", chat: {
+                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6"))
+            }, size: .accessibility3),
             chat("asking", chat: {
                 ScriptedChat(
                     rows: F.conversation + [F.askedCommand], frame: ScriptedChat.frame(phase: .needsYou),
@@ -1205,13 +1249,16 @@ extension ComponentCatalog {
     fileprivate static let newAgent: [ComponentExample] = [
         newAgent("codex", provider: .codex, signedIn: true),
         newAgent("signed-out", provider: .claude, signedIn: false),
+        newAgent("large-text", provider: .claude, signedIn: true, size: .accessibility3, height: 2400),
     ]
 
     private static func newAgent(
-        _ id: String, provider: NewAgentStore.Provider, signedIn: Bool
+        _ id: String, provider: NewAgentStore.Provider, signedIn: Bool,
+        size: DynamicTypeSize = .large, height: CGFloat = 1100
     ) -> ComponentExample {
         ComponentExample(
-            id: "new-agent.\(id)", family: .chat, canvas: CGSize(width: 390, height: 1100),
+            id: "new-agent.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
+            dynamicTypeSize: size,
             readinessIdentifier: "new-agent.worktree", readinessValue: "on"
         ) {
             let (store, hosts) = CatalogFixtures.newAgent(provider: provider, signedIn: signedIn)

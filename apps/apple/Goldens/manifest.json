@@ -69,6 +69,10 @@
       "shows": "A file change: each file with the lines it added and removed."
     },
     {
+      "id": "row.file-change-large-text",
+      "shows": "A file step at accessibility3: each file's verb, path and counts stacked, so a long path keeps its file name."
+    },
+    {
       "id": "row.command",
       "shows": "A command with its exit code, duration and output."
     },
@@ -337,8 +341,32 @@
       "shows": "The escape from an ask the phone cannot answer: what it is and how to get out of it."
     },
     {
+      "id": "ask.permission-command-large-text",
+      "shows": "A Claude command permission at accessibility3: the command in full, the always-allow row, and Allow and Deny stacked when they do not fit side by side."
+    },
+    {
+      "id": "ask.codex-command-large-text",
+      "shows": "A Codex command approval at accessibility3: its session and similar-commands rows wrapping, and its buttons whole."
+    },
+    {
+      "id": "ask.question-large-text",
+      "shows": "A question at accessibility5: the question, every option and Something else clear of each other, with Skip and Reply instead whole."
+    },
+    {
+      "id": "ask.plan-large-text",
+      "shows": "A plan decision at accessibility3: the permission switch wrapping and Approve and Send back whole, one above the other."
+    },
+    {
+      "id": "ask.not-confirmed-large-text",
+      "shows": "An answer not confirmed at accessibility3: the notice wrapping and Resend and Discard whole."
+    },
+    {
       "id": "composer.empty",
       "shows": "The composer with nothing written."
+    },
+    {
+      "id": "composer.chip-large-text",
+      "shows": "The composer at accessibility3: the model chip on a line of its own above the buttons, its words whole."
     },
     {
       "id": "composer.draft",
@@ -461,6 +489,10 @@
       "shows": "A whole chat: rows, composer and strip."
     },
     {
+      "id": "chat.conversation-large-text",
+      "shows": "A chat at accessibility3: the header pill held at the largest ordinary size, and the step rows stacking verb, subject and counts."
+    },
+    {
       "id": "chat.asking",
       "shows": "A whole chat with a permission ask open over the composer."
     },
@@ -563,6 +595,10 @@
     {
       "id": "new-agent.signed-out",
       "shows": "Starting a Claude agent on a host where Claude is not signed in."
+    },
+    {
+      "id": "new-agent.large-text",
+      "shows": "New Agent at accessibility3: the back link above the title, every field's value under its label, and the last row clear of the Start bar."
     }
   ],
   "screens": [
@@ -593,6 +629,36 @@
     {
       "id": "composer-chips",
       "shows": "A chat's draft holding two files at an accessibility text size: each name wraps rather than losing its extension, its size under it, each remove mark a thumb's target."
+    },
+    {
+      "id": "large-text",
+      "shows": "The screens read most, at the accessibility3 text size: nothing overprints, no word is cut, and every control stays on the screen.",
+      "frames": [
+        {
+          "name": "fleet",
+          "shows": "Agents home: its header, the account and New Agent buttons beside the title, and each row's name and second line wrapping."
+        },
+        {
+          "name": "hosts",
+          "shows": "Hosts: this phone's identity row with its label above its value, and the paired desk."
+        },
+        {
+          "name": "you",
+          "shows": "You: the phone's rows and the Appearance control with every choice whole."
+        },
+        {
+          "name": "new-agent",
+          "shows": "New Agent: the back link above the title, and the Start bar clear of the Model and Permission rows."
+        },
+        {
+          "name": "chat",
+          "shows": "A chat after a turn: the header pill, the feed's step rows keeping their file names, and the composer's model chip."
+        },
+        {
+          "name": "question",
+          "shows": "A docked question card taller than the room it has: the question and options scroll under the pinned Skip, Send and Reply instead."
+        }
+      ]
     },
     {
       "id": "origin-rewind",

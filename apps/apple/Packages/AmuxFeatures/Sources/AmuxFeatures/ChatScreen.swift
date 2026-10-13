@@ -103,6 +103,7 @@ public enum ChatOverlay: String, Equatable, Sendable {
 /// them.
 public struct ChatScreen: View {
     @Environment(\.design) private var design
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
     let model: ChatModel
     let subject: ChatSubject
@@ -113,6 +114,10 @@ public struct ChatScreen: View {
     @State private var overviewOpen = false
     /// Bumped to put the keyboard down.
     @State private var putDown = 0
+    /// The screen's height and its header's, which bound how tall a docked
+    /// card may grow.
+    @State private var screenHeight: CGFloat?
+    @State private var headerHeight: CGFloat = 0
 
     public init(
         model: ChatModel, subject: ChatSubject, family: FamilyHeader? = nil,
@@ -124,6 +129,11 @@ public struct ChatScreen: View {
         self.actions = actions
         _showing = State(initialValue: showing)
     }
+
+    /// How much of the chat a docked ask card always leaves showing above
+    /// it, so a long one at a large text size still reads as part of the
+    /// conversation rather than a page of its own.
+    static let feedGlimpse: CGFloat = 48
 
     /// Everyone below this agent in its family, on any host: a stop or a
     /// delete takes them all with it. The fleet row counts them on hosts this
@@ -161,13 +171,17 @@ public struct ChatScreen: View {
                 .identified("chat.newActivity", label: String(localized: "New activity"), value: "shown")
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { header }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            header.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ChatStanding(
                 model: model, subject: subject, children: family?.children ?? [],
                 descendants: descendants, showing: $showing, putDown: putDown,
+                askRoom: screenHeight.map { max(0, $0 - headerHeight - Self.feedGlimpse) },
                 openOverview: { overviewOpen = true }, actions: actions)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
         .toolbar(.hidden, for: .navigationBar)
         .accessibilityElement(children: .contain)
         .reported("chat", value: subject.name)
@@ -239,7 +253,7 @@ public struct ChatScreen: View {
                                 Text(placeLine)
                                     .designFont(.monoSmall, design)
                                     .foregroundStyle(design.inkFaint.color)
-                                    .lineLimit(1)
+                                    .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
                                     .truncationMode(placeIsPath ? .middle : .tail)
                             }
                         }
@@ -251,6 +265,11 @@ public struct ChatScreen: View {
                 }
                 .padding(.horizontal, 13)
                 .padding(.vertical, 8)
+                // A bar over the chat, sized as the system sizes its own bars:
+                // past the largest ordinary size it stops growing, so at an
+                // accessibility size it does not cover the rows it heads.
+                // Tapping it shows the place in full at any size.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .frosted(Capsule(), as: .glass)
                 .identified(
                     "chat.header", label: placeLine,
@@ -466,6 +485,9 @@ public struct ChatStanding: View {
     let descendants: Int
     @Binding var showing: ChatOverlay?
     let putDown: Int
+    /// The most height an ask card docked here may take; past it the card's
+    /// content scrolls under its pinned buttons.
+    let askRoom: CGFloat?
     /// Opens what runs around the chat, from the facts strip.
     let openOverview: () -> Void
     let actions: (ChatAction) -> Void
@@ -474,6 +496,7 @@ public struct ChatStanding: View {
     public init(
         model: ChatModel, subject: ChatSubject, children: [FleetCard] = [], dockExpanded: Bool = false,
         descendants: Int = 0, showing: Binding<ChatOverlay?> = .constant(nil), putDown: Int = 0,
+        askRoom: CGFloat? = nil,
         openOverview: @escaping () -> Void = {}, actions: @escaping (ChatAction) -> Void = { _ in }
     ) {
         self.model = model
@@ -483,6 +506,7 @@ public struct ChatStanding: View {
         self.descendants = descendants
         _showing = showing
         self.putDown = putDown
+        self.askRoom = askRoom
         self.openOverview = openOverview
         self.actions = actions
     }
@@ -574,6 +598,7 @@ public struct ChatStanding: View {
             case nil:
                 if let ask = model.ask, ask.state != .dismissed {
                     AskCardView(card: ask, questions: keeping(ask), form: formKeeping(ask), act: answer)
+                        .frame(maxHeight: askRoom)
                 } else {
                     if let ask = model.ask { AskCardView(card: ask, questions: keeping(ask), form: formKeeping(ask), act: answer) }
                     composerStack

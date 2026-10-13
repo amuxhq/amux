@@ -456,6 +456,16 @@ failure, never a flaky one. These in-process images say nothing about system
 chrome, keyboards, scrolling or layering between screens; those belong to the
 goldens and journeys.
 
+Examples whose ids end in `-large-text` are drawn at an accessibility text
+size (accessibility3, accessibility5 for the question card). For these the
+suite also reads the window's accessibility tree, which a SwiftUI screen
+builds only while something reads it, so the suite turns on the automation
+reading that UI test drivers use. It fails when one piece of text is drawn
+over another, or when a control reaches more than a thumb target's slack
+past the canvas. The tree combines a row's words into one element, so this
+check finds text overprinting text and controls cut off. It does not find
+words clipped inside a single element. The pictures cover that case.
+
 ### Whole-screen goldens
 
 ```sh
@@ -470,8 +480,10 @@ sentence saying what it shows. `components` is every example the component
 catalogue pins, and the snapshot suite checks that the two name the same
 pictures. `screens` is the handful of whole screens the phone is held to:
 pairing, hosts, the fleet, a chat with its strip, a question ask, the way out
-of an ask the phone cannot answer, and a chat through its host's power loss
-before and after the swap.
+of an ask the phone cannot answer, the screens read most at accessibility3
+(`large-text`: the fleet, hosts, You, New Agent, a chat and a docked
+question), and a chat through its host's power loss before and after the
+swap.
 
 `scripts/ios-goldens.py` reaches every screen the way a person does. It
 serves `journeys/topologies/phone-goldens.json`, installs the debug app
@@ -555,6 +567,28 @@ prose are judged on their name only and listed in the record, which lands in
 `just ios loopback-smoke` links the driving bridge from a bare Swift
 executable, pairs it with a served machine by the link that machine prints,
 and reads the machine and its agents back.
+
+## Large text
+
+At accessibility text sizes the phone reflows rather than cuts:
+
+- A docked ask card is never taller than the chat less its header and a
+  48-point glimpse of the feed. Past that, its subject and choices scroll
+  under its answer buttons, which stay pinned at the foot of the card. Two
+  buttons that do not fit side by side stack.
+- A settings row (`FieldRow`) puts its value under its label and wraps it.
+  The Appearance control goes under its label, one choice under another if
+  it must, and never breaks a word.
+- The Agents header puts the account disc and New Agent on a line above the
+  title, with the subtitle's facts one to a line. A row's second line keeps
+  two lines, and its place keeps one line and loses its middle.
+- New Agent puts the back link above the title, and its last row always
+  scrolls clear of the Start bar, whose height it measures.
+- The chat header pill stops growing at the largest ordinary size, as the
+  system's own bars do. A tap shows the place in full. The composer's model
+  chip gets a line of its own and wraps.
+- A step row stacks its verb, its subject (two lines, cut in the middle) and
+  its counts, so a file keeps its name.
 
 ## Copy
 

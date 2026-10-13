@@ -1,0 +1,39 @@
+shell |  | agents | 0,62,402,778
+home |  | signed-out | 0,62,402,778
+home.newAgent | New Agent |  | 345,67,44,44
+home.title | Agents, switch account | Agents | 18,105,165,68
+home.subtitle |  | 2 need you · 4 agents | 18,172,186,81
+home.row.<dialog> | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 18,316,366,236
+home.row.<dialog>.age.volatile | <volatile>
+home.row.<dialog>.second |  |  | 31,376,325,78
+home.row.<dialog>.detail.volatile | <volatile>
+home.row.<asker> | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 18,552,366,236
+home.row.<asker>.age.volatile | <volatile>
+home.row.<asker>.second |  |  | 31,612,340,78
+home.row.<asker>.detail.volatile | <volatile>
+home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread | idle | 18,855,366,236
+home.row.<keeper>.age.volatile | <volatile>
+home.row.<keeper>.second |  |  | 31,915,308,78
+home.row.<keeper>.detail.volatile | <volatile>
+hosts |  | 1 reachable | 0,62,402,778
+hosts.title |  | Hosts | 18,72,118,54
+hosts.subtitle |  | 1 reachable | 18,127,205,40
+hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 18,230,366,108
+hosts.fact.identity | <volatile>
+hosts.fact.paired-devices | Paired Devices, 1 | 1 | 18,556,366,114
+hosts.caption.devices |  |  | 18,678,347,78
+tab.agents | Agents | selected | 50,777,99,57
+tab.hosts | Hosts | not selected | 151,777,99,57
+tab.you | You | not selected | 253,777,99,57
+ | Agents |  | 50,777,99,57
+ | Hosts |  | 151,777,99,57
+ | You |  | 253,777,99,57
+ | New Agent |  | 345,67,44,44
+ | Agents, switch account |  | 18,105,165,68
+ | 2 need you
+4 agents |  | 18,172,186,81
+ | NEEDS YOU |  | 20,269,166,39
+ | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 18,316,366,236
+ | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 18,553,366,236
+ | LIVE |  | 20,808,74,39
+ | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread |  | 18,855,366,236

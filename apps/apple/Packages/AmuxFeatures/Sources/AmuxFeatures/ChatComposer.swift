@@ -15,6 +15,7 @@ public enum AttachChoice: String, Equatable, Sendable {
 /// or on an exited agent resumes it with the draft. Drafting never waits;
 /// sending waits for the rows to be current and the agent live.
 struct ComposerBox: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     /// The side of every control's target in the row under the field.
     static let slot: CGFloat = 44
     /// The drawn plus, send, stop and resume controls, centred in their slots.
@@ -71,6 +72,13 @@ struct ComposerBox: View {
                     .reclaimingThumbTarget(x: 12, y: 12)
                 }
             }
+            // At an accessibility text size the model's words get a line of
+            // their own: beside the buttons there is room for a few letters.
+            if typeSize.isAccessibilitySize, let controls = model.frame?.controls,
+               let chip = ChatWords.chip(controls) {
+                modelChip(chip, warns: controls.permission?.neverAsks == true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             // Every control here keeps a 44 pt slot, side by side rather than
             // grown over each other. The row then gives back the slack around
             // the drawn circles at its edges, so they sit on the card's padding.
@@ -88,7 +96,8 @@ struct ComposerBox: View {
                 .buttonStyle(.amuxControl)
                 .accessibilityLabel("Attach")
                 .identified("chat.attach", label: String(localized: "Attach"), value: plusOpen ? "open" : "closed")
-                if let controls = model.frame?.controls, let chip = ChatWords.chip(controls) {
+                if !typeSize.isAccessibilitySize, let controls = model.frame?.controls,
+                   let chip = ChatWords.chip(controls) {
                     modelChip(chip, warns: controls.permission?.neverAsks == true)
                 }
                 Spacer(minLength: 4)
@@ -149,29 +158,49 @@ struct ComposerBox: View {
             .joined(separator: " · ")
         return Button(action: openSettings) {
             HStack(spacing: 5) {
-                // Where the row is tight the effort goes first, then the
-                // model name shortens; the permission and mode stay.
-                ViewThatFits(in: .horizontal) {
-                    chipWords(chip.model, detail: chip.detail, unusual: chip.unusual, warns: warns)
-                    chipWords(chip.model, detail: "", unusual: chip.unusual, warns: warns)
-                    HStack(spacing: 0) {
-                        Text(verbatim: chip.model)
-                            .foregroundStyle(design.inkMuted.color)
-                            .truncationMode(.tail)
-                            .frame(minWidth: 52, alignment: .leading)
-                        chipWords("", detail: "", unusual: chip.unusual, warns: warns, after: true)
-                            .layoutPriority(1)
+                // On its own line at an accessibility size the words wrap
+                // whole. Elsewhere, where the row is tight the effort goes
+                // first, then the model name shortens; the permission and
+                // mode stay.
+                if typeSize.isAccessibilitySize {
+                    // A no-break space holds each "·" to the word before
+                    // it, so a wrapped line never starts with one.
+                    chipWords(
+                        chip.model, detail: chip.detail, unusual: chip.unusual, warns: warns,
+                        joint: "\u{00A0}· ")
+                        .designFont(.monoSmall, design)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        chipWords(chip.model, detail: chip.detail, unusual: chip.unusual, warns: warns)
+                        chipWords(chip.model, detail: "", unusual: chip.unusual, warns: warns)
+                        HStack(spacing: 0) {
+                            Text(verbatim: chip.model)
+                                .foregroundStyle(design.inkMuted.color)
+                                .truncationMode(.tail)
+                                .frame(minWidth: 52, alignment: .leading)
+                            chipWords("", detail: "", unusual: chip.unusual, warns: warns, after: true)
+                                .layoutPriority(1)
+                        }
                     }
+                    .designFont(.monoSmall, design)
+                    .lineLimit(1)
                 }
-                .designFont(.monoSmall, design)
-                .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(design.inkFaint.color)
             }
             .padding(.horizontal, 11)
-            .frame(height: 30)
-            .background(Capsule().fill(design.sunken.color))
+            .padding(.vertical, typeSize.isAccessibilitySize ? 6 : 0)
+            .frame(minHeight: 30)
+            .background {
+                // A capsule's ends would cut into words on two lines.
+                if typeSize.isAccessibilitySize {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous).fill(design.sunken.color)
+                } else {
+                    Capsule().fill(design.sunken.color)
+                }
+            }
             .frame(minHeight: ComposerBox.slot)
             .contentShape(Rectangle())
         }
@@ -184,17 +213,18 @@ struct ComposerBox: View {
     /// The chip's words; `after` when they follow a name drawn apart. The
     /// first of `unusual` is the permission when `warns`, and reads in red.
     private func chipWords(
-        _ name: String, detail: String, unusual: [String], warns: Bool, after: Bool = false
+        _ name: String, detail: String, unusual: [String], warns: Bool, after: Bool = false,
+        joint: String = " · "
     ) -> some View {
         var led = after || !name.isEmpty
         var words = Text(verbatim: name).foregroundStyle(design.inkMuted.color)
         if !detail.isEmpty {
-            words = words + Text(verbatim: (led ? " · " : "") + detail).foregroundStyle(design.inkMuted.color)
+            words = words + Text(verbatim: (led ? joint : "") + detail).foregroundStyle(design.inkMuted.color)
             led = true
         }
         for (index, word) in unusual.enumerated() {
             let red = warns && index == 0
-            words = words + Text(verbatim: (led ? " · " : "") + word)
+            words = words + Text(verbatim: (led ? joint : "") + word)
                 .foregroundStyle(red ? design.removed.color : design.ink.color)
             led = true
         }

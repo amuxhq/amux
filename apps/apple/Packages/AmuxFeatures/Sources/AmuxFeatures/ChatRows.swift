@@ -397,6 +397,7 @@ struct RowMeta: Equatable {
 /// words in quotes, a command's output head, or the detail it opens to.
 struct GridRow: View {
     @Environment(\.design) private var design
+    @Environment(\.dynamicTypeSize) private var typeSize
     enum SubjectFace { case mono, path, text }
     enum DetailFace { case mono, text }
 
@@ -478,30 +479,18 @@ struct GridRow: View {
                 .frame(width: RowGrid.cell, height: RowGrid.cell)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    RowLine {
-                        if !verb.isEmpty {
-                            Text(verb)
-                                .designFont(.detail, design)
-                                .foregroundStyle(quiet ? design.inkMuted.color : design.ink.color)
-                                .lineLimit(1)
-                                .rowLine(.verb)
-                        }
-                        if !subject.isEmpty {
-                            Text(subject)
-                                .designFont(subjectFace == .text ? .detail : .monoSmall, design)
-                                .foregroundStyle(
-                                    subjectFace == .path ? design.ink.color : design.inkMuted.color)
-                                .lineLimit(1)
-                                .truncationMode(subjectFace == .text ? .tail : truncation)
-                                .rowLine(.subject)
-                        }
-                        if !meta.isEmpty {
-                            Text(meta.attributed(design))
-                                .designFont(.monoSmall, design)
-                                .lineLimit(1)
-                                // Usually a measured duration: a compared screenshot masks it.
-                                .reported("chat.row.meta.volatile")
-                                .rowLine(.meta)
+                    if typeSize.isAccessibilitySize {
+                        stacked
+                    } else {
+                        RowLine {
+                            if !verb.isEmpty { verbText.lineLimit(1).rowLine(.verb) }
+                            if !subject.isEmpty {
+                                subjectText
+                                    .lineLimit(1)
+                                    .truncationMode(subjectFace == .text ? .tail : truncation)
+                                    .rowLine(.subject)
+                            }
+                            if !meta.isEmpty { metaText.lineLimit(1).rowLine(.meta) }
                         }
                     }
                     if opens {
@@ -515,6 +504,42 @@ struct GridRow: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    /// At an accessibility size the verb, its subject and the meta cannot
+    /// share one line without each losing most of itself: a file name was
+    /// cut to its extension. They stack, the subject wrapping to two lines
+    /// before it loses its middle.
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if !verb.isEmpty { verbText.fixedSize(horizontal: false, vertical: true) }
+            if !subject.isEmpty {
+                subjectText
+                    .lineLimit(2)
+                    .truncationMode(subjectFace == .text ? .tail : truncation)
+            }
+            if !meta.isEmpty { metaText.fixedSize(horizontal: false, vertical: true) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var verbText: some View {
+        Text(verb)
+            .designFont(.detail, design)
+            .foregroundStyle(quiet ? design.inkMuted.color : design.ink.color)
+    }
+
+    private var subjectText: some View {
+        Text(subject)
+            .designFont(subjectFace == .text ? .detail : .monoSmall, design)
+            .foregroundStyle(subjectFace == .path ? design.ink.color : design.inkMuted.color)
+    }
+
+    private var metaText: some View {
+        Text(meta.attributed(design))
+            .designFont(.monoSmall, design)
+            // Usually a measured duration: a compared screenshot masks it.
+            .reported("chat.row.meta.volatile")
     }
 
     @ViewBuilder private var underneath: some View {

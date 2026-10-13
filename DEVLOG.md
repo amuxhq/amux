@@ -1,3 +1,26 @@
+2026-10-13 — **The phone reflows at accessibility text sizes instead of overprinting or cutting words.**
+A docked ask card at a large text size was squeezed until its words
+overprinted and its buttons fell off the screen. The card now stops growing
+short of the chat's header, and its subject and choices scroll under answer
+buttons pinned at its foot. Two buttons that do not fit side by side go one
+above the other, so a plan's Approve and Send back read whole. A command
+waiting for permission is shown in full, and a RECOMMENDED tag goes under
+its option rather than splitting the option's name.
+
+Elsewhere at those sizes: a settings row puts its value under its label, so
+this phone's identity and the relay's state are no longer cut from the
+front. The Appearance control drops under its label and never breaks a
+word. The Agents header puts the account and New Agent buttons above the
+title, with one fact to a line beneath it, and a row's place keeps one line.
+New Agent puts its back link above the title, and its last rows scroll clear
+of the Start bar. The chat's header pill stops growing at the largest
+ordinary size, the composer's model chip gets a line of its own, and a step
+row stacks its verb, file and counts so the file keeps its name. Component
+pictures at accessibility3 (accessibility5 for a question) fail when one
+piece of text is drawn over another or a control leaves the canvas. A
+whole-screen golden run now also photographs the fleet, hosts, You, New
+Agent, a chat and a docked question at accessibility3.
+
 2026-10-13 — **The chat vocabulary's terminal figures show the terminal as it draws today.**
 Six of the figures in the chat vocabulary were drawn before recent changes:
 answered asks with their notes and skips, plans with their switch, step rows,

@@ -32,6 +32,10 @@ public enum NewAgentAction: Equatable, Sendable {
 /// unstated on the one control where it matters.
 public struct NewAgent: View {
     @Environment(\.design) private var design
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// How tall the Start bar floating at the foot is, so the last rows can
+    /// always scroll clear of it, at any text size.
+    @State private var footHeight: CGFloat = 110
     private let model: NewAgentStore
     private let hosts: HostsStore
     private let actions: @MainActor (NewAgentAction) -> Void
@@ -89,28 +93,50 @@ public struct NewAgent: View {
             .padding(.horizontal, design.metrics.gutter)
             .padding(.top, 8)
             // Clear of the bar at the foot, which floats over this.
-            .padding(.bottom, 130)
+            .padding(.bottom, footHeight + 20)
         }
         .scrollIndicators(.hidden)
     }
 
     // MARK: - The bar
 
+    /// The way back on the left and the title centred, or, at an
+    /// accessibility text size where the two would run into each other, the
+    /// way back above the title.
+    @ViewBuilder
     private var bar: some View {
-        ZStack {
-            Text("New Agent")
-                .designFont(.bodyEmphasis, design)
-                .foregroundStyle(design.ink.color)
-                .identified("new-agent.title", value: "New Agent")
-            HStack {
-                BackLink("Agents", identifier: "new-agent.back") {
-                    actions(.cancel)
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    back
+                    title
                 }
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ZStack {
+                    title
+                    HStack {
+                        back
+                        Spacer()
+                    }
+                }
             }
         }
         .padding(.horizontal, design.metrics.gutter)
         .padding(.vertical, 10)
+    }
+
+    private var title: some View {
+        Text("New Agent")
+            .designFont(.bodyEmphasis, design)
+            .foregroundStyle(design.ink.color)
+            .identified("new-agent.title", value: "New Agent")
+    }
+
+    private var back: some View {
+        BackLink("Agents", identifier: "new-agent.back") {
+            actions(.cancel)
+        }
     }
 
     // MARK: - Which machine
@@ -488,6 +514,7 @@ public struct NewAgent: View {
                     "new-agent.start", label: "Start on \(machineName)",
                     value: model.starting ? "starting" : "ready", enabled: model.ready)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footHeight = $0 }
         }
     }
 }

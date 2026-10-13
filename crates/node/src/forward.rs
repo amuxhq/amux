@@ -187,7 +187,18 @@ impl ProfileRuntime {
         }
         match tokio::time::timeout(REACH_PATIENCE, edge.peer(host)).await {
             Ok(Ok(client)) => Ok(client),
-            Ok(Err(_)) | Err(_) => Err(not_sent()),
+            Ok(Err(_)) | Err(_) => {
+                // A host listed as reachable that takes no call is not
+                // reachable: its route goes down, so presence says so, and
+                // comes back once a call gets through, which is what
+                // releases sends held for the host. A host that revoked
+                // this one already reads as away.
+                if !edge.revoked(host) && edge.via(host).await != crate::routing::LiveRoute::Offline
+                {
+                    edge.calls_failed(host).await;
+                }
+                Err(not_sent())
+            }
         }
     }
 

@@ -1,5 +1,5 @@
 
-  backups │ /tmp/journey/aj-xxxxxxxx/net/cabin/work · cabin                                  [Diff] │ [Home]
+  backups │ /tmp/journey/aj-xxxxxxxx/net/cabin/work · cabin       cabin away · not current │ [Diff] │ [Home]
 
 
 
@@ -13,7 +13,7 @@
 
 
 
-                                              Nothing here yet.
+                         Its host is away, and nothing of this chat is held here yet.
 
 
 
@@ -27,8 +27,8 @@
 
 
     Rotate the backup keys.                                                       sends when cabin is back
-  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  ╭─ cabin is away ────────────────────────────────────────────────────────────────────────────────────────╮
   │ › Message backups                                                                                      │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  shift+tab permission   ctrl+a more
+  enter holds it   it sends when the host is back

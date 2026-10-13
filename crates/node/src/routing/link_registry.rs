@@ -114,6 +114,10 @@ pub(crate) enum LinkCloseRequest {
     /// close code, so the peer learns it even when closing the connection
     /// drops the message.
     Revoked,
+    /// A call could not open a channel on the link while it stayed up: it
+    /// closes as a dead connection would, so the host reads as away until
+    /// a link that carries calls replaces it.
+    CallsFailed,
 }
 
 /// A link the registry accepted.

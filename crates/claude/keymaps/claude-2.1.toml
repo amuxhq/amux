@@ -129,10 +129,15 @@ steps = [
     { step = "digit", digit = { source = "menu_entry", menu = "plan", entry = "approve_auto" } },
     { step = "digit", digit = { source = "menu_entry", menu = "plan", entry = "approve_manual" } },
     { step = "digit", digit = { source = "menu_entry", menu = "plan", entry = "request_changes" } },
-    { step = "if", cond = "has_feedback", then = [
+    # The send-back entry opens a field for what to change. Enter on it
+    # sends the plan back, with the note when there is one and without
+    # one when the field is left empty.
+    { step = "if", cond = "sends_back", then = [
         { step = "delay", delay = "after_menu_text_open" },
-        { step = "type", text = "plan_feedback" },
-        { step = "delay", delay = "before_submit" },
+        { step = "if", cond = "has_feedback", then = [
+            { step = "type", text = "plan_feedback" },
+            { step = "delay", delay = "before_submit" },
+        ] },
         { step = "key", key = "enter" },
     ] },
 ]

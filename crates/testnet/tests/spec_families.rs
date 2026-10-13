@@ -264,8 +264,8 @@ fn three_hosts() -> Topology {
 /// and the trusted ones, exactly and then ignoring case. No match is
 /// NOT_FOUND naming the hosts there are; two are ambiguous, with both as
 /// candidates. A match elsewhere forwards the create to that host with the
-/// parent as host and id, and a directory there, or none, which starts the
-/// child in its host's home directory; the parent's host and a third host
+/// parent as host and id and a directory there; with no directory it is
+/// refused in words naming that host. The parent's host and a third host
 /// list the child under its own host in the parent's family.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
@@ -374,27 +374,27 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         println!("{host}'s fleet: family {family:?}");
     }
 
-    // The spawn tool names no directory: the child starts where box's
-    // agents work (helper's folder), not in the home directory.
-    let homed = net
-        .spawn_child("lead", child("wanderer", "box", says("Here.")).cwd(""))
+    // The spawn names no directory on box: refused, naming box and asking
+    // for a folder there, and nothing starts.
+    let refused = tools
+        .create_agent(Request::new(request("box")))
         .await
-        .unwrap();
-    let home = std::env::var("HOME").unwrap();
-    assert_eq!(homed.cwd, own.cwd);
-    assert_eq!(row(&net, "box", "wanderer").await.unwrap().cwd, own.cwd);
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::InvalidArgument);
+    let error = wire_error(&refused);
+    assert!(
+        error.message.contains("box") && error.message.contains("folder"),
+        "{}",
+        error.message
+    );
     println!(
-        "spawn on \"box\" naming no directory: wanderer starts in {}",
-        own.cwd
+        "spawn on \"box\" naming no directory: refused ({})",
+        error.message
     );
 
     // Naming the parent's own host, by any of its names, is a spawn here:
     // with no directory the child starts where its parent works.
     let lead_cwd = row(&net, "desk", "lead").await.unwrap().cwd;
-    assert_ne!(
-        lead_cwd, home,
-        "the parent works outside the home directory"
-    );
     let local = net
         .spawn_child(
             "lead",
@@ -2151,38 +2151,4 @@ async fn a_file_one_agent_sends_another_arrives_on_the_recipients_own_host() {
         "the file reached the other host's agent naming the sender host's path, not one on its own host: {delivered:?}"
     );
     assert!(held, "the recipient's host holds no copy of the file");
-}
-
-/// A child an agent starts on another host without naming a folder starts
-/// where that host's agents work, as a person's new agent there would be
-/// offered, not in the home folder of the user its daemon runs as: a Codex
-/// child given shell commands had the whole home folder around it.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_far_child_with_no_folder_starts_where_its_hosts_agents_work() {
-    let mut net = Net::start(
-        Topology::new()
-            .host("desk")
-            .host("laptop")
-            .link("desk", "laptop")
-            .agent(lead())
-            .agent(
-                AgentDecl::new("local", "laptop")
-                    .prompt("Tidy up.")
-                    .steps(says("Tidied.")),
-            ),
-    )
-    .await
-    .unwrap();
-    net.settle("local").await.unwrap();
-    let work = row(&net, "laptop", "local").await.unwrap().cwd;
-    let kid = net
-        .spawn_child(
-            "lead",
-            child("kid", "laptop", vec![waits("never"), Step::TurnEnd]).cwd(""),
-        )
-        .await
-        .unwrap();
-    println!("kid starts in {}", kid.cwd);
-    assert_eq!(kid.cwd, work, "the far child starts in another folder");
-    net.shutdown().await.unwrap();
 }

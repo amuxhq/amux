@@ -2126,11 +2126,27 @@ impl Net {
 
     /// Makes `a` fail every call to `b` before it goes out, as when no
     /// channel for it can be opened, while the link between them and the
-    /// sessions it carries stay up. `refuse: false` lifts it.
-    pub fn refuse_calls(&self, a: &str, b: &str, refuse: bool) -> Result<Ack, NetError> {
+    /// sessions it carries stay up until a call fails on it. `a` then takes
+    /// the route down: it closes its own link to `b`, or marks the relay's
+    /// route down and keeps trying it. `refuse: false` lifts it; a link
+    /// between them in this process that a failed call closed is linked
+    /// again, as redialling would bring a real one back.
+    pub async fn refuse_calls(&mut self, a: &str, b: &str, refuse: bool) -> Result<Ack, NetError> {
         self.in_process(a, "refusing calls")?;
         let peer = self.host(b)?.host_id;
         self.edge(a)?.refuse_calls(peer, refuse);
+        if !refuse
+            && self
+                .links
+                .get(&link_key(a, b))
+                .is_some_and(|link| !link.severed && link.live.is_some())
+            && !self.link_up(a, b).await
+        {
+            self.links.get_mut(&link_key(a, b)).expect("the link").live = None;
+            self.wait_direct_gone(a, b).await?;
+            self.link_all()?;
+            self.wait_link(a, b, true).await?;
+        }
         Ok(self.ack(format!(
             "{a} {} calls to {b}",
             if refuse { "refuses" } else { "makes" }

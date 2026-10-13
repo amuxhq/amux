@@ -1226,6 +1226,16 @@ impl Engine {
                         return self.abandon(&id, &name, &input, &tool);
                     };
                     self.call_row(request, message, &id, &name, &input);
+                    // Enter on the empty field sends the plan back without
+                    // a note, which Claude takes as a plain No: the turn
+                    // ends and Claude waits for the person.
+                    if feedback.trim().is_empty() {
+                        let refusal = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.".to_owned();
+                        self.finish_tool(&id, &name, &input, &tool, Err(refusal));
+                        self.cut = Some(Cut::Denied);
+                        self.interruption_row("[Request interrupted by user for tool use]");
+                        return;
+                    }
                     let refusal = format!(
                         "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n{feedback}"
                     );

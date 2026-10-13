@@ -1,7 +1,8 @@
 //! Outbound channel selection over native link streams.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -12,12 +13,23 @@ use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
 use crate::routing::{LinkCarrier, LinkCloseRequest, LiveRoute, Route, RoutingCore, RoutingEvent};
 use crate::transport::{TrustedPeerConnections, pairing_channel_from_io};
 
+/// How long after a route was taken down the first fresh call channel is
+/// tried on it, doubling after each failure up to [`DOWN_RETRY_MAX`].
+const DOWN_RETRY_FIRST: Duration = Duration::from_secs(1);
+const DOWN_RETRY_MAX: Duration = Duration::from_secs(30);
+/// How long one retry may take to open its channel before it counts as
+/// failed: as long as a call waits to reach a host.
+const DOWN_RETRY_PATIENCE: Duration = Duration::from_secs(10);
+
 pub struct ConnectionManager {
     routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     trusted_connections: TrustedPeerConnections,
     state: RwLock<ConnectionState>,
     analytics: analytics::Analytics,
+    /// Hosts no call channel opens to while the link stays up: a fault a
+    /// test network injects.
+    refused_calls: Mutex<HashSet<HostId>>,
 }
 
 #[derive(Default)]
@@ -27,6 +39,10 @@ struct ConnectionState {
     /// What each host was last described as, so a description is sent when
     /// the answer has moved and not merely when something happened.
     announced: HashMap<HostId, HostDescription>,
+    /// Routes still listed that a call could not open a channel on, by
+    /// host. A host whose route is here reads as offline until a call
+    /// channel to it opens again.
+    down: HashMap<HostId, Route>,
 }
 
 /// What a client would be told about a host: the route carrying its traffic,
@@ -45,6 +61,18 @@ impl ConnectionManager {
             trusted_connections: TrustedPeerConnections::default(),
             state: RwLock::new(ConnectionState::default()),
             analytics: analytics::Analytics::off(),
+            refused_calls: Mutex::default(),
+        }
+    }
+
+    /// From now on no call channel to `peer` opens while `refuse` holds,
+    /// whatever route reaches it.
+    pub(crate) fn refuse_calls(&self, peer: HostId, refuse: bool) {
+        let mut refused = self.refused_calls.lock().unwrap();
+        if refuse {
+            refused.insert(peer);
+        } else {
+            refused.remove(&peer);
         }
     }
 
@@ -70,8 +98,79 @@ impl ConnectionManager {
         })
     }
 
+    /// A channel for calls to `peer`. One that opens means a call can get
+    /// through, so a route taken down for `peer` comes back up.
     pub async fn channel_to(&self, peer: HostId) -> Result<Channel, ChannelError> {
-        self.channel_to_class(peer, ChannelClass::Calls).await
+        if self.refused_calls.lock().unwrap().contains(&peer) {
+            return Err(ChannelError::LinkUnavailable { host_id: peer });
+        }
+        let channel = self.channel_to_class(peer, ChannelClass::Calls).await?;
+        let was_down = self.state.read().await.down.contains_key(&peer)
+            && self.state.write().await.down.remove(&peer).is_some();
+        if was_down {
+            tracing::info!(%peer, "a call channel opened again; the host's route is back up");
+            self.describe_again(peer).await;
+        }
+        Ok(channel)
+    }
+
+    /// A call to `peer` could not open a channel on the route that lists
+    /// it, so the route is taken down: presence then says what a call
+    /// would find, and the host reads as reachable again only once a call
+    /// can get through.
+    ///
+    /// The host's own direct or SSH link is closed, as its idle timeout
+    /// would close it, only sooner; redialling and discovery bring it back
+    /// as they do any lost link. Any other route, the relay's tunnel or a
+    /// link through another host, cannot be closed for this host alone: it
+    /// is marked down, and a fresh call channel is tried on it in the
+    /// background until one opens.
+    pub(crate) async fn calls_failed(self: &Arc<Self>, peer: HostId) {
+        let Some(route) = self.route_for(peer).await else {
+            return;
+        };
+        tracing::warn!(%peer, ?route, "no call channel opened on a listed route; taking it down");
+        match route {
+            Route::Direct(link) if link.peer() == peer => {
+                self.channels
+                    .link_registry()
+                    .close_host(peer, LinkCloseRequest::CallsFailed)
+                    .await;
+            }
+            route => {
+                self.state.write().await.down.insert(peer, route);
+                // The next try opens a fresh stream rather than reusing a
+                // channel cached on the route.
+                self.channels.drop_route(peer, route);
+                self.describe_again(peer).await;
+                self.retry_down_route(peer);
+            }
+        }
+    }
+
+    /// Tries a fresh call channel to `peer` while its route stays down,
+    /// backing off between tries; the first that opens brings the route
+    /// back up.
+    fn retry_down_route(self: &Arc<Self>, peer: HostId) {
+        let manager = Arc::downgrade(self);
+        tokio::spawn(async move {
+            let mut pause = DOWN_RETRY_FIRST;
+            loop {
+                tokio::time::sleep(pause).await;
+                let Some(manager) = manager.upgrade() else {
+                    return;
+                };
+                if !manager.state.read().await.down.contains_key(&peer) {
+                    return;
+                }
+                if let Ok(Ok(_)) =
+                    tokio::time::timeout(DOWN_RETRY_PATIENCE, manager.channel_to(peer)).await
+                {
+                    return;
+                }
+                pause = (pause * 2).min(DOWN_RETRY_MAX);
+            }
+        });
     }
 
     pub async fn session_channel_to(&self, peer: HostId) -> Result<Channel, ChannelError> {
@@ -186,13 +285,20 @@ impl ConnectionManager {
     }
 
     /// The route calls to `peer` take now: the one carrying traffic, or
-    /// the one routing would pick.
+    /// the one routing would pick. None while that route is down.
     pub(crate) async fn route_for(&self, peer: HostId) -> Option<Route> {
-        let route = self.state.read().await.active.get(&peer).copied();
-        match route {
+        let (active, down) = {
+            let state = self.state.read().await;
+            (
+                state.active.get(&peer).copied(),
+                state.down.get(&peer).copied(),
+            )
+        };
+        let route = match active {
             Some(route) => Some(route),
             None => self.routing.route_to(peer).await,
-        }
+        };
+        route.filter(|route| Some(*route) != down)
     }
 
     pub(crate) async fn via_for(&self, peer: HostId) -> LiveRoute {
@@ -294,6 +400,21 @@ impl ConnectionManager {
         }
     }
 
+    /// Describes `host_id` again after something other than a routing
+    /// event moved it, announcing it if what a client would be told moved.
+    async fn describe_again(&self, host_id: HostId) {
+        let description = self.host_description(host_id).await;
+        let before = self
+            .state
+            .write()
+            .await
+            .announced
+            .insert(host_id, description);
+        if before != Some(description) {
+            self.routing.announce_route(host_id).await;
+        }
+    }
+
     async fn host_description(&self, host_id: HostId) -> HostDescription {
         let active = self.state.read().await.active.get(&host_id).copied();
         (
@@ -328,6 +449,9 @@ impl ConnectionManager {
                 if state.active.get(&host_id) == Some(&Route::Direct(link)) {
                     state.active.remove(&host_id);
                 }
+                if state.down.get(&host_id) == Some(&Route::Direct(link)) {
+                    state.down.remove(&host_id);
+                }
             }
             RoutingEvent::ClaimUp { relay, host } => {
                 self.clear_reachability_error(host.id).await;
@@ -353,6 +477,9 @@ impl ConnectionManager {
                 let mut state = self.state.write().await;
                 if state.active.get(&host_id) == Some(&Route::Via(relay)) {
                     state.active.remove(&host_id);
+                }
+                if state.down.get(&host_id) == Some(&Route::Via(relay)) {
+                    state.down.remove(&host_id);
                 }
             }
         }
@@ -394,6 +521,7 @@ impl ConnectionManager {
     async fn remove_host_runtime_state(&self, peer: HostId) {
         let mut state = self.state.write().await;
         state.active.remove(&peer);
+        state.down.remove(&peer);
         // A host that is gone is described afresh if it ever comes back.
         state.announced.remove(&peer);
         drop(state);

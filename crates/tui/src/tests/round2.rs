@@ -737,6 +737,41 @@ fn slash_rename_is_amuxs_rename_not_a_prompt() {
     );
 }
 
+/// Decided: a refused rename shows its reason on the key line while the
+/// name being edited stays. "/rename ünï" cleared the composer and the
+/// reason ran off the 80-column key line before it said where a name may
+/// start.
+#[test]
+fn a_slash_rename_the_name_rule_refuses_keeps_the_name_and_says_why_whole() {
+    let state = claude_with_models();
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    typed(&mut view, &state, "/rename ünï-日本-🚀");
+    let effects = view.key(&state, key(KeyCode::Enter), theme());
+    let words = effects
+        .iter()
+        .find_map(|effect| match effect {
+            ChatEffect::Notice(words) => Some(words.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no reason given: {effects:?}"));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, ChatEffect::Rename(_))),
+        "a name the rule refuses was sent: {effects:?}"
+    );
+    assert!(
+        words.contains("starting with a letter or digit")
+            && crate::text::str_width(&words) <= 80 - 2,
+        "the reason does not fit an 80-column key line: {words:?}"
+    );
+    assert_eq!(
+        view.editor.text(),
+        "/rename ünï-日本-🚀",
+        "the name was cleared"
+    );
+}
+
 /// Decided: Codex runs only the commands its catalogue lists (amux's
 /// table: /compact, /clear, /review, /init, /plan, and skills); any other
 /// "/..." is refused in the composer and never reaches the model, which

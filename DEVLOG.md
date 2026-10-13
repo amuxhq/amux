@@ -1,3 +1,15 @@
+2026-10-13 — **A refused `/rename` keeps the name and says why whole.** In
+a chat, `/rename ünï` cleared the composer, went to the host, and came
+back as "could not rename: an agent's name is lowercase letters, digits
+and hyphens, s…", cut at 80 columns before it said where a name may
+start. The chat now checks the name against the shared name rule before
+sending, keeps `/rename ünï` in the composer, and says "not renamed: a
+name is a-z, 0-9 and hyphens, starting with a letter or digit", the short
+words home's rename already uses, which fit an 80-column key line. A
+rename the host refuses (a taken name, the host away) puts `/rename
+<name>` back in the composer with the host's reason. A chat test types an
+invalid `/rename` and reads the effect and the composer.
+
 2026-10-13 — **A new agent's edge shows what Shift+Tab turned on.** On the
 new-agent screen at 80 columns in a deep folder, Shift+Tab turned Codex's
 plan mode on and the edge still read "Codex · read only": too long for

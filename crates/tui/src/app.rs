@@ -1342,13 +1342,25 @@ impl App {
                     chat.view.editor.restore(&text, attachments);
                 }
             }
+            // Refused by the host (the name taken, the host away), the
+            // command goes back to the composer to fix, with why.
             ChatEffect::Rename(name) => {
                 let client = self.client.clone();
                 self.spawn(async move {
-                    let request = RenameAgentRequest { agent_id, name };
-                    client.rename_agent(request).await.err().map(|error| {
-                        AppEvent::Notice(format!("could not rename: {error}"), Tone::Warn)
-                    })
+                    let request = RenameAgentRequest {
+                        agent_id: agent_id.clone(),
+                        name: name.clone(),
+                    };
+                    client
+                        .rename_agent(request)
+                        .await
+                        .err()
+                        .map(|error| AppEvent::Restore {
+                            agent_id,
+                            text: format!("/rename {name}"),
+                            attachments: Vec::new(),
+                            notice: Some(format!("not renamed: {error}")),
+                        })
                 })
             }
             ChatEffect::Page(n) => {

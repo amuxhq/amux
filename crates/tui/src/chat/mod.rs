@@ -1035,7 +1035,17 @@ impl ChatView {
                     "Name the agent after the command: /rename <name>".into(),
                 )]);
             }
-            Slash::Rename(name) => vec![ChatEffect::Rename(name)],
+            // A name the rule refuses is refused here, the draft kept to
+            // fix, in words that fit the key line.
+            Slash::Rename(name) => match wire::agent_name_problem(&name) {
+                Some(problem) => {
+                    return Some(vec![ChatEffect::Notice(format!(
+                        "not renamed: {}",
+                        crate::words::name_problem(problem)
+                    ))]);
+                }
+                None => vec![ChatEffect::Rename(name)],
+            },
             // The draft stays, so the person can fix it.
             Slash::Refused { command, offered } => {
                 return Some(vec![ChatEffect::Notice(refused_command_words(

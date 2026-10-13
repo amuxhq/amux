@@ -1196,13 +1196,6 @@ impl App {
                     agent_id: agent.agent,
                 };
                 Some(match client.delete_agent(request).await {
-                    Ok(response) if !response.unreachable_children.is_empty() => AppEvent::Notice(
-                        format!(
-                            "deleted; {} child agent(s) on unreachable hosts remain",
-                            response.unreachable_children.len()
-                        ),
-                        Tone::Warn,
-                    ),
                     Ok(_) => AppEvent::Notice("deleted".into(), Tone::Info),
                     Err(error) => {
                         AppEvent::Notice(format!("could not delete: {error}"), Tone::Warn)

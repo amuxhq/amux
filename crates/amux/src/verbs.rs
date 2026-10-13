@@ -377,12 +377,6 @@ pub async fn delete(client: &mut Client, reference: &str) -> Result<()> {
     for child in &response.removed_children {
         println!("Deleted its child {}.", child.name);
     }
-    for child in &response.unreachable_children {
-        println!(
-            "Could not reach its child {}; it stays listed on its own.",
-            child.name
-        );
-    }
     Ok(())
 }
 

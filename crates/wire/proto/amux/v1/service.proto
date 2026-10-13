@@ -401,9 +401,10 @@ message DeleteAgentRequest {
   bytes agent_id = 1;
 }
 
+// A delete either removes the whole family or fails before removing any
+// of it, so the answer lists only what it removed.
 message DeleteAgentResponse {
   repeated Agent removed_children = 1;
-  repeated Agent unreachable_children = 2;
 }
 
 // A message to an agent. `id` is the caller's, so the recipient's daemon

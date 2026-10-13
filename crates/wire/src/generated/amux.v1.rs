@@ -5962,12 +5962,12 @@ impl ::prost::Name for DeleteAgentRequest {
         "/amux.v1.DeleteAgentRequest".into()
     }
 }
+/// A delete either removes the whole family or fails before removing any
+/// of it, so the answer lists only what it removed.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteAgentResponse {
     #[prost(message, repeated, tag = "1")]
     pub removed_children: ::prost::alloc::vec::Vec<Agent>,
-    #[prost(message, repeated, tag = "2")]
-    pub unreachable_children: ::prost::alloc::vec::Vec<Agent>,
 }
 impl ::prost::Name for DeleteAgentResponse {
     const NAME: &'static str = "DeleteAgentResponse";

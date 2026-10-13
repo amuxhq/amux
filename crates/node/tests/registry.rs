@@ -764,6 +764,28 @@ async fn delete_aborts_first_and_cascades_to_children() {
         );
     }
 
+    // Deleting the family would leave the far child running with no
+    // parent: nothing is deleted, and the refusal names it.
+    let refused = runtime
+        .delete(parent)
+        .await
+        .expect_err("a family with a child out of reach is not deleted");
+    println!("delete refused: {refused}");
+    assert!(
+        matches!(refused, RegistryError::FamilyUnreachable { .. })
+            && refused.to_wire().code == wire::ErrorCode::Unreachable as i32,
+        "{refused:?}"
+    );
+    for id in [parent, child] {
+        assert!(install.agent_dir(id).exists(), "nothing is removed");
+        assert_eq!(
+            runtime.agent(id).await.unwrap().lifecycle,
+            Lifecycle::Live as i32,
+            "nothing is stopped"
+        );
+    }
+    runtime.store().await.delete_agent(&remote).unwrap();
+
     let response = runtime.delete(parent).await.expect("the delete completes");
     println!("delete response: {response:#?}");
     assert_eq!(
@@ -773,14 +795,6 @@ async fn delete_aborts_first_and_cascades_to_children() {
             .map(|agent| agent.agent_id.clone())
             .collect::<Vec<_>>(),
         vec![child.as_bytes().to_vec()]
-    );
-    assert_eq!(
-        response
-            .unreachable_children
-            .iter()
-            .map(|agent| agent.agent_id.clone())
-            .collect::<Vec<_>>(),
-        vec![remote.agent.clone()]
     );
     for id in [parent, child] {
         assert!(!install.agent_dir(id).exists(), "the directory is removed");
@@ -795,7 +809,6 @@ async fn delete_aborts_first_and_cascades_to_children() {
         );
     }
     assert_eq!(runtime.draft(bystander.as_bytes()).text, "unsent");
-    assert!(runtime.store().await.agent(&remote).unwrap().is_some());
     assert_eq!(
         runtime.agent(bystander).await.unwrap().lifecycle,
         Lifecycle::Live as i32

@@ -1,3 +1,19 @@
+2026-10-13 — **A delete that cannot reach the whole family deletes
+nothing.** Deleting a parent whose children lived on a host desk had been
+unlinked from said "Deleted lead3" and left those children running with
+no parent, one still working: the delete walked only the children desk's
+store listed, and an unlinked host's rows leave that listing. A delete
+now first checks every far child of the family (those the parent's host
+lists, and those its daemon made elsewhere, which a stop already knew
+of), and when one's host cannot be reached it fails at once, deleting
+nothing: "nothing was deleted: scout is part of this family, and laptop
+cannot be reached" (unreachable, or lapsed where the relay is the only
+way). Far children are deleted before anything here, and one that fails
+fails the delete. `DeleteAgentResponse` loses `unreachable_children`,
+which a delete can no longer report. Tests: the families spec refuses
+the delete with laptop severed and again with it unlinked, and the
+registry test refuses a family with a listed child out of reach.
+
 2026-10-13 — **A question card draws inline code as code.** Codex's
 question cards showed the backticks around file names literally, in the
 question and in every option, while the same words in the agent's prose

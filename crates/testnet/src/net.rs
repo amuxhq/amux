@@ -1267,14 +1267,13 @@ impl Net {
     pub async fn delete(&mut self, name: &str) -> Result<Ack, NetError> {
         let answer = self.delete_family(name).await?;
         Ok(self.ack(format!(
-            "{name} deleted with {} children; {} children unreachable",
-            answer.removed_children.len(),
-            answer.unreachable_children.len()
+            "{name} deleted with {} children",
+            answer.removed_children.len()
         )))
     }
 
     /// Deletes the agent on its own host, as a person does there, and
-    /// answers what the cascade reached and what it could not. The net
+    /// answers what the cascade removed. The net
     /// forgets every agent the cascade removed.
     pub async fn delete_family(&mut self, name: &str) -> Result<DeleteAgentResponse, NetError> {
         let agent = self.agent(name)?.clone();

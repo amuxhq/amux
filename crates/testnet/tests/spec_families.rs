@@ -2,8 +2,9 @@
 //! by the host's name, the parent's host forwards the create there, and
 //! every host's fleet groups the family from the replica rows it holds.
 //! Stop and send are checked against the parent edge wherever the child
-//! lives; a cascade delete reaches the children it can and leaves the rest
-//! listed under their own hosts; and the deliveries outbox carries a
+//! lives; a cascade delete reaches every child through its own host, and
+//! deletes nothing while part of the family is out of reach; and the
+//! deliveries outbox carries a
 //! child's finished and failed messages over the peer link, exactly once,
 //! to the incarnation that was waiting for them.
 
@@ -16,7 +17,7 @@ use node::SourceVerdict;
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Script, Step};
 use store::{AgentKey, AgentRow};
-use testnet::{AgentDecl, Net, PATIENCE, Topology, holds_for, observe, until};
+use testnet::{AgentDecl, Net, NetError, PATIENCE, Topology, holds_for, observe, until};
 use tonic::{Code, Request};
 use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
@@ -511,11 +512,15 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     net.shutdown().await.unwrap();
 }
 
-/// Deleting a parent deletes its children on hosts it can reach, through
-/// each child's own host, and leaves a child on an unreachable host where
-/// it is: listed under that host with its parent edge pointing at nothing.
+/// Deleting a parent whose family reaches a host that cannot be reached
+/// fails at once, naming that host, and deletes nothing: it said "Deleted
+/// lead" and left the far children running with no parent. That holds when
+/// the parent's host still lists the far child, and when it no longer does
+/// (the hosts unlinked), since the parent's host remembers the children it
+/// started elsewhere. Once the host is back, the delete takes the whole
+/// family through each child's own host.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_cascade_delete_reaches_a_reachable_child_and_orphans_an_unreachable_one() {
+async fn a_delete_whose_family_reaches_an_unreachable_host_deletes_nothing() {
     let mut net = Net::start(
         Topology::new()
             .host("desk")
@@ -540,7 +545,6 @@ async fn a_cascade_delete_reaches_a_reachable_child_and_orphans_an_unreachable_o
     .await
     .unwrap();
     let helper = net.agent("helper").unwrap().clone();
-    let scout = net.agent("scout").unwrap().clone();
     until("desk to hold both children", || {
         let net = &net;
         async move {
@@ -556,67 +560,69 @@ async fn a_cascade_delete_reaches_a_reachable_child_and_orphans_an_unreachable_o
     .await
     .unwrap();
 
+    let refused = |error: NetError| match error {
+        NetError::Refused(status) => *status,
+        other => panic!("the delete failed otherwise: {other}"),
+    };
+    // Severed: desk still lists scout.
     net.sever_link("desk", "laptop").unwrap();
     net.wait_link("desk", "laptop", false).await.unwrap();
-    let answer = net.delete_family("lead").await.unwrap();
-    let names = |agents: &[wire::Agent]| -> Vec<String> {
-        agents.iter().map(|agent| agent.name.clone()).collect()
-    };
-    assert_eq!(names(&answer.removed_children), ["helper"]);
-    assert_eq!(names(&answer.unreachable_children), ["scout"]);
-    println!(
-        "delete lead: removed {:?}, unreachable {:?}",
-        names(&answer.removed_children),
-        names(&answer.unreachable_children)
+    let status = refused(net.delete_family("lead").await.unwrap_err());
+    println!("delete lead, laptop severed: {}", status.message());
+    assert!(
+        status.message().contains("laptop"),
+        "the refusal does not name laptop: {}",
+        status.message()
     );
-    let on_server = net
-        .runtime("server")
-        .unwrap()
-        .store()
-        .await
-        .agent(&helper.key())
-        .unwrap();
-    assert!(on_server.is_none(), "helper is gone from its own host");
+    assert!(row(&net, "desk", "lead").await.is_some(), "lead is kept");
+    assert!(
+        net.runtime("server")
+            .unwrap()
+            .store()
+            .await
+            .agent(&helper.key())
+            .unwrap()
+            .is_some(),
+        "helper is kept"
+    );
     assert_eq!(
         lifecycle(&net, "laptop", "scout").await,
         Some(Lifecycle::Live),
-        "scout runs on, untouched"
+        "scout runs on"
     );
 
+    // Unlinked: desk no longer lists scout, and still knows of it.
     net.restore_link("desk", "laptop").await.unwrap();
     net.wait_link("desk", "laptop", true).await.unwrap();
-    let mut inventory = net.observe_inventory("desk").await.unwrap();
-    let laptop = net.host("laptop").unwrap().host_id;
-    let events = inventory
-        .observe_until(
-            |events| {
-                let fleet = fleet(events);
-                fleet.caught_up()
-                    && fleet.find(helper.id.as_bytes()).is_none()
-                    && fleet.find(scout.id.as_bytes()).is_some()
-            },
-            PATIENCE,
-        )
-        .await
-        .unwrap();
-    let fleet = fleet(events);
-    let orphan = fleet.find(scout.id.as_bytes()).unwrap();
+    net.remove_link("desk", "laptop").await.unwrap();
+    until("desk to forget scout", || {
+        let net = &net;
+        async move {
+            row(net, "desk", "scout")
+                .await
+                .is_none()
+                .then_some(())
+                .ok_or_else(|| "desk still lists scout".to_owned())
+        }
+    })
+    .await
+    .unwrap();
+    let status = refused(net.delete_family("lead").await.unwrap_err());
+    println!("delete lead, laptop unlinked: {}", status.message());
+    assert!(
+        status.message().contains("laptop"),
+        "the refusal does not name laptop: {}",
+        status.message()
+    );
+    assert!(
+        row(&net, "desk", "lead").await.is_some(),
+        "lead is deleted with scout out of reach"
+    );
     assert_eq!(
-        orphan.host_id,
-        laptop.as_bytes(),
-        "listed under its own host"
+        lifecycle(&net, "laptop", "scout").await,
+        Some(Lifecycle::Live),
+        "scout runs on"
     );
-    assert!(
-        fleet.parent(&ui_state::agent_key(orphan)).is_none(),
-        "its parent edge points at nothing"
-    );
-    assert!(
-        fleet
-            .roots()
-            .any(|root| root.agent_id == scout.id.as_bytes()),
-        "an orphan heads its own family"
-    );
-    println!("desk's fleet after the link returns: scout listed under laptop as an orphan");
     net.shutdown().await.unwrap();
 }
 
@@ -1154,7 +1160,6 @@ async fn cross_host_family_journey() {
     // Cascade delete.
     let answer = net.delete_family("lead").await.unwrap();
     assert_eq!(answer.removed_children.len(), 1);
-    assert!(answer.unreachable_children.is_empty());
     assert!(
         net.runtime("server")
             .unwrap()

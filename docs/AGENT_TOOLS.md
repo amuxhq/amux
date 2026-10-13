@@ -304,10 +304,13 @@ an agent makes while it is being stopped or deleted is refused ("agent … is
 stopping and starts no more agents"); one already under way when the stop
 began finishes first and its child is stopped with the rest, so no child
 outlives the stop by being made during it. Deleting an agent
-deletes its children too, best effort: a child on another host is deleted
-through that host's daemon, and one whose host cannot be reached is reported
-in `unreachable_children` and stays on its host as an orphan a person can
-delete.
+deletes its children too: a child on another host is deleted through that
+host's daemon, which deletes that child's own family. When part of the
+family is on a host that cannot be reached, the delete fails at once,
+naming the descendant and the host, and deletes nothing, rather than leave
+that part running with no parent. A far child is known from its parent's
+host listing it and, as a stop knows it, from that daemon having made it,
+so unlinking the hosts does not hide it.
 
 **In the clients.** The fleet groups each family under its head and ranks it
 by its loudest member (`ui_view::fleet_view`); a family can be expanded to

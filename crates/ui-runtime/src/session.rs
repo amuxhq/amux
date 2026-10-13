@@ -158,8 +158,18 @@ impl Inner {
 
     /// Applies one message; after close, a late result changes nothing.
     fn apply(&self, msg: Msg) -> Outcome {
+        self.apply_then(msg, |_| ()).0
+    }
+
+    /// [`Self::apply`], reading the state the message left under the same
+    /// lock, before any other message can change it; None after close.
+    fn apply_then<R>(
+        &self,
+        msg: Msg,
+        read: impl FnOnce(&SessionState) -> R,
+    ) -> (Outcome, Option<R>) {
         if self.closed.load(Ordering::Acquire) {
-            return Outcome::default();
+            return (Outcome::default(), None);
         }
         let at_ms = self.clock.now_ms();
         let streamed = matches!(msg, Msg::Event(_));
@@ -174,6 +184,7 @@ impl Inner {
         } = &mut *model;
         trace.record(state, at_ms, TraceEvent::Msg(msg.clone()));
         let outcome = state.update(msg);
+        let read = read(state);
         if self.gathering.load(Ordering::Acquire) {
             changes.absorb(&outcome, changed_keys);
         }
@@ -202,7 +213,7 @@ impl Inner {
         if outcome.reload {
             self.reload.notify_one();
         }
-        outcome
+        (outcome, Some(read))
     }
 
     fn note(&self, event: DriverEvent) {
@@ -325,10 +336,12 @@ impl Inner {
             input.input_id = inputs::input_id();
         }
         let id = input.input_id.clone();
-        self.apply(Msg::Send(input.clone()));
         // Sent while the chat is not current: held, never handed on, until
-        // the chat catches up again.
-        if self.model().state.input_state(&id) == Some(InputState::Held) {
+        // the chat catches up again, which then sends it. Read under the
+        // lock the send applied in: a catch-up in between would release it
+        // to its resend, and this send would deliver it a second time.
+        let (_, state) = self.apply_then(Msg::Send(input.clone()), |state| state.input_state(&id));
+        if state.flatten() == Some(InputState::Held) {
             return Sent {
                 id,
                 outcome: InputOutcome::Held,

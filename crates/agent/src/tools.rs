@@ -307,15 +307,24 @@ impl Server {
         let text = required(arguments, "text")?;
         let context = arguments["context"].as_str().map(|context| context.into());
         let recipient = self.resolve(&to).await?;
+        // The attach tool's elements leave the text for the message's
+        // attachments: an element names the file by its path on this host,
+        // which the recipient's host may not share, so the recipient is
+        // handed the attachment and names its own copy.
+        let parsed = attachments::parse(&text).positioned;
         let request = SendMessageRequest {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             to: Some(AgentRef {
                 host_id: recipient.host_id,
                 agent_id: recipient.agent_id,
             }),
-            text,
+            text: if parsed.attachments.is_empty() {
+                text
+            } else {
+                parsed.text
+            },
             context,
-            attachments: Vec::new(),
+            attachments: parsed.attachments,
         };
         let sent = self
             .daemon_once(format!("the message to {to}"), |mut client| {

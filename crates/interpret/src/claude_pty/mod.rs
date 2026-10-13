@@ -800,11 +800,14 @@ impl State {
             }
             tool.emitted = body.clone();
             let at_ms = tool.at_ms;
+            // The message's files go as attachments, not their elements.
+            let (text, attachments) = crate::shared::parse_reply(text);
             return self.shared.item(
                 emit,
                 ItemDraft {
                     key: id.to_owned(),
                     text,
+                    attachments,
                     body,
                     at_ms: Some(at_ms),
                     complete: true,
@@ -1288,6 +1291,7 @@ impl State {
             ItemDraft {
                 key: agent_message_key(&envelope.id),
                 text: envelope.text.clone(),
+                attachments: envelope.attachments.clone(),
                 input_id: envelope.id.clone(),
                 body: item_body(claude_pty_item::Kind::AgentMessage(agent_message_body(
                     &envelope,

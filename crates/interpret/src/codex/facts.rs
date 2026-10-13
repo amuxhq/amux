@@ -2146,6 +2146,8 @@ impl State {
             (true, _) => SendOutcome::Failed(&error),
         };
         let (message_text, message) = sent_message(arguments.as_bytes(), outcome);
+        // The message's files go as attachments, not their elements.
+        let (message_text, attachments) = crate::shared::parse_reply(message_text);
         let at_ms = self
             .sent
             .entry(id.to_owned())
@@ -2156,6 +2158,7 @@ impl State {
             ItemDraft {
                 key: id.to_owned(),
                 text: message_text,
+                attachments,
                 body: item_body(codex_item::Kind::AgentMessage(message)),
                 at_ms: Some(at_ms),
                 complete: true,

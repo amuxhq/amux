@@ -195,7 +195,15 @@ that provider reads (`crates/agent/src/provider.rs`):
 | `claude_sdk` | A user message whose text carries the elements with paths. When the prompt has images, the content is blocks instead: the text split at each image's element, with the image's bytes as a native image block right after it. |
 | `codex` | The turn's input with each attachment appended after the text: an image as a `localImage` item naming its blob's path, anything else as its element text naming the same path. |
 
-An agent message carries text only; attachments travel in prompts and items.
+An agent message carries attachments as a prompt does. The `send` tool takes
+the attach tool's elements out of the text and sends them as the message's
+attachments, since an element names the file by its path on the sender's
+host. The recipient's interpreter hands them on with the message, and the
+agent process writes each element at its place with the path of the
+recipient's own copy: in the user message for headless Claude, in the text on
+the messaging socket for terminal Claude, and in the injected message's text
+for Codex. The message's item, in the sender's chat and in the recipient's,
+carries the attachments rather than their elements.
 
 ## The review document
 

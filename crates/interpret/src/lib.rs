@@ -231,11 +231,11 @@ pub enum Effect {
     /// Claude in a terminal: a session started on this transcript file;
     /// the agent process tails it from now on.
     FollowTranscript { path: String },
-    /// Codex: a `turn/start` or `turn/steer` request whose input carries
-    /// attachments. The agent process appends each attachment to
-    /// `params.input` as a Codex input item (an image blob by its path in
-    /// the agent's blob directory, inline text and files as text) and
-    /// writes the request.
+    /// Codex: a `turn/start`, `turn/steer` or `thread/inject_items`
+    /// request whose input carries attachments. The agent process appends
+    /// each attachment as a Codex input item (an image blob by its path in
+    /// the agent's blob directory, inline text and files as text; an
+    /// injected message's as its element) and writes the request.
     CodexTurnInput {
         request: Vec<u8>,
         attachments: Vec<wire::Attachment>,

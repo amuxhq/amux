@@ -1276,7 +1276,7 @@ fn queued_from_bootstrap(bootstrap: &Bootstrap) -> Option<QueuedInput> {
         bootstrap::Of::AgentMessage(envelope) => QueuedInput {
             input_id: envelope.id.clone(),
             text: worded(envelope.clone()).text,
-            attachments: Vec::new(),
+            attachments: envelope.attachments.clone(),
             steer: false,
             sender: envelope.from.clone(),
         },

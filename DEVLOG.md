@@ -1,3 +1,12 @@
+2026-10-13 — **Files one agent sends another travel as attachments.** The
+send tool passed the attach tool's element on as text, naming the file by
+the sender host's path, which an agent on another host cannot open. The
+send tool now moves elements into the message's attachments; the
+recipient's interpreter hands them on with the message, and its agent
+process writes each element with the path in the recipient's own blobs
+folder, for every kind. Both chats' message items carry the attachments.
+Fetching the bytes onto the recipient's host is the daemon's part.
+
 2026-10-13 — **A stopped child's report says it was stopped.** A child
 deleted mid-turn reported "[agent helper finished its turn]" with no words,
 and its parent told the person the work was done. A turn a stop cuts short

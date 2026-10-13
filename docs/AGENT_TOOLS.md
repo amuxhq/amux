@@ -98,7 +98,9 @@ match across the fleet, own and replica rows alike; an unknown or ambiguous
 name is refused before anything is sent. The answer is the envelope id, once
 the recipient's provider has the message; [delivery](#delivery) describes
 what that means. When a message reaches an agent from another agent, the
-tool's description tells it to reply with `send` to that agent's name.
+tool's description tells it to reply with `send` to that agent's name. An
+attach tool's element in `text` is sent as the message's attachment, not as
+text (see [attachments](ATTACHMENTS.md)).
 
 ### spawn
 

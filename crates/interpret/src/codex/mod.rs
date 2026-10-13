@@ -1175,6 +1175,7 @@ impl State {
             ItemDraft {
                 key: agent_message_key(&envelope.id),
                 text: envelope.text.clone(),
+                attachments: envelope.attachments.clone(),
                 input_id: envelope.id.clone(),
                 body: item_body(codex_item::Kind::AgentMessage(agent_message_body(
                     &envelope,
@@ -1214,8 +1215,7 @@ impl State {
             })],
             extra: Default::default(),
         };
-        self.request(
-            emit,
+        let request = self.request_bytes(
             ClientRequest::ThreadInjectItems(InjectItemsParams {
                 thread_id: self.thread(),
                 items: vec![InjectedItem::Message(message)],
@@ -1227,6 +1227,15 @@ impl State {
                 turn_over: false,
             },
         );
+        // The agent process names each attachment by its path on this host.
+        emit.effect(if envelope.attachments.is_empty() {
+            Effect::ProviderWrite(request)
+        } else {
+            Effect::CodexTurnInput {
+                request,
+                attachments: envelope.attachments.clone(),
+            }
+        });
     }
 
     /// Starts an empty turn; the messages it carries are consumed at its

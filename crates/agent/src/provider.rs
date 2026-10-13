@@ -21,7 +21,8 @@ use std::time::Duration;
 
 use claude_protocol::stream as claude_stream;
 use codex_protocol::client::{
-    Capabilities, ClientInfo, InitializeParams, ThreadResumeParams, ThreadStartParams,
+    Capabilities, ClientInfo, InitializeParams, InjectedContent, InjectedItem, ThreadResumeParams,
+    ThreadStartParams,
 };
 use codex_protocol::items::{LocalImageInput, UserInput};
 use codex_protocol::{ClientMessage, ClientNotification, ClientRequest, RequestId, ServerMessage};
@@ -689,7 +690,8 @@ impl Provider {
                 via: interpret::Carrier::Stdin,
             } => {
                 let uuid = interpret::claude_sdk::client_uuid(&envelope.id);
-                self.user_message(&uuid, &envelope.text, &[]).await
+                self.user_message(&uuid, &envelope.text, &envelope.attachments)
+                    .await
             }
             Effect::CodexTurnInput {
                 request,
@@ -722,7 +724,10 @@ impl Provider {
             Effect::Inject {
                 envelope,
                 via: interpret::Carrier::MessagingSocket,
-            } => self.message_terminal(&envelope.text).await,
+            } => {
+                let text = self.with_attachments(&envelope.text, &envelope.attachments);
+                self.message_terminal(&text).await
+            }
             other => Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 format!("this agent cannot carry out {other:?} yet"),
@@ -1049,6 +1054,32 @@ fn codex_turn_input(
 ) -> io::Result<Vec<u8>> {
     let mut request = codex_protocol::decode_client(request)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    if let ClientMessage::Request {
+        request: ClientRequest::ThreadInjectItems(params),
+        ..
+    } = &mut request
+    {
+        // An injected message takes text only: each attachment's element
+        // goes at its place, naming the file by its path here.
+        for item in &mut params.items {
+            let InjectedItem::Message(message) = item else {
+                continue;
+            };
+            for content in &mut message.content {
+                let InjectedContent::InputText(text) = content else {
+                    continue;
+                };
+                text.text = attachments::format(
+                    &attachments::Positioned {
+                        text: std::mem::take(&mut text.text),
+                        attachments: attachments.to_vec(),
+                    },
+                    blobs,
+                );
+            }
+        }
+        return Ok(codex_protocol::encode(&request));
+    }
     let input = match &mut request {
         ClientMessage::Request {
             request: ClientRequest::TurnStart(params),

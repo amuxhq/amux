@@ -233,6 +233,8 @@ pub enum RegistryError {
     HostName(#[from] crate::forward::HostNameError),
     #[error(transparent)]
     Forwarded(#[from] crate::forward::ForwardError),
+    #[error("agent {0} is stopping and starts no more agents")]
+    ParentStopping(AgentId),
     #[error("agent {0} did not start within the start deadline")]
     StartTimeout(AgentId),
     #[error("agent {0} did not stop within the stop deadline")]
@@ -312,7 +314,7 @@ impl RegistryError {
                 ErrorCode::InvalidArgument
             }
             Self::OtherHost => ErrorCode::Unimplemented,
-            Self::KindNotRun { .. } => ErrorCode::FailedPrecondition,
+            Self::KindNotRun { .. } | Self::ParentStopping(_) => ErrorCode::FailedPrecondition,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
                 git_facts::WorktreeError::BranchExists(_)
@@ -404,6 +406,8 @@ pub struct ProfileRuntime {
     /// One operation at a time per agent: spawn, resume, stop and delete
     /// each finish before the next starts.
     operations: Mutex<HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>>,
+    /// Each parent's barrier between its stop and its children's creation.
+    births: Mutex<HashMap<AgentId, Arc<Births>>>,
     pub(crate) retention: watch::Sender<Retention>,
     pub(crate) reports: PathBuf,
     pub(crate) daemon_log: Option<PathBuf>,
@@ -438,6 +442,35 @@ enum Stopping {
     Stop,
     /// The process group ended at once; nothing more is written.
     Kill,
+}
+
+/// The barrier between an agent's stop (or delete) and the creation of
+/// its children. A stop lists the children it cascades to; a child whose
+/// row were written after that listing would escape it and keep running.
+/// So a creation for a parent holds `creating` shared from its check to
+/// its child's start, and a stop marks the parent `stopping` and then
+/// takes `creating` alone once before it lists: every creation already
+/// past its check has its child listed, and every later one sees the mark
+/// and is refused.
+#[derive(Default)]
+struct Births {
+    creating: Arc<tokio::sync::RwLock<()>>,
+    /// Stops and deletes of the parent under way.
+    stopping: std::sync::atomic::AtomicUsize,
+    /// Children made on other hosts at this daemon's asking, which this
+    /// host's store may not list yet.
+    forwarded: Mutex<Vec<AgentKey>>,
+}
+
+/// A parent marked stopping, until this is dropped.
+struct BirthsClosed {
+    births: Arc<Births>,
+}
+
+impl Drop for BirthsClosed {
+    fn drop(&mut self) {
+        self.births.stopping.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 pub(crate) struct AgentHandle {
@@ -653,6 +686,7 @@ impl ProfileRuntime {
             store: tokio::sync::Mutex::new(store),
             agents: Mutex::new(HashMap::new()),
             operations: Mutex::new(HashMap::new()),
+            births: Mutex::new(HashMap::new()),
             retention: watch::Sender::new(Retention::default()),
             reports,
             daemon_log,
@@ -839,6 +873,34 @@ impl ProfileRuntime {
             .clone()
     }
 
+    fn births(&self, id: AgentId) -> Arc<Births> {
+        self.births.lock().unwrap().entry(id).or_default().clone()
+    }
+
+    /// Marks `id` as stopping and waits out every creation of a child of
+    /// its already under way; until the mark is dropped, a creation for it
+    /// is refused. See [`Births`].
+    async fn close_births(&self, id: AgentId) -> BirthsClosed {
+        let births = self.births(id);
+        births.stopping.fetch_add(1, Ordering::SeqCst);
+        drop(births.creating.write().await);
+        BirthsClosed { births }
+    }
+
+    /// Lets a creation for `parent` go on, held until its child has
+    /// started, or refuses it when the parent is stopping. See [`Births`].
+    async fn open_birth(
+        &self,
+        parent: AgentId,
+    ) -> Result<tokio::sync::OwnedRwLockReadGuard<()>, RegistryError> {
+        let births = self.births(parent);
+        let open = births.creating.clone().read_owned().await;
+        if births.stopping.load(Ordering::SeqCst) > 0 {
+            return Err(RegistryError::ParentStopping(parent));
+        }
+        Ok(open)
+    }
+
     // --- spawn and resume ------------------------------------------------
 
     /// Creates an agent: its row, its directory and `spec.1`, its tools
@@ -854,6 +916,10 @@ impl ProfileRuntime {
             0 => Uuid::new_v4(),
             16 => Uuid::from_slice(&request.agent_id).expect("sixteen bytes"),
             n => return Err(RegistryError::BadId(n)),
+        };
+        let _birth = match caller {
+            Some(parent) => Some(self.open_birth(parent).await?),
+            None => None,
         };
         if self.target_host(&request)? != self.host {
             return Err(RegistryError::OtherHost);
@@ -1049,6 +1115,10 @@ impl ProfileRuntime {
         {
             self.runs_kind(capabilities, &entry.name, kind)?;
         }
+        let birth = match caller {
+            Some(parent) => Some((parent, self.open_birth(parent).await?)),
+            None => None,
+        };
         let mut request = request;
         if let Some(caller) = caller {
             request.parent = Some(AgentRef {
@@ -1060,11 +1130,21 @@ impl ProfileRuntime {
         if request.agent_id.is_empty() {
             request.agent_id = Uuid::new_v4().as_bytes().to_vec();
         }
-        Ok(self
+        let child = self
             .on_peer(host, |mut client| async move {
                 client.create_agent(request).await
             })
-            .await?)
+            .await?;
+        // The child's row reaches this host's store when its host's
+        // inventory does; until then a stop of the parent finds it here.
+        if let Some((parent, _open)) = birth {
+            self.births(parent)
+                .forwarded
+                .lock()
+                .unwrap()
+                .push(AgentKey::new(child.host_id.clone(), child.agent_id.clone()));
+        }
+        Ok(child)
     }
 
     /// Refuses a kind `capabilities` do not list, in words naming `host`.
@@ -1304,6 +1384,7 @@ impl ProfileRuntime {
     /// one and nothing waits for them, so a child whose host cannot be
     /// reached, or whose stop fails, is left as it is.
     pub async fn stop(&self, id: AgentId) -> Result<Agent, RegistryError> {
+        let _closed = self.close_births(id).await;
         self.stop_children(id).await;
         let operation = self.operation(id);
         let _operation = operation.lock().await;
@@ -1332,33 +1413,43 @@ impl ProfileRuntime {
         Box::pin(async move { self.stop(id).await })
     }
 
+    /// Stops each of the agent's children, as its host's store lists them
+    /// and as made on other hosts at this daemon's asking.
     async fn stop_children(&self, id: AgentId) {
         let key = self.key(id);
-        let children = match self.store.lock().await.agents_of_parent(&key) {
+        let listed = match self.store.lock().await.agents_of_parent(&key) {
             Ok(children) => children,
             Err(error) => {
                 tracing::warn!(agent = %id, %error, "a stop could not list the agent's children");
                 return;
             }
         };
+        let mut children: Vec<AgentKey> = listed.into_iter().map(|row| row.agent).collect();
+        {
+            let births = self.births(id);
+            let mut forwarded = births.forwarded.lock().unwrap();
+            // One the store lists now is stopped from the listing.
+            forwarded.retain(|child| !children.contains(child));
+            children.extend(forwarded.iter().cloned());
+        }
         for child in children {
             let me = self.me.clone();
             tokio::spawn(async move {
                 let Some(runtime) = me.upgrade() else { return };
-                let Ok(child_id) = Uuid::from_slice(&child.agent.agent) else {
+                let Ok(child_id) = Uuid::from_slice(&child.agent) else {
                     return;
                 };
-                if child.agent.host == runtime.host.as_bytes() {
+                if child.host == runtime.host.as_bytes() {
                     if let Err(error) = runtime.clone().stop_boxed(child_id).await {
                         tracing::warn!(child = %child_id, %error, "a cascaded stop failed");
                     }
                     return;
                 }
-                let Ok(host) = Uuid::from_slice(&child.agent.host) else {
+                let Ok(host) = Uuid::from_slice(&child.host) else {
                     return;
                 };
                 let request = wire::StopAgentRequest {
-                    agent_id: child.agent.agent.clone(),
+                    agent_id: child.agent.clone(),
                 };
                 if let Err(error) = runtime
                     .on_peer(host, |mut client| async move {
@@ -1468,6 +1559,7 @@ impl ProfileRuntime {
         key: AgentKey,
         response: &mut DeleteAgentResponse,
     ) -> Result<(), RegistryError> {
+        let _closed = self.close_births(id).await;
         self.stop_locked(id).await?;
 
         let children: Vec<AgentRow> = self.store.lock().await.agents_of_parent(&key)?;
@@ -1512,6 +1604,7 @@ impl ProfileRuntime {
             Err(error) => return Err(error.into()),
         }
         self.operations.lock().unwrap().remove(&id);
+        self.births.lock().unwrap().remove(&id);
         Ok(())
     }
 

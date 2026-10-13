@@ -1,3 +1,15 @@
+2026-10-13 — **A child made while its parent stops is stopped too, or
+refused.** A stop listed the parent's children before it ended the parent,
+and a child the parent was spawning at that moment could be written after
+the listing, escape the cascade and keep running. Each parent now has a
+barrier between its stop and its children's creation: a stop or delete
+marks the parent stopping and waits out every creation of a child already
+past its check before it lists the children, and a creation that finds the
+mark is refused in plain words. A child forwarded to another host is
+remembered by the parent's daemon, so a stop reaches it before that host's
+inventory lists it here. A registry test drives the overlap on one thread,
+holding the store so the stop's listing comes first, with no sleeps.
+
 2026-10-13 — **A resume keeps a person's own Claude arguments.** A
 resumed Claude agent took `--model`, `--permission-mode` and `--effort` out
 of its extra arguments wherever they stood, the person's own included, so an

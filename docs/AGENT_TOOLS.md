@@ -297,7 +297,11 @@ incarnation.
 an agent, by the tool or by a person, stops its whole family the same way:
 each child is stopped on its own host through that host's daemon, and stops its own children in turn. The children's stops run beside
 the parent's and nothing waits for them; a child whose host cannot be reached
-is left running. A resumed parent hears nothing extra about them. Deleting an agent
+is left running. A resumed parent hears nothing extra about them. A `spawn`
+an agent makes while it is being stopped or deleted is refused ("agent … is
+stopping and starts no more agents"); one already under way when the stop
+began finishes first and its child is stopped with the rest, so no child
+outlives the stop by being made during it. Deleting an agent
 deletes its children too, best effort: a child on another host is deleted
 through that host's daemon, and one whose host cannot be reached is reported
 in `unreachable_children` and stays on its host as an orphan a person can

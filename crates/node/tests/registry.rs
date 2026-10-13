@@ -796,6 +796,81 @@ async fn delete_aborts_first_and_cascades_to_children() {
     daemon.shutdown().await.unwrap();
 }
 
+/// Polls a future once, as far as it gets before it waits.
+async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> std::task::Poll<F::Output> {
+    std::future::poll_fn(|cx| std::task::Poll::Ready(std::pin::Pin::new(&mut *future).poll(cx)))
+        .await
+}
+
+/// A child its parent asks for while the parent is being stopped never
+/// outlives the stop. The stop lists the parent's children before it ends
+/// the parent, so a child whose row was written after that listing would
+/// escape the cascade and keep running. Holding the store puts the stop's
+/// listing first and the child's creation after it, on one thread, so the
+/// overlap happens every run: the creation is refused, and says why.
+#[tokio::test]
+async fn a_child_asked_for_while_its_parent_stops_is_refused() {
+    let install = Install::new();
+    let never = install.path("never");
+    let daemon = install
+        .start("boot-1", install.launch("held", vec![wait_for(&never)]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let parent = id_of(
+        &runtime
+            .spawn(create(&install.work, "parent", Some("hold")), None)
+            .await
+            .unwrap(),
+    );
+    until("the turn to start", || working(&runtime, parent))
+        .await
+        .unwrap();
+
+    let spawned = {
+        let store = runtime.store().await;
+        let mut stop = std::pin::pin!(runtime.stop(parent));
+        assert!(
+            poll_once(&mut stop).await.is_pending(),
+            "the stop waits for the store to list the children"
+        );
+        let mut spawn = std::pin::pin!(runtime.spawn(
+            create(&install.work, "late-child", Some("hold")),
+            Some(parent)
+        ));
+        let early = poll_once(&mut spawn).await;
+        drop(store);
+        // Both go on together: the store passes to the stop first.
+        let (stopped, spawned) = tokio::join!(stop, async move {
+            match early {
+                std::task::Poll::Ready(spawned) => spawned,
+                std::task::Poll::Pending => spawn.await,
+            }
+        });
+        stopped.expect("the stop completes");
+        spawned
+    };
+
+    let refusal = match spawned {
+        Ok(child) => panic!(
+            "a child was made for a stopping parent and is {:?}",
+            runtime.agent(id_of(&child)).await.unwrap().lifecycle()
+        ),
+        Err(refusal) => refusal,
+    };
+    assert!(
+        matches!(refusal, RegistryError::ParentStopping(id) if id == parent),
+        "{refusal:?}"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        format!("agent {parent} is stopping and starts no more agents"),
+    );
+
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn rename_changes_the_row_and_the_next_spec_never_a_written_one() {
     let install = Install::new();

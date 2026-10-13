@@ -45,7 +45,7 @@ final class DoorHost {
     /// Every element the screens declared, with where it is drawn.
     @ObservationIgnored var declared: [IdentifiedElement] = []
     let store = ScriptedStoreFront()
-    let cloud = ScriptedCloudService()
+    let cloud = DoorCloud()
     let webAuth = ScriptedWebAuth()
     @ObservationIgnored private weak var composition: Composition?
     /// Where a push handed over through the door goes: the app's own handler.
@@ -295,16 +295,32 @@ final class DoorHost {
 
     /// Signs the launch's account in to the served network's relay, the way
     /// the app keeps a sign-in: its profile is bound with the relay's own
-    /// login and the account goes on screen.
+    /// login, what the account may do is read from the network's account
+    /// service, and the account goes on screen.
     private func signIn(user: String, relay: String, token: String) async -> DoorReply {
-        guard let composition, let cloud = URL(string: relay) else {
+        guard let composition, let service = URL(string: relay) else {
             return .error("nothing to sign in with")
         }
         let account = AccountId(user)
-        composition.accounts.entitlement(.active(grant: .granted, renews: nil), for: account)
+        await cloud.read(plansFrom: service)
         switch await composition.runtime.bind(
-            account, cloud: cloud, client: "cli", refreshToken: token) {
-        case .success: return .ack
+            account, cloud: service, client: "cli", refreshToken: token) {
+        case .success:
+            // The runtime lends the read its bearer once the bound profile
+            // is listed, which can be a moment after the bind returns.
+            let deadline = Date().addingTimeInterval(15)
+            while true {
+                do {
+                    let plan = try await cloud.entitlement(account)
+                    composition.accounts.entitlement(plan, for: account)
+                    return .ack
+                } catch {
+                    guard Date() < deadline else {
+                        return .error("the account service did not say what \(user) may do: \(error)")
+                    }
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+            }
         case .failure(let why): return .error(why.description)
         }
     }
@@ -841,5 +857,91 @@ struct DrivenRoot<Content: View>: View {
             .onPreferenceChange(IdentifiedElements.self) { declared in
                 Task { @MainActor in DoorHost.shared.declared = declared }
             }
+    }
+}
+
+/// The account service a driven launch talks to: the scripted one, except
+/// that once the door has signed an account in to a served network, what an
+/// account may do is read from that network's own account service. A plan
+/// the network changes then reaches the phone wherever the app reads it, as
+/// a real one does from amux.sh, rather than the plan scripted at launch.
+final class DoorCloud: CloudService, @unchecked Sendable {
+    let script = ScriptedCloudService()
+    private let lock = NSLock()
+    private var served: AmuxCloudService?
+    private var lender: (@Sendable (AccountId) async -> String?)?
+
+    var scripted: ScriptedCloudState {
+        get { script.scripted }
+        set { script.scripted = newValue }
+    }
+
+    var calls: [CloudCall] { script.calls }
+    var uploaded: [ReportBundle] { script.uploaded }
+
+    /// Reads plans from the account service at `base` from now on, with the
+    /// bearer the runtime holds for the account.
+    func read(plansFrom base: URL) async {
+        let service = AmuxCloudService(endpoint: CloudEndpoint(
+            base: base, clientID: "cli", callback: CloudEndpoint.production.callback,
+            scopes: []))
+        if let lender = lock.withLock({ self.lender }) {
+            await service.lend(from: lender)
+        }
+        lock.withLock { served = service }
+    }
+
+    func signIn(
+        _ intent: SignInIntent, presenting: any WebAuthPresenter
+    ) async throws(CloudError) -> SignedInAccount {
+        try await script.signIn(intent, presenting: presenting)
+    }
+
+    func handOver(_ id: AccountId) async -> Handover? {
+        await script.handOver(id)
+    }
+
+    func forgetSession(_ id: AccountId) async throws {
+        try await script.forgetSession(id)
+    }
+
+    func lend(from lender: @escaping @Sendable (AccountId) async -> String?) async {
+        let served = lock.withLock {
+            self.lender = lender
+            return self.served
+        }
+        await script.lend(from: lender)
+        await served?.lend(from: lender)
+    }
+
+    func account(_ id: AccountId) async throws(CloudError) -> AccountFacts {
+        var facts = try await script.account(id)
+        if lock.withLock({ served }) != nil {
+            facts.entitlement = try await entitlement(id)
+        }
+        return facts
+    }
+
+    func entitlement(_ id: AccountId) async throws(CloudError) -> Entitlement {
+        guard let served = lock.withLock({ self.served }) else {
+            return try await script.entitlement(id)
+        }
+        return try await served.entitlement(id)
+    }
+
+    func recordPurchase(_ id: AccountId, signedTransaction: String) async throws(CloudError) {
+        try await script.recordPurchase(id, signedTransaction: signedTransaction)
+    }
+
+    func requestDeletion(
+        _ id: AccountId, confirmedEmail: String
+    ) async throws(CloudError) -> DeletionOutcome {
+        try await script.requestDeletion(id, confirmedEmail: confirmedEmail)
+    }
+
+    func uploadReport(
+        _ id: AccountId, bundle: ReportBundle
+    ) async throws(CloudError) -> ReportReceipt {
+        try await script.uploadReport(id, bundle: bundle)
     }
 }

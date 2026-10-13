@@ -865,6 +865,78 @@ does nothing. A key after Ctrl+S that is no setting reaches the draft, and
 Ctrl+S under an open ask opens no hidden picker. Moving to Cancel in the
 stop window cancels. A prompt of only spaces is not sent. A prompt sent
 while its file attaches waits for the file.
+2026-10-13 — **The settled list says a conversation switched in Claude's own
+view is information, not an ask.** It told testers the agent needs you; the
+chat instead says so, with Switch back, and the phase does not change. It
+also said a bare `/rename` opens the picker; it opens the rename.
+
+2026-10-13 — **Account plans in a test net behave like real ones.**
+`ctl tier` nudged only in-process hosts named in the topology, so a host
+signed in with `ctl sign-in`, or running as its own process, learned a
+lapse minutes later; process hosts could not reach the net's relay at all,
+since they did not trust its self-signed certificate. The net's account
+service had no plan read, so the phone kept the plan the door had set at
+sign-in, and `ctl status` printed each account's tier as created. Now
+process hosts trust the relay through `AMUX_CLOUD_TLS_CA`; every host
+signed in to the account learns a change at once (a process host by a
+pause and resume of its profile); the account service answers the phone's
+`/api/graphql` plan read from the account's current tier; the phone's
+debug door signs in by reading that plan and reads it there afterwards;
+and the net's topology, which `ctl status` prints, carries the new tier.
+
+2026-10-13 — **`testnet ctl` pastes, taps, pairs and reads a fleet the way
+a person meets them, and the phone's debug door keeps up.** `tui paste`
+pasted with tmux's `paste-buffer -p` without `-r`, turning every line feed
+into a carriage return (behind both CRLF findings), and long pastes failed
+as "command too long": the text now goes through a file into tmux's buffer
+and arrives byte for byte. `phone tap` waits for its element to be on
+screen and enabled, taps again while a just-enabled control is still drawn
+disabled (67 "chat.send did not activate" refusals), and waits for the
+screen to change before settling. A failed `phone pair` closes the pairing
+window it opened, so a retry is not refused as already open. `fleet HOST`
+lists only what the host's clients show, its own and its trusted peers'
+agents, and lists rows left by a host it no longer trusts apart; the
+door's `Inventory` reply carries the hosts with their trust. The phone's
+debug door rescanned its whole buffer on every 8 KiB read and served one
+connection at a time, so a 50 MB attach took many minutes and other
+queries timed out behind it: it now searches only new bytes for a line's
+end and reads each connection on a thread of its own.
+
+2026-10-13 — **A QA finding says whether it is new, and follows the
+template.** The second run's stop rule, a wave that finds nothing new,
+never fired: at least 44 findings repeated an earlier symptom unmarked,
+some marks named the wrong finding, severities drifted ("high", sentences),
+template comments and folder-name titles were accepted, and three folders
+were recorded twice. `ctl ledger findings` lists the run's findings, each
+once, with who saw it again; each tester's prompt starts with that list.
+Once the run has a finding, `ctl ledger finding` needs `--new` or
+`--duplicate-of` the original, and its refusal lists the findings most like
+the new title. It refuses a severity outside the five words, an unfilled
+line or section, a leftover comment or a folder-name title, naming each,
+and a folder already recorded. Earlier runs never count: a repeat after a
+fix round is a regression to report.
+
+2026-10-13 — **QA testers are told the settled behaviour and how slowly
+they type.** Testers kept reporting decided behaviour: a phone listing only
+the agents of hosts it is paired with, agents ending after a test net's
+20-second grace, amux's own presentation of tool calls. `qa/SETTLED.md`
+lists, as behaviour, what is decided once the current fixes land, and goes
+into every tester's prompt. The agent guide says a tester's key landing on
+an ask that opened while it typed, more than half a second after its
+previous key, is an artefact of its pace.
+
+2026-10-13 — **The QA launcher shuts every net down, and a tester's `ctl`
+finds its net from any folder.** In the second overnight run one `ctl down`
+outlasted the launcher's three-minute wait; the timeout went uncaught, the
+run ended with no summary and the last wave's nets kept running. The
+launcher now gives `ctl down` five minutes, kills whatever of a net is
+still running after it fails or times out (the folder's tmux server and
+every process whose command line lies in the tester's folder), carries on
+with the other testers, and writes the summary however the run ends, naming
+any net it had to kill. Testers who changed folder hit "no net in this
+folder" 349 times: `ctl` now takes the session folder from
+`TESTNET_FOLDER`, which the launcher sets to each tester's own, and looks
+for a relative input file in the current folder first.
 
 2026-10-12 — **A message counts as in hand once it is written to its
 agent.** The cross-host family journey cuts the sender's links while the

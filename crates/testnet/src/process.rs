@@ -26,6 +26,10 @@ pub(crate) struct ProcessHost {
     pub bin: PathBuf,
     /// Whether its daemon advertises on the machine's real mDNS.
     pub bonjour: bool,
+    /// The net relay's certificate, once the net has a relay: a daemon
+    /// process dials the relay where the account service names it, and
+    /// trusts its self-signed certificate only when told to.
+    pub relay_ca: PathBuf,
 }
 
 /// How long a process host has to answer after a start: a fresh binary's
@@ -51,6 +55,11 @@ impl ProcessHost {
             .env_remove("AMUX_CONFIG")
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true);
+        if self.relay_ca.is_file() {
+            command.env("AMUX_CLOUD_TLS_CA", &self.relay_ca);
+        } else {
+            command.env_remove("AMUX_CLOUD_TLS_CA");
+        }
         command
     }
 

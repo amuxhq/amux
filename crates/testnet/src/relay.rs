@@ -3,11 +3,12 @@
 //!
 //! One [`Relay`] is a production [`CloudLinkServer`] serving its QUIC
 //! carrier and its TCP fallback on loopback, beside a stand-in for the
-//! cloud: the OAuth token and userinfo endpoints a sign-in calls, and the
+//! cloud: the OAuth token and userinfo endpoints a sign-in calls, the
 //! connect call that mints a relay credential for the account's current
-//! tier. Credentials expire on the net's policy clock. Each host dials the
-//! relay's QUIC carrier through its own [`UdpGate`], so a test can take UDP
-//! away from one host and give it back.
+//! tier, and the plan read a phone makes (`/api/graphql`). Credentials
+//! expire on the net's policy clock. Each host dials the relay's QUIC
+//! carrier through its own [`UdpGate`], so a test can take UDP away from
+//! one host and give it back.
 
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
@@ -45,6 +46,9 @@ const QUIC_HANDSHAKE: Duration = Duration::from_secs(10);
 struct Account {
     user: Uuid,
     tier: Tier,
+    /// When it last went from Pro to Free, on the policy clock: the moment
+    /// its access ended, as the plan read says.
+    lapsed_ms: Option<i64>,
     /// Signing in and refreshing fail as for a revoked login.
     revoked: bool,
 }
@@ -87,6 +91,8 @@ pub struct Relay {
     /// The relay's self-signed certificate, DER, for a client outside the
     /// net to trust its QUIC carrier by.
     quic_root: Vec<u8>,
+    /// The same certificate as PEM, for a daemon process to trust.
+    quic_root_pem: String,
     quic_endpoint: quinn::Endpoint,
     cloud: Arc<Cloud>,
     tasks: Vec<JoinHandle<()>>,
@@ -96,7 +102,7 @@ impl Relay {
     /// Starts the relay and the cloud for `decl`'s accounts, their
     /// credentials timed by `clock`.
     pub async fn start(decl: &RelayDecl, clock: Arc<dyn Clock>) -> std::io::Result<Self> {
-        let (quic_server, quic_client, quic_root) = quic_configs();
+        let (quic_server, quic_client, quic_root, quic_root_pem) = quic_configs();
         let quic_endpoint =
             quinn::Endpoint::server(quic_server, SocketAddr::from(([127, 0, 0, 1], 0)))?;
         let quic = quic_endpoint.local_addr()?;
@@ -107,6 +113,7 @@ impl Relay {
                 Account {
                     user: Uuid::new_v4(),
                     tier: account.tier.into(),
+                    lapsed_ms: None,
                     revoked: false,
                 },
             );
@@ -140,6 +147,7 @@ impl Relay {
             quic,
             quic_client,
             quic_root,
+            quic_root_pem,
             quic_endpoint,
             cloud,
             tasks,
@@ -179,6 +187,13 @@ impl Relay {
         &self.quic_root
     }
 
+    /// The relay's self-signed certificate, PEM: what a debug daemon process
+    /// is told to trust (`AMUX_CLOUD_TLS_CA`) to reach the relay where the
+    /// account service names it.
+    pub fn quic_root_pem(&self) -> &str {
+        &self.quic_root_pem
+    }
+
     /// The refresh token a person signing in as `account` hands the daemon.
     pub fn login(account: &str) -> String {
         format!("refresh-{account}")
@@ -203,17 +218,36 @@ impl Relay {
             Account {
                 user,
                 tier,
+                lapsed_ms: None,
                 revoked: false,
             },
         );
         user
     }
 
-    /// What `account` buys from its next credential on.
+    /// What `account` buys from its next credential and its next plan
+    /// read on.
     pub fn set_tier(&self, account: &str, tier: Tier) {
+        let now = self.cloud.clock.now_ms();
         if let Some(known) = self.cloud.state.lock().unwrap().accounts.get_mut(account) {
+            known.lapsed_ms = match (known.tier, tier) {
+                (Tier::Pro, Tier::Free) => Some(now),
+                (_, Tier::Pro) => None,
+                _ => known.lapsed_ms,
+            };
             known.tier = tier;
         }
+    }
+
+    /// What `account` buys now.
+    pub fn tier(&self, account: &str) -> Option<Tier> {
+        self.cloud
+            .state
+            .lock()
+            .unwrap()
+            .accounts
+            .get(account)
+            .map(|known| known.tier)
     }
 
     /// Revokes `account`'s login: the token endpoint refuses its refresh
@@ -389,6 +423,15 @@ impl Cloud {
                 Some(account) => json(self.mint(&account)),
                 None => status(401, serde_json::json!({})),
             },
+            // The plan read a phone makes. Whatever the query asks, the
+            // answer is the account's access: `pro`, when it ended, and why
+            // it has it, the way the real account service words it.
+            "/api/graphql" => match bearer.filter(|account| self.signed_in(account)) {
+                Some(account) => json(serde_json::json!({
+                    "data": {"me": {"access": self.access(&account)}},
+                })),
+                None => status(401, serde_json::json!({})),
+            },
             _ => status(404, serde_json::json!({})),
         }
     }
@@ -400,6 +443,28 @@ impl Cloud {
             .accounts
             .get(account)
             .is_some_and(|known| !known.revoked)
+    }
+
+    /// An account's access as the plan read answers it. A Pro account was
+    /// given its access (the net knows no purchases); one moved from Pro to
+    /// Free had that access end when it moved; one that was always Free
+    /// has none.
+    fn access(&self, account: &str) -> serde_json::Value {
+        let known = self.state.lock().unwrap().accounts[account].clone();
+        let at = |ms: i64| {
+            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)
+                .expect("a time in range")
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        };
+        match (known.tier, known.lapsed_ms) {
+            (Tier::Pro, _) => serde_json::json!({
+                "pro": true, "until": null, "grant": {"__typename": "Granted"},
+            }),
+            (Tier::Free, Some(lapsed)) => serde_json::json!({
+                "pro": false, "until": at(lapsed), "grant": {"__typename": "Granted"},
+            }),
+            (Tier::Free, None) => serde_json::json!({"pro": false, "until": null, "grant": null}),
+        }
     }
 
     fn mint(&self, account: &str) -> serde_json::Value {
@@ -445,8 +510,9 @@ fn status(code: u16, body: serde_json::Value) -> hyper::Response<Full<Bytes>> {
 }
 
 /// A self-signed certificate for the relay's QUIC carrier, a client
-/// configuration that trusts only it, and the certificate itself.
-fn quic_configs() -> (quinn::ServerConfig, quinn::ClientConfig, Vec<u8>) {
+/// configuration that trusts only it, and the certificate itself, as DER
+/// and as PEM.
+fn quic_configs() -> (quinn::ServerConfig, quinn::ClientConfig, Vec<u8>, String) {
     let rcgen::CertifiedKey { cert, signing_key } =
         rcgen::generate_simple_self_signed(vec![RELAY_HOST.to_owned()])
             .expect("a relay certificate");
@@ -462,5 +528,5 @@ fn quic_configs() -> (quinn::ServerConfig, quinn::ClientConfig, Vec<u8>) {
     roots.add(der).expect("the relay certificate as a root");
     let client =
         relay_quic_client_config_with_roots(roots).expect("the relay's QUIC client configuration");
-    (server, client, cert.der().as_ref().to_vec())
+    (server, client, cert.der().as_ref().to_vec(), cert.pem())
 }

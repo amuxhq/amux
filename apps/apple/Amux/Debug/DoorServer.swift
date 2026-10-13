@@ -46,10 +46,10 @@ enum DoorFailure: Error, CustomStringConvertible {
     }
 }
 
-/// The listening socket and its accept loop. One connection is served at a
-/// time: a driver speaks a sequence of requests and waits for each answer, so
-/// a second driver arriving mid-run would be a bug worth blocking on rather
-/// than interleaving with.
+/// The listening socket and its accept loop. Each connection is read on a
+/// thread of its own, so one carrying a long request (a large attachment's
+/// bytes) does not hold up a query that arrives meanwhile; every request is
+/// still answered on the main actor.
 private final class DoorListener: @unchecked Sendable {
     private let descriptor: Int32
     let port: UInt16
@@ -74,7 +74,7 @@ private final class DoorListener: @unchecked Sendable {
             }
         }
         guard bound == 0 else { throw DoorFailure.bind(errno) }
-        guard listen(descriptor, 1) == 0 else { throw DoorFailure.listen(errno) }
+        guard listen(descriptor, 16) == 0 else { throw DoorFailure.listen(errno) }
 
         var assigned = sockaddr_in()
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -105,25 +105,41 @@ private final class DoorListener: @unchecked Sendable {
                     if errno == EINTR { continue }
                     return
                 }
-                converse(on: connection)
-                close(connection)
+                // A driver that hangs up mid-reply must not take the app
+                // down with a broken pipe.
+                var one: Int32 = 1
+                setsockopt(
+                    connection, SOL_SOCKET, SO_NOSIGPIPE, &one,
+                    socklen_t(MemoryLayout<Int32>.size))
+                Thread.detachNewThread { [self] in
+                    converse(on: connection)
+                    close(connection)
+                }
             }
         }
     }
 
+    /// Reads requests a line at a time. Only the bytes that arrived since
+    /// the last read are searched for the line's end, so a request of many
+    /// megabytes costs its length once rather than once per read.
     private func converse(on connection: Int32) {
         var pending = Data()
-        var buffer = [UInt8](repeating: 0, count: 8192)
+        var searched = 0
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
-            let read = buffer.withUnsafeMutableBytes { Darwin.read(connection, $0.baseAddress, 8192) }
+            let read = buffer.withUnsafeMutableBytes {
+                Darwin.read(connection, $0.baseAddress, $0.count)
+            }
             if read <= 0 { return }
             pending.append(contentsOf: buffer[0..<read])
-            while let newline = pending.firstIndex(of: 0x0A) {
-                let line = pending[pending.startIndex..<newline]
-                pending = pending[pending.index(after: newline)...]
+            while let newline = pending[(pending.startIndex + searched)...].firstIndex(of: 0x0A) {
+                let line = pending.subdata(in: pending.startIndex..<newline)
+                pending = pending.subdata(in: pending.index(after: newline)..<pending.endIndex)
+                searched = 0
                 guard !line.isEmpty else { continue }
-                if answer(to: Data(line), on: connection) == .stop { return }
+                if answer(to: line, on: connection) == .stop { return }
             }
+            searched = pending.count
         }
     }
 
@@ -162,10 +178,9 @@ private final class DoorListener: @unchecked Sendable {
 
 /// Carries one request across to the main actor and waits for its answer.
 ///
-/// The accept loop is a plain blocking thread on purpose — a door that is
-/// itself a concurrent system is a door that can hang a golden run for reasons
-/// nobody can reproduce — so it blocks here while the app answers on the actor
-/// that owns the screen.
+/// Each connection's thread blocks here while the app answers on the actor
+/// that owns the screen. Requests from two connections share that actor: one
+/// whose answer waits (for frames, a pairing) lets the other run meanwhile.
 private enum DoorAnswering {
     static func answer(_ request: DoorRequest) -> DoorReply {
         let answered = Answer()

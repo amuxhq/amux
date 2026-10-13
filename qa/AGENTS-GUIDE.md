@@ -33,6 +33,16 @@ word for word, and change only the names, files and texts in them.
 - **See what is waiting on you** with `ctl chat HOST AGENT`: its phase, every
   item with what it decodes as, and under "waiting on you" each open ask.
 
+## Your typing is slow
+
+You press keys far more slowly than a person types: each `ctl tui keys` or
+`ctl tui type` is a command of its own, often seconds after the last. An ask
+that opens while someone types takes no key until half a second passes with
+no key pressed (`SETTLED.md`). A key of yours that answered or moved an ask
+that opened while you were typing, more than half a second after your
+previous key, is an artefact of your pace, not a finding. Wait for the ask to
+show before you answer it.
+
 ## Claude
 
 | Behaviour | How |

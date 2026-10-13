@@ -19,13 +19,18 @@ pixel nits. Report both, but hunt the worst first.
 Several testers work at once, each on a net of its own. The run's ledger says
 who covers what and what has been found (`reference/qa/LEDGER.md`).
 
-1. `testnet ctl ledger read`.
+1. `testnet ctl ledger read`, and read the run's findings so far: the end of
+   this prompt lists them as they stood when you started, and
+   `testnet ctl ledger findings` lists them now.
 2. Choose ground nobody has covered, from your persona's point of view.
 3. `testnet ctl ledger claim <what you will cover>`.
-4. Read the ledger again whenever you change ground or are about to record a
-   finding. If someone found your symptom first, they get the credit: move on to
-   thinner ground. If your evidence still adds something, record it with
-   `--duplicate-of` (step 8); only new findings keep the run going.
+4. Read `testnet ctl ledger findings` again whenever you change ground and
+   before you record a finding. If someone found your symptom first, they get
+   the credit: move on to thinner ground. If your evidence still adds
+   something, record it with `--duplicate-of` (step 8); only new findings keep
+   the run going.
+5. Read `SETTLED.md` (below, and in `reference/qa`): behaviour that is
+   decided is not a finding.
 
 ## 3. Hypotheses before actions
 
@@ -74,12 +79,15 @@ When something is wrong, run `testnet ctl capture NAME --note "<one line>"`
 while it is still on screen: it keeps the topology, your session log, a dump of
 every host, the agents' provider traffic, a fresh shot of every pane and the
 phone, and the logs, in `findings/NAME/` in your folder. Fill in its
-`finding.md` at once (`reference/qa/FINDING.md` is the format; put the title on
-the first line and the severity on its line first), then
-`testnet ctl ledger finding NAME`. When the ledger already holds the same
-symptom, add `--duplicate-of TESTER/NAME`, naming the earlier finding as
-`ledger read` shows it. Whether it is the same symptom is your call. A hunch you could not capture goes to the
-ledger as `testnet ctl ledger idea <text>`.
+`finding.md` at once (`reference/qa/FINDING.md` is the format): the symptom as
+its title, every line and section answered, every template comment deleted,
+and a severity that is exactly one of `data loss`, `broken flow`,
+`wrong state`, `visual` or `wording`. Then record it, saying which it is: with
+`--duplicate-of TESTER/NAME` when `testnet ctl ledger findings` already holds
+the same symptom (name that original), or `--new` when it does not:
+`testnet ctl ledger finding NAME --new`. Whether it is the same symptom is
+your call. A finding seen in an earlier run is new in this one. A hunch you
+could not capture goes to the ledger as `testnet ctl ledger idea <text>`.
 
 ## 9. See it twice
 
@@ -94,7 +102,8 @@ how many times you saw it and what changed between them.
 
 Your judgement decides what is a finding. Use the docs only afterwards, to
 label it: it contradicts the docs (quote the promise), it is documented but
-surprising, or it is undocumented.
+surprising, or it is undocumented. What `SETTLED.md` describes is decided:
+report only where amux behaves otherwise.
 
 ## 11. When to stop
 
@@ -127,7 +136,8 @@ Claude and Codex.
 
 - Read `reference/docs` and `reference/qa` only. Do not look for or read source
   code, tests or history: you are testing the product as a person meets it.
-- Work in your own folder; write nowhere else.
+- Work in your own folder; write nowhere else. `testnet ctl` finds your net
+  from any folder.
 - Every action goes through `testnet ctl` (`testnet ctl --help`, and `--help`
   on any command). It is logged to your `session.jsonl`, which is part of your
   evidence.

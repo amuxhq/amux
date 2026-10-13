@@ -53,6 +53,8 @@ use crate::topology::{
 /// The extension of the file beside an agent's script that its provider
 /// logs every line it reads to.
 const INPUT_LOG: &str = "input";
+/// The relay's certificate in the net's root, for process hosts to trust.
+const RELAY_CA: &str = "relay-ca.pem";
 
 /// The version a supervised host starts on: older than anything a test
 /// publishes.
@@ -426,6 +428,7 @@ impl Net {
         };
         if let Some(relay) = &topology.relay {
             net.relay = Some(Relay::start(relay, net.clock.clone()).await?);
+            net.write_relay_ca()?;
         }
         for decl in &topology.hosts {
             net.create_host(decl)?;
@@ -684,6 +687,7 @@ impl Net {
             let relay = Relay::start(&RelayDecl::default(), self.clock.clone()).await?;
             self.relay = Some(relay);
             self.topology.relay = Some(RelayDecl::default());
+            self.write_relay_ca()?;
         }
         let relay = self.relay.as_ref().expect("the relay");
         if relay.user(&account.name).is_some() {
@@ -716,6 +720,15 @@ impl Net {
     pub fn open_gate(&self, name: &str) -> Result<Ack, NetError> {
         std::fs::write(self.gates().join(name), b"")?;
         Ok(self.ack(format!("gate {name} open")))
+    }
+
+    /// Writes the relay's certificate where a process host's daemon is
+    /// told to find it, so it can reach the relay as an in-process host
+    /// does.
+    fn write_relay_ca(&self) -> Result<(), NetError> {
+        let relay = self.relay()?;
+        std::fs::write(self.root.path().join(RELAY_CA), relay.quic_root_pem())?;
+        Ok(())
     }
 
     /// The relay the topology declares.
@@ -1604,6 +1617,7 @@ impl Net {
             front_door: front_door.clone(),
             bin: dir.join("bin"),
             bonjour: decl.bonjour,
+            relay_ca: self.root.path().join(RELAY_CA),
         });
         self.lan.learn(&decl.name, host_id);
         self.hosts.insert(
@@ -1884,31 +1898,103 @@ impl Net {
         Ok(self.ack(format!("{host} signed in to {account}")))
     }
 
-    /// Changes what `account` has bought, and has each of its hosts that is
-    /// up ask for its entitlement at once, as the host where a purchase or
-    /// a cancellation happened does.
-    pub async fn set_tier(&self, account: &str, tier: TierDecl) -> Result<Ack, NetError> {
+    /// Changes what `account` has bought, and has each host signed in to
+    /// it learn that at once, as the host where a purchase or a
+    /// cancellation happened does: an in-process host asks for its
+    /// entitlement over its relay link. A process host's daemon offers no
+    /// socket that asks it to, so its profile is paused and resumed, which
+    /// dials the relay afresh for a credential of the new tier; its relay
+    /// link drops for that moment.
+    pub async fn set_tier(&mut self, account: &str, tier: TierDecl) -> Result<Ack, NetError> {
         self.relay()?.set_tier(account, tier.into());
-        let signed_in: Vec<String> = self
-            .hosts
-            .values()
-            .filter(|host| host.decl.account.as_deref() == Some(account))
-            // A process host's daemon asks on its own schedule; nothing on
-            // its sockets asks it to ask now.
-            .filter(|host| host.process.is_none())
-            .map(|host| host.info.name.clone())
-            .filter(|name| self.is_up(name))
-            .collect();
-        for host in &signed_in {
-            self.edge(host)?
-                .refresh_entitlement()
-                .await
-                .map_err(|error| NetError::Host {
-                    host: host.clone(),
-                    error,
-                })?;
+        if let Some(declared) = self.topology.relay.as_mut() {
+            for known in declared
+                .accounts
+                .iter_mut()
+                .filter(|known| known.name == account)
+            {
+                known.tier = tier;
+            }
         }
-        Ok(self.ack(format!("{account} is on {tier:?}")))
+        let up: Vec<String> = self
+            .hosts
+            .keys()
+            .filter(|name| self.is_up(name))
+            .cloned()
+            .collect();
+        let wanted = match tier {
+            TierDecl::Pro => wire::Tier::Pro,
+            TierDecl::Free => wire::Tier::Free,
+        };
+        let mut told = Vec::new();
+        for host in up {
+            let profile = self.host(&host)?.profile;
+            let info = self
+                .front_door(&host)
+                .await?
+                .list_profiles(wire::Empty {})
+                .await
+                .map_err(|status| NetError::Refused(Box::new(status)))?
+                .into_inner()
+                .profiles
+                .into_iter()
+                .find(|info| info.id == profile.as_bytes());
+            // Only a host whose relay link is up has anything to learn now;
+            // any other learns the tier when its link comes up.
+            if !info.is_some_and(|info| {
+                info.account_subject == account && info.observed() == wire::Observed::Connected
+            }) {
+                continue;
+            }
+            if self.process(&host)?.is_none() {
+                self.edge(&host)?
+                    .refresh_entitlement()
+                    .await
+                    .map_err(|error| NetError::Host {
+                        host: host.clone(),
+                        error,
+                    })?;
+            } else {
+                let request = wire::ProfileRequest {
+                    profile_id: profile.as_bytes().to_vec(),
+                };
+                let mut door = self.front_door(&host).await?;
+                door.pause_profile(request.clone())
+                    .await
+                    .map_err(|status| NetError::Refused(Box::new(status)))?;
+                door.resume_profile(request)
+                    .await
+                    .map_err(|status| NetError::Refused(Box::new(status)))?;
+            }
+            let what = format!("{host}'s relay link on {tier:?}");
+            observe::until(&what, || async {
+                let info = self
+                    .front_door(&host)
+                    .await
+                    .map_err(|error| error.to_string())?
+                    .list_profiles(wire::Empty {})
+                    .await
+                    .map_err(|status| status.message().to_owned())?
+                    .into_inner()
+                    .profiles
+                    .into_iter()
+                    .find(|info| info.id == profile.as_bytes());
+                let seen = info.as_ref().map(|info| (info.observed(), info.tier()));
+                (seen == Some((wire::Observed::Connected, wanted)))
+                    .then_some(())
+                    .ok_or_else(|| format!("observed {seen:?}"))
+            })
+            .await?;
+            told.push(host);
+        }
+        Ok(self.ack(format!(
+            "{account} is on {tier:?}{}",
+            if told.is_empty() {
+                String::new()
+            } else {
+                format!("; {} learned it", told.join(", "))
+            }
+        )))
     }
 
     /// The address of a gate in front of `host`'s LAN listener, started

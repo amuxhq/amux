@@ -912,6 +912,20 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             let events = inventory
                 .observe_until(observe::inventory_caught_up, observe::PATIENCE)
                 .await?;
+            // The hosts beside the agents, with their trust: a client
+            // shows only the agents of hosts it trusts, and the inventory
+            // also keeps rows a host it no longer trusts left behind.
+            let hosts: Vec<Value> = observe::inventory_hosts(events)
+                .iter()
+                .map(|host| {
+                    json!({
+                        "name": host.name,
+                        "id": Uuid::from_slice(&host.host_id).unwrap_or_default(),
+                        "trust": host.trust().as_str_name().trim_start_matches("TRUST_"),
+                        "presence": host.presence().as_str_name().trim_start_matches("PRESENCE_"),
+                    })
+                })
+                .collect();
             let agents: Vec<Value> = observe::inventory_agents(events)
                 .iter()
                 .map(|agent| {
@@ -934,7 +948,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                     })
                 })
                 .collect();
-            json!({ "agents": agents })
+            json!({ "agents": agents, "hosts": hosts })
         }
         Control::Block { host, agent } => {
             net.assert_block_invariant(&host, &agent).await?;

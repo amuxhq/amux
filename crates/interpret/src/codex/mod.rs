@@ -161,11 +161,23 @@ enum Command {
 
 impl Command {
     /// The command `text` names, if it is one amux runs. `Err` for a
-    /// `/word` amux does not run.
+    /// `/word` amux does not run. A command's name is a word with no
+    /// further slash, as the composer reads it, so a prompt that starts
+    /// with an absolute path is words.
     fn parse(text: &str) -> Option<Result<Self, ()>> {
         let text = text.trim();
         let rest = text.strip_prefix('/')?;
         let (name, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+        let is_name = name
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic())
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
+        if !is_name {
+            return None;
+        }
         let args = args.trim().to_owned();
         Some(match name {
             "compact" => Ok(Self::Compact),
@@ -2293,5 +2305,21 @@ mod tests {
         assert_eq!(super::tidy_model("gpt-5-codex"), "GPT-5 Codex");
         assert_eq!(super::tidy_model("gpt-5.1-codex-max"), "GPT-5.1 Codex Max");
         assert_eq!(super::tidy_model("o3"), "o3");
+    }
+
+    /// A prompt that starts with an absolute path is words, not a command:
+    /// a command's name holds no further slash.
+    #[test]
+    fn a_prompt_starting_with_a_path_is_not_a_command() {
+        use super::Command;
+        assert_eq!(Command::parse("/Users/me/src/lib.rs has a bug"), None);
+        assert_eq!(Command::parse("/etc/hosts"), None);
+        assert_eq!(Command::parse("/ alone"), None);
+        assert_eq!(Command::parse("/compact"), Some(Ok(Command::Compact)));
+        assert_eq!(Command::parse("/status"), Some(Err(())));
+        assert_eq!(
+            Command::parse("/review src/lib.rs"),
+            Some(Ok(Command::Review("src/lib.rs".into())))
+        );
     }
 }

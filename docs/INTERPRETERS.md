@@ -678,7 +678,9 @@ answer.
   commands is left out of the catalogue, since `/name` runs the command. A
   `/` followed by any other skill's name goes to the model as written; any other `/word` (Codex's `/new` among
   them, which means another conversation, so another agent) is refused as
-  unsupported rather than sent to the model as words.
+  unsupported rather than sent to the model as words. A command's name is a
+  word with no further slash, so a prompt that starts with a path
+  (`/Users/me/src/lib.rs has a bug`) is words and goes to the model.
 - **Asks** are the server's requests:
 
   | Request | Ask |

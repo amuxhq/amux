@@ -15,9 +15,13 @@
 //!   kill, the daemon's escalation past its stop deadline, ends the process
 //!   group at once and writes nothing. A draining agent answers new input as
 //!   `REFUSAL_DRAINING`.
+//! - Asking the provider to finish sends it SIGTERM, on which every provider
+//!   cleans up its commands; whatever still runs below it once it has
+//!   exited is killed (see the tree module).
 //! - An agent with a parent is one-shot: at a turn end with nothing queued,
-//!   running or accepted-but-unconsumed it exits, and input arriving while
-//!   it does is refused as `REFUSAL_EXITING`.
+//!   running or accepted-but-unconsumed, and no agent below it live (the
+//!   daemon says how many are), it exits, and input arriving while it does
+//!   is refused as `REFUSAL_EXITING`.
 //! - The provider exiting ends the agent, whatever state it was in.
 
 use std::path::PathBuf;
@@ -83,6 +87,22 @@ impl Drain {
     }
 }
 
+/// A stretch of time with agents live below this one, as the daemon counts
+/// them. Each child's report starts a turn that ends with the usual one-shot
+/// check; but the daemon's word that the last of them ended can come after
+/// the report it sent, and then no turn end is left to check at. So the
+/// agent counts the most agents live below it at once and the reports it
+/// took meanwhile, and when the count falls to none, a one-shot agent with
+/// nothing else to do exits if it has taken as many reports: never while a
+/// report may still be on its way, which starts a turn of its own.
+#[derive(Default)]
+struct Spell {
+    /// The most agents live below this one at once.
+    most: u32,
+    /// Finished and failed reports taken.
+    reports: u32,
+}
+
 /// The daemon's connection: its id, so frames from a replaced one are
 /// ignored, and its outgoing frames.
 struct Daemon {
@@ -107,6 +127,12 @@ pub(crate) struct Host<I: Interpreter> {
     mode: Mode,
     phase: Phase,
     queue_empty: bool,
+    /// How many agents below this one are live, as the daemon last said.
+    children: u32,
+    /// Set while agents below this one are live.
+    spell: Option<Spell>,
+    /// The spell that ended with the last count, for `settle`.
+    spell_ended: Option<Spell>,
     turn_ended: bool,
     /// The interpreter asked the process to exit.
     asked_to_exit: Option<ExitCause>,
@@ -231,6 +257,9 @@ pub(crate) async fn run<I: Interpreter>(
         mode: Mode::Running,
         phase: Phase::Starting,
         queue_empty: true,
+        children: 0,
+        spell: None,
+        spell_ended: None,
         turn_ended: false,
         asked_to_exit: None,
         last_tick: i64::MIN,
@@ -368,6 +397,9 @@ impl<I: Interpreter> Host<I> {
             }
             ProviderEvent::Exited(code) => {
                 if let Mode::Exiting { cause, .. } = &self.mode {
+                    if let Some(provider) = &mut self.provider {
+                        provider.finish();
+                    }
                     self.done = Some(cause.clone());
                     return Ok(());
                 }
@@ -469,6 +501,14 @@ impl<I: Interpreter> Host<I> {
             }
             Some(ctl_frame::Of::AgentMessage(envelope)) => {
                 let id = envelope.id.clone();
+                if let Some(spell) = &mut self.spell
+                    && matches!(
+                        envelope.kind(),
+                        wire::EnvelopeKind::Finished | wire::EnvelopeKind::Failed
+                    )
+                {
+                    spell.reports += 1;
+                }
                 self.take(id, Event::AgentMessage(envelope)).await?
             }
             // A rename that arrives once the agent is leaving has no thread
@@ -479,6 +519,15 @@ impl<I: Interpreter> Host<I> {
                 }
             }
             Some(ctl_frame::Of::Stop(stop)) => self.stop(stop.kill).await?,
+            Some(ctl_frame::Of::Children(children)) => {
+                self.children = children.live;
+                if children.live > 0 {
+                    let spell = self.spell.get_or_insert_with(Spell::default);
+                    spell.most = spell.most.max(children.live);
+                } else {
+                    self.spell_ended = self.spell.take();
+                }
+            }
             // Hello, nudges, dump parts and replies travel the other way.
             _ => {}
         }
@@ -572,10 +621,23 @@ impl<I: Interpreter> Host<I> {
         let one_shot = self.spec.parent.is_some();
         let turn_running = matches!(self.phase, Phase::Working | Phase::NeedsYou);
         let phase = self.phase;
+        let waited_out = self
+            .spell_ended
+            .take()
+            .is_some_and(|spell| spell.reports >= spell.most);
         let cause = match &mut self.mode {
             Mode::Exiting { .. } => None,
             _ if asked.is_some() => asked,
-            Mode::Running => (turn_ended && one_shot && quiescent).then_some(ExitCause::Finished),
+            Mode::Running => {
+                ((turn_ended || waited_out) && one_shot && quiescent).then_some(ExitCause::Finished)
+            }
+            // A one-shot agent whose work ends while it drains for a lost
+            // daemon has finished it: its parent hears it finished, and so
+            // does its row.
+            Mode::Draining {
+                why: Drain::DaemonLost,
+                ..
+            } if turn_ended && one_shot && quiescent => Some(ExitCause::Finished),
             Mode::Draining { why, ask_until } => {
                 if turn_ended || !turn_running {
                     Some(why.cause())
@@ -595,10 +657,14 @@ impl<I: Interpreter> Host<I> {
         Ok(())
     }
 
-    /// Nothing runs, nothing is queued and no accepted agent message waits
-    /// to be consumed.
+    /// Nothing runs, nothing is queued, no accepted agent message waits to
+    /// be consumed, and no agent below this one is live: a child's report
+    /// starts the next turn, which reports up as usual.
     fn quiescent(&self) -> bool {
-        self.phase == Phase::Idle && self.queue_empty && I::pending_messages(&self.state).is_empty()
+        self.phase == Phase::Idle
+            && self.queue_empty
+            && self.children == 0
+            && I::pending_messages(&self.state).is_empty()
     }
 
     /// Writes the final boundary and asks the provider to finish.

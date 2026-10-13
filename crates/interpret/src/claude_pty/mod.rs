@@ -10,9 +10,10 @@
 //! rows of the turn it began, so nothing waits for it. Hooks carry what the
 //! transcript never does: SessionStart names the transcript and the
 //! session, PermissionRequest opens an ask, Stop closes what the turn left
-//! open, and a Notification announces a dialog only the terminal can
-//! answer. PreToolUse and PostToolUse only mark a call running, for the
-//! activity line while its row is on the way; they never make a row.
+//! open, SubagentStop ends a background subagent, and a Notification
+//! announces a dialog only the terminal can answer. PreToolUse and
+//! PostToolUse only mark a call running, for the activity line while its
+//! row is on the way; they never make a row.
 //!
 //! Terminal Claude has no protocol for asks, so this is the one interpreter
 //! that infers them, and every inference rule lives in this module:
@@ -50,21 +51,31 @@
 //!   question with its own item, answered through amux or closed by the
 //!   session starting (trusted in the terminal) or Claude exiting.
 //! - A plan ask's switch is the permission the first entry of Claude's own
-//!   plan menu moves to. The agent process reads that menu off the screen
-//!   and reports it, and an open plan ask takes it; before any menu has
-//!   been seen, auto mode where the host's Claude offers it for the
-//!   running model, accept edits otherwise. A switch answered for any other
-//!   permission is refused: the menu's first entry would not do it.
-//! - The permission Claude's footer names, as the agent process reads it
-//!   off the screen, is the permission now: Shift+Tab changes it on screen
-//!   at once, while Claude records it only with the next prompt.
+//!   plan menu moves to, which follows from how Claude was launched and
+//!   what its model offers: never ask where Claude was launched allowing
+//!   it, else auto mode where the host's Claude offers it for the running
+//!   model, else accept edits. A switch answered for any other permission
+//!   is refused: the menu's first entry would not do it.
+//! - The permission is the one amux last cycled Claude to (amux knows
+//!   Claude's cycle: default, accept edits, plan, then never ask and auto
+//!   mode where they are on offer, and back to default), confirmed by the
+//!   permission Claude next records on a row or hook. Nothing is read off
+//!   the screen.
+//! - A turn starts when Claude records its prompt, not when amux types it:
+//!   keys typed into a terminal may land in one of Claude's own screens and
+//!   never reach the conversation.
+//! - An agent is its conversation. A SessionStart resuming another session
+//!   means Claude's own view now shows a conversation that is not this
+//!   agent's: the snapshot names it, prompts are refused, the other
+//!   session's hooks are ignored, and switching back types `/resume` with
+//!   this agent's session. A clear is this agent starting afresh.
 //!
 //! Terminal Claude offers no list of models, efforts or commands a program
-//! could read, so its snapshot offers none and it takes no model or effort
-//! input: a person types `/model <name>` or `/effort <level>` as any other
-//! prompt, and the command's own transcript rows reflect it. The permission
-//! mode changes only by cycling, since the cycle's order depends on how
-//! Claude was launched.
+//! could read, so it takes no model or effort input: a person types
+//! `/model <name>` or `/effort <level>` as any other prompt. The model is
+//! what Claude's newest assistant row ran (or what `/model`'s output says
+//! it set, until a row names it), and the effort is the one that row ran
+//! with. The permission mode changes only by cycling.
 
 mod facts;
 mod recording;
@@ -252,7 +263,9 @@ pub struct PermissionMenus {
 pub(crate) enum AgentFact {
     /// Sent before the provider's first fact, and again after the agent
     /// process relaunches it. `send_now_refused` is why the keymap cannot
-    /// type send now for this Claude, when it cannot.
+    /// type send now for this Claude, when it cannot. `asking`: the agent
+    /// is asking Claude in its own folder what it offers, so the catalogue
+    /// waits for [`AgentFact::Offered`].
     Launch {
         #[serde(default)]
         version: String,
@@ -262,6 +275,8 @@ pub(crate) enum AgentFact {
         permission_menus: PermissionMenus,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         send_now_refused: Option<String>,
+        #[serde(default)]
+        asking: bool,
     },
     /// Claude's terminal first drew with bracketed paste on: its input is
     /// live, so a prompt can be typed. Some versions report their session
@@ -271,12 +286,13 @@ pub(crate) enum AgentFact {
     /// Claude's first screen is its folder-trust dialog; sent before
     /// [`AgentFact::Ready`].
     TrustDialog,
-    /// Claude's footer names this permission. Claude changes it on screen
-    /// at once but records it only with the next prompt.
-    Permission { permission: String },
-    /// Claude drew its plan approval menu, whose first entry starts the
-    /// work switching to this permission.
-    PlanMenu { switch: String },
+    /// What Claude offers asked from the agent's own folder, which names
+    /// the project's own commands the host's copy cannot; none when Claude
+    /// could not say, and the host's copy stands.
+    Offered {
+        #[serde(with = "serde_pb::opt_msg")]
+        catalogue: Option<wire::Catalogue>,
+    },
 }
 
 impl AgentFact {
@@ -291,12 +307,14 @@ pub fn launch_fact(
     keymap: &str,
     permission_menus: &PermissionMenus,
     send_now_refused: Option<&str>,
+    asking: bool,
 ) -> Vec<u8> {
     AgentFact::Launch {
         version: version.to_owned(),
         keymap: keymap.to_owned(),
         permission_menus: permission_menus.clone(),
         send_now_refused: send_now_refused.map(str::to_owned),
+        asking,
     }
     .encode()
 }
@@ -311,20 +329,10 @@ pub fn trust_dialog_fact() -> Vec<u8> {
     AgentFact::TrustDialog.encode()
 }
 
-/// The fact that Claude's footer names `permission`.
-pub fn permission_fact(permission: &str) -> Vec<u8> {
-    AgentFact::Permission {
-        permission: permission.to_owned(),
-    }
-    .encode()
-}
-
-/// The fact that Claude's plan menu switches to `switch`.
-pub fn plan_menu_fact(switch: &str) -> Vec<u8> {
-    AgentFact::PlanMenu {
-        switch: switch.to_owned(),
-    }
-    .encode()
+/// The fact that Claude, asked in the agent's folder, offers `catalogue`,
+/// or could not say.
+pub fn offered_fact(catalogue: Option<wire::Catalogue>) -> Vec<u8> {
+    AgentFact::Offered { catalogue }.encode()
 }
 
 /// What the interpreter knows about the Claude process and its session.
@@ -342,15 +350,23 @@ struct Provider {
     /// restart whatever its source says.
     relaunched: bool,
     model: Option<String>,
+    /// The model as Claude named it when it was set in Claude's own view
+    /// ("Set model to `Haiku 5.5`"), until a row names the model's id.
+    #[serde(default)]
+    model_name: Option<String>,
+    /// The reasoning effort Claude's newest assistant row ran with.
+    #[serde(default)]
+    effort: Option<String>,
     permission_mode: Option<String>,
     /// Launched allowing the never-ask permission.
     never_ask: bool,
-    /// What the plan menu Claude last drew switches to.
-    plan_switch: Option<String>,
-    /// A plan menu read off the screen before the hook that opens its ask
-    /// arrived: the ask, when it opens, has been drawn with this switch.
+    /// The permission Claude was launched in, from its arguments.
     #[serde(default)]
-    unclaimed_menu: Option<String>,
+    launched_permission: Option<String>,
+    /// The other conversation Claude's own view resumed, while it shows
+    /// one that is not this agent's.
+    #[serde(default)]
+    switched_away_to: Option<String>,
     /// What the host's Claude offers, from the spec: a terminal offers
     /// nothing a program can read.
     #[serde(with = "serde_pb::opt_msg")]
@@ -389,6 +405,9 @@ struct Tool {
     /// Images the tool read, by the blobs that hold them.
     #[serde(with = "serde_pb::msgs")]
     images: Vec<Attachment>,
+    /// What amux's attach tool attached, from the element it answered.
+    #[serde(default, with = "serde_pb::msgs")]
+    attached: Vec<Attachment>,
     /// An ExitPlanMode call is drawn as its plan, with this verdict.
     plan: Option<Verdict>,
     /// An AskUserQuestion call is drawn as its question, closed with this
@@ -509,13 +528,11 @@ enum AskShape {
         /// the terminal's menu by.
         suggestions: u32,
     },
-    /// The permission the ask's switch choice moves to, and whether
-    /// Claude has drawn this ask's menu. Until it has, the switch is
-    /// inferred, and the menu's first entry may move somewhere else.
+    /// The permission the ask's switch choice moves to: what the first
+    /// entry of Claude's plan menu switches to, known from how Claude was
+    /// launched and what its model offers.
     Plan {
         switch: String,
-        #[serde(default)]
-        drawn: bool,
     },
     Question {
         questions: Vec<QuestionShape>,
@@ -607,6 +624,10 @@ pub struct State {
     /// Plans announced by their hook and not yet drawn: they wait for the
     /// row of the prompt that began their turn.
     announced_plans: Vec<AnnouncedPlan>,
+    /// The step of a `!command` typed in Claude's own view, until its
+    /// output row.
+    #[serde(default)]
+    bang: Option<String>,
 }
 
 /// A plan its PreToolUse hook announced: the call's id, tool name and the
@@ -630,10 +651,16 @@ impl State {
     }
 
     fn new(spec: &AgentSpec, producer_version: &str) -> Self {
+        let mut shared = Shared::new(spec, ClaudePty::KIND, producer_version);
+        // Keys typed into a terminal may land in one of Claude's own
+        // screens and never reach the conversation: a turn starts when
+        // Claude records the prompt.
+        shared.start_turns_on_reflection();
         Self {
-            shared: Shared::new(spec, ClaudePty::KIND, producer_version),
+            shared,
             provider: Provider {
                 never_ask: crate::claude_common::allows_never_ask(&spec.provider_args),
+                launched_permission: crate::claude_common::launched_permission(&spec.provider_args),
                 offered: spec.offered.clone(),
                 ..Provider::default()
             },
@@ -653,6 +680,7 @@ impl State {
             running: Vec::new(),
             submitted: Vec::new(),
             announced_plans: Vec::new(),
+            bang: None,
         }
     }
 
@@ -678,12 +706,15 @@ impl State {
             context: Some(context),
             model: self.provider.model.clone(),
             // Terminal Claude lists no models of its own to name it from.
-            model_name: self
-                .provider
-                .model
-                .as_deref()
-                .filter(|model| !model.is_empty())
-                .map(crate::claude_common::tidy_model),
+            model_name: self.provider.model_name.clone().or_else(|| {
+                self.provider
+                    .model
+                    .as_deref()
+                    .filter(|model| !model.is_empty())
+                    .map(crate::claude_common::tidy_model)
+            }),
+            effort: self.provider.effort.clone(),
+            switched_away_to: self.provider.switched_away_to.clone(),
             permission: self.provider.permission_mode.clone(),
             provider_session: self.provider.session.clone(),
             background_jobs: Some(self.shared.jobs()),
@@ -769,11 +800,14 @@ impl State {
             }
             tool.emitted = body.clone();
             let at_ms = tool.at_ms;
+            // The message's files go as attachments, not their elements.
+            let (text, attachments) = crate::shared::parse_reply(text);
             return self.shared.item(
                 emit,
                 ItemDraft {
                     key: id.to_owned(),
                     text,
+                    attachments,
                     body,
                     at_ms: Some(at_ms),
                     complete: true,
@@ -814,11 +848,13 @@ impl State {
         }
         tool.emitted = body.clone();
         let at_ms = tool.at_ms;
+        let attachments = tool.attached.clone();
         self.shared.item(
             emit,
             ItemDraft {
                 key: id.to_owned(),
                 body,
+                attachments,
                 at_ms: Some(at_ms),
                 complete: true,
                 ..Default::default()
@@ -928,6 +964,42 @@ impl State {
         if left_plan && let Some(key) = self.plan_ask() {
             self.close(emit, &key, Decision::elsewhere(DecisionOutcome::Allowed));
         }
+    }
+
+    /// Whether Claude offers auto mode for the running model, as the
+    /// host's Claude says (its models' `supportsAutoMode`).
+    fn offers_auto(&self) -> bool {
+        let model = self.provider.model.as_deref().unwrap_or_default();
+        self.provider.offered.as_ref().is_some_and(|offered| {
+            offered.permissions.iter().any(|permission| {
+                permission.value == "auto"
+                    && (permission.models.is_empty()
+                        || permission.models.iter().any(|named| named == model))
+            })
+        })
+    }
+
+    /// The permission Claude's cycle key moves to from the one it is in,
+    /// as Claude's own cycle goes: default, accept edits, plan, then never
+    /// ask where Claude was launched allowing it and auto mode where its
+    /// model offers it, and back to default.
+    fn next_permission(&self) -> String {
+        let current = self
+            .provider
+            .permission_mode
+            .clone()
+            .or_else(|| self.provider.launched_permission.clone())
+            .unwrap_or_else(|| "default".to_owned());
+        let never_ask = self.provider.never_ask;
+        let auto = self.offers_auto();
+        match current.as_str() {
+            "default" => "acceptEdits",
+            "acceptEdits" => "plan",
+            "plan" if never_ask => crate::claude_common::NEVER_ASK,
+            "plan" | "bypassPermissions" if auto => "auto",
+            _ => "default",
+        }
+        .to_owned()
     }
 
     /// A prompt typed instead of deciding the open plan: the plan is
@@ -1240,6 +1312,11 @@ impl State {
             _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
         };
         match arm {
+            // Claude's own view shows a conversation that is not this
+            // agent's: nothing is typed into it.
+            claude_pty_input::Of::Prompt(_) if self.provider.switched_away_to.is_some() => self
+                .shared
+                .reject(emit, &id, Refusal::ConversationElsewhere),
             claude_pty_input::Of::Prompt(prompt) => {
                 self.dismiss_plan(emit);
                 if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
@@ -1249,10 +1326,19 @@ impl State {
             claude_pty_input::Of::Withdraw(withdraw) => {
                 self.shared.withdraw(emit, &id, &withdraw.queued_input_id)
             }
-            // Nothing yet notices Claude's own view switching conversations,
-            // so there is nothing to switch back from.
+            // Back to this agent's conversation: Claude's own resume of it.
             claude_pty_input::Of::SwitchBack(_) => {
-                self.shared.reject(emit, &id, Refusal::Unsupported)
+                let ours = self.provider.session.clone();
+                match ours.filter(|_| self.provider.switched_away_to.is_some()) {
+                    Some(session) => {
+                        emit.effect(Effect::Terminal(TerminalInput::Prompt {
+                            text: format!("/resume {session}"),
+                            attachments: Vec::new(),
+                        }));
+                        self.shared.accept(emit, &id, false);
+                    }
+                    None => self.shared.reject(emit, &id, Refusal::Unsupported),
+                }
             }
             // Typed while the turn runs, a prompt joins it at the next tool
             // boundary, as Codex's steer and headless Claude's mid-turn
@@ -1285,8 +1371,12 @@ impl State {
                 emit.effect(Effect::Terminal(TerminalInput::Clear));
                 self.shared.accept(emit, &id, false);
             }
+            // amux knows Claude's cycle, so the permission it moves to is
+            // recorded at once; Claude's next record of it confirms it.
             claude_pty_input::Of::CyclePermissionMode(_) => {
                 emit.effect(Effect::Terminal(TerminalInput::CyclePermissionMode));
+                let next = self.next_permission();
+                self.permission_seen(emit, &next);
                 self.shared.accept(emit, &id, false);
             }
             claude_pty_input::Of::Answer(answer) => self.answer(emit, &id, answer),
@@ -1476,29 +1566,19 @@ fn terminal_answer(
                 )),
             }
         }
-        (AskShape::Plan { switch, drawn }, claude_answer::Of::Plan(plan)) => {
+        (AskShape::Plan { switch }, claude_answer::Of::Plan(plan)) => {
             let (choice, verdict) = match wire::PlanChoice::try_from(plan.choice) {
                 Ok(wire::PlanChoice::Start) => (
                     PlanChoice::Approve,
                     Verdict::of(wire::PlanVerdict::Approved),
                 ),
-                // The menu's first entry switches to what Claude drew it
-                // with; an answer agreeing to another permission is not
-                // what that key would do. Before the menu is drawn the
-                // switch is inferred, and the first entry may move
-                // somewhere else, so the work starts without switching:
-                // never to a permission the person did not choose.
+                // The menu's first entry switches to the permission the ask
+                // names; an answer agreeing to another is not what that key
+                // would do.
                 Ok(wire::PlanChoice::StartSwitching)
                     if !switch.is_empty() && plan.permission == *switch =>
                 {
-                    if *drawn {
-                        (PlanChoice::ApproveSwitching, Verdict::switching(switch))
-                    } else {
-                        (
-                            PlanChoice::Approve,
-                            Verdict::of(wire::PlanVerdict::Approved),
-                        )
-                    }
+                    (PlanChoice::ApproveSwitching, Verdict::switching(switch))
                 }
                 Ok(wire::PlanChoice::KeepPlanning) => {
                     let note = plan.note.unwrap_or_default();

@@ -140,7 +140,9 @@ that host, since only the agent's own host writes its directory.
 **A model's attachment.** The `attach` tool reads a file on the agent's host,
 hashes it, writes it into the agent's directory and returns the element that
 names it ([agent tools](AGENT_TOOLS.md#attach)); no daemon call is made. The
-model puts the element in its reply, and the interpreter turns it into an
+tool's own step carries the attachment, read from the element it returned
+(whose path is this host's, so it is not shown as text). The model may also
+put the element in its reply, and the interpreter turns it into an
 attachment on the reply's item when the reply completes. An
 image inside a Claude tool result takes the same lane without a tool: the
 interpreter decodes the base64 image block, hashes it, and emits a blob write

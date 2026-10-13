@@ -76,8 +76,14 @@ pub fn spawn_server(mut command: Command, listen: &Listen) -> io::Result<Child> 
 /// closes; on a socket nothing tells it, so it would serve on with no one
 /// to serve. The tether is a shell in the server's process group, reading a
 /// pipe only the starter holds: when the starter dies, however it dies, the
-/// pipe closes and the shell sends the group SIGTERM. Being in the group,
-/// it keeps the group's id from being reused while it waits.
+/// pipe closes and the shell sends the group SIGTERM. A server that is
+/// still running `TETHER_GRACE_SECS` later (one with an approval open
+/// ignores SIGTERM, and would hold its thread from every later client) has
+/// its group killed. Being in the group, the shell keeps the group's id,
+/// and so the server's pid, from being reused while it waits.
+#[cfg(unix)]
+pub const TETHER_GRACE_SECS: u32 = 5;
+
 #[cfg(unix)]
 pub struct Tether {
     shell: Child,
@@ -90,12 +96,16 @@ impl Tether {
         let group = server
             .id()
             .ok_or_else(|| io::Error::other("the server has already been reaped"))?;
+        // The shell ignores the SIGTERM it sends its own group.
+        let script = format!(
+            r#"trap '' TERM; read _; kill -TERM "-$1" 2>/dev/null; i=0
+while kill -0 "$1" 2>/dev/null; do
+  if [ "$i" -ge {TETHER_GRACE_SECS} ]; then kill -KILL "-$1" 2>/dev/null; exit 0; fi
+  sleep 1; i=$((i + 1))
+done"#
+        );
         let shell = Command::new("/bin/sh")
-            .args([
-                "-c",
-                r#"read _; kill -TERM "-$1" 2>/dev/null"#,
-                "codex-tether",
-            ])
+            .args(["-c", &script, "codex-tether"])
             .arg(group.to_string())
             .stdin(Stdio::piped())
             .stdout(Stdio::null())

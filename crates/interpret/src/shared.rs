@@ -22,6 +22,9 @@ pub const STATUS_TOOL: &str = "status";
 /// amux's tool that messages another agent; its call is drawn as the
 /// message it sent, never as a tool call.
 pub const SEND_TOOL: &str = "send";
+/// amux's tool that attaches a file: it answers with the attachment's
+/// element, which its step carries as the attachment, never as text.
+pub const ATTACH_TOOL: &str = "attach";
 
 /// An open ask as the shared list needs to see it. Implemented by the
 /// per-kind ask messages.
@@ -377,8 +380,12 @@ pub struct Shared<A: OpenAsk> {
     /// The hash of the catalogue last written; None until the provider
     /// says what it offers.
     catalogue: Option<Vec<u8>>,
-    /// The daemon asked this incarnation to stop: a turn cut short now
-    /// ended because the agent was stopped, not interrupted.
+    /// A submitted prompt starts no turn: the provider's own record of the
+    /// prompt does (terminal Claude, where keys typed may never arrive).
+    #[serde(default)]
+    turn_on_reflection: bool,
+    /// The agent is being stopped: the turn the stop cuts short ends
+    /// stopped, however the provider words its end.
     #[serde(default)]
     stopping: bool,
 }
@@ -406,6 +413,7 @@ impl<A: OpenAsk> Shared<A> {
             git: None,
             jobs: None,
             catalogue: None,
+            turn_on_reflection: false,
             stopping: false,
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
@@ -712,8 +720,16 @@ impl<A: OpenAsk> Shared<A> {
 
     fn mark_submitted(&mut self, input_id: &[u8]) {
         self.submitted.push(input_id.to_vec());
-        self.busy = true;
-        self.turn.begin(self.now_ms);
+        if !self.turn_on_reflection {
+            self.busy = true;
+            self.turn.begin(self.now_ms);
+        }
+    }
+
+    /// A submitted prompt starts no turn; the kind calls
+    /// [`Self::turn_started`] when the provider records the prompt.
+    pub fn start_turns_on_reflection(&mut self) {
+        self.turn_on_reflection = true;
     }
 
     /// The input id of the oldest submitted prompt the provider has not yet
@@ -890,11 +906,11 @@ impl<A: OpenAsk> Shared<A> {
     /// item. None when no turn was running.
     pub fn turn_ended(&mut self, emit: &mut Emit, outcome: wire::TurnOutcome) -> Option<OpenTurn> {
         self.busy = false;
-        // The stop cancels the turn the way an interrupt does; the turn
-        // ended because the agent was stopped, which its parent hears.
+        let stopping = std::mem::take(&mut self.stopping);
         let outcome = match outcome {
-            wire::TurnOutcome::Interrupted if self.stopping => wire::TurnOutcome::Stopped,
-            outcome => outcome,
+            wire::TurnOutcome::Completed => outcome,
+            _ if stopping => wire::TurnOutcome::Stopped,
+            _ => outcome,
         };
         let turn = self.turn.end()?;
         emit.step.turn_end = Some(TurnEnd {
@@ -906,7 +922,9 @@ impl<A: OpenAsk> Shared<A> {
     }
 
     /// The daemon asked the agent to stop: the turn the kind now cancels
-    /// ends as stopped.
+    /// ends as stopped, however the provider words its end. Set whether or
+    /// not a turn is known to run: terminal Claude's turn starts on its
+    /// transcript row, which may come after the stop.
     pub fn stop_requested(&mut self) {
         self.stopping = true;
     }
@@ -964,6 +982,11 @@ pub fn status_working_on(arguments_json: &[u8]) -> Option<Option<String>> {
 /// Whether a tool-server call is amux's status tool.
 pub fn is_status_tool(server: &str, tool: &str) -> bool {
     server == AMUX_TOOL_SERVER && tool == STATUS_TOOL
+}
+
+/// Whether a tool-server call is amux's attach tool.
+pub fn is_attach_tool(server: &str, tool: &str) -> bool {
+    server == AMUX_TOOL_SERVER && tool == ATTACH_TOOL
 }
 
 /// Whether a tool-server call is amux's send tool.
@@ -1161,11 +1184,9 @@ pub fn worded(mut envelope: Envelope) -> Envelope {
 }
 
 /// A worded agent message as its recipient's model reads it, labelled with
-/// its sender and what it is: before a child's report, how its turn ended
-/// (`[agent <name> finished its turn]`, `[agent <name> was stopped before
-/// it finished]`, `[agent <name>'s turn was interrupted]` or `[agent
-/// <name>'s turn failed]`), `[agent <name> stopped: <cause>]` for a failed
-/// one, and
+/// its sender and what it is: `[agent <name> finished its turn]` before a
+/// child's report (or how else its turn ended: stopped, interrupted or
+/// failed before it finished), `[agent <name> stopped: <cause>]` for a failed one, and
 /// `[message from agent <name>]` before anything else an agent sends. The
 /// provider's own channel carries only text, so without the label a model
 /// takes another agent's words for its person's. A message from no agent
@@ -1181,18 +1202,15 @@ pub(crate) fn carried(envelope: &Envelope) -> String {
     };
     match EnvelopeKind::try_from(envelope.kind).unwrap_or_default() {
         EnvelopeKind::Finished => {
-            let ended = match envelope
-                .outcome
-                .and_then(|outcome| wire::TurnOutcome::try_from(outcome).ok())
-            {
-                Some(wire::TurnOutcome::Stopped) => {
-                    format!("{from} was stopped before it finished")
+            let ended = match envelope.outcome.map(wire::TurnOutcome::try_from) {
+                Some(Ok(wire::TurnOutcome::Stopped)) => "was stopped before it finished",
+                Some(Ok(wire::TurnOutcome::Interrupted)) => {
+                    "was interrupted before it finished its turn"
                 }
-                Some(wire::TurnOutcome::Interrupted) => format!("{from}'s turn was interrupted"),
-                Some(wire::TurnOutcome::Failed) => format!("{from}'s turn failed"),
-                _ => format!("{from} finished its turn"),
+                Some(Ok(wire::TurnOutcome::Failed)) => "failed before it finished its turn",
+                _ => "finished its turn",
             };
-            format!("[{ended}]\n{}", envelope.text)
+            format!("[{from} {ended}]\n{}", envelope.text)
         }
         EnvelopeKind::Failed => format!("[{from} stopped: {}]", envelope.text),
         _ => format!("[message from {from}]\n{}", envelope.text),
@@ -1282,7 +1300,7 @@ fn queued_from_bootstrap(bootstrap: &Bootstrap) -> Option<QueuedInput> {
         bootstrap::Of::AgentMessage(envelope) => QueuedInput {
             input_id: envelope.id.clone(),
             text: worded(envelope.clone()).text,
-            attachments: Vec::new(),
+            attachments: envelope.attachments.clone(),
             steer: false,
             sender: envelope.from.clone(),
         },

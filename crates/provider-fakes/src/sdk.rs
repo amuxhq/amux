@@ -113,6 +113,9 @@ struct Engine {
     /// What the initialize answer offers.
     models: Vec<OfferedModel>,
     commands: Vec<OfferedCommand>,
+    /// Every model takes auto mode, as the scripted Claude's terminal
+    /// offers it.
+    offers_auto_mode: bool,
     mode: String,
     cwd: String,
     ids: Ids,
@@ -209,6 +212,7 @@ impl Engine {
             session,
             models: OfferedModel::offered(&script.models, &model),
             commands: script.commands,
+            offers_auto_mode: script.offers_auto_mode,
             effort: args_effort,
             model,
             mode,
@@ -516,6 +520,9 @@ impl Engine {
                 }
                 if let Some(resolved) = &model.resolved_model {
                     offered["resolvedModel"] = json!(resolved);
+                }
+                if self.offers_auto_mode {
+                    offered["supportsAutoMode"] = json!(true);
                 }
                 offered
             }).collect::<Vec<_>>(),

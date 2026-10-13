@@ -268,11 +268,16 @@ task, and no rollback is needed. A child that never comes up exits, and the
 parent hears that it failed.
 
 **One-shot.** An agent with a parent exits when a turn ends with nothing
-queued, nothing running and no accepted message still pending (the
-interpreter's `quiescent`); its exit cause is `FINISHED`, which the agent
-process tells the daemon in its last control frame. Input that arrives
-while it exits is answered `REFUSAL_EXITING`. Its transcript and its parent
-edge stay.
+queued, nothing running, no accepted message still pending and no agent
+below it still live; its exit cause is `FINISHED`, which its journal's last
+step records. A sub-agent whose own child still works therefore stays: the
+child's report starts its next turn, and it reports up as usual. Its daemon
+tells it how many agents below it are live (the `children` control frame),
+and when that count falls to none after the report that ended its last turn
+already arrived, it exits then. An unreachable child's host leaves it
+waiting, and stopping it (or a stop cascading from above) ends it. Input
+that arrives while it exits is answered `REFUSAL_EXITING`. Its transcript
+and its parent edge stay.
 
 **Resume.** A parent's send to its exited child, or to one answering
 `exiting`, resumes it: same identity, same provider session, the next spec
@@ -351,12 +356,13 @@ was away when the child finished and that was resumed before the row reached
 it.
 
 The parent receives the report like any agent message, through its own
-carrier, labelled with how the turn ended (`[agent <name> finished its
-turn]`, `[agent <name> was stopped before it finished]`, `[agent <name>'s
-turn was interrupted]`, `[agent <name>'s turn failed]`) or
+carrier, labelled `[agent <name> finished its turn]` (or, by how the turn
+ended, `was stopped before it finished`, `was interrupted before it finished
+its turn` or `failed before it finished its turn`) or
 `[agent <name> stopped: <cause>]` for every kind of agent, so its model can
-tell a child's words from its person's. The item in the parent's transcript
-keeps the words alone; its sender is on the item.
+tell a child's words from its person's. A turn a stop cuts short ends
+stopped, whatever the provider calls its end. The item in the parent's
+transcript keeps the words alone; its sender is on the item.
 
 ## Across hosts
 

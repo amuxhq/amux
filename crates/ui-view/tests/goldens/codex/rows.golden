@@ -26,15 +26,15 @@
 ## 20 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"note-1","phase":"commentary","text":"Splitting the lexer out first.","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
   row    6 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
 ## 21 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","exitCode":null,"id":"cmd-1","status":"inProgress","type":"commandExecution"},"startedAtMs":1800000001000,"threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-1 Command { command: "/bin/zsh -lc 'cargo watch'", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+  row    7 cmd-1 Command { command: "cargo watch", state: Running, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "cmd-1" }) queue=[] underway=[] refused=[]
 ## 22 fact {"channel":"rpc","json":{"method":"item/commandExecution/outputDelta","params":{"delta":"[watching]\n","itemId":"cmd-1","threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-1 Command { command: "/bin/zsh -lc 'cargo watch'", state: Running, exit_code: None, output_head: ["[watching]"], more_lines: 0, output_trimmed: false, output_tail: ["[watching]"], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+  row    7 cmd-1 Command { command: "cargo watch", state: Running, exit_code: None, output_head: ["[watching]"], more_lines: 0, output_trimmed: false, output_tail: ["[watching]"], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 live RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
 ## 23 fact {"channel":"rpc","json":{"method":"turn/diff/updated","params":{"diff":"diff --git a/lexer.rs b/lexer.rs\n","threadId":"t1","turnId":"turn-1"}}}
   row    8 diff:turn-1 Hidden collapsed
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 26 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"rv-1","review":"current changes","type":"enteredReviewMode"},"threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-1 Command { command: "/bin/zsh -lc 'cargo watch'", state: Running, exit_code: None, output_head: ["[watching]"], more_lines: 0, output_trimmed: false, output_tail: ["[watching]"], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+  row    7 cmd-1 Command { command: "cargo watch", state: Running, exit_code: None, output_head: ["[watching]"], more_lines: 0, output_trimmed: false, output_tail: ["[watching]"], duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   row    9 rv-1 Unrecognized { what: "enteredReviewMode", summary: "an item amux does not read" }
 ## 29 fact {"channel":"rpc","json":{"method":"item/somethingNew","params":{"itemId":"x","threadId":"t1"}}}
   row   10 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }
@@ -45,11 +45,11 @@
 ## 32 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"msg-1","phase":"final_answer","text":"The lexer is split.","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
   row   11 msg-1 Prose { text: [Text("The lexer is split.")], streaming: false, working_note: false }
 ## 33 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"durationMs":4000,"id":"turn-1","status":"completed"}}}}
-  row    7 cmd-1 Background { command: "/bin/zsh -lc 'cargo watch'", running: true, duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+  row    7 cmd-1 Background { command: "cargo watch", running: true, duration_ms: None } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
   row   12 turn:1 TurnEnd { duration_ms: Some(4000), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 35 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000010000,"item":{"aggregatedOutput":"[watching]\n[done]\n","command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","durationMs":9000,"exitCode":0,"id":"cmd-1","status":"completed","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-  row    7 cmd-1 Background { command: "/bin/zsh -lc 'cargo watch'", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+  row    7 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
 ## 36 input {"id":"p2","prompt":{"text":"Run the tests."}}
   row   13 prompt:7032 Prompt { text: [Text("Run the tests.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
@@ -70,7 +70,7 @@
      4 reroute:2 ModelSwitch { from: "gpt-5.6-luna", to: "gpt-5.6-mini", reason: "highRiskCyberActivity" }
      5 rs-1 Thinking { text: "The parser has two entry points.", open: false, duration_ms: None }
      6 note-1 Prose { text: [Text("Splitting the lexer out first.")], streaming: false, working_note: true }
-     7 cmd-1 Background { command: "/bin/zsh -lc 'cargo watch'", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
+     7 cmd-1 Background { command: "cargo watch", running: false, duration_ms: Some(9000) } run[cmd-1..cmd-1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
      8 diff:turn-1 Hidden collapsed
      9 rv-1 Unrecognized { what: "enteredReviewMode", summary: "an item amux does not read" }
     10 unrecognized:3 Unrecognized { what: "item/somethingNew", summary: "a notification amux does not read" }

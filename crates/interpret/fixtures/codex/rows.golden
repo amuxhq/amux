@@ -47,7 +47,7 @@ append note-1 "Splitting the lexer out first."
 ## 20 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"note-1","phase":"commentary","text":"Splitting the lexer out first.","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
 item note-1 working_note final at=1800000000000 text="Splitting the lexer out first."
 ## 21 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","exitCode":null,"id":"cmd-1","status":"inProgress","type":"commandExecution"},"startedAtMs":1800000001000,"threadId":"t1","turnId":"turn-1"}}}
-item cmd-1 work open at=1800000001000 text="" command "/bin/zsh -lc 'cargo watch'" cwd=/work TOOL_STATE_RUNNING
+item cmd-1 work open at=1800000001000 text="" command "cargo watch" cwd=/work TOOL_STATE_RUNNING
 ## 22 fact {"channel":"rpc","json":{"method":"item/commandExecution/outputDelta","params":{"delta":"[watching]\n","itemId":"cmd-1","threadId":"t1","turnId":"turn-1"}}}
 append cmd-1 "[watching]\n"
 ## 23 fact {"channel":"rpc","json":{"method":"turn/diff/updated","params":{"diff":"diff --git a/lexer.rs b/lexer.rs\n","threadId":"t1","turnId":"turn-1"}}}
@@ -69,14 +69,14 @@ append msg-1 "The lexer is split."
 item msg-1 message final at=1800000000000 text="The lexer is split."
 ## 33 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"durationMs":4000,"id":"turn-1","status":"completed"}}}}
 effect write "{\"id\":\"amux-jobs-1-1\",\"method\":\"thread/backgroundTerminals/list\",\"params\":{\"threadId\":\"t1\"}}"
-item cmd-1 work open at=1800000001000 text="[watching]\n" command "/bin/zsh -lc 'cargo watch'" cwd=/work background TOOL_STATE_RUNNING
+item cmd-1 work open at=1800000001000 text="[watching]\n" command "cargo watch" cwd=/work background TOOL_STATE_RUNNING
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1799999996000
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-mini model_name="GPT-5.6 Mini" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=HEALTH_STATE_DEGRADED[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 turn_end 1 last=msg-1
 ## 34 fact {"channel":"rpc","json":{"id":"amux-jobs-1-1","result":{"data":[{"command":"/bin/zsh -lc 'cargo watch'","cpuPercent":null,"cwd":"/work","itemId":"cmd-1","osPid":null,"processId":"91","rssKb":null}],"nextCursor":null}}}
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-mini model_name="GPT-5.6 Mini" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=HEALTH_STATE_DEGRADED[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[cmd-1:"/bin/zsh -lc 'cargo watch'"@1800000001000]
 ## 35 fact {"channel":"rpc","json":{"method":"item/completed","params":{"completedAtMs":1800000010000,"item":{"aggregatedOutput":"[watching]\n[done]\n","command":"/bin/zsh -lc 'cargo watch'","commandActions":[{"command":"cargo watch","type":"unknown"}],"cwd":"/work","durationMs":9000,"exitCode":0,"id":"cmd-1","status":"completed","type":"commandExecution"},"threadId":"t1","turnId":"turn-1"}}}
-item cmd-1 work final at=1800000001000 text="[watching]\n[done]\n" command "/bin/zsh -lc 'cargo watch'" cwd=/work exit=0 background TOOL_STATE_SUCCEEDED ended=1800000010000
+item cmd-1 work final at=1800000001000 text="[watching]\n[done]\n" command "cargo watch" cwd=/work exit=0 background TOOL_STATE_SUCCEEDED ended=1800000010000
 snapshot IDLE queue=[] working_on="Splitting the lexer" at=1800000000000 asks=[] thread=t1 turn=- model=gpt-5.6-mini model_name="GPT-5.6 Mini" effort=? permission=default mode=? approval=on-request sandbox=workspace-write reviewer=? collaboration=? context=48000/258400 plan=[1:TASK_LIST_STATUS_COMPLETED:"Read the parser",2:TASK_LIST_STATUS_IN_PROGRESS:"Split the lexer",3:TASK_LIST_STATUS_PENDING:"Run the tests"] usage=blocked 5h:100%(blocked) 7d:40%(ok) credits=0 servers=HEALTH_STATE_DEGRADED[docs:TOOL_SERVER_STATUS_FAILED] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
 ## 36 input {"id":"p2","prompt":{"text":"Run the tests."}}
 effect reply p2 accepted

@@ -52,9 +52,9 @@ append msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 "."
 ## 55 recorded 54: fact Rpc method=item/completed
 item msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 working_note final at=1790388499483 text="I’ll run the exact command once and report its result."
 ## 57 recorded 56: fact Rpc method=item/started
-item exec-8bcf460a-8814-4073-b121-3c591c0497e5 work open at=1790388501895 text="" command "/bin/zsh -lc 'ls does-not-exist'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING list
+item exec-8bcf460a-8814-4073-b121-3c591c0497e5 work open at=1790388501895 text="" command "ls does-not-exist" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING list
 ## 58 recorded 57: fact Rpc method=item/completed
-item exec-8bcf460a-8814-4073-b121-3c591c0497e5 work final at=1790388501895 text="ls: does-not-exist: No such file or directory\n" command "/bin/zsh -lc 'ls does-not-exist'" cwd=<MACHINE_PATH> exit=1 TOOL_STATE_FAILED list ended=1790388501895
+item exec-8bcf460a-8814-4073-b121-3c591c0497e5 work final at=1790388501895 text="ls: does-not-exist: No such file or directory\n" command "ls does-not-exist" cwd=<MACHINE_PATH> exit=1 TOOL_STATE_FAILED list ended=1790388501895
 ## 60 recorded 59: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790388501900 asks=[] thread=01a0db78-69a7-7332-8ccf-7726a5579e18 turn=01a0db78-69c1-77d0-9761-acf0d3e0050c model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never sandbox=workspace-write reviewer=user collaboration=? context=12557/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 61 recorded 60: fact Rpc method=account/rateLimits/updated

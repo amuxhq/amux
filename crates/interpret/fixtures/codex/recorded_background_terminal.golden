@@ -64,7 +64,7 @@ append msg_02ce3e63657d5390016ab72f2e74d087d2bf4425ba206a616a "."
 ## 69 recorded 68: fact Rpc method=item/completed
 item msg_02ce3e63657d5390016ab72f2e74d087d2bf4425ba206a616a working_note final at=1790390062492 text="I’ll start the waiting shell session, then send `hello` and read its response."
 ## 71 recorded 70: fact Rpc method=item/started
-item exec-fab58c85-33be-409e-b3fa-73402a9c2500 work open at=1790390063971 text="" command "/bin/zsh -lc 'read LINE; echo CODEX_SPEC_GOT $LINE'" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING
+item exec-fab58c85-33be-409e-b3fa-73402a9c2500 work open at=1790390063971 text="" command "read LINE; echo CODEX_SPEC_GOT $LINE" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING
 ## 73 recorded 72: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790390064978 asks=[] thread=01a0db90-3d17-77f2-9a59-16c6f52d7860 turn=01a0db90-3d32-71e2-8dc0-0b02dea92306 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never sandbox=workspace-write reviewer=user collaboration=? context=12558/258400 plan=? usage=? servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 74 recorded 73: fact Rpc method=account/rateLimits/updated
@@ -78,7 +78,7 @@ append exec-fab58c85-33be-409e-b3fa-73402a9c2500 "hello\r\n"
 ## 82 recorded 81: fact Rpc method=item/commandExecution/outputDelta
 append exec-fab58c85-33be-409e-b3fa-73402a9c2500 "CODEX_SPEC_GOT hello\r\n"
 ## 86 recorded 85: fact Rpc method=item/completed
-item exec-fab58c85-33be-409e-b3fa-73402a9c2500 work final at=1790390063971 text="hello\r\nCODEX_SPEC_GOT hello\r\n" command "/bin/zsh -lc 'read LINE; echo CODEX_SPEC_GOT $LINE'" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED ended=1790390066855
+item exec-fab58c85-33be-409e-b3fa-73402a9c2500 work final at=1790390063971 text="hello\r\nCODEX_SPEC_GOT hello\r\n" command "read LINE; echo CODEX_SPEC_GOT $LINE" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED ended=1790390066855
 ## 88 recorded 87: fact Rpc method=thread/tokenUsage/updated
 snapshot WORKING queue=[] working_on=- at=1790390066858 asks=[] thread=01a0db90-3d17-77f2-9a59-16c6f52d7860 turn=01a0db90-3d32-71e2-8dc0-0b02dea92306 model=gpt-5.6-luna model_name="GPT-5.6 Luna" effort=? permission=custom mode=? approval=never sandbox=workspace-write reviewer=user collaboration=? context=12882/258400 plan=? usage=ok 7d:1%(ok) credits=0 servers=HEALTH_STATE_HEALTHY[codex_apps:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
 ## 92 recorded 91: fact Rpc method=item/started

@@ -3,7 +3,7 @@
 ## 1 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
   row    1 boundary:1 Boundary { kind: Started, cause: "" }
 ## 2 input {"id":"p1","prompt":{"text":"Ask a subagent what this project is."}}
-  composer Send activity=Some(Working) queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("Ask a subagent what this project is.")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 49], text: [Text("Ask a subagent what this project is.")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
 ## 3 fact {"channel":"transcript","json":{"message":{"content":"Ask a subagent what this project is.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
   row    2 u1 Prompt { text: [Text("Ask a subagent what this project is.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
@@ -30,9 +30,10 @@
   row    5 turn:1 TurnEnd { duration_ms: Some(5), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 input {"id":"p2","prompt":{"text":"Meanwhile, what time is it?"}}
-  composer Send activity=Some(Working) queue=[] underway=[SentPrompt { input_id: [112, 50], text: [Text("Meanwhile, what time is it?")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
+  composer Send activity=None queue=[] underway=[SentPrompt { input_id: [112, 50], text: [Text("Meanwhile, what time is it?")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
 ## 14 fact {"channel":"transcript","json":{"message":{"content":"<task-notification>\n<task-id>ag1</task-id>\n<tool-use-id>toolu_agent</tool-use-id>\n<status>completed</status>\n<summary>Agent \"Look around\" finished</summary>\n<result>A command-line multiplexer for agents.</result>\n</task-notification>","role":"user"},"origin":{"kind":"task-notification"},"promptSource":"system","sessionId":"s1","tim…
   row    3 toolu_agent Subagent { description: "Look around", running: false, tool_count: 1, last_tool: "Bash", answer: "A command-line multiplexer for agents.", duration_ms: Some(40) } run[toolu_agent..toolu_agent x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 1, other: 0 }]
+  composer Send activity=Some(Working) queue=[] underway=[SentPrompt { input_id: [112, 50], text: [Text("Meanwhile, what time is it?")], lands: Queue, underway: Sending { waiting: false } }] refused=[]
 ## 15 fact {"channel":"transcript","json":{"message":{"content":[{"text":"The subagent says it is a command-line multiplexer for agents.","type":"text"}],"id":"m2","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.070Z","type":"assistant","uuid":"a2"}}
   row    6 a2 Prose { text: [Text("The subagent says it is a command-line multiplexer for agents.")], streaming: false, working_note: false }
 ## 16 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.080Z","type":"system","uuid":"d2"}}

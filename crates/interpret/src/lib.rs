@@ -38,8 +38,8 @@ pub use serde_pb::{from_hex, to_hex};
 pub use shared::{
     AMUX_TOOL_SERVER, Asks, Emit, ItemDraft, OUTPUT_CAP, OpenAsk, OpenTurn, Output, Queue,
     SEND_TOOL, STATUS_TOOL, SendOutcome, Shared, TurnCounter, agent_message_body,
-    agent_message_key, human, is_send_tool, is_status_tool, output_cut, sent_message,
-    status_working_on,
+    agent_message_key, human, is_attach_tool, is_send_tool, is_status_tool, output_cut,
+    sent_message, status_working_on,
 };
 use wire::{AgentSpec, Envelope, Input, SendInputResponse, Step};
 
@@ -231,11 +231,11 @@ pub enum Effect {
     /// Claude in a terminal: a session started on this transcript file;
     /// the agent process tails it from now on.
     FollowTranscript { path: String },
-    /// Codex: a `turn/start` or `turn/steer` request whose input carries
-    /// attachments. The agent process appends each attachment to
-    /// `params.input` as a Codex input item (an image blob by its path in
-    /// the agent's blob directory, inline text and files as text) and
-    /// writes the request.
+    /// Codex: a `turn/start`, `turn/steer` or `thread/inject_items`
+    /// request whose input carries attachments. The agent process appends
+    /// each attachment as a Codex input item (an image blob by its path in
+    /// the agent's blob directory, inline text and files as text; an
+    /// injected message's as its element) and writes the request.
     CodexTurnInput {
         request: Vec<u8>,
         attachments: Vec<wire::Attachment>,

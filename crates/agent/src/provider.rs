@@ -21,7 +21,8 @@ use std::time::Duration;
 
 use claude_protocol::stream as claude_stream;
 use codex_protocol::client::{
-    Capabilities, ClientInfo, InitializeParams, ThreadResumeParams, ThreadStartParams,
+    Capabilities, ClientInfo, InitializeParams, InjectedContent, InjectedItem, ThreadResumeParams,
+    ThreadStartParams,
 };
 use codex_protocol::items::{LocalImageInput, UserInput};
 use codex_protocol::{ClientMessage, ClientNotification, ClientRequest, RequestId, ServerMessage};
@@ -31,8 +32,8 @@ use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 use wire::{AgentSpec, Attachment};
 
-use crate::dir;
 use crate::terminal::{self, Keys};
+use crate::{dir, tree};
 
 /// How long output still in flight is collected after the child exits.
 const TRAILING_OUTPUT: Duration = Duration::from_millis(300);
@@ -67,6 +68,7 @@ const HOOK_EVENTS: &[&str] = &[
     "PostToolUse",
     "PostToolUseFailure",
     "Stop",
+    "SubagentStop",
     "Notification",
 ];
 
@@ -148,8 +150,6 @@ pub struct Provider {
     #[cfg_attr(unix, allow(dead_code))]
     kill: Option<oneshot::Sender<()>>,
     terminal: Option<pty_host::PtyHandle>,
-    /// Terminal Claude's screen as drawn, kept the terminal's size.
-    screen: Option<Arc<std::sync::Mutex<crate::screen::Screen>>>,
     /// Terminal Claude's keymap, when one covers its version.
     keys: Option<Keys>,
     messaging: Option<claude::hooks::MessagingCredentials>,
@@ -157,6 +157,9 @@ pub struct Provider {
     dir: PathBuf,
     events: mpsc::Sender<ProviderEvent>,
     followers: Vec<Follower>,
+    /// Every process below the provider when it was asked to finish, killed
+    /// once it has exited if still running (see the tree module).
+    census: Vec<tree::Descendant>,
 }
 
 impl Provider {
@@ -251,19 +254,27 @@ impl Provider {
             pid,
             kill: Some(kill),
             terminal: None,
-            screen: None,
             keys: None,
             messaging: None,
             session,
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            census: Vec::new(),
         };
         // Claude reports nothing until it is asked; its answer is what says
-        // it takes input.
+        // it takes input. amux's interrupt ends the turn and leaves
+        // background work running on every kind; Claude spares background
+        // subagents on an interrupt, as it spares background shells, only
+        // for a host that says it can stop each task on its own.
         let initialize = claude_stream::ControlRequest::new(
             "agent-initialize",
-            claude_stream::ControlRequestBody::Initialize(Default::default()),
+            claude_stream::ControlRequestBody::Initialize(
+                claude_stream::control::InitializeRequestBody {
+                    per_task_stop_affordance: Some(true),
+                    ..Default::default()
+                },
+            ),
         );
         provider
             .write_line(&claude_stream::encode(
@@ -381,9 +392,13 @@ impl Provider {
                             let _ = initialized.send(());
                         }
                     }
-                    // The thread the server made or resumed is the session
-                    // the next incarnation resumes.
-                    Some((RequestId::String(id), Some(result))) if id == CODEX_THREAD => {
+                    // The thread the server made or resumed, or the one a
+                    // `/clear` started, is the session the next incarnation
+                    // resumes.
+                    Some((RequestId::String(id), Some(result)))
+                        if id == CODEX_THREAD
+                            || id.starts_with(interpret::codex::CLEAR_REQUEST) =>
+                    {
                         if let Ok(answer) = codex_protocol::result::<
                             codex_protocol::server::ThreadResponse,
                         >(&result)
@@ -496,13 +511,13 @@ impl Provider {
             pid,
             kill: Some(kill),
             terminal: None,
-            screen: None,
             keys: None,
             messaging: None,
             session: String::new(),
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            census: Vec::new(),
         })
     }
 
@@ -528,6 +543,7 @@ impl Provider {
                 .map(Keys::permission_menus)
                 .unwrap_or_default(),
             keys.as_ref().and_then(Keys::send_now_refused).as_deref(),
+            true,
         );
         let _ = events
             .send(ProviderEvent::Fact(Fact {
@@ -535,6 +551,19 @@ impl Provider {
                 payload: launch,
             }))
             .await;
+        // What the host's Claude offers is what the daemon gathered in its
+        // own folder; asked here, Claude adds the project's own commands.
+        let offered = events.clone();
+        let asking = spec.clone();
+        tokio::spawn(async move {
+            let catalogue = crate::catalogue::claude_in(&asking).await.ok();
+            let _ = offered
+                .send(ProviderEvent::Fact(Fact {
+                    channel: Channel::Agent,
+                    payload: interpret::claude_pty::offered_fact(catalogue),
+                }))
+                .await;
+        });
         let private = dir.join(dir::PRIVATE);
         let (mut args, settings) = claude_launch(spec, dir, true)?;
         args.extend([
@@ -575,11 +604,6 @@ impl Provider {
         let mut output = handle.output();
         let mut exit = process.exit;
         let forward = events.clone();
-        let size = pty_host::PtySize::default();
-        let screen = Arc::new(std::sync::Mutex::new(crate::screen::Screen::new(
-            size.rows, size.cols,
-        )));
-        let drawn = screen.clone();
         tokio::spawn(async move {
             let agent_fact = |payload| {
                 ProviderEvent::Fact(Fact {
@@ -600,18 +624,6 @@ impl Provider {
                     bytes = output.recv() => match bytes {
                         Some(bytes) => {
                             let _ = forward.send(ProviderEvent::Output(bytes.to_vec())).await;
-                            let seen = drawn.lock().map(|mut screen| screen.watch(&bytes)).unwrap_or_default();
-                            for seen in seen {
-                                let payload = match seen {
-                                    crate::screen::Seen::Permission(permission) => {
-                                        interpret::claude_pty::permission_fact(permission)
-                                    }
-                                    crate::screen::Seen::PlanSwitch(permission) => {
-                                        interpret::claude_pty::plan_menu_fact(permission)
-                                    }
-                                };
-                                let _ = forward.send(agent_fact(payload)).await;
-                            }
                             if trust.as_mut().is_some_and(|trust| trust.watch(&bytes)) {
                                 trust = None;
                                 let payload = interpret::claude_pty::trust_dialog_fact();
@@ -654,13 +666,13 @@ impl Provider {
             pid: Some(handle.pid()),
             kill: None,
             terminal: Some(handle),
-            screen: Some(screen),
             keys,
             messaging: None,
             session,
             dir: dir.to_owned(),
             events,
             followers: Vec::new(),
+            census: Vec::new(),
         })
     }
 
@@ -944,10 +956,27 @@ impl Provider {
     /// Asks the provider to finish: end of input for a plain child, a
     /// terminate signal for a terminal one. Codex on a socket is sent its
     /// signal once its server has closed the agent's connection in turn.
+    /// Asks the provider to finish: the end of its input, and SIGTERM, on
+    /// which every provider cleans up the commands it runs. What runs below
+    /// it is counted first, for `finish` to end what it leaves.
     pub fn close(&mut self) {
+        if let Some(pid) = self.pid
+            && self.census.is_empty()
+        {
+            self.census = tree::descendants(pid);
+        }
         match std::mem::replace(&mut self.input, Input::Closed) {
             Input::Stdin(stdin) => {
                 tokio::spawn(async move { stdin.lock().await.take() });
+                // Headless Claude does not exit on the end of its input
+                // while a background shell runs.
+                #[cfg(unix)]
+                if let Some(pid) = self.pid {
+                    // SAFETY: kill only sends a signal.
+                    unsafe {
+                        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                    }
+                }
             }
             Input::Codex(sender) => {
                 tokio::spawn(async move {
@@ -965,8 +994,18 @@ impl Provider {
         }
     }
 
-    /// The process group, now.
+    /// The provider has exited after `close`: whatever it left running
+    /// below it is killed.
+    pub fn finish(&mut self) {
+        tree::kill(&std::mem::take(&mut self.census));
+    }
+
+    /// Everything below the provider, then its process group, now.
     pub fn kill(&mut self) {
+        if let Some(pid) = self.pid {
+            self.census.extend(tree::descendants(pid));
+        }
+        self.finish();
         if let Some(terminal) = &self.terminal {
             let _ = terminal.signal_process_group(pty_host::ProcessGroupSignal::Kill);
             return;
@@ -995,9 +1034,6 @@ impl Provider {
         if let Some(terminal) = &self.terminal {
             let _ = terminal.resize(pty_host::PtySize { rows, cols });
         }
-        if let Some(Ok(mut screen)) = self.screen.as_ref().map(|screen| screen.lock()) {
-            screen.resize(rows, cols);
-        }
     }
 }
 
@@ -1020,6 +1056,32 @@ fn codex_turn_input(
 ) -> io::Result<Vec<u8>> {
     let mut request = codex_protocol::decode_client(request)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    if let ClientMessage::Request {
+        request: ClientRequest::ThreadInjectItems(params),
+        ..
+    } = &mut request
+    {
+        // An injected message takes text only: each attachment's element
+        // goes at its place, naming the file by its path here.
+        for item in &mut params.items {
+            let InjectedItem::Message(message) = item else {
+                continue;
+            };
+            for content in &mut message.content {
+                let InjectedContent::InputText(text) = content else {
+                    continue;
+                };
+                text.text = attachments::format(
+                    &attachments::Positioned {
+                        text: std::mem::take(&mut text.text),
+                        attachments: attachments.to_vec(),
+                    },
+                    blobs,
+                );
+            }
+        }
+        return Ok(codex_protocol::encode(&request));
+    }
     let input = match &mut request {
         ClientMessage::Request {
             request: ClientRequest::TurnStart(params),
@@ -1037,19 +1099,22 @@ fn codex_turn_input(
         }
     };
     for attachment in attachments {
-        input.push(match &attachment.of {
-            Some(wire::attachment::Of::Image(blob)) => UserInput::LocalImage(LocalImageInput {
+        // Every attachment is introduced by its element, which names it: a
+        // bare local image reaches the model as "Image #1", and it cannot
+        // tell which attached file is which.
+        input.push(UserInput::text(attachments::element(
+            attachment,
+            attachments::blob_path(attachment, blobs).as_deref(),
+        )));
+        if let Some(wire::attachment::Of::Image(blob)) = &attachment.of {
+            input.push(UserInput::LocalImage(LocalImageInput {
                 path: blobs
                     .join(interpret::to_hex(&blob.hash))
                     .to_string_lossy()
                     .into_owned(),
                 extra: Default::default(),
-            }),
-            _ => UserInput::text(attachments::element(
-                attachment,
-                attachments::blob_path(attachment, blobs).as_deref(),
-            )),
-        });
+            }));
+        }
     }
     Ok(codex_protocol::encode(&request))
 }
@@ -1168,9 +1233,14 @@ fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<S
             .map(|event| (*event).to_owned())
             .collect(),
         accept_cross_session: true,
+        // The files amux attaches live in the agent's blob folder, outside
+        // the working folder: without this Claude asks to read a file the
+        // person just attached, naming only its hash path. `//` makes the
+        // rule's path absolute.
         permissions_allow: tools
             .iter()
             .map(|_| format!("mcp__{}__*", interpret::AMUX_TOOL_SERVER))
+            .chain([format!("Read(/{}/**)", dir.join(dir::BLOBS).display())])
             .collect(),
         ..Default::default()
     };
@@ -1420,7 +1490,8 @@ mod tests {
     use std::path::Path;
 
     /// A file reaches Codex as its element naming where the file is, so the
-    /// model can open it; an image goes as a local image by the same path.
+    /// model can open it; an image goes as its element and then as a local
+    /// image by the same path.
     #[test]
     fn codex_attachments_name_their_blob_paths() {
         let blob = |hash: u8, name: &str, mime: &str| wire::BlobRef {
@@ -1461,9 +1532,13 @@ mod tests {
                 .unwrap()
                 .contains(&format!("path=\"{}\"", file.display()))
         );
-        assert_eq!(input[2]["type"], "localImage");
         assert_eq!(
-            input[2]["path"],
+            input[2]["text"],
+            attachments::element(&attachments[1], Some(&blobs.join("ab".repeat(32))))
+        );
+        assert_eq!(input[3]["type"], "localImage");
+        assert_eq!(
+            input[3]["path"],
             blobs.join("ab".repeat(32)).display().to_string()
         );
     }

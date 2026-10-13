@@ -125,6 +125,10 @@ message CtlFrame {
     // input's verdict as the SendInput reply and uses a message's verdict
     // to settle its delivery.
     Verdict reply = 9;
+    // Daemon to agent: how many agents below this one are live, sent when
+    // the agent connects and whenever the count changes. A one-shot agent
+    // waits for its children before it exits.
+    Children children = 10;
   }
 }
 
@@ -142,6 +146,12 @@ message AgentHello {
 }
 
 message Nudge {}
+
+// The live descendants of the agent, on every host its daemon knows of; best
+// effort, it may undercount a host out of reach.
+message Children {
+  uint32 live = 1;
+}
 
 // The daemon ends its agent. Without `kill`, the running turn is cancelled
 // the provider's own way and the agent exits. With it, the provider's process

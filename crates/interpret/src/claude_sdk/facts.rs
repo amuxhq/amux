@@ -26,13 +26,15 @@ use super::{
 };
 use crate::claude_common::{
     AnsweredResult, BackgroundInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, Verdict,
-    apply_task_tool, auto_models, blocks_text, claude_limit, compact_json, message_text,
+    apply_task_tool, auto_models, blocks_text, claude_limit, compact_json, job_kind, message_text,
     offered_commands, offered_models, permission_scopes, plan_ask, plan_mode_write, question_ask,
     question_ask_text, split_tool_name, tool_class, tool_result_images, tool_result_text,
     without_image_bytes,
 };
 use crate::shared::json_as_written;
-use crate::{Channel, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_working_on};
+use crate::{
+    Channel, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool, status_working_on,
+};
 
 const INTERRUPTED: &str = "[Request interrupted by user";
 
@@ -98,6 +100,11 @@ impl State {
                 let whole = message_text(&replay.message.content);
                 if let Some(output) = local_output(&whole) {
                     return self.slash_output(emit, replay.uuid, &output);
+                }
+                if let Some(command) = command_name(&whole)
+                    && let Some((key, text)) = self.synthetic.take()
+                {
+                    self.slash_item(emit, key, text, &command);
                 }
                 self.steer_replayed(emit, &replay.uuid);
                 self.taken(&replay.uuid);
@@ -251,6 +258,11 @@ impl State {
             Message::LocalCommandOutput(output) => {
                 self.slash_output(emit, output.uuid, &output.content)
             }
+            // Claude's own ambient work (memory consolidation and the
+            // like) is nothing the person started: no row, no job.
+            Message::TaskStarted(task) if task.ambient == Some(true) => {
+                self.ambient.insert(task.task_id);
+            }
             Message::TaskStarted(task) => self.task_event(
                 emit,
                 TaskReport {
@@ -262,11 +274,15 @@ impl State {
                     ..Default::default()
                 },
             ),
+            // A task sent to the background after it started says so only
+            // here, as a patch.
             Message::TaskUpdated(task) => self.task_event(
                 emit,
                 TaskReport {
                     task_id: &task.task_id,
+                    description: task.patch.description.as_deref(),
                     status: task.patch.status.as_deref(),
+                    backgrounded: task.patch.is_backgrounded == Some(true),
                     ..Default::default()
                 },
             ),
@@ -296,10 +312,16 @@ impl State {
             Message::BackgroundTasksChanged(changed) => {
                 if let Some(tasks) = changed.tasks {
                     let now = self.shared.now_ms();
+                    let ambient = &mut self.ambient;
                     let jobs = self.jobs.listed(
-                        tasks
-                            .into_iter()
-                            .map(|task| (task.task_id, task.description)),
+                        tasks.into_iter().filter_map(|task| {
+                            if task.ambient == Some(true) {
+                                ambient.insert(task.task_id);
+                                return None;
+                            }
+                            let kind = job_kind(&task.task_type);
+                            Some((task.task_id, task.description, kind))
+                        }),
                         now,
                     );
                     self.shared.set_jobs(jobs);
@@ -464,7 +486,7 @@ impl State {
 
     fn task_event(&mut self, emit: &mut Emit, report: TaskReport) {
         let id = report.task_id.to_owned();
-        if id.is_empty() {
+        if id.is_empty() || self.ambient.contains(&id) {
             return;
         }
         let now = self.shared.now_ms();
@@ -504,6 +526,7 @@ impl State {
         }
         let wire = task.to_wire(&id);
         let at_ms = task.at_ms;
+        let shell = task.shell;
         let summary = written_opt(report.summary);
         let key = task.tool_key.clone();
         // A task of a call this interpreter showed is progress on that call,
@@ -523,13 +546,23 @@ impl State {
                 last_tool: wire.last_tool.clone(),
                 finished,
             });
-            if report.backgrounded {
+            if report.backgrounded && !finished {
                 tool.background = true;
+                let kind = if shell {
+                    wire::BackgroundKind::Shell
+                } else if subagent {
+                    wire::BackgroundKind::Subagent
+                } else {
+                    wire::BackgroundKind::Other
+                };
                 let (command, at_ms) = (JobInput::command(&tool.input), tool.at_ms);
-                self.jobs.launched(&id, &key, command, at_ms);
+                self.jobs.launched(&id, &key, command, at_ms, kind);
                 if let Some(jobs) = self.jobs.current() {
                     self.shared.set_jobs(jobs);
                 }
+            }
+            if finished && let Some(jobs) = self.jobs.ended(&id) {
+                self.shared.set_jobs(jobs);
             }
             if !finished {
                 tool.state = ToolState::Running as i32;
@@ -743,6 +776,26 @@ impl State {
         }
         let parent = assistant.parent_tool_use_id.as_deref().unwrap_or_default();
         let base = self.blocks.get(&message_id).copied().unwrap_or(0);
+        // A built-in command Claude runs itself answers as the `<synthetic>`
+        // model: the answer is the command's output, not a reply.
+        if message.model == "<synthetic>"
+            && !blocks.is_empty()
+            && blocks
+                .iter()
+                .all(|block| matches!(block, ContentBlock::Text { .. }))
+        {
+            self.blocks.insert(message_id.clone(), base + 1);
+            let key = format!("{message_id}:{base}");
+            let text = blocks_text(blocks);
+            match self.slash.take() {
+                Some(slash) => self.slash_item(emit, key, text, &slash),
+                None => {
+                    self.synthetic = Some((key.clone(), text.clone()));
+                    self.slash_item(emit, key, text, "");
+                }
+            }
+            return;
+        }
         self.blocks
             .insert(message_id.clone(), base + blocks.len() as u32);
         for (offset, block) in blocks.iter().enumerate() {
@@ -819,6 +872,7 @@ impl State {
             parent_key: parent.to_owned(),
             task: None,
             images: Vec::new(),
+            attached: Vec::new(),
             emitted: Vec::new(),
         });
         if let Some(input) = input {
@@ -935,7 +989,21 @@ impl State {
                 emit.effect(write);
             }
         }
-        if let Some(result) = result {
+        if is_attach_tool(&tool.server, &tool.name) {
+            // The element names the blob by this host's path; the step
+            // carries the attachment instead.
+            let (text, attached) =
+                crate::shared::parse_reply(std::mem::take(&mut tool.outcome_text));
+            if !attached.is_empty() {
+                tool.outcome_text = text;
+                tool.attached = attached;
+            } else {
+                tool.outcome_text = text;
+                if let Some(result) = result {
+                    tool.outcome_json = compact_json(&without_image_bytes(result));
+                }
+            }
+        } else if let Some(result) = result {
             tool.outcome_json = compact_json(&without_image_bytes(result));
         }
         // A question nothing here closed: Claude's own record says how.
@@ -963,15 +1031,22 @@ impl State {
         self.emit_tool(emit, id);
     }
 
+    /// A local command's output. Output no command typed through amux
+    /// asked for is Claude's note on a setting amux changed (its "Set model
+    /// to" after a model chosen from the settings), which the snapshot
+    /// already shows: it draws nothing.
     fn slash_output(&mut self, emit: &mut Emit, key: String, output: &str) {
         let output = local_output(output).unwrap_or_else(|| output.to_owned());
-        let (command, args) = match &self.slash {
-            Some(slash) => {
-                let (command, args) = slash.split_once(char::is_whitespace).unwrap_or((slash, ""));
-                (command.to_owned(), args.trim().to_owned())
-            }
-            None => (String::new(), String::new()),
+        let Some(slash) = self.slash.take() else {
+            return;
         };
+        self.slash_item(emit, key, output, &slash);
+    }
+
+    /// A slash command's output item, the command as typed (`/name args`).
+    fn slash_item(&mut self, emit: &mut Emit, key: String, output: String, slash: &str) {
+        let (command, args) = slash.split_once(char::is_whitespace).unwrap_or((slash, ""));
+        let (command, args) = (command.to_owned(), args.trim().to_owned());
         self.shared.item(
             emit,
             ItemDraft {
@@ -986,6 +1061,9 @@ impl State {
 
     fn result(&mut self, emit: &mut Emit, result: &ResultMessage) {
         self.dismiss_asks(emit);
+        // A command that ran a turn (a custom command or a skill) wrote no
+        // output of its own; a later note is not its.
+        self.slash = None;
         // A result of a kind this build does not know still carries the
         // fields every result does.
         let unknown = match result {
@@ -1344,6 +1422,23 @@ fn context_window(models: &BTreeMap<String, ModelUsage>, model: &str) -> Option<
         .get(model)
         .or_else(|| models.values().next())
         .map(|usage| usage.context_window)
+}
+
+/// The command a slash command's replay names, with its arguments, as
+/// typed.
+fn command_name(text: &str) -> Option<String> {
+    let tag = |name: &str| {
+        let open = format!("<{name}>");
+        let close = format!("</{name}>");
+        let start = text.find(&open)? + open.len();
+        let end = text[start..].find(&close)? + start;
+        Some(text[start..end].trim().to_owned())
+    };
+    let command = tag("command-name")?;
+    Some(match tag("command-args").filter(|args| !args.is_empty()) {
+        Some(args) => format!("{command} {args}"),
+        None => command,
+    })
 }
 
 /// A local command's output as Claude replays it.

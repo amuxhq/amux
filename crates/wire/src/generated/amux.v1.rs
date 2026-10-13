@@ -12423,7 +12423,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -12464,6 +12464,11 @@ pub mod ctl_frame {
         /// to settle its delivery.
         #[prost(message, tag = "9")]
         Reply(super::Verdict),
+        /// Daemon to agent: how many agents below this one are live, sent when
+        /// the agent connects and whenever the count changes. A one-shot agent
+        /// waits for its children before it exits.
+        #[prost(message, tag = "10")]
+        Children(super::Children),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -12533,6 +12538,23 @@ impl ::prost::Name for Nudge {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.Nudge".into()
+    }
+}
+/// The live descendants of the agent, on every host its daemon knows of; best
+/// effort, it may undercount a host out of reach.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Children {
+    #[prost(uint32, tag = "1")]
+    pub live: u32,
+}
+impl ::prost::Name for Children {
+    const NAME: &'static str = "Children";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Children".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Children".into()
     }
 }
 /// The daemon ends its agent. Without `kill`, the running turn is cancelled

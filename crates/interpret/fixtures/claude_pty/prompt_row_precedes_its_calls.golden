@@ -9,11 +9,10 @@ snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=? model=? m
 ## 3 input {"id":"p1","prompt":{"text":"Check the deployment once."}}
 effect reply p1 accepted
 effect terminal prompt "Check the deployment once."
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=? model=? model_name=? mode=? context=? tasks=? background=?
 ## 4 fact {"channel":"hook","json":{"hook_event_name":"SessionStart","model":"claude-opus-5-5","session_id":"s1","source":"startup","transcript_path":"/t/s1.jsonl"}}
 effect follow "/t/s1.jsonl"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.283 keymap=claude-2.1
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 5 tick 1800000001000
 ## 6 fact {"channel":"hook","json":{"hook_event_name":"UserPromptSubmit","prompt":"Check the deployment once.","session_id":"s1"}}
 ## 7 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"command":"deploy --check"},"tool_name":"Bash","tool_use_id":"t1"}}
@@ -34,7 +33,6 @@ turn_end 1 last=-
 ## 14 input {"id":"p2","prompt":{"text":"Sign in to the tracker."}}
 effect reply p2 accepted
 effect terminal prompt "Sign in to the tracker."
-snapshot WORKING queue=[] working_on=- at=1800000002000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 15 tick 1800000006000
 ## 16 fact {"channel":"hook","json":{"cwd":"/w","hook_event_name":"Notification","message":"Claude Code needs your input","notification_type":"elicitation_dialog","permission_mode":"default","session_id":"s1","transcript_path":"/t/s1.jsonl"}}
 item ask:ask:1 ask final at=1800000006000 text="" unanswerable "Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent." open
@@ -48,14 +46,14 @@ item ask:ask:1 ask final at=1800000006000 text="" unanswerable "Claude is showin
 snapshot WORKING queue=[] working_on=- at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 ## 19 fact {"channel":"transcript","json":{"message":{"content":"[Request interrupted by user]","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.100Z","type":"user","uuid":"u3"}}
 item u3 interruption final at=1800000006100 text=""
-item turn:2 turn final at=1800000006100 text="" #2 TURN_OUTCOME_INTERRUPTED started=1800000002000
+item turn:2 turn final at=1800000006100 text="" #2 TURN_OUTCOME_INTERRUPTED started=1800000006000
 snapshot IDLE queue=[] working_on=- at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 turn_end 2 last=-
 ## 20 input {"id":"p3","prompt":{"text":"Summarise the log."}}
 effect reply p3 accepted
 effect terminal prompt "Summarise the log."
-snapshot WORKING queue=[] working_on=- at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 ## 21 fact {"channel":"transcript","json":{"message":{"content":"<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command finished</summary>\n</task-notification>","role":"user"},"origin":{"kind":"task-notification"},"promptSource":"system","sessionId":"s1","timestamp":"2027-01-15T08:00:06.200Z","type":"user","uuid":"n1"}}
+snapshot WORKING queue=[] working_on=- at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 ## 22 fact {"channel":"transcript","json":{"attachment":{"commandMode":"prompt","prompt":"Summarise the log.","type":"queued_command"},"sessionId":"s1","timestamp":"2027-01-15T08:00:06.300Z","type":"attachment","uuid":"q1"}}
 item q1 steer final input=p3 at=1800000006300 text="Summarise the log."
 ## 23 fact {"channel":"transcript","json":{"durationMs":200,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:06.400Z","type":"system","uuid":"d2"}}
@@ -65,6 +63,6 @@ turn_end 3 last=-
 ## 24 input {"id":"p4","prompt":{"text":"Now the errors."}}
 effect reply p4 accepted
 effect terminal prompt "Now the errors."
-snapshot WORKING queue=[] working_on=- at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?
 ## 25 fact {"channel":"transcript","json":{"message":{"content":"Now the errors.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:06.500Z","type":"user","uuid":"u4"}}
 item u4 prompt final input=p4 at=1800000006500 text="Now the errors."
+snapshot WORKING queue=[] working_on=- at=1800000006000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=default context=? tasks=? background=?

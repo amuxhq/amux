@@ -454,6 +454,9 @@ pub(crate) struct AgentHandle {
     running: watch::Sender<bool>,
     pub(crate) exited: watch::Sender<bool>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
+    /// The agent's count of live descendants, as last counted: what the
+    /// next `Children` frame says.
+    children: std::sync::atomic::AtomicU32,
 }
 
 impl AgentHandle {
@@ -473,7 +476,25 @@ impl AgentHandle {
             running: watch::Sender::new(pid.is_some()),
             exited: watch::Sender::new(false),
             tasks: Mutex::new(Vec::new()),
+            children: std::sync::atomic::AtomicU32::new(0),
         })
+    }
+
+    /// Tells the agent how many live agents are below it: the count as it
+    /// stands when the connection is free, so writes racing each other
+    /// still end on the newest count.
+    pub(crate) async fn send_children(&self, patience: Duration) {
+        let _ = tokio::time::timeout(patience, async {
+            if let Some(ctl) = self.ctl.lock().await.as_mut() {
+                let frame = CtlFrame {
+                    of: Some(ctl_frame::Of::Children(wire::Children {
+                        live: self.children.load(Ordering::SeqCst),
+                    })),
+                };
+                let _ = agent_dir::write_frame(ctl, &frame).await;
+            }
+        })
+        .await;
     }
 
     fn abort(&self) {
@@ -1893,6 +1914,14 @@ impl ProfileRuntime {
         *handle.ctl.lock().await = Some(writer);
         handle.hello.send_replace(Some(hello));
         handle.caught_up_due.store(true, Ordering::SeqCst);
+        let count = match self.store.lock().await.agent(&self.key(id)) {
+            Ok(Some(row)) => row.descendants,
+            _ => 0,
+        };
+        handle.children.store(count, Ordering::SeqCst);
+        if count > 0 {
+            handle.send_children(ms(self.launch().ctl_write_ms)).await;
+        }
         if let Err(error) = self.ingest(id).await {
             tracing::warn!(agent = %id, %error, "ingest failed");
         }
@@ -2066,9 +2095,24 @@ impl ProfileRuntime {
             }
             store.set_descendants(&key, count)?;
             self.publish_row(store, &key)?;
+            self.tell_children(&key, count);
             parent = row.parent;
         }
         Ok(())
+    }
+
+    /// Tells a running agent its new count of live descendants: a one-shot
+    /// agent exits only once none is left.
+    fn tell_children(&self, key: &AgentKey, count: u32) {
+        let Ok(id) = AgentId::from_slice(&key.agent) else {
+            return;
+        };
+        let Some(handle) = self.agents.lock().unwrap().get(&id).cloned() else {
+            return;
+        };
+        handle.children.store(count, Ordering::SeqCst);
+        let patience = ms(self.launch().ctl_write_ms);
+        tokio::spawn(async move { handle.send_children(patience).await });
     }
 
     /// Marks the row exited, then settles what the process leaves: its

@@ -30,6 +30,7 @@ method_enum! {
         "turn/start" => TurnStart(TurnStartParams),
         "turn/steer" => TurnSteer(TurnSteerParams),
         "turn/interrupt" => TurnInterrupt(TurnInterruptParams),
+        "review/start" => ReviewStart(ReviewStartParams),
         "model/list" => ModelList(ModelListParams),
         "skills/list" => SkillsList(SkillsListParams),
         "account/read" => AccountRead(AccountReadParams),
@@ -215,6 +216,34 @@ tagged_enum! {
     pub enum InjectedContent {
         "input_text" => InputText(crate::items::TextContent),
     }
+}
+
+/// Codex's own review of changes, run as a turn on the thread (inline,
+/// Codex's default delivery).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewStartParams {
+    pub thread_id: String,
+    pub target: ReviewTarget,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+tagged_enum! {
+    /// What a review looks at.
+    pub enum ReviewTarget {
+        /// The working tree: staged, unstaged and untracked files.
+        "uncommittedChanges" => UncommittedChanges(Extra),
+        /// The reviewer's instructions in the person's words.
+        "custom" => Custom(CustomReview),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomReview {
+    pub instructions: String,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

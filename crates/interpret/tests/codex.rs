@@ -343,9 +343,14 @@ fn offered_lists_keep_what_the_server_named() {
         ["gpt-6-astra", "gpt-6-sol"],
         "both pages, the hidden model left out"
     );
+    // The commands amux runs come first; the skills follow.
+    let skills: Vec<_> = catalogue
+        .commands
+        .iter()
+        .filter(|command| command.source != "codex")
+        .collect();
     assert_eq!(
-        catalogue
-            .commands
+        skills
             .iter()
             .map(|command| (command.name.as_str(), command.source.as_str()))
             .collect::<Vec<_>>(),
@@ -356,11 +361,7 @@ fn offered_lists_keep_what_the_server_named() {
         ],
         "the turned-off skill left out"
     );
-    assert!(
-        catalogue.commands[0]
-            .description
-            .starts_with("Execute confirmed")
-    );
+    assert!(skills[0].description.starts_with("Execute confirmed"));
     assert_eq!(last_catalogue("offered_refused"), None);
 }
 

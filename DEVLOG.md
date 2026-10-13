@@ -1,3 +1,16 @@
+2026-10-13 — **The daemon and agents halves of the second QA round, merged.**
+Both halves fixed four things the other also fixed; where their code met,
+one version stays. An agent's stop on its tools socket is refused in words
+that name the action ("an agent stops only its own children"), and the stop
+tool passes the daemon's refusal on as "<name> did not stop: …", so a
+model reads why. A send keeps the attach tool's elements out of the text
+whether or not any parsed, so a stray placeholder never reaches the
+recipient. A child's report is worded by its outcome as "[agent helper was
+stopped before it finished]", "was interrupted before it finished its
+turn" or "failed before it finished its turn"; a stop marks the turn it
+cuts short stopped whatever the provider calls its end, except a turn that
+completed, and is forgotten when the agent is next incarnated.
+
 2026-10-13 — **A message an agent cannot take is refused in a sentence.** A
 send to a stopped agent from anyone but its parent came back to the sending
 agent as `rejected: exited`. Each refusal now reads as a sentence the
@@ -127,6 +140,123 @@ draws on the alternate screen, so leaving it gives the shell its own screen
 back rather than the agent's last frame. Pairing to an address where nothing
 answers is answered by the daemon as unreachable (naming the address), not
 as unavailable, which the CLI rightly reads as its own daemon going away.
+2026-10-13 — **An agent's stop tool stops.** The tool interrupted the
+child's turn, which left the child's own children running. It now asks the
+daemon for a person's stop: the child exits stopped and the daemon stops its
+descendants on every host with it. The tool's description and the tools
+test follow.
+
+2026-10-13 — **An agent stops only its own children.** On an agent's tools
+socket the daemon checked the lineage of inputs but not of stops, and the
+stop tool is becoming a real stop: a stop from an agent now goes only to its
+own direct children, on any host, as its inputs do.
+
+2026-10-13 — **Files one agent sends another travel as attachments.** The
+send tool passed the attach tool's element on as text, naming the file by
+the sender host's path, which an agent on another host cannot open. The
+send tool now moves elements into the message's attachments; the
+recipient's interpreter hands them on with the message, and its agent
+process writes each element with the path in the recipient's own blobs
+folder, for every kind. Both chats' message items carry the attachments.
+Fetching the bytes onto the recipient's host is the daemon's part.
+
+2026-10-13 — **A stopped child's report says it was stopped.** A child
+deleted mid-turn reported "[agent helper finished its turn]" with no words,
+and its parent told the person the work was done. A turn a stop cuts short
+now ends with the outcome stopped, whatever the provider calls its end, and
+the parent's interpreter words a report by its outcome: stopped,
+interrupted or failed before it finished, or finished its turn.
+
+2026-10-13 — **Terminal Claude offers its project's own commands.** The
+daemon gathers the host's Claude catalogue in its own folder, and Claude
+lists a project's commands only when asked from inside the project, so they
+never appeared. As terminal Claude launches, the agent asks a headless
+Claude in the agent's folder, with terminal Claude's environment, and the
+catalogue is published from that answer; the host's copy stands when Claude
+cannot say within 30 seconds. The headless fake now marks its models as
+taking auto mode when its script offers auto mode, as one Claude would.
+
+2026-10-13 — **Codex's slash commands are amux's own table.** Codex's
+server has no commands, so `/clear` reached the model as words. The Codex
+interpreter now runs `/compact`, `/clear` (a new thread, adopted as the
+agent's conversation and resumed by the next incarnation), `/review`
+(Codex's `review/start`), `/init` (Codex's own fixed prompt) and `/plan`
+(plan mode, with any words after it as the prompt). The catalogue lists
+them before the skills, and any other `/word` is refused. A command
+approval and its step show the script inside Codex's shell wrapper, as
+Codex's own view does. A command still running at an interrupt carries on
+as a background terminal, and the interpreter asks Codex for its list. A web
+search that opens a page names the address. `configWarning` keeps its words
+as a warning item, and goal progress draws nothing, not an unreadable row.
+
+2026-10-13 — **Claude's interpreters read what Claude records, not its
+screen.** Terminal Claude: a turn starts on the prompt's transcript row,
+since keys typed into a terminal may land in one of Claude's own screens
+and never reach the conversation (QA saw a phantom working turn). The screen
+watcher is gone: the permission is the one amux cycled to, from Claude's
+known cycle, confirmed by the permission Claude next records, and a plan's
+switch follows from the launch arguments and the catalogue (never ask, auto
+mode, then accept edits). Effort comes from assistant rows; `/model` in
+Claude's own view names the model at once. A `resume` of another session in
+Claude's own view marks the agent switched away: prompts are refused, the
+other session's hooks ignored, and switch back types `/resume` with the
+agent's session. `!commands` are shell steps, local output loses terminal
+colour codes, and a prompt's attachment elements become attachments. Jobs:
+both kinds carry the job's kind and publish a launch at once; terminal
+Claude drops a job on its task notification or the new `SubagentStop` hook,
+and keeps a background subagent's dialog open across `Stop`. Headless
+Claude reads `is_backgrounded` from `task_updated`, drops finished tasks,
+hides ambient ones, and draws a built-in command's `<synthetic>` answer as
+the command's output rather than a reply. amux's attach tool's step carries
+its attachment in both.
+
+2026-10-13 — **A plan sent back without a note reaches terminal Claude.**
+The plan menu's program typed the note whenever the answer kept planning,
+and an empty note failed to encode, so nothing was typed while amux marked
+the plan sent back and Claude's menu waited for good. Without a note only
+the menu's send-back entry is typed.
+
+2026-10-13 — **Attachments the model can tell apart, and read without
+asking.** Codex is told each attached image's name: its element goes before
+the local image, as a file's element does, where a bare image left the model
+calling them "Image #1" and "Image #2". Claude (both kinds) may read the
+agent's `blobs/` folder without asking: headless Claude asked permission to
+read a file the person had just attached, naming only its hash path.
+
+2026-10-13 — **A sub-agent waits for its running children.** A one-shot
+agent now exits only when its turn has ended, nothing is queued or pending
+and no agent below it is live, by its daemon's count. QA saw a middle agent
+exit while its scout still worked, so the scout's result had nowhere to go
+and the lead waited forever. The child's report starts the sub-agent's next
+turn, which reports up as usual. When the daemon's word that the last child
+ended comes after the report that ended the sub-agent's turn, the sub-agent
+exits then, if it has taken as many reports as agents were live below it at
+once, so it never exits ahead of a report still on its way. A one-shot child
+whose turn ends while it drains for a lost daemon now exits finished, as its
+parent hears it, not "while the daemon was away".
+
+2026-10-13 — **A stop leaves nothing of the agent's commands running.**
+Claude's and Codex's tool shells each lead a session of their own, so the
+kill of the provider's process group missed them: QA saw a stopped headless
+Claude's command run on for its whole 90 seconds. Asking a provider to finish
+now takes a census of every process below it, then sends it SIGTERM (every
+provider cleans up its commands on it; headless Claude does not exit on the
+end of its input while a background shell runs); once it has exited, or at
+the ten-second deadline, whatever of the census still runs is killed, each
+process checked by its start time so a reused pid is never signalled. Codex's
+tether now kills the server's group five seconds after its SIGTERM if the
+server still runs: one with an approval open ignores SIGTERM and held its
+thread from every later incarnation. Headless Claude's `initialize` declares
+`perTaskStopAffordance`, so its interrupt spares background subagents as it
+spares background shells. The replay fixtures' initialize line follows.
+
+2026-10-13 — **The daemon tells an agent how many agents below it are
+live.** A new control frame, `Children { live }`, carries an agent's count of
+live descendants from its daemon: sent when the agent connects with any below
+it, and whenever the daemon recounts it (the same count the fleet row
+shows). It lets a one-shot sub-agent wait for its own children before it
+exits. Each write reads the newest count under the connection's lock, so
+writes that race each other still end on the latest.
 
 2026-10-13 — **The second QA round's protocol changes.** The wire changes
 the round's decisions need, with only the code that keeps everything

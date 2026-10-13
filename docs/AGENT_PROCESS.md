@@ -139,12 +139,22 @@ action, `exit(cause)`:
    which closes every open ask and writes the final `Exited` boundary with
    the cause (an `ExitCause`) and its own words, in a step whose
    `incarnation_end` carries the same;
-2. close the provider's input: end of input for a child on pipes, a
-   terminate signal to the process group for terminal Claude;
-3. enter `Exiting` with a ten-second deadline, after which the provider's
-   process group is killed.
+2. take a census of every process below the provider, then ask it to
+   finish: end of input and SIGTERM for headless Claude, the end of its
+   connection (on which the agent sends SIGTERM) for Codex, SIGTERM to the
+   process group for terminal Claude. Every provider cleans up the commands
+   it runs on SIGTERM, and headless Claude does not exit on the end of its
+   input alone while a background shell runs;
+3. enter `Exiting` with a ten-second deadline, after which everything below
+   the provider and its process group are killed.
 
-The provider's own exit then ends the loop. Two paths skip `exit`: the
+The provider's own exit then ends the loop, after the agent kills whatever
+of the census still runs. Claude's and Codex's tool shells each lead a
+session of their own, so a kill of the provider's process group misses
+them, and by the time the provider has exited its orphans belong to init:
+the census, taken while the provider runs, is what finds them. Each process
+is remembered with its start time and killed only if that same process is
+still running ([`tree.rs`](../crates/agent/src/tree.rs)). Two paths skip `exit`: the
 provider exiting by itself (the interpreter records it as the final boundary,
 with the exit code or "killed by a signal"), and a kill, which kills the
 provider's process group at once and writes nothing.
@@ -153,15 +163,16 @@ provider's process group at once and writes nothing.
 |---|---|---|
 | `Running`, no daemon connected | The grace timer runs out | The interpreter writes a daemon-lost boundary; `Draining` (daemon lost) |
 | `Running` | `Stop` arrives | The interpreter cancels the turn the provider's own way, so an open ask closes as dismissed and its call as cancelled; `Draining` (stop) |
-| `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST` or `STOPPED` |
+| `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST` or `STOPPED`; a one-shot agent whose turn ends quiescent while it drains for a lost daemon exits `FINISHED`, as its parent hears it |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
-| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued and no accepted agent message still unconsumed | `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed and no agent below it live | `exit` with `FINISHED` (the one-shot rule) |
+| `Running`, the agent has a parent, quiescent | The daemon's count of live agents below it falls to none, and the agent has taken as many reports since agents were live below it as were ever live at once | `exit` with `FINISHED`: the reports it waited for came before the count did |
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
 | Any | The provider exits | The loop ends; `PROVIDER_EXITED` with the exit code or signal |
-| Any | `Stop { kill }` arrives | The provider's process group is killed; `KILLED` |
+| Any | `Stop { kill }` arrives | Everything below the provider, and its process group, is killed; `KILLED` |
 | Start | The provider cannot be started | `COULD_NOT_START`, with why |
-| `Exiting` | Ten seconds pass | The provider's process group is killed |
+| `Exiting` | Ten seconds pass | Everything below the provider, and its process group, is killed |
 
 Why the incarnation ended travels in the journal, not on `ctl.sock`: the
 step that writes the final boundary also carries `incarnation_end`, and the
@@ -217,7 +228,8 @@ version integer, and a frame a reader does not know is ignored.
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's part of a dump bundle, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
-| `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill the provider's process group at once (the daemon's escalation past the stop deadline) |
+| `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
+| `children` | daemon → agent | `Children { live }`: how many agents below this one are live, on every host its daemon knows of, sent when the agent connects with any below it and whenever the count changes; a one-shot agent waits for none to be left |
 | `dump` | agent → daemon | `DumpPart`, answering a dump request |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 
@@ -253,8 +265,8 @@ abandoned, not joined. Before the exit is recorded, the agent feeds the
 interpreter everything the provider said first: events already queued, then
 any transcript rows a follower has not read yet.
 
-A provider's background jobs do not outlive a clean exit: Codex and headless
-Claude end them when their input closes. A provider process killed on its
+A provider's background jobs do not outlive the agent's exit: every provider
+ends them on SIGTERM, and the census kills any it left. A provider process killed on its
 own leaves them running, orphaned, and terminal Claude's `/exit` lets the
 person move the session and its jobs into Claude's own background, where
 they keep running after the pane closes. Either way the agent's list of
@@ -293,8 +305,9 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   them. The agent's part registers `<install path> hooks claude` as the hook
   command for `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
   `PermissionRequest`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-  `Stop` and `Notification`, accepts messages from other sessions at once, and allows amux's own tools
-  without asking.
+  `Stop`, `SubagentStop` and `Notification`, accepts messages from other sessions at once, and allows amux's own tools
+  and reading the agent's `blobs/` folder (where the files a person attaches
+  are) without asking. Headless Claude gets the same settings.
 - `--mcp-config` naming amux's tool server (see [the tool server](#the-tool-server)).
 - `--messaging-socket-path private/messaging.sock`.
 
@@ -310,18 +323,17 @@ paste on has been followed by 100 ms of quiet, or 500 ms at most. The
 `SessionStart` hook is no signal on its own, because some Claude versions run
 it only after the first prompt.
 
-For the whole of its life the agent also keeps Claude's screen as Claude
-draws it (at the terminal's height, and at least 240 columns wide so a
-recording replayed into a narrower terminal still lands where it was drawn)
-and reads two things off it that nothing else says yet. The footer's
-permission (`⏵⏵ accept edits on`, `⏸ plan mode on`, `⏸ manual mode on`)
-changes at once when Shift+Tab is typed, but Claude records the change only
-with the next prompt; the agent sends a permission fact each time the
-footer names a different one. And a plan approval menu's first entry
-(`Yes, and use auto mode` or `Yes, auto-accept edits`) is the permission
-that approving with a switch moves to; the agent sends a plan-menu fact each
-time a menu opens. Claude redraws only the cells that change, so neither
-can be read off a single chunk of output.
+As Claude launches, the agent also asks a headless Claude, in the agent's
+folder and with the environment terminal Claude runs with, what it offers
+(the `initialize` answer, as the daemon's host catalogue asks it): a project's
+own commands are listed only when asked from inside it. The answer, or word
+that there is none within 30 seconds, goes to the interpreter as an offered
+fact, which publishes the catalogue.
+
+Nothing else is read off the screen. The permission Claude runs in is the
+one amux cycled it to with Shift+Tab, confirmed by the permission Claude
+records next; the permission approving a plan switches to follows from the
+launch arguments and the catalogue (see [the interpreters](INTERPRETERS.md)).
 
 Keystrokes are typed by one task, in order, with the pauses the keymap's
 programs ask for; what an attached terminal types goes through the same task,
@@ -342,7 +354,11 @@ the agent offers.
 The interpreter writes everything after that: user messages carry a UUID
 derived from the input or envelope id, which Claude echoes on its replay of
 the message, and images a person attached go as base64 image blocks beside
-the element that names their blob. Closing the child is closing its stdin.
+the element that names their blob. Closing the child is closing its stdin
+and sending it SIGTERM. Its `initialize` declares `perTaskStopAffordance`:
+amux's interrupt ends the turn and leaves background work running on every
+kind, and Claude spares background subagents on an interrupt, as it spares
+background shells, only for a host that says it can stop each task itself.
 
 ### Codex
 
@@ -366,7 +382,9 @@ refusing anyone else's resume ("thread … already has an active writer"); the
 agent asks again every quarter of a second for up to 30 seconds before it
 hands the refusal on, and a refusal handed on ends the incarnation with
 Codex's words rather than leave it starting. The thread id the server answers with is written to
-`private/provider-session`. Straight after, the interpreter names the thread
+`private/provider-session`, as is the thread a `/clear` starts (the
+interpreter's `thread/start`, ids `amux-clear-<n>`): from then on that thread
+is the agent's conversation. Straight after, the interpreter names the thread
 with the agent's name (`thread/name/set`), and names it again when the agent
 is renamed: the daemon tells a running Codex agent with a `rename` frame, and a
 resumed agent's spec carries its current name, so Codex's own app shows the
@@ -377,8 +395,9 @@ also reads it with its turns (`thread/read`), which has Codex write it, so
 the app can attach before the first turn. Every message the server sends the agent is a fact; the
 interpreter writes every request after the handshake with ids of its own
 (`amux-<n>`). A turn whose prompt carries attachments has them appended to
-its input: an image as a local image at its blob's path, anything else as the
-element text the model reads.
+its input, each as the element text the model reads (naming it and where it
+is), and an image then also as a local image at its blob's path, so the
+model can tell which attached image is which.
 
 Closing the agent's connection ends a stdio server. On a socket, the end of
 the agent's connection (closed by the agent, or dropped by the server) is
@@ -386,9 +405,11 @@ when the agent sends the server SIGTERM; Codex then finishes any running
 turn and exits. Nothing tells a socket server that the agent died, so the
 agent also starts a tether beside it: a shell in the server's process group
 reading a pipe only the agent holds. When the agent dies, however it dies,
-the pipe closes and the shell sends the server's group SIGTERM; after the
-server exits on its own, the agent lets the tether go, which ends whatever
-the server left in its group.
+the pipe closes and the shell sends the server's group SIGTERM, and, if the
+server is still running five seconds later (one with an approval open
+ignores SIGTERM, and would hold its thread from the next incarnation for
+good), SIGKILL. After the server exits on its own, the agent lets the tether
+go, which ends whatever the server left in its group.
 
 ## Git facts
 

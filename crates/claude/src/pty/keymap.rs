@@ -1400,7 +1400,10 @@ impl Interpreter<'_, '_> {
                 Some(AskAnswer::Permission(PermissionAnswer::Deny {
                     feedback: Some(feedback),
                 })) => !feedback.trim().is_empty(),
-                Some(AskAnswer::Plan(PlanAnswer::RequestChanges { .. })) => true,
+                // Sent back without a note, the menu's entry alone is typed.
+                Some(AskAnswer::Plan(PlanAnswer::RequestChanges { feedback })) => {
+                    !feedback.trim().is_empty()
+                }
                 _ => false,
             }),
             Cond::HasOther => Ok(self.question_answer()?.other.is_some()),

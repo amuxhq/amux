@@ -22,11 +22,14 @@ use super::{
 };
 use crate::claude_common::{
     AnsweredResult, BackgroundInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, Verdict,
-    apply_task_tool, blocks_text, claude_grant, compact_json, message_text, permission_scopes,
-    plan_ask, plan_mode_write, question_ask, question_ask_text, same_json, split_tool_name,
-    timestamp_ms, tool_class, tool_result_images, tool_result_text, without_image_bytes,
+    apply_task_tool, blocks_text, claude_grant, compact_json, job_kind, message_text,
+    permission_scopes, plan_ask, plan_mode_write, question_ask, question_ask_text, same_json,
+    split_tool_name, timestamp_ms, tool_class, tool_result_images, tool_result_text,
+    without_image_bytes, without_terminal_codes,
 };
-use crate::{Channel, Emit, Fact, ItemDraft, ask_item, is_status_tool, status_working_on};
+use crate::{
+    Channel, Emit, Fact, ItemDraft, ask_item, is_attach_tool, is_status_tool, status_working_on,
+};
 
 /// How terminal Claude words a call the person refused, on the tool result.
 const REJECTED: &str = "The user doesn't want to proceed with this tool use.";
@@ -178,22 +181,25 @@ impl State {
     }
 
     fn agent_fact(&mut self, emit: &mut Emit, fact: AgentFact) {
-        let (version, keymap, permission_menus, send_now_refused) = match fact {
+        let (version, keymap, permission_menus, send_now_refused, asking) = match fact {
             AgentFact::Launch {
                 version,
                 keymap,
                 permission_menus,
                 send_now_refused,
-            } => (version, keymap, permission_menus, send_now_refused),
+                asking,
+            } => (version, keymap, permission_menus, send_now_refused, asking),
             // Waiting on its trust dialog, Claude takes no prompt; it
             // starts its session once trusted, and that start says so.
             AgentFact::Ready if self.trust_ask().is_some() => return,
             AgentFact::Ready => return self.shared.provider_started(),
             AgentFact::TrustDialog => return self.trust_dialog(emit),
-            AgentFact::Permission { permission } => {
-                return self.permission_seen(emit, &permission);
+            AgentFact::Offered { catalogue } => {
+                if catalogue.is_some() {
+                    self.provider.offered = catalogue;
+                }
+                return self.publish_catalogue(emit);
             }
-            AgentFact::PlanMenu { switch } => return self.plan_menu(switch),
         };
         let provider = &mut self.provider;
         provider.version = (!version.is_empty()).then_some(version);
@@ -202,47 +208,21 @@ impl State {
         provider.send_now_refused = send_now_refused;
         provider.relaunched = provider.launches > 0;
         provider.launches += 1;
-        self.publish_catalogue(emit);
+        // Asked in the agent's folder, Claude's answer publishes it.
+        if !asking {
+            self.publish_catalogue(emit);
+        }
     }
 
-    /// The permission a plan ask's switch moves to: what Claude's plan
-    /// menu last switched to, or, before Claude has drawn one, auto mode
-    /// where the host's Claude offers it for this model and accept edits
-    /// otherwise.
+    /// The permission a plan ask's switch moves to: what the first entry
+    /// of Claude's own plan menu switches to. Never ask where Claude was
+    /// launched allowing it, else auto mode where its model offers it, else
+    /// accept edits.
     fn plan_switch(&self) -> String {
-        if let Some(switch) = &self.provider.plan_switch {
-            return switch.clone();
+        if self.provider.never_ask {
+            return crate::claude_common::NEVER_ASK.to_owned();
         }
-        let model = self.provider.model.as_deref().unwrap_or_default();
-        let offers_auto = self.provider.offered.as_ref().is_some_and(|offered| {
-            offered.permissions.iter().any(|permission| {
-                permission.value == "auto"
-                    && (permission.models.is_empty()
-                        || permission.models.iter().any(|named| named == model))
-            })
-        });
-        crate::claude_common::plan_switch(offers_auto).to_owned()
-    }
-
-    /// Claude drew its plan menu: an open plan ask offers the switch that
-    /// menu's first entry makes.
-    fn plan_menu(&mut self, switch: String) {
-        self.provider.plan_switch = Some(switch.clone());
-        let Some(key) = self.plan_ask() else {
-            // The screen and the hook race: the ask opens drawn.
-            self.provider.unclaimed_menu = Some(switch);
-            return;
-        };
-        if let Some(meta) = self.asks.get_mut(&key) {
-            meta.shape = AskShape::Plan {
-                switch: switch.clone(),
-                drawn: true,
-            };
-        }
-        if let Some(mut ask) = self.shared.asks().get(&key).cloned() {
-            ask.body = Some(wire::ask::Body::Plan(plan_ask(&switch)));
-            self.shared.open_ask(ask);
-        }
+        crate::claude_common::plan_switch(self.offers_auto()).to_owned()
     }
 
     /// A terminal offers nothing a program can read: its models and
@@ -292,6 +272,14 @@ impl State {
         let Some(common) = payload.common() else {
             return;
         };
+        // While Claude's own view shows another conversation, only its
+        // next session start concerns this agent.
+        if self.provider.switched_away_to.is_some()
+            && !matches!(payload, Payload::SessionStart(_))
+            && self.provider.session.as_deref() != Some(common.session_id.as_str())
+        {
+            return;
+        }
         if let Some(mode) = &common.permission_mode {
             self.permission_seen(emit, mode.as_str());
         }
@@ -329,6 +317,12 @@ impl State {
             }
             Payload::Notification(notification) => self.notification(emit, notification),
             Payload::Stop(stop) => {
+                let background: Vec<String> = stop
+                    .background_tasks
+                    .iter()
+                    .flatten()
+                    .map(|task| task.id.clone())
+                    .collect();
                 if let Some(tasks) = &stop.background_tasks {
                     let now = self.shared.now_ms();
                     let jobs = self.jobs.listed(
@@ -336,6 +330,7 @@ impl State {
                             (
                                 task.id.clone(),
                                 task.description.clone().unwrap_or_default(),
+                                job_kind(&task.r#type),
                             )
                         }),
                         now,
@@ -343,7 +338,33 @@ impl State {
                     self.shared.set_jobs(jobs);
                 }
                 self.running.clear();
-                self.close_all_unknown(emit);
+                // A subagent Claude still runs in the background keeps the
+                // dialog it raised open in Claude's own view: so does amux.
+                for key in self.open_ask_keys() {
+                    let in_background = self
+                        .asks
+                        .get(&key)
+                        .and_then(|meta| meta.agent.as_ref())
+                        .is_some_and(|agent| background.contains(agent));
+                    if !in_background {
+                        self.close(emit, &key, Decision::unknown());
+                    }
+                }
+            }
+            // A subagent finished: it leaves the background list, and a
+            // dialog it left open is over.
+            Payload::SubagentStop(stop) => {
+                let Some(agent) = stop.common.agent_id.clone() else {
+                    return;
+                };
+                if let Some(jobs) = self.jobs.ended(&agent) {
+                    self.shared.set_jobs(jobs);
+                }
+                for key in self.open_ask_keys() {
+                    if self.asks.get(&key).and_then(|meta| meta.agent.as_ref()) == Some(&agent) {
+                        self.close(emit, &key, Decision::unknown());
+                    }
+                }
             }
             Payload::Unknown(_) => {}
         }
@@ -357,6 +378,20 @@ impl State {
         self.close_trust_answered_elsewhere(emit);
         self.close_all_unknown(emit);
         let common = &start.common;
+        // An agent is its conversation. A resume in Claude's own view of a
+        // conversation that is not this agent's moved its terminal to
+        // another agent's: nothing of it is followed or typed into, until
+        // Claude resumes this one again. A clear is this agent starting
+        // afresh, in a new session.
+        let ours = self.provider.session.clone();
+        if start.source == "resume"
+            && !common.session_id.is_empty()
+            && ours.as_ref().is_some_and(|ours| *ours != common.session_id)
+        {
+            self.provider.switched_away_to = Some(common.session_id.clone());
+            return;
+        }
+        self.provider.switched_away_to = None;
         if !common.session_id.is_empty() {
             self.provider.session = Some(common.session_id.clone());
         }
@@ -472,7 +507,11 @@ impl State {
         tool.awaiting_notification = true;
         tool.background = true;
         let (command, at_ms) = (JobInput::command(&tool.input), tool.at_ms);
-        self.jobs.launched(&agent, id, command, at_ms);
+        self.jobs
+            .launched(&agent, id, command, at_ms, wire::BackgroundKind::Subagent);
+        if let Some(jobs) = self.jobs.current() {
+            self.shared.set_jobs(jobs);
+        }
         self.agents.insert(agent, id.to_owned());
         true
     }
@@ -495,13 +534,10 @@ impl State {
                 )
             }
             PLAN_TOOL if server.is_empty() => {
-                let (switch, drawn) = match self.provider.unclaimed_menu.take() {
-                    Some(switch) => (switch, true),
-                    None => (self.plan_switch(), false),
-                };
+                let switch = self.plan_switch();
                 (
                     wire::ask::Body::Plan(plan_ask(&switch)),
-                    AskShape::Plan { switch, drawn },
+                    AskShape::Plan { switch },
                 )
             }
             _ => permission_ask(
@@ -754,6 +790,7 @@ impl State {
                     subagent,
                     awaiting_notification: false,
                     images: Vec::new(),
+                    attached: Vec::new(),
                     plan,
                     question,
                     asked: None,
@@ -797,7 +834,11 @@ impl State {
             && let Some(tool) = self.tools.get(&id)
         {
             let (command, at_ms) = (JobInput::command(&tool.input), tool.at_ms);
-            self.jobs.launched(&task, &id, command, at_ms);
+            self.jobs
+                .launched(&task, &id, command, at_ms, wire::BackgroundKind::Shell);
+            if let Some(jobs) = self.jobs.current() {
+                self.shared.set_jobs(jobs);
+            }
         }
         let Some(tool) = self.tools.get_mut(&id) else {
             return;
@@ -839,6 +880,15 @@ impl State {
             ToolState::Succeeded as i32
         };
         tool.outcome_text = output.clone();
+        // amux's attach tool answers with the element, naming the blob by
+        // this host's path: the step carries the attachment instead.
+        if is_attach_tool(&tool.server, &tool.name) {
+            let (text, attached) = crate::shared::parse_reply(output.clone());
+            if !attached.is_empty() {
+                tool.outcome_text = text;
+                tool.attached = attached;
+            }
+        }
         let images = tool_result_images(content);
         if !images.is_empty() {
             tool.images = Vec::new();
@@ -847,7 +897,8 @@ impl State {
                 emit.effect(write);
             }
         }
-        if let Some(result) = result.filter(|result| !result.is_null()) {
+        if let Some(result) = result.filter(|result| !result.is_null() && tool.attached.is_empty())
+        {
             tool.outcome_json = compact_json(&without_image_bytes(result));
         }
         if tool.ended_at_ms.is_none() {
@@ -1017,6 +1068,17 @@ impl State {
         if trimmed.starts_with("<local-command-caveat>") {
             return;
         }
+        if trimmed.starts_with("<bash-input>") {
+            let command = between(trimmed, "bash-input").unwrap_or_default();
+            return self.bang_input(emit, uuid, command, at_ms);
+        }
+        if trimmed.starts_with("<bash-stdout>") || trimmed.starts_with("<bash-stderr>") {
+            let stdout =
+                without_terminal_codes(between(trimmed, "bash-stdout").unwrap_or_default());
+            let stderr =
+                without_terminal_codes(between(trimmed, "bash-stderr").unwrap_or_default());
+            return self.bang_output(emit, stdout, stderr, at_ms);
+        }
         if trimmed.starts_with("<command-name>") {
             let command = between(trimmed, "command-name").unwrap_or_default();
             let args = between(trimmed, "command-args").unwrap_or_default();
@@ -1032,10 +1094,12 @@ impl State {
         if trimmed.starts_with("<local-command-stdout>")
             || trimmed.starts_with("<local-command-stderr>")
         {
-            let output = between(trimmed, "local-command-stdout")
-                .or_else(|| between(trimmed, "local-command-stderr"))
-                .unwrap_or_default()
-                .to_owned();
+            let output = without_terminal_codes(
+                between(trimmed, "local-command-stdout")
+                    .or_else(|| between(trimmed, "local-command-stderr"))
+                    .unwrap_or_default(),
+            );
+            self.model_set(&output);
             if let Some(slash) = &mut self.slash {
                 slash.output = Some(output);
                 self.emit_slash(emit);
@@ -1071,7 +1135,10 @@ impl State {
         let input_id = if self.shared.awaiting_reflection().is_empty() {
             Vec::new()
         } else {
+            // The command amux typed: it runs as a turn of its own until
+            // its output row.
             self.local_turn = true;
+            self.shared.turn_started();
             self.shared.reflect_prompt().unwrap_or_default()
         };
         self.slash = Some(Slash {
@@ -1083,6 +1150,79 @@ impl State {
             output: None,
         });
         self.emit_slash(emit);
+    }
+
+    /// A `!command` typed in Claude's own view (or through amux): Claude
+    /// runs it in a shell with no model turn and records it as user rows in
+    /// its own markup. It is a shell step.
+    fn bang_input(&mut self, emit: &mut Emit, key: String, command: &str, at_ms: Option<i64>) {
+        // One typed through amux leaves the prompts awaiting reflection.
+        let oldest = self.shared.awaiting_reflection().first().cloned();
+        if let Some(oldest) = oldest
+            && self
+                .submitted
+                .iter()
+                .any(|prompt| prompt.id == oldest && prompt.text.trim_start().starts_with('!'))
+        {
+            self.shared.reflect_prompt();
+        }
+        let input = serde_json::json!({ "command": command });
+        self.tool_seen(emit, &key, "Bash", &input, at_ms, "");
+        self.bang = Some(key);
+    }
+
+    /// The `!command`'s output: its step ends with what it wrote.
+    fn bang_output(&mut self, emit: &mut Emit, stdout: String, stderr: String, at_ms: Option<i64>) {
+        let Some(key) = self.bang.take() else {
+            return;
+        };
+        let now = self.shared.now_ms();
+        let Some(tool) = self.tools.get_mut(&key) else {
+            return;
+        };
+        tool.finished = true;
+        tool.state = ToolState::Succeeded as i32;
+        tool.outcome_text = match (stdout.is_empty(), stderr.is_empty()) {
+            (_, true) => stdout,
+            (true, false) => stderr,
+            (false, false) => format!("{stdout}\n{stderr}"),
+        };
+        tool.ended_at_ms = at_ms.or(Some(now));
+        self.emit_tool(emit, &key);
+    }
+
+    /// A local command's output that says the model was set, as `/model`
+    /// in Claude's own view writes it at once ("Set model to `Haiku 5.5`
+    /// and saved …"): the snapshot names the model from then, by the
+    /// catalogue's entry of that name where there is one.
+    fn model_set(&mut self, output: &str) {
+        let Some(name) = output
+            .strip_prefix("Set model to `")
+            .and_then(|rest| rest.split_once('`'))
+            .map(|(name, _)| name.trim())
+            .filter(|name| !name.is_empty())
+        else {
+            return;
+        };
+        let entry = self.provider.offered.as_ref().and_then(|offered| {
+            offered
+                .models
+                .iter()
+                .find(|model| {
+                    model.display_name.eq_ignore_ascii_case(name)
+                        || model.value.eq_ignore_ascii_case(name)
+                })
+                .cloned()
+        });
+        if let Some(entry) = entry {
+            let id = if entry.resolved_model.is_empty() {
+                entry.value
+            } else {
+                entry.resolved_model
+            };
+            self.provider.model = Some(id);
+        }
+        self.provider.model_name = Some(name.to_owned());
     }
 
     fn end_local_turn(&mut self) {
@@ -1124,16 +1264,19 @@ impl State {
                     && prompt.text.trim() == text.trim()
             })
             .map_or(text, |prompt| prompt.words.clone());
+        // Attachments go in as their elements: the row holds the
+        // attachments at their places, not the elements' text.
+        let (text, attachments) = crate::shared::parse_reply(text);
         self.shared.item(
             emit,
             ItemDraft {
                 key,
                 text,
+                attachments,
                 input_id,
                 body: item_body(Kind::Prompt(wire::Prompt {})),
                 at_ms,
                 complete: true,
-                ..Default::default()
             },
         );
     }
@@ -1222,6 +1365,12 @@ impl State {
         self.close_all_unknown(emit);
         self.local_turn = false;
         self.shared.turn_started();
+        // The task it reports on is over: it leaves the background list.
+        if let Some(task) = between(text, "task-id")
+            && let Some(jobs) = self.jobs.ended(task)
+        {
+            self.shared.set_jobs(jobs);
+        }
         let Some(id) = between(text, "tool-use-id") else {
             return;
         };
@@ -1331,6 +1480,10 @@ impl State {
         let message_id = message.id.clone();
         if !message.model.is_empty() && message.model != "<synthetic>" {
             self.provider.model = Some(message.model.clone());
+            self.provider.model_name = None;
+        }
+        if let Some(effort) = row.effort.as_ref().filter(|effort| !effort.is_empty()) {
+            self.provider.effort = Some(effort.clone());
         }
         let usage = &message.usage;
         let tokens = usage.input_tokens

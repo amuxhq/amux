@@ -339,6 +339,15 @@ impl Agent {
             created_at_ms: T0,
             incarnation: 1,
             bootstrap: setup.initial_prompt.map(|text| bootstrap(b"p0", text)),
+            // The daemon tells the agent what the host's Claude offers,
+            // auto mode among it, as the fake stands for that Claude.
+            offered: setup.offers_auto_mode.then(|| wire::Catalogue {
+                permissions: vec![wire::OfferedPermission {
+                    value: "auto".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
             ..Default::default()
         };
         std::fs::write(dir.join("spec.1"), spec.encode_to_vec()).unwrap();

@@ -1,3 +1,13 @@
+2026-10-13 — **Two family specs wait for what the stop cascade does later.**
+A stop ends its agent and starts its descendants' stops without waiting for
+them. The stop tool's spec read the grandchild's row as soon as the child
+had exited and now waits for the grandchild to exit too. The out-of-sight
+resume spec assumed the child's report would be sent after the parent's
+resume; with stops now ending the provider's whole process tree, the child
+often ends between the parent's stop and its resume, its report is turned
+away as for a stopped parent, and the next outbox pass is 30 s off. The
+spec now runs the child host's outbox pass itself while it waits.
+
 2026-10-13 — **Terminal Claude's folder catalogue is gathered once, by the
 daemon.** Both merged halves asked Claude in the agent's own folder: the
 daemon at spawn and resume, through its existing host probe run from the

@@ -865,9 +865,14 @@ async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_liv
     )
     .await
     .unwrap();
+    // The cascade may end helper while lead is between its stop and its
+    // resume; desk then turns the row away as for a stopped parent and it
+    // waits for the outbox's next pass. Server cannot hear the resume that
+    // would wake it (its follower is held), so the pass is run here.
     until("the row to be settled", || {
         let net = &net;
         async move {
+            net.runtime("server").unwrap().drain_deliveries().await;
             let rows = outbox(net, "server").await;
             (rows == 0)
                 .then_some(())
@@ -1652,6 +1657,8 @@ async fn an_agents_stop_tool_stops_its_child_and_the_childs_descendants() {
     net.send("lead", "Stop the helper.").await.unwrap();
     net.turn_ended("lead", 2).await.unwrap();
     until_exited(&net, "server", "helper").await;
+    // The cascade starts each descendant's stop without waiting for it.
+    until_exited(&net, "phone", "scout").await;
     let helper = row(&net, "server", "helper").await.unwrap();
     let scout = row(&net, "phone", "scout").await.unwrap();
     net.shutdown().await.unwrap();

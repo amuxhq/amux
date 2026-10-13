@@ -492,6 +492,7 @@ impl ProfileService for FrontDoor {
         let (_, edge) = Self::edge(&installation, &request.into_inner().profile_id)?;
         Ok(Response::new(PairingStatus {
             active: edge.pairing_active(),
+            locked_out: edge.pairing_locked_out(),
         }))
     }
 

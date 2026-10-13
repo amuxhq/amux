@@ -8,17 +8,17 @@
 use std::future::Future;
 use std::time::Duration;
 
-use store::{AgentRow, StoreError};
+use store::{AgentKey, AgentRow, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
 use wire::{
-    AmbiguousHostName, DeleteAgentRequest, DeleteAgentResponse, ErrorCode, ErrorDetail, HostEntry,
-    Trust,
+    Agent, AmbiguousHostName, DeleteAgentRequest, DeleteAgentResponse, ErrorCode, ErrorDetail,
+    HostEntry, Trust,
 };
 
 use crate::HostId;
 use crate::grpc::wire_error;
-use crate::runtime::{ProfileRuntime, to_wire};
+use crate::runtime::ProfileRuntime;
 
 /// How long reaching a host may take: finding its link and opening a
 /// channel on it. Past it the call never left, and the host counts as
@@ -163,19 +163,15 @@ impl ProfileRuntime {
         self.store.lock().await.agent_by_id(agent_id)
     }
 
-    /// Makes one call on `host`'s daemon. Reaching the host and waiting for
-    /// its answer have separate limits, so a failure says whether the call
-    /// went out.
-    pub(crate) async fn on_peer<T, F, Fut>(&self, host: HostId, call: F) -> Result<T, ForwardError>
-    where
-        F: FnOnce(crate::PeerClient) -> Fut,
-        Fut: Future<Output = Result<Response<T>, Status>>,
-    {
+    /// Whether a call to `host` can leave now: why not, as a call to it
+    /// would fail before it went out. Nothing is asked of the host.
+    pub(crate) async fn reachable(&self, host: HostId) -> Result<(), ForwardError> {
+        self.peer_client(host).await.map(drop)
+    }
+
+    /// A client for `host`, or why no call to it can leave.
+    async fn peer_client(&self, host: HostId) -> Result<crate::PeerClient, ForwardError> {
         let not_sent = || ForwardError::NotSent {
-            host,
-            name: self.host_name(host),
-        };
-        let uncertain = || ForwardError::Uncertain {
             host,
             name: self.host_name(host),
         };
@@ -198,11 +194,25 @@ impl ProfileRuntime {
                 name: self.host_name(host),
             });
         }
-        let client = match tokio::time::timeout(REACH_PATIENCE, edge.peer(host)).await {
-            Ok(Ok(client)) => client,
-            Ok(Err(_)) | Err(_) => return Err(not_sent()),
+        match tokio::time::timeout(REACH_PATIENCE, edge.peer(host)).await {
+            Ok(Ok(client)) => Ok(client),
+            Ok(Err(_)) | Err(_) => Err(not_sent()),
+        }
+    }
+
+    /// Makes one call on `host`'s daemon. Reaching the host and waiting for
+    /// its answer have separate limits, so a failure says whether the call
+    /// went out.
+    pub(crate) async fn on_peer<T, F, Fut>(&self, host: HostId, call: F) -> Result<T, ForwardError>
+    where
+        F: FnOnce(crate::PeerClient) -> Fut,
+        Fut: Future<Output = Result<Response<T>, Status>>,
+    {
+        let uncertain = || ForwardError::Uncertain {
+            host,
+            name: self.host_name(host),
         };
-        drop(edge);
+        let client = self.peer_client(host).await?;
         match tokio::time::timeout(ANSWER_PATIENCE, call(client)).await {
             Ok(answer) => answer
                 .map(Response::into_inner)
@@ -212,7 +222,7 @@ impl ProfileRuntime {
     }
 
     /// `host` as a person knows it: the name it was paired under.
-    fn host_name(&self, host: HostId) -> String {
+    pub(crate) fn host_name(&self, host: HostId) -> String {
         self.edge()
             .and_then(|edge| {
                 edge.trusted()
@@ -224,21 +234,19 @@ impl ProfileRuntime {
 
     /// The cascade's step for a child on another host: the delete is
     /// forwarded to the child's host, which deletes the child's own
-    /// children in turn. A child whose host cannot be reached stays there,
-    /// its parent edge pointing at nothing, listed under its own host as
-    /// an orphan the person can delete; nothing is queued.
+    /// children in turn. A child already gone there counts as deleted; any
+    /// other failure is the caller's to fail the delete with.
     pub(crate) async fn delete_remote_child(
         &self,
-        child: AgentRow,
+        child: AgentKey,
+        wire: Agent,
         response: &mut DeleteAgentResponse,
-    ) {
-        let wire = to_wire(&child);
-        let Ok(host) = Uuid::from_slice(&child.agent.host) else {
-            response.unreachable_children.push(wire);
-            return;
+    ) -> Result<(), ForwardError> {
+        let Ok(host) = Uuid::from_slice(&child.host) else {
+            return Ok(());
         };
         let request = DeleteAgentRequest {
-            agent_id: child.agent.agent.clone(),
+            agent_id: child.agent.clone(),
         };
         match self
             .on_peer(host, |mut client| async move {
@@ -249,17 +257,16 @@ impl ProfileRuntime {
             Ok(answer) => {
                 response.removed_children.push(wire);
                 response.removed_children.extend(answer.removed_children);
-                response
-                    .unreachable_children
-                    .extend(answer.unreachable_children);
+                Ok(())
             }
             // Already gone on its host.
             Err(error) if error.code() == ErrorCode::NotFound => {
                 response.removed_children.push(wire);
+                Ok(())
             }
             Err(error) => {
                 tracing::warn!(%host, %error, "a cascaded delete could not reach the child's host");
-                response.unreachable_children.push(wire);
+                Err(error)
             }
         }
     }

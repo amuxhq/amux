@@ -73,9 +73,15 @@ pub struct ComposerView {
 }
 
 pub fn composer(state: &SessionState, now_ms: i64) -> ComposerView {
+    let mode = state.composer();
     ComposerView {
-        mode: state.composer(),
-        activity: crate::fleet::activity(state, now_ms),
+        // With the host out of reach the phase is the last one heard, not
+        // what the agent is doing: no clock counts a turn that may be over.
+        activity: match mode {
+            Composer::Holds(Waiting::Detached) => None,
+            _ => crate::fleet::activity(state, now_ms),
+        },
+        mode,
         switched_away: switched_away(state),
     }
 }

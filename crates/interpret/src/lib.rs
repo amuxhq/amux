@@ -26,6 +26,7 @@ pub mod unknown;
 #[cfg(test)]
 mod testkind;
 
+pub use claude_common::NOTEBOOK_OLD_SOURCE;
 pub use golden::{
     EndRules, FixtureInput, FixtureScript, GoldenReport, Replayed, UPDATE_GOLDENS_ENV,
     check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,

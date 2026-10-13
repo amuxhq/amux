@@ -6,7 +6,7 @@
   row    2 prompt:737464696e2d34 Prompt { text: [Text("Think briefly, then reply exactly CODEX_SPEC_INITIAL.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 16 recorded 15: agent_message stdin-5
-  row    3 agent-message:737464696e2d35 AgentMessage { from: "", kind: Message, text: "Reply with exactly CODEX_SPEC_INJECT_BUSY and nothing else.", to: "", sent: Unspecified, rejection: "" }
+  row    3 agent-message:737464696e2d35 AgentMessage { from: "", kind: Message, text: [Text("Reply with exactly CODEX_SPEC_INJECT_BUSY and nothing else.")], to: "", sent: Unspecified, rejection: "" }
 ## 25 recorded 24: fact Rpc method=item/started
   row    4 rs_08d5f33a5d089915016a93485ac70487d288f584a4149d2b4e Thinking { text: "", open: true, duration_ms: None }
   composer Send activity=Some(Thinking) queue=[] underway=[] refused=[]
@@ -47,7 +47,7 @@
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:737464696e2d34 Prompt { text: [Text("Think briefly, then reply exactly CODEX_SPEC_INITIAL.")], steered: false }
-     3 agent-message:737464696e2d35 AgentMessage { from: "", kind: Message, text: "Reply with exactly CODEX_SPEC_INJECT_BUSY and nothing else.", to: "", sent: Unspecified, rejection: "" }
+     3 agent-message:737464696e2d35 AgentMessage { from: "", kind: Message, text: [Text("Reply with exactly CODEX_SPEC_INJECT_BUSY and nothing else.")], to: "", sent: Unspecified, rejection: "" }
      4 rs_08d5f33a5d089915016a93485ac70487d288f584a4149d2b4e Thinking { text: "", open: false, duration_ms: Some(2690) }
      5 msg_08d5f33a5d089915016a93485af42487d296cab165af265657 Prose { text: [Text("CODEX_SPEC_INITIAL")], streaming: false, working_note: false }
      6 msg_08d5f33a5d089915016a93485c655487d29454fd4453c31da2 Prose { text: [Text("CODEX_SPEC_INJECT_BUSY")], streaming: false, working_note: false }

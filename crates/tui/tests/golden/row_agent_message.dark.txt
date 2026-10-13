@@ -1,5 +1,5 @@
   ✉ From planner
-    Take the relay half.
+    Take the relay half. [relay-notes.md · 2 KB]
 
   ✉ From worker-2 · finished
     3 specs updated

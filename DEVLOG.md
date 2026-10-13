@@ -54,6 +54,185 @@ host's name, and both browsers read it, falling back to the instance name
 only for a record without one. Tests: the record carries the name (the
 shared fixture both platforms read), and a renamed instance decodes, on
 the Mac and on the phone, as the name its record carries.
+2026-10-13 — **Box a listed child in the delete walk.** The daemon's delete walk holds a family as listed rows and children forwarded to other hosts in one enum; the listed row is several times the size of the forwarded one, which the lint flags. The listed row is boxed.
+
+2026-10-13 — **Stop claiming work on a host that is out of reach.** With an agent's host away, `amux ls` printed the last phase it had heard ("working: …") while the clients said the host was away and the host itself said idle, and the chat's "Working · 1m 18s" clock kept counting a turn that had long ended. `amux ls` now reads "plap is away" for a live agent whose host is not online (or "no longer trusts this machine" for one that revoked it), and the shared composer view shows no activity clock while the chat is detached from its host, on the terminal and the phone alike.
+
+2026-10-13 — **Say a host is away because of the free plan.** The daemon lists a host away only when the relay alone sees it and the account is on the free plan, whose relay opens no connection between hosts. Nothing said so: the terminal's hosts overlay showed a stale direct-dial error ("127.0.0.1:61393: the QUIC handshake timed out"), the chat said "away · not current" and `amux peers` a bare "away", so a lapsed subscriber would conclude the machine or network was broken. The hosts overlay, the chat header and composer now say "the free plan does not relay between hosts" (before any old dial error), and `amux peers` reads "away: the free plan does not relay between hosts".
+
+2026-10-13 — **Show what a notebook edit replaces.** Claude's request to edit a notebook cell names the cell and its new source only, so amux's card read "Wants to edit n.ipynb / + print(10)": an apparent insertion where Claude's own dialog shows "Replace cell contents for cell cell-0" with the old line removed. When Claude asks (a terminal Claude's permission hook, or the SDK's can_use_tool request), the host now reads that cell from the notebook and adds its source to the payload as `amux_old_source`; the interpreters pass it to the card's input as `old_source`, leaving the input they match calls by untouched. The card draws it as removed lines, drops the new source for a delete, and says what happens to the cell: "Replace cell cell-0", "Delete cell cell-1", "Insert a new markdown cell after cell-1".
+
+2026-10-13 — **Hand a deleted row's highlight to the row in its place.** Deleting the last row of the terminal home list sent the highlight back to the first agent, far up and often off screen, so the next `x` offered to stop an agent nobody had picked; clearing exited rows with `x Enter` repeatedly stopped a live agent once they ran out. Home now remembers where the highlight stood: when its row leaves, the row that takes its place gets it (the new last row when the last one went) and is scrolled into sight.
+
+2026-10-13 — **Say a pairing window closed for too many wrong PINs.** After five wrong PINs the host closed its window, and the right PIN was then refused with the same "did not match" as a wrong one while `amux pair` on the host kept waiting silently. The host now remembers the lockout until a new window opens (or the old one would have expired), still takes the connection, and refuses with PAIRING_LOCKED, which the pairing side words as "closed its pairing window after too many wrong PINs; run `amux pair` there again". Its pairing status carries `locked_out`, so the waiting `amux pair` ends saying the window closed after too many wrong PINs. Before the cap every refusal still reads the same; after it, saying so tells a guesser nothing a closed window doesn't.
+
+2026-10-13 — **Ask cards fit a short terminal.** Three cards ran out of
+room on small terminals. A multi-select question at 80x16 showed only
+"↓ more" and "Something else": its window of options shrank to one row,
+which the marker took, so no option and no highlight was ever on screen.
+A long question at 80x24 was cut after its opening, losing the sentence
+that asks, with no way to read the rest. A three-file Codex patch at
+80x16 kept its seven preview lines and ran off the bottom, "3. No" and
+the key line with it. Now the options' window always holds the
+highlighted option between its markers, and before windowing a short
+card sheds its spacing and "Select all that apply" (the key line says
+space selects); a cut question keeps its opening and its last line with
+"… N more lines [Show All]" between, and `f` or a click shows it whole;
+the patch preview keeps only the rows the choices, frame and keys leave
+it, down to its "… more lines [Full Diff]" line. Layout tests walk the
+focus through each card at 80x16, 80x14 and 40x16, and read a long
+question at 80x20, 40x30 and 80x16, cut and whole.
+
+2026-10-13 — **A terminal Claude plan sent back without a note keeps
+planning.** "No, keep planning" with no note typed the third entry of
+Claude's plan menu, "Tell Claude what to change", which opens a field and
+waits there for something to be sent; amux marked the plan sent back and
+the agent working, and nothing moved until the person interrupted. A plan
+sent back without a note now types "Not approved yet. Keep planning."
+into that field and sends it, so Claude plans again; the chat still
+records the plan as sent back with no note. A key test checks the field
+is filled for a note-less send-back on Claude 2.1.296.
+
+2026-10-13 — **Home's header and its Needs you section agree while a host is
+away.** With desk's daemon stopped, the terminal's header said "desk away
+· 1 needs you" while the Needs you section just below listed three,
+desk's two drawn "desk is away". The header left out agents whose host is
+out of reach (each is only as it last said), and the sections placed them
+by their last phase. The shared fleet view now places and counts from one
+rule: an agent whose host is out of reach is neither working nor waiting
+on the person from here, so its family sits in Live until the host is
+back, and a folded family's loud member is never one of them. The phone
+builds its home from the same view. The header-count test now also
+checks the Needs you section against the header.
+
+2026-10-13 — **A plan approved with its switch shows where it switched at
+once.** A QA run approved a terminal Claude plan with "switch to Accept
+edits" and Claude ended in auto mode while amux's row said accept edits.
+The cause, a plan switch worded from a catalogue lookup that never
+matched the running model, is the auto-mode fix earlier today: the
+switch is now named from the same knowledge of auto mode that decides
+what the menu's first entry does, so the ask offers auto where Claude
+goes to auto. What was left: after the approval amux still showed the
+permission as plan until Claude's next record. The switch's target is
+now recorded at once, as the permission ask's switch to auto already
+was, and confirmed by Claude's next record. An interpreter test approves
+a plan with its switch where Claude offers auto mode.
+
+2026-10-13 — **Home's row counts an agent's background jobs.** After an
+interrupt left a Codex command running, the chat said "1 background job"
+and Codex's own view "1 background terminal running", while the home
+row said nothing: the host's row carried the count (`background_jobs`,
+from the same snapshot the chat reads) but the terminal's home never drew
+it. An idle or working row now leads its second line with the count ("1
+background job · done", "2 background jobs running" when there is
+nothing else to say); a row asking something keeps its ask. The phone's
+fleet row does not draw the count either. A layout test draws an idle
+row with one and with two jobs.
+
+2026-10-13 — **A refused `/rename` keeps the name and says why whole.** In
+a chat, `/rename ünï` cleared the composer, went to the host, and came
+back as "could not rename: an agent's name is lowercase letters, digits
+and hyphens, s…", cut at 80 columns before it said where a name may
+start. The chat now checks the name against the shared name rule before
+sending, keeps `/rename ünï` in the composer, and says "not renamed: a
+name is a-z, 0-9 and hyphens, starting with a letter or digit", the short
+words home's rename already uses, which fit an 80-column key line. A
+rename the host refuses (a taken name, the host away) puts `/rename
+<name>` back in the composer with the host's reason. A chat test types an
+invalid `/rename` and reads the effect and the composer.
+
+2026-10-13 — **A new agent's edge shows what Shift+Tab turned on.** On the
+new-agent screen at 80 columns in a deep folder, Shift+Tab turned Codex's
+plan mode on and the edge still read "Codex · read only": too long for
+the edge, it dropped the mode first, so the agent started planning with
+nothing having said so. The edge still sheds settings when it must, but
+never the one Shift+Tab steps (the mode for Codex, the permission for
+Claude); the model goes instead. A test draws a new Codex agent's edge at
+80 columns in a deep folder, plan off, on and off again.
+
+2026-10-13 — **A child started on another host with no folder starts where
+that host's agents work.** An agent's spawn tool naming another host and
+no folder started the child in the home folder of the user that host's
+daemon runs as, so a Codex child given shell commands had the whole home
+folder around it, while an agent a person started there got a work
+folder. The far host now gives such a child the folder its own agents
+most recently worked in (still a folder there), which is the folder a
+person starting an agent on that host is offered first, and the home
+folder only when it has none. A spawn on the caller's own host still
+starts in the caller's folder. Tests: the families spec spawns a far
+child with no folder on a host whose agent works elsewhere.
+
+2026-10-13 — **A delete that cannot reach the whole family deletes
+nothing.** Deleting a parent whose children lived on a host desk had been
+unlinked from said "Deleted lead3" and left those children running with
+no parent, one still working: the delete walked only the children desk's
+store listed, and an unlinked host's rows leave that listing. A delete
+now first checks every far child of the family (those the parent's host
+lists, and those its daemon made elsewhere, which a stop already knew
+of), and when one's host cannot be reached it fails at once, deleting
+nothing: "nothing was deleted: scout is part of this family, and laptop
+cannot be reached" (unreachable, or lapsed where the relay is the only
+way). Far children are deleted before anything here, and one that fails
+fails the delete. `DeleteAgentResponse` loses `unreachable_children`,
+which a delete can no longer report. Tests: the families spec refuses
+the delete with laptop severed and again with it unlinked, and the
+registry test refuses a family with a listed child out of reach.
+
+2026-10-13 — **A question card draws inline code as code.** Codex's
+question cards showed the backticks around file names literally, in the
+question and in every option, while the same words in the agent's prose
+and plan were drawn as markdown. The terminal's question card now draws
+inline code in the question, the options' labels and their descriptions
+(and the review's questions) in the code colour, without the backticks;
+a lone backtick stays as typed. The phone draws the question with plain
+text and has the same gap. A layout test draws a Codex question with
+file names at 72 and 40 columns.
+
+2026-10-13 — **A Codex command stopped while it waited for approval never
+ran.** Stopping a Codex agent with a command approval open recorded the
+command as a background terminal: the stop interrupts the turn first, and
+an interrupt leaves a running command running on in the background, so
+the phone read "In background · touch decided.txt · finished" for a
+command nobody approved. The Codex interpreter now sets aside the work
+whose approval was still open when the turn ended; it is cut short
+(cancelled, decision unknown) and never counted as a background job. An
+interpreter test interrupts a turn with a command's approval open.
+
+2026-10-13 — **An agent's message draws its attachments as chips.** A
+message one agent sent another with a file read "second look at this ￼"
+in both chats: the item carried the attachment and its placeholder, as a
+prompt's does, but the shared view handed the row its raw text. The
+agent-message row now carries its words as segments, as a prompt's row
+does, so the terminal draws `[report.txt · 27 B]` where the file stands
+and the phone, which draws from the same row, reads the same words
+(`ChatWords.text(of:)`). Tests: the view's row for a received message with
+a file, and the terminal's agent-message vocabulary with a chip.
+
+2026-10-13 — **A held prompt survives the terminal client being killed.** A
+prompt held while its host could not be reached went back to the draft
+only when the client quit cleanly; closing its pane killed the client with
+the prompt and its chips, and an older stored draft (one the person had
+cleared) came back instead. The client now writes each agent's held
+prompts into the draft this machine's daemon keeps as soon as they are
+held, and writes the draft again without them once they are sent or
+cancelled; a chat closed with prompts held keeps them in the stored copy
+too. The composer itself is unchanged while the client runs. What the
+person types after the hold is still saved only on leaving the chat or
+quitting. Test: a prompt held for a far host is in the daemon's draft
+while the client runs, and the client is then dropped without a quit.
+
+2026-10-13 — **A Codex command rule names the command, whole.** The "always
+allow" choice on a Codex command approval read "allow commands starting
+with /bin/zsh -lc echo aaaa…": Codex proposes its rule as the argv it runs,
+shell wrapper included, and the box cut the label at its edge, losing the
+`&& touch END_MARK` that says what the rule covers. The shared view now
+names a rule for `sh`/`bash`/`zsh` `-c`/`-lc` by the script alone, as
+Codex's own view does, both on the choice and on the decided row, so the
+phone gets the same words. The terminal box wraps a long choice under its
+own start when the screen has room for it; on a short screen each choice
+keeps one line so none is pushed off. Tests: the view's rule words for
+each shell and flag, and a 170-character rule read whole in an 80-column
+box.
 
 2026-10-13 — **The phone's chat header stays dark over large text.** At
 accessibility text sizes in the dark appearance the header pill turned

@@ -60,6 +60,7 @@ fn opaque_pairing_status(error: Status) -> Status {
     match error.code() {
         tonic::Code::Unavailable | tonic::Code::Internal => error,
         tonic::Code::InvalidArgument if error.message().contains("SELF_PAIRING") => error,
+        tonic::Code::PermissionDenied if error.message() == "PAIRING_LOCKED" => error,
         _ => invalid_pin(),
     }
 }
@@ -84,7 +85,7 @@ fn pair_mode_status(error: PairModeError) -> Status {
         PairModeError::InvalidPinFormat => {
             Status::invalid_argument("PIN must be six decimal digits")
         }
-        PairModeError::SecretGeneration | PairModeError::NotActive => {
+        PairModeError::SecretGeneration | PairModeError::NotActive | PairModeError::LockedOut => {
             Status::internal("PAIR_MODE_ERROR")
         }
     }
@@ -270,6 +271,11 @@ impl Edge {
 
     pub fn pairing_active(&self) -> bool {
         self.pair_mode.is_active()
+    }
+
+    /// Whether too many wrong secrets closed the last pairing window.
+    pub fn pairing_locked_out(&self) -> bool {
+        self.pair_mode.is_locked_out()
     }
 
     pub async fn cancel_pairing(&self) -> Result<(), Status> {

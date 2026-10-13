@@ -5962,12 +5962,12 @@ impl ::prost::Name for DeleteAgentRequest {
         "/amux.v1.DeleteAgentRequest".into()
     }
 }
+/// A delete either removes the whole family or fails before removing any
+/// of it, so the answer lists only what it removed.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteAgentResponse {
     #[prost(message, repeated, tag = "1")]
     pub removed_children: ::prost::alloc::vec::Vec<Agent>,
-    #[prost(message, repeated, tag = "2")]
-    pub unreachable_children: ::prost::alloc::vec::Vec<Agent>,
 }
 impl ::prost::Name for DeleteAgentResponse {
     const NAME: &'static str = "DeleteAgentResponse";
@@ -10069,6 +10069,9 @@ impl ::prost::Name for PairingWindow {
 pub struct PairingStatus {
     #[prost(bool, tag = "1")]
     pub active: bool,
+    /// Too many wrong secrets closed the last window; a new one is needed.
+    #[prost(bool, tag = "2")]
+    pub locked_out: bool,
 }
 impl ::prost::Name for PairingStatus {
     const NAME: &'static str = "PairingStatus";

@@ -484,6 +484,14 @@ fn permission_body(p: &wire::PermissionAsk) -> AskBody {
                 .unwrap_or_default();
             let lines = replaced_lines(&input);
             let (added, removed) = counts(&lines);
+            // A notebook edit says which cell and what happens to it, as
+            // Claude's own dialog does: the patch alone cannot tell a
+            // replaced cell from a new one.
+            let reason = match notebook_change(&input).filter(|_| p.tool_name == "NotebookEdit") {
+                Some(change) if p.reason.is_empty() => change,
+                Some(change) => format!("{change}: {}", p.reason),
+                None => p.reason.clone(),
+            };
             AskBody::Edit {
                 path,
                 files: 1,
@@ -491,7 +499,7 @@ fn permission_body(p: &wire::PermissionAsk) -> AskBody {
                 removed,
                 line: first_change(&lines),
                 lines,
-                reason: p.reason.clone(),
+                reason,
                 created: (p.tool_name != "Write").then_some(false),
             }
         }
@@ -501,6 +509,30 @@ fn permission_body(p: &wire::PermissionAsk) -> AskBody {
             arguments: pretty(&input),
         },
     }
+}
+
+/// What a notebook edit does to its cell: "Replace cell cell-0", "Delete
+/// cell cell-1", "Insert a new markdown cell after cell-1".
+fn notebook_change(input: &Value) -> Option<String> {
+    let field = |name: &str| input.get(name).and_then(Value::as_str).unwrap_or_default();
+    let cell = field("cell_id");
+    Some(match field("edit_mode") {
+        "insert" => {
+            let kind = match field("cell_type") {
+                "" => "code",
+                kind => kind,
+            };
+            if cell.is_empty() {
+                format!("Insert a new {kind} cell at the top")
+            } else {
+                format!("Insert a new {kind} cell after {cell}")
+            }
+        }
+        "delete" if cell.is_empty() => "Delete a cell".to_owned(),
+        "delete" => format!("Delete cell {cell}"),
+        _ if cell.is_empty() => "Replace a cell".to_owned(),
+        _ => format!("Replace cell {cell}"),
+    })
 }
 
 /// A tool called with no arguments shows no arguments block: null, `{}`
@@ -687,7 +719,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                     }
                     CodexDecision::ApproveSession => ChoiceOutcome::AllowForSession,
                     CodexDecision::ApproveSimilar => ChoiceOutcome::AllowSimilar {
-                        prefix: similar.clone(),
+                        prefix: shown_prefix(&similar),
                     },
                     CodexDecision::ApproveNetwork => ChoiceOutcome::AllowNetwork {
                         hosts: hosts.clone(),
@@ -979,9 +1011,111 @@ fn with_note(answer: &Answer, note: &str) -> Answer {
     answer
 }
 
+/// The words of a Codex command rule as Codex itself names them: a rule
+/// for a shell running a script (`/bin/zsh -lc "echo hi && touch b"`)
+/// reads as the script, since the wrapper is how Codex runs every
+/// command, not what the person is allowing.
+pub fn shown_prefix(words: &[String]) -> Vec<String> {
+    match words {
+        [shell, flag, script] if matches!(flag.as_str(), "-lc" | "-c") => {
+            let name = shell.rsplit('/').next().unwrap_or(shell);
+            if matches!(name, "bash" | "zsh" | "sh") {
+                vec![script.clone()]
+            } else {
+                words.to_vec()
+            }
+        }
+        _ => words.to_vec(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::review::LineKind;
+
+    fn words(of: &[&str]) -> Vec<String> {
+        of.iter().map(|word| (*word).to_owned()).collect()
+    }
+
+    fn notebook_card(input: serde_json::Value) -> (Vec<(LineKind, String)>, String) {
+        let body = permission_body(&wire::PermissionAsk {
+            tool_name: "NotebookEdit".into(),
+            input_json: serde_json::to_vec(&input).unwrap(),
+            ..Default::default()
+        });
+        let AskBody::Edit { lines, reason, .. } = body else {
+            panic!("not an edit card: {body:?}");
+        };
+        let lines = lines
+            .into_iter()
+            .filter_map(|line| match line {
+                EditLine::Line(line) => Some((line.kind, line.text)),
+                _ => None,
+            })
+            .collect();
+        (lines, reason)
+    }
+
+    /// A notebook edit's card names the cell and what happens to it, and
+    /// shows the source it replaces, which its host read from the notebook,
+    /// as removed lines: it read as one added line, an insertion.
+    #[test]
+    fn a_notebook_edit_card_names_its_cell_and_what_it_replaces() {
+        let (lines, reason) = notebook_card(serde_json::json!({
+            "notebook_path": "/w/n.ipynb",
+            "cell_id": "cell-0",
+            "new_source": "print(10)",
+            "old_source": "print(1)",
+        }));
+        assert_eq!(
+            lines,
+            [
+                (LineKind::Removed, "print(1)".to_owned()),
+                (LineKind::Added, "print(10)".to_owned()),
+            ]
+        );
+        assert_eq!(reason, "Replace cell cell-0");
+        let (lines, reason) = notebook_card(serde_json::json!({
+            "notebook_path": "/w/n.ipynb",
+            "cell_id": "cell-1",
+            "new_source": "",
+            "edit_mode": "delete",
+            "old_source": "print(2)",
+        }));
+        assert_eq!(lines, [(LineKind::Removed, "print(2)".to_owned())]);
+        assert_eq!(reason, "Delete cell cell-1");
+        let (lines, reason) = notebook_card(serde_json::json!({
+            "notebook_path": "/w/n.ipynb",
+            "cell_id": "cell-1",
+            "new_source": "# notes",
+            "cell_type": "markdown",
+            "edit_mode": "insert",
+        }));
+        assert_eq!(lines, [(LineKind::Added, "# notes".to_owned())]);
+        assert_eq!(reason, "Insert a new markdown cell after cell-1");
+    }
+
+    #[test]
+    fn a_command_prefix_names_the_script_its_shell_runs() {
+        let script = "echo hi > a.txt && touch b.txt";
+        for shell in ["/bin/zsh", "bash", "/usr/bin/sh"] {
+            for flag in ["-lc", "-c"] {
+                assert_eq!(
+                    shown_prefix(&words(&[shell, flag, script])),
+                    words(&[script])
+                );
+            }
+        }
+        assert_eq!(
+            shown_prefix(&words(&["curl", "-s"])),
+            words(&["curl", "-s"])
+        );
+        assert_eq!(
+            shown_prefix(&words(&["/usr/bin/python3", "-c", "print(1)"])),
+            words(&["/usr/bin/python3", "-c", "print(1)"])
+        );
+    }
 
     #[test]
     fn a_tool_called_with_no_arguments_shows_no_arguments_block() {

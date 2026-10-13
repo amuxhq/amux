@@ -36,13 +36,16 @@ pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> Stri
     match reach {
         Reach::Away(Away::Revoked) => parts.push("no longer trusts this machine".into()),
         Reach::Away(Away::SignedOut) => parts.push("this machine is signed out".into()),
+        // Why it is away comes before any old error from dialing it
+        // directly, which is not the reason.
+        Reach::Away(Away::Plain) => parts.push(crate::chat::FREE_PLAN_AWAY.into()),
         // Signing in matters only for reaching a host through the relay.
-        Reach::Online(RouteKind::Relay) | Reach::Away(Away::Plain) | Reach::Offline
+        Reach::Online(RouteKind::Relay) | Reach::Offline
             if entry.account_signed_in == Some(false) =>
         {
             parts.push("not signed in".into());
         }
-        Reach::Online(_) | Reach::Away(Away::Plain) | Reach::Offline => {}
+        Reach::Online(_) | Reach::Offline => {}
     }
     if let Some(error) = entry.last_dial_error.as_ref().filter(|e| !e.is_empty()) {
         parts.push(error.clone());

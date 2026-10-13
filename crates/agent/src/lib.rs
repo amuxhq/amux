@@ -20,6 +20,7 @@ mod dir;
 mod dump;
 mod git;
 mod host;
+mod notebook;
 mod provider;
 mod ready;
 mod ring;

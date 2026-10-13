@@ -1,9 +1,9 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 2 agent_message {"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"}
-  row    1 agent-message:656e762d69646c65 AgentMessage { from: "probe", kind: Message, text: "A2A_SOCKET_IDLE_21240", to: "", sent: Unspecified, rejection: "" }
+  row    1 agent-message:656e762d69646c65 AgentMessage { from: "probe", kind: Message, text: [Text("A2A_SOCKET_IDLE_21240")], to: "", sent: Unspecified, rejection: "" }
 ## 3 agent_message {"envelope":"env-busy","from":"probe","text":"A2A_SOCKET_BUSY_21240"}
-  row    2 agent-message:656e762d62757379 AgentMessage { from: "probe", kind: Message, text: "A2A_SOCKET_BUSY_21240", to: "", sent: Unspecified, rejection: "" }
+  row    2 agent-message:656e762d62757379 AgentMessage { from: "probe", kind: Message, text: [Text("A2A_SOCKET_BUSY_21240")], to: "", sent: Unspecified, rejection: "" }
 ## 11 recorded 7: fact Transcript type=user uuid=f30e3af6-7585-43a0-bff2-42f3eb53493b
   row    3 f30e3af6-7585-43a0-bff2-42f3eb53493b Prompt { text: [Text("Reply exactly READY and nothing else.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
@@ -46,8 +46,8 @@
 ## 72 recorded 68: fact Transcript type=user uuid=fab2d431-bbc0-457f-9613-04d4050d004f
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
-     1 agent-message:656e762d69646c65 AgentMessage { from: "probe", kind: Message, text: "A2A_SOCKET_IDLE_21240", to: "", sent: Unspecified, rejection: "" }
-     2 agent-message:656e762d62757379 AgentMessage { from: "probe", kind: Message, text: "A2A_SOCKET_BUSY_21240", to: "", sent: Unspecified, rejection: "" }
+     1 agent-message:656e762d69646c65 AgentMessage { from: "probe", kind: Message, text: [Text("A2A_SOCKET_IDLE_21240")], to: "", sent: Unspecified, rejection: "" }
+     2 agent-message:656e762d62757379 AgentMessage { from: "probe", kind: Message, text: [Text("A2A_SOCKET_BUSY_21240")], to: "", sent: Unspecified, rejection: "" }
      3 f30e3af6-7585-43a0-bff2-42f3eb53493b Prompt { text: [Text("Reply exactly READY and nothing else.")], steered: false }
      4 6770e217-dc12-44ac-aa3e-f9d8651ce95e Thinking { text: "", open: false, duration_ms: Some(1448) }
      5 70cca43c-1567-454d-b513-aee897603d83 Prose { text: [Text("READY")], streaming: false, working_note: false }

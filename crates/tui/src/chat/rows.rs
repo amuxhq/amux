@@ -444,6 +444,14 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             };
             let mut lines = vec![head(("✉", theme.muted()), verb, who, &meta, width, theme)];
             let limit = if open { OPEN_LINES } else { 1 };
+            // Its attachments as chips where they stand, as in a prompt.
+            let body: String = body
+                .iter()
+                .map(|segment| match segment {
+                    Segment::Text(text) => text.clone(),
+                    Segment::Attachment(view) => chip(view),
+                })
+                .collect();
             lines.extend(detail(body.trim(), width, theme.text(), limit, theme));
             lines
         }

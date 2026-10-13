@@ -1244,6 +1244,56 @@ fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
     assert_eq!(after.permission.as_deref(), Some("auto"));
 }
 
+/// A plan approved with its switch, where Claude offers auto mode, types
+/// the menu's first entry (which Claude takes to auto mode) and shows the
+/// permission as auto at once: a QA
+/// run saw the chat say "switched to Accept edits" while Claude ran in auto
+/// mode.
+#[test]
+fn a_plan_approved_with_its_switch_lands_in_the_switch_it_names() {
+    let mut state = claude_offering_auto();
+    let opened = ClaudePty::step(
+        &mut state,
+        hook(serde_json::json!({
+            "hook_event_name": "PermissionRequest", "session_id": "s1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "permission_mode": "plan", "tool_name": "ExitPlanMode",
+            "tool_input": {"plan": "# Plan"}, "permission_suggestions": [],
+        })),
+    );
+    let (_, snapshot) = decoded(&opened).expect("a snapshot");
+    let ask = snapshot.asks.first().expect("the plan ask").clone();
+    let Some(wire::ask::Body::Plan(plan)) = &ask.body else {
+        panic!("a plan ask: {ask:?}");
+    };
+    assert_eq!(plan.switch_permission, "auto");
+    let answer = ClaudePty::fixture_input(
+        b"a1".to_vec(),
+        &interpret::FixtureInput::Answer {
+            ask: ask.key.clone(),
+            answer: serde_json::json!({"approve_plan": {"switch_to": "auto"}}),
+        },
+    )
+    .expect("an answer");
+    let answered = ClaudePty::step(&mut state, Event::Input(answer));
+    assert!(
+        answered.effects.iter().any(|effect| matches!(
+            effect,
+            Effect::Terminal(interpret::claude_pty::TerminalInput::Plan(
+                interpret::claude_pty::PlanChoice::ApproveSwitching
+            ))
+        )),
+        "the plan's switch is not what is typed: {:?}",
+        answered.effects
+    );
+    let (_, after) = decoded(&answered).expect("a snapshot");
+    assert_eq!(
+        after.permission.as_deref(),
+        Some("auto"),
+        "the permission shown is not the one the switch moved to"
+    );
+}
+
 /// The plan's switch and Shift+Tab's cycle know auto mode the same way:
 /// the plan ask switches to auto, and the cycle goes accept edits, plan,
 /// auto, then back to manual, as Claude's own does.

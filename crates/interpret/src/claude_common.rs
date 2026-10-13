@@ -303,6 +303,22 @@ pub(crate) fn split_tool_name(name: &str) -> (String, String) {
     (String::new(), name.to_owned())
 }
 
+/// The source of the notebook cell an edit replaces. Claude's request names
+/// only the cell, so the host reads the cell from the notebook when Claude
+/// asks and adds it to the request's payload under this name.
+pub const NOTEBOOK_OLD_SOURCE: &str = "amux_old_source";
+
+/// The input an ask's card shows: Claude's, plus the notebook cell it
+/// replaces as `old_source` when the host found one. Matching an ask to its
+/// call compares Claude's input alone.
+pub(crate) fn shown_input(input: &Value, extensions: &serde_json::Map<String, Value>) -> Value {
+    let mut shown = input.clone();
+    if let (Some(old), Value::Object(fields)) = (extensions.get(NOTEBOOK_OLD_SOURCE), &mut shown) {
+        fields.insert("old_source".to_owned(), old.clone());
+    }
+    shown
+}
+
 pub(crate) fn same_json(stored: &str, value: &Value) -> bool {
     serde_json::from_str::<Value>(stored).is_ok_and(|stored| stored == *value)
 }
@@ -1385,6 +1401,19 @@ pub(crate) fn describe_model_name(name: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The cell source the host read rides into the card's input; the
+    /// input matched against calls is left as Claude sent it.
+    #[test]
+    fn a_notebook_asks_shown_input_carries_the_cell_the_host_read() {
+        let input = serde_json::json!({"notebook_path": "n.ipynb", "new_source": "print(10)"});
+        let mut extensions = serde_json::Map::new();
+        extensions.insert(NOTEBOOK_OLD_SOURCE.into(), "print(1)".into());
+        let shown = shown_input(&input, &extensions);
+        assert_eq!(shown["old_source"], "print(1)");
+        assert_eq!(shown["new_source"], "print(10)");
+        assert_eq!(shown_input(&input, &serde_json::Map::new()), input);
+    }
 
     #[test]
     fn a_finished_write_says_whether_it_made_the_file_and_an_edit_where_it_landed() {

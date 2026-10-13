@@ -405,6 +405,19 @@ fn second_line(
     said.unwrap_or(SecondLine::Blank)
 }
 
+/// An agent's attention as home places and counts it: one whose host is
+/// out of reach is only as it last said, as its row says, so it neither
+/// works nor waits on the person from here. The header's counts and the
+/// sections both read this, so they agree.
+fn placed(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> Attention {
+    let attention = ui_state::attention(agent);
+    if attention > Attention::Idle && !reach(fleet, local_host, &agent.host_id).online() {
+        Attention::Idle
+    } else {
+        attention
+    }
+}
+
 fn section_of(attention: Attention) -> SectionKind {
     match attention {
         Attention::NeedsYou => SectionKind::NeedsYou,
@@ -462,11 +475,16 @@ pub fn fleet_view(
             if !members.iter().any(|member| keep(member)) {
                 return None;
             }
-            let section = section_of(members.iter().map(|m| ui_state::attention(m)).max()?);
+            let section = section_of(
+                members
+                    .iter()
+                    .map(|member| placed(fleet, local_host, member))
+                    .max()?,
+            );
             // Ordered by when the members that place it there last changed.
             let since = members
                 .iter()
-                .filter(|member| section_of(ui_state::attention(member)) == section)
+                .filter(|member| section_of(placed(fleet, local_host, member)) == section)
                 .map(|member| member.phase_since_ms)
                 .max()?;
             Some((section, since, root))
@@ -508,8 +526,7 @@ pub fn fleet_view(
     let counted = |wanted: &[Attention]| {
         fleet
             .agents()
-            .filter(|agent| wanted.contains(&ui_state::attention(agent)))
-            .filter(|agent| reach(fleet, local_host, &agent.host_id).online())
+            .filter(|agent| wanted.contains(&placed(fleet, local_host, agent)))
             .count() as u32
     };
     FleetView {
@@ -545,7 +562,7 @@ fn push(
             fleet
                 .family(&card_.agent)
                 .into_iter()
-                .filter(|member| ui_state::attention(member) == Attention::NeedsYou)
+                .filter(|member| placed(fleet, local_host, member) == Attention::NeedsYou)
                 .max_by(|a, b| {
                     a.phase_since_ms
                         .cmp(&b.phase_since_ms)
@@ -598,8 +615,9 @@ impl Reach {
 /// this machine, never a claim about the host.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub enum Away {
-    /// The host's link says it is away: seen, as through the relay, and not
-    /// reachable from here.
+    /// The host's link says it is away: only the relay sees it, and the
+    /// account is on the free plan, whose relay opens no connection
+    /// between hosts.
     Plain,
     /// This machine is signed out of its account, so the relay carries
     /// nothing for it; a host only the relay reaches is away until it signs

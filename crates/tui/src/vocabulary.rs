@@ -1446,13 +1446,21 @@ fn row_sets() -> Vec<RowSet> {
         ),
         (
             "row_agent_message",
-            "Messages between agents: one received, a child's finished report, one sent and delivered, and one the recipient refused.",
+            "Messages between agents: one received with a file attached, a child's finished report, one sent and delivered, and one the recipient refused.",
             vec![
                 (
                     row(RowKind::AgentMessage {
                         from: "planner".into(),
                         kind: EnvelopeKind::Message,
-                        text: "Take the relay half.".into(),
+                        text: vec![
+                            Segment::Text("Take the relay half. ".into()),
+                            Segment::Attachment(AttachmentView::File(wire::BlobRef {
+                                name: "relay-notes.md".into(),
+                                mime: "text/markdown".into(),
+                                size: 2_048,
+                                ..Default::default()
+                            })),
+                        ],
                         to: String::new(),
                         sent: SendState::Unspecified,
                         rejection: String::new(),
@@ -1463,7 +1471,7 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::AgentMessage {
                         from: "worker-2".into(),
                         kind: EnvelopeKind::Finished,
-                        text: "3 specs updated".into(),
+                        text: vec![Segment::Text("3 specs updated".into())],
                         to: String::new(),
                         sent: SendState::Unspecified,
                         rejection: String::new(),
@@ -1474,7 +1482,7 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::AgentMessage {
                         from: String::new(),
                         kind: EnvelopeKind::Message,
-                        text: "Start on the store.".into(),
+                        text: vec![Segment::Text("Start on the store.".into())],
                         to: "worker-1".into(),
                         sent: SendState::Sent,
                         rejection: String::new(),
@@ -1485,7 +1493,7 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::AgentMessage {
                         from: String::new(),
                         kind: EnvelopeKind::Message,
-                        text: "Stop now.".into(),
+                        text: vec![Segment::Text("Stop now.".into())],
                         to: "worker-3".into(),
                         sent: SendState::Rejected,
                         rejection: "exited".into(),

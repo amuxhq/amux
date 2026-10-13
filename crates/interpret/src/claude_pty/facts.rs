@@ -24,7 +24,7 @@ use crate::claude_common::{
     AnsweredResult, BackgroundInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, Verdict,
     apply_task_tool, blocks_text, claude_grant, compact_json, job_kind, message_text,
     permission_scopes, plan_ask, plan_mode_write, question_ask, question_ask_text, same_json,
-    split_tool_name, timestamp_ms, tool_class, tool_result_images, tool_result_text,
+    shown_input, split_tool_name, timestamp_ms, tool_class, tool_result_images, tool_result_text,
     without_image_bytes, without_terminal_codes,
 };
 use crate::{
@@ -542,7 +542,7 @@ impl State {
             _ => permission_ask(
                 &server,
                 &tool,
-                input,
+                &shown_input(input, &request.extensions),
                 request
                     .permission_suggestions
                     .as_deref()

@@ -222,12 +222,13 @@ impl Provider {
         let stdout = child.stdout.take().expect("stdout is piped");
 
         let lines = events.clone();
+        let cwd = PathBuf::from(&spec.cwd);
         let reader = tokio::spawn(async move {
             let mut stdout = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = stdout.next_line().await {
                 let fact = Fact {
                     channel: Channel::Stream,
-                    payload: line.into_bytes(),
+                    payload: crate::notebook::annotate_stream(line, &cwd).into_bytes(),
                 };
                 if lines.send(ProviderEvent::Fact(fact)).await.is_err() {
                     break;

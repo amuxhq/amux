@@ -665,6 +665,22 @@ impl AskUi {
         }
     }
 
+    /// Whether the choices' long labels wrap: when the screen has room for
+    /// them beside the box's own lines and one line of subject. On a short
+    /// screen each choice keeps one line, so none is pushed off it.
+    fn wraps_choices(&self, card: &AskCard, width: usize) -> bool {
+        self.room == 0 || self.room >= BOX_CHROME + 3 + wrapped_choice_rows(card, width)
+    }
+
+    /// How many lines the box's choices take at `width`.
+    fn choice_rows(&self, card: &AskCard, width: usize) -> usize {
+        if self.wraps_choices(card, width) {
+            wrapped_choice_rows(card, width)
+        } else {
+            box_choices(card).len()
+        }
+    }
+
     /// The boxed ask's lines, `width` columns wide: what it wants, the
     /// subject verbatim, the agent's reason, then the choices.
     pub fn box_lines(&self, card: &AskCard, width: usize, theme: Theme) -> BoxLines {
@@ -772,7 +788,7 @@ impl AskUi {
             usize::MAX
         } else {
             self.room
-                .saturating_sub(BOX_CHROME + out.lines.len() + 1 + box_choices(card).len())
+                .saturating_sub(BOX_CHROME + out.lines.len() + 1 + self.choice_rows(card, width))
                 .max(1)
         };
         let subject_lines = SUBJECT_LINES.min(words_room);
@@ -906,19 +922,31 @@ impl AskUi {
                 // Opened ([Full Diff] or f), the whole patch shows in the
                 // box, which grows to fill the chat and scrolls (wheel,
                 // PgUp/PgDn) when even that is too little.
-                let opened = self.show_all && lines.len() > DIFF_LINES;
-                let cut = lines.len() > DIFF_LINES && !opened;
+                // On a short screen the patch gives way to the choices, the
+                // frame and the keys: it keeps what rows they leave, down to
+                // the one saying how much more there is.
+                let small = if self.room == 0 {
+                    DIFF_LINES
+                } else {
+                    self.room
+                        .saturating_sub(
+                            BOX_CHROME + out.lines.len() + 1 + self.choice_rows(card, width),
+                        )
+                        .clamp(1, DIFF_LINES)
+                };
+                let opened = self.show_all && lines.len() > small;
+                let cut = lines.len() > small && !opened;
                 let rows = if self.room == 0 { 36 } else { self.room };
                 let fits = rows
-                    .saturating_sub(DIFF_CHROME + box_choices(card).len())
-                    .max(DIFF_LINES);
+                    .saturating_sub(DIFF_CHROME + self.choice_rows(card, width))
+                    .max(small.saturating_sub(1).max(1));
                 let scroll = if opened {
                     self.diff_scroll.min(lines.len().saturating_sub(fits))
                 } else {
                     0
                 };
                 let take = if cut {
-                    DIFF_LINES - 1
+                    small - 1
                 } else if opened {
                     fits.min(lines.len())
                 } else {
@@ -982,7 +1010,7 @@ impl AskUi {
             let used = out.lines.len();
             let room = (self.room != 0).then(|| {
                 self.room
-                    .saturating_sub(BOX_CHROME + used + 1 + box_choices(card).len())
+                    .saturating_sub(BOX_CHROME + used + 1 + self.choice_rows(card, width))
             });
             let mut parts = text::wrap(&reason, width.max(1));
             if let Some(room) = room
@@ -1002,6 +1030,7 @@ impl AskUi {
         // The choices, numbered, the highlighted one bright. The refusal is
         // last, and where it can carry a note its line is the note's field.
         let list = box_choices(card);
+        let wraps = self.wraps_choices(card, width);
         for (at, index) in list.iter().enumerate() {
             let choice = &card.choices[*index];
             let lit = at == self.selected;
@@ -1033,13 +1062,28 @@ impl AskUi {
                     },
                 );
                 continue;
-            } else {
+            } else if deny {
                 push(&mut row, said, ink, width);
-                if deny {
-                    push(&mut row, "  esc", theme.faint(), width);
-                }
-                if deny && choice.takes_note {
+                push(&mut row, "  esc", theme.faint(), width);
+                if choice.takes_note {
                     push(&mut row, " · tab to add a note", theme.faint(), width);
+                }
+            } else if !wraps {
+                push(&mut row, said, ink, width);
+            } else {
+                // A long label (a Codex rule naming a whole command) wraps
+                // under its own start rather than losing its end, which is
+                // what says what the rule covers.
+                let lead = text::line_width(&row);
+                let mut parts = label_lines(&said, lead, width).into_iter();
+                push(&mut row, parts.next().unwrap_or_default(), ink, width);
+                for part in parts {
+                    out.spots
+                        .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
+                    out.lines.push(row);
+                    row = Line::default();
+                    push(&mut row, " ".repeat(lead), ink, width);
+                    push(&mut row, part, ink, width);
                 }
             }
             out.spots
@@ -1047,6 +1091,128 @@ impl AskUi {
             out.lines.push(row);
         }
         out
+    }
+}
+
+/// A choice's label in lines of `width` columns, each after `lead` columns
+/// (its marker and number on the first, as much blank on the rest).
+fn label_lines(label: &str, lead: usize, width: usize) -> Vec<String> {
+    let room = width.saturating_sub(lead).max(1);
+    let parts = text::wrap(label, room);
+    if parts.is_empty() {
+        vec![String::new()]
+    } else {
+        parts
+    }
+}
+
+/// How many lines the box's choices take at `width` with their labels
+/// wrapped: one each, and more for a label that wraps.
+fn wrapped_choice_rows(card: &AskCard, width: usize) -> usize {
+    box_choices(card)
+        .iter()
+        .enumerate()
+        .map(|(at, index)| {
+            let choice = &card.choices[*index];
+            if refuses(&choice.outcome) {
+                return 1;
+            }
+            let lead = 2 + format!("{}. ", at + 1).len();
+            label_lines(&box_label(choice, card.kind), lead, width).len()
+        })
+        .sum()
+}
+
+/// `source` with its inline code (`` `like this` ``) unmarked, and where
+/// that code stands in what is left, by byte range. A backtick with no
+/// partner is kept as it is.
+fn inline_code(source: &str) -> (String, Vec<std::ops::Range<usize>>) {
+    let mut plain = String::with_capacity(source.len());
+    let mut code = Vec::new();
+    let mut rest = source;
+    while let Some(at) = rest.find('`') {
+        plain.push_str(&rest[..at]);
+        let fence_len = rest[at..].len() - rest[at..].trim_start_matches('`').len();
+        let fence = &rest[at..at + fence_len];
+        let after = &rest[at + fence_len..];
+        match after.find(fence).filter(|&end| end > 0) {
+            Some(end) => {
+                let start = plain.len();
+                plain.push_str(&after[..end]);
+                code.push(start..plain.len());
+                rest = &after[end + fence_len..];
+            }
+            None => {
+                plain.push_str(fence);
+                rest = after;
+            }
+        }
+    }
+    plain.push_str(rest);
+    (plain, code)
+}
+
+/// The piece `from..to` of `plain` as runs, the code in `code`'s style and
+/// the rest in `ink`.
+fn styled_runs(
+    plain: &str,
+    ranges: &[std::ops::Range<usize>],
+    from: usize,
+    to: usize,
+    ink: Style,
+    code: Style,
+) -> Vec<(String, Style)> {
+    let mut runs: Vec<(String, Style)> = Vec::new();
+    let mut at = from;
+    while at < to {
+        let inside = ranges.iter().find(|range| range.contains(&at));
+        let (end, style) = match inside {
+            Some(range) => (range.end.min(to), code),
+            None => (
+                ranges
+                    .iter()
+                    .map(|range| range.start)
+                    .filter(|&start| start > at)
+                    .min()
+                    .unwrap_or(to)
+                    .min(to),
+                ink,
+            ),
+        };
+        runs.push((plain[at..end].to_owned(), style));
+        at = end;
+    }
+    runs
+}
+
+/// An agent's words on one line, its inline code drawn as code.
+fn code_runs(source: &str, ink: Style, code: Style) -> Vec<(String, Style)> {
+    let (plain, ranges) = inline_code(source);
+    styled_runs(&plain, &ranges, 0, plain.len(), ink, code)
+}
+
+/// An agent's words wrapped at `width`, its inline code drawn as code
+/// without the backticks, as its prose is.
+fn code_wrap(source: &str, width: usize, ink: Style, code: Style) -> Vec<Vec<(String, Style)>> {
+    let (plain, ranges) = inline_code(source);
+    let mut cursor = 0;
+    text::wrap(&plain, width.max(1))
+        .into_iter()
+        .map(|part| match plain[cursor..].find(part.as_str()) {
+            Some(found) => {
+                let start = cursor + found;
+                cursor = start + part.len();
+                styled_runs(&plain, &ranges, start, cursor, ink, code)
+            }
+            None => vec![(part, ink)],
+        })
+        .collect()
+}
+
+/// Pushes runs onto `line`, clipped at `width`.
+fn push_runs(line: &mut Line<'static>, runs: Vec<(String, Style)>, width: usize) {
+    for (words, style) in runs {
+        push(line, words, style, width);
     }
 }
 
@@ -1554,14 +1720,9 @@ impl AskUi {
                     self.selected = out;
                 }
             }
-            KeyCode::Char('f')
-                if question
-                    .options
-                    .iter()
-                    .any(|option| !option.preview.is_empty()) =>
-            {
-                self.show_all = !self.show_all;
-            }
+            // F shows the previews, or a question cut on a short screen,
+            // whole, and cuts them again.
+            KeyCode::Char('f') => self.show_all = !self.show_all,
             KeyCode::Char(' ') if self.selected < rows.options => {
                 return self.question_row(card, questions, self.selected, false);
             }
@@ -1835,9 +1996,14 @@ impl AskUi {
             // highlighted one's lines brighten.
             for (at, question) in questions.iter().enumerate() {
                 let lit = self.selected == at;
-                for (i, part) in text::wrap(&question.question, width.saturating_sub(2).max(1))
-                    .into_iter()
-                    .enumerate()
+                for (i, part) in code_wrap(
+                    &question.question,
+                    width.saturating_sub(2),
+                    if lit { theme.text() } else { theme.faint() },
+                    theme.code(),
+                )
+                .into_iter()
+                .enumerate()
                 {
                     let mut row = Line::default();
                     push(
@@ -1846,12 +2012,7 @@ impl AskUi {
                         theme.attention(),
                         width,
                     );
-                    push(
-                        &mut row,
-                        part,
-                        if lit { theme.text() } else { theme.faint() },
-                        width,
-                    );
+                    push_runs(&mut row, part, width);
                     out.spots
                         .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
                     out.lines.push(row);
@@ -1940,11 +2101,11 @@ impl AskUi {
 
         let question = &questions[self.step];
         let rows = QuestionRows::of(question, card);
-        let asked =
-            out.lines.len()..out.lines.len() + text::wrap(&question.question, width.max(1)).len();
-        for part in text::wrap(&question.question, width.max(1)) {
+        let asked_rows = code_wrap(&question.question, width, theme.text(), theme.code());
+        let asked = out.lines.len()..out.lines.len() + asked_rows.len();
+        for part in asked_rows {
             let mut line = Line::default();
-            push(&mut line, part, theme.text(), width);
+            push_runs(&mut line, part, width);
             out.lines.push(line);
         }
         // A form's field: required, and what it is for.
@@ -1973,11 +2134,13 @@ impl AskUi {
                 out.lines.push(line);
             }
         }
+        let select_all = question.multi_select.then_some(out.lines.len());
         if question.multi_select {
             let mut line = Line::default();
             push(&mut line, "Select all that apply", theme.faint(), width);
             out.lines.push(line);
         }
+        let gap = out.lines.len();
         out.lines.push(Line::default());
 
         // With previews, the options and the highlighted one's preview side
@@ -2010,28 +2173,51 @@ impl AskUi {
             if out.lines.len() + left.lines.len() > budget {
                 left = self.question_rows(question, &rows, left_width, false, footer, theme);
             }
+            // Then the spacing: the blank under the question, "Select all
+            // that apply" (the key line says space selects), and the blank
+            // above the footer, so the options keep their rows.
+            if out.lines.len() + left.lines.len() > budget {
+                drop_line(&mut out, gap);
+            }
+            if let Some(at) = select_all
+                && out.lines.len() + left.lines.len() > budget
+            {
+                drop_line(&mut out, at);
+            }
+            if out.lines.len() + left.lines.len() > budget
+                && let Some(footer_at) = rows.skip.or(rows.out).and_then(|at| {
+                    left.spots
+                        .iter()
+                        .find(|(_, _, spot)| *spot == BoxSpot::Choice(at))
+                        .map(|(row, ..)| *row)
+                })
+                && footer_at > 0
+                && text::line_width(&left.lines[footer_at - 1]) == 0
+            {
+                drop_line(&mut left, footer_at - 1);
+            }
             let over = (out.lines.len() + left.lines.len()).saturating_sub(budget);
-            let cut = over.min(asked.len().saturating_sub(QUESTION_LEAST));
+            // Cut, the question keeps its opening and its last line, which
+            // is where it asks, and says how much is hidden between: `f`
+            // or a click shows it whole.
+            let cut = if self.show_all {
+                0
+            } else {
+                over.min(asked.len().saturating_sub(QUESTION_LEAST))
+            };
             if cut > 0 {
-                let last = asked.end - cut - 1;
-                let kept = text::wrap(&question.question, width.max(1))
-                    .get(last - asked.start)
-                    .cloned()
-                    .unwrap_or_default();
-                let mut line = Line::default();
-                push(
-                    &mut line,
-                    text::ellipsize(&format!("{kept}…"), width.max(1)),
-                    theme.text(),
-                    width,
-                );
-                out.lines[last] = line;
-                out.lines.drain(last + 1..asked.end);
+                let hidden = cut + 1;
+                let from = asked.end - 1 - hidden;
+                let mut more = Line::default();
+                push_more(&mut more, hidden, "[Show All]", theme, width);
+                let at = text::line_width(&more).saturating_sub(10);
+                out.lines.splice(from..asked.end - 1, [more]);
                 for spot in &mut out.spots {
-                    if spot.0 > last {
+                    if spot.0 > from {
                         spot.0 -= cut;
                     }
                 }
+                out.spots.push((from, (at, at + 10), BoxSpot::ShowAll));
             }
             let over = (out.lines.len() + left.lines.len()).saturating_sub(budget);
             if over > 0 {
@@ -2150,7 +2336,10 @@ fn window_options(left: &mut BoxLines, options: usize, selected: usize, over: us
         })
         .max()
         .unwrap_or(0);
-    let show = option_rows.saturating_sub(over).max(1);
+    // However short the screen, the window holds the highlighted option
+    // with a marker either side: one row was all "↓ more", which hid every
+    // option and the highlight with them.
+    let show = option_rows.saturating_sub(over).max(3);
     if show >= option_rows {
         return;
     }
@@ -2208,6 +2397,25 @@ fn window_options(left: &mut BoxLines, options: usize, selected: usize, over: us
         } else {
             *row = row.saturating_sub(from);
         }
+    }
+}
+
+/// Removes line `at`, moving the click spots and the cursor below it up.
+fn drop_line(lines: &mut BoxLines, at: usize) {
+    if at >= lines.lines.len() {
+        return;
+    }
+    lines.lines.remove(at);
+    lines.spots.retain(|(row, ..)| *row != at);
+    for (row, ..) in &mut lines.spots {
+        if *row > at {
+            *row -= 1;
+        }
+    }
+    if let Some((row, _)) = &mut lines.cursor
+        && *row > at
+    {
+        *row -= 1;
     }
 }
 
@@ -2348,10 +2556,13 @@ impl AskUi {
                 );
             }
             let indent = text::line_width(&row);
-            push(
+            push_runs(
                 &mut row,
-                option.label.clone(),
-                if lit { theme.bright() } else { theme.text() },
+                code_runs(
+                    &option.label,
+                    if lit { theme.bright() } else { theme.text() },
+                    theme.code(),
+                ),
                 width,
             );
             // "recommended" after the label where it fits, else under it.
@@ -2378,14 +2589,24 @@ impl AskUi {
             let description = option.description.trim();
             if descriptions && !description.is_empty() {
                 let used = text::line_width(&row);
-                if used + 3 + text::str_width(description) <= width {
-                    push(&mut row, format!(" · {description}"), theme.faint(), width);
+                if used + 3 + text::str_width(&inline_code(description).0) <= width {
+                    push(&mut row, " · ", theme.faint(), width);
+                    push_runs(
+                        &mut row,
+                        code_runs(description, theme.faint(), theme.code()),
+                        width,
+                    );
                     out.lines.push(row);
                 } else {
                     out.lines.push(row);
-                    for part in text::wrap(description, width.saturating_sub(indent).max(1)) {
+                    for part in code_wrap(
+                        description,
+                        width.saturating_sub(indent),
+                        theme.faint(),
+                        theme.code(),
+                    ) {
                         let mut more = Line::from(Span::raw(" ".repeat(indent)));
-                        push(&mut more, part, theme.faint(), width);
+                        push_runs(&mut more, part, width);
                         out.spots
                             .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
                         out.lines.push(more);

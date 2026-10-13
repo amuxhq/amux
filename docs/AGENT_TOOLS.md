@@ -119,8 +119,10 @@ names the kind by its arm with that kind's default settings. `name` names it. `h
 resolves it, and omitted it means the caller's own host. `cwd` is a path on
 the host the child runs on: omitted on the caller's host (named or not, by
 any of its names) it is the caller's own working directory, and omitted on
-another host that host picks, which is the home directory of the user its
-daemon runs as. The caller becomes the
+another host that host picks: the folder its own agents most recently
+worked in, which is also the folder a person starting an agent there is
+offered first, else the home directory of the user its daemon runs as. The
+caller becomes the
 child's parent; the request cannot name any other parent.
 [Families](#families) describes what a child is.
 
@@ -304,10 +306,13 @@ an agent makes while it is being stopped or deleted is refused ("agent … is
 stopping and starts no more agents"); one already under way when the stop
 began finishes first and its child is stopped with the rest, so no child
 outlives the stop by being made during it. Deleting an agent
-deletes its children too, best effort: a child on another host is deleted
-through that host's daemon, and one whose host cannot be reached is reported
-in `unreachable_children` and stays on its host as an orphan a person can
-delete.
+deletes its children too: a child on another host is deleted through that
+host's daemon, which deletes that child's own family. When part of the
+family is on a host that cannot be reached, the delete fails at once,
+naming the descendant and the host, and deletes nothing, rather than leave
+that part running with no parent. A far child is known from its parent's
+host listing it and, as a stop knows it, from that daemon having made it,
+so unlinking the hosts does not hide it.
 
 **In the clients.** The fleet groups each family under its head and ranks it
 by its loudest member (`ui_view::fleet_view`); a family can be expanded to

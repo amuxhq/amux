@@ -985,7 +985,7 @@ async fn hook_payloads(mut listener: LocalListener, events: mpsc::Sender<Provide
         }
         let fact = interpret::Fact {
             channel: interpret::Channel::Hook,
-            payload,
+            payload: crate::notebook::annotate_hook(payload),
         };
         if events.send(ProviderEvent::Fact(fact)).await.is_err() {
             return;

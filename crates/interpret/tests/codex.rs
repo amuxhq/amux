@@ -1252,6 +1252,47 @@ fn a_command_codex_keeps_running_past_an_interrupt_is_not_drawn_cancelled() {
     );
 }
 
+/// A command still waiting for its approval when the turn is interrupted
+/// (a Stop) never ran: it is cut short, not a background terminal. It was
+/// recorded as running on in the background, which the phone drew as
+/// "In background · touch decided.txt · finished".
+#[test]
+fn a_command_awaiting_approval_at_an_interrupt_never_ran() {
+    use prost::Message as _;
+    let mut state = idle_codex();
+    let command = json!({"type": "commandExecution", "id": "exec-1", "command": "/bin/zsh -lc 'touch decided.txt'",
+        "cwd": "/w", "processId": null, "source": "agent", "status": "inProgress",
+        "commandActions": [{"type": "unknown", "command": "touch decided.txt"}],
+        "aggregatedOutput": null, "exitCode": null, "durationMs": null});
+    let mut works = Vec::new();
+    for message in [
+        json!({"method": "turn/started", "params": {"threadId": "t1", "turn": {"id": "turn-1", "status": "inProgress"}}}),
+        json!({"method": "item/started", "params": {"threadId": "t1", "turnId": "turn-1", "item": command}}),
+        json!({"id": 0, "method": "item/commandExecution/requestApproval", "params": {
+            "threadId": "t1", "turnId": "turn-1", "itemId": "exec-1",
+            "command": "touch decided.txt", "cwd": "/w",
+            "availableDecisions": ["accept", "cancel"]}}),
+        json!({"method": "turn/completed", "params": {"threadId": "t1", "turn": {"id": "turn-1", "items": [], "status": "interrupted", "error": null}}}),
+    ] {
+        for item in Codex::step(&mut state, rpc(message)).step.items {
+            if item.key.contains("exec-1")
+                && let Ok(body) = wire::CodexItem::decode(item.body.as_slice())
+                && let Some(wire::codex_item::Kind::Work(work)) = body.kind
+            {
+                works.push(work);
+            }
+        }
+    }
+    let last = works.last().expect("the command's item");
+    let Some(wire::work::Of::Command(command)) = &last.of else {
+        panic!("{last:?}");
+    };
+    assert!(
+        !command.background && last.state() == wire::ToolState::Cancelled,
+        "a command that never ran reads as running on in the background: {last:?}"
+    );
+}
+
 // --- Codex's slash commands: amux runs the ones it has a request for and
 // refuses the rest, rather than sending them to the model as words.
 

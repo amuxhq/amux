@@ -233,6 +233,15 @@ pub enum RegistryError {
     HostName(#[from] crate::forward::HostNameError),
     #[error(transparent)]
     Forwarded(#[from] crate::forward::ForwardError),
+    /// A delete refused before it touched anything: part of the family is
+    /// on a host it cannot reach, and deleting the rest would leave that
+    /// part running with no parent.
+    #[error("nothing was deleted: {agent} is part of this family, and {why}")]
+    FamilyUnreachable {
+        /// The descendant out of reach, by name.
+        agent: String,
+        why: crate::forward::ForwardError,
+    },
     #[error("agent {0} is stopping and starts no more agents")]
     ParentStopping(AgentId),
     #[error("agent {0} did not start within the start deadline")]
@@ -327,6 +336,7 @@ impl RegistryError {
             Self::Store(_) | Self::Io(_) => ErrorCode::Internal,
             Self::HostName(error) => return error.to_wire(),
             Self::Forwarded(error) => return error.to_wire(),
+            Self::FamilyUnreachable { why, .. } => why.code(),
         };
         crate::grpc::wire_error(code, self.to_string())
     }
@@ -458,8 +468,78 @@ struct Births {
     /// Stops and deletes of the parent under way.
     stopping: std::sync::atomic::AtomicUsize,
     /// Children made on other hosts at this daemon's asking, which this
-    /// host's store may not list yet.
-    forwarded: Mutex<Vec<AgentKey>>,
+    /// host's store may not list yet, or no longer lists once their host
+    /// is unlinked.
+    forwarded: Mutex<Vec<ForwardedChild>>,
+}
+
+/// A child made on another host at this daemon's asking: its key, and its
+/// name and its host's as they were when it was made, to name it by when
+/// its host can no longer be reached.
+#[derive(Clone)]
+struct ForwardedChild {
+    key: AgentKey,
+    name: String,
+    host_name: String,
+}
+
+/// A child of an agent being deleted: as its parent's host lists it, or
+/// known only from having been made elsewhere at this daemon's asking.
+enum Child {
+    Listed(Box<AgentRow>),
+    Forwarded(ForwardedChild),
+}
+
+impl Child {
+    fn key(&self) -> &AgentKey {
+        match self {
+            Child::Listed(row) => &row.agent,
+            Child::Forwarded(child) => &child.key,
+        }
+    }
+
+    /// As the delete's answer lists it.
+    fn wire(&self) -> Agent {
+        match self {
+            Child::Listed(row) => to_wire(row),
+            Child::Forwarded(child) => Agent {
+                agent_id: child.key.agent.clone(),
+                host_id: child.key.host.clone(),
+                name: child.name.clone(),
+                ..Default::default()
+            },
+        }
+    }
+
+    /// The child by name.
+    fn words(&self) -> String {
+        match self {
+            Child::Listed(row) => row.name.clone(),
+            Child::Forwarded(child) => child.name.clone(),
+        }
+    }
+
+    /// Why the child's host cannot be reached, naming the host as it was
+    /// known when the child was made: a host since unlinked has no name
+    /// here any more.
+    fn unreachable(&self, why: crate::forward::ForwardError) -> RegistryError {
+        use crate::forward::ForwardError;
+        let why = match (self, why) {
+            (Child::Forwarded(child), ForwardError::NotSent { host, .. })
+                if !child.host_name.is_empty() =>
+            {
+                ForwardError::NotSent {
+                    host,
+                    name: child.host_name.clone(),
+                }
+            }
+            (_, why) => why,
+        };
+        RegistryError::FamilyUnreachable {
+            agent: self.words(),
+            why,
+        }
+    }
 }
 
 /// A parent marked stopping, until this is dropped.
@@ -947,11 +1027,16 @@ impl ProfileRuntime {
         }
         if request.cwd.is_empty() {
             // A spawn from another host names no path here unless it knows
-            // one: the child starts in the home directory of the user this
+            // one: the child starts where this host's agents work (the most
+            // recently busy one's folder, which a person's new agent here is
+            // offered first), else in the home directory of the user this
             // daemon runs as.
-            request.cwd = home_dir()
-                .map(|home| home.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            request.cwd = match self.recent_folder().await? {
+                Some(folder) => folder,
+                None => home_dir()
+                    .map(|home| home.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            };
         }
         if request.cwd.is_empty() || !Path::new(&request.cwd).is_dir() {
             return Err(RegistryError::BadCwd(request.cwd));
@@ -1091,6 +1176,30 @@ impl ProfileRuntime {
         self.drafts.lock().unwrap().save(agent_id, draft);
     }
 
+    /// The folder this host's own agents most recently worked in, while it
+    /// is still a folder here.
+    async fn recent_folder(&self) -> Result<Option<String>, RegistryError> {
+        let mut own: Vec<AgentRow> = self
+            .store
+            .lock()
+            .await
+            .agents()?
+            .into_iter()
+            .filter(|row| row.agent.host == self.host.as_bytes() && !row.cwd.is_empty())
+            .collect();
+        own.sort_by_key(|row| {
+            std::cmp::Reverse(
+                row.phase_since_ms
+                    .or(row.last_activity_ms)
+                    .unwrap_or(row.created_at_ms),
+            )
+        });
+        Ok(own
+            .into_iter()
+            .map(|row| row.cwd)
+            .find(|cwd| Path::new(cwd).is_dir()))
+    }
+
     /// The host a create request is for: the one it names, by id or by name
     /// resolved against this host and the trusted ones, else this host.
     pub fn target_host(&self, request: &CreateAgentRequest) -> Result<HostId, RegistryError> {
@@ -1144,11 +1253,16 @@ impl ProfileRuntime {
         // The child's row reaches this host's store when its host's
         // inventory does; until then a stop of the parent finds it here.
         if let Some((parent, _open)) = birth {
+            let host_name = self.host_name(host);
             self.births(parent)
                 .forwarded
                 .lock()
                 .unwrap()
-                .push(AgentKey::new(child.host_id.clone(), child.agent_id.clone()));
+                .push(ForwardedChild {
+                    key: AgentKey::new(child.host_id.clone(), child.agent_id.clone()),
+                    name: child.name.clone(),
+                    host_name,
+                });
         }
         Ok(child)
     }
@@ -1435,8 +1549,8 @@ impl ProfileRuntime {
             let births = self.births(id);
             let mut forwarded = births.forwarded.lock().unwrap();
             // One the store lists now is stopped from the listing.
-            forwarded.retain(|child| !children.contains(child));
-            children.extend(forwarded.iter().cloned());
+            forwarded.retain(|child| !children.contains(&child.key));
+            children.extend(forwarded.iter().map(|child| child.key.clone()));
         }
         for child in children {
             let me = self.me.clone();
@@ -1526,11 +1640,59 @@ impl ProfileRuntime {
     /// Deletes an agent: stops its process if live, deletes its children
     /// on this host the same way and forwards the delete of each child on
     /// another host to that host, then removes its rows and its directory.
-    /// A child whose host cannot be reached is reported as unreachable.
+    ///
+    /// A family part of which is on a host that cannot be reached is not
+    /// deleted at all: the delete fails at once, naming the descendant and
+    /// its host, rather than leave that part running with no parent. A far
+    /// child is known from this host's listing of it and, as a stop knows
+    /// it, from this daemon having made it, which outlasts the listing when
+    /// the hosts are unlinked.
     pub async fn delete(&self, id: AgentId) -> Result<DeleteAgentResponse, RegistryError> {
         let mut response = DeleteAgentResponse::default();
         self.delete_into(id, &mut response).await?;
         Ok(response)
+    }
+
+    /// The agent's children: its host's listing of them, and the ones made
+    /// on other hosts at this daemon's asking that the listing lacks, as
+    /// rows where the listing has them.
+    async fn children_of(&self, id: AgentId) -> Result<Vec<Child>, RegistryError> {
+        let key = self.key(id);
+        let listed = self.store.lock().await.agents_of_parent(&key)?;
+        let mut children: Vec<Child> = listed
+            .into_iter()
+            .map(|row| Child::Listed(Box::new(row)))
+            .collect();
+        let forwarded = self.births(id).forwarded.lock().unwrap().clone();
+        for child in forwarded {
+            if !children.iter().any(|known| known.key() == &child.key) {
+                children.push(Child::Forwarded(child));
+            }
+        }
+        Ok(children)
+    }
+
+    /// Fails with the first descendant of `id` whose host cannot be
+    /// reached: its children on other hosts must be reachable, and its
+    /// children here are asked the same of theirs. A far child's own
+    /// descendants are its host's to check when the delete reaches it.
+    async fn family_reachable(&self, id: AgentId) -> Result<(), RegistryError> {
+        for child in self.children_of(id).await? {
+            let key = child.key();
+            if key.host == self.host.as_bytes() {
+                if let Ok(child_id) = Uuid::from_slice(&key.agent) {
+                    Box::pin(self.family_reachable(child_id)).await?;
+                }
+                continue;
+            }
+            let Ok(host) = Uuid::from_slice(&key.host) else {
+                continue;
+            };
+            if let Err(why) = self.reachable(host).await {
+                return Err(child.unreachable(why));
+            }
+        }
+        Ok(())
     }
 
     async fn delete_into(
@@ -1548,6 +1710,7 @@ impl ProfileRuntime {
         // would offer to resume an agent about to be removed. Nothing about
         // the agent is published until its removal is; a delete that fails
         // publishes the row as it then stands.
+        self.family_reachable(id).await?;
         self.fanout.mute(&key);
         let deleted = self.delete_muted(id, key.clone(), response).await;
         self.fanout.unmute(&key);
@@ -1567,25 +1730,28 @@ impl ProfileRuntime {
         let _closed = self.close_births(id).await;
         self.stop_locked(id).await?;
 
-        let children: Vec<AgentRow> = self.store.lock().await.agents_of_parent(&key)?;
-        for child in children {
-            let wire = to_wire(&child);
-            if child.agent.host != self.host.as_bytes() {
-                self.delete_remote_child(child, response).await;
-                continue;
-            }
-            let Ok(child_id) = Uuid::from_slice(&child.agent.agent) else {
+        // The far children first: one that fails (its host went away
+        // since the check, or its own family is out of reach) fails the
+        // delete with this agent and its children here still in place.
+        let (far, here): (Vec<Child>, Vec<Child>) = self
+            .children_of(id)
+            .await?
+            .into_iter()
+            .partition(|child| child.key().host != self.host.as_bytes());
+        for child in far {
+            self.delete_remote_child(child.key().clone(), child.wire(), response)
+                .await
+                .map_err(|why| match why {
+                    crate::forward::ForwardError::Remote(_) => RegistryError::Forwarded(why),
+                    why => child.unreachable(why),
+                })?;
+        }
+        for child in here {
+            let Ok(child_id) = Uuid::from_slice(&child.key().agent) else {
                 continue;
             };
-            // Best effort: a child that cannot be deleted stays listed as an
-            // orphan the person can delete.
-            match Box::pin(self.delete_into(child_id, response)).await {
-                Ok(()) => response.removed_children.push(wire),
-                Err(error) => {
-                    tracing::warn!(child = %child_id, %error, "a cascaded delete failed");
-                    response.unreachable_children.push(wire);
-                }
-            }
+            Box::pin(self.delete_into(child_id, response)).await?;
+            response.removed_children.push(child.wire());
         }
 
         // Rows first: a crash between the two leaves a directory with no

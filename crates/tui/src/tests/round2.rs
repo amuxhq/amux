@@ -737,6 +737,41 @@ fn slash_rename_is_amuxs_rename_not_a_prompt() {
     );
 }
 
+/// Decided: a refused rename shows its reason on the key line while the
+/// name being edited stays. "/rename ünï" cleared the composer and the
+/// reason ran off the 80-column key line before it said where a name may
+/// start.
+#[test]
+fn a_slash_rename_the_name_rule_refuses_keeps_the_name_and_says_why_whole() {
+    let state = claude_with_models();
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    typed(&mut view, &state, "/rename ünï-日本-🚀");
+    let effects = view.key(&state, key(KeyCode::Enter), theme());
+    let words = effects
+        .iter()
+        .find_map(|effect| match effect {
+            ChatEffect::Notice(words) => Some(words.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no reason given: {effects:?}"));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, ChatEffect::Rename(_))),
+        "a name the rule refuses was sent: {effects:?}"
+    );
+    assert!(
+        words.contains("starting with a letter or digit")
+            && crate::text::str_width(&words) <= 80 - 2,
+        "the reason does not fit an 80-column key line: {words:?}"
+    );
+    assert_eq!(
+        view.editor.text(),
+        "/rename ünï-日本-🚀",
+        "the name was cleared"
+    );
+}
+
 /// Decided: Codex runs only the commands its catalogue lists (amux's
 /// table: /compact, /clear, /review, /init, /plan, and skills); any other
 /// "/..." is refused in the composer and never reaches the model, which
@@ -1113,5 +1148,61 @@ fn an_invalid_new_agent_name_is_refused_on_the_spot() {
     assert!(
         edge.contains("opus") && edge.contains('…'),
         "the name pushed the model off the edge instead of shortening: {edge:?}"
+    );
+}
+
+/// Deleting the last row of the list hands the highlight to the new last
+/// row, in sight: it fell back to the first agent, far up and often off
+/// screen, so the next `x` offered to stop an agent nobody had picked.
+#[test]
+fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
+    let now = now();
+    let mut fleet = home_fleet();
+    let mut attic = home_agent(b"old2", "attic", Phase::Idle, None, now - 3 * 86_400_000);
+    if let wire::inventory_event::Of::Agent(agent) = &mut attic {
+        agent.lifecycle = wire::Lifecycle::Exited as i32;
+        agent.exit_cause = wire::ExitCause::Stopped as i32;
+    }
+    inventory(&mut fleet, attic);
+    let mut home = crate::home::Home::default();
+    home_at(&mut home, &fleet, W, H);
+    // End lands on the folded "Exited" heading; Enter opens it; End again
+    // reaches its last row.
+    home.key(&fleet, key(KeyCode::End), false);
+    home.key(&fleet, key(KeyCode::Enter), false);
+    home.key(&fleet, key(KeyCode::End), false);
+    home.key(&fleet, key(KeyCode::Char('x')), false);
+    let deleted = match home.key(&fleet, key(KeyCode::Enter), false).as_slice() {
+        [FleetEffect::Delete(agent)] => agent.clone(),
+        effects => panic!("x on the last row did {effects:?}"),
+    };
+    let kept = if deleted.agent == b"old" {
+        "attic"
+    } else {
+        "archive"
+    };
+    inventory(
+        &mut fleet,
+        wire::inventory_event::Of::AgentRemoved(wire::AgentRemoved {
+            host_id: deleted.host.clone(),
+            agent_id: deleted.agent.clone(),
+            ..Default::default()
+        }),
+    );
+    let screen = home_at(&mut home, &fleet, W, H);
+    let marked = screen
+        .lines()
+        .find(|line| line.contains('›'))
+        .unwrap_or_else(|| panic!("no row is highlighted:\n{screen}"));
+    assert!(
+        marked.contains(kept),
+        "{kept} is not highlighted:\n{screen}"
+    );
+    home.key(&fleet, key(KeyCode::Char('x')), false);
+    let effects = home.key(&fleet, key(KeyCode::Enter), false);
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Delete(agent)] if agent.agent != deleted.agent
+            && agent.agent.starts_with(b"old")),
+        "x after the delete did {effects:?}:\n{screen}"
     );
 }

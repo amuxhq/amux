@@ -6,18 +6,18 @@
   row    2 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 7 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"arguments":{"context":"parser","text":"Please review the parser change.\nIt is on branch parser.","to":"reviewer"},"id":"sn1","server":"amux","status":"inProgress","tool":"send","type":"mcpToolCall"},"threadId":"t1","turnId":"turn-1"}}}
-  row    3 sn1 AgentMessage { from: "", kind: Message, text: "Please review the parser change.\nIt is on branch parser.", to: "reviewer", sent: Sending, rejection: "" }
+  row    3 sn1 AgentMessage { from: "", kind: Message, text: [Text("Please review the parser change.\nIt is on branch parser.")], to: "reviewer", sent: Sending, rejection: "" }
 ## 8 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"arguments":{"context":"parser","text":"Please review the parser change.\nIt is on branch parser.","to":"reviewer"},"durationMs":500,"id":"sn1","result":{"content":[{"text":"{\"id\": \"0f1e2d3c4b5a69788796a5b4c3d2e1f0\"}","type":"text"}]},"server":"amux","status":"completed","tool":"send","type":"mcpToolCall"},"threadId":"t1…
-  row    3 sn1 AgentMessage { from: "", kind: Message, text: "Please review the parser change.\nIt is on branch parser.", to: "reviewer", sent: Sent, rejection: "" }
+  row    3 sn1 AgentMessage { from: "", kind: Message, text: [Text("Please review the parser change.\nIt is on branch parser.")], to: "reviewer", sent: Sent, rejection: "" }
 ## 9 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"arguments":{"text":"Are you there?","to":"ghost"},"id":"sn2","server":"amux","status":"inProgress","tool":"send","type":"mcpToolCall"},"threadId":"t1","turnId":"turn-1"}}}
-  row    4 sn2 AgentMessage { from: "", kind: Message, text: "Are you there?", to: "ghost", sent: Sending, rejection: "" }
+  row    4 sn2 AgentMessage { from: "", kind: Message, text: [Text("Are you there?")], to: "ghost", sent: Sending, rejection: "" }
 ## 10 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"arguments":{"text":"Are you there?","to":"ghost"},"error":{"message":"no agent named ghost"},"id":"sn2","server":"amux","status":"failed","tool":"send","type":"mcpToolCall"},"threadId":"t1","turnId":"turn-1"}}}
-  row    4 sn2 AgentMessage { from: "", kind: Message, text: "Are you there?", to: "ghost", sent: Rejected, rejection: "no agent named ghost" }
+  row    4 sn2 AgentMessage { from: "", kind: Message, text: [Text("Are you there?")], to: "ghost", sent: Rejected, rejection: "no agent named ghost" }
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:7031 Prompt { text: [Text("Refactor the parser.")], steered: false }
-     3 sn1 AgentMessage { from: "", kind: Message, text: "Please review the parser change.\nIt is on branch parser.", to: "reviewer", sent: Sent, rejection: "" }
-     4 sn2 AgentMessage { from: "", kind: Message, text: "Are you there?", to: "ghost", sent: Rejected, rejection: "no agent named ghost" }
+     3 sn1 AgentMessage { from: "", kind: Message, text: [Text("Please review the parser change.\nIt is on branch parser.")], to: "reviewer", sent: Sent, rejection: "" }
+     4 sn2 AgentMessage { from: "", kind: Message, text: [Text("Are you there?")], to: "ghost", sent: Rejected, rejection: "no agent named ghost" }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

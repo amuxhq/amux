@@ -179,7 +179,8 @@ pub enum RowKind {
     AgentMessage {
         from: String,
         kind: EnvelopeKind,
-        text: String,
+        /// Its words, with its attachments where their placeholders stand.
+        text: Vec<Segment>,
         /// A message this agent sent: the recipient as the model named it,
         /// and how the send went; empty and unspecified on one it received.
         to: String,
@@ -608,7 +609,7 @@ fn decision_view(
             Some(wire::codex_grant::Of::Session(_)) => Some(PermissionGrant::Session),
             Some(wire::codex_grant::Of::CommandPrefix(prefix)) => {
                 Some(PermissionGrant::CommandPrefix {
-                    words: prefix.words.clone(),
+                    words: crate::ask::shown_prefix(&prefix.words),
                 })
             }
             Some(wire::codex_grant::Of::NetworkHosts(hosts)) => {
@@ -1036,7 +1037,7 @@ fn agent_message(held: &Held, m: &wire::AgentMessage) -> RowKind {
     RowKind::AgentMessage {
         from,
         kind: m.kind(),
-        text: held.item.text.clone(),
+        text: chat_segments(held),
         to: m.to.clone(),
         sent: m.send_state(),
         rejection: m.rejection.clone(),
@@ -1637,13 +1638,20 @@ pub(crate) fn replaced_lines(input: &Value) -> Vec<EditLine> {
         .unwrap_or_else(|| vec![input.clone()]);
     let mut lines = Vec::new();
     for edit in &edits {
+        let deletes = edit.get("edit_mode").and_then(Value::as_str) == Some("delete");
         for (name, kind) in [
             ("old_string", LineKind::Removed),
             ("new_string", LineKind::Added),
             ("content", LineKind::Added),
-            // A notebook edit's new cell source.
+            // A notebook edit's cell as it stands, which the host read from
+            // the notebook when Claude asked (Claude names only the cell),
+            // then its new source unless the cell is being deleted.
+            ("old_source", LineKind::Removed),
             ("new_source", LineKind::Added),
         ] {
+            if deletes && name == "new_source" {
+                continue;
+            }
             lines.extend(field(edit, name).lines().map(|text| {
                 EditLine::Line(PatchLine {
                     number: None,

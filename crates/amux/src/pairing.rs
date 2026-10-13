@@ -95,15 +95,20 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
         tokio::select! {
             () = &mut ended => return cancel(door, profile).await,
             () = tokio::time::sleep(PAIRING_POLL) => {
-                let active = door
+                let status = door
                     .get_pairing_status(ProfileRequest {
                         profile_id: profile.id.clone(),
                     })
                     .await
                     .map_err(plain)?
-                    .into_inner()
-                    .active;
-                if !active || tokio::time::Instant::now() >= deadline {
+                    .into_inner();
+                if status.locked_out {
+                    bail!(
+                        "Pairing mode closed after too many wrong PINs; \
+                         run `amux pair` again for a new one."
+                    );
+                }
+                if !status.active || tokio::time::Instant::now() >= deadline {
                     println!("Pairing mode ended.");
                     return Ok(());
                 }
@@ -392,6 +397,12 @@ async fn confirm(mut door: Door, pairing: BeginPairRequest) -> Result<()> {
 /// window read the same on the wire, so a guesser learns nothing, and so
 /// the words name both.
 fn refused(status: tonic::Status, secret: &str) -> anyhow::Error {
+    if status.code() == tonic::Code::PermissionDenied && status.message() == "PAIRING_LOCKED" {
+        return anyhow!(
+            "the other host closed its pairing window after too many wrong {secret}s; \
+             run `amux pair` there again for a new {secret}"
+        );
+    }
     if status.code() == tonic::Code::PermissionDenied && status.message() == "INVALID_PIN" {
         return anyhow!(
             "the {secret} did not match, or the other host's pairing window has closed; \
@@ -559,6 +570,11 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
                 wire::RouteKind::Ssh => "online, over SSH",
                 _ => "online, on this network",
             },
+            // The daemon lists a host away only when the relay alone sees it
+            // and the account is on the free plan.
+            Some(host) if host.presence() == wire::Presence::Away => {
+                "away: the free plan does not relay between hosts"
+            }
             Some(_) => "away",
             None => "not listed",
         };
@@ -734,6 +750,12 @@ mod tests {
              check the PIN it shows and try again"
         );
         assert!(!refusal.contains("INVALID_PIN"));
+        // Locked out after too many wrong PINs: said so, with the way on.
+        let locked = refused(tonic::Status::permission_denied("PAIRING_LOCKED"), "PIN").to_string();
+        assert!(
+            locked.contains("too many wrong PINs") && locked.contains("amux pair"),
+            "{locked}"
+        );
         // Any other refusal reads as it did.
         assert_eq!(
             refused(tonic::Status::permission_denied("not allowed"), "PIN").to_string(),
@@ -847,5 +869,29 @@ mod tests {
         assert!(lines[1].contains("online, through the relay"), "{table}");
         assert!(lines[2].starts_with("den mac"), "{table}");
         assert!(lines[2].ends_with("no: amux pair 'den mac'"), "{table}");
+    }
+
+    /// A host the daemon lists away is one only the relay sees while the
+    /// account is on the free plan: the table says so, not a bare "away".
+    #[test]
+    fn a_peer_away_on_the_free_plan_names_the_plan() {
+        let away = HostEntry {
+            host_id: vec![1; 16],
+            name: "plap".into(),
+            trust: Trust::Trusted as i32,
+            presence: wire::Presence::Away as i32,
+            via: wire::RouteKind::Relay as i32,
+            ..HostEntry::default()
+        };
+        let trusted = [PeerEntry {
+            host_id: vec![1; 16],
+            name: "plap".into(),
+            ..PeerEntry::default()
+        }];
+        let table = peer_table(&trusted, &[away]);
+        assert!(
+            table.contains("away: the free plan does not relay between hosts"),
+            "{table}"
+        );
     }
 }

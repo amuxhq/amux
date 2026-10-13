@@ -162,6 +162,9 @@ enum Overlay {
 #[derive(Debug, Default)]
 pub struct Home {
     selected: Option<Target>,
+    /// Where the highlight last stood in the list, so a row that leaves
+    /// hands it to the row that takes its place, or the new last row.
+    selected_at: Option<usize>,
     expanded: HashSet<Vec<u8>>,
     /// Sections the person folded or unfolded against their default.
     toggled: HashSet<SectionKind>,
@@ -507,18 +510,37 @@ impl Home {
             .collect()
     }
 
-    /// The highlight, kept on something still listed: when its agent left,
-    /// the first agent, else "+ New Agent".
+    /// The highlight, kept on something still listed: when its row left,
+    /// the row now in its place (the new last row when it was last),
+    /// brought into sight; with nothing highlighted yet, the first agent,
+    /// else "+ New Agent".
     fn settle(&mut self, targets: &[Target]) -> Target {
-        if let Some(selected) = self.selected.as_ref().filter(|t| targets.contains(t)) {
-            return selected.clone();
+        if let Some(at) = self
+            .selected
+            .as_ref()
+            .and_then(|selected| targets.iter().position(|t| t == selected))
+        {
+            self.selected_at = Some(at);
+            return targets[at].clone();
         }
-        let fallback = targets
-            .iter()
-            .find(|target| matches!(target, Target::Agent(_)))
+        let in_place = self
+            .selected
+            .as_ref()
+            .and(self.selected_at)
+            .and_then(|at| targets.get(at.min(targets.len().saturating_sub(1))));
+        if in_place.is_some() {
+            self.reveal = true;
+        }
+        let fallback = in_place
+            .or_else(|| {
+                targets
+                    .iter()
+                    .find(|target| matches!(target, Target::Agent(_)))
+            })
             .or(targets.first())
             .cloned()
             .unwrap_or(Target::New);
+        self.selected_at = targets.iter().position(|t| *t == fallback);
         self.selected = Some(fallback.clone());
         fallback
     }
@@ -1611,8 +1633,9 @@ impl Home {
         // Too long for the edge: the folder shortens in the middle first,
         // then the name at its end, since the model and the permission are
         // what the person is about to start the agent with. Still too long,
-        // the mode drops, then the model, then the permission (ctrl+s or
-        // shift+tab still reach them).
+        // the mode drops, then the model, then the permission (ctrl+s
+        // still reaches them), but never what Shift+Tab steps: a key whose
+        // effect nothing shows is a setting changed blind.
         for shortened in [Setting::Folder, Setting::Name] {
             let over = measure(&groups).saturating_sub(room);
             if over == 0 {
@@ -1631,8 +1654,13 @@ impl Home {
                 }
             }
         }
+        let stepped = if setup.cycles() == "mode" {
+            Setting::Mode
+        } else {
+            Setting::Permission
+        };
         for dropped in [Setting::Mode, Setting::Model, Setting::Permission] {
-            if measure(&groups) > room {
+            if dropped != stepped && measure(&groups) > room {
                 for group in &mut groups {
                     group.retain(|(item, _)| *item != dropped);
                 }
@@ -2170,6 +2198,22 @@ fn second_words(
             format!("stop held · it goes when {host} is back · x cancels"),
             theme.warning(),
         ));
+    }
+    // Work it runs in the background, which leaves it idle, is counted
+    // first, so a long line cannot cut the count off.
+    let jobs = row.card.background_jobs;
+    if jobs > 0
+        && matches!(
+            line,
+            SecondLine::LastSaid(_) | SecondLine::Step(_) | SecondLine::Blank
+        )
+    {
+        let count = format!("{jobs} background job{}", if jobs == 1 { "" } else { "s" });
+        return Some(match line {
+            SecondLine::LastSaid(said) => (format!("{count} · {said}"), theme.muted()),
+            SecondLine::Step(step) => (format!("{count} · {}", step_words(step)), theme.muted()),
+            _ => (format!("{count} running"), theme.muted()),
+        });
     }
     Some(match line {
         // What it asks is the most important line on home.

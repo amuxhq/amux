@@ -3,7 +3,7 @@
 ## 1 input {"id":"p1","prompt":{"text":"Review the parser change."}}
   composer Send activity=None queue=[QueuedRow { input_id: [112, 49], text: [Text("Review the parser change.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 2 agent_message {"envelope":"e1","from":"lead","text":"It is on branch parser."}
-  row    1 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "It is on branch parser.", to: "", sent: Unspecified, rejection: "" }
+  row    1 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("It is on branch parser.")], to: "", sent: Unspecified, rejection: "" }
 ## 3 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.157.0","id":"t1","turns":[]}}}}
   row    2 boundary:1 Boundary { kind: Started, cause: "" }
   row    3 prompt:7031 Prompt { text: [Text("Review the parser change.")], steered: false }
@@ -12,7 +12,7 @@
   row    4 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
-     1 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "It is on branch parser.", to: "", sent: Unspecified, rejection: "" }
+     1 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("It is on branch parser.")], to: "", sent: Unspecified, rejection: "" }
      2 boundary:1 Boundary { kind: Started, cause: "" }
      3 prompt:7031 Prompt { text: [Text("Review the parser change.")], steered: false }
      4 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }

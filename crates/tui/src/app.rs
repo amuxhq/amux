@@ -15,7 +15,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use tokio::sync::mpsc;
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
-use ui_state::{AgentKey, Composer, InputWhat, PhaseView};
+use ui_state::{AgentKey, Composer, InputWhat, PhaseView, SessionState};
 use ui_view::family_header;
 use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
 
@@ -282,6 +282,11 @@ pub struct App {
     /// one: it outranks the daemon's copy, which the save may not have
     /// emptied yet, and the save as the client quits sends it again.
     drafts: HashMap<AgentKey, crate::editor::Editor>,
+    /// By agent, the prompts held for an unreachable host that the draft
+    /// this machine keeps already carries, by input id: a held prompt goes
+    /// back to the draft if the client closes first, and a client killed
+    /// without quitting has no chance to put it there then.
+    held_kept: HashMap<AgentKey, Vec<ui_state::InputId>>,
     /// A chat closed under the person: home takes no key until
     /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
     /// rest of what they were typing never acts on another agent. The last
@@ -322,6 +327,20 @@ fn composer_draft(editor: &crate::editor::Editor) -> wire::ComposerDraft {
         text: editor.text().to_owned(),
         attachments: editor.attachments().to_vec(),
     }
+}
+
+/// The prompts `state` holds for an unreachable host: id, words and
+/// attachments.
+fn held_prompts(state: &SessionState) -> Vec<(ui_state::InputId, String, Vec<Attachment>)> {
+    state
+        .held()
+        .filter_map(|sent| match &sent.what {
+            InputWhat::Prompt { text, attachments } => {
+                Some((sent.id.clone(), text.clone(), attachments.clone()))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Saves drafts with this machine's daemon; a failure loses only what a
@@ -397,6 +416,7 @@ impl App {
             report: None,
             host_offers: HashMap::new(),
             drafts: HashMap::new(),
+            held_kept: HashMap::new(),
             home_held: None,
             offers_asked: HashSet::new(),
             events,
@@ -725,7 +745,13 @@ impl App {
     /// kept too, so the chat reopens empty and the quit's save, which is
     /// waited for, empties the daemon's copy even if this save has not.
     fn keep_draft(&mut self, chat: OpenChat) {
-        let draft = composer_draft(&chat.view.editor);
+        // Its held prompts go in the daemon's copy too, as they did while
+        // the chat was open, but not in the composer it reopens with.
+        let mut kept = chat.view.editor.clone();
+        for (_, text, attachments) in held_prompts(&chat.session.state()) {
+            kept.restore(&text, attachments);
+        }
+        let draft = composer_draft(&kept);
         let client = self.client.clone();
         let agent_id = chat.agent.agent.clone();
         self.spawn(async move {
@@ -754,22 +780,14 @@ impl App {
             }
         }
         for session in self.fleet.sessions() {
-            let held: Vec<(String, Vec<Attachment>)> = session
-                .state()
-                .held()
-                .filter_map(|sent| match &sent.what {
-                    InputWhat::Prompt { text, attachments } => {
-                        Some((text.clone(), attachments.clone()))
-                    }
-                    _ => None,
-                })
-                .collect();
+            let state = session.state();
+            let held = held_prompts(&state);
             if held.is_empty() {
                 continue;
             }
-            let key = ui_state::agent_key(session.state().agent());
+            let key = ui_state::agent_key(state.agent());
             let editor = editors.entry(key).or_default();
-            for (text, attachments) in held {
+            for (_, text, attachments) in held {
                 editor.restore(&text, attachments);
             }
         }
@@ -777,6 +795,52 @@ impl App {
             .into_iter()
             .map(|(agent, editor)| (agent.agent, composer_draft(&editor)))
             .collect()
+    }
+
+    /// Keeps each agent's held prompts in the draft this machine's daemon
+    /// keeps, from the moment they are held until they leave, so a client
+    /// that dies without quitting still hands them back to the draft. Saved
+    /// only when what is held changes; the quit's save covers the typing.
+    fn keep_held_drafts(&mut self) {
+        let mut saves = Vec::new();
+        let mut seen = HashSet::new();
+        for session in self.fleet.sessions() {
+            let state = session.state();
+            let key = ui_state::agent_key(state.agent());
+            let held = held_prompts(&state);
+            drop(state);
+            seen.insert(key.clone());
+            let ids: Vec<ui_state::InputId> = held.iter().map(|(id, ..)| id.clone()).collect();
+            if self
+                .held_kept
+                .get(&key)
+                .map_or(ids.is_empty(), |kept| *kept == ids)
+            {
+                continue;
+            }
+            let mut editor = match &self.chat {
+                Some(chat) if chat.agent == key => chat.view.editor.clone(),
+                _ => self.drafts.get(&key).cloned().unwrap_or_default(),
+            };
+            for (_, text, attachments) in held {
+                editor.restore(&text, attachments);
+            }
+            saves.push((key.agent.clone(), composer_draft(&editor)));
+            if ids.is_empty() {
+                self.held_kept.remove(&key);
+            } else {
+                self.held_kept.insert(key, ids);
+            }
+        }
+        // A session gone (its agent exited or deleted) holds nothing more.
+        self.held_kept.retain(|key, _| seen.contains(key));
+        if !saves.is_empty() {
+            let client = self.client.clone();
+            self.spawn(async move {
+                save_drafts(client, saves).await;
+                None
+            });
+        }
     }
 
     /// Hands every draft to this machine's daemon; awaited as the client
@@ -1132,13 +1196,6 @@ impl App {
                     agent_id: agent.agent,
                 };
                 Some(match client.delete_agent(request).await {
-                    Ok(response) if !response.unreachable_children.is_empty() => AppEvent::Notice(
-                        format!(
-                            "deleted; {} child agent(s) on unreachable hosts remain",
-                            response.unreachable_children.len()
-                        ),
-                        Tone::Warn,
-                    ),
                     Ok(_) => AppEvent::Notice("deleted".into(), Tone::Info),
                     Err(error) => {
                         AppEvent::Notice(format!("could not delete: {error}"), Tone::Warn)
@@ -1285,13 +1342,25 @@ impl App {
                     chat.view.editor.restore(&text, attachments);
                 }
             }
+            // Refused by the host (the name taken, the host away), the
+            // command goes back to the composer to fix, with why.
             ChatEffect::Rename(name) => {
                 let client = self.client.clone();
                 self.spawn(async move {
-                    let request = RenameAgentRequest { agent_id, name };
-                    client.rename_agent(request).await.err().map(|error| {
-                        AppEvent::Notice(format!("could not rename: {error}"), Tone::Warn)
-                    })
+                    let request = RenameAgentRequest {
+                        agent_id: agent_id.clone(),
+                        name: name.clone(),
+                    };
+                    client
+                        .rename_agent(request)
+                        .await
+                        .err()
+                        .map(|error| AppEvent::Restore {
+                            agent_id,
+                            text: format!("/rename {name}"),
+                            attachments: Vec::new(),
+                            notice: Some(format!("not renamed: {error}")),
+                        })
                 })
             }
             ChatEffect::Page(n) => {
@@ -1418,6 +1487,7 @@ impl App {
     /// closes to the fleet, and the changed files its overview lists are
     /// fetched when it asks.
     pub fn housekeep(&mut self) {
+        self.keep_held_drafts();
         if let Some(gone) = self.chat_gone() {
             if gone.deleted {
                 self.close_deleted_chat();

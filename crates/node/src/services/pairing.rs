@@ -1325,6 +1325,10 @@ fn pair_mode_status(error: crate::pairing::PairModeError) -> Status {
 
     match error {
         PairModeError::NotActive => pairing_status(Code::PermissionDenied, "INVALID_PIN"),
+        // The window is closed for good: saying so tells a guesser nothing
+        // a closed window does not, and tells the person why the right PIN
+        // no longer pairs.
+        PairModeError::LockedOut => pairing_status(Code::PermissionDenied, "PAIRING_LOCKED"),
         PairModeError::AlreadyActive
         | PairModeError::InvalidPinFormat
         | PairModeError::SecretGeneration => pairing_status(Code::Internal, "PAIR_MODE_ERROR"),

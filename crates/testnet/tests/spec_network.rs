@@ -307,7 +307,9 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     println!("the PIN paired the laptop once; the intruder's late try: {late:?}");
 
     // Five wrong guesses close the window; after that the right PIN is
-    // refused like the consumed one until someone opens a new window.
+    // refused as locked out, not as a PIN that did not match, until
+    // someone opens a new window, and the host says so to whoever opened
+    // it.
     let started = start_pairing(&net, "shed", pin_window()).await.unwrap();
     let pin = pin_of(&started);
     for _ in 0..5 {
@@ -332,7 +334,11 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     )
     .await
     .expect_err("the right PIN after the cap");
-    assert!(is_invalid_secret(&closed), "{closed:?}");
+    assert!(
+        closed.code() == tonic::Code::PermissionDenied && closed.message() == "PAIRING_LOCKED",
+        "the right PIN after five wrong ones reads as a wrong PIN: {closed:?}"
+    );
+    assert!(edge(&net, "shed").pairing_locked_out());
     assert!(edge(&net, "shed").trusted().is_empty());
     println!("five wrong guesses closed the window; the right PIN then: {closed:?}");
 

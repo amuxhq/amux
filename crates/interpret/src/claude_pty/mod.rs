@@ -1443,20 +1443,26 @@ impl State {
             Ok(answered) => answered,
             Err(why) => return self.shared.refuse(emit, id, why),
         };
+        let plan_switch = match self.asks.get(&key).map(|meta| &meta.shape) {
+            Some(AskShape::Plan { switch }) => Some(switch.clone()),
+            _ => None,
+        };
         self.shared.answer(emit, id, &key);
         self.close(emit, &key, decision);
         // amux knows where the switch goes, as it knows Claude's cycle:
-        // recorded at once, confirmed by Claude's next record.
-        let to_auto = matches!(
-            terminal,
+        // recorded at once, confirmed by Claude's next record. A plan's
+        // switch goes where the ask said it would.
+        let switched_to = match &terminal {
             TerminalInput::Permission {
                 choice: PermissionChoice::AllowSwitchingToAuto,
                 ..
-            }
-        );
+            } => Some("auto".to_owned()),
+            TerminalInput::Plan(PlanChoice::ApproveSwitching) => plan_switch,
+            _ => None,
+        };
         emit.effect(Effect::Terminal(terminal));
-        if to_auto {
-            self.permission_seen(emit, "auto");
+        if let Some(permission) = switched_to {
+            self.permission_seen(emit, &permission);
         }
         self.shared.accept(emit, id, false);
     }

@@ -156,7 +156,10 @@ other side:
 The PIN never crosses the network. Both hosts run a password-authenticated
 key exchange (SPAKE2) that proves each is talking to the machine in front of
 you; someone listening learns nothing they can use. A PIN works once and
-expires with the pairing window, and five wrong guesses close the window.
+expires with the pairing window, and five wrong guesses close the window:
+after that even the right PIN is refused with word that the window closed
+for too many wrong PINs, `amux pair` on the host says so too, and pairing
+needs a new window.
 
 For an unattended demo, such as an app reviewer who will never see your
 screen, `amux pair --demo --pin 246810 --for 30d` holds a PIN you choose

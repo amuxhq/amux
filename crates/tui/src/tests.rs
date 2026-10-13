@@ -1110,6 +1110,62 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
     assert!(!screen.contains("signed out"), "{screen}");
 }
 
+/// A host only the relay sees while the account is on the free plan is
+/// away because the free plan relays nothing between hosts, and every
+/// place that says it is away says so: the hosts overlay put a stale
+/// direct-dial error in its place, and the chat said only "away".
+#[test]
+fn a_host_away_on_the_free_plan_names_the_plan() {
+    let mut fleet = FleetState::new();
+    inventory(
+        &mut fleet,
+        host(
+            b"laptop",
+            "laptop",
+            wire::Trust::Trusted,
+            wire::Presence::Online,
+        ),
+    );
+    let mut desk = host(b"host", "desk", wire::Trust::Trusted, wire::Presence::Away);
+    if let wire::inventory_event::Of::Host(entry) = &mut desk {
+        entry.via = wire::RouteKind::Relay as i32;
+        entry.account_signed_in = Some(true);
+        entry.last_dial_error = Some("127.0.0.1:61393: the QUIC handshake timed out".into());
+    }
+    inventory(&mut fleet, desk);
+
+    let mut state = chat(replies(1, 5));
+    state.update(Msg::Host(fleet.host(b"host").unwrap().clone()));
+    state.update(event(session_event::Of::Detached(wire::Detached {})));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    view.reach = ui_view::reach(&fleet, b"laptop", b"host");
+    let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
+    let screen = text(&buffer);
+    assert!(
+        screen.contains("desk away · the free plan does not relay between hosts"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("desk is away · the free plan does not relay between hosts"),
+        "{screen}"
+    );
+
+    let rows: Vec<String> = crate::hosts::modal_rows(&fleet, b"laptop", theme())
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect()
+        })
+        .collect();
+    let rows = rows.join("\n");
+    assert!(
+        rows.contains("away · the free plan does not relay between hosts"),
+        "{rows}"
+    );
+}
+
 /// A host that closed its link saying it no longer trusts this machine is
 /// captioned and headed with that, never with its own old sign-in.
 #[test]
@@ -2689,6 +2745,66 @@ fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_colum
     assert!(
         edge.contains("Opus (high)") && edge.contains("never ask"),
         "the edge names the model and the permission it will start with: {edge}"
+    );
+}
+
+/// What Shift+Tab steps shows on a new agent's edge however narrow the
+/// edge is: at 80 columns in a deep folder, Codex's plan mode went on with
+/// nothing on the edge saying so, and the agent started planning.
+#[test]
+fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
+    let fleet = home_fleet();
+    let place = crate::home::Place {
+        working_dir: "~/.local/state/amux-qa/20261013-043305/t8/.testnet/net/desk/work",
+        ..*HOME_PLACE
+    };
+    let mut home = crate::home::Home::default();
+    home.key(&fleet, key(KeyCode::Char('n')), false);
+    let setup = home.open_setup(&place).unwrap();
+    setup.pick(crate::setup::Item::Kind, "1");
+    setup.offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
+    setup.pick(crate::setup::Item::Permission, "read-only");
+    let edge_of = |home: &mut crate::home::Home| {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, H)).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                home.draw(
+                    frame,
+                    area,
+                    &fleet,
+                    &HashMap::new(),
+                    None,
+                    now(),
+                    theme(),
+                    &place,
+                );
+            })
+            .unwrap();
+        let screen = text(terminal.backend().buffer());
+        screen
+            .lines()
+            .find(|line| line.contains("╰") && line.contains("Codex"))
+            .unwrap_or_else(|| panic!("no edge on\n{screen}"))
+            .to_owned()
+    };
+    assert!(
+        !edge_of(&mut home).contains("plan"),
+        "{}",
+        edge_of(&mut home)
+    );
+    home.key(&fleet, key(KeyCode::BackTab), false);
+    let edge = edge_of(&mut home);
+    assert!(
+        edge.contains("plan") && edge.contains("read only"),
+        "the edge does not show the plan mode Shift+Tab turned on: {edge}"
+    );
+    home.key(&fleet, key(KeyCode::BackTab), false);
+    assert!(
+        !edge_of(&mut home).contains("plan"),
+        "{}",
+        edge_of(&mut home)
     );
 }
 

@@ -2070,6 +2070,57 @@ fn a_reply_opening_with_an_attachment_still_says_something_on_its_row() {
     );
 }
 
+/// A message another agent sent with an attachment draws the attachment
+/// where its placeholder stands, as a person's prompt does: the row read a
+/// bare object-replacement character, with no name, size or way to open it.
+#[test]
+fn an_agent_message_carries_its_attachments_as_chips() {
+    let file = wire::Attachment {
+        of: Some(wire::attachment::Of::File(wire::BlobRef {
+            hash: vec![7; 32],
+            name: "report.txt".into(),
+            mime: "text/plain".into(),
+            size: 27,
+        })),
+    };
+    let message = Item {
+        attachments: vec![file.clone()],
+        input_id: b"envelope".to_vec(),
+        ..sdk_item(
+            1,
+            1,
+            wire::claude_sdk_item::Kind::AgentMessage(wire::AgentMessage {
+                envelope_id: b"envelope".to_vec(),
+                from: Some(wire::Sender {
+                    value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                        name: "cl".into(),
+                        ..Default::default()
+                    })),
+                }),
+                ..Default::default()
+            }),
+            "second look at this \u{FFFC}",
+        )
+    };
+    let state = session_on(
+        &fleet_entry("a", "h1", Phase::Idle, None, 1),
+        wire::ClaudeSdkSnapshot::default(),
+        vec![message],
+    );
+    let rows = all_rows(&state, &ChatOptions::default());
+    let RowKind::AgentMessage { text, from, .. } = &rows[0].kind else {
+        panic!("{:?}", rows[0].kind);
+    };
+    assert_eq!(from, "cl");
+    assert_eq!(
+        *text,
+        vec![
+            Segment::Text("second look at this ".into()),
+            Segment::Attachment(AttachmentView::of(&file)),
+        ]
+    );
+}
+
 #[test]
 fn each_row_says_what_its_state_calls_for() {
     let mut fleet = FleetState::new();
@@ -3091,6 +3142,19 @@ fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
         (1, 0),
         "the header counts agents whose rows say their host is away"
     );
+    // The sections agree with the header: an agent whose host is away does
+    // not wait in Needs you while the header says nobody does.
+    let needs_you: usize = view
+        .sections
+        .iter()
+        .filter(|section| section.kind == SectionKind::NeedsYou)
+        .map(|section| section.rows.len())
+        .sum();
+    assert_eq!(
+        needs_you, view.need_you as usize,
+        "the header counts {} needing you and Needs you lists {needs_you}",
+        view.need_you
+    );
 }
 
 /// A step that edits a file inside the agent's folder names it relative to
@@ -3731,4 +3795,24 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
         !composer(&state, 0).switched_away,
         "back on its own conversation"
     );
+}
+
+/// A chat whose host went out of reach mid-turn shows no working clock:
+/// the turn may have ended there long ago, and "Working · 1m 18s" kept
+/// counting beside a header that said the host is away.
+#[test]
+fn a_chat_whose_host_is_away_counts_no_working_time() {
+    let mut state = SessionState::new(agent(Kind::Codex), CAP);
+    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
+        kind: Kind::Codex as i32,
+        phase: Phase::Working as i32,
+        ..wire::Snapshot::default()
+    })));
+    state.update(caught_up());
+    assert!(
+        composer(&state, 60_000).activity.is_some(),
+        "a working agent on a reachable host shows its clock"
+    );
+    state.update(event(session_event::Of::Detached(wire::Detached {})));
+    assert_eq!(composer(&state, 60_000).activity, None);
 }

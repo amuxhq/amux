@@ -373,16 +373,19 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_forwarded() {
         println!("{host}'s fleet: family {family:?}");
     }
 
-    // The spawn tool names no directory: the child starts in the home
-    // directory of the user its host runs as.
+    // The spawn tool names no directory: the child starts where box's
+    // agents work (helper's folder), not in the home directory.
     let homed = net
         .spawn_child("lead", child("wanderer", "box", says("Here.")).cwd(""))
         .await
         .unwrap();
     let home = std::env::var("HOME").unwrap();
-    assert_eq!(homed.cwd, home);
-    assert_eq!(row(&net, "box", "wanderer").await.unwrap().cwd, home);
-    println!("spawn on \"box\" naming no directory: wanderer starts in {home}");
+    assert_eq!(homed.cwd, own.cwd);
+    assert_eq!(row(&net, "box", "wanderer").await.unwrap().cwd, own.cwd);
+    println!(
+        "spawn on \"box\" naming no directory: wanderer starts in {}",
+        own.cwd
+    );
 
     // Naming the parent's own host, by any of its names, is a spawn here:
     // with no directory the child starts where its parent works.
@@ -1966,4 +1969,38 @@ async fn a_file_one_agent_sends_another_arrives_on_the_recipients_own_host() {
         "the file reached the other host's agent naming the sender host's path, not one on its own host: {delivered:?}"
     );
     assert!(held, "the recipient's host holds no copy of the file");
+}
+
+/// A child an agent starts on another host without naming a folder starts
+/// where that host's agents work, as a person's new agent there would be
+/// offered, not in the home folder of the user its daemon runs as: a Codex
+/// child given shell commands had the whole home folder around it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_far_child_with_no_folder_starts_where_its_hosts_agents_work() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop")
+            .agent(lead())
+            .agent(
+                AgentDecl::new("local", "laptop")
+                    .prompt("Tidy up.")
+                    .steps(says("Tidied.")),
+            ),
+    )
+    .await
+    .unwrap();
+    net.settle("local").await.unwrap();
+    let work = row(&net, "laptop", "local").await.unwrap().cwd;
+    let kid = net
+        .spawn_child(
+            "lead",
+            child("kid", "laptop", vec![waits("never"), Step::TurnEnd]).cwd(""),
+        )
+        .await
+        .unwrap();
+    println!("kid starts in {}", kid.cwd);
+    assert_eq!(kid.cwd, work, "the far child starts in another folder");
+    net.shutdown().await.unwrap();
 }

@@ -355,7 +355,8 @@ impl Server {
         let host = optional(arguments, "host");
         let cwd = optional(arguments, "cwd").unwrap_or_else(|| match host {
             // A named host may be this one or another; the daemon picks:
-            // this agent's directory here, the home directory elsewhere.
+            // this agent's directory here, where that host's agents work
+            // elsewhere.
             Some(_) => String::new(),
             None => self.cwd.clone(),
         });

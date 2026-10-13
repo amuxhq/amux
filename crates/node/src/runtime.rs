@@ -1027,11 +1027,16 @@ impl ProfileRuntime {
         }
         if request.cwd.is_empty() {
             // A spawn from another host names no path here unless it knows
-            // one: the child starts in the home directory of the user this
+            // one: the child starts where this host's agents work (the most
+            // recently busy one's folder, which a person's new agent here is
+            // offered first), else in the home directory of the user this
             // daemon runs as.
-            request.cwd = home_dir()
-                .map(|home| home.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            request.cwd = match self.recent_folder().await? {
+                Some(folder) => folder,
+                None => home_dir()
+                    .map(|home| home.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            };
         }
         if request.cwd.is_empty() || !Path::new(&request.cwd).is_dir() {
             return Err(RegistryError::BadCwd(request.cwd));
@@ -1169,6 +1174,30 @@ impl ProfileRuntime {
     /// one forgets it.
     pub fn save_draft(&self, agent_id: &[u8], draft: &wire::ComposerDraft) {
         self.drafts.lock().unwrap().save(agent_id, draft);
+    }
+
+    /// The folder this host's own agents most recently worked in, while it
+    /// is still a folder here.
+    async fn recent_folder(&self) -> Result<Option<String>, RegistryError> {
+        let mut own: Vec<AgentRow> = self
+            .store
+            .lock()
+            .await
+            .agents()?
+            .into_iter()
+            .filter(|row| row.agent.host == self.host.as_bytes() && !row.cwd.is_empty())
+            .collect();
+        own.sort_by_key(|row| {
+            std::cmp::Reverse(
+                row.phase_since_ms
+                    .or(row.last_activity_ms)
+                    .unwrap_or(row.created_at_ms),
+            )
+        });
+        Ok(own
+            .into_iter()
+            .map(|row| row.cwd)
+            .find(|cwd| Path::new(cwd).is_dir()))
     }
 
     /// The host a create request is for: the one it names, by id or by name

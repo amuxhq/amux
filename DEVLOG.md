@@ -1,3 +1,15 @@
+2026-10-13 — **A child started on another host with no folder starts where
+that host's agents work.** An agent's spawn tool naming another host and
+no folder started the child in the home folder of the user that host's
+daemon runs as, so a Codex child given shell commands had the whole home
+folder around it, while an agent a person started there got a work
+folder. The far host now gives such a child the folder its own agents
+most recently worked in (still a folder there), which is the folder a
+person starting an agent on that host is offered first, and the home
+folder only when it has none. A spawn on the caller's own host still
+starts in the caller's folder. Tests: the families spec spawns a far
+child with no folder on a host whose agent works elsewhere.
+
 2026-10-13 — **A delete that cannot reach the whole family deletes
 nothing.** Deleting a parent whose children lived on a host desk had been
 unlinked from said "Deleted lead3" and left those children running with

@@ -1,3 +1,13 @@
+2026-10-13 — **A Codex command stopped while it waited for approval never
+ran.** Stopping a Codex agent with a command approval open recorded the
+command as a background terminal: the stop interrupts the turn first, and
+an interrupt leaves a running command running on in the background, so
+the phone read "In background · touch decided.txt · finished" for a
+command nobody approved. The Codex interpreter now sets aside the work
+whose approval was still open when the turn ended; it is cut short
+(cancelled, decision unknown) and never counted as a background job. An
+interpreter test interrupts a turn with a command's approval open.
+
 2026-10-13 — **An agent's message draws its attachments as chips.** A
 message one agent sent another with a file read "second look at this ￼"
 in both chats: the item carried the attachment and its placeholder, as a

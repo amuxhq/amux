@@ -1,5 +1,7 @@
 //! What the app server writes: responses, requests and notifications.
 
+use std::collections::BTreeSet;
+
 use codex_protocol::client::{
     BackgroundTerminalsListParams, CommandApprovalResponse, ElicitationAction, ModelListParams,
     SkillsListParams, ThreadReadParams, ThreadSetNameParams, ToolCallResponse, TurnInterruptParams,
@@ -2197,11 +2199,14 @@ impl State {
             );
         }
         self.final_error = None;
+        // Work whose approval was still open never ran.
+        let mut unapproved = BTreeSet::new();
         for ask in self.shared.close_all_asks() {
             if let Some(codex_ask::Body::Plan(_)) = ask.body {
                 self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
                 continue;
             }
+            unapproved.insert(ask.item_key.clone());
             let meta = self.asks.remove(&ask.key);
             self.dismiss(emit, &ask, meta);
         }
@@ -2210,6 +2215,7 @@ impl State {
         self.settle_open(
             emit,
             matches!(outcome, TurnOutcome::Completed | TurnOutcome::Interrupted),
+            &unapproved,
         );
         // Codex lists what carries on in the background; with nothing
         // still running there is nothing to ask.
@@ -2272,8 +2278,10 @@ impl State {
     /// At turn end nothing streams any more. A command still running
     /// carries on in the background when the turn completed or was
     /// interrupted (a command Codex did end reports its own end), else it
-    /// was cut short; any other open item is finished as it stands.
-    fn settle_open(&mut self, emit: &mut Emit, completed: bool) {
+    /// was cut short, as is one still waiting for its approval
+    /// (`unapproved`, by item key), which never ran; any other open item
+    /// is finished as it stands.
+    fn settle_open(&mut self, emit: &mut Emit, completed: bool, unapproved: &BTreeSet<String>) {
         let open = self
             .works
             .iter()
@@ -2290,7 +2298,7 @@ impl State {
             };
             match (&mut work.of, completed) {
                 (Some(work::Of::Command(command)), true)
-                    if work.state == ToolState::Running as i32 =>
+                    if work.state == ToolState::Running as i32 && !unapproved.contains(&key) =>
                 {
                     if command.background {
                         continue;
@@ -2369,7 +2377,7 @@ impl State {
                 self.emit_ask(emit, &ask, meta.at_ms, Some(ask_item::dismissed()));
             }
         }
-        self.settle_open(emit, false);
+        self.settle_open(emit, false, &BTreeSet::new());
         self.background = None;
         self.shared.provider_exited();
         self.active_turn = None;

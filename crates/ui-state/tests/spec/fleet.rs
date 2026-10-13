@@ -261,3 +261,32 @@ fn a_stop_held_under_the_newest_listing_waits_for_its_host() {
     assert!(fleet.take_released_stops().is_empty());
     assert!(fleet.stop_held(&at("a", "worker")));
 }
+
+/// A held stop the end of a listing sends again leaves its row changed, so
+/// clients stop drawing it held with Cancel.
+#[test]
+fn a_stop_released_at_a_listings_end_changes_its_row() {
+    let mut fleet = FleetState::new();
+    for msg in [
+        online("a"),
+        agent(row("a", "worker", Phase::Working, None)),
+        caught_up(),
+    ] {
+        fleet.update(msg);
+    }
+    let left = fleet.listings();
+    fleet.update(FleetMsg::Connection(Connection::Reconnecting));
+    fleet.update(FleetMsg::Connection(Connection::Live));
+    fleet.update(online("a"));
+    fleet.update(FleetMsg::HoldStop {
+        agent: at("a", "worker"),
+        listing: left,
+    });
+    fleet.update(agent(row("a", "worker", Phase::Working, None)));
+    let changed = fleet.update(caught_up());
+    assert_eq!(fleet.take_released_stops(), [at("a", "worker")]);
+    assert!(
+        changed.contains(&at("a", "worker")),
+        "the released stop's row did not change: {changed:?}"
+    );
+}

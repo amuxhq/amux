@@ -1,3 +1,9 @@
+2026-10-13 — **A held stop sent again at a listing's end stops reading
+held.** A held stop that went again when a listing ended with its host
+online left the held list without its agent being reported as changed, so
+clients kept drawing the row "stop held" with Cancel. Every released stop now
+marks its agent's row changed.
+
 2026-10-13 — **A child's report names the incarnation it is from.** A
 sub-agent waits for the last report of every child incarnation its daemon
 names live, but reports carried no child incarnation. A child resumed by its

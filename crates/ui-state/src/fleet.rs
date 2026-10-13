@@ -288,7 +288,7 @@ impl FleetState {
                         let host_id = host.host_id.clone();
                         self.hosts.insert(host.host_id.clone(), host);
                         if online {
-                            self.release_stops(|agent| agent.host == host_id);
+                            self.release_stops(|agent| agent.host == host_id, &mut changed);
                         }
                     }
                     inventory_event::Of::HostRemoved(removed) => {
@@ -344,7 +344,7 @@ impl FleetState {
                             .filter(|host| self.host_online(host))
                             .cloned()
                             .collect();
-                        self.release_stops(|agent| online.contains(&agent.host));
+                        self.release_stops(|agent| online.contains(&agent.host), &mut changed);
                     }
                 }
             }
@@ -352,8 +352,13 @@ impl FleetState {
         changed.into_iter().collect()
     }
 
-    /// Hands the held stops `which` picks to the driver to send again.
-    fn release_stops(&mut self, which: impl Fn(&AgentKey) -> bool) {
+    /// Hands the held stops `which` picks to the driver to send again, and
+    /// marks each agent's row changed: it no longer reads held.
+    fn release_stops(
+        &mut self,
+        which: impl Fn(&AgentKey) -> bool,
+        changed: &mut BTreeSet<AgentKey>,
+    ) {
         let back: Vec<AgentKey> = self
             .held_stops
             .iter()
@@ -362,6 +367,7 @@ impl FleetState {
             .collect();
         for agent in back {
             self.held_stops.remove(&agent);
+            changed.insert(agent.clone());
             self.released_stops.push(agent);
         }
     }

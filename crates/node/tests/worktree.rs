@@ -279,16 +279,18 @@ async fn an_agent_created_from_another_host_gets_its_worktree_on_its_own_host() 
     assert_eq!(reported.branch.as_deref(), Some("from-laptop"));
     assert_eq!(reported.base_branch.as_deref(), Some("feature"));
 
-    // The desk's refusal reaches the laptop as the desk said it.
+    // The desk's refusal reaches the laptop as the desk said it. A taken
+    // agent name would only earn a suffix, so the clash is with a branch
+    // the repository already has.
     let refused = from_laptop
-        .create_agent(tonic::Request::new(on_desk("from-laptop")))
+        .create_agent(tonic::Request::new(on_desk("main")))
         .await
         .unwrap_err();
     assert_eq!(refused.code(), tonic::Code::AlreadyExists, "{refused:?}");
     assert!(
         refused
             .message()
-            .contains("the repository already has a branch named from-laptop"),
+            .contains("the repository already has a branch named main"),
         "{refused:?}"
     );
     println!(

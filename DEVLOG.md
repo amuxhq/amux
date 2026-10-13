@@ -1,3 +1,9 @@
+2026-10-13 — **A far host's refusal test clashes on a branch, not a name.**
+The test that a desk's worktree refusal reaches the laptop in the desk's
+words created a second agent with a taken name. Names on a host are now
+unique and a taken one earns a suffix, so that create succeeds; the test
+now asks for a worktree on a branch the repository already has.
+
 2026-10-13 — **Agents send files as attachments.** The send tool moves each
 attachment element the model wrote out of the text into the message's
 attachments, and the recipient's agent process writes them with paths on its

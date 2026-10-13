@@ -181,25 +181,18 @@ impl State {
     }
 
     fn agent_fact(&mut self, emit: &mut Emit, fact: AgentFact) {
-        let (version, keymap, permission_menus, send_now_refused, asking) = match fact {
+        let (version, keymap, permission_menus, send_now_refused) = match fact {
             AgentFact::Launch {
                 version,
                 keymap,
                 permission_menus,
                 send_now_refused,
-                asking,
-            } => (version, keymap, permission_menus, send_now_refused, asking),
+            } => (version, keymap, permission_menus, send_now_refused),
             // Waiting on its trust dialog, Claude takes no prompt; it
             // starts its session once trusted, and that start says so.
             AgentFact::Ready if self.trust_ask().is_some() => return,
             AgentFact::Ready => return self.shared.provider_started(),
             AgentFact::TrustDialog => return self.trust_dialog(emit),
-            AgentFact::Offered { catalogue } => {
-                if catalogue.is_some() {
-                    self.provider.offered = catalogue;
-                }
-                return self.publish_catalogue(emit);
-            }
         };
         let provider = &mut self.provider;
         provider.version = (!version.is_empty()).then_some(version);
@@ -208,10 +201,7 @@ impl State {
         provider.send_now_refused = send_now_refused;
         provider.relaunched = provider.launches > 0;
         provider.launches += 1;
-        // Asked in the agent's folder, Claude's answer publishes it.
-        if !asking {
-            self.publish_catalogue(emit);
-        }
+        self.publish_catalogue(emit);
     }
 
     /// The permission a plan ask's switch moves to: what the first entry

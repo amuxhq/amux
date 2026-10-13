@@ -543,7 +543,6 @@ impl Provider {
                 .map(Keys::permission_menus)
                 .unwrap_or_default(),
             keys.as_ref().and_then(Keys::send_now_refused).as_deref(),
-            true,
         );
         let _ = events
             .send(ProviderEvent::Fact(Fact {
@@ -551,19 +550,6 @@ impl Provider {
                 payload: launch,
             }))
             .await;
-        // What the host's Claude offers is what the daemon gathered in its
-        // own folder; asked here, Claude adds the project's own commands.
-        let offered = events.clone();
-        let asking = spec.clone();
-        tokio::spawn(async move {
-            let catalogue = crate::catalogue::claude_in(&asking).await.ok();
-            let _ = offered
-                .send(ProviderEvent::Fact(Fact {
-                    channel: Channel::Agent,
-                    payload: interpret::claude_pty::offered_fact(catalogue),
-                }))
-                .await;
-        });
         let private = dir.join(dir::PRIVATE);
         let (mut args, settings) = claude_launch(spec, dir, true)?;
         args.extend([

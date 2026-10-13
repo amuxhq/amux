@@ -323,13 +323,6 @@ paste on has been followed by 100 ms of quiet, or 500 ms at most. The
 `SessionStart` hook is no signal on its own, because some Claude versions run
 it only after the first prompt.
 
-As Claude launches, the agent also asks a headless Claude, in the agent's
-folder and with the environment terminal Claude runs with, what it offers
-(the `initialize` answer, as the daemon's host catalogue asks it): a project's
-own commands are listed only when asked from inside it. The answer, or word
-that there is none within 30 seconds, goes to the interpreter as an offered
-fact, which publishes the catalogue.
-
 Nothing else is read off the screen. The permission Claude runs in is the
 one amux cycled it to with Shift+Tab, confirmed by the permission Claude
 records next; the permission approving a plan switches to follows from the

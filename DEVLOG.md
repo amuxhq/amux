@@ -1,3 +1,14 @@
+2026-10-13 — **Terminal Claude's folder catalogue is gathered once, by the
+daemon.** Both merged halves asked Claude in the agent's own folder: the
+daemon at spawn and resume, through its existing host probe run from the
+folder, and the agent process again as Claude launched, with a fact the
+interpreter waited for. The daemon's ask stays: it reuses the probe, keeps
+each folder's answer as long as the host's copy is kept, and falls back to
+the host's copy; the agent's second ask, its 30-second wait and the offered
+fact are gone. The headless fake still marks its models as taking auto
+mode when its script offers it, so a catalogue asked of it agrees with the
+scripted terminal Claude.
+
 2026-10-13 — **Codex reads another agent's file at its path here, once.**
 The merged halves both wrote Codex's injected message for an agent message
 with files: its interpreter wrote each element without a path, and the

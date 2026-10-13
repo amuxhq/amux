@@ -311,6 +311,11 @@ impl Server {
         // recipient's host fetches its bytes and its agent reads them at a
         // path of its own.
         let positioned = attachments::parse(&text).positioned;
+        // Measured as stored, not as the element says: the model wrote the
+        // element, and the recipient's host fetches every byte.
+        for attachment in &positioned.attachments {
+            self.within_limit(attachment)?;
+        }
         let request = SendMessageRequest {
             id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             to: Some(AgentRef {
@@ -530,16 +535,22 @@ impl Server {
         } else {
             Path::new(&self.cwd).join(path)
         };
-        let bytes =
-            std::fs::read(&path).map_err(|error| format!("reading {}: {error}", path.display()))?;
-        let hash = sha2::Sha256::digest(&bytes).to_vec();
-        dir::write_blob(&self.dir, &hash, &bytes)
-            .map_err(|error| format!("storing {}: {error}", path.display()))?;
         let name = optional(arguments, "name").unwrap_or_else(|| {
             path.file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default()
         });
+        let size = std::fs::metadata(&path)
+            .map_err(|error| format!("reading {}: {error}", path.display()))?
+            .len();
+        if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+            return Err(too_large_words(&name).into());
+        }
+        let bytes =
+            std::fs::read(&path).map_err(|error| format!("reading {}: {error}", path.display()))?;
+        let hash = sha2::Sha256::digest(&bytes).to_vec();
+        dir::write_blob(&self.dir, &hash, &bytes)
+            .map_err(|error| format!("storing {}: {error}", path.display()))?;
         let mime = mime_type(&path);
         let blob = BlobRef {
             hash: hash.clone(),
@@ -557,6 +568,46 @@ impl Server {
         let stored = self.dir.join(dir::BLOBS).join(interpret::to_hex(&hash));
         Ok(attachments::element(&attachment, Some(&stored)))
     }
+
+    /// Refuses an attachment whose stored blob in this agent's directory is
+    /// over [`wire::ATTACHMENT_SIZE_LIMIT`], in the words a person's
+    /// over-large file gets.
+    fn within_limit(&self, attachment: &Attachment) -> Result<(), Refusal> {
+        use wire::attachment::Of;
+        let blob = match attachment.of.as_ref() {
+            Some(Of::Image(blob) | Of::File(blob)) => blob,
+            Some(Of::Review(review)) => {
+                match review.diff.as_ref().and_then(|diff| diff.patch.as_ref()) {
+                    Some(blob) => blob,
+                    None => return Ok(()),
+                }
+            }
+            Some(Of::Text(_)) | None => return Ok(()),
+        };
+        let stored = self
+            .dir
+            .join(dir::BLOBS)
+            .join(interpret::to_hex(&blob.hash));
+        let size = std::fs::metadata(&stored).map_or(0, |meta| meta.len());
+        if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+            let name = if blob.name.is_empty() {
+                "the attachment"
+            } else {
+                &blob.name
+            };
+            return Err(too_large_words(name).into());
+        }
+        Ok(())
+    }
+}
+
+/// Why a file is not attached: it is over the limit, in the unit a person
+/// reads (the limit is 64 MiB of the file's own bytes).
+fn too_large_words(name: &str) -> String {
+    format!(
+        "{name} is too large to attach: files can be at most {} MB",
+        wire::ATTACHMENT_SIZE_LIMIT / (1024 * 1024)
+    )
 }
 
 /// The status call is the provider's fact; there is nothing to do but

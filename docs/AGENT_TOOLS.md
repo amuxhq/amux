@@ -104,7 +104,9 @@ before anything is sent, and a name agents on two hosts share is refused
 offering the `name@host` forms that pick each. An attachment element in
 `text` (what `attach` answered) travels as an attachment: the recipient's
 host fetches the file, and the recipient reads it at a path on its own host
-([attachments](ATTACHMENTS.md)). The answer is the envelope id, once
+([attachments](ATTACHMENTS.md)). Each attachment is measured as stored in the
+sender's blobs, not as its element says; one over the 64 MB attachment limit
+is refused in words naming the limit, and nothing is sent. The answer is the envelope id, once
 the recipient's provider has the message; [delivery](#delivery) describes
 what that means. When a message reaches an agent from another agent, the
 tool's description tells it to reply with `send` to that agent's name.
@@ -151,7 +153,9 @@ reads the file (a relative path is taken from the agent's working directory),
 hashes it, writes it into `<dir>/blobs/<sha256>`, and returns the canonical
 `<amux-attachment>` element naming it, with `name` as the name viewers see
 (the file's own name when omitted) and a mime type from the file's extension.
-PNG, JPEG, GIF, WebP and SVG are images; everything else is a file. No daemon
+PNG, JPEG, GIF, WebP and SVG are images; everything else is a file. A file
+over the 64 MB attachment limit is refused, naming the limit, before it is
+read. No daemon
 call is made, so it works while the daemon is away. The model is told to put
 the element in its reply exactly as returned; when the reply completes, the
 interpreter makes the element an attachment on the reply's item, which both

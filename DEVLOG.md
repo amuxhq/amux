@@ -1,3 +1,15 @@
+2026-10-13 — **An agent's attachment is held to the 64 MB limit.** A person's
+files over the attachment limit are refused before upload, but an agent's
+were not: the attach tool stored a file of any size, and the send tool
+passed on whatever attachment element the model wrote, so a recipient on
+the same host was handed an oversized file and one on another host had an
+oversized response built before the framing limit refused it. The attach
+tool now refuses a file over the limit before reading it, the send tool
+measures each attachment as stored in the sender's blobs (not as its
+element says) and refuses one over the limit in the person's words, and
+the daemon's GetBlob refuses a stored blob over the limit before reading
+it, which covers the copy to a recipient on either host.
+
 2026-10-13 — **A click in the terminal composer lands between whole
 characters.** The composer draws a grapheme at a time, but finding the
 draft position under a click stepped one code point at a time, so a family

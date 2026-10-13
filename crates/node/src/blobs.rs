@@ -146,13 +146,24 @@ impl ProfileRuntime {
         {
             blobs.touch(&path, self.clock_now());
         }
-        let bytes = match tokio::fs::read(&path).await {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return Err(BlobError::NoBlob(hex(&request.hash)));
+        let missing = |error: io::Error| {
+            if error.kind() == io::ErrorKind::NotFound {
+                BlobError::NoBlob(hex(&request.hash))
+            } else {
+                BlobError::Read(error)
             }
-            Err(error) => return Err(BlobError::Read(error)),
         };
+        // Measured before it is read: an agent's attachment is fetched
+        // here, by its recipient's host, and only its sender's word says
+        // how large it is.
+        let size = tokio::fs::metadata(&path).await.map_err(missing)?.len();
+        if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+            return Err(BlobError::TooLarge {
+                name: hex(&request.hash),
+                size: usize::try_from(size).unwrap_or(usize::MAX),
+            });
+        }
+        let bytes = tokio::fs::read(&path).await.map_err(missing)?;
         Ok(GetBlobResponse { bytes })
     }
 

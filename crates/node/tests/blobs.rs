@@ -104,6 +104,36 @@ async fn put_blob_writes_the_agents_directory_and_get_blob_reads_it_back() {
     daemon.shutdown().await.unwrap();
 }
 
+/// A stored blob over the attachment limit is refused, naming the limit,
+/// before its bytes are read: an agent's attachment is fetched by GetBlob,
+/// on this host or from another, and a response that size cannot be sent.
+#[tokio::test(flavor = "multi_thread")]
+async fn get_blob_refuses_a_stored_blob_over_the_attachment_limit() {
+    let install = Install::new();
+    let agent = SyntheticAgent::new(&install, "dumps", SEGMENTS);
+    agent.register_offline(&install);
+    let daemon = install.start("boot-1", quiet_launch()).await;
+    let runtime = runtime(&daemon, &install);
+    let blobs = agent.dir.join(agent_dir::BLOBS);
+    std::fs::create_dir_all(&blobs).unwrap();
+    let hash = vec![7u8; 32];
+    std::fs::File::create(blobs.join(hex(&hash)))
+        .unwrap()
+        .set_len(wire::ATTACHMENT_SIZE_LIMIT as u64 + 1)
+        .unwrap();
+    let refused = runtime
+        .get_blob(GetBlobRequest {
+            agent_id: agent.id.as_bytes().to_vec(),
+            hash,
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(refused, BlobError::TooLarge { .. }), "{refused}");
+    assert!(refused.to_string().contains("64 MB limit"), "{refused}");
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn get_blob_reads_a_replica_file_and_put_blob_refuses_a_replica() {
     let install = Install::new();

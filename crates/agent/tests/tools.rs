@@ -834,6 +834,70 @@ async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
     assert!(missing.starts_with("reading "), "{missing}");
 }
 
+/// A file over the attachment limit is refused in words naming the limit,
+/// before its bytes are read or stored: the recipient could not be sent it.
+#[tokio::test(flavor = "multi_thread")]
+async fn attach_refuses_a_file_over_the_attachment_limit() {
+    let mut mcp = Mcp::start(WINDOW).await;
+    let huge = std::fs::File::create(mcp.cwd.join("huge.bin")).unwrap();
+    huge.set_len(wire::ATTACHMENT_SIZE_LIMIT as u64 + 1)
+        .unwrap();
+    let refused = mcp.refused("attach", json!({ "path": "huge.bin" })).await;
+    assert_eq!(
+        refused,
+        "huge.bin is too large to attach: files can be at most 64 MB"
+    );
+    let stored = std::fs::read_dir(mcp.dir.join(agent::BLOBS))
+        .map(|blobs| blobs.count())
+        .unwrap_or(0);
+    assert_eq!(stored, 0, "nothing was stored");
+}
+
+/// A send's attachment is measured as stored, not as its element says:
+/// one over the limit is refused naming it, and nothing is sent.
+#[tokio::test(flavor = "multi_thread")]
+async fn send_refuses_an_attachment_stored_over_the_limit() {
+    let mut mcp = Mcp::start(WINDOW).await;
+    let fleet = fleet();
+    let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
+    let hash = vec![7u8; 32];
+    let blobs = mcp.dir.join(agent::BLOBS);
+    std::fs::create_dir_all(&blobs).unwrap();
+    let stored = blobs.join(interpret::to_hex(&hash));
+    std::fs::File::create(&stored)
+        .unwrap()
+        .set_len(wire::ATTACHMENT_SIZE_LIMIT as u64 + 1)
+        .unwrap();
+    let element = attachments::element(
+        &wire::Attachment {
+            of: Some(wire::attachment::Of::File(wire::BlobRef {
+                hash,
+                name: "dump.bin".into(),
+                mime: "application/octet-stream".into(),
+                size: 10,
+            })),
+        },
+        Some(&stored),
+    );
+    let refused = mcp
+        .refused(
+            "send",
+            json!({ "to": "reviewer", "text": format!("Here: {element}") }),
+        )
+        .await;
+    assert_eq!(
+        refused,
+        "dump.bin is too large to attach: files can be at most 64 MB"
+    );
+    assert!(
+        !fleet
+            .calls()
+            .iter()
+            .any(|call| matches!(call, Call::Send(_))),
+        "nothing was sent"
+    );
+}
+
 /// A daemon that comes up inside the window is reached; with none the call
 /// says so once the window has passed.
 #[tokio::test(flavor = "multi_thread")]

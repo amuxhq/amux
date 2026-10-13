@@ -484,7 +484,7 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
     assert!(
-        refused.message().contains("exited"),
+        refused.message().contains("has stopped"),
         "{}",
         refused.message()
     );

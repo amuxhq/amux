@@ -42,7 +42,7 @@ pub enum RelayError {
     Unavailable,
     #[error("the agent's answer was lost; the input may or may not have arrived")]
     Lost,
-    #[error("rejected: {}", said(.0))]
+    #[error("{}", said(.0))]
     Rejected(Rejected),
     #[error("the recipient's incarnation the message was for has ended")]
     Stale,
@@ -115,16 +115,30 @@ fn rejection(verdict: &SendInputResponse) -> Option<&Rejected> {
     }
 }
 
-/// A refusal as an error or a log line says it: its own words, else its
-/// value's name in lower case ("exited").
+/// A refusal as an error says it: its own words, else a sentence a sending
+/// agent's model can act on. The recipient goes unnamed because the sender
+/// already knows whom it addressed.
 fn said(rejected: &Rejected) -> String {
-    rejected.detail.clone().unwrap_or_else(|| {
-        rejected
-            .refusal()
-            .as_str_name()
-            .trim_start_matches("REFUSAL_")
-            .to_ascii_lowercase()
-    })
+    if let Some(detail) = &rejected.detail {
+        return detail.clone();
+    }
+    match rejected.refusal() {
+        Refusal::Unspecified => "the recipient refused the message",
+        Refusal::ClosedAsk => "the question the message answers is no longer open",
+        Refusal::NotQueued => "the message it names is no longer waiting",
+        Refusal::Unsupported => "the recipient cannot take that input",
+        Refusal::Draining => "the recipient is finishing its last turn and takes nothing new",
+        Refusal::Exiting => "the recipient is stopping",
+        Refusal::Exited => {
+            "the recipient has stopped; only a message from its parent starts it again"
+        }
+        Refusal::HostUnreachable => "the recipient's host cannot be reached",
+        Refusal::ConversationElsewhere => {
+            "Claude's own view switched to another conversation, so the recipient's \
+             conversation is not the one on its screen"
+        }
+    }
+    .to_owned()
 }
 
 /// The blob an attachment's bytes are, for the kinds that have one.

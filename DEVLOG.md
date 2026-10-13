@@ -1,3 +1,10 @@
+2026-10-13 — **A message an agent cannot take is refused in a sentence.** A
+send to a stopped agent from anyone but its parent came back to the sending
+agent as `rejected: exited`. Each refusal now reads as a sentence the
+sender's model can act on, such as "the recipient has stopped; only a
+message from its parent starts it again", and a far host's refusal arrives
+in its own words without a prefix.
+
 2026-10-13 — **A far host's refusal test clashes on a branch, not a name.**
 The test that a desk's worktree refusal reaches the laptop in the desk's
 words created a second agent with a taken name. Names on a host are now

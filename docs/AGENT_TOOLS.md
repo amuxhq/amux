@@ -70,8 +70,8 @@ may have taken the call, and that the call was not made again.
 A refusal comes back as the tool's error text, in words a model can act on:
 `no agent named <name>`, `<name> names more than one agent; pick one with
 <name>@<host> or <name>@<host>` (agents on two hosts sharing a name),
-`rejected: exited` (a `send` to an exited agent that is not the sender's
-child), `<name> did not stop: <why>` (a `stop` the daemon refused, such as
+`the recipient has stopped; only a message from its parent starts it
+again` (a `send` to an exited agent that is not the sender's child), `<name> did not stop: <why>` (a `stop` the daemon refused, such as
 one aimed at an agent that is not the caller's child), `<host> cannot be
 reached`, or the daemon's own message.
 
@@ -208,8 +208,9 @@ A send goes from the model to the recipient's provider like this:
    on another host it forwards the envelope there
    ([across hosts](#across-hosts)); otherwise it runs the recipient's lane.
 3. A recipient that has exited is resumed with the message as its first
-   input when the sender is its parent. Any other sender is answered
-   `rejected: exited`.
+   input when the sender is its parent. Any other sender is refused in
+   words: the recipient has stopped and only its parent's message starts it
+   again.
 4. The recipient's interpreter receives the `agent_message` frame, writes the
    agent-message item with the envelope id as its input id, marks the message
    pending, answers accepted, and emits an inject effect naming its carrier.

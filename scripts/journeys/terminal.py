@@ -331,8 +331,8 @@ def selected_row(frame: str, agent: str) -> bool:
 
 
 def working(frame: str) -> bool:
-    """A turn is under way: the keys under the composer offer to stop it."""
-    return "ctrl+x stop" in frame
+    """A turn is under way: the keys under the composer offer to interrupt it."""
+    return "ctrl+x interrupt" in frame
 
 
 def at_rest(frame: str, *terms: str) -> bool:

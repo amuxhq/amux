@@ -12,7 +12,7 @@
     ○ decision-pty  Claude (termin│ Stop helper? It can be resumed later. │ork                         now
                                   │                                       │
     ○ reviewer  Claude · /tmp/jour│ [Stop]  [Cancel]                      │                            now
-                                  │ enter stop   esc cancel               │
+                                  │ ←→ choose   enter press   esc cancel  │
     ○ keeper  Claude · /tmp/journe╰───────────────────────────────────────╯                            now
       The recovery state is safely stored.
 

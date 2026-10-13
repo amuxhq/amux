@@ -31,4 +31,4 @@
   │ › Message worker                                                                                       │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter queue   ctrl+x stop   shift+tab permission   ctrl+a more
+  enter queue   ctrl+x interrupt   shift+tab permission   ctrl+a more

@@ -108,7 +108,7 @@ def leave_and_recover(journey: TerminalJourney) -> list[str]:
     journey.open_chat(pane, "keeper")
     journey.wait_terms(pane, first, "desk away · not current")
     journey.type(pane, DRAFT)
-    journey.wait_terms(pane, DRAFT, "Draft kept · sending waits")
+    journey.wait_terms(pane, DRAFT, "enter holds it", "it sends when the host is back")
     journey.frame(pane, "cached-offline")
 
     # Work goes on at the desk while the laptop is cut off; when the link
@@ -138,11 +138,11 @@ def leave_and_recover(journey: TerminalJourney) -> list[str]:
     # reads the same before the outage as after it and a send pressed while
     # the client is reconnecting is not taken.
     journey.request({"KillDaemon": {"host": "laptop"}})
-    journey.wait_terms(pane, "reconnecting", DRAFT, "Draft kept · sending waits")
+    journey.wait_terms(pane, "reconnecting", DRAFT, "it sends once amux is back")
     journey.request({"RestartDaemon": {"host": "laptop"}})
     journey.wait(
         pane,
-        lambda frame: DRAFT in frame and "Draft kept" not in frame and second in frame,
+        lambda frame: DRAFT in frame and "enter holds it" not in frame and second in frame,
         "the chat live again after the restart",
     )
     journey.keys(pane, "Enter")
@@ -239,10 +239,10 @@ def manage_agent(journey: TerminalJourney) -> list[str]:
 
     # Stopped: exited on the host with its history kept, and resumable.
     journey.select_agent(pane, "helper")
-    journey.keys(pane, "s")
+    journey.keys(pane, "x")
     journey.wait_terms(pane, "Stop helper? It can be resumed later.")
     journey.frame(pane, "stop-asked")
-    journey.keys(pane, "y")
+    journey.keys(pane, "Enter")
     journey.wait(pane, lambda frame: "▸ Exited 1 " in frame and agent_row(frame, "helper") is None, "helper exited")
     stopped = journey.wait_inventory(
         "desk", lambda agents: (listed(agents, agent_id) or {}).get("lifecycle") == EXITED, "stopped"
@@ -273,12 +273,22 @@ def manage_agent(journey: TerminalJourney) -> list[str]:
     reflected_once(resumed, BACK)
     journey.frame(pane, "resumed")
 
-    # Deleted, explicitly: gone from home and from the host.
+    # Deleted, explicitly: only an exited agent offers it, so stopped
+    # again first, then gone from home and from the host.
     journey.home(pane)
     journey.select_agent(pane, "helper")
     journey.keys(pane, "x")
+    journey.wait_terms(pane, "Stop helper? It can be resumed later.")
+    journey.keys(pane, "Enter")
+    journey.wait_inventory(
+        "desk", lambda agents: (listed(agents, agent_id) or {}).get("lifecycle") == EXITED, "stopped-again"
+    )
+    if "▸ Exited " in journey.wait_terms(pane, "Exited "):
+        journey.open_exited(pane)
+    journey.select_agent(pane, "helper")
+    journey.keys(pane, "x")
     journey.wait_terms(pane, "Delete helper and its history?")
-    journey.keys(pane, "y")
+    journey.keys(pane, "Enter")
     journey.wait(pane, lambda frame: agent_row(frame, "helper") is None, "home without helper")
     journey.wait_inventory("desk", lambda agents: listed(agents, agent_id) is None, "deleted")
     journey.frame(pane, "deleted")
@@ -286,10 +296,10 @@ def manage_agent(journey: TerminalJourney) -> list[str]:
     return [
         "n, a first prompt and enter started a headless Claude the desk lists, and its chat opened on the reply",
         "r renamed it in place; the desk lists the same id as helper",
-        "s stopped it: the desk lists it exited, with its prompt and reply kept",
+        "x stopped it: the desk lists it exited, with its prompt and reply kept",
         control,
         "a message from the exited composer resumed the same id, and each prompt is in the desk's chat once",
-        "x deleted it: gone from home and from the desk",
+        "stopped again, x on its exited row deleted it: gone from home and from the desk",
         "the client exited 0",
     ]
 
@@ -504,7 +514,7 @@ def keep_authority(journey: TerminalJourney) -> list[str]:
     journey.wait_terms(signed_out, "Signed default out", "AMUX_EXIT_0")
     # The reason named is this machine's sign-out, never a claim about the
     # desk, and the hosts overlay says the same.
-    journey.wait_terms(pane, "desk away · this machine is signed out", "until this machine signs in")
+    journey.wait_terms(pane, "desk away · this machine is signed out", "it sends once this machine signs in")
     journey.home(pane)
     journey.keys(pane, "h")
     journey.wait_terms(pane, "signed out · amux login", "away · this machine is signed out")
@@ -514,18 +524,21 @@ def keep_authority(journey: TerminalJourney) -> list[str]:
     journey.wait_terms(pane, "desk away · this machine is signed out")
     journey.type(pane, held)
     journey.keys(pane, "Enter")
-    journey.wait_terms(pane, held, "Draft kept · sending waits until this machine signs in")
+    journey.wait_terms(pane, held, "sends when desk is back")
     journey.frame(pane, "blocked")
     time.sleep(2)
     blocked = journey.chat("desk", "guarded", "while-signed-out")
     never_received(blocked, held)
     control = negative_control(never_received, blocked, asked)
 
-    # Signed in again: the chat is current and the held message goes once.
+    # Signed in again: the chat is current and the held message goes by
+    # itself, once.
     journey.request({"SignIn": {"host": "laptop", "account": "ada"}})
-    journey.wait(pane, lambda frame: "not current" not in frame and held in frame and "Draft kept" not in frame, "the chat current again")
-    journey.keys(pane, "Enter")
-    journey.wait(pane, lambda frame: at_rest(frame, "The relay carries us again."), "the reply after signing in")
+    journey.wait(
+        pane,
+        lambda frame: "not current" not in frame and at_rest(frame, held, "The relay carries us again.") and "sends when" not in frame,
+        "the reply after signing in",
+    )
     after = journey.wait_chat("desk", "guarded", lambda chat: chat["phase"] == "IDLE" and len(prompts(chat, held)) == 1, "sent-after-sign-in")
     reflected_once(after, asked)
     reflected_once(after, held)
@@ -536,7 +549,7 @@ def keep_authority(journey: TerminalJourney) -> list[str]:
         f"through the relay the desk received {asked!r} once and answered",
         "signed out, the laptop named its own sign-out as the reason the desk was away, in the chat and the hosts overlay, and held the message; the desk never received it",
         control,
-        f"signed in again, the chat was current and {held!r} reached the desk once and was answered",
+        f"signed in again, the chat was current and the held {held!r} went by itself, reached the desk once and was answered",
         "the clients exited 0",
     ]
 
@@ -665,7 +678,7 @@ def decide_plan_codex(journey: TerminalJourney) -> list[str]:
     # The plan is in the feed while the turn still runs.
     journey.wait(
         pane,
-        lambda frame: "3. Delete the old journal." in frame and "ctrl+x stop" in frame and "Plan ready" not in frame,
+        lambda frame: "3. Delete the old journal." in frame and working(frame) and "Plan ready" not in frame,
         "the plan streaming",
     )
     journey.frame(pane, "plan-streaming")
@@ -865,7 +878,7 @@ def queue_and_steer(journey: TerminalJourney) -> list[str]:
     journey.open_chat(pane, "worker")
     journey.type(pane, RUN)
     journey.keys(pane, "Enter")
-    journey.wait_terms(pane, "Running scripts/soak --for 1h", "ctrl+x stop")
+    journey.wait_terms(pane, "Running scripts/soak --for 1h", "ctrl+x interrupt")
     # While it works, prompts queue under the feed.
     journey.type(pane, STEER)
     journey.keys(pane, "Enter")
@@ -913,23 +926,25 @@ def send_while_away(journey: TerminalJourney) -> list[str]:
     journey.wait_terms(pane, "cabin away")
     journey.type(pane, BACKUP)
     journey.keys(pane, "Enter")
-    journey.wait_terms(pane, f"› {BACKUP}", "Draft kept · sending waits")
+    journey.wait_terms(pane, BACKUP, "sends when cabin is back")
     journey.frame(pane, "away")
     time.sleep(2)
     away = journey.chat("cabin", "backups", "while-away")
     never_sent(away, BACKUP)
     journey.request({"Restore": {"a": "cabin", "b": "laptop"}})
-    journey.wait(pane, lambda frame: BACKUP in frame and "Draft kept" not in frame and "cabin away" not in frame, "the cabin back")
-    journey.keys(pane, "Enter")
-    journey.wait(pane, lambda frame: at_rest(frame, "Last night's backup finished with no errors."), "the reply")
+    journey.wait(
+        pane,
+        lambda frame: at_rest(frame, BACKUP, "Last night's backup finished with no errors.") and "sends when" not in frame,
+        "the reply",
+    )
     heard = journey.wait_chat("cabin", "backups", lambda chat: chat["phase"] == "IDLE" and len(prompts(chat, BACKUP)) == 1, "sent")
     reflected_once(heard, BACKUP)
     control = negative_control(never_sent, heard, BACKUP)
     journey.frame(pane, "sent")
     journey.quit_client(pane)
     return [
-        "with the cabin away, Enter kept the draft in the composer and the cabin never received it",
-        f"with the cabin back, Enter sent it and the cabin holds {BACKUP!r} once",
+        "with the cabin away, Enter held the prompt to send when the cabin is back, and the cabin never received it",
+        f"with the cabin back, the held prompt went by itself and the cabin holds {BACKUP!r} once",
         control,
         "the client exited 0",
     ]
@@ -949,25 +964,28 @@ def send_rejected(journey: TerminalJourney) -> list[str]:
     journey.type(pane, NOT_SENT)
     journey.wait_terms(pane, NOT_SENT)
     journey.keys(pane, "Enter")
-    journey.wait_terms(pane, "not sent: its host can't be reached", f"› {NOT_SENT}")
+    journey.wait_terms(pane, NOT_SENT, "sends when cabin is back")
     journey.frame(pane, "not-sent")
     time.sleep(2)
     refused = journey.chat("cabin", "backups", "refused")
     never_sent(refused, NOT_SENT)
-    # The words came back to the composer: with calls made again, Enter
-    # sends them.
+    # The prompt is held until the cabin next reads as reachable. A call
+    # that cannot be made in earnest means the link is gone, so the cabin
+    # drops away and comes back; the held prompt then goes by itself.
     journey.request({"RefuseCalls": {"a": "laptop", "b": "cabin", "refuse": False}})
-    journey.keys(pane, "Enter")
-    journey.wait(pane, lambda frame: at_rest(frame, BACKUP_DONE) and "not sent" not in frame, "the reply")
+    journey.request({"Sever": {"a": "cabin", "b": "laptop"}})
+    journey.wait_terms(pane, "cabin away", NOT_SENT, "sends when cabin is back")
+    journey.request({"Restore": {"a": "cabin", "b": "laptop"}})
+    journey.wait(pane, lambda frame: at_rest(frame, NOT_SENT, BACKUP_DONE) and "sends when" not in frame, "the reply")
     heard = journey.wait_chat("cabin", "backups", lambda chat: chat["phase"] == "IDLE" and len(prompts(chat, NOT_SENT)) == 1, "sent")
     reflected_once(heard, NOT_SENT)
     control = negative_control(never_sent, heard, NOT_SENT)
     journey.frame(pane, "sent")
     journey.quit_client(pane)
     return [
-        "a send that could not leave the laptop read not sent, host unreachable, and its words came back to the composer",
+        "a send that could not leave the laptop was held, to send when the cabin is back",
         "the cabin never received it",
-        f"sent again once calls were made, the cabin holds {NOT_SENT!r} once",
+        f"once the cabin was back the held prompt went by itself, and the cabin holds {NOT_SENT!r} once",
         control,
         "the client exited 0",
     ]
@@ -1203,7 +1221,8 @@ def new_agent_worktree(journey: TerminalJourney) -> list[str]:
     if folder == os.path.realpath(repository) or Path(folder).name != name:
         raise RuntimeError(f"{name} works in {folder}, not a worktree of its own")
 
-    # The same name again: the branch is taken, and the screen says so.
+    # The same name again: names are unique on a host, so the second agent
+    # gets the next free one and a worktree and branch of its own.
     journey.home(pane)
     journey.keys(pane, "n")
     journey.wait_terms(pane, "What should the new agent work on?", "· new worktree │")
@@ -1215,20 +1234,31 @@ def new_agent_worktree(journey: TerminalJourney) -> list[str]:
     journey.type(pane, "Redesign it again.")
     journey.wait_terms(pane, "› Redesign it again.")
     journey.keys(pane, "Enter")
-    journey.wait_terms(pane, "Could not start the agent:", "already has a branch named")
-    journey.wait_terms(pane, "› Redesign it again.")
-    journey.frame(pane, "branch-taken")
-    again = journey.inventory("desk", "after-refusal")
+    second = f"{name}-2"
+    journey.wait(
+        pane,
+        lambda frame: chat_of(frame) == second
+        and at_rest(frame, "Redesign it again.", "Working in the new worktree.")
+        and f"{second} │ {second} " in frame,
+        "the second agent's reply, on its branch",
+    )
+    journey.frame(pane, "name-taken")
+    again = journey.wait_inventory("desk", lambda agents: any(a["name"] == second for a in agents), "after-second")
     if [a["name"] for a in again].count(name) != 1:
         raise RuntimeError(f"the desk lists {again!r}")
-    journey.keys(pane, "Escape")
-    journey.wait(pane, at_home, "home again")
+    (other,) = [a for a in again if a["name"] == second]
+    other_folder = os.path.realpath(other["cwd"])
+    trees = worktrees(repository)
+    listed = [tree for tree in trees if os.path.realpath(tree["worktree"]) == other_folder]
+    if len(listed) != 1 or listed[0].get("branch") != f"refs/heads/{second}" or other_folder == folder:
+        raise RuntimeError(f"the desk's repository lists {trees!r}, not {other_folder} on {second}")
+    journey.home(pane)
     journey.quit_client(pane)
     return [
         "the new agent was set to run on the desk, on Fable 5 from the desk's own catalogue, in the desk's repository, in a new worktree",
         "it started on the desk on claude-fable-5 and answered; its prompt reached the desk once",
         f"the desk's repository lists the agent's folder as a worktree on branch {name}, named after the agent",
-        f"started again as {name}, the desk refused and the new agent's screen said the branch is taken, keeping the prompt; no second agent exists",
+        f"started again as {name}, the desk named the second agent {name}-2, in a worktree of its own on branch {name}-2",
         "the client exited 0",
     ]
 

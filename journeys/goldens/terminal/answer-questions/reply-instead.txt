@@ -31,4 +31,4 @@
   │ › Reply instead: Let me see both palettes on the desk first.                                           │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter send   esc clear   ctrl+x stop
+  enter send   esc clear   ctrl+x interrupt

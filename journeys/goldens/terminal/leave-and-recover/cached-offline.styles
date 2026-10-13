@@ -31,7 +31,7 @@
 ..bbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa..................................................................b..
 ..bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb..
 ..............................................................................................................
-..bbbbbbbbbbbbbbbbbbbbbbbbbb..................................................................................
+..gggggbbbbbbbbbbbbggbbbbbbbbbbbbbbbbbbbbbbbbbbbb.............................................................
 --- legend
 a = {"fg": "5;15"}
 b = {"fg": "5;8"}
@@ -39,3 +39,4 @@ c = {"fg": "5;3"}
 d = {"bg": "5;0"}
 e = {"bg": "5;0", "fg": "5;15"}
 f = {"bg": "5;0", "fg": "5;8"}
+g = {"bold": true, "fg": "5;15"}

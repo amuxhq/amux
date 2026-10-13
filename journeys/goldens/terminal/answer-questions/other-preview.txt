@@ -31,4 +31,4 @@
   │   Reply instead  esc   │                                                                               │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter choose   ←/→ questions   tab note   ctrl+x stop
+  enter choose   ←/→ questions   tab note   ctrl+x interrupt

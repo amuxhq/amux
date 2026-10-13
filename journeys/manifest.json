@@ -118,14 +118,14 @@
       "clients": ["terminal", "phone"],
       "topology": "journeys/topologies/terminal-flows.json",
       "phone_topology": "journeys/topologies/phone-flows.json",
-      "claim": "With the agent's host out of reach, Enter keeps the prompt as a draft and the host never receives it; with the host back, Enter sends it and the host holds it once."
+      "claim": "With the agent's host out of reach, Enter holds the prompt, shown pending until the host is back, and the host never receives it; with the host back, the held prompt goes by itself and the host holds it once."
     },
     {
       "id": "send-rejected",
       "stage": 17,
       "clients": ["terminal"],
       "topology": "journeys/topologies/terminal-flows.json",
-      "claim": "With the laptop unable to open a call to the agent's host while the chat stays live, a prompt that never left reads not sent because its host cannot be reached, and its words come back to the composer; the host never receives it. Sent again once calls can be made, the host holds it once."
+      "claim": "With the laptop unable to open a call to the agent's host while the chat stays live, a prompt that never left is held, shown pending until the host is back, and the host never receives it. Once the host is back the held prompt goes by itself, and the host holds it once."
     },
     {
       "id": "send-may-not-have-arrived",
@@ -154,7 +154,7 @@
       "stage": 17,
       "clients": ["terminal"],
       "topology": "journeys/topologies/terminal-worktree.json",
-      "claim": "From the laptop, a new Claude agent is set to run on the desk, in the desk's repository, on a model only the desk's catalogue offers, in a new worktree. It starts there on that model and answers; the desk's repository lists the worktree on a branch named after the agent. Started again under the same name, the host refuses and the new agent's screen says why, keeping the prompt."
+      "claim": "From the laptop, a new Claude agent is set to run on the desk, in the desk's repository, on a model only the desk's catalogue offers, in a new worktree. It starts there on that model and answers; the desk's repository lists the worktree on a branch named after the agent. Started again under the same name, the host gives the second agent the next free name, in a worktree of its own on a branch of that name."
     },
     {
       "id": "report-a-problem",

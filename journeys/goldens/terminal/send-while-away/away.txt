@@ -13,7 +13,6 @@
 
 
 
-
                          Its host is away, and nothing of this chat is held here yet.
 
 
@@ -27,8 +26,9 @@
 
 
 
+    Check last night's backup.                                                    sends when cabin is back
   ╭─ cabin is away ────────────────────────────────────────────────────────────────────────────────────────╮
-  │ › Check last night's backup.                                                                           │
+  │ › Message backups                                                                                      │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  Draft kept · sending waits
+  enter holds it   it sends when the host is back

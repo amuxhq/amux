@@ -16,7 +16,6 @@
 
 
 
-
   started ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -27,8 +26,9 @@
 
     Worked <t>
 
+    Still there?                                                                   sends when desk is back
   ╭─ desk is away · this machine is signed out ────────────────────────────────────────────────────────────╮
-  │ › Still there?                                                                                         │
+  │ › Message guarded                                                                                      │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  Draft kept · sending waits until this machine signs in
+  enter holds it   it sends once this machine signs in

@@ -9,7 +9,7 @@
   › ○ release-notes│                                                                      │            [x]
       Ready to writ│  Name      desk-notes                                                │
                    │  Agent      Claude · not signed in   Codex · not signed in           │
-    ○ backups  Clau│  Folder    /tmp/journey/aj-xxxxxxxx/net/laptop/work                  │            now
+    ○ backups  Clau│  Folder    /tmp/journey/aj-xxxxxxxx/net/cabin/work                   │            now
                    │  Host       cabin   desk   laptop                                    │
     ○ expired  Clau│  Worktree  [ ] new worktree                                          │            now
       Tidied.      │                                                                      │

@@ -31,4 +31,4 @@
   │   3. No, keep planning  esc · tab to add a note                                                        │
   ╰──────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) · plan ─╯
 
-  enter choose   ctrl+x stop   ctrl+a more
+  enter choose   ctrl+x interrupt   ctrl+a more

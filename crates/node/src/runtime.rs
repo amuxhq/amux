@@ -1432,6 +1432,26 @@ impl ProfileRuntime {
         if self.store.lock().await.agent(&key)?.is_none() {
             return Err(RegistryError::NotFound(id));
         }
+        // The stop is part of the delete: a subscriber that read its exit
+        // would offer to resume an agent about to be removed. Nothing about
+        // the agent is published until its removal is; a delete that fails
+        // publishes the row as it then stands.
+        self.fanout.mute(&key);
+        let deleted = self.delete_muted(id, key.clone(), response).await;
+        self.fanout.unmute(&key);
+        if deleted.is_err() {
+            let store = self.store.lock().await;
+            let _ = self.publish_row(&store, &key);
+        }
+        deleted
+    }
+
+    async fn delete_muted(
+        &self,
+        id: AgentId,
+        key: AgentKey,
+        response: &mut DeleteAgentResponse,
+    ) -> Result<(), RegistryError> {
         self.stop_locked(id).await?;
 
         let children: Vec<AgentRow> = self.store.lock().await.agents_of_parent(&key)?;
@@ -2183,6 +2203,9 @@ impl ProfileRuntime {
 
     /// Tells inventory subscribers what the row now says.
     pub(crate) fn publish_row(&self, store: &Sqlite, key: &AgentKey) -> Result<(), StoreError> {
+        if self.fanout.muted(key) {
+            return Ok(());
+        }
         if let Some(row) = store.agent(key)? {
             self.fanout
                 .publish_inventory(inventory(inventory_event::Of::Agent(to_wire(&row))));

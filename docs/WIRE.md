@@ -660,7 +660,9 @@ and `REMOVAL_REASON_RETENTION` are this host's own;
 `REMOVAL_REASON_NO_LONGER_LISTED` is a paired host that stopped listing the
 agent (whatever the reason there), and `REMOVAL_REASON_HOST_UNTRUSTED` is every
 row of a host this machine stopped trusting. A client subscribed to that agent sees its
-stream end.
+stream end. A delete stops a live agent first, and nothing of that stop is published:
+the agent's row and session say nothing more until `AgentRemoved`, so no client reads
+the stop as an exit it could resume.
 
 An inventory stream that falls behind sends `Lagged` and closes; the client
 subscribes again at once for a fresh current set. `amux ls`-style one-shot listings read to `CaughtUp`

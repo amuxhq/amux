@@ -1,3 +1,11 @@
+2026-10-13 — **A deleted agent never reads as resumable on its way out.** A
+delete stops a live agent before it removes the row, and the stop's exit
+was published like any other: a chat open on the agent, here or on another
+host, briefly read "exited · Enter resumes" until the removal arrived. The
+daemon now publishes nothing about an agent while it deletes it, neither
+its session nor its row; the removal is the next thing subscribers hear,
+and a delete that fails publishes the row as it then stands.
+
 2026-10-13 — **The clients half of the second QA round, merged.** The
 clients' switch back sends the SwitchBack input the terminal Claude
 interpreter types as `/resume <session>`, and their /model and /effort on

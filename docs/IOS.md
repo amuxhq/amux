@@ -88,7 +88,11 @@ only what changed. A chat is a `ChatModel` over an open `Chat`:
   draft and its attachments last longer: `DraftShelf` keeps each one on the
   phone, per account and agent, as it changes, so a draft outlives its
   chat's session and the app being closed. Drafts never leave the device,
-  and removing an account from the phone forgets its drafts.
+  and removing an account from the phone forgets its drafts. Deleting an
+  agent from the phone forgets its draft, and nothing typed into its chat
+  while the page leaves is kept. An agent deleted elsewhere leaves its draft
+  on the phone: the phone reads the fleet as it stands and is not told of
+  removals.
 - An attachment is checked against the stated limit, 64 MB of content
   (`wire::ATTACHMENT_SIZE_LIMIT`, copied as `ChatModel.attachmentLimit`),
   before anything is read or uploaded, and one over it is refused in words

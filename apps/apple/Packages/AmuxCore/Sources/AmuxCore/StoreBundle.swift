@@ -49,6 +49,8 @@ public final class StoreBundle {
     @ObservationIgnored public let drafts: DraftShelf
     /// Opens a session; the profile's unless a test hands one in.
     @ObservationIgnored private let opener: (@MainActor (AgentKey) throws(RuntimeFailure) -> OpenChat)?
+    /// Acts on an agent; the profile's unless a test hands one in.
+    @ObservationIgnored private let acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)?
     @ObservationIgnored public let now: @MainActor () -> Date
     /// Told how many machines this account has paired and how many of its
     /// agents need the person, each time the fleet is read.
@@ -70,13 +72,15 @@ public final class StoreBundle {
     public init(
         account: AccountId, clock: @escaping @MainActor () -> Date = { Date() },
         sessionRetention: Duration = StoreBundle.sessionRetention,
-        opener: (@MainActor (AgentKey) throws(RuntimeFailure) -> OpenChat)? = nil
+        opener: (@MainActor (AgentKey) throws(RuntimeFailure) -> OpenChat)? = nil,
+        acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)? = nil
     ) {
         self.account = account
         self.drafts = DraftShelf(account: account)
         self.now = clock
         self.sessionRetention = sessionRetention
         self.opener = opener
+        self.acting = acting
         self.fleet = FleetStore(now: clock())
         self.hosts = HostsStore(clock: clock)
         self.pairing = PairingStore(clock: clock)
@@ -456,9 +460,21 @@ public final class StoreBundle {
         return await profile.act(.cancelStop, on: agent)
     }
 
+    /// Deletes an agent. Its draft goes with it: forgotten from the shelf,
+    /// and nothing typed into its chat while the page leaves is kept.
     public func delete(_ agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
+        let outcome = await act(.delete, on: agent)
+        if case .success = outcome {
+            models[agent]?.model.keeping = nil
+            drafts.forget(agent)
+        }
+        return outcome
+    }
+
+    private func act(_ act: AgentAct, on agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
+        if let acting { return await acting(act, agent) }
         guard let profile else { return .failure(RuntimeFailure("nothing is running")) }
-        return await profile.act(.delete, on: agent)
+        return await profile.act(act, on: agent)
     }
 
     // MARK: - Diagnostics

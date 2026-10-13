@@ -1,3 +1,13 @@
+2026-10-13 — **Deleting an agent on the phone forgets its draft.** The
+phone's draft shelf kept a deleted agent's draft for good, and the chat
+still on screen until its page left went on keeping what was typed into it.
+A successful delete now removes the draft from the shelf and stops the chat
+keeping one; a failed delete leaves both. The phone reads the fleet as it
+stands and handles no removal events, so an agent deleted from another
+client keeps its draft on the phone. StoreBundle takes the act on an agent
+from a test, as it already takes the opening of a chat; two package tests
+pin the delete and the failed delete.
+
 2026-10-13 — **A deleted agent's draft goes with it.** A chat that closed
 because its agent was deleted handed its draft back to this machine's
 daemon as it closed, and again as the client quit, so the daemon kept words

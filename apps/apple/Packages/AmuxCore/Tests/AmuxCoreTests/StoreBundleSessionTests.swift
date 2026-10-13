@@ -67,7 +67,10 @@ final class StoreBundleSessionTests: XCTestCase {
     private var opened: [CaughtUpSession] = []
     private var current = true
 
-    private func bundle(account: String = "a") -> StoreBundle {
+    private func bundle(
+        account: String = "a",
+        acting: (@MainActor (AgentAct, AgentKey) async -> Result<Nothing, RuntimeFailure>)? = nil
+    ) -> StoreBundle {
         StoreBundle(
             account: AccountId(account), clock: { [unowned self] in clock },
             sessionRetention: .seconds(300),
@@ -76,7 +79,8 @@ final class StoreBundleSessionTests: XCTestCase {
                 session.current = current
                 opened.append(session)
                 return session
-            })
+            },
+            acting: acting)
     }
 
     private func sessions(for agent: AgentKey) -> [CaughtUpSession] { opened.filter { $0.agent == agent } }
@@ -188,5 +192,38 @@ final class StoreBundleSessionTests: XCTestCase {
         XCTAssertEqual(
             try after.chat(agent).draft, "half typed before the app closed",
             "the draft was lost when the app was reopened")
+    }
+
+    /// A deleted agent's draft goes with it: the phone kept it on its
+    /// shelf for good, and the chat still on screen until its page left
+    /// went on keeping what was typed into it.
+    func testADeletedAgentsDraftIsForgotten() async throws {
+        let account = "deleted-\(UUID().uuidString)"
+        let agent = Cards.key(2)
+        let stores = bundle(account: account, acting: { _, _ in .success(Nothing()) })
+        stores.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
+        try stores.chat(agent).draft = "for an agent about to go"
+
+        guard case .success = await stores.delete(agent) else { return XCTFail("the delete failed") }
+        try stores.chat(agent).draft = "typed as the page left"
+        XCTAssertNil(stores.drafts.draft(for: agent), "the deleted agent's draft is still kept")
+        stores.closeChats()
+
+        let after = bundle(account: account)
+        after.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
+        XCTAssertEqual(try after.chat(agent).draft, "", "the deleted agent's draft came back")
+    }
+
+    /// A delete that fails leaves the agent, and its draft, as they were.
+    func testAFailedDeleteKeepsTheDraft() async throws {
+        let agent = Cards.key(2)
+        let stores = bundle(
+            account: "undeleted-\(UUID().uuidString)",
+            acting: { _, _ in .failure(RuntimeFailure("desk cannot be reached")) })
+        stores.fleet.show(Cards.view([Cards.row(2, "idle")]), hosts: [Cards.host()])
+        try stores.chat(agent).draft = "still wanted"
+
+        guard case .failure = await stores.delete(agent) else { return XCTFail("the delete went through") }
+        XCTAssertNotNil(stores.drafts.draft(for: agent), "a failed delete dropped the draft")
     }
 }

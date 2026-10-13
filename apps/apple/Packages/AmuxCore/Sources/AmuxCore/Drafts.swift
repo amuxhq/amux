@@ -38,6 +38,11 @@ public struct DraftShelf: Sendable {
         try? data.write(to: url, options: .atomic)
     }
 
+    /// Forgets a deleted agent's draft.
+    public func forget(_ agent: AgentKey) {
+        try? FileManager.default.removeItem(at: file(agent))
+    }
+
     /// Forgets every draft of this account, as it leaves the phone.
     public func forgetAll() {
         try? FileManager.default.removeItem(at: folder)

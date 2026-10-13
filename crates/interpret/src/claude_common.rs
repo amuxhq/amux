@@ -1212,10 +1212,12 @@ pub(crate) fn allows_never_ask(args: &[String]) -> bool {
     })
 }
 
-/// The permission launch arguments start Claude in, when they name one.
-/// The value of `--flag value` or `--flag=value` in launch arguments.
+/// The value of `--flag value` or `--flag=value` in launch arguments. A
+/// flag given more than once takes its last value, as Claude's command
+/// line does: amux appends the effective model after one the person
+/// passed.
 pub(crate) fn launch_arg(args: &[String], flag: &str) -> Option<String> {
-    args.iter().enumerate().find_map(|(index, arg)| {
+    args.iter().enumerate().rev().find_map(|(index, arg)| {
         if arg == flag {
             args.get(index + 1).cloned()
         } else {
@@ -1224,6 +1226,7 @@ pub(crate) fn launch_arg(args: &[String], flag: &str) -> Option<String> {
     })
 }
 
+/// The permission launch arguments start Claude in, when they name one.
 pub(crate) fn launched_permission(args: &[String]) -> Option<String> {
     args.iter().enumerate().find_map(|(at, arg)| {
         if arg == "--dangerously-skip-permissions" {
@@ -1401,6 +1404,31 @@ pub(crate) fn describe_model_name(name: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Claude's command line takes the last of a repeated flag, and amux
+    /// appends the effective model after any the person passed: the model
+    /// that runs is the last one named.
+    #[test]
+    fn a_repeated_launch_flag_reads_as_its_last_value() {
+        let args = |of: &[&str]| of.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            launch_arg(&args(&["--model", "sonnet", "--model", "opus"]), "--model").as_deref(),
+            Some("opus")
+        );
+        assert_eq!(
+            launch_arg(
+                &args(&["--model=sonnet", "--effort", "high", "--model", "opus"]),
+                "--model"
+            )
+            .as_deref(),
+            Some("opus")
+        );
+        assert_eq!(
+            launch_arg(&args(&["--model", "opus", "--model=haiku"]), "--model").as_deref(),
+            Some("haiku")
+        );
+        assert_eq!(launch_arg(&args(&["--effort", "high"]), "--model"), None);
+    }
 
     /// The cell source the host read rides into the card's input; the
     /// input matched against calls is left as Claude sent it.

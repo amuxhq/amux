@@ -3727,5 +3727,8 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
         "the snapshot's effort is the one in force"
     );
     state.update(snapshot(None));
-    assert!(!composer(&state, 0).switched_away, "back on its own conversation");
+    assert!(
+        !composer(&state, 0).switched_away,
+        "back on its own conversation"
+    );
 }

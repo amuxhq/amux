@@ -17,8 +17,8 @@ use interpret::{Checkpoint, Effect, Event, Interpreter, decode_checkpoint, encod
 use support::Committer;
 use ui_state::{InputOutcome, Msg, SessionState};
 use ui_view::{
-    Answer, AskBody, AskCard, CardState, Changeable, QuestionResponse, SettingChange,
-    answer_input, ask_card, question_answer, reply_answer, setting_input, settings,
+    Answer, AskBody, AskCard, CardState, Changeable, QuestionResponse, SettingChange, answer_input,
+    ask_card, question_answer, reply_answer, setting_input, settings,
 };
 use wire::{Kind, SessionEvent, send_input_response, session_event};
 
@@ -188,7 +188,11 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
                     ..QuestionResponse::default()
                 })
                 .collect();
-            answers.push(("picks and something else".into(), question_answer(card, &both), ""));
+            answers.push((
+                "picks and something else".into(),
+                question_answer(card, &both),
+                "",
+            ));
         }
         if card.question_skip {
             let mut skipped = first.clone();

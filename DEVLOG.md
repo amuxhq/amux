@@ -1,3 +1,7 @@
+2026-10-13 — **The merged clients half is formatted.** Eight files from the
+clients half did not match the pinned rustfmt; `just fmt` rewrote them,
+with no change of behaviour.
+
 2026-10-13 — **A deleted agent never reads as resumable on its way out.** A
 delete stops a live agent before it removes the row, and the stop's exit
 was published like any other: a chat open on the agent, here or on another

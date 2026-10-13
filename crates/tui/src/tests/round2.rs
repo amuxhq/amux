@@ -810,10 +810,11 @@ fn a_multi_select_sends_its_ticks_with_the_words_typed_as_something_else() {
         })
         .unwrap_or_else(|| panic!("no answer from {effects:?}:\n{screen}"));
     let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-        of: Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
-            of: Some(wire::claude_answer::Of::Question(sent)),
-            ..
-        })),
+        of:
+            Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+                of: Some(wire::claude_answer::Of::Question(sent)),
+                ..
+            })),
     })) = answer.decode_body()
     else {
         panic!("{answer:?}");

@@ -1191,7 +1191,10 @@ impl App {
             }),
             ChatEffect::SwitchBack => self.spawn(async move {
                 session.switch_back().await.err().map(|error| {
-                    AppEvent::Notice(format!("could not switch back: {}", plain(error)), Tone::Warn)
+                    AppEvent::Notice(
+                        format!("could not switch back: {}", plain(error)),
+                        Tone::Warn,
+                    )
                 })
             }),
             ChatEffect::Interrupt => self.spawn(async move {

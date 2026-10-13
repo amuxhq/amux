@@ -874,12 +874,10 @@ impl QuestionResponse {
 fn responses(given: &[QuestionResponse]) -> Vec<wire::QuestionResponse> {
     given
         .iter()
-        .map(|response| {
-            wire::QuestionResponse {
-                selected: response.picked.clone(),
-                other: response.other.clone().filter(|other| !other.is_empty()),
-                note: (!response.note.is_empty()).then(|| response.note.clone()),
-            }
+        .map(|response| wire::QuestionResponse {
+            selected: response.picked.clone(),
+            other: response.other.clone().filter(|other| !other.is_empty()),
+            note: (!response.note.is_empty()).then(|| response.note.clone()),
         })
         .collect()
 }

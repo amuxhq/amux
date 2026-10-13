@@ -638,7 +638,10 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     let (request, reply) = calls.stop().await;
     assert_eq!(request.agent_id, b"a");
     reply.send(Ok(())).ok();
-    until(fleet.changed(), || (!fleet.state().stop_held(&key)).then_some(())).await;
+    until(fleet.changed(), || {
+        (!fleet.state().stop_held(&key)).then_some(())
+    })
+    .await;
 
     // Cancelled while held, it never goes.
     let stopping = tokio::spawn({

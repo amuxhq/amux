@@ -252,6 +252,5 @@ pub fn refused_prompts(state: &SessionState) -> Vec<RefusedPrompt> {
 /// agent's (terminal Claude resumed another in its own screen): the agent
 /// takes no prompt until it is back, and a switch back takes it back.
 pub fn switched_away(state: &SessionState) -> bool {
-    !matches!(state.composer(), Composer::Resume)
-        && state.agent_state().switched_away_to.is_some()
+    !matches!(state.composer(), Composer::Resume) && state.agent_state().switched_away_to.is_some()
 }

@@ -393,7 +393,11 @@ fn a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up() {
             }),
         );
         assert_eq!(
-            outcome.resend.iter().map(|input| input.input_id.clone()).collect::<Vec<_>>(),
+            outcome
+                .resend
+                .iter()
+                .map(|input| input.input_id.clone())
+                .collect::<Vec<_>>(),
             vec![b"p1".to_vec()],
             "caught up, the held prompt goes again under its id"
         );

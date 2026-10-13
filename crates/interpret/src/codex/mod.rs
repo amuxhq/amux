@@ -2269,6 +2269,19 @@ fn tidy_model(id: &str) -> String {
     }
 }
 
+/// A count with its thousands marked: 1,048,576.
+fn thousands(count: usize) -> String {
+    let digits = count.to_string();
+    let mut out = String::new();
+    for (at, digit) in digits.chars().enumerate() {
+        if at > 0 && (digits.len() - at).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -2277,17 +2290,4 @@ mod tests {
         assert_eq!(super::tidy_model("gpt-5.1-codex-max"), "GPT-5.1 Codex Max");
         assert_eq!(super::tidy_model("o3"), "o3");
     }
-}
-
-/// A count with its thousands marked: 1,048,576.
-fn thousands(count: usize) -> String {
-    let digits = count.to_string();
-    let mut out = String::new();
-    for (at, digit) in digits.chars().enumerate() {
-        if at > 0 && (digits.len() - at) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
 }

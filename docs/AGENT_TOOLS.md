@@ -117,15 +117,12 @@ child's parent; the request cannot name any other parent.
 
 ### stop
 
-Interrupts the turn one of the caller's own direct children is running. The
-daemon checks the lineage and refuses any other agent with
-`PERMISSION_DENIED`. The interrupt is the kind's own `Interrupt` input, so the
-turn is cancelled the provider's way. It is the one input an agent sends; an
-agent reaches another agent's queue only by messaging it. The child's history
-stays and its
-process is not stopped by the call; a child then exits by its own one-shot
-rule once nothing is left for it. A child that has already finished has
-nothing to interrupt and answers that it did not stop.
+Stops one of the caller's own direct children, as a person's stop does: the
+child's turn is cancelled the provider's way and it exits stopped, and the
+daemon stops the child's own descendants on every host with it. The daemon
+checks the lineage and refuses any other agent with `PERMISSION_DENIED`. The
+child's history stays, and a later `send` to it resumes it. Stopping a child
+that has already exited changes nothing.
 
 ### status
 

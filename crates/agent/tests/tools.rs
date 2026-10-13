@@ -23,7 +23,6 @@ use wire::{
     Agent as Row, AgentRef, AgentSpec, AmbiguousAgentName, CreateAgentRequest, Empty, HostEntry,
     InventoryEvent, Kind, Lifecycle, Phase, Presence, SendInputRequest, SendInputResponse,
     SendMessageRequest, SendMessageResponse, Trust, create_agent_request, inventory_event,
-    send_input_response,
 };
 
 const ME: [u8; 16] = [0xa1; 16];
@@ -41,7 +40,7 @@ enum Call {
     Resolve(String),
     Send(SendMessageRequest),
     Create(Box<CreateAgentRequest>),
-    Input(SendInputRequest),
+    Stop(wire::StopAgentRequest),
 }
 
 #[derive(Clone, Default)]
@@ -52,8 +51,8 @@ struct Fleet {
     ambiguous: Vec<String>,
     /// The reason SendMessage refuses with, if it does.
     refuse_send: Option<Status>,
-    /// The reason SendInput rejects with, if it does.
-    reject_input: Option<wire::Rejected>,
+    /// The reason StopAgent refuses with, if it does.
+    refuse_stop: Option<Status>,
     /// Set, a send, spawn or stop is taken and then its connection is
     /// dropped before the daemon answers.
     sever: Option<Arc<tokio::sync::Notify>>,
@@ -189,16 +188,9 @@ impl ClientService for Fleet {
 
     async fn send_input(
         &self,
-        request: Request<SendInputRequest>,
+        _: Request<SendInputRequest>,
     ) -> Result<Response<SendInputResponse>, Status> {
-        self.record(Call::Input(request.into_inner()));
-        self.severed().await?;
-        Ok(Response::new(SendInputResponse {
-            of: Some(match &self.reject_input {
-                Some(rejected) => send_input_response::Of::Rejected(rejected.clone()),
-                None => send_input_response::Of::Accepted(wire::Accepted { queued: false }),
-            }),
-        }))
+        Err(Status::unimplemented("send_input"))
     }
 
     async fn subscribe(
@@ -224,9 +216,14 @@ impl ClientService for Fleet {
     }
     async fn stop_agent(
         &self,
-        _: Request<wire::StopAgentRequest>,
+        request: Request<wire::StopAgentRequest>,
     ) -> Result<Response<Empty>, Status> {
-        Err(Status::unimplemented("stop"))
+        self.record(Call::Stop(request.into_inner()));
+        self.severed().await?;
+        match &self.refuse_stop {
+            Some(status) => Err(status.clone()),
+            None => Ok(Response::new(Empty {})),
+        }
     }
     async fn resume_agent(
         &self,
@@ -741,36 +738,32 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     );
 }
 
+/// The stop tool is a person's stop: the daemon ends the child and its
+/// descendants, and refuses an agent that is not the caller's own child.
 #[tokio::test(flavor = "multi_thread")]
-async fn stop_interrupts_the_named_child_its_own_kinds_way() {
+async fn stop_stops_the_named_child() {
     let mut mcp = Mcp::start(WINDOW).await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     assert_eq!(mcp.ok("stop", json!({ "name": "helper" })).await, json!({}));
     let calls = fleet.calls();
-    let [Call::Resolve(_), Call::Input(request)] = calls.as_slice() else {
-        panic!("resolve then input, got {calls:?}");
+    let [Call::Resolve(_), Call::Stop(request)] = calls.as_slice() else {
+        panic!("resolve then stop, got {calls:?}");
     };
     assert_eq!(request.agent_id, CHILD.to_vec());
-    assert!(matches!(
-        request.input.as_ref().and_then(wire::Input::decode_body),
-        Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-            of: Some(wire::claude_sdk_input::Of::Interrupt(_)),
-        }))
-    ));
 
     let mut fleet = fleet.clone();
-    fleet.reject_input = Some(wire::Rejected {
-        refusal: wire::Refusal::Exiting as i32,
-        detail: None,
-    });
+    fleet.refuse_stop = Some(Status::permission_denied(
+        "an agent acts only on its own children",
+    ));
     fleet.calls = Default::default();
     let mcp_dir = mcp.dir.clone();
     _daemon.stop().await;
     let _daemon = Daemon::listen(&mcp_dir, fleet);
-    assert_eq!(
-        mcp.refused("stop", json!({ "name": "reviewer" })).await,
-        "reviewer did not stop: exiting"
+    let refusal = mcp.refused("stop", json!({ "name": "reviewer" })).await;
+    assert!(
+        refusal.contains("only on its own children"),
+        "the daemon's refusal reaches the model: {refusal}"
     );
 }
 
@@ -897,15 +890,11 @@ async fn a_call_the_daemon_may_have_taken_is_never_made_again() {
             .filter_map(|call| match call {
                 Call::Send(_) => Some("send"),
                 Call::Create(_) => Some("create"),
-                Call::Input(_) => Some("input"),
+                Call::Stop(_) => Some("stop"),
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            taken,
-            ["send", "create", "input"],
-            "each call went out once"
-        );
+        assert_eq!(taken, ["send", "create", "stop"], "each call went out once");
     }
 }
 

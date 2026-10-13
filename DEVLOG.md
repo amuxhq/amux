@@ -1,3 +1,9 @@
+2026-10-13 — **An agent's stop tool stops.** The tool interrupted the
+child's turn, which left the child's own children running. It now asks the
+daemon for a person's stop: the child exits stopped and the daemon stops its
+descendants on every host with it. The tool's description and the tools
+test follow.
+
 2026-10-13 — **An agent stops only its own children.** On an agent's tools
 socket the daemon checked the lineage of inputs but not of stops, and the
 stop tool is becoming a real stop: a stop from an agent now goes only to its

@@ -703,22 +703,25 @@ impl AskUi {
                 out.lines.push(line(words, theme.faint()));
                 return out;
             }
+            // Why, wrapped inside the box: the when is the point.
             CardState::NotConfirmed => {
-                out.lines.push(line(
-                    "Your answer was not confirmed: the connection dropped before the agent replied."
-                        .into(),
-                    theme.warning(),
-                ));
+                for part in text::wrap(
+                    "Your answer was not confirmed: the connection dropped before the agent replied.",
+                    width.max(1),
+                ) {
+                    out.lines.push(line(part, theme.warning()));
+                }
                 out.lines
                     .push(line("r resend · d discard".into(), theme.faint()));
                 return out;
             }
             CardState::Held => {
-                out.lines.push(line(
-                    "Your answer is held: the agent's host can't be reached. It sends when the host is back."
-                        .into(),
-                    theme.warning(),
-                ));
+                for part in text::wrap(
+                    "Your answer is held: the agent's host can't be reached. It sends when the host is back.",
+                    width.max(1),
+                ) {
+                    out.lines.push(line(part, theme.warning()));
+                }
                 out.lines.push(line("c cancel".into(), theme.faint()));
                 return out;
             }

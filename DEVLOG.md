@@ -1,3 +1,9 @@
+2026-10-13 — **A held answer's explanation wraps in its box.** At 80
+columns the terminal client cut a held ask answer's line to "Your answer is
+held: the agent's host can't be reached. It sends when t…", losing when it
+sends. The held and not-confirmed explanations now wrap inside the box. A
+chat test draws a held answer at 80 columns.
+
 2026-10-13 — **A new agent's invalid name is refused where it is typed.**
 The terminal client's new-agent name field showed why a name would be
 refused (cut off at 80 columns) yet offered "enter save" and took it; the

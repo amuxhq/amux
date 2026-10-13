@@ -749,6 +749,32 @@ fn an_unconfirmed_answer_offers_resend_and_discard() {
     );
 }
 
+/// A held answer says why it is held and when it sends, whole, at 80
+/// columns: the box wraps the sentence rather than cutting it short.
+#[test]
+fn a_held_answer_says_when_it_sends_whole_at_80_columns() {
+    let (mut state, at) = fixtures::Named::CodexApproval.state();
+    let card = ask_card(&state).unwrap();
+    let mut input = ui_view::answer_input(&card, &card.choices[0].answer, "").unwrap();
+    input.input_id = b"answer-1".to_vec();
+    state.update(Msg::Send(input));
+    state.update(Msg::Sent(b"answer-1".to_vec(), InputOutcome::Held));
+    assert_eq!(ask_card(&state).unwrap().state, CardState::Held);
+    let mut view = ChatView::new(b"agent".to_vec(), at, false);
+    let (buffer, _) = draw(&mut view, &state, at, 80, 24, theme());
+    let screen = text(&buffer);
+    let words: String = screen
+        .lines()
+        .map(|line| line.trim_matches(|c: char| c == ' ' || c == '│'))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        !screen.contains('…') && words.contains("It sends when the host is back."),
+        "the held answer's explanation is cut short:\n{screen}"
+    );
+    assert!(screen.contains("c cancel"), "{screen}");
+}
+
 // --- the composer ----------------------------------------------------------
 
 /// A draft is taken at any time, and Enter always hands it on: while the

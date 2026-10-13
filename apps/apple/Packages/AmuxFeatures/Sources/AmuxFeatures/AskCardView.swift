@@ -287,15 +287,23 @@ struct PinnedFooter<Content: View, Footer: View>: View {
     @ViewBuilder let footer: () -> Footer
     @State private var height: CGFloat?
 
+    /// How far the scrolling part reaches past the content on each side. A
+    /// system switch draws its track a couple of points past the frame its
+    /// Toggle is laid out in, and a scroll view clips to its own bounds, so
+    /// without this room a switch at the end of a row lost its rounded end.
+    static var overhang: CGFloat { 6 }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) { content() }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Self.overhang)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: height)
+            .padding(.horizontal, -Self.overhang)
             footer()
         }
     }

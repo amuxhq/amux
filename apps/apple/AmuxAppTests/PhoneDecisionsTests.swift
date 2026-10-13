@@ -291,6 +291,48 @@ final class PhoneDecisionsTests: XCTestCase {
         XCTAssertTrue(said.contains { $0.contains("Create README.md") }, "the first option is not drawn: \(said)")
     }
 
+    /// A switch on an ask card is drawn whole, its rounded right end inside
+    /// the card: the list the card's choices scroll in cut it flat.
+    func testAnAskCardsSwitchesAreDrawnWhole() async throws {
+        let plan = CatalogFixtures.card(.claudePty, .plan(body: CatalogFixtures.planBody, title: CatalogFixtures.planTitle), [
+            Choice(outcome: .approvePlan(mode: "acceptEdits", modeName: "Accept edits"), primary: true, takesNote: false),
+            Choice(outcome: .approvePlan(mode: "", modeName: ""), primary: false, takesNote: false),
+            Choice(outcome: .sendBack, primary: false, takesNote: true),
+        ])
+        let form = CatalogFixtures.card(.claudeSdk, .form(
+            server: "github", message: "Create the issue in which repository?", fields: CatalogFixtures.formFields), [
+                Choice(outcome: .submit, primary: true, takesNote: false),
+                Choice(outcome: .decline, primary: false, takesNote: false),
+            ])
+        for (name, card) in [("plan", plan), ("form", form)] {
+            for size in [DynamicTypeSize.large, .xxxLarge] {
+                try host(AskCardView(card: card) { _ in }.padding(.horizontal, 16), size: size)
+                await spin()
+                let window = try XCTUnwrap(window)
+                let switches = Self.views(in: window).compactMap { $0 as? UISwitch }
+                XCTAssertFalse(switches.isEmpty, "the \(name) card draws no switch")
+                for control in switches {
+                    let drawn = control.convert(control.bounds, to: window)
+                    var above = control.superview
+                    while let view = above {
+                        if view.clipsToBounds {
+                            let shown = view.convert(view.bounds, to: window)
+                            XCTAssertTrue(
+                                shown.contains(drawn),
+                                "the \(name) card's switch at \(size) is cut: drawn \(drawn), shown \(shown)")
+                        }
+                        above = view.superview
+                    }
+                }
+                tearDownWindow()
+            }
+        }
+    }
+
+    private static func views(in view: UIView) -> [UIView] {
+        [view] + view.subviews.flatMap { views(in: $0) }
+    }
+
     // MARK: - Home and new agent
 
     /// A reopened app draws its home before its saved hosts are read; it must

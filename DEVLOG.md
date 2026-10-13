@@ -1,3 +1,13 @@
+2026-10-13 — **An ask card's switch is drawn whole on the phone.** The
+plan card's "Switch to …" toggle, and a form's toggles, had their rounded
+right end cut flat. iOS 26's switch is drawn two points past the frame its
+Toggle is laid out in, and the card's choices sit in a scroll view, which
+clips to its bounds. The scroll view now reaches a few points past the
+card's content on each side, with the content inset by the same, so
+nothing moves and the switch is no longer cut. A phone test finds every
+switch on a plan card and a form card, at two text sizes, inside every
+view that clips it; the plan and form baselines were re-recorded.
+
 2026-10-13 — **The phone's question cards draw an agent's code as code.**
 A Codex question naming files between backticks showed the backticks on
 the phone too: the card drew the question, its options and their

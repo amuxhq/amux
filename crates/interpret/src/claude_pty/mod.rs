@@ -58,6 +58,9 @@
 //!   it, else auto mode where the host's Claude offers it for the running
 //!   model, else accept edits. A switch answered for any other permission
 //!   is refused: the menu's first entry would not do it.
+//! - In manual mode, where Claude offers auto mode, its permission menu
+//!   has "Yes, and switch to auto mode" after the scope entries; on a menu
+//!   the keymap knows, the ask offers it as a last scope switching to auto.
 //! - The permission is the one amux last cycled Claude to (amux knows
 //!   Claude's cycle: default, accept edits, plan, then never ask and auto
 //!   mode where they are on offer, and back to default), confirmed by the
@@ -156,6 +159,9 @@ pub enum PermissionChoice {
     AllowScoped {
         suggestion: u32,
     },
+    /// "Yes, and switch to auto mode": the entry Claude's menu has, in
+    /// manual mode, where its model takes auto mode.
+    AllowSwitchingToAuto,
     /// Terminal Claude always ends the turn on a deny.
     Deny {
         note: String,
@@ -346,6 +352,11 @@ struct Provider {
     /// The permission Claude was launched in, from its arguments.
     #[serde(default)]
     launched_permission: Option<String>,
+    /// The model Claude was launched with (`--model`), which runs until
+    /// Claude names the running one: it starts its session only once a
+    /// prompt arrives.
+    #[serde(default)]
+    launched_model: Option<String>,
     /// The other conversation Claude's own view resumed, while it shows
     /// one that is not this agent's.
     #[serde(default)]
@@ -514,6 +525,10 @@ enum AskShape {
         /// How many suggestions the hook carried: what the keymap reads
         /// the terminal's menu by.
         suggestions: u32,
+        /// The last grant is the menu's switch to auto mode, not one of
+        /// the hook's suggestions.
+        #[serde(default)]
+        auto: bool,
     },
     /// The permission the ask's switch choice moves to: what the first
     /// entry of Claude's plan menu switches to, known from how Claude was
@@ -652,6 +667,7 @@ impl State {
             provider: Provider {
                 never_ask: crate::claude_common::allows_never_ask(&spec.provider_args),
                 launched_permission: crate::claude_common::launched_permission(&spec.provider_args),
+                launched_model: crate::claude_common::launch_arg(&spec.provider_args, "--model"),
                 offered: spec.offered.clone(),
                 ..Provider::default()
             },
@@ -958,10 +974,29 @@ impl State {
         }
     }
 
+    /// Whether Claude's permission menu has "Yes, and switch to auto mode":
+    /// in manual mode, where Claude offers auto mode for the running model.
+    pub(super) fn menu_offers_auto(&self) -> bool {
+        let current = self
+            .provider
+            .permission_mode
+            .as_deref()
+            .or(self.provider.launched_permission.as_deref())
+            .unwrap_or("default");
+        current == "default" && !self.provider.never_ask && self.offers_auto()
+    }
+
     /// Whether Claude offers auto mode for the running model, as the
     /// host's Claude says (its models' `supportsAutoMode`).
     fn offers_auto(&self) -> bool {
-        let model = self.provider.model.as_deref().unwrap_or_default();
+        // Before Claude names its model, the one it was launched with runs,
+        // else its default.
+        let model = self
+            .provider
+            .model
+            .as_deref()
+            .or(self.provider.launched_model.as_deref())
+            .unwrap_or("default");
         self.provider.offered.as_ref().is_some_and(|offered| {
             offered.permissions.iter().any(|permission| {
                 permission.value == "auto"
@@ -1410,7 +1445,19 @@ impl State {
         };
         self.shared.answer(emit, id, &key);
         self.close(emit, &key, decision);
+        // amux knows where the switch goes, as it knows Claude's cycle:
+        // recorded at once, confirmed by Claude's next record.
+        let to_auto = matches!(
+            terminal,
+            TerminalInput::Permission {
+                choice: PermissionChoice::AllowSwitchingToAuto,
+                ..
+            }
+        );
         emit.effect(Effect::Terminal(terminal));
+        if to_auto {
+            self.permission_seen(emit, "auto");
+        }
         self.shared.accept(emit, id, false);
     }
 }
@@ -1517,10 +1564,12 @@ fn terminal_answer(
             AskShape::Permission {
                 grants,
                 suggestions,
+                auto,
             },
             claude_answer::Of::Permission(permission),
         ) => {
             let suggestions = *suggestions;
+            let auto_at = auto.then(|| grants.len().saturating_sub(1) as u32);
             match permission.of.ok_or_else(unsupported)? {
                 permission_answer::Of::Allow(allow) => match allow.scope {
                     None => Ok((
@@ -1533,7 +1582,11 @@ fn terminal_answer(
                     Some(index) => Ok((
                         TerminalInput::Permission {
                             suggestions,
-                            choice: PermissionChoice::AllowScoped { suggestion: index },
+                            choice: if auto_at == Some(index) {
+                                PermissionChoice::AllowSwitchingToAuto
+                            } else {
+                                PermissionChoice::AllowScoped { suggestion: index }
+                            },
                         },
                         decision(
                             DecisionOutcome::Allowed,

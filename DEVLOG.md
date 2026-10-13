@@ -1,3 +1,23 @@
+2026-10-13 — **Terminal Claude's auto mode is known, offered and cycled
+through.** Where Claude offers auto mode, amux's plan ask offered "switch
+to accept edits", its permission ask left out Claude's "Yes, and switch to
+auto mode", and Shift+Tab's label cycled without auto, drifting from
+Claude's own. The cause was one lookup: Claude lists its models by alias
+("haiku") with `supportsAutoMode`, while its hooks and rows name the
+running model by id ("claude-haiku-5-5"), so the running model never
+matched. The catalogue's auto permission now names each model by alias and
+by the `resolvedModel` it stands for, and before Claude names its model the
+one it was launched with (else its default) decides. With that the plan's
+switch goes to auto and the cycle runs accept edits, plan, auto, manual, as
+Claude's does. The permission ask, in manual mode where auto is offered and
+on a menu the keymap knows, adds the switch as a last scope moving to
+auto; choosing it types the menu's entry after the scopes (a new
+`auto_switch` digit in the keymap) and records the permission as auto at
+once. Nothing is read off the screen. Tests: the initialize answer's auto
+models, the ask's switch and its keys, the cycle and plan before and after
+Claude names its model, and the fake terminal Claude switching from its
+menu.
+
 2026-10-13 — **A prompt longer than Codex takes is refused before it is
 sent.** Codex takes at most 1,048,576 characters in a prompt and refuses a
 longer one with `input_too_large`, but only once amux had taken the prompt,

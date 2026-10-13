@@ -113,6 +113,9 @@ impl Keys {
                     PermissionChoice::AllowScoped { suggestion } => PermissionAnswer::AllowScoped {
                         suggestion: *suggestion as usize,
                     },
+                    PermissionChoice::AllowSwitchingToAuto => {
+                        PermissionAnswer::AllowSwitchingToAuto
+                    }
                     PermissionChoice::Deny { note } => PermissionAnswer::Deny {
                         feedback: (!note.is_empty()).then(|| note.clone()),
                     },

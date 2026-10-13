@@ -57,7 +57,9 @@ after_menu_text_open = 800
 after_other_save = 600
 
 # No has no fixed entry: 2.1.283 in manual mode adds "Yes, and switch to
-# auto mode" above it, so a deny is Escape, which Claude takes as No.
+# auto mode" above it, so a deny is Escape, which Claude takes as No. That
+# switch is the entry after the scope entries (auto_switch): 3 on a menu of
+# one suggestion or two folded, as 2.1.283 and 2.1.296 draw it.
 [menus.permission.entries]
 allow_once = 1
 allow_scoped = 2
@@ -108,6 +110,7 @@ stability = "menu"
 steps = [
     { step = "digit", digit = { source = "menu_entry", menu = "permission", entry = "allow_once" } },
     { step = "digit", digit = { source = "suggestion" } },
+    { step = "digit", digit = { source = "auto_switch" } },
     { step = "if", cond = "denies", then = [{ step = "key", key = "escape" }] },
     { step = "if", cond = "has_feedback", then = [
         { step = "delay", delay = "after_deny" },

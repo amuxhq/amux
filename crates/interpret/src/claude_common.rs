@@ -1197,6 +1197,17 @@ pub(crate) fn allows_never_ask(args: &[String]) -> bool {
 }
 
 /// The permission launch arguments start Claude in, when they name one.
+/// The value of `--flag value` or `--flag=value` in launch arguments.
+pub(crate) fn launch_arg(args: &[String], flag: &str) -> Option<String> {
+    args.iter().enumerate().find_map(|(index, arg)| {
+        if arg == flag {
+            args.get(index + 1).cloned()
+        } else {
+            arg.strip_prefix(flag)?.strip_prefix('=').map(str::to_owned)
+        }
+    })
+}
+
 pub(crate) fn launched_permission(args: &[String]) -> Option<String> {
     args.iter().enumerate().find_map(|(at, arg)| {
         if arg == "--dangerously-skip-permissions" {
@@ -1249,13 +1260,23 @@ pub(crate) fn without_terminal_codes(text: &str) -> String {
     out
 }
 
-/// The models an initialize answer says take Claude's auto permission.
+/// The models an initialize answer says take Claude's auto permission, by
+/// the value Claude lists ("haiku") and the model it resolves to
+/// ("claude-haiku-5-5"), which is how Claude's rows and hooks name the
+/// running model.
 pub(crate) fn auto_models(models: &[ModelInfo]) -> Vec<String> {
-    models
+    let mut named = Vec::new();
+    for model in models
         .iter()
         .filter(|model| model.supports_auto_mode == Some(true))
-        .map(|model| model.value.clone())
-        .collect()
+    {
+        for name in std::iter::once(&model.value).chain(model.resolved_model.as_ref()) {
+            if !named.contains(name) {
+                named.push(name.clone());
+            }
+        }
+    }
+    named
 }
 
 /// The permissions Claude offers, ask first. Auto names the models that

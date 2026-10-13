@@ -397,7 +397,7 @@ Hooks carry only what the transcript never does:
 | `Stop` | Lists the background jobs still running (see [background jobs](#background-jobs)), clears the running marks, and closes every ask still open with its outcome unknown, drawn dismissed until the call's result says how it went, except one raised by a subagent still running in the background, whose dialog Claude keeps open. It does **not** end the turn. |
 | `SubagentStop` | A subagent finished: it leaves the background jobs, and any ask it left open closes with its outcome unknown. |
 | `Notification` | For a tool server's form or link that Claude shows in its own terminal (notification types `elicitation_dialog` and `elicitation_url_dialog`), opens an unanswerable ask with an item of its own, pointing at the call that was running. No hook can answer it: it closes cancelled on an interrupt through amux, and dismissed on that call's result, a row from a later assistant message, or any fact that closes every ask. Other notification types draw nothing. |
-| `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | Mark a call running, and then not running, for the snapshot's running calls (the activity line while the call's row is on the way). They never make a row. |
+| `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | Mark a call running, and then not running, for the snapshot's running calls (the activity line while the call's row is on the way). They never make a row. `PostToolUse`'s duration gives the call the time it began running, after any wait for approval (`started_at_ms`), which the call's result row carries. |
 | `UserPromptSubmit` | Input is live. |
 | `SessionEnd` | Closes every open ask with its outcome unknown. |
 
@@ -434,7 +434,11 @@ with the scope at an index of the offered suggestions, deny with a note, a
 plan choice, one answer per question, or trusting the folder. An answer the
 menu cannot express is refused before anything is typed. A scope is offered
 only for the permission menus the resolved keymap can type (its verified menu
-shapes); on any other menu the card offers allow once and deny.
+shapes); on any other menu the card offers allow once and deny. In manual
+mode, where Claude offers auto mode for the running model, its menu has
+"Yes, and switch to auto mode" after the scope entries: on a menu the keymap
+knows, the card offers it as one more scope, a switch to auto, and choosing
+it types that entry and records the permission as auto at once.
 
 Terminal Claude offers no list of models, efforts or commands a program could
 read, so its catalogue, written when it launches, holds the models and
@@ -449,7 +453,11 @@ by cycling. amux knows Claude's cycle (default, accept edits, plan, then
 never ask where Claude was launched allowing it and auto mode where its
 model offers it, and back to default), so the snapshot shows the
 permission a cycle moves to at once, and the permission Claude next records
-on a row or hook confirms or corrects it. Its inputs are
+on a row or hook confirms or corrects it. Whether the model offers auto mode
+is the catalogue's word: its auto permission names each model Claude lists
+by its alias and by the model the alias resolves to, since Claude's records
+name the running model by id; until Claude names it, the model it was
+launched with runs, else its default. Its inputs are
 prompt, withdraw, send now, interrupt, clear, the permission-mode cycle,
 switch back, and answer.
 

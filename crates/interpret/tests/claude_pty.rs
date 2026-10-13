@@ -1144,3 +1144,196 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         "the command's time counts the wait for approval"
     );
 }
+
+/// Terminal Claude on a model that takes auto mode, in manual mode: the
+/// catalogue names the model by alias and by the id Claude's hooks name it
+/// by, as Claude 2.1.296 on Haiku 5.5 lists it.
+fn claude_offering_auto() -> interpret::claude_pty::State {
+    let mut catalogue = offers_auto();
+    for permission in &mut catalogue.permissions {
+        if permission.value == "auto" {
+            permission.models = vec!["haiku".into(), "claude-haiku-5-5".into()];
+        }
+    }
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        offered: Some(catalogue),
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let launch = serde_json::json!({
+        "type": "launch", "version": "2.1.296", "keymap": "claude-2.1",
+        "permission_menus": {"per_suggestion": [1], "folded": [2]},
+    });
+    for event in [
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: launch.to_string().into_bytes(),
+        }),
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: interpret::claude_pty::ready_fact(),
+        }),
+        hook(serde_json::json!({
+            "hook_event_name": "SessionStart", "source": "startup", "session_id": "s1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "model": "claude-haiku-5-5", "permission_mode": "default",
+        })),
+    ] {
+        ClaudePty::step(&mut state, event);
+    }
+    state
+}
+
+/// Claude's permission menu in manual mode, where its model takes auto
+/// mode, reads Yes / Yes, and always allow … / Yes, and switch to auto mode
+/// / No. The ask offers the switch as a scope moving to auto; choosing it
+/// types that entry, and the permission is auto at once.
+#[test]
+fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
+    let mut state = claude_offering_auto();
+    let opened = ClaudePty::step(
+        &mut state,
+        hook(serde_json::json!({
+            "hook_event_name": "PermissionRequest", "session_id": "s1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "permission_mode": "default", "tool_name": "Bash",
+            "tool_input": {"command": "touch decided.txt"},
+            "permission_suggestions": [{"type": "addRules", "rules": [{"toolName": "Bash",
+                "ruleContent": "touch decided.txt"}], "behavior": "allow",
+                "destination": "localSettings"}],
+        })),
+    );
+    let (_, snapshot) = decoded(&opened).expect("a snapshot");
+    let ask = snapshot.asks.first().expect("the ask").clone();
+    let Some(wire::ask::Body::Permission(permission)) = &ask.body else {
+        panic!("a permission ask: {ask:?}");
+    };
+    let modes: Vec<Option<String>> = permission
+        .scopes
+        .iter()
+        .map(|scope| scope.grant.as_ref().and_then(|grant| grant.mode.clone()))
+        .collect();
+    assert_eq!(
+        modes,
+        [None, Some("auto".to_owned())],
+        "the ask leaves out Claude's switch to auto mode: {permission:?}"
+    );
+    let answer = ClaudePty::fixture_input(
+        b"a1".to_vec(),
+        &interpret::FixtureInput::Answer {
+            ask: ask.key.clone(),
+            answer: serde_json::json!({"allow": {"scope": 1}}),
+        },
+    )
+    .expect("an answer");
+    let answered = ClaudePty::step(&mut state, Event::Input(answer));
+    assert!(
+        answered.effects.iter().any(|effect| matches!(
+            effect,
+            Effect::Terminal(interpret::claude_pty::TerminalInput::Permission {
+                choice: interpret::claude_pty::PermissionChoice::AllowSwitchingToAuto,
+                ..
+            })
+        )),
+        "the switch to auto mode is not what is typed: {:?}",
+        answered.effects
+    );
+    let (_, after) = decoded(&answered).expect("a snapshot");
+    assert_eq!(after.permission.as_deref(), Some("auto"));
+}
+
+/// The plan's switch and Shift+Tab's cycle know auto mode the same way:
+/// the plan ask switches to auto, and the cycle goes accept edits, plan,
+/// auto, then back to manual, as Claude's own does.
+#[test]
+fn auto_mode_is_in_the_plan_switch_and_the_cycle_where_claude_offers_it() {
+    let mut state = claude_offering_auto();
+    let mut seen = Vec::new();
+    for at in 0..4 {
+        let cycled = ClaudePty::step(
+            &mut state,
+            Event::Input(wire::Input::new(
+                format!("k{at}").into_bytes(),
+                wire::ClaudePtyInput {
+                    of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+                        wire::CyclePermissionMode {},
+                    )),
+                },
+            )),
+        );
+        let (_, snapshot) = decoded(&cycled).expect("a snapshot");
+        seen.push(snapshot.permission.unwrap_or_default());
+    }
+    assert_eq!(seen, ["acceptEdits", "plan", "auto", "default"]);
+    let opened = ClaudePty::step(
+        &mut state,
+        hook(serde_json::json!({
+            "hook_event_name": "PermissionRequest", "session_id": "s1",
+            "transcript_path": "/claude/projects/w/s1.jsonl", "cwd": "/w",
+            "permission_mode": "plan", "tool_name": "ExitPlanMode",
+            "tool_input": {"plan": "# Plan"}, "permission_suggestions": [],
+        })),
+    );
+    let (_, snapshot) = decoded(&opened).expect("a snapshot");
+    let plan = snapshot
+        .asks
+        .iter()
+        .find_map(|ask| match &ask.body {
+            Some(wire::ask::Body::Plan(plan)) => Some(plan.clone()),
+            _ => None,
+        })
+        .expect("the plan ask");
+    assert_eq!(plan.switch_permission, "auto");
+}
+
+/// Claude starts its session only once a prompt arrives, so before then no
+/// hook names its model: the one it was launched with runs, and Shift+Tab
+/// already cycles through auto mode where that model takes it.
+#[test]
+fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
+    let mut catalogue = offers_auto();
+    for permission in &mut catalogue.permissions {
+        if permission.value == "auto" {
+            permission.models = vec!["haiku".into(), "claude-haiku-5-5".into()];
+        }
+    }
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        incarnation: 1,
+        offered: Some(catalogue),
+        provider_args: vec!["--model".into(), "haiku".into()],
+        ..Default::default()
+    };
+    let (mut state, _) = ClaudePty::initial(&spec, "test");
+    let launch = serde_json::json!({
+        "type": "launch", "version": "2.1.296", "keymap": "claude-2.1",
+        "permission_menus": {"per_suggestion": [1], "folded": [2]},
+    });
+    ClaudePty::step(
+        &mut state,
+        Event::Fact(interpret::Fact {
+            channel: interpret::Channel::Agent,
+            payload: launch.to_string().into_bytes(),
+        }),
+    );
+    let mut seen = Vec::new();
+    for at in 0..3 {
+        let cycled = ClaudePty::step(
+            &mut state,
+            Event::Input(wire::Input::new(
+                format!("k{at}").into_bytes(),
+                wire::ClaudePtyInput {
+                    of: Some(wire::claude_pty_input::Of::CyclePermissionMode(
+                        wire::CyclePermissionMode {},
+                    )),
+                },
+            )),
+        );
+        if let Some((_, snapshot)) = decoded(&cycled) {
+            seen.push(snapshot.permission.unwrap_or_default());
+        }
+    }
+    assert_eq!(seen, ["acceptEdits", "plan", "auto"]);
+}

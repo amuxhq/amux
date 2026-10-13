@@ -548,6 +548,7 @@ impl State {
                     .as_deref()
                     .unwrap_or_default(),
                 &self.provider.permission_menus,
+                self.menu_offers_auto(),
             ),
         };
         let seq = self.next_seq();
@@ -1678,20 +1679,37 @@ fn permission_ask(
     input: &Value,
     suggestions: &[PermissionUpdate],
     menus: &PermissionMenus,
+    menu_offers_auto: bool,
 ) -> (wire::ask::Body, AskShape) {
     let count = suggestions.len() as u32;
     // A menu the keymap does not know offers no scope: its Yes and its
     // deny are still typed.
-    let scopes = if menus.per_suggestion.contains(&count) {
+    let known = menus.per_suggestion.contains(&count) || menus.folded.contains(&count);
+    let mut scopes = if menus.per_suggestion.contains(&count) {
         permission_scopes(suggestions)
     } else if menus.folded.contains(&count) {
         vec![folded(permission_scopes(suggestions))]
     } else {
         Vec::new()
     };
+    // "Yes, and switch to auto mode" sits after the scope entries, so only
+    // a menu whose entries the keymap knows can reach it.
+    let auto = menu_offers_auto && known;
+    if auto {
+        scopes.push(ScopeChoice {
+            index: scopes.len() as u32,
+            grant: Some(wire::ClaudeGrant {
+                mode: Some("auto".to_owned()),
+                destination: wire::ScopeDestination::Session as i32,
+                destination_word: "session".to_owned(),
+                ..Default::default()
+            }),
+        });
+    }
     let shape = AskShape::Permission {
         grants: scopes.iter().map(claude_grant).collect(),
         suggestions: count,
+        auto,
     };
     (
         wire::ask::Body::Permission(PermissionAsk {

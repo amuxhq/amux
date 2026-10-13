@@ -746,6 +746,84 @@ fn terminal_claude_replays_a_prompt_a_denial_with_feedback_and_its_end() {
     });
 }
 
+/// Terminal Claude in manual mode, where it offers auto mode, draws Yes /
+/// Yes, don't ask again / Yes, and switch to auto mode / No. The ask offers
+/// the switch, and choosing it allows the call and puts Claude in auto
+/// mode.
+// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// docs/ARCHITECTURE.md, "Windows, as a stated cost").
+#[cfg(unix)]
+#[test]
+fn terminal_claude_switches_to_auto_mode_from_the_permission_menu() {
+    use prost::Message as _;
+    use provider_fakes::{Ask, Outcome, Tool, ToolClass};
+    terminal_test(async {
+        let agent = Agent::start(Setup {
+            kind: Kind::ClaudePty,
+            offers_auto_mode: true,
+            steps: vec![
+                Step::Ask(Ask::Permission(Tool {
+                    name: None,
+                    class: ToolClass::Consequential,
+                    input: Some(serde_json::json!({"command": "touch decided.txt"})),
+                    outcome: Outcome {
+                        output: "".into(),
+                        error: false,
+                        pieces: None,
+                    },
+                    wait_for: None,
+                })),
+                Step::Text {
+                    chunks: vec!["done".into()],
+                },
+                Step::TurnEnd,
+            ],
+            ..Setup::sdk()
+        })
+        .await;
+        let mut daemon = agent.dial().await;
+        agent.ready().await;
+        assert_eq!(
+            daemon.prompt(b"p1", "Touch decided.txt").await,
+            Verdict::Accepted
+        );
+        answer(
+            &agent,
+            &mut daemon,
+            b"a1",
+            serde_json::json!({"allow": {"scope": 1}}),
+        )
+        .await;
+        agent
+            .wait("the turn ends", |log| log.turn_ends() == 1)
+            .await;
+        let log = agent.log();
+        let tools = log
+            .items()
+            .into_iter()
+            .filter_map(|(_, item)| {
+                match wire::ClaudePtyItem::decode(item.body.as_slice())
+                    .ok()?
+                    .kind?
+                {
+                    wire::claude_pty_item::Kind::Tool(tool) => Some((item.key, tool)),
+                    _ => None,
+                }
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .into_values()
+            .collect::<Vec<_>>();
+        let [tool] = tools.as_slice() else {
+            panic!("one call: {tools:#?}");
+        };
+        assert_eq!(tool.state(), wire::ToolState::Succeeded, "{tool:#?}");
+        assert!(log.has_text("done"));
+        assert_eq!(log.permission().as_deref(), Some("auto"));
+        daemon.stop().await;
+        assert_eq!(agent.exit().await, ExitCause::Stopped);
+    });
+}
+
 /// Terminal Claude 2.1.283 in manual mode draws Yes / Yes, don't ask again
 /// / Yes, and switch to auto mode / No. A deny with a note reaches No: the
 /// call is refused, the session stays in manual mode and the note follows

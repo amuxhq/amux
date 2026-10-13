@@ -1078,3 +1078,28 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         "the command's time counts the wait for approval"
     );
 }
+
+/// Claude lists its models by alias ("haiku") with the model each resolves
+/// to ("claude-haiku-5-5"), while its rows and hooks name the running model
+/// by that id. Auto mode names both, so a Claude running the resolved model
+/// is known to offer it.
+#[test]
+fn auto_mode_names_each_model_by_alias_and_by_the_model_it_resolves_to() {
+    let mut state = started();
+    let mut answer = initialized(&["compact"]);
+    answer["response"]["response"]["models"] = json!([
+        {"value": "haiku", "resolvedModel": "claude-haiku-5-5", "displayName": "Haiku 5.5",
+            "description": "", "supportsAutoMode": true},
+        {"value": "claude-haiku-4-5-20251001", "resolvedModel": "claude-haiku-4-5-20251001",
+            "displayName": "Haiku 4.5", "description": ""},
+    ]);
+    let stepped = ClaudeSdk::step(&mut state, stream(answer));
+    let auto = written_catalogue(&stepped)
+        .expect("the initialize answer writes a catalogue")
+        .1
+        .permissions
+        .into_iter()
+        .find(|offered| offered.value == "auto")
+        .expect("auto mode is offered");
+    assert_eq!(auto.models, ["haiku", "claude-haiku-5-5"]);
+}

@@ -40,8 +40,8 @@ use wire::{
 
 use crate::claude_common::{
     Jobs, Task, Verdict, claude_grant, describe_asks, describe_claude_usage, describe_tasks,
-    describe_tool, file_step_facts, or_dash, permission_scopes, plan_item, question_item,
-    task_list,
+    describe_tool, file_step_facts, launch_arg, or_dash, permission_scopes, plan_item,
+    question_item, task_list,
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
@@ -314,17 +314,6 @@ struct QuestionNote<'a> {
 enum SdkAnswer {
     Permission(PermissionResult),
     Elicitation(ElicitationResult),
-}
-
-/// The value of `--flag value` or `--flag=value` in launch arguments.
-fn launch_arg(args: &[String], flag: &str) -> Option<String> {
-    args.iter().enumerate().find_map(|(index, arg)| {
-        if arg == flag {
-            args.get(index + 1).cloned()
-        } else {
-            arg.strip_prefix(flag)?.strip_prefix('=').map(str::to_owned)
-        }
-    })
 }
 
 /// What Claude offers on a host with no agent running, from its initialize

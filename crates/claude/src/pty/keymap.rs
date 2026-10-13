@@ -151,6 +151,8 @@ pub enum DigitSource {
     SelectedOption,
     OtherRow,
     Suggestion,
+    /// The entry after the scope entries: "Yes, and switch to auto mode".
+    AutoSwitch,
 }
 
 macro_rules! string_enum {
@@ -1009,13 +1011,20 @@ fn validate_environment(
             let folded = shapes
                 .is_some_and(|shapes| shapes.permission_folded_suggestions.contains(&suggestions));
             // Yes is the first entry of every menu and Escape denies
-            // whatever entries it holds; only a scope needs a known menu.
+            // whatever entries it holds; a scope, and the switch to auto
+            // mode after the scopes, need a known menu.
             let scoped = matches!(answer, PermissionAnswer::AllowScoped { .. });
-            if scoped && !whole && !folded {
+            let auto = matches!(answer, PermissionAnswer::AllowSwitchingToAuto);
+            if (scoped || auto) && !whole && !folded {
                 return Err(InputError::UnverifiedShape {
                     program,
                     reason: format!(
-                        "a scoped allowance on a permission menu with {suggestions} suggestions is not verified"
+                        "{} on a permission menu with {suggestions} suggestions is not verified",
+                        if auto {
+                            "the switch to auto mode"
+                        } else {
+                            "a scoped allowance"
+                        }
                     ),
                 });
             }
@@ -1347,6 +1356,25 @@ impl Interpreter<'_, '_> {
                     let first = self.keymap.menus[&MenuName::Permission].entries
                         [&MenuEntryName::AllowScoped];
                     Ok(Some(usize::from(first) + suggestion))
+                }
+                _ => Ok(None),
+            },
+            DigitSource::AutoSwitch => match (self.env.ask, self.env.answer) {
+                (
+                    Some(AskKind::Permission { suggestions, .. }),
+                    Some(AskAnswer::Permission(PermissionAnswer::AllowSwitchingToAuto)),
+                ) => {
+                    let first = self.keymap.menus[&MenuName::Permission].entries
+                        [&MenuEntryName::AllowScoped];
+                    let folded = self
+                        .keymap
+                        .verified_shapes
+                        .get(&ProgramName::PermissionMenu)
+                        .is_some_and(|shapes| {
+                            shapes.permission_folded_suggestions.contains(suggestions)
+                        });
+                    let entries = if folded { 1 } else { *suggestions };
+                    Ok(Some(usize::from(first) + entries))
                 }
                 _ => Ok(None),
             },
@@ -1908,6 +1936,30 @@ mod interpret {
             .expect("plain deny"),
             vec![write(b"\x1b")]
         );
+    }
+
+    /// "Yes, and switch to auto mode" follows the scope entries: third on
+    /// a menu with one suggestion, or two folded into one entry, as Claude
+    /// 2.1.283 and 2.1.296 draw it. A menu whose entries are not known
+    /// cannot reach it.
+    #[test]
+    fn the_switch_to_auto_mode_follows_the_scope_entries() {
+        let auto = || {
+            answer_intent(AskAnswer::Permission(
+                PermissionAnswer::AllowSwitchingToAuto,
+            ))
+        };
+        for suggestions in [1, 2] {
+            assert_eq!(
+                encoded(&auto(), Some(&permission(suggestions))).expect("auto"),
+                vec![write(b"3")],
+                "{suggestions} suggestions"
+            );
+        }
+        assert!(matches!(
+            encoded(&auto(), Some(&permission(3))),
+            Err(InputError::UnverifiedShape { .. })
+        ));
     }
 
     #[test]

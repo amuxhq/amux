@@ -72,8 +72,15 @@ pub enum AskAnswer {
 #[serde(tag = "permission", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PermissionAnswer {
     AllowOnce,
-    AllowScoped { suggestion: usize },
-    Deny { feedback: Option<String> },
+    AllowScoped {
+        suggestion: usize,
+    },
+    /// "Yes, and switch to auto mode", which Claude's menu offers in manual
+    /// mode where its model takes auto mode.
+    AllowSwitchingToAuto,
+    Deny {
+        feedback: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

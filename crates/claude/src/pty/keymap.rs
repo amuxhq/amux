@@ -247,6 +247,7 @@ string_enum!(Iter {
 
 string_enum!(Cond {
     Denies,
+    SendsBack,
     HasFeedback,
     HasOther,
     MultiSelect,
@@ -1424,11 +1425,14 @@ impl Interpreter<'_, '_> {
                 self.env.answer,
                 Some(AskAnswer::Permission(PermissionAnswer::Deny { .. }))
             )),
+            Cond::SendsBack => Ok(matches!(
+                self.env.answer,
+                Some(AskAnswer::Plan(PlanAnswer::RequestChanges { .. }))
+            )),
             Cond::HasFeedback => Ok(match self.env.answer {
                 Some(AskAnswer::Permission(PermissionAnswer::Deny {
                     feedback: Some(feedback),
                 })) => !feedback.trim().is_empty(),
-                // Sent back without a note, the menu's entry alone is typed.
                 Some(AskAnswer::Plan(PlanAnswer::RequestChanges { feedback })) => {
                     !feedback.trim().is_empty()
                 }

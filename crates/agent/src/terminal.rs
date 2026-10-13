@@ -18,10 +18,6 @@ use claude::pty::{
 use interpret::claude_pty::{PermissionChoice, PermissionMenus, PlanChoice, TerminalInput};
 use tokio::sync::mpsc;
 
-/// What a plan sent back without a note tells Claude, in the field its
-/// plan menu opens for what to change.
-const KEEP_PLANNING: &str = "Not approved yet. Keep planning.";
-
 /// The keymap for the Claude this incarnation runs, and the version it was
 /// resolved for.
 pub struct Keys {
@@ -135,14 +131,6 @@ impl Keys {
                 let answer = AskAnswer::Plan(match choice {
                     PlanChoice::ApproveSwitching => PlanAnswer::ApproveAuto,
                     PlanChoice::Approve => PlanAnswer::ApproveManual,
-                    // Claude's entry opens a field for what to change and
-                    // waits there until something is sent, so a plan sent
-                    // back without a note says to keep planning.
-                    PlanChoice::SendBack { note } if note.trim().is_empty() => {
-                        PlanAnswer::RequestChanges {
-                            feedback: KEEP_PLANNING.to_owned(),
-                        }
-                    }
                     PlanChoice::SendBack { note } => PlanAnswer::RequestChanges {
                         feedback: note.clone(),
                     },
@@ -315,12 +303,12 @@ mod tests {
     /// "No, keep planning" with no note, as the terminal client sends it
     /// (a note there goes as a prompt of its own), on Claude 2.1.296 as QA
     /// ran it: the plan menu's third entry is typed, and since that entry
-    /// opens a field for what to change, words saying to keep planning are
-    /// typed and sent there. QA recorded no key at all reaching Claude, and
-    /// then the entry alone, whose field waited for good while amux marked
+    /// opens a field for what to change, Enter is pressed on the field left
+    /// empty, which sends the plan back without a note. QA recorded the
+    /// entry alone once, whose field then waited for good while amux marked
     /// the plan sent back and the agent working.
     #[test]
-    fn a_plan_sent_back_without_a_note_types_the_menus_send_back_entry() {
+    fn a_plan_sent_back_without_a_note_sends_the_menus_empty_field() {
         let version = "2.1.296".parse().expect("a version");
         let (resolved, keymap) =
             keymap::resolve_session(&keymap::KeymapSources::default(), &version).expect("a keymap");
@@ -337,22 +325,17 @@ mod tests {
                 "",
             )
             .expect("keys for a plan sent back");
-        assert!(
-            steps.contains(&KeyStep::Write(b"3".to_vec())),
-            "no key picks the menu's send-back entry: {steps:?}"
-        );
-        let typed: Vec<u8> = steps
+        let typed: Vec<&KeyStep> = steps
             .iter()
-            .filter_map(|step| match step {
-                KeyStep::Write(bytes) => Some(bytes.clone()),
-                _ => None,
-            })
-            .flatten()
+            .filter(|step| matches!(step, KeyStep::Write(_)))
             .collect();
-        let typed = String::from_utf8_lossy(&typed);
-        assert!(
-            typed.contains(KEEP_PLANNING),
-            "nothing is typed into the field the entry opens: {steps:?}"
+        assert_eq!(
+            typed,
+            [
+                &KeyStep::Write(b"3".to_vec()),
+                &KeyStep::Write(b"\r".to_vec()),
+            ],
+            "the send-back entry, then Enter on its empty field: {steps:?}"
         );
     }
 }

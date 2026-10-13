@@ -542,6 +542,47 @@ impl Child {
     }
 }
 
+/// An agent whose changes are not published while a delete removes it,
+/// until this is dropped. A delete dropped before it settled (its caller
+/// went away) unmutes too and publishes the row as it then stands, since
+/// what the delete changed meanwhile reached no subscriber.
+struct Muted<'a> {
+    runtime: &'a ProfileRuntime,
+    key: AgentKey,
+    settled: bool,
+}
+
+impl<'a> Muted<'a> {
+    fn new(runtime: &'a ProfileRuntime, key: AgentKey) -> Self {
+        runtime.fanout.mute(&key);
+        Self {
+            runtime,
+            key,
+            settled: false,
+        }
+    }
+}
+
+impl Drop for Muted<'_> {
+    fn drop(&mut self) {
+        self.runtime.fanout.unmute(&self.key);
+        if self.settled {
+            return;
+        }
+        let (Some(me), Ok(handle)) = (
+            self.runtime.me.upgrade(),
+            tokio::runtime::Handle::try_current(),
+        ) else {
+            return;
+        };
+        let key = self.key.clone();
+        handle.spawn(async move {
+            let store = me.store.lock().await;
+            let _ = me.publish_row(&store, &key);
+        });
+    }
+}
+
 /// A parent marked stopping, until this is dropped.
 struct BirthsClosed {
     births: Arc<Births>,
@@ -963,8 +1004,11 @@ impl ProfileRuntime {
     async fn close_births(&self, id: AgentId) -> BirthsClosed {
         let births = self.births(id);
         births.stopping.fetch_add(1, Ordering::SeqCst);
-        drop(births.creating.write().await);
-        BirthsClosed { births }
+        // The guard before the wait: a stop dropped while it waits lifts
+        // its mark, or the parent would refuse every spawn until restart.
+        let closed = BirthsClosed { births };
+        drop(closed.births.creating.write().await);
+        closed
     }
 
     /// Lets a creation for `parent` go on, held until its child has
@@ -1718,9 +1762,10 @@ impl ProfileRuntime {
         // the agent is published until its removal is; a delete that fails
         // publishes the row as it then stands.
         self.family_reachable(id).await?;
-        self.fanout.mute(&key);
+        let mut muted = Muted::new(self, key.clone());
         let deleted = self.delete_muted(id, key.clone(), response).await;
-        self.fanout.unmute(&key);
+        muted.settled = true;
+        drop(muted);
         if deleted.is_err() {
             let store = self.store.lock().await;
             let _ = self.publish_row(&store, &key);

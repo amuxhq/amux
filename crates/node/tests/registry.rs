@@ -898,6 +898,141 @@ async fn a_child_asked_for_while_its_parent_stops_is_refused() {
     daemon.shutdown().await.unwrap();
 }
 
+/// A stop dropped while it waits for a child's creation to finish (its
+/// caller went away) leaves the parent as it was: a later child is made.
+/// The stop marked the parent stopping before that wait, and the mark is
+/// lifted only by a guard built after it, so the dropped stop kept the
+/// parent refusing every spawn until the daemon restarted.
+#[tokio::test]
+async fn a_stop_dropped_mid_way_leaves_its_parent_able_to_spawn() {
+    let install = Install::new();
+    let never = install.path("never");
+    let daemon = install
+        .start("boot-1", install.launch("held", vec![wait_for(&never)]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let parent = id_of(
+        &runtime
+            .spawn(create(&install.work, "parent", Some("hold")), None)
+            .await
+            .unwrap(),
+    );
+    until("the turn to start", || working(&runtime, parent))
+        .await
+        .unwrap();
+
+    {
+        // A child's creation under way, held at the store, keeps the
+        // stop waiting for it; then the stop's caller goes away.
+        let store = runtime.store().await;
+        let mut spawn = std::pin::pin!(runtime.spawn(
+            create(&install.work, "first-child", Some("hold")),
+            Some(parent)
+        ));
+        assert!(poll_once(&mut spawn).await.is_pending());
+        let mut stop = Box::pin(runtime.stop(parent));
+        assert!(
+            poll_once(&mut stop).await.is_pending(),
+            "the stop waits for the creation under way"
+        );
+        drop(stop);
+        drop(store);
+        spawn.await.expect("the creation under way completes");
+    }
+
+    let later = runtime
+        .spawn(
+            create(&install.work, "later-child", Some("hold")),
+            Some(parent),
+        )
+        .await;
+    assert!(
+        later.is_ok(),
+        "a parent whose stop was dropped refuses spawns: {:?}",
+        later.err()
+    );
+
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A delete dropped mid-way (its caller went away) leaves the agent's row
+/// published again. The delete mutes the agent's changes until its removal
+/// is published, and unmuted it only after its await: dropped there, it
+/// kept every later change of the agent from every client until restart.
+#[tokio::test]
+async fn a_delete_dropped_mid_way_leaves_its_agents_changes_published() {
+    let install = Install::new();
+    let never = install.path("never");
+    let daemon = install
+        .start("boot-1", install.launch("held", vec![wait_for(&never)]))
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let parent = id_of(
+        &runtime
+            .spawn(create(&install.work, "parent", Some("hold")), None)
+            .await
+            .unwrap(),
+    );
+    until("the turn to start", || working(&runtime, parent))
+        .await
+        .unwrap();
+    let mut inventory = runtime.subscribe_inventory().await.unwrap();
+
+    {
+        // A child's creation under way keeps the delete waiting once it
+        // has muted the parent; then the delete's caller goes away.
+        let store = runtime.store().await;
+        let mut spawn = std::pin::pin!(runtime.spawn(
+            create(&install.work, "first-child", Some("hold")),
+            Some(parent)
+        ));
+        assert!(poll_once(&mut spawn).await.is_pending());
+        drop(store);
+        let mut spawn_on = poll_once(&mut spawn).await;
+        assert!(spawn_on.is_pending(), "the creation waits for its child");
+        let mut delete = Box::pin(runtime.delete(parent));
+        for _ in 0..8 {
+            assert!(
+                poll_once(&mut delete).await.is_pending(),
+                "the delete waits for the creation under way"
+            );
+            tokio::task::yield_now().await;
+        }
+        drop(delete);
+        if spawn_on.is_pending() {
+            spawn_on = std::task::Poll::Ready(spawn.await);
+        }
+        let std::task::Poll::Ready(child) = spawn_on else {
+            unreachable!()
+        };
+        child.expect("the creation under way completes");
+    }
+
+    runtime.rename(parent, "renamed-parent").await.unwrap();
+    let renamed = tokio::time::timeout(PATIENCE, async {
+        while let Some(event) = inventory.next().await {
+            if let Some(wire::inventory_event::Of::Agent(agent)) = &event.of
+                && agent.agent_id == parent.as_bytes()
+                && agent.name == "renamed-parent"
+            {
+                return true;
+            }
+        }
+        false
+    })
+    .await;
+    assert!(
+        matches!(renamed, Ok(true)),
+        "the parent's rename never reached a subscriber after its delete was dropped"
+    );
+
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn rename_changes_the_row_and_the_next_spec_never_a_written_one() {
     let install = Install::new();

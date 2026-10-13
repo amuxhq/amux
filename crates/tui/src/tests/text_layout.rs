@@ -573,3 +573,224 @@ fn an_idle_rows_background_jobs_are_counted_on_it() {
     let screen = fleet_screen_at(&mut view, &fleet, 80, 24);
     assert!(screen.contains("2 background jobs"), "{screen}");
 }
+
+/// A multi-select question of three options, each with a description, and
+/// Something else, as an agent asks it.
+fn toppings() -> SessionState {
+    let body = wire::ClaudeSdkSnapshot {
+        asks: vec![wire::Ask {
+            key: "q-1".into(),
+            item_key: "call-q".into(),
+            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+                questions: vec![wire::Question {
+                    header: "Toppings".into(),
+                    question: "Which toppings do you want on the pizza?".into(),
+                    options: [
+                        ("Cheese", "Mozzarella, melted"),
+                        ("Basil", "Fresh leaves, added after baking"),
+                        ("Olives", "Black, sliced"),
+                    ]
+                    .map(|(label, description)| wire::QuestionOption {
+                        label: label.into(),
+                        description: description.into(),
+                        ..Default::default()
+                    })
+                    .into(),
+                    multi_select: true,
+                    allow_other: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut state = chat(replies(1, 2));
+    state.update(snapshot(Phase::NeedsYou, body.encode_to_vec(), vec![]));
+    state
+}
+
+/// On a short terminal the question card keeps the focused option on
+/// screen, wherever the focus moves: at 80x16 and 40x16 it showed the
+/// question, "↓ more" and "4. Something else", and options 1 to 3 and the
+/// focus marker never, while Up and Down moved a focus nobody could see.
+#[test]
+fn a_question_card_on_a_short_screen_keeps_the_focused_option_in_sight() {
+    let state = toppings();
+    for (width, height) in [(80, 16), (40, 16), (80, 14)] {
+        let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+        let rows = rows_of(&mut view, &state, 0, width, height);
+        for (step, label) in [
+            "1. [ ] Cheese",
+            "2. [ ] Basil",
+            "3. [ ] Olives",
+            "4. Something else",
+        ]
+        .iter()
+        .enumerate()
+        {
+            if step > 0 {
+                view.key(&state, key(KeyCode::Down), theme());
+            }
+            let rows = rows_of(&mut view, &state, 0, width, height);
+            let screen = rows.join("\n");
+            let focused = rows.iter().find(|row| row.contains('›'));
+            assert!(
+                focused.is_some_and(|row| row.contains(label)),
+                "at {width}x{height} the focus on {label:?} is not in sight:\n{screen}"
+            );
+            assert!(
+                screen.contains('╰'),
+                "at {width}x{height} the card runs off the screen:\n{screen}"
+            );
+        }
+        drop(rows);
+    }
+}
+
+/// One question of about 400 characters and three options.
+fn long_question() -> (SessionState, String) {
+    let question = "We have been weighing two ways to store the session history for a while now. \
+        The first keeps every row in one table and is simple to reason about, but it grows \
+        without bound and its queries slow down as it does. The second splits rows by day and \
+        prunes old days, which is faster but harder to migrate and to test, and there are open \
+        questions about whether the choice will be easy to reverse later. Given all of that, \
+        which direction should we take for this decision?"
+        .to_owned();
+    let body = wire::ClaudeSdkSnapshot {
+        asks: vec![wire::Ask {
+            key: "q-1".into(),
+            item_key: "call-q".into(),
+            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+                questions: vec![wire::Question {
+                    header: "Storage".into(),
+                    question: question.clone(),
+                    options: ["One table", "Split by day", "Decide later"]
+                        .map(|label| wire::QuestionOption {
+                            label: label.into(),
+                            ..Default::default()
+                        })
+                        .into(),
+                    allow_other: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut state = chat(replies(1, 2));
+    state.update(snapshot(Phase::NeedsYou, body.encode_to_vec(), vec![]));
+    (state, question)
+}
+
+/// A long question cut on a small terminal keeps the sentence that asks,
+/// says how much is hidden, and shows the rest on `f`: at 80x24 the card
+/// ended "which direction should we…", the question itself in the lost
+/// tail, with no way to read it.
+#[test]
+fn a_long_question_on_a_small_screen_keeps_its_ask_and_shows_the_rest_on_f() {
+    let (state, question) = long_question();
+    let words = |rows: &[String]| -> String {
+        rows.iter()
+            .map(|row| row.trim_matches(|c: char| c == ' ' || c == '│'))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let whole = question.split_whitespace().collect::<Vec<_>>().join(" ");
+    let flat = |rows: &[String]| words(rows).split_whitespace().collect::<Vec<_>>().join(" ");
+    for (width, height) in [(80, 20), (40, 30), (80, 16)] {
+        let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+        rows_of(&mut view, &state, 0, width, height);
+        let rows = rows_of(&mut view, &state, 0, width, height);
+        let screen = rows.join("\n");
+        assert!(
+            !flat(&rows).contains(&whole),
+            "at {width}x{height} the question is not cut; pick a smaller screen:\n{screen}"
+        );
+        assert!(
+            words(&rows).contains("this decision?") && screen.contains("[Show All]"),
+            "at {width}x{height} the cut loses the asking sentence or hides it silently:\n{screen}"
+        );
+        assert!(screen.contains("1. One table"), "{screen}");
+        view.key(&state, key(KeyCode::Char('f')), theme());
+        let rows = rows_of(&mut view, &state, 0, width, height);
+        assert!(
+            flat(&rows).contains(&whole),
+            "at {width}x{height} f does not show the whole question:\n{}",
+            rows.join("\n")
+        );
+    }
+}
+
+/// Codex asking to apply a patch to three new files, approvable for the
+/// session or refused.
+fn three_file_patch() -> (SessionState, i64) {
+    let (mut state, at) = fixtures::Named::CodexApproval.state();
+    let file = |name: &str| wire::FileChange {
+        path: format!("/work/{name}"),
+        kind: wire::FileChangeKind::Add as i32,
+        patch: format!("@@ -0,0 +1,3 @@\n+{name} one\n+{name} two\n+{name} three\n"),
+        ..Default::default()
+    };
+    let agent = state.agent_state();
+    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
+        kind: Kind::Codex as i32,
+        body: wire::CodexSnapshot {
+            asks: vec![wire::CodexAsk {
+                key: "7".into(),
+                item_key: "patch-1".into(),
+                body: Some(wire::codex_ask::Body::FileChange(
+                    wire::FileChangeApproval {
+                        changes: vec![file("one.txt"), file("two.txt"), file("three.txt")],
+                        ..Default::default()
+                    },
+                )),
+                decisions: vec![
+                    wire::Decision::Approve as i32,
+                    wire::Decision::ApproveSession as i32,
+                    wire::Decision::Deny as i32,
+                ],
+            }],
+            model: agent.model.clone(),
+            ..Default::default()
+        }
+        .encode_to_vec(),
+        phase: Phase::NeedsYou as i32,
+        revision: agent.revision + 1,
+        catalogue: agent.catalogue.clone(),
+        ..wire::Snapshot::default()
+    })));
+    (state, at)
+}
+
+/// A patch approval on a short terminal keeps every choice and its frame on
+/// screen, the diff giving way: at 80x16 a three-file patch ran the card
+/// off the bottom, with "3. No" and the key line gone and Down moving the
+/// highlight there unseen.
+#[test]
+fn a_patch_card_on_a_short_screen_keeps_its_choices() {
+    let (state, at) = three_file_patch();
+    assert!(ask_card(&state).is_some(), "the patch ask is open");
+    for (width, height) in [(80, 16), (80, 14), (40, 16)] {
+        let mut view = ChatView::new(b"agent".to_vec(), at, false);
+        rows_of(&mut view, &state, at, width, height);
+        for down in 0..3 {
+            if down > 0 {
+                view.key(&state, key(KeyCode::Down), theme());
+            }
+            let rows = rows_of(&mut view, &state, at, width, height);
+            let screen = rows.join("\n");
+            assert!(
+                screen.contains("1. Yes") && screen.contains("3. No") && screen.contains('╰'),
+                "at {width}x{height} the card runs off the screen:\n{screen}"
+            );
+            assert!(
+                rows.iter().any(|row| row.contains('›')),
+                "at {width}x{height} the highlight is off the screen:\n{screen}"
+            );
+        }
+    }
+}

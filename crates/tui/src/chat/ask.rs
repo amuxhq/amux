@@ -922,19 +922,31 @@ impl AskUi {
                 // Opened ([Full Diff] or f), the whole patch shows in the
                 // box, which grows to fill the chat and scrolls (wheel,
                 // PgUp/PgDn) when even that is too little.
-                let opened = self.show_all && lines.len() > DIFF_LINES;
-                let cut = lines.len() > DIFF_LINES && !opened;
+                // On a short screen the patch gives way to the choices, the
+                // frame and the keys: it keeps what rows they leave, down to
+                // the one saying how much more there is.
+                let small = if self.room == 0 {
+                    DIFF_LINES
+                } else {
+                    self.room
+                        .saturating_sub(
+                            BOX_CHROME + out.lines.len() + 1 + self.choice_rows(card, width),
+                        )
+                        .clamp(1, DIFF_LINES)
+                };
+                let opened = self.show_all && lines.len() > small;
+                let cut = lines.len() > small && !opened;
                 let rows = if self.room == 0 { 36 } else { self.room };
                 let fits = rows
                     .saturating_sub(DIFF_CHROME + self.choice_rows(card, width))
-                    .max(DIFF_LINES);
+                    .max(small.saturating_sub(1).max(1));
                 let scroll = if opened {
                     self.diff_scroll.min(lines.len().saturating_sub(fits))
                 } else {
                     0
                 };
                 let take = if cut {
-                    DIFF_LINES - 1
+                    small - 1
                 } else if opened {
                     fits.min(lines.len())
                 } else {
@@ -1708,14 +1720,9 @@ impl AskUi {
                     self.selected = out;
                 }
             }
-            KeyCode::Char('f')
-                if question
-                    .options
-                    .iter()
-                    .any(|option| !option.preview.is_empty()) =>
-            {
-                self.show_all = !self.show_all;
-            }
+            // F shows the previews, or a question cut on a short screen,
+            // whole, and cuts them again.
+            KeyCode::Char('f') => self.show_all = !self.show_all,
             KeyCode::Char(' ') if self.selected < rows.options => {
                 return self.question_row(card, questions, self.selected, false);
             }
@@ -2127,11 +2134,13 @@ impl AskUi {
                 out.lines.push(line);
             }
         }
+        let select_all = question.multi_select.then_some(out.lines.len());
         if question.multi_select {
             let mut line = Line::default();
             push(&mut line, "Select all that apply", theme.faint(), width);
             out.lines.push(line);
         }
+        let gap = out.lines.len();
         out.lines.push(Line::default());
 
         // With previews, the options and the highlighted one's preview side
@@ -2164,28 +2173,51 @@ impl AskUi {
             if out.lines.len() + left.lines.len() > budget {
                 left = self.question_rows(question, &rows, left_width, false, footer, theme);
             }
+            // Then the spacing: the blank under the question, "Select all
+            // that apply" (the key line says space selects), and the blank
+            // above the footer, so the options keep their rows.
+            if out.lines.len() + left.lines.len() > budget {
+                drop_line(&mut out, gap);
+            }
+            if let Some(at) = select_all
+                && out.lines.len() + left.lines.len() > budget
+            {
+                drop_line(&mut out, at);
+            }
+            if out.lines.len() + left.lines.len() > budget
+                && let Some(footer_at) = rows.skip.or(rows.out).and_then(|at| {
+                    left.spots
+                        .iter()
+                        .find(|(_, _, spot)| *spot == BoxSpot::Choice(at))
+                        .map(|(row, ..)| *row)
+                })
+                && footer_at > 0
+                && text::line_width(&left.lines[footer_at - 1]) == 0
+            {
+                drop_line(&mut left, footer_at - 1);
+            }
             let over = (out.lines.len() + left.lines.len()).saturating_sub(budget);
-            let cut = over.min(asked.len().saturating_sub(QUESTION_LEAST));
+            // Cut, the question keeps its opening and its last line, which
+            // is where it asks, and says how much is hidden between: `f`
+            // or a click shows it whole.
+            let cut = if self.show_all {
+                0
+            } else {
+                over.min(asked.len().saturating_sub(QUESTION_LEAST))
+            };
             if cut > 0 {
-                let last = asked.end - cut - 1;
-                let kept = text::wrap(&inline_code(&question.question).0, width.max(1))
-                    .get(last - asked.start)
-                    .cloned()
-                    .unwrap_or_default();
-                let mut line = Line::default();
-                push(
-                    &mut line,
-                    text::ellipsize(&format!("{kept}…"), width.max(1)),
-                    theme.text(),
-                    width,
-                );
-                out.lines[last] = line;
-                out.lines.drain(last + 1..asked.end);
+                let hidden = cut + 1;
+                let from = asked.end - 1 - hidden;
+                let mut more = Line::default();
+                push_more(&mut more, hidden, "[Show All]", theme, width);
+                let at = text::line_width(&more).saturating_sub(10);
+                out.lines.splice(from..asked.end - 1, [more]);
                 for spot in &mut out.spots {
-                    if spot.0 > last {
+                    if spot.0 > from {
                         spot.0 -= cut;
                     }
                 }
+                out.spots.push((from, (at, at + 10), BoxSpot::ShowAll));
             }
             let over = (out.lines.len() + left.lines.len()).saturating_sub(budget);
             if over > 0 {
@@ -2304,7 +2336,10 @@ fn window_options(left: &mut BoxLines, options: usize, selected: usize, over: us
         })
         .max()
         .unwrap_or(0);
-    let show = option_rows.saturating_sub(over).max(1);
+    // However short the screen, the window holds the highlighted option
+    // with a marker either side: one row was all "↓ more", which hid every
+    // option and the highlight with them.
+    let show = option_rows.saturating_sub(over).max(3);
     if show >= option_rows {
         return;
     }
@@ -2362,6 +2397,25 @@ fn window_options(left: &mut BoxLines, options: usize, selected: usize, over: us
         } else {
             *row = row.saturating_sub(from);
         }
+    }
+}
+
+/// Removes line `at`, moving the click spots and the cursor below it up.
+fn drop_line(lines: &mut BoxLines, at: usize) {
+    if at >= lines.lines.len() {
+        return;
+    }
+    lines.lines.remove(at);
+    lines.spots.retain(|(row, ..)| *row != at);
+    for (row, ..) in &mut lines.spots {
+        if *row > at {
+            *row -= 1;
+        }
+    }
+    if let Some((row, _)) = &mut lines.cursor
+        && *row > at
+    {
+        *row -= 1;
     }
 }
 

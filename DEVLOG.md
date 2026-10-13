@@ -1,3 +1,20 @@
+2026-10-13 — **Ask cards fit a short terminal.** Three cards ran out of
+room on small terminals. A multi-select question at 80x16 showed only
+"↓ more" and "Something else": its window of options shrank to one row,
+which the marker took, so no option and no highlight was ever on screen.
+A long question at 80x24 was cut after its opening, losing the sentence
+that asks, with no way to read the rest. A three-file Codex patch at
+80x16 kept its seven preview lines and ran off the bottom, "3. No" and
+the key line with it. Now the options' window always holds the
+highlighted option between its markers, and before windowing a short
+card sheds its spacing and "Select all that apply" (the key line says
+space selects); a cut question keeps its opening and its last line with
+"… N more lines [Show All]" between, and `f` or a click shows it whole;
+the patch preview keeps only the rows the choices, frame and keys leave
+it, down to its "… more lines [Full Diff]" line. Layout tests walk the
+focus through each card at 80x16, 80x14 and 40x16, and read a long
+question at 80x20, 40x30 and 80x16, cut and whole.
+
 2026-10-13 — **A terminal Claude plan sent back without a note keeps
 planning.** "No, keep planning" with no note typed the third entry of
 Claude's plan menu, "Tell Claude what to change", which opens a field and

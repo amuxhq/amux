@@ -1,3 +1,10 @@
+2026-10-13 — **The chat vocabulary's terminal figures show the terminal as it draws today.**
+Six of the figures in the chat vocabulary were drawn before recent changes:
+answered asks with their notes and skips, plans with their switch, step rows,
+and asks whose key lines and wording have since moved. They are rendered
+again from the terminal's own components, and the figure manifest's sizes
+and checksums follow.
+
 2026-10-13 — **The phone opens a host's own page, holds sends while a host is away, and runs the client's commands.**
 Tapping a host on the Hosts tab opened a blank page. It now opens the host's
 page: how the phone reaches it, its platform, version, providers, addresses

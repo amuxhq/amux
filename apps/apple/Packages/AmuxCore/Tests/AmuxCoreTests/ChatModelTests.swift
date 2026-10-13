@@ -118,9 +118,19 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return pending
     }
 
+    /// Sends are held, as for a host that cannot be reached: each is listed
+    /// held with its draft, under ids from 1.
+    var holdsSends = false
+
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
         sent.append(draft)
-        return .success(SendOutcome(inputId: [1], state: .sent))
+        let id = [UInt8(sent.count)]
+        guard holdsSends else { return .success(SendOutcome(inputId: id, state: .sent)) }
+        drafts[id] = draft
+        current.underway.append(
+            SentPrompt(inputId: id, text: [.text(draft.words)], lands: .feed, underway: .held))
+        pending.session = true
+        return .success(SendOutcome(inputId: id, state: .held))
     }
 
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { .done }
@@ -699,6 +709,33 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.notice, "Not sent: its host can’t be reached")
         XCTAssertEqual(source.discarded, [[8]])
         XCTAssertEqual(model.frame?.refused, [], "taken back once")
+    }
+
+    /// Settled: if the phone closes before its host is back, a held prompt
+    /// goes back to the draft, which the phone keeps on the device. So the
+    /// kept draft carries the held prompt's words from the moment it is
+    /// held, beside what is typed after it, and drops them once the prompt
+    /// is released and sent.
+    func testAHeldPromptIsKeptInTheDraftUntilItIsSent() async {
+        let source = FakeChat(rows: [], frame: frame())
+        source.holdsSends = true
+        let model = ChatModel(source: source)
+        var kept: [Draft] = []
+        model.keeping = { kept.append($0) }
+        model.draft = "Run the tests."
+        model.send()
+        await settle()
+        model.woke()
+        XCTAssertEqual(model.draft, "", "the composer is free for the next prompt")
+        XCTAssertEqual(kept.last?.words, "Run the tests.", "the held prompt is kept in the draft")
+
+        model.draft = "Then the lint."
+        XCTAssertEqual(kept.last?.words, "Run the tests.\nThen the lint.", "typing keeps the held words")
+
+        source.current.underway[0].underway = .sending(waiting: false)
+        source.pending.session = true
+        model.woke()
+        XCTAssertEqual(kept.last?.words, "Then the lint.", "a released prompt leaves the kept draft")
     }
 
     /// Prompts on their way split by where they land: the feed's end or

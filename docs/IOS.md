@@ -87,7 +87,10 @@ only what changed. A chat is a `ChatModel` over an open `Chat`:
   long as the chat is open, so leaving the page loses none of them. The
   draft and its attachments last longer: `DraftShelf` keeps each one on the
   phone, per account and agent, as it changes, so a draft outlives its
-  chat's session and the app being closed. Drafts never leave the device,
+  chat's session and the app being closed. A prompt held for a host that
+  cannot be reached is kept in the draft too, ahead of what is typed, from
+  the moment it is held until it is released and sent, so a phone that
+  closes first finds its words back in the composer. Drafts never leave the device,
   and removing an account from the phone forgets its drafts. Deleting an
   agent from the phone forgets its draft, and nothing typed into its chat
   while the page leaves is kept. An agent deleted elsewhere leaves its draft

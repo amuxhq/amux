@@ -3232,6 +3232,7 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         RefusalReason::ConversationElsewhere => {
             "Claude's own view switched to another conversation"
         }
+        RefusalReason::TooLong => "it is longer than the agent takes",
         RefusalReason::Unspecified => "it was refused",
     }
     .to_owned()

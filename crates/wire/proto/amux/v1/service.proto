@@ -589,4 +589,6 @@ enum Refusal {
   // Terminal Claude's own view switched to another conversation; this
   // agent's conversation is not the one on its screen.
   REFUSAL_CONVERSATION_ELSEWHERE = 8;
+  // The prompt is longer than the agent takes; the detail names the limit.
+  REFUSAL_TOO_LONG = 9;
 }

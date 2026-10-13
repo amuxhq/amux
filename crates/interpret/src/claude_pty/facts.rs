@@ -803,9 +803,10 @@ impl State {
                         .is_ok_and(|input| input.run_in_background),
                     decision: None,
                     ended_at_ms: None,
-                    started_at_ms: self.ran_from.remove(id).map(|started| {
-                        started.max(at_ms.unwrap_or_else(|| self.shared.now_ms()))
-                    }),
+                    started_at_ms: self
+                        .ran_from
+                        .remove(id)
+                        .map(|started| started.max(at_ms.unwrap_or_else(|| self.shared.now_ms()))),
                     message_id: message_id.to_owned(),
                     finished: false,
                     hidden,

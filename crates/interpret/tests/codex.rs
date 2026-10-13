@@ -1510,14 +1510,70 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         .iter()
         .rev()
         .filter(|item| item.key == "cmd-1")
-        .find_map(|item| match wire::CodexItem::decode(item.body.as_slice()).ok()?.kind {
-            Some(wire::codex_item::Kind::Work(work)) => Some(work),
-            _ => None,
-        })
+        .find_map(
+            |item| match wire::CodexItem::decode(item.body.as_slice()).ok()?.kind {
+                Some(wire::codex_item::Kind::Work(work)) => Some(work),
+                _ => None,
+            },
+        )
         .expect("the command's row");
     assert_eq!(
         (work.started_at_ms, work.ended_at_ms),
         (Some(61_200 - 194), Some(61_200)),
         "the command's time counts the wait for approval"
+    );
+}
+
+/// A prompt longer than Codex takes (1,048,576 characters) is refused
+/// before it is sent, in words naming the limit, so it goes back to the
+/// composer; Codex would refuse it only after amux had taken it, and the
+/// draft would be gone. A prompt at the limit goes.
+#[test]
+fn a_prompt_over_codexs_limit_is_refused_before_it_is_sent() {
+    let spec = wire::AgentSpec {
+        agent_id: b"agent".to_vec(),
+        ..Default::default()
+    };
+    let (mut state, _) = Codex::initial(&spec, "test");
+    Codex::step(
+        &mut state,
+        rpc(
+            json!({"id": 2, "result": {"thread": {"id": "t1", "cliVersion": "0.160.0", "turns": []}, "model": "m"}}),
+        ),
+    );
+    let verdict = |stepped: &interpret::Stepped| {
+        stepped
+            .effects
+            .iter()
+            .find_map(|effect| match effect {
+                Effect::Reply { verdict, .. } => Some(verdict.clone()),
+                _ => None,
+            })
+            .expect("a verdict")
+    };
+    let over = Codex::step(&mut state, prompt(b"p1", &"é".repeat(1_048_577)));
+    let refused = match verdict(&over).of {
+        Some(wire::send_input_response::Of::Rejected(rejected)) => rejected,
+        other => panic!("the long prompt was taken: {other:?}"),
+    };
+    assert_eq!(refused.refusal(), wire::Refusal::TooLong);
+    assert!(
+        refused
+            .detail
+            .as_deref()
+            .is_some_and(|words| words.contains("1,048,576")),
+        "the refusal does not name the limit: {refused:?}"
+    );
+    assert!(
+        writes(&over.effects).is_empty(),
+        "the long prompt was written"
+    );
+    let at = Codex::step(&mut state, prompt(b"p2", &"é".repeat(1_048_576)));
+    assert!(
+        !matches!(
+            verdict(&at).of,
+            Some(wire::send_input_response::Of::Rejected(_))
+        ),
+        "a prompt at the limit was refused"
     );
 }

@@ -6637,6 +6637,8 @@ pub enum Refusal {
     /// Terminal Claude's own view switched to another conversation; this
     /// agent's conversation is not the one on its screen.
     ConversationElsewhere = 8,
+    /// The prompt is longer than the agent takes; the detail names the limit.
+    TooLong = 9,
 }
 impl Refusal {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6654,6 +6656,7 @@ impl Refusal {
             Self::Exited => "REFUSAL_EXITED",
             Self::HostUnreachable => "REFUSAL_HOST_UNREACHABLE",
             Self::ConversationElsewhere => "REFUSAL_CONVERSATION_ELSEWHERE",
+            Self::TooLong => "REFUSAL_TOO_LONG",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -6668,6 +6671,7 @@ impl Refusal {
             "REFUSAL_EXITED" => Some(Self::Exited),
             "REFUSAL_HOST_UNREACHABLE" => Some(Self::HostUnreachable),
             "REFUSAL_CONVERSATION_ELSEWHERE" => Some(Self::ConversationElsewhere),
+            "REFUSAL_TOO_LONG" => Some(Self::TooLong),
             _ => None,
         }
     }

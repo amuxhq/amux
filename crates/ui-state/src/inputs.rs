@@ -25,6 +25,7 @@ pub fn refusal_reason(refusal: wire::Refusal) -> RefusalReason {
         wire::Refusal::Exited => RefusalReason::Exited,
         wire::Refusal::HostUnreachable => RefusalReason::HostUnreachable,
         wire::Refusal::ConversationElsewhere => RefusalReason::ConversationElsewhere,
+        wire::Refusal::TooLong => RefusalReason::TooLong,
     }
 }
 

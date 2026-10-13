@@ -4610,9 +4610,9 @@ public struct Refusal: Codable, Hashable, Sendable {
 /// The reasons the wire's refusals carry, one for one: the agent had exited
 /// or was exiting, its host is shutting down or cannot be reached, this
 /// agent cannot take an input of the kind, the ask the answer names had
-/// closed, the queued prompt it names was no longer queued, or terminal
-/// Claude's own view is on another conversation. A reason this build does
-/// not know is unspecified.
+/// closed, the queued prompt it names was no longer queued, terminal
+/// Claude's own view is on another conversation, or the prompt is longer
+/// than the agent takes. A reason this build does not know is unspecified.
 public enum RefusalReason: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
     case exited = "Exited"
@@ -4623,6 +4623,7 @@ public enum RefusalReason: String, Codable, Hashable, Sendable, CaseIterable {
     case closedAsk = "ClosedAsk"
     case notQueued = "NotQueued"
     case conversationElsewhere = "ConversationElsewhere"
+    case tooLong = "TooLong"
 }
 
 /// A prompt the agent refused. Its words go back to the composer, with

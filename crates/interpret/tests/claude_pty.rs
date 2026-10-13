@@ -1069,7 +1069,8 @@ fn a_finished_background_subagent_leaves_the_background_list() {
 fn a_commands_time_starts_after_the_approval_it_waited_for() {
     use prost::Message as _;
     let (mut state, _) = started_claude();
-    let command = serde_json::json!({"command": "curl -sI https://example.com", "description": "Fetch"});
+    let command =
+        serde_json::json!({"command": "curl -sI https://example.com", "description": "Fetch"});
     let common = |extra: serde_json::Value| {
         let mut value = serde_json::json!({
             "session_id": "s1", "transcript_path": "/claude/projects/w/s1.jsonl",
@@ -1086,10 +1087,14 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
     let mut items = Vec::new();
     for event in [
         transcript_row(typed_row("u1", "fetch it")),
-        common(serde_json::json!({"hook_event_name": "PreToolUse", "tool_name": "Bash",
-            "tool_input": command, "tool_use_id": "toolu_curl"})),
-        common(serde_json::json!({"hook_event_name": "PermissionRequest", "tool_name": "Bash",
-            "tool_input": command})),
+        common(
+            serde_json::json!({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+            "tool_input": command, "tool_use_id": "toolu_curl"}),
+        ),
+        common(
+            serde_json::json!({"hook_event_name": "PermissionRequest", "tool_name": "Bash",
+            "tool_input": command}),
+        ),
         transcript_row(serde_json::json!({
             "type": "assistant", "uuid": "a1", "parentUuid": "u1",
             "timestamp": "2026-10-12T08:00:01.000Z", "sessionId": "s1",
@@ -1105,10 +1110,12 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         Event::Tick {
             at_ms: called_ms + 60_200,
         },
-        common(serde_json::json!({"hook_event_name": "PostToolUse", "tool_name": "Bash",
+        common(
+            serde_json::json!({"hook_event_name": "PostToolUse", "tool_name": "Bash",
             "tool_input": command, "tool_use_id": "toolu_curl",
             "tool_response": {"stdout": "HTTP/2 200", "stderr": "", "interrupted": false},
-            "duration_ms": 194})),
+            "duration_ms": 194}),
+        ),
         transcript_row(serde_json::json!({
             "type": "user", "uuid": "u2", "parentUuid": "a1",
             "timestamp": "2026-10-12T08:01:01.200Z", "sessionId": "s1",
@@ -1124,10 +1131,12 @@ fn a_commands_time_starts_after_the_approval_it_waited_for() {
         .iter()
         .rev()
         .filter(|item| item.key == "toolu_curl")
-        .find_map(|item| match wire::ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind {
-            Some(wire::claude_pty_item::Kind::Tool(tool)) => Some(tool),
-            _ => None,
-        })
+        .find_map(
+            |item| match wire::ClaudePtyItem::decode(item.body.as_slice()).ok()?.kind {
+                Some(wire::claude_pty_item::Kind::Tool(tool)) => Some(tool),
+                _ => None,
+            },
+        )
         .expect("the call's row");
     assert_eq!(
         (call.ended_at_ms, call.started_at_ms),

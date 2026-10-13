@@ -137,6 +137,7 @@ fn said(rejected: &Rejected) -> String {
             "Claude's own view switched to another conversation, so the recipient's \
              conversation is not the one on its screen"
         }
+        Refusal::TooLong => "the message is longer than the recipient takes",
     }
     .to_owned()
 }

@@ -1035,6 +1035,7 @@ public final class ChatModel {
         case .closedAsk: String(localized: "the ask had already closed")
         case .notQueued: String(localized: "it was no longer queued")
         case .conversationElsewhere: String(localized: "Claude’s own view switched to another conversation")
+        case .tooLong: String(localized: "it is longer than the agent takes")
         case .unspecified: String(localized: "it was refused")
         }
     }

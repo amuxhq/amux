@@ -8605,6 +8605,18 @@
         }
       }
     },
+    "it is longer than the agent takes": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/ChatModel.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "it is longer than the agent takes"
+          }
+        }
+      }
+    },
     "it no longer trusts this phone, pair again to reach it": {
       "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
       "extractionState": "manual",

@@ -1,3 +1,14 @@
+2026-10-13 — **A prompt longer than Codex takes is refused before it is
+sent.** Codex takes at most 1,048,576 characters in a prompt and refuses a
+longer one with `input_too_large`, but only once amux had taken the prompt,
+so a 2 MB paste showed as sent, then an error row, and the draft was gone.
+The Codex interpreter now refuses such a prompt at once with a new typed
+refusal, `REFUSAL_TOO_LONG`, whose detail names the limit and the prompt's
+length, and the refused prompt goes back to the composer by the usual path.
+Claude documents no character limit for a prompt (only its context window),
+so Claude agents get none. An interpreter test sends a prompt one character
+over the limit and one at it.
+
 2026-10-13 — **A held answer's explanation wraps in its box.** At 80
 columns the terminal client cut a held ask answer's line to "Your answer is
 held: the agent's host can't be reached. It sends when t…", losing when it

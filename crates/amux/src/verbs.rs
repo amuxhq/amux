@@ -348,6 +348,7 @@ fn refusal_words(name: &str, refusal: Refusal) -> String {
             "Claude's own view switched to another conversation, so {name}'s conversation is \
              not the one on its screen"
         ),
+        Refusal::TooLong => format!("the prompt is longer than {name} takes"),
     }
 }
 

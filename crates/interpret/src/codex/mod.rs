@@ -58,8 +58,8 @@ use wire::{
     AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
     CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction,
     Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, QueuedInput,
-    Refusal, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work, codex_answer,
-    codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
+    Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServerHealth, Work,
+    codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
 };
 
 use crate::claude_common::{clip, describe_tasks, or_dash};
@@ -138,6 +138,11 @@ pub const COMMANDS: [(&str, &str, &str); 5] = [
 
 /// The prompt Codex's own `/init` sends, as Codex 0.161 words it.
 const INIT_PROMPT: &str = include_str!("init_prompt.md");
+
+/// The most characters Codex takes in a prompt's text (its
+/// `MAX_USER_INPUT_TEXT_CHARS`, 2^20); a longer one it refuses with
+/// `input_too_large` only after amux has taken the prompt.
+pub const PROMPT_CHARS_MOST: usize = 1 << 20;
 
 /// Prefix of the ids of the `thread/start` requests `/clear` sends: the
 /// thread one answers is this agent's conversation from then on, which the
@@ -897,6 +902,21 @@ impl State {
                     && !self.names_skill(&prompt.text) =>
             {
                 self.shared.reject(emit, &id, Refusal::Unsupported)
+            }
+            // Refused here, so the words go back to the composer.
+            codex_input::Of::Prompt(prompt) if prompt.text.chars().count() > PROMPT_CHARS_MOST => {
+                self.shared.refuse(
+                    emit,
+                    &id,
+                    Rejected {
+                        refusal: Refusal::TooLong as i32,
+                        detail: Some(format!(
+                            "a prompt to Codex is at most {} characters, and this one is {}",
+                            thousands(PROMPT_CHARS_MOST),
+                            thousands(prompt.text.chars().count()),
+                        )),
+                    },
+                )
             }
             codex_input::Of::Prompt(prompt) => {
                 if let Some(key) = self.plan_ask() {
@@ -2257,4 +2277,17 @@ mod tests {
         assert_eq!(super::tidy_model("gpt-5.1-codex-max"), "GPT-5.1 Codex Max");
         assert_eq!(super::tidy_model("o3"), "o3");
     }
+}
+
+/// A count with its thousands marked: 1,048,576.
+fn thousands(count: usize) -> String {
+    let digits = count.to_string();
+    let mut out = String::new();
+    for (at, digit) in digits.chars().enumerate() {
+        if at > 0 && (digits.len() - at) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
 }

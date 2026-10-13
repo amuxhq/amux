@@ -929,7 +929,12 @@ impl Picker {
             // not cut it.
             if let Some(problem) = self.name_problem() {
                 let mut why = Line::from(Span::raw("  "));
-                push(&mut why, crate::words::name_problem(problem), theme.warning(), wide);
+                push(
+                    &mut why,
+                    crate::words::name_problem(problem),
+                    theme.warning(),
+                    wide,
+                );
                 lines.push(why);
                 rows.push(None);
             }

@@ -492,6 +492,7 @@ The `Refusal` says why:
 | `REFUSAL_EXITED` | the owning daemon | The agent has exited; the composer offers Resume |
 | `REFUSAL_HOST_UNREACHABLE` | the local runtime | The agent's host cannot be reached, so the input never left; one that left and lost its answer is `ABORTED` instead |
 | `REFUSAL_CONVERSATION_ELSEWHERE` | interpreter | Terminal Claude's own view switched to another conversation, so a prompt would land in a conversation that is not this agent's |
+| `REFUSAL_TOO_LONG` | interpreter | The prompt is longer than the agent takes: Codex takes at most 1,048,576 characters (2^20), and would refuse a longer one only after amux had taken it; the detail names the limit and the prompt's length |
 
 `detail` carries a sentence for a person when the refusal depends on the
 provider rather than the protocol: terminal Claude refuses send-now as

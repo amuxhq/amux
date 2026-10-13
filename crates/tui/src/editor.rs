@@ -56,13 +56,24 @@ impl Editor {
         self.text[..self.cursor].chars().count()
     }
 
-    /// Puts the cursor after `chars` characters, or at the end.
+    /// Puts the cursor after `chars` characters, or at the end; a count
+    /// that falls inside a grapheme puts it before that grapheme.
     pub fn set_cursor_chars(&mut self, chars: usize) {
-        self.cursor = self
+        let at = self
             .text
             .char_indices()
             .nth(chars)
             .map_or(self.text.len(), |(at, _)| at);
+        self.cursor = if at == self.text.len() {
+            at
+        } else {
+            self.text
+                .grapheme_indices(true)
+                .map(|(start, _)| start)
+                .take_while(|start| *start <= at)
+                .last()
+                .unwrap_or(0)
+        };
     }
 
     /// Replaces the whole draft and puts the cursor at its end.

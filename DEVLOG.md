@@ -1,3 +1,12 @@
+2026-10-13 — **A click in the terminal composer lands between whole
+characters.** The composer draws a grapheme at a time, but finding the
+draft position under a click stepped one code point at a time, so a family
+emoji (people joined into one two-column character) measured six columns
+and a click after it put the cursor inside it. The hit-test now walks the
+same graphemes at the same widths as the drawing, and setting the cursor
+by a count of characters puts it before any grapheme the count falls
+inside.
+
 2026-10-13 — **A held prompt goes whenever its host reads online.** A
 prompt or answer refused as host-unreachable is held and goes again when
 the host is back, but the session sent it only on the host's change from

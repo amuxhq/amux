@@ -187,6 +187,52 @@ fn the_composer_draws_a_combining_accent() {
     );
 }
 
+/// A click in the composer lands between the characters the person sees,
+/// measured as the composer draws them: hit-testing stepped one code point
+/// at a time, so a family emoji (three people joined into one two-column
+/// character) measured six columns, and a click on the letter after it
+/// put the cursor inside the emoji.
+#[test]
+fn a_click_in_the_composer_never_lands_inside_a_character() {
+    let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    let mut editor = crate::editor::Editor::default();
+    editor.set(&format!("a{family}b cafe\u{301}!"), Vec::new());
+    let chars = |text: &str| text.chars().count();
+    let after_family = 1 + chars(family);
+    let cases = [
+        // On "a", on the emoji's either column, on "b".
+        (0, 0),
+        (1, 1),
+        (2, 1),
+        (3, after_family),
+        // On the accented "e", and on the "!" after it.
+        (8, after_family + 5),
+        (9, after_family + 7),
+    ];
+    for (col, want) in cases {
+        let at = crate::chat::composer::cursor_at(&editor, 80, 0, col);
+        assert_eq!(at, want, "a click at column {col}");
+        editor.set_cursor_chars(at);
+        assert_eq!(editor.cursor_chars(), want);
+    }
+}
+
+/// The cursor never rests inside a character, whatever position it is
+/// asked for.
+#[test]
+fn the_composer_cursor_snaps_to_a_whole_character() {
+    let mut editor = crate::editor::Editor::default();
+    editor.set("a\u{1F44D}\u{1F3FD}b", Vec::new());
+    editor.set_cursor_chars(2);
+    assert_eq!(
+        editor.cursor_chars(),
+        1,
+        "inside the emoji, it goes before it"
+    );
+    editor.set_cursor_chars(3);
+    assert_eq!(editor.cursor_chars(), 3);
+}
+
 /// Backspace removes the character the person sees, not one code point of
 /// it: an emoji with a skin tone took two presses, the second invisible.
 #[test]

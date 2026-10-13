@@ -319,8 +319,10 @@ pub fn placeholder(mode: &Composer, name: &str, host: &str, reach: Reach) -> Str
 
 /// The draft position under a click in the composer: `row` and `col`
 /// count from the first wrapped line and the first column after the
-/// prompt mark, wrapped at `width` as [`editor_lines`] wraps. The answer is
-/// a count of characters, an attachment's placeholder one.
+/// prompt mark, wrapped at `width` as [`editor_lines`] wraps, a grapheme
+/// at a time at its drawn width, so a click never lands inside a
+/// character. The answer is a count of characters, an attachment's
+/// placeholder one.
 pub fn cursor_at(editor: &Editor, width: usize, target_row: usize, target_col: usize) -> usize {
     let room = width.saturating_sub(2).max(1);
     let mut row = 0usize;
@@ -329,18 +331,19 @@ pub fn cursor_at(editor: &Editor, width: usize, target_row: usize, target_col: u
     for segment in composer_tokens(editor.text(), editor.attachments()) {
         match segment {
             Segment::Text(text) => {
-                for c in text.chars() {
-                    if c == '\n' {
+                for grapheme in text.graphemes(true) {
+                    let chars = grapheme.chars().count();
+                    if grapheme == "\n" || grapheme == "\r\n" {
                         if row >= target_row {
                             return at;
                         }
                         row += 1;
                         used = 0;
-                        at += 1;
+                        at += chars;
                         continue;
                     }
-                    let shown = if editor.secret { '•' } else { c };
-                    let w = text::str_width(shown.encode_utf8(&mut [0; 4]));
+                    let shown = if editor.secret { "•" } else { grapheme };
+                    let w = text::str_width(shown);
                     if used + w > room {
                         if row >= target_row {
                             return at;
@@ -352,7 +355,7 @@ pub fn cursor_at(editor: &Editor, width: usize, target_row: usize, target_col: u
                         return at;
                     }
                     used += w;
-                    at += 1;
+                    at += chars;
                 }
             }
             Segment::Attachment(view) => {

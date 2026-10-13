@@ -1,3 +1,13 @@
+2026-10-13 — **A resume keeps a person's own Claude arguments.** A
+resumed Claude agent took `--model`, `--permission-mode` and `--effort` out
+of its extra arguments wherever they stood, the person's own included, so an
+agent created with `-- --model sonnet` and no model setting came back on
+Claude's default. A resume now removes only the arguments amux appended
+for the previous incarnation's settings (the tail its spec records) and
+appends the settings it resumes with after the person's arguments, so the
+person's flags survive and a setting the agent last ran with still wins. A
+unit test pins it.
+
 2026-10-13 — **A draft cleared in the terminal stays cleared.** Closing a
 chat whose draft the person had cleared sent the daemon an empty draft from
 a task nobody waited for, and kept nothing in the client. Reopening the chat

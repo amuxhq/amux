@@ -284,7 +284,10 @@ the agent exited with one-step resume.
 
 A resume writes the next `spec.<n>` from the current configuration, with
 the model, permission, mode and effort the agent last ran with (from its
-newest snapshot) rather than the ones it was created with, and
+newest snapshot) rather than the ones it was created with. The extra
+arguments a person gave Claude are carried as given, a `--model` or
+`--effort` of their own included; amux's settings follow them, so where a
+setting is known it is the one that counts. The resume
 starts the directory again with the same agent id, so family edges and
 replicas keep pointing at the same thing. There is no automatic resume.
 

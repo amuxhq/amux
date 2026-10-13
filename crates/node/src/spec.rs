@@ -54,6 +54,7 @@ pub struct Settings {
 pub fn carry(previous: &AgentSpec, latest: Settings) -> Resolved {
     use create_agent_request::Agent;
     let config = previous.config.clone().unwrap_or_default();
+    let args = without_settings(&previous.provider_args, &config);
     let model = latest.model.or(config.model);
     let permission = latest.permission.or(config.permission);
     let mode = latest.mode.or(config.mode);
@@ -66,7 +67,7 @@ pub fn carry(previous: &AgentSpec, latest: Settings) -> Resolved {
             mode,
         })),
         _ => resolve(&Agent::ClaudeSdk(wire::ClaudeCreateConfig {
-            args: without_settings(&previous.provider_args),
+            args,
             model,
             effort,
             permission,
@@ -74,23 +75,24 @@ pub fn carry(previous: &AgentSpec, latest: Settings) -> Resolved {
     }
 }
 
-/// Claude's arguments with the settings amux passes taken out, leaving the
-/// ones the person gave: [`resolve`] adds the settings again.
-fn without_settings(args: &[String]) -> Vec<String> {
-    const SETTINGS: [&str; 3] = ["--model", "--permission-mode", "--effort"];
-    let mut kept = Vec::new();
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        if SETTINGS.contains(&arg.as_str()) {
-            args.next();
-        } else if !SETTINGS
-            .iter()
-            .any(|setting| arg.starts_with(&format!("{setting}=")))
-        {
-            kept.push(arg.clone());
-        }
+/// Claude's arguments without the settings [`resolve`] appended for the
+/// previous incarnation, leaving exactly the ones the person gave, their
+/// own `--model` or `--effort` among them: [`resolve`] appends the
+/// settings again, after the person's, so the ones last run with win.
+fn without_settings(args: &[String], config: &EffectiveConfig) -> Vec<String> {
+    let appended: Vec<String> = [
+        ("--model", &config.model),
+        ("--permission-mode", &config.permission),
+        ("--effort", &config.effort),
+    ]
+    .into_iter()
+    .filter_map(|(flag, value)| value.as_ref().map(|value| [flag.to_owned(), value.clone()]))
+    .flatten()
+    .collect();
+    match args.strip_suffix(appended.as_slice()) {
+        Some(persons) => persons.to_vec(),
+        None => args.to_vec(),
     }
-    kept
 }
 
 /// Resolves a creation's per-provider settings. Claude takes its model and
@@ -336,6 +338,46 @@ mod tests {
             ]
         );
         assert_eq!(resumed.effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn a_resume_keeps_the_persons_own_setting_arguments() {
+        let created = resolve(&Agent::ClaudePty(ClaudeCreateConfig {
+            args: vec![
+                "--model".into(),
+                "sonnet".into(),
+                "--permission-mode=plan".into(),
+                "--effort".into(),
+                "low".into(),
+            ],
+            model: None,
+            permission: None,
+            effort: Some("high".into()),
+        }));
+        let previous = AgentSpec {
+            kind: Kind::ClaudePty as i32,
+            provider_args: created.provider_args,
+            config: Some(EffectiveConfig {
+                model: created.model,
+                permission: created.permission,
+                effort: created.effort,
+                ..EffectiveConfig::default()
+            }),
+            ..AgentSpec::default()
+        };
+        let resumed = carry(&previous, Settings::default());
+        assert_eq!(
+            resumed.provider_args,
+            [
+                "--model",
+                "sonnet",
+                "--permission-mode=plan",
+                "--effort",
+                "low",
+                "--effort",
+                "high"
+            ]
+        );
     }
 
     #[test]

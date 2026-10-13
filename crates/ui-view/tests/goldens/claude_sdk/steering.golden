@@ -14,7 +14,7 @@
   row    3 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("Use the staging config.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 10 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
-  row    4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
+  row    4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
 ## 12 fact {"channel":"stream","json":{"message":{"content":[{"text":"Planned, with the staging config.","type":"text"}],"id":"msg-1","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"a1"}}
   row    5 msg-1:0 Prose { text: [Text("Planned, with the staging config.")], streaming: false, working_note: false }
 ## 13 input {"id":"p2","prompt":{"text":"Then summarise."}}
@@ -52,7 +52,7 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 70300000-0000-4000-8000-000000000000 Prompt { text: [Text("Plan it.")], steered: false }
      3 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("Use the staging config.")], steered: true }
-     4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
+     4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
      5 msg-1:0 Prose { text: [Text("Planned, with the staging config.")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: Some(0.01), failed: false }
      7 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("Then summarise.")], steered: false }

@@ -184,10 +184,10 @@ enum ComponentCatalog {
             row("model-switch", r("z5", 29, .modelSwitch(from: "opus", to: "sonnet 4.6", reason: "Opus declined this request"))),
             row("boundary", r("z6", 30, .boundary(kind: .resumed, cause: "after an update"))),
             row("agent-message", height: 130, r("m1", 31, .agentMessage(
-                from: "worker-2", kind: .finished, text: "3 specs updated, all green.", to: "",
+                from: "worker-2", kind: .finished, text: [.text("3 specs updated, all green.")], to: "",
                 sent: .unspecified, rejection: ""))),
             row("agent-message-rejected", height: 130, r("m2", 32, .agentMessage(
-                from: "", kind: .message, text: "Please rebase onto main first.", to: "worker-3",
+                from: "", kind: .message, text: [.text("Please rebase onto main first.")], to: "worker-3",
                 sent: .rejected, rejection: "no agent by that name"))),
             row("auto-review", r("v1", 33, .autoReview(
                 status: .approved, statusWord: "approved", risk: "low", rationale: "Local only.",

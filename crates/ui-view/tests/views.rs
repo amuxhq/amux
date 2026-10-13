@@ -2070,6 +2070,57 @@ fn a_reply_opening_with_an_attachment_still_says_something_on_its_row() {
     );
 }
 
+/// A message another agent sent with an attachment draws the attachment
+/// where its placeholder stands, as a person's prompt does: the row read a
+/// bare object-replacement character, with no name, size or way to open it.
+#[test]
+fn an_agent_message_carries_its_attachments_as_chips() {
+    let file = wire::Attachment {
+        of: Some(wire::attachment::Of::File(wire::BlobRef {
+            hash: vec![7; 32],
+            name: "report.txt".into(),
+            mime: "text/plain".into(),
+            size: 27,
+        })),
+    };
+    let message = Item {
+        attachments: vec![file.clone()],
+        input_id: b"envelope".to_vec(),
+        ..sdk_item(
+            1,
+            1,
+            wire::claude_sdk_item::Kind::AgentMessage(wire::AgentMessage {
+                envelope_id: b"envelope".to_vec(),
+                from: Some(wire::Sender {
+                    value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                        name: "cl".into(),
+                        ..Default::default()
+                    })),
+                }),
+                ..Default::default()
+            }),
+            "second look at this \u{FFFC}",
+        )
+    };
+    let state = session_on(
+        &fleet_entry("a", "h1", Phase::Idle, None, 1),
+        wire::ClaudeSdkSnapshot::default(),
+        vec![message],
+    );
+    let rows = all_rows(&state, &ChatOptions::default());
+    let RowKind::AgentMessage { text, from, .. } = &rows[0].kind else {
+        panic!("{:?}", rows[0].kind);
+    };
+    assert_eq!(from, "cl");
+    assert_eq!(
+        *text,
+        vec![
+            Segment::Text("second look at this ".into()),
+            Segment::Attachment(AttachmentView::of(&file)),
+        ]
+    );
+}
+
 #[test]
 fn each_row_says_what_its_state_calls_for() {
     let mut fleet = FleetState::new();

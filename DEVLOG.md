@@ -1,3 +1,13 @@
+2026-10-13 — **An agent's message draws its attachments as chips.** A
+message one agent sent another with a file read "second look at this ￼"
+in both chats: the item carried the attachment and its placeholder, as a
+prompt's does, but the shared view handed the row its raw text. The
+agent-message row now carries its words as segments, as a prompt's row
+does, so the terminal draws `[report.txt · 27 B]` where the file stands
+and the phone, which draws from the same row, reads the same words
+(`ChatWords.text(of:)`). Tests: the view's row for a received message with
+a file, and the terminal's agent-message vocabulary with a chip.
+
 2026-10-13 — **A held prompt survives the terminal client being killed.** A
 prompt held while its host could not be reached went back to the draft
 only when the client quit cleanly; closing its pane killed the client with

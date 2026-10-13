@@ -23,7 +23,7 @@
   row    4 q1 Prompt { text: [Text("Use the staging config.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 14 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
-  row    5 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
+  row    5 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
 ## 16 fact {"channel":"transcript","json":{"message":{"content":[{"text":"Built with the staging config.","type":"text"}],"id":"m2","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.070Z","type":"assistant","uuid":"a2"}}
   row    6 a2 Prose { text: [Text("Built with the staging config.")], streaming: false, working_note: false }
 ## 17 input {"id":"p2","prompt":{"text":"Then summarise."}}
@@ -82,7 +82,7 @@
      2 u1 Prompt { text: [Text("Plan it.")], steered: false }
      3 toolu_1 Command { command: "make build", state: Succeeded, exit_code: None, output_head: ["built"], more_lines: 0, output_trimmed: false, output_tail: ["built"], duration_ms: Some(20) } run[toolu_1..toolu_1 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0 }]
      4 q1 Prompt { text: [Text("Use the staging config.")], steered: true }
-     5 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
+     5 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
      6 a2 Prose { text: [Text("Built with the staging config.")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(5), cost_usd: None, failed: false }
      8 u3 Prompt { text: [Text("Then summarise.")], steered: false }

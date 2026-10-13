@@ -179,7 +179,8 @@ pub enum RowKind {
     AgentMessage {
         from: String,
         kind: EnvelopeKind,
-        text: String,
+        /// Its words, with its attachments where their placeholders stand.
+        text: Vec<Segment>,
         /// A message this agent sent: the recipient as the model named it,
         /// and how the send went; empty and unspecified on one it received.
         to: String,
@@ -1036,7 +1037,7 @@ fn agent_message(held: &Held, m: &wire::AgentMessage) -> RowKind {
     RowKind::AgentMessage {
         from,
         kind: m.kind(),
-        text: held.item.text.clone(),
+        text: chat_segments(held),
         to: m.to.clone(),
         sent: m.send_state(),
         rejection: m.rejection.clone(),

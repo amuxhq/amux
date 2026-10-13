@@ -172,7 +172,8 @@ public struct ChatRowView: View {
                 accented: sent == .rejected, rail: rail,
                 verb: to.isEmpty ? String(localized: "From") : String(localized: "To"),
                 subject: to.isEmpty ? from : to, meta: RowMeta(messageMeta(kind, sent, rejection)),
-                detail: text.trimmingCharacters(in: .whitespacesAndNewlines), detailFace: .text,
+                detail: ChatWords.text(of: text).trimmingCharacters(in: .whitespacesAndNewlines),
+                detailFace: .text,
                 detailLines: expanded ? nil : 1, opens: true, open: expanded, toggle: toggle)
         case .autoReview(let status, let statusWord, let risk, let rationale, _):
             GridRow(

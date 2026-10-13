@@ -10,7 +10,7 @@
 ## 6 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"id":"msg-1","phase":"final_answer","text":"1 2 3","type":"agentMessage"},"threadId":"t1","turnId":"turn-1"}}}
   row    3 msg-1 Prose { text: [Text("1 2 3")], streaming: false, working_note: false }
 ## 8 agent_message {"envelope":"e1","from":"reviewer","text":"Also say DONE."}
-  row    4 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: "Also say DONE.", to: "", sent: Unspecified, rejection: "" }
+  row    4 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("Also say DONE.")], to: "", sent: Unspecified, rejection: "" }
 ## 9 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
   row    5 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
@@ -27,7 +27,7 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:7031 Prompt { text: [Text("Count to three.")], steered: false }
      3 msg-1 Prose { text: [Text("1 2 3")], streaming: false, working_note: false }
-     4 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: "Also say DONE.", to: "", sent: Unspecified, rejection: "" }
+     4 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("Also say DONE.")], to: "", sent: Unspecified, rejection: "" }
      5 turn:1 TurnEnd { duration_ms: Some(1000), cost_usd: None, failed: false }
      6 msg-2 Prose { text: [Text("DONE")], streaming: false, working_note: false }
      7 turn:2 TurnEnd { duration_ms: Some(1000), cost_usd: None, failed: false }

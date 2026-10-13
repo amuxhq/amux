@@ -6,7 +6,7 @@
   row    2 prompt:7031 Prompt { text: [Text("Count to ten slowly.")], steered: false }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 6 agent_message {"envelope":"e1","from":"reviewer","text":"Also say DONE at the end."}
-  row    3 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: "Also say DONE at the end.", to: "", sent: Unspecified, rejection: "" }
+  row    3 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("Also say DONE at the end.")], to: "", sent: Unspecified, rejection: "" }
 ## 8 fact {"channel":"rpc","json":{"method":"item/started","params":{"item":{"id":"msg-1","phase":"final_answer","text":"","type":"agentMessage"},"startedAtMs":null,"threadId":"t1","turnId":"turn-1"}}}
   row    4 msg-1 Prose { text: [], streaming: true, working_note: false }
 ## 9 fact {"channel":"rpc","json":{"method":"item/agentMessage/delta","params":{"delta":"1 2 3 4 5 6 7 8 9 10","itemId":"msg-1","threadId":"t1","turnId":"turn-1"}}}
@@ -33,7 +33,7 @@
 == chat
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:7031 Prompt { text: [Text("Count to ten slowly.")], steered: false }
-     3 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: "Also say DONE at the end.", to: "", sent: Unspecified, rejection: "" }
+     3 agent-message:6531 AgentMessage { from: "reviewer", kind: Message, text: [Text("Also say DONE at the end.")], to: "", sent: Unspecified, rejection: "" }
      4 msg-1 Prose { text: [Text("1 2 3 4 5 6 7 8 9 10")], streaming: false, working_note: false }
      5 msg-2 Prose { text: [Text("DONE")], streaming: false, working_note: false }
      6 turn:1 TurnEnd { duration_ms: Some(2000), cost_usd: None, failed: false }

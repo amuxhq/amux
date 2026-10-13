@@ -14,7 +14,7 @@
   row    3 steer:7031 Prompt { text: [Text("Use the staging config.")], steered: true }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 14 agent_message {"envelope":"e1","from":"lead","text":"Status?"}
-  row    4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
+  row    4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
 ## 17 input {"id":"p2","prompt":{"text":"Then summarise."}}
   composer Send activity=Some(Working) queue=[QueuedRow { input_id: [112, 50], text: [Text("Then summarise.")], from_agent: None, steered: false, can_withdraw: true, can_send_now: true }] underway=[] refused=[]
 ## 18 fact {"channel":"rpc","json":{"method":"turn/completed","params":{"threadId":"t1","turn":{"id":"turn-1","status":"completed"}}}}
@@ -36,7 +36,7 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 prompt:7030 Prompt { text: [Text("Plan it.")], steered: false }
      3 steer:7031 Prompt { text: [Text("Use the staging config.")], steered: true }
-     4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: "Status?", to: "", sent: Unspecified, rejection: "" }
+     4 agent-message:6531 AgentMessage { from: "lead", kind: Message, text: [Text("Status?")], to: "", sent: Unspecified, rejection: "" }
      5 turn:1 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }
      6 prompt:7032 Prompt { text: [Text("Then summarise.")], steered: false }
      7 turn:2 TurnEnd { duration_ms: Some(0), cost_usd: None, failed: false }

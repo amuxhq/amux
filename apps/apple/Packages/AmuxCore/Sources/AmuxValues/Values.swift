@@ -4848,7 +4848,7 @@ public enum RowKind: Codable, Hashable, Sendable {
     case error(errorKind: String, message: String, attempts: UInt32, gaveUp: Bool)
     case modelSwitch(from: String, to: String, reason: String)
     case boundary(kind: BoundaryKind, cause: String)
-    case agentMessage(from: String, kind: EnvelopeKind, text: String, to: String, sent: SendState, rejection: String)
+    case agentMessage(from: String, kind: EnvelopeKind, text: [Segment], to: String, sent: SendState, rejection: String)
     /// Codex's automatic reviewer on an action. A client words the status,
     /// and says `status_word` for one this build does not know.
     case autoReview(status: ReviewStatus, statusWord: String, risk: String, rationale: String, subject: String)
@@ -5156,7 +5156,7 @@ public enum RowKind: Codable, Hashable, Sendable {
             self = .agentMessage(
                 from: try _fields.decode(String.self, forKey: .from),
                 kind: try _fields.decode(EnvelopeKind.self, forKey: .kind),
-                text: try _fields.decode(String.self, forKey: .text),
+                text: try _fields.decode([Segment].self, forKey: .text),
                 to: try _fields.decode(String.self, forKey: .to),
                 sent: try _fields.decode(SendState.self, forKey: .sent),
                 rejection: try _fields.decode(String.self, forKey: .rejection))

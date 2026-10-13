@@ -917,6 +917,9 @@ impl<A: OpenAsk> Shared<A> {
             turn_id: turn.id,
             last_message_key: turn.last_message_key.clone(),
             outcome: outcome as i32,
+            // Marked by the agent process, which alone knows whether the
+            // incarnation exits after this turn.
+            last: false,
         });
         Some(turn)
     }

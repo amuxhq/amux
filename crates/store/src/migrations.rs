@@ -45,7 +45,7 @@ CREATE TABLE agents (
   source_generation   INTEGER NOT NULL DEFAULT 0, -- replica rows: the origin generation of the block
   complete_from_order INTEGER,           -- the block runs from here; NULL means all history (own) or no block (replica)
   exhausted           INTEGER NOT NULL DEFAULT 0, -- no older history exists (replica) or retention trimmed it (own)
-  turn_open           INTEGER NOT NULL DEFAULT 0, -- own rows: the incarnation has a turn it has not ended
+  owes_report         INTEGER NOT NULL DEFAULT 0, -- own rows: the incarnation has not sent its parent its last report
   created_at_ms       INTEGER NOT NULL,  -- when the agent was created, on its origin's clock
   incarnation         INTEGER NOT NULL,  -- the agent's spec.<n>, counting resumes from 1
   background_jobs     INTEGER NOT NULL DEFAULT 0, -- copied from the newest snapshot: jobs the provider runs in the background
@@ -66,6 +66,7 @@ CREATE TABLE deliveries (
   exit_cause          INTEGER,           -- failed: amux.v1.ExitCause, how the incarnation ended
   exit_detail         TEXT,              -- failed: the cause's own words, when it has any
   outcome             INTEGER,           -- finished: amux.v1.TurnOutcome, how the turn ended
+  last                INTEGER NOT NULL DEFAULT 0, -- the child incarnation's last report: always for failed
   PRIMARY KEY (child_id, incarnation, kind, turn_id)
 );
 

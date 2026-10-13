@@ -163,10 +163,9 @@ provider's process group at once and writes nothing.
 |---|---|---|
 | `Running`, no daemon connected | The grace timer runs out | The interpreter writes a daemon-lost boundary; `Draining` (daemon lost) |
 | `Running` | `Stop` arrives | The interpreter cancels the turn the provider's own way, so an open ask closes as dismissed and its call as cancelled; `Draining` (stop) |
-| `Draining` | The turn ends, or no turn is running | `exit` with `DAEMON_LOST` or `STOPPED`; a one-shot agent whose turn ends quiescent while it drains for a lost daemon exits `FINISHED`, as its parent hears it |
+| `Draining` | The turn ends, or no turn is running | A turn end is marked `last`; `exit` with `DAEMON_LOST` or `STOPPED`; a one-shot agent whose turn ends quiescent while it drains for a lost daemon exits `FINISHED`, as its parent hears it |
 | `Draining` after the daemon was lost | An ask is open (phase needs you) | A drain deadline is armed; when it passes, `exit` with `ORPHANED` |
-| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed and no agent below it live | `exit` with `FINISHED` (the one-shot rule) |
-| `Running`, the agent has a parent, quiescent | The daemon's count of live agents below it falls to none, and every incarnation of a direct child the daemon named live since agents were live below it has reported (a child's report starting a turn that spawns the next child never stands in for the next child's) | `exit` with `FINISHED`: the reports it waited for came before the count did |
+| `Running`, the agent has a parent | A turn ends with nothing running, nothing queued, no accepted agent message still unconsumed, and the last report of every child incarnation the daemon named live already taken | The turn end is marked `last`; `exit` with `FINISHED` (the one-shot rule) |
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
 | Any | The provider exits | The loop ends; `PROVIDER_EXITED` with the exit code or signal |
@@ -207,6 +206,18 @@ the operating system names it (`SO_PEERCRED` on Linux, `LOCAL_PEEREPID` on
 macOS, the pipe's server process on Windows), so an agent adopted from an
 earlier daemon is killed as surely as one this daemon started.
 
+A turn end after which the incarnation exits is marked `last` in the
+journal (the interpreter cannot know it; the process marks it): a one-shot
+turn end that leaves it quiescent, one the interpreter asks to exit after,
+and any while it drains or exits. Its parent's report of that turn is the
+incarnation's last. An incarnation that exits without one, its turn open or
+ended idle (a sub-agent stopped while it waits for its own child), gets a
+failed report from its daemon instead, so every child incarnation ends with
+exactly one last report. A waiting sub-agent counts on that, not on how many
+agents are live below it: one child's report can start a turn that spawns
+the next before the daemon says the first has gone, and a child with its own
+child reports mid-way and again at its end.
+
 The one-shot rule is what having a parent means: there is no flag. An input
 that arrives while such an agent is exiting is answered `REFUSAL_EXITING`,
 and the daemon then treats it as exited and resumes it if the sender is its
@@ -229,7 +240,7 @@ version integer, and a frame a reader does not know is ignored.
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's part of a dump bundle, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
 | `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
-| `children` | daemon → agent | `Children { live }`: how many agents below this one are live, on every host its daemon knows of, sent when the agent connects with any below it and whenever the count changes; a one-shot agent waits for none to be left |
+| `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent when the agent connects with any and whenever the list changes; a one-shot agent waits for each incarnation's last report |
 | `dump` | agent → daemon | `DumpPart`, answering a dump request |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 

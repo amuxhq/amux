@@ -397,6 +397,12 @@ text is the child's last message, and its `outcome` is how the turn ended (a
 step's `TurnEnd`; a failed one has no text and carries how the
 child's incarnation ended as `ended` (an `IncarnationEnd`: the `ExitCause` and
 its own words), which the parent's interpreter words for its provider. A
+report's `last` says it is the child incarnation's last: a finished one whose
+step's `TurnEnd` was marked `last` (the child exits after that turn), and every
+failed one. Each child incarnation ends with exactly one last report: an
+incarnation that exits without having sent one (its turn open, or ended
+idle, as a stopped sub-agent waiting on its own child is) sends a failed one.
+A sub-agent waiting on its children waits for each one's last report. A
 message's `attachments` reference blobs in the sender's directory on the
 sender's host; the envelope carries them as the request gave them. The recipient's daemon dedupes by
 `id` against the recipient's items, so a resend after a lost answer is one

@@ -273,6 +273,7 @@ impl ProfileRuntime {
             incarnation: None,
             attachments: request.attachments,
             outcome: None,
+            last: false,
         };
         self.send_message_from(envelope, caller.map_or(From::Person, From::Agent))
             .await

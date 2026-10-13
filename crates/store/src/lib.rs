@@ -89,11 +89,12 @@ pub struct AgentRow {
     pub exhausted: bool,
     pub created_at_ms: i64,
     pub incarnation: u32,
-    /// Own rows: the incarnation has a turn it has not ended, from its
-    /// start until its first turn end and again whenever a later turn
-    /// starts. An incarnation that exits with one open tells its parent it
-    /// failed; one that ended its turn already told it it finished.
-    pub turn_open: bool,
+    /// Own rows: the incarnation has not yet sent its parent its last
+    /// report, from its start until a turn end marked last (and again
+    /// should a later turn start). An incarnation that exits still owing
+    /// one, its turn open or ended without being its last, tells its parent
+    /// it failed: every child incarnation ends with exactly one last report.
+    pub owes_report: bool,
     /// Copied from the snapshot envelope at commit, and for a replica from
     /// its inventory row: how many jobs the provider runs in the
     /// background.
@@ -131,7 +132,7 @@ impl AgentRow {
             exhausted: false,
             created_at_ms: 0,
             incarnation: 1,
-            turn_open: true,
+            owes_report: true,
             background_jobs: 0,
             descendants: 0,
         }
@@ -284,6 +285,9 @@ pub struct Delivery {
     /// How a finished turn ended (`wire::TurnOutcome` as an integer); None
     /// for a failed incarnation.
     pub outcome: Option<i32>,
+    /// The child incarnation's last report: a finished turn marked last,
+    /// and every failed incarnation.
+    pub last: bool,
 }
 
 /// The push outbox row for one turn into needs_you, built from envelope

@@ -172,6 +172,12 @@ pub struct Envelope {
     /// parent hears a stopped or interrupted turn as that, not as finished.
     #[prost(enumeration = "TurnOutcome", optional, tag = "10")]
     pub outcome: ::core::option::Option<i32>,
+    /// On a child's report: it is the child incarnation's last, sent as it
+    /// exits. Always set on a failed report; on a finished one, when its turn
+    /// was the incarnation's last. A parent waiting on its children waits for
+    /// each incarnation's last report, not merely for one.
+    #[prost(bool, tag = "11")]
+    pub last: bool,
 }
 impl ::prost::Name for Envelope {
     const NAME: &'static str = "Envelope";
@@ -479,6 +485,11 @@ pub struct TurnEnd {
     /// How the turn ended; a parent's finished report carries it.
     #[prost(enumeration = "TurnOutcome", tag = "3")]
     pub outcome: i32,
+    /// The incarnation exits after this turn: a one-shot agent with nothing
+    /// left to do, or an agent already on its way out. Its finished report is
+    /// its incarnation's last.
+    #[prost(bool, tag = "4")]
+    pub last: bool,
 }
 impl ::prost::Name for TurnEnd {
     const NAME: &'static str = "TurnEnd";
@@ -12736,16 +12747,14 @@ impl ::prost::Name for Nudge {
         "/amux.v1.Nudge".into()
     }
 }
-/// The live descendants of the agent, on every host its daemon knows of; best
-/// effort, it may undercount a host out of reach. `children` names the live
-/// agents directly below it, each with its incarnation: every incarnation of a
-/// child reports to its parent, so the agent knows whose report it still
-/// awaits even when one child ends and the next starts between two frames.
+/// The live agents directly below the agent, on every host its daemon knows
+/// of, each with its incarnation; sent whenever that changes. Every child
+/// incarnation ends with a last report to its parent, so the agent knows
+/// whose last report it still awaits, even when one child ends and the next
+/// starts between two frames.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Children {
-    #[prost(uint32, tag = "1")]
-    pub live: u32,
-    #[prost(message, repeated, tag = "2")]
+    #[prost(message, repeated, tag = "1")]
     pub children: ::prost::alloc::vec::Vec<LiveChild>,
 }
 impl ::prost::Name for Children {

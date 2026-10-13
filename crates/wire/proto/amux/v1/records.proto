@@ -52,6 +52,11 @@ message Envelope {
   // Set only on a finished report: how the child's turn ended, so the
   // parent hears a stopped or interrupted turn as that, not as finished.
   optional TurnOutcome outcome = 10;
+  // On a child's report: it is the child incarnation's last, sent as it
+  // exits. Always set on a failed report; on a finished one, when its turn
+  // was the incarnation's last. A parent waiting on its children waits for
+  // each incarnation's last report, not merely for one.
+  bool last = 11;
 }
 
 message Sender {
@@ -251,6 +256,10 @@ message TurnEnd {
   string last_message_key = 2;
   // How the turn ended; a parent's finished report carries it.
   TurnOutcome outcome = 3;
+  // The incarnation exits after this turn: a one-shot agent with nothing
+  // left to do, or an agent already on its way out. Its finished report is
+  // its incarnation's last.
+  bool last = 4;
 }
 
 // How a turn ended: on a kind's Turn item, on the step's TurnEnd, and on a

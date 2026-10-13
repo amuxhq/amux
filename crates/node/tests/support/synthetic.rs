@@ -433,13 +433,15 @@ async fn answer_input(
     }
 }
 
-/// A step that ends a turn whose last message is the item `key`.
+/// A step that ends a turn whose last message is the item `key`, marked as
+/// the incarnation's last, as a one-shot agent's final turn is.
 pub fn turn_end(turn_id: u64, key: &str) -> Step {
     Step {
         turn_end: Some(TurnEnd {
             turn_id,
             last_message_key: key.to_owned(),
             outcome: wire::TurnOutcome::Completed as i32,
+            last: true,
         }),
         ..snapshot(Phase::Idle, &[], 4_000)
     }

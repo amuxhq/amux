@@ -147,14 +147,13 @@ message AgentHello {
 
 message Nudge {}
 
-// The live descendants of the agent, on every host its daemon knows of; best
-// effort, it may undercount a host out of reach. `children` names the live
-// agents directly below it, each with its incarnation: every incarnation of a
-// child reports to its parent, so the agent knows whose report it still
-// awaits even when one child ends and the next starts between two frames.
+// The live agents directly below the agent, on every host its daemon knows
+// of, each with its incarnation; sent whenever that changes. Every child
+// incarnation ends with a last report to its parent, so the agent knows
+// whose last report it still awaits, even when one child ends and the next
+// starts between two frames.
 message Children {
-  uint32 live = 1;
-  repeated LiveChild children = 2;
+  repeated LiveChild children = 1;
 }
 
 message LiveChild {

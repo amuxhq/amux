@@ -1,3 +1,21 @@
+2026-10-13 — **A sub-agent waits for each child's last report.** The
+earlier fix told children apart, but a child that waits on its own child
+reports mid-way and again at its end, and a sub-agent could take the mid-way
+report as the child's whole word and exit before the last one arrived if
+the daemon said the child had gone first. A turn end after which the
+incarnation exits is now marked `last` in the journal by the agent process,
+and its report carries `last` to the parent; an incarnation that exits
+without such a turn end (its turn open, or idle, as a sub-agent stopped
+while it waits) gets a failed report, also last, so every child incarnation
+ends with exactly one. A waiting sub-agent exits at a turn end once it holds
+the last report of every child incarnation its daemon named live; the count
+of live agents below it no longer decides anything, so the `Children` frame
+carries only the live children. The row's `turn_open` became `owes_report`
+and deliveries keep `last`, in the first migration with its hash pinned
+again: existing profile stores need resetting. A unit test pins the mid-way
+case, and family specs cover a three-level chain and a sub-agent stopped
+while it waits.
+
 2026-10-13 — **An agent's attachment is held to the 64 MB limit.** A person's
 files over the attachment limit are refused before upload, but an agent's
 were not: the attach tool stored a file of any size, and the send tool

@@ -232,6 +232,7 @@ impl ProfileRuntime {
             incarnation: Some(row.parent_incarnation),
             attachments: Vec::new(),
             outcome: row.outcome,
+            last: row.last,
         };
         let sent = if row.parent.host == self.host().as_bytes() {
             self.deliver(parent_id, envelope, false, Some(row.parent_incarnation))

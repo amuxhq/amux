@@ -379,53 +379,54 @@ fn live_descendants_walk_own_rows_and_take_a_replicas_own_count() {
     assert_eq!(store.agent(&lead).unwrap().unwrap().descendants, 5);
 }
 
-/// Whether the incarnation has a turn it has not ended: from its start
-/// until its first turn end, again from each later turn's start, and after
-/// a step that ends one turn and starts the next. What the snapshot's phase
-/// says at exit does not matter.
+/// Whether the incarnation still owes its parent its last report: from its
+/// start until a turn end marked last, and again should a later turn start.
+/// A turn end that is not the last leaves it owed; what the snapshot's
+/// phase says at exit does not matter.
 #[test]
-fn a_turn_is_open_from_an_incarnations_start_until_it_ends() {
+fn an_incarnation_owes_its_last_report_until_a_turn_end_marked_last() {
     let store = fresh();
     let agent = own("child");
     let mut store = with_agent(store, &agent);
-    let open = |store: &Sqlite| store.agent(&agent).unwrap().unwrap().turn_open;
-    assert!(open(&store), "a new incarnation owes a turn end");
-    let ended = |phase: Phase| Step {
+    let owes = |store: &Sqlite| store.agent(&agent).unwrap().unwrap().owes_report;
+    assert!(owes(&store), "a new incarnation owes its last report");
+    let ended = |phase: Phase, last: bool| Step {
         turn_end: Some(TurnEnd {
             turn_id: 1,
             last_message_key: String::new(),
             outcome: wire::TurnOutcome::Completed as i32,
+            last,
         }),
         ..phase_step(phase)
     };
     store
         .commit(&agent, &[(1, phase_step(Phase::Working))], CLOCK)
         .unwrap();
-    assert!(open(&store));
+    assert!(owes(&store));
     store
-        .commit(&agent, &[(2, ended(Phase::Idle))], CLOCK)
+        .commit(&agent, &[(2, ended(Phase::Idle, false))], CLOCK)
         .unwrap();
-    assert!(!open(&store), "the turn ended");
+    assert!(owes(&store), "a turn ended that was not the last");
     store
-        .commit(&agent, &[(3, phase_step(Phase::Starting))], CLOCK)
+        .commit(&agent, &[(3, ended(Phase::Idle, true))], CLOCK)
         .unwrap();
-    assert!(!open(&store), "a provider's exit opens no turn");
+    assert!(!owes(&store), "the last turn ended");
     store
-        .commit(&agent, &[(4, phase_step(Phase::NeedsYou))], CLOCK)
+        .commit(&agent, &[(4, phase_step(Phase::Starting))], CLOCK)
         .unwrap();
-    assert!(open(&store), "a later turn asks");
+    assert!(!owes(&store), "a provider's exit opens no turn");
     store
-        .commit(&agent, &[(5, ended(Phase::Working))], CLOCK)
+        .commit(&agent, &[(5, phase_step(Phase::NeedsYou))], CLOCK)
         .unwrap();
-    assert!(open(&store), "one turn ended and the next began");
+    assert!(owes(&store), "a later turn asks");
     store
-        .commit(&agent, &[(6, ended(Phase::Idle))], CLOCK)
+        .commit(&agent, &[(6, ended(Phase::Idle, true))], CLOCK)
         .unwrap();
     let mut row = store.agent(&agent).unwrap().unwrap();
-    assert!(!row.turn_open);
+    assert!(!row.owes_report);
     row.incarnation += 1;
     store.put_agent(&row).unwrap();
-    assert!(open(&store), "a resumed incarnation owes one again");
+    assert!(owes(&store), "a resumed incarnation owes one again");
 }
 
 fn phase_step(phase: Phase) -> Step {
@@ -456,6 +457,7 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
             turn_id: 7,
             last_message_key: key.into(),
             outcome: wire::TurnOutcome::Interrupted as i32,
+            last: true,
         }),
         ..Default::default()
     };
@@ -475,6 +477,7 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
             body: "the answer".into(),
             ended: None,
             outcome: Some(wire::TurnOutcome::Interrupted as i32),
+            last: true,
         }]
     );
     let delivery = store.deliveries().unwrap().remove(0);
@@ -495,6 +498,7 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
             detail: Some("exit code 1".into()),
         }),
         outcome: None,
+        last: true,
     };
     store.put_delivery(&failed).unwrap();
     assert_eq!(store.deliveries().unwrap(), vec![failed]);
@@ -606,6 +610,7 @@ fn delete_removes_an_agent_whole() {
             turn_id: 1,
             last_message_key: "m".into(),
             outcome: wire::TurnOutcome::Completed as i32,
+            last: false,
         }),
         ..Default::default()
     };

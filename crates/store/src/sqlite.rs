@@ -631,12 +631,14 @@ fn commit(
                 body,
                 ended: None,
                 outcome: Some(turn_end.outcome),
+                last: turn_end.last,
             })?;
         }
-        // A step that ends one turn may start the next; the snapshot says
-        // where the step leaves the agent.
-        if step.turn_end.is_some() {
-            row.turn_open = false;
+        // The last turn's report is the incarnation's last. A step that ends
+        // one turn may start the next; the snapshot says where the step
+        // leaves the agent.
+        if step.turn_end.as_ref().is_some_and(|turn_end| turn_end.last) {
+            row.owes_report = false;
         }
         // Why the incarnation ended goes onto the row with the step that
         // says so: a daemon that stops before it marks the agent exited
@@ -649,7 +651,7 @@ fn commit(
             && (snapshot.phase == wire::Phase::Working as i32
                 || snapshot.phase == wire::Phase::NeedsYou as i32)
         {
-            row.turn_open = true;
+            row.owes_report = true;
         }
         row.ingest_cursor = *offset;
     }

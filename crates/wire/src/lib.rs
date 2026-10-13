@@ -379,6 +379,7 @@ mod tests {
                 turn_id: 1,
                 last_message_key: "msg:1".into(),
                 outcome: TurnOutcome::Completed as i32,
+                last: true,
             }),
             ..Default::default()
         };

@@ -19,7 +19,7 @@ use crate::{
 const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host, parent_id, \
     lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, \
     last_activity_ms, snapshot, ingest_cursor, next_revision, source_cursor, source_generation, \
-    complete_from_order, exhausted, turn_open, created_at_ms, incarnation, background_jobs, \
+    complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
     descendants";
 
 const ITEM_COLUMNS: &str =
@@ -74,7 +74,7 @@ pub(crate) const COMMITTED: &[&str] = &[
     "snapshot",
     "ingest_cursor",
     "next_revision",
-    "turn_open",
+    "owes_report",
 ];
 
 /// What an absorb writes: the newest snapshot's envelope and the replica's
@@ -126,8 +126,8 @@ pub(crate) fn registry_update(own: bool) -> String {
             "{registry}, \
              phase = CASE WHEN excluded.incarnation > agents.incarnation \
                THEN {starting} ELSE agents.phase END, \
-             turn_open = CASE WHEN excluded.incarnation > agents.incarnation \
-               THEN 1 ELSE agents.turn_open END",
+             owes_report = CASE WHEN excluded.incarnation > agents.incarnation \
+               THEN 1 ELSE agents.owes_report END",
             starting = wire::Phase::Starting as i32,
         )
     } else {
@@ -167,7 +167,7 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             source_generation: row.get::<_, i64>(19)? as u64,
             complete_from_order: row.get::<_, Option<i64>>(20)?.map(|order| order as u64),
             exhausted: row.get::<_, i64>(21)? != 0,
-            turn_open: row.get::<_, i64>(22)? != 0,
+            owes_report: row.get::<_, i64>(22)? != 0,
             created_at_ms: row.get(23)?,
             incarnation: row.get(24)?,
             background_jobs: row.get(25)?,
@@ -229,6 +229,7 @@ fn delivery_row(row: &Row<'_>) -> rusqlite::Result<Delivery> {
         body: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
         ended: cause.map(|cause| wire::IncarnationEnd { cause, detail }),
         outcome: row.get(10)?,
+        last: row.get::<_, i64>(11)? != 0,
     })
 }
 
@@ -353,7 +354,7 @@ impl Rows<'_> {
                 signed(row.source_generation),
                 row.complete_from_order.map(signed),
                 i64::from(row.exhausted),
-                i64::from(row.turn_open),
+                i64::from(row.owes_report),
                 row.created_at_ms,
                 row.incarnation,
                 row.background_jobs,
@@ -616,8 +617,8 @@ impl Rows<'_> {
         self.conn
             .prepare(
                 "INSERT OR REPLACE INTO deliveries (child_id, incarnation, turn_id, parent_host, \
-                 parent_id, parent_incarnation, kind, body, exit_cause, exit_detail, outcome) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                 parent_id, parent_incarnation, kind, body, exit_cause, exit_detail, outcome, \
+                 last) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             )?
             .execute(params![
                 delivery.child_id,
@@ -631,6 +632,7 @@ impl Rows<'_> {
                 delivery.ended.as_ref().map(|end| end.cause),
                 delivery.ended.as_ref().and_then(|end| end.detail.clone()),
                 delivery.outcome,
+                i64::from(delivery.last),
             ])?;
         Ok(())
     }
@@ -638,7 +640,7 @@ impl Rows<'_> {
     pub(crate) fn deliveries(&self) -> Result<Vec<Delivery>, StoreError> {
         let mut statement = self.conn.prepare(
             "SELECT child_id, incarnation, turn_id, parent_host, parent_id, parent_incarnation, \
-             kind, body, exit_cause, exit_detail, outcome FROM deliveries \
+             kind, body, exit_cause, exit_detail, outcome, last FROM deliveries \
              ORDER BY child_id, incarnation, kind, turn_id",
         )?;
         let rows = statement

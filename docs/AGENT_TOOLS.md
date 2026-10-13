@@ -272,14 +272,15 @@ task, and no rollback is needed. A child that never comes up exits, and the
 parent hears that it failed.
 
 **One-shot.** An agent with a parent exits when a turn ends with nothing
-queued, nothing running, no accepted message still pending and no agent
-below it still live; its exit cause is `FINISHED`, which its journal's last
-step records. A sub-agent whose own child still works therefore stays: the
-child's report starts its next turn, and it reports up as usual. Its daemon
-tells it how many agents below it are live and which of its own children,
-in which incarnation (the `children` control frame), and when that count
-falls to none after every such child's report already arrived, it exits
-then. An unreachable child's host leaves it
+queued, nothing running, no accepted message still pending and no child of
+its still to send its last report; its exit cause is `FINISHED`, which its
+journal's last step records, and that turn's report is marked `last`. A
+sub-agent whose own child still works therefore stays: each report the
+child sends starts its next turn, and it reports up as usual. Its daemon
+tells it which of its own children are live, in which incarnation (the
+`children` control frame), and it waits for each incarnation's last report:
+a mid-way report from a child that waits on its own child, or the report of
+an earlier child, never stands in for it. An unreachable child's host leaves it
 waiting, and stopping it (or a stop cascading from above) ends it. Input
 that arrives while it exits is answered `REFUSAL_EXITING`. Its transcript
 and its parent edge stay.
@@ -326,8 +327,12 @@ A parent hears one thing per event, from the daemon, through an outbox: the
 - **Failed.** When a child's process ends while a turn is open (a crash, a
   stop, a child that never came up) the daemon writes a row of kind `failed`
   whose body is the cause in words, followed by its own words when it has
-  any ("the provider exited: exit code 1"). A one-shot exit after a finished turn sends
-  nothing more.
+  any ("the provider exited: exit code 1"). So does a child whose process
+  ends idle without having marked a turn its last, as a sub-agent stopped
+  while it waits for its own child does. A one-shot exit after a turn marked
+  last sends nothing more: each child incarnation sends exactly one last
+  report, the finished one marked `last` or the failed one, and the envelope
+  says so in `last`.
 
 A row records the parent's incarnation as it was when the row was written, or
 zero when the parent's row is not held yet, in which case the drain stamps it

@@ -1472,6 +1472,138 @@ async fn a_sub_agent_waits_for_its_running_child_and_reports_its_result_up() {
     );
 }
 
+/// A one-shot sub-agent waits for its child's last report, not its first.
+/// Its child reports mid-way (it started a scout of its own) and again when
+/// the scout's result is in; the sub-agent takes the mid-way report as a
+/// turn of its own and stays, and reports up only once the child's last
+/// report has come. Every hop crosses hosts.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sub_agent_waits_for_its_childs_last_report_not_its_mid_way_one() {
+    let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
+    net.settle("lead").await.unwrap();
+    net.spawn_child(
+        "lead",
+        child(
+            "planner",
+            "server",
+            vec![
+                waits("planner-go"),
+                text("Started mid."),
+                Step::TurnEnd,
+                text("Mid is still on it."),
+                Step::TurnEnd,
+                text("Mid reported the scout's result; planner done."),
+                Step::TurnEnd,
+            ],
+        ),
+    )
+    .await
+    .unwrap();
+    net.spawn_child(
+        "planner",
+        child(
+            "mid",
+            "phone",
+            vec![
+                waits("mid-go"),
+                text("Started the scout."),
+                Step::TurnEnd,
+                text("The scout reported; mid done."),
+                Step::TurnEnd,
+            ],
+        ),
+    )
+    .await
+    .unwrap();
+    net.spawn_child(
+        "mid",
+        child(
+            "scout",
+            "desk",
+            vec![waits("scout-go"), text("Scout done."), Step::TurnEnd],
+        ),
+    )
+    .await
+    .unwrap();
+    until_live(&net, "desk", "scout").await;
+    net.open_gate("planner-go").unwrap();
+    net.turn_ended("planner", 1).await.unwrap();
+    net.open_gate("mid-go").unwrap();
+    net.turn_ended("planner", 2).await.unwrap();
+    let planner = row(&net, "server", "planner").await.unwrap();
+    assert_eq!(
+        Lifecycle::try_from(planner.lifecycle),
+        Ok(Lifecycle::Live),
+        "the planner left on mid's mid-way report"
+    );
+    net.open_gate("scout-go").unwrap();
+    let reached = until("the lead to hear the planner report mid's result", || {
+        let net = &net;
+        async move {
+            let got = received(net, "lead").await;
+            got.iter()
+                .any(|item| item.text.contains("planner done"))
+                .then_some(())
+                .ok_or_else(|| {
+                    format!(
+                        "lead received {:?}",
+                        got.iter().map(|item| &item.text).collect::<Vec<_>>()
+                    )
+                })
+        }
+    })
+    .await;
+    net.shutdown().await.unwrap();
+    reached.expect("the planner never reported mid's last result to the lead");
+}
+
+/// Every child incarnation ends with a last report. A sub-agent stopped
+/// while it waits idle for its own child has no turn to cut short, yet its
+/// parent still hears that it stopped: a parent waiting on it would
+/// otherwise wait for good.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sub_agent_stopped_while_it_waits_tells_its_parent_it_stopped() {
+    let mut net = Net::start(three_hosts().agent(lead())).await.unwrap();
+    net.settle("lead").await.unwrap();
+    net.spawn_child(
+        "lead",
+        child(
+            "mid",
+            "server",
+            vec![waits("mid-go"), text("Started the scout."), Step::TurnEnd],
+        ),
+    )
+    .await
+    .unwrap();
+    net.spawn_child(
+        "mid",
+        child(
+            "scout",
+            "phone",
+            vec![waits("never"), text("Scout done."), Step::TurnEnd],
+        ),
+    )
+    .await
+    .unwrap();
+    until_live(&net, "phone", "scout").await;
+    net.open_gate("mid-go").unwrap();
+    net.turn_ended("mid", 1).await.unwrap();
+    net.stop("mid").await.unwrap();
+    let reached = until("the lead to hear that mid stopped", || {
+        let net = &net;
+        async move {
+            let got = received(net, "lead").await;
+            let texts: Vec<&String> = got.iter().map(|item| &item.text).collect();
+            (texts.len() >= 2 && texts.iter().any(|text| text.contains("stopped")))
+                .then_some(())
+                .ok_or_else(|| format!("lead received {texts:?}"))
+        }
+    })
+    .await;
+    net.shutdown().await.unwrap();
+    reached.expect("the lead never heard that mid stopped");
+}
+
 /// A child's report says how its turn ended. A child deleted in the
 /// middle of its turn tells its parent it was stopped before it finished,
 /// never that it finished. QA: deleted and denied children reported

@@ -181,7 +181,7 @@ processes the frames in journal order, inside one transaction:
 | Append | Appends the text to the held item and assigns it the next revision. The broadcast `Append` carries the item's previous revision as `base_revision`. An append naming a key the store does not hold is skipped and counted. |
 | Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms`, `git`, `background_jobs` and `at_ms` (as `last_activity_ms`) from its envelope onto the row. |
 | Snapshot turning the phase to `PHASE_NEEDS_YOU` | Inserts a `notifications` row due after the push delay. Leaving `PHASE_NEEDS_YOU` deletes the agent's pending rows. |
-| `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message and the turn's outcome. |
+| `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message, the turn's outcome and whether it is the incarnation's `last`; a turn end marked last clears `owes_report`. |
 | `incarnation_end` | Copies the cause and its words onto the row as `exit_cause` and `exit_detail`. The row stays live until the daemon marks the agent exited, which keeps this cause, so a daemon that stops in between leaves it for the next one. |
 
 Then the row's `ingest_cursor` is set to the offset just past the last frame
@@ -346,7 +346,7 @@ The schema is the migration in
 | `source_generation` | Replica rows: the origin generation the block was taken under, from the `Opening` of the stream whose `Reset` began it |
 | `complete_from_order` | The order from which the held rows are known to be contiguous up to the newest (see below) |
 | `exhausted` | No older history exists: the origin said so, or retention trimmed it |
-| `turn_open` | Own rows: the incarnation has a turn it has not ended. An incarnation that exits with one open tells its parent it failed. |
+| `owes_report` | Own rows: the incarnation has not yet sent its parent its last report, from its start until a turn end marked `last` (and again should a later turn start). An incarnation that exits still owing one, its turn open or ended idle, tells its parent it failed. |
 | `created_at_ms`, `incarnation` | Creation time and the `spec.<n>` it is running |
 
 Kind, lifecycle, exit cause and phase are stored as their wire integers, so a value from
@@ -375,7 +375,7 @@ The rest:
 
 | Table | Rows |
 | --- | --- |
-| `deliveries` | The daemon's outbox to parents: a child's `finished` (turn ended; body is its last message, `outcome` how the turn ended) or `failed` (the incarnation ended without one; `exit_cause` and `exit_detail` say how, as the row's do). Keyed by child, incarnation, kind and turn id. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
+| `deliveries` | The daemon's outbox to parents: a child's `finished` (turn ended; body is its last message, `outcome` how the turn ended) or `failed` (the incarnation ended without a last report; `exit_cause` and `exit_detail` say how, as the row's do), and `last`: set on a finished turn marked last and on every failed row, so each child incarnation sends exactly one last report. Keyed by child, incarnation, kind and turn id. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
 | `notifications` | The push outbox: one row per turn into `needs_you`, keyed by agent and snapshot revision, with a due time (`due_at_ms`) and the push's `name`, `working_on` and `text`, built from envelope fields only. Deleted unsent if the phase leaves `needs_you` first, and with the agent. |
 | `hosts` | One row per peer host: the generation its inventory last reported, for the host entry this machine publishes. |
 | `schema_migrations` | Each applied migration's number and SHA-256 |

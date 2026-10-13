@@ -118,6 +118,9 @@ pub struct SessionState {
     connection: Connection,
     /// The incarnation a Send was rejected as exited under.
     exited_under: Option<u32>,
+    /// Words that the host can be reached: each time its row reads online,
+    /// and each CaughtUp. A held input goes at the first one after it left.
+    reach: u64,
     epoch: u64,
     blobs: HashMap<Vec<u8>, BlobStatus>,
     /// The most rows the window keeps while the reader follows.
@@ -237,6 +240,7 @@ impl SessionState {
             detached: false,
             connection: Connection::Connecting,
             exited_under: None,
+            reach: 0,
             epoch: 0,
             blobs: HashMap::new(),
             cap: cap.max(1),
@@ -604,6 +608,11 @@ impl SessionState {
             Msg::Send(input) => {
                 let id = input.input_id.clone();
                 outcome.session = self.inputs.push(input);
+                if outcome.session
+                    && let Some(sent) = self.inputs.get_mut(&id)
+                {
+                    sent.left_at = self.reach;
+                }
                 // Not current, a prompt or an answer certainly cannot leave:
                 // it is held, and goes once the chat is current again.
                 let hold = !self.caught_up && !self.exited();
@@ -617,7 +626,15 @@ impl SessionState {
                 // A reflection can beat the optimistic row only on a resend
                 // of a known id, which the push refuses.
             }
-            Msg::Sent(id, result) => outcome.session = self.sent(&id, result),
+            Msg::Sent(id, result) => {
+                outcome.session = self.sent(&id, result);
+                // Held by a failure that answers a send which left before
+                // the newest word that the host is back: that word came
+                // already, and the input goes now.
+                if outcome.session && self.caught_up && self.host_online() {
+                    outcome.resend = self.release_held();
+                }
+            }
             Msg::Discard(id) => outcome.session = self.inputs.remove(&id),
             Msg::Entry(agent) => {
                 if agent.lifecycle() == wire::Lifecycle::Live
@@ -630,15 +647,16 @@ impl SessionState {
                 self.agent = agent;
                 outcome.session = true;
             }
+            // Every word that the host is online counts, not only a return
+            // from away: a send can fail as unreachable after the host's
+            // return already arrived, or while its row still read online.
             Msg::Host(host) => {
-                let back = host.presence() == wire::Presence::Online
-                    && self
-                        .host
-                        .as_ref()
-                        .is_some_and(|before| before.presence() != wire::Presence::Online);
                 self.host = Some(host);
-                if back && self.caught_up {
-                    outcome.resend = self.release_held();
+                if self.host_online() {
+                    self.reach += 1;
+                    if self.caught_up {
+                        outcome.resend = self.release_held();
+                    }
                 }
                 outcome.session = true;
             }
@@ -733,6 +751,7 @@ impl SessionState {
                 }
                 self.trim(changed);
                 self.resolve_uncertain();
+                self.reach += 1;
                 outcome.resend = self.release_held();
                 outcome.session = true;
             }
@@ -933,16 +952,26 @@ impl SessionState {
         }
     }
 
-    /// The held inputs, sent from now: the chat is current again or the
-    /// agent's host came back. One that already landed (its reflection or
-    /// queue entry is here) is settled instead of sent twice.
+    fn host_online(&self) -> bool {
+        self.host
+            .as_ref()
+            .is_some_and(|host| host.presence() == wire::Presence::Online)
+    }
+
+    /// The held inputs that left before the newest word that the host can
+    /// be reached, sent from now: the chat is current again or the agent's
+    /// host is online. One held under the newest word waits for the next,
+    /// so a host that cannot take it is not asked again and again. One that
+    /// already landed (its reflection or queue entry is here) is settled
+    /// instead of sent twice.
     fn release_held(&mut self) -> Vec<Input> {
         let queue = &self.state.queue;
         let transcript = &self.transcript;
         let arrivals = &self.arrivals;
+        let reach = self.reach;
         let mut resend = Vec::new();
         for sent in self.inputs.iter_mut() {
-            if sent.state != InputState::Held {
+            if sent.state != InputState::Held || sent.left_at == reach {
                 continue;
             }
             if queue.iter().any(|entry| entry.input_id == sent.id) {
@@ -954,6 +983,7 @@ impl SessionState {
                 sent.state = InputState::Settled;
             } else {
                 sent.state = InputState::Sent;
+                sent.left_at = reach;
                 resend.push(sent.input.clone());
             }
         }

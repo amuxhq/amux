@@ -320,7 +320,7 @@ impl Inner {
         }
     }
 
-    async fn send(&self, mut input: Input) -> Sent {
+    async fn send(self: &Arc<Self>, mut input: Input) -> Sent {
         if input.input_id.is_empty() {
             input.input_id = inputs::input_id();
         }
@@ -351,8 +351,9 @@ impl Inner {
     }
 
     /// Hands an input the state already holds as sent to the runtime and
-    /// applies the verdict.
-    async fn deliver(&self, input: Input) -> Sent {
+    /// applies the verdict; one held by it that the host's return already
+    /// overtook goes again at once.
+    async fn deliver(self: &Arc<Self>, input: Input) -> Sent {
         let id = input.input_id.clone();
         let request = SendInputRequest {
             agent_id: self.agent_id.clone(),
@@ -368,7 +369,8 @@ impl Inner {
             // rejection, never uncertain.
             Err(RpcError::Refused(error)) => InputOutcome::Reply(refused(error)),
         };
-        self.apply(Msg::Sent(id.clone(), outcome.clone()));
+        let applied = self.apply(Msg::Sent(id.clone(), outcome.clone()));
+        self.resend(applied.resend);
         Sent { id, outcome }
     }
 

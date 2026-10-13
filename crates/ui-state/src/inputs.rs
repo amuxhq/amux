@@ -142,6 +142,9 @@ pub struct SentInput {
     /// A snapshot has listed it in the queue; leaving the queue after that
     /// means it was submitted or withdrawn.
     pub(crate) seen_queued: bool,
+    /// The session's count of words that the host can be reached, as this
+    /// input last left: a word since then sends it again if it is held.
+    pub(crate) left_at: u64,
 }
 
 /// Every input this client sent during this open, in sending order. Nothing
@@ -178,6 +181,7 @@ impl Inputs {
             state: InputState::Sent,
             input,
             seen_queued: false,
+            left_at: 0,
         });
         true
     }

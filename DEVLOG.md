@@ -1,3 +1,15 @@
+2026-10-13 — **A held prompt goes whenever its host reads online.** A
+prompt or answer refused as host-unreachable is held and goes again when
+the host is back, but the session sent it only on the host's change from
+away to online. If that change arrived while the send was still in flight
+and the send then failed, the input was held after the only return it
+would see and stayed pending. Every word that the host is online now
+releases held inputs while the chat is current, and a failure that answers
+a send which left before the newest such word sends it again at once; one
+that fails under the newest word waits for the next, so an unreachable
+host is not asked in a loop. Each held input still goes once, under its
+own id.
+
 2026-10-13 — **A held stop goes when its host is next listed online.** A
 stop whose host could not be reached is held and goes again when the host
 is back, but the fleet only counted the host as away if its row already

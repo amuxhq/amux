@@ -162,6 +162,9 @@ enum Overlay {
 #[derive(Debug, Default)]
 pub struct Home {
     selected: Option<Target>,
+    /// Where the highlight last stood in the list, so a row that leaves
+    /// hands it to the row that takes its place, or the new last row.
+    selected_at: Option<usize>,
     expanded: HashSet<Vec<u8>>,
     /// Sections the person folded or unfolded against their default.
     toggled: HashSet<SectionKind>,
@@ -507,18 +510,37 @@ impl Home {
             .collect()
     }
 
-    /// The highlight, kept on something still listed: when its agent left,
-    /// the first agent, else "+ New Agent".
+    /// The highlight, kept on something still listed: when its row left,
+    /// the row now in its place (the new last row when it was last),
+    /// brought into sight; with nothing highlighted yet, the first agent,
+    /// else "+ New Agent".
     fn settle(&mut self, targets: &[Target]) -> Target {
-        if let Some(selected) = self.selected.as_ref().filter(|t| targets.contains(t)) {
-            return selected.clone();
+        if let Some(at) = self
+            .selected
+            .as_ref()
+            .and_then(|selected| targets.iter().position(|t| t == selected))
+        {
+            self.selected_at = Some(at);
+            return targets[at].clone();
         }
-        let fallback = targets
-            .iter()
-            .find(|target| matches!(target, Target::Agent(_)))
+        let in_place = self
+            .selected
+            .as_ref()
+            .and(self.selected_at)
+            .and_then(|at| targets.get(at.min(targets.len().saturating_sub(1))));
+        if in_place.is_some() {
+            self.reveal = true;
+        }
+        let fallback = in_place
+            .or_else(|| {
+                targets
+                    .iter()
+                    .find(|target| matches!(target, Target::Agent(_)))
+            })
             .or(targets.first())
             .cloned()
             .unwrap_or(Target::New);
+        self.selected_at = targets.iter().position(|t| *t == fallback);
         self.selected = Some(fallback.clone());
         fallback
     }

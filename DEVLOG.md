@@ -1,3 +1,16 @@
+2026-10-13 — **A held prompt survives the terminal client being killed.** A
+prompt held while its host could not be reached went back to the draft
+only when the client quit cleanly; closing its pane killed the client with
+the prompt and its chips, and an older stored draft (one the person had
+cleared) came back instead. The client now writes each agent's held
+prompts into the draft this machine's daemon keeps as soon as they are
+held, and writes the draft again without them once they are sent or
+cancelled; a chat closed with prompts held keeps them in the stored copy
+too. The composer itself is unchanged while the client runs. What the
+person types after the hold is still saved only on leaving the chat or
+quitting. Test: a prompt held for a far host is in the daemon's draft
+while the client runs, and the client is then dropped without a quit.
+
 2026-10-13 — **A Codex command rule names the command, whole.** The "always
 allow" choice on a Codex command approval read "allow commands starting
 with /bin/zsh -lc echo aaaa…": Codex proposes its rule as the argv it runs,

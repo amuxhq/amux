@@ -1329,17 +1329,17 @@ struct QuestionCard: View {
 
     @ViewBuilder
     private func question(_ question: QuestionView, at index: Int) -> some View {
-        Text(question.question)
+        Text(design.inline(question.question))
             .designFont(.body, design)
             .foregroundStyle(design.ink.color)
             .fixedSize(horizontal: false, vertical: true)
-            .identified("ask.question", label: question.question)
+            .identified("ask.question", label: AgentText.plain(question.question))
         if let shown = previewed(question, at: index) {
             let option = question.options[shown]
             VStack(alignment: .leading, spacing: 4) {
                 // Named, because before a pick it is the first option's,
                 // which nothing else on the card says.
-                Text(option.label)
+                Text(design.inline(option.label))
                     .designFont(.caption, design)
                     .foregroundStyle(design.inkMuted.color)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1353,7 +1353,7 @@ struct QuestionCard: View {
                             .fill(design.sunken.color)
                     }
             }
-            .identified("ask.preview", label: option.label)
+            .identified("ask.preview", label: AgentText.plain(option.label))
         }
         VStack(spacing: 6) {
             ForEach(Array(question.options.enumerated()), id: \.offset) { position, option in
@@ -1439,7 +1439,7 @@ struct QuestionCard: View {
                 recommended: option.recommended, multi: question.multiSelect, selected: selected)
         }
         .buttonStyle(.amuxControl)
-        .identified("ask.option.\(position)", label: option.label, value: selected ? "selected" : nil)
+        .identified("ask.option.\(position)", label: AgentText.plain(option.label), value: selected ? "selected" : nil)
     }
 
     private func select(_ position: UInt32, in question: QuestionView, at index: Int) {
@@ -1538,7 +1538,7 @@ struct QuestionCard: View {
                     step = index
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(question.header.isEmpty ? question.question : "\(question.header) · \(question.question)")
+                        Text(design.inline(question.header.isEmpty ? question.question : "\(question.header) · \(question.question)"))
                             .designFont(.detail, design)
                             .foregroundStyle(design.inkMuted.color)
                             .lineLimit(2)
@@ -1574,7 +1574,8 @@ struct QuestionCard: View {
     private func summary(_ question: QuestionView, at index: Int) -> String {
         guard picks.indices.contains(index) else { return "" }
         var parts = picks[index].sorted().compactMap { position in
-            question.options.indices.contains(Int(position)) ? question.options[Int(position)].label : nil
+            question.options.indices.contains(Int(position))
+                ? AgentText.plain(question.options[Int(position)].label) : nil
         }
         if let other = others[index], !other.isEmpty {
             parts.append(question.secret ? String(localized: "answered (hidden)") : "“\(other)”")
@@ -1678,7 +1679,7 @@ struct OptionRow: View {
                     }
                 }
                 if !detail.isEmpty {
-                    Text(detail)
+                    Text(design.inline(detail))
                         .designFont(.detail, design)
                         .foregroundStyle(design.inkMuted.color)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1698,7 +1699,7 @@ struct OptionRow: View {
     }
 
     private var labelText: some View {
-        Text(label)
+        Text(design.inline(label))
             .designFont(quiet ? .body : .bodyEmphasis, design)
             .foregroundStyle(quiet ? design.inkMuted.color : design.ink.color)
             .fixedSize(horizontal: false, vertical: true)

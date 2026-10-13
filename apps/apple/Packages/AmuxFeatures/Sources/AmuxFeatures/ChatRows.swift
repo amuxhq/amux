@@ -1071,18 +1071,7 @@ private struct MarkdownBlockView: View {
     }
 
     private func inline(_ source: AttributedString) -> AttributedString {
-        var text = source
-        for run in text.runs {
-            if run.inlinePresentationIntent == .code {
-                text[run.range].font = design.font(.mono)
-                text[run.range].foregroundColor = design.inkMuted.color
-            }
-            if run.link != nil {
-                text[run.range].foregroundColor = design.accent.color
-                text[run.range].underlineStyle = .single
-            }
-        }
-        return text
+        design.inline(source)
     }
 
     private func heading(_ level: Int) -> Font {
@@ -1251,7 +1240,7 @@ private struct AskRowView: View {
                     Rectangle().fill(design.hairline.color).frame(height: design.metrics.hairline)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(pairs.count == 1 || pair.0.header.isEmpty ? pair.0.question : pair.0.header)
+                    Text(design.inline(pairs.count == 1 || pair.0.header.isEmpty ? pair.0.question : pair.0.header))
                         .designFont(.detail, design)
                         .foregroundStyle(design.inkMuted.color)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1285,7 +1274,7 @@ private struct AskRowView: View {
     @ViewBuilder
     private func answer(_ answer: AnswerView) -> some View {
         if answer.hidden || answer.picked.count + (answer.other == nil ? 0 : 1) < 2 {
-            Text(answer.picked.isEmpty ? ChatWords.answer(answer) : answer.picked[0])
+            Text(answer.picked.isEmpty ? AttributedString(ChatWords.answer(answer)) : design.inline(answer.picked[0]))
                 .designFont(.bodyEmphasis, design)
                 .italic(answer.picked.isEmpty && !answer.hidden)
                 .foregroundStyle(design.ink.color)
@@ -1293,7 +1282,7 @@ private struct AskRowView: View {
         } else {
             HStack(spacing: 6) {
                 ForEach(answer.picked, id: \.self) { pick in
-                    Text(pick)
+                    Text(design.inline(pick))
                         .designFont(.detail, design)
                         .foregroundStyle(design.ink.color)
                         .lineLimit(1)

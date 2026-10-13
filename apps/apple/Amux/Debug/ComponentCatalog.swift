@@ -310,6 +310,7 @@ enum ComponentCatalog {
             ask("question-other", height: 520, preset: .other("Put it in amux-wire next to the codes"),
                 F.card(.claudeSdk, .question([F.redactionQuestion]), [])),
             ask("question-secret", height: 420, preset: .other("hunter2"), F.card(.codex, .question([F.secretQuestion]), [])),
+            ask("question-code", height: 460, F.card(.codex, .question([F.codeQuestion]), [])),
             ask("plan", height: 260, preset: .autoAccept, F.card(.claudeSdk, .plan(body: F.planBody, title: F.planTitle), [
                 Choice(outcome: .approvePlan(mode: "auto", modeName: "Auto"), primary: true, takesNote: false),
                 Choice(outcome: .approvePlan(mode: "", modeName: ""), primary: false, takesNote: false),
@@ -1014,6 +1015,20 @@ enum CatalogFixtures {
             OptionView(label: "amux-core", description: "Every client already depends on it", preview: "", recommended: true),
             OptionView(label: "amux-ui", description: "Closest to where the copy is used", preview: "", recommended: false),
             OptionView(label: "A new crate", description: "", preview: "", recommended: false),
+        ], allowOther: true, secret: false)
+
+    /// Codex names files as code, between backticks.
+    static let codeQuestion = QuestionView(
+        header: "Exact target",
+        question: "`q1/README.md` is absent; `../plan1/README.md` has two lines (`UPDATED`, `done`). Which should be used?",
+        multiSelect: false,
+        options: [
+            OptionView(
+                label: "Create `README.md`", description: "Create the missing file with exactly one line: `UPDATED`.",
+                preview: "", recommended: true),
+            OptionView(
+                label: "Edit the other", description: "Change `../plan1/README.md` instead.",
+                preview: "", recommended: false),
         ], allowOther: true, secret: false)
 
     static let platformQuestion = QuestionView(

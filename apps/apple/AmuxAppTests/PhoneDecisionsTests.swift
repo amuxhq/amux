@@ -262,6 +262,35 @@ final class PhoneDecisionsTests: XCTestCase {
             "the ticks and the typed words do not both reach the answer")
     }
 
+    /// An agent writes file names in its questions as code, between
+    /// backticks. The card draws them as code, as the chat does, and never
+    /// shows the backticks.
+    func testAQuestionsCodeIsDrawnAsCodeWithoutItsBackticks() async throws {
+        let question = QuestionView(
+            header: "Exact target",
+            question: "`q1/README.md` is absent; `../plan1/README.md` has two lines. Which should be used?",
+            multiSelect: false,
+            options: [
+                OptionView(
+                    label: "Create `README.md`", description: "Create the missing file with exactly one line: `UPDATED`.",
+                    preview: "", recommended: true),
+                OptionView(label: "Edit the other", description: "Change `../plan1/README.md` instead.", preview: "", recommended: false),
+            ], allowOther: true, secret: false)
+        try host(AskCardView(card: CatalogFixtures.card(.codex, .question([question]), [])) { _ in })
+        await spin()
+        try await accessible()
+        let asked = try XCTUnwrap(element("ask.question"), "the card shows its question")
+        XCTAssertEqual(
+            asked.label, "q1/README.md is absent; ../plan1/README.md has two lines. Which should be used?")
+        let said = VisibleTree.elements(of: try XCTUnwrap(window))
+            .compactMap { [$0.label, $0.value].compactMap { $0 }.joined(separator: " ") }
+            + probe.elements.compactMap(\.label)
+        for text in said {
+            XCTAssertFalse(text.contains("`"), "the card says \(String(reflecting: text))")
+        }
+        XCTAssertTrue(said.contains { $0.contains("Create README.md") }, "the first option is not drawn: \(said)")
+    }
+
     // MARK: - Home and new agent
 
     /// A reopened app draws its home before its saved hosts are read; it must

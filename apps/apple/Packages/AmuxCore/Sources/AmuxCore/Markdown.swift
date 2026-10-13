@@ -174,7 +174,7 @@ public struct MarkdownDocument: Equatable, Sendable {
     /// is given the whole run at once. It refuses malformed source outright, so
     /// a failure falls back to the literal text: an agent writing a stray
     /// asterisk must not blank its own sentence.
-    nonisolated static func inline(_ source: some StringProtocol) -> AttributedString {
+    public nonisolated static func inline(_ source: some StringProtocol) -> AttributedString {
         let text = String(source)
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: true,

@@ -301,6 +301,10 @@
       "shows": "A question whose answer is a secret, typed hidden."
     },
     {
+      "id": "ask.question-code",
+      "shows": "A question whose words carry code between backticks, drawn as code without them."
+    },
+    {
       "id": "ask.plan",
       "shows": "A plan's decision where the composer was, with the choice to switch to the permission the agent offers as the work starts."
     },

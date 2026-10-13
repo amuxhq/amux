@@ -1,3 +1,14 @@
+2026-10-13 — **The phone's question cards draw an agent's code as code.**
+A Codex question naming files between backticks showed the backticks on
+the phone too: the card drew the question, its options and their
+descriptions as plain strings. They are now read as inline markdown, as
+the chat's prose is, with code in the mono face, and so is the answered
+question in the chat and the card's review. What VoiceOver and the door
+read is the text without its markup. A phone test opens such a card and
+finds no backtick anywhere on it; a new component example
+(`ask.question-code`) pictures it, and `ask.question-other` was
+re-recorded for a one-pixel move of a radio beside an attributed label.
+
 2026-10-13 — **A found host is offered by its own name.** The phone
 offered the only desk on the network as "desk (2)". A Bonjour responder
 that meets a second instance of the same name renames its own (two test

@@ -312,18 +312,32 @@ public struct ChatScreen: View {
         }
         .padding(.horizontal, design.metrics.gutter)
         .padding(.top, 2)
-        .padding(.bottom, 6)
-        // Rows scrolled up fade into the ground behind the header and the status bar
-        // instead of showing crisp beside the pill. A drawn fade rather than a safe-area
-        // bar's scroll edge effect: that blur is not drawn the same way twice.
+        .padding(.bottom, Self.headerBelowPill)
+        // Rows scrolled up go under solid ground down to the pill's foot and fade into
+        // it from there, instead of showing crisp beside the pill. The pill's
+        // glass then always sits over the ground: over a row's large bright words, as at
+        // an accessibility text size, glass turns light in the dark appearance and its
+        // faint place line all but vanishes. A drawn fade rather than a safe-area bar's
+        // scroll edge effect: that blur is not drawn the same way twice.
         .background {
-            LinearGradient(
-                stops: [.init(color: design.ground.color, location: 0.6),
-                        .init(color: design.ground.color.opacity(0), location: 1)],
-                startPoint: .top, endPoint: .bottom)
+            // Negative padding carries the fade past the header's foot.
+            VStack(spacing: 0) {
+                design.ground.color
+                LinearGradient(
+                    colors: [design.ground.color, design.ground.color.opacity(0)],
+                    startPoint: .top, endPoint: .bottom)
+                .frame(height: Self.headerFade)
+            }
+            .padding(.bottom, Self.headerBelowPill - Self.headerFade)
             .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
         }
     }
+
+    /// The header's room under its pill, where the rows begin to fade.
+    static let headerBelowPill: CGFloat = 6
+    /// How far below the pill's foot the rows fade into the ground.
+    static let headerFade: CGFloat = 14
 
     private var overflow: some View {
         let running = model.frame.map({ if case .exited = $0.phase { false } else { true } }) ?? false

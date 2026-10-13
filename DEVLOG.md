@@ -1,3 +1,18 @@
+2026-10-13 — **The phone's chat header stays dark over large text.** At
+accessibility text sizes in the dark appearance the header pill turned
+bright with its place line nearly unreadable, and ran over the first row:
+rows scrolled up showed through the header's fade, and liquid glass over
+their large bright words turns light. The header now stands on solid
+ground down to the pill's foot and fades into the rows from there, so the
+pill always sits over the ground. Two neighbouring reports are left as
+they are. A large-text ask card keeps its pinned buttons, with its
+content scrolling above them, because that is the tested promise that the
+ways to answer stay on screen. The composer at accessibility3 floats over
+the chat by design, and its settings chip already wraps its words whole.
+Glass is drawn flat in the component snapshots, so no test sees the glass
+turn; the chat baselines and whole-screen goldens were re-recorded for the
+new ground and looked over.
+
 2026-10-13 — **Terminal Claude's auto mode is known, offered and cycled
 through.** Where Claude offers auto mode, amux's plan ask offered "switch
 to accept edits", its permission ask left out Claude's "Yes, and switch to

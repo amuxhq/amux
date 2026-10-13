@@ -687,7 +687,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                     }
                     CodexDecision::ApproveSession => ChoiceOutcome::AllowForSession,
                     CodexDecision::ApproveSimilar => ChoiceOutcome::AllowSimilar {
-                        prefix: similar.clone(),
+                        prefix: shown_prefix(&similar),
                     },
                     CodexDecision::ApproveNetwork => ChoiceOutcome::AllowNetwork {
                         hosts: hosts.clone(),
@@ -979,9 +979,52 @@ fn with_note(answer: &Answer, note: &str) -> Answer {
     answer
 }
 
+/// The words of a Codex command rule as Codex itself names them: a rule
+/// for a shell running a script (`/bin/zsh -lc "echo hi && touch b"`)
+/// reads as the script, since the wrapper is how Codex runs every
+/// command, not what the person is allowing.
+pub fn shown_prefix(words: &[String]) -> Vec<String> {
+    match words {
+        [shell, flag, script] if matches!(flag.as_str(), "-lc" | "-c") => {
+            let name = shell.rsplit('/').next().unwrap_or(shell);
+            if matches!(name, "bash" | "zsh" | "sh") {
+                vec![script.clone()]
+            } else {
+                words.to_vec()
+            }
+        }
+        _ => words.to_vec(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn words(of: &[&str]) -> Vec<String> {
+        of.iter().map(|word| (*word).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_command_prefix_names_the_script_its_shell_runs() {
+        let script = "echo hi > a.txt && touch b.txt";
+        for shell in ["/bin/zsh", "bash", "/usr/bin/sh"] {
+            for flag in ["-lc", "-c"] {
+                assert_eq!(
+                    shown_prefix(&words(&[shell, flag, script])),
+                    words(&[script])
+                );
+            }
+        }
+        assert_eq!(
+            shown_prefix(&words(&["curl", "-s"])),
+            words(&["curl", "-s"])
+        );
+        assert_eq!(
+            shown_prefix(&words(&["/usr/bin/python3", "-c", "print(1)"])),
+            words(&["/usr/bin/python3", "-c", "print(1)"])
+        );
+    }
 
     #[test]
     fn a_tool_called_with_no_arguments_shows_no_arguments_block() {

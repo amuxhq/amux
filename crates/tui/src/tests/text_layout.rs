@@ -275,6 +275,89 @@ fn a_long_edit_path_keeps_the_files_name() {
     );
 }
 
+/// A Codex rule for a long command reads whole in the box, as Codex's own
+/// view words it: the choice wraps instead of cutting the command's end,
+/// which is what says what the rule covers.
+#[test]
+fn a_codex_rule_for_a_long_command_reads_whole() {
+    let script = format!("echo {} > long.txt && touch END_MARK", "a".repeat(170));
+    let answer = |decision: wire::Decision| {
+        ui_view::Answer::Codex(wire::CodexAnswer {
+            of: Some(wire::codex_answer::Of::Approve(decision as i32)),
+            ..Default::default()
+        })
+    };
+    let choice = |outcome, decision| Choice {
+        outcome,
+        primary: false,
+        takes_note: false,
+        answer: answer(decision),
+    };
+    let card = AskCard {
+        kind: Kind::Codex,
+        key: "ask".into(),
+        item_key: "k".into(),
+        position: 1,
+        count: 1,
+        body: ui_view::AskBody::Command {
+            command: script.clone(),
+            cwd: "/work".into(),
+            reason: String::new(),
+            description: String::new(),
+        },
+        choices: vec![
+            choice(ui_view::ChoiceOutcome::AllowOnce, wire::Decision::Approve),
+            choice(
+                ui_view::ChoiceOutcome::AllowSimilar {
+                    prefix: vec![script.clone()],
+                },
+                wire::Decision::ApproveSimilar,
+            ),
+            choice(
+                ui_view::ChoiceOutcome::Deny { stops: false },
+                wire::Decision::Deny,
+            ),
+        ],
+        question_note: false,
+        question_skip: false,
+        question_reply: false,
+        stops_turn: true,
+        state: CardState::Open,
+    };
+    let mut ask = crate::chat::ask::AskUi::default();
+    ask.sync(&card);
+    let lines = ask.box_lines(&card, 72, theme());
+    let screen: Vec<String> = lines
+        .lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect()
+        })
+        .collect();
+    let at = screen
+        .iter()
+        .position(|row| row.contains("2. Yes, and allow commands starting with"))
+        .expect("the rule's choice is in the box");
+    let rule: String = screen[at..]
+        .iter()
+        .take_while(|row| !row.contains("3. No"))
+        .map(|row| row.trim())
+        .collect();
+    assert!(
+        rule.ends_with("> long.txt && touch END_MARK") && !rule.contains('…'),
+        "the rule's command is cut short:\n{}",
+        screen.join("\n")
+    );
+    assert!(
+        screen.iter().any(|row| row.contains("3. No")),
+        "{}",
+        screen.join("\n")
+    );
+}
+
 /// A permission ask for a long command keeps its choices and its key line
 /// on screen in a short terminal: the command is cut harder, not the
 /// choices. Seen at 80x18 (the last choice and the key line gone) and

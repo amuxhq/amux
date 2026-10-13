@@ -1,3 +1,16 @@
+2026-10-13 — **A Codex command rule names the command, whole.** The "always
+allow" choice on a Codex command approval read "allow commands starting
+with /bin/zsh -lc echo aaaa…": Codex proposes its rule as the argv it runs,
+shell wrapper included, and the box cut the label at its edge, losing the
+`&& touch END_MARK` that says what the rule covers. The shared view now
+names a rule for `sh`/`bash`/`zsh` `-c`/`-lc` by the script alone, as
+Codex's own view does, both on the choice and on the decided row, so the
+phone gets the same words. The terminal box wraps a long choice under its
+own start when the screen has room for it; on a short screen each choice
+keeps one line so none is pushed off. Tests: the view's rule words for
+each shell and flag, and a 170-character rule read whole in an 80-column
+box.
+
 2026-10-13 — **The phone's chat header stays dark over large text.** At
 accessibility text sizes in the dark appearance the header pill turned
 bright with its place line nearly unreadable, and ran over the first row:

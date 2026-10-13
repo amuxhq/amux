@@ -608,7 +608,7 @@ fn decision_view(
             Some(wire::codex_grant::Of::Session(_)) => Some(PermissionGrant::Session),
             Some(wire::codex_grant::Of::CommandPrefix(prefix)) => {
                 Some(PermissionGrant::CommandPrefix {
-                    words: prefix.words.clone(),
+                    words: crate::ask::shown_prefix(&prefix.words),
                 })
             }
             Some(wire::codex_grant::Of::NetworkHosts(hosts)) => {

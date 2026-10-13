@@ -137,7 +137,7 @@
   composer Send activity=Some(Running { key: "exec-1ce5edf9-a814-458c-a852-ef3356c960e7" }) queue=[] underway=[] refused=[]
 ## 163 recorded 162: fact Rpc method=item/commandExecution/requestApproval
   ask 0 -> "exec-1ce5edf9-a814-458c-a852-ef3356c960e7" 1/1 Open
-    choices AllowOnce*, AllowSimilar { prefix: ["/bin/zsh", "-lc", "printf 'UPDATED\\n' > README.md"] }, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowSimilar { prefix: ["printf 'UPDATED\\n' > README.md"] }, Deny { stops: false }, DenyAndStop
     body Command { command: "printf 'UPDATED\\n' > README.md", cwd: "<MACHINE_PATH>", reason: "Allow updating README.md to UPDATED?", description: "" }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 165 recorded 164: input stdin-10

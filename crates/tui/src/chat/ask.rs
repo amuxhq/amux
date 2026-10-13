@@ -665,6 +665,22 @@ impl AskUi {
         }
     }
 
+    /// Whether the choices' long labels wrap: when the screen has room for
+    /// them beside the box's own lines and one line of subject. On a short
+    /// screen each choice keeps one line, so none is pushed off it.
+    fn wraps_choices(&self, card: &AskCard, width: usize) -> bool {
+        self.room == 0 || self.room >= BOX_CHROME + 3 + wrapped_choice_rows(card, width)
+    }
+
+    /// How many lines the box's choices take at `width`.
+    fn choice_rows(&self, card: &AskCard, width: usize) -> usize {
+        if self.wraps_choices(card, width) {
+            wrapped_choice_rows(card, width)
+        } else {
+            box_choices(card).len()
+        }
+    }
+
     /// The boxed ask's lines, `width` columns wide: what it wants, the
     /// subject verbatim, the agent's reason, then the choices.
     pub fn box_lines(&self, card: &AskCard, width: usize, theme: Theme) -> BoxLines {
@@ -772,7 +788,7 @@ impl AskUi {
             usize::MAX
         } else {
             self.room
-                .saturating_sub(BOX_CHROME + out.lines.len() + 1 + box_choices(card).len())
+                .saturating_sub(BOX_CHROME + out.lines.len() + 1 + self.choice_rows(card, width))
                 .max(1)
         };
         let subject_lines = SUBJECT_LINES.min(words_room);
@@ -910,7 +926,7 @@ impl AskUi {
                 let cut = lines.len() > DIFF_LINES && !opened;
                 let rows = if self.room == 0 { 36 } else { self.room };
                 let fits = rows
-                    .saturating_sub(DIFF_CHROME + box_choices(card).len())
+                    .saturating_sub(DIFF_CHROME + self.choice_rows(card, width))
                     .max(DIFF_LINES);
                 let scroll = if opened {
                     self.diff_scroll.min(lines.len().saturating_sub(fits))
@@ -982,7 +998,7 @@ impl AskUi {
             let used = out.lines.len();
             let room = (self.room != 0).then(|| {
                 self.room
-                    .saturating_sub(BOX_CHROME + used + 1 + box_choices(card).len())
+                    .saturating_sub(BOX_CHROME + used + 1 + self.choice_rows(card, width))
             });
             let mut parts = text::wrap(&reason, width.max(1));
             if let Some(room) = room
@@ -1002,6 +1018,7 @@ impl AskUi {
         // The choices, numbered, the highlighted one bright. The refusal is
         // last, and where it can carry a note its line is the note's field.
         let list = box_choices(card);
+        let wraps = self.wraps_choices(card, width);
         for (at, index) in list.iter().enumerate() {
             let choice = &card.choices[*index];
             let lit = at == self.selected;
@@ -1033,13 +1050,28 @@ impl AskUi {
                     },
                 );
                 continue;
-            } else {
+            } else if deny {
                 push(&mut row, said, ink, width);
-                if deny {
-                    push(&mut row, "  esc", theme.faint(), width);
-                }
-                if deny && choice.takes_note {
+                push(&mut row, "  esc", theme.faint(), width);
+                if choice.takes_note {
                     push(&mut row, " · tab to add a note", theme.faint(), width);
+                }
+            } else if !wraps {
+                push(&mut row, said, ink, width);
+            } else {
+                // A long label (a Codex rule naming a whole command) wraps
+                // under its own start rather than losing its end, which is
+                // what says what the rule covers.
+                let lead = text::line_width(&row);
+                let mut parts = label_lines(&said, lead, width).into_iter();
+                push(&mut row, parts.next().unwrap_or_default(), ink, width);
+                for part in parts {
+                    out.spots
+                        .push((out.lines.len(), (0, width), BoxSpot::Choice(at)));
+                    out.lines.push(row);
+                    row = Line::default();
+                    push(&mut row, " ".repeat(lead), ink, width);
+                    push(&mut row, part, ink, width);
                 }
             }
             out.spots
@@ -1048,6 +1080,35 @@ impl AskUi {
         }
         out
     }
+}
+
+/// A choice's label in lines of `width` columns, each after `lead` columns
+/// (its marker and number on the first, as much blank on the rest).
+fn label_lines(label: &str, lead: usize, width: usize) -> Vec<String> {
+    let room = width.saturating_sub(lead).max(1);
+    let parts = text::wrap(label, room);
+    if parts.is_empty() {
+        vec![String::new()]
+    } else {
+        parts
+    }
+}
+
+/// How many lines the box's choices take at `width` with their labels
+/// wrapped: one each, and more for a label that wraps.
+fn wrapped_choice_rows(card: &AskCard, width: usize) -> usize {
+    box_choices(card)
+        .iter()
+        .enumerate()
+        .map(|(at, index)| {
+            let choice = &card.choices[*index];
+            if refuses(&choice.outcome) {
+                return 1;
+            }
+            let lead = 2 + format!("{}. ", at + 1).len();
+            label_lines(&box_label(choice, card.kind), lead, width).len()
+        })
+        .sum()
 }
 
 /// The end of `words` in at most `max` columns, "…" where it is cut.

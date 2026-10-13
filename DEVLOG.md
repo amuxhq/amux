@@ -1,3 +1,13 @@
+2026-10-13 — **A terminal Claude plan sent back without a note keeps
+planning.** "No, keep planning" with no note typed the third entry of
+Claude's plan menu, "Tell Claude what to change", which opens a field and
+waits there for something to be sent; amux marked the plan sent back and
+the agent working, and nothing moved until the person interrupted. A plan
+sent back without a note now types "Not approved yet. Keep planning."
+into that field and sends it, so Claude plans again; the chat still
+records the plan as sent back with no note. A key test checks the field
+is filled for a note-less send-back on Claude 2.1.296.
+
 2026-10-13 — **Home's header and its Needs you section agree while a host is
 away.** With desk's daemon stopped, the terminal's header said "desk away
 · 1 needs you" while the Needs you section just below listed three,

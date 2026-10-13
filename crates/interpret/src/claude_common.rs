@@ -312,11 +312,19 @@ pub const NOTEBOOK_OLD_SOURCE: &str = "amux_old_source";
 /// replaces as `old_source` when the host found one. Matching an ask to its
 /// call compares Claude's input alone.
 pub(crate) fn shown_input(input: &Value, extensions: &serde_json::Map<String, Value>) -> Value {
-    let mut shown = input.clone();
-    if let (Some(old), Value::Object(fields)) = (extensions.get(NOTEBOOK_OLD_SOURCE), &mut shown) {
-        fields.insert("old_source".to_owned(), old.clone());
-    }
-    shown
+    let Some(old_source) = extensions.get(NOTEBOOK_OLD_SOURCE) else {
+        return input.clone();
+    };
+    serde_json::to_value(ShownInput { input, old_source }).unwrap_or_else(|_| input.clone())
+}
+
+/// A notebook edit's input as its ask's card shows it: Claude's fields with
+/// the replaced cell's source beside them.
+#[derive(Serialize)]
+struct ShownInput<'a> {
+    #[serde(flatten)]
+    input: &'a Value,
+    old_source: &'a Value,
 }
 
 pub(crate) fn same_json(stored: &str, value: &Value) -> bool {
@@ -473,6 +481,13 @@ pub(crate) fn describe_claude_usage(usage: &ClaudeUsage) -> String {
         ));
     }
     text
+}
+
+/// The input of the Bash call a `!command` is recorded as: what Claude's
+/// own Bash tool takes, the command alone.
+#[derive(Serialize)]
+pub(crate) struct BangInput<'a> {
+    pub command: &'a str,
 }
 
 /// What a call that started a background job ran: Bash's command, or the

@@ -21,8 +21,8 @@ use super::{
     Running, Slash, State, Subagent, Tool, item_body,
 };
 use crate::claude_common::{
-    AnsweredResult, BackgroundInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS, Verdict,
-    apply_task_tool, blocks_text, claude_grant, compact_json, job_kind, message_text,
+    AnsweredResult, BackgroundInput, BangInput, JobInput, PLAN_TOOL, QUESTION_TOOL, TASK_TOOLS,
+    Verdict, apply_task_tool, blocks_text, claude_grant, compact_json, job_kind, message_text,
     permission_scopes, plan_ask, plan_mode_write, question_ask, question_ask_text, same_json,
     shown_input, split_tool_name, timestamp_ms, tool_class, tool_result_images, tool_result_text,
     without_image_bytes, without_terminal_codes,
@@ -1190,7 +1190,7 @@ impl State {
         {
             self.shared.reflect_prompt();
         }
-        let input = serde_json::json!({ "command": command });
+        let input = serde_json::to_value(BangInput { command }).expect("a command serializes");
         self.tool_seen(emit, &key, "Bash", &input, at_ms, "");
         self.bang = Some(key);
     }

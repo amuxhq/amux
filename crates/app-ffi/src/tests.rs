@@ -6,7 +6,7 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use app_runtime::values::{ActOutcome, ChatChanges, PageOutcome};
+use app_runtime::values::{ActOutcome, ChatChanges, CommandOutcome, PageOutcome};
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use serde_json::{Value, json};
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, Topology};
@@ -532,6 +532,23 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     };
     assert_eq!(outcome::<ActOutcome>(phone.result()), ActOutcome::Done);
     phone.until(id, chat, "the answer", || says(chat, "answered"));
+
+    // A draft naming one of the client's own commands answers with the
+    // command's outcome itself, which is what the phone decodes.
+    let draft = c(&json!({"parts": [{"Text": "/rename"}]}).to_string());
+    // SAFETY: the chat is open; the string lives for the call.
+    unsafe { amux_session_command(chat, draft.as_ptr(), on_result, phone.context()) };
+    assert_eq!(
+        outcome::<CommandOutcome>(phone.result()),
+        CommandOutcome::AskName
+    );
+    let not_a_draft = c("[]");
+    // SAFETY: the chat is open; the string lives for the call.
+    unsafe { amux_session_command(chat, not_a_draft.as_ptr(), on_result, phone.context()) };
+    assert!(matches!(
+        outcome::<CommandOutcome>(phone.result()),
+        CommandOutcome::Acted(ActOutcome::Failed(_))
+    ));
     // SAFETY: the chat is open, and closed once.
     unsafe { amux_session_close(chat) };
 

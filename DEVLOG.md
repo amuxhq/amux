@@ -1,3 +1,13 @@
+2026-10-13 — **The phone's slash commands run again.** Every draft that
+began with "/" on the phone (`/model`, `/rename`, `/clear`, `/compact`)
+was refused with "This chat is closed.", on a live agent. The C library
+answered the command call wrapped as `{"Ok": outcome}`, the shape its
+fallible calls use, while the phone reads that call's answer as the
+outcome itself; the decode failed and the phone took the failure for a
+closed chat. The call now answers the outcome itself, and a draft that does
+not parse answers a failed act. The C ABI test runs `/rename` and a
+malformed draft through the call and decodes what comes back.
+
 2026-10-13 — **Deleting an agent on the phone forgets its draft.** The
 phone's draft shelf kept a deleted agent's draft for good, and the chat
 still on screen until its page left went on keeping what was typed into it.

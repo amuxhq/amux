@@ -33,7 +33,9 @@ use std::sync::{Arc, Mutex};
 use app_embedded::{
     EdgeOverrides, EmbeddedRuntime, PairRequest, ProfileEvent, ProfileId, StartConfig, UsageEvent,
 };
-use app_runtime::values::{ActOutcome, AgentAct, Draft, Found, FrozenReview, NewAgent, RowOptions};
+use app_runtime::values::{
+    ActOutcome, AgentAct, CommandOutcome, Draft, Found, FrozenReview, NewAgent, RowOptions,
+};
 use app_runtime::{AppRuntime, Chat, Wake};
 use model::{AgentKey, Key};
 use node::SourcePolicy;
@@ -1910,7 +1912,7 @@ pub unsafe extern "C" fn amux_session_send(
 /// Runs a `Draft`, as JSON, that names a command the client handles itself
 /// (`/model`, `/effort`, `/rename`) or one the agent does not run; the
 /// callback gets a `CommandOutcome`, whose `Send` says to send the draft as
-/// typed.
+/// typed. A draft that does not parse answers `Acted(Failed)`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `draft` is a NUL-terminated string.
@@ -1927,8 +1929,10 @@ pub unsafe extern "C" fn amux_session_command(
     unsafe {
         act(chat, callback, context, |chat| async move {
             match draft {
-                Some(draft) => Answered::Ok(chat.command(&draft).await),
-                None => Answered::Err("the draft is not a Draft".into()),
+                Some(draft) => chat.command(&draft).await,
+                None => {
+                    CommandOutcome::Acted(ActOutcome::Failed("the draft is not a Draft".into()))
+                }
             }
         })
     }

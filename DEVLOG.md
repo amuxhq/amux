@@ -1,3 +1,16 @@
+2026-10-13 — **A plan approved with its switch shows where it switched at
+once.** A QA run approved a terminal Claude plan with "switch to Accept
+edits" and Claude ended in auto mode while amux's row said accept edits.
+The cause, a plan switch worded from a catalogue lookup that never
+matched the running model, is the auto-mode fix earlier today: the
+switch is now named from the same knowledge of auto mode that decides
+what the menu's first entry does, so the ask offers auto where Claude
+goes to auto. What was left: after the approval amux still showed the
+permission as plan until Claude's next record. The switch's target is
+now recorded at once, as the permission ask's switch to auto already
+was, and confirmed by Claude's next record. An interpreter test approves
+a plan with its switch where Claude offers auto mode.
+
 2026-10-13 — **Home's row counts an agent's background jobs.** After an
 interrupt left a Codex command running, the chat said "1 background job"
 and Codex's own view "1 background terminal running", while the home

@@ -786,6 +786,9 @@ mod tests {
             // and hands it to ui_view::fleet_view, which returns the cards
             // the phone draws.
             "SessionLine",
+            // What a typed draft is to the terminal; the phone asks the
+            // bridge's command call, which answers a CommandOutcome.
+            "Slash",
         ];
         let definitions = definitions();
         let root = repository();

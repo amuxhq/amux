@@ -1517,6 +1517,7 @@
       {"literal": "\"%02x\"", "context": "bytes.map { String(format: \"%02x\", $0) }.joined()", "reason": "Format string for hex digits, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift": [
+      {"literal": "\"host.pairAgain\"", "context": ".identified(\"host.pairAgain\", label: String(localized: \"Pair Again\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"host.back\"", "context": "BackLink(\"Hosts\", identifier: \"host.back\") { actions(.back) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"host.gone\"", "context": ".identified(\"host.gone\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"host.name\"", "context": ".identified(\"host.name\", value: view.name)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1530,7 +1531,7 @@
       {"literal": "\"version\"", "context": "facts.append(Fact(id: \"version\", label: String(localized: \"Version\"), value: version, mono: true))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"providers\"", "context": "id: \"providers\", label: String(localized: \"Runs\"),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"addresses\"", "context": "id: \"addresses\", label: String(localized: \"Addresses\"),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"last-error\"", "context": "facts.append(Fact(id: \"last-error\", label: String(localized: \"Last try\"), value: error))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"last-error\"", "context": "id: \"last-error\", label: String(localized: \"Last try\"),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"fingerprint\"", "context": "id: \"fingerprint\", label: String(localized: \"Fingerprint\"),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ]
   }

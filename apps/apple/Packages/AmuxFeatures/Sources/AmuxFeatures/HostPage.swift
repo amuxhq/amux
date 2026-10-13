@@ -7,15 +7,18 @@ public enum HostPageAction: Equatable, Sendable {
     case back
     /// Stop trusting the machine, once the person has confirmed it.
     case revoke(HostId)
+    /// Pair with a machine that no longer trusts this phone.
+    case pairAgain(HostId)
 }
 
 /// One paired machine, opened from its row on Hosts: how this phone reaches
 /// it, what it is, which providers it runs, and its key in full.
 ///
 /// The row already says where the machine is; this page is for the facts a
-/// row has no room for, and for the one thing there is to do about a machine
-/// here, which is to stop trusting it. That asks first, because it cannot be
-/// undone from this phone: only pairing again brings the machine back.
+/// row has no room for, and for what there is to do about a machine here:
+/// pair again with one that no longer trusts this phone, and stop trusting
+/// it. Revoking asks first, because it cannot be undone from this phone:
+/// only pairing again brings the machine back.
 public struct HostPage: View {
     @Environment(\.design) private var design
     private let model: HostsStore
@@ -90,6 +93,16 @@ public struct HostPage: View {
                 .accessibilityElement(children: .combine)
                 .identified("host.fact.\(fact.id)", label: fact.label, value: fact.value)
             }
+            // A machine that dropped this phone is still on its list; pairing
+            // again is the way back, and the first thing to offer.
+            if view.reach == .away(.revoked), let id = view.id {
+                Button { actions(.pairAgain(id)) } label: {
+                    ActionLabel(String(localized: "Pair Again"), kind: .primary, fill: true)
+                }
+                .buttonStyle(.amuxControl)
+                .accessibilityLabel(String(localized: "Pair Again with \(view.name)"))
+                .identified("host.pairAgain", label: String(localized: "Pair Again"))
+            }
             if confirming {
                 confirm(view)
             } else {
@@ -156,8 +169,13 @@ public struct HostPage: View {
                 id: "addresses", label: String(localized: "Addresses"),
                 value: view.addrs.joined(separator: "\n"), mono: true))
         }
-        if !view.online, let error = view.lastDialError, !error.isEmpty {
-            facts.append(Fact(id: "last-error", label: String(localized: "Last try"), value: error))
+        // The dial's own error names an address and a status code, which say
+        // nothing a person can act on. A machine that dropped this phone has
+        // its reason said above it; any other failed dial is said in words.
+        if !view.online, view.reach != .away(.revoked), let error = view.lastDialError, !error.isEmpty {
+            facts.append(Fact(
+                id: "last-error", label: String(localized: "Last try"),
+                value: String(localized: "Could not connect")))
         }
         if let peer = model.devices.first(where: { $0.hostId == view.hostId }) {
             facts.append(Fact(

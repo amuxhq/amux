@@ -255,6 +255,8 @@ public struct Shell: View {
                 case .revoke(let host):
                     stores.revoke(host)
                     router.pop()
+                case .pairAgain(let host):
+                    router.open(.pairByCode(host))
                 }
             }
             .toolbar(.hidden, for: .navigationBar)

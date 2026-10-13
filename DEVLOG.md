@@ -1,3 +1,13 @@
+2026-10-13 — **A host that dropped the phone offers pairing again.** After
+a host unpaired the phone, the host's page on the phone offered only a red
+Revoke, and "Last try" showed the dial's raw error with an address and a
+status code. The page now offers Pair Again first, which opens pairing
+with that host (pairing again over a key the phone still holds is already
+supported), and keeps Revoke below it. The raw error is gone: a host that
+no longer trusts the phone has that said on the page already, and any
+other failed dial reads "Could not connect". A phone test opens the page
+for such a host, finds no raw error and presses Pair Again.
+
 2026-10-13 — **An ask card's switch is drawn whole on the phone.** The
 plan card's "Switch to …" toggle, and a form's toggles, had their rounded
 right end cut flat. iOS 26's switch is drawn two points past the frame its

@@ -333,6 +333,36 @@ final class PhoneDecisionsTests: XCTestCase {
         [view] + view.subviews.flatMap { views(in: $0) }
     }
 
+    // MARK: - Hosts
+
+    /// A host that dropped this phone is offered again from its page, and
+    /// its page says why it is out of reach in words, not as the dial's raw
+    /// error with an address and a code.
+    func testAHostThatNoLongerTrustsThisPhoneOffersPairingAgainInWords() async throws {
+        let desk = HostId(UUID(uuidString: "00000000-0000-0000-0000-00000000de5c")!)
+        let hosts = HostsStore()
+        hosts.show([HostView(
+            hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
+            reach: .away(.revoked), addrs: ["127.0.0.1:55186"], current: false, providers: [],
+            lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
+            platform: "macOS", signedIn: nil, version: nil)])
+        var asked: [HostPageAction] = []
+        try host(HostPage(model: hosts, host: desk) { asked.append($0) })
+        await spin()
+        for element in probe.elements {
+            let said = [element.label, element.value].compactMap { $0 }.joined(separator: " ")
+            XCTAssertFalse(
+                said.contains("code:") || said.contains("55186:"),
+                "\(element.identifier) shows the raw dial error: \(said)")
+        }
+        let again = try XCTUnwrap(element("host.pairAgain"), "the page offers no way to pair again")
+        XCTAssertEqual(again.label, "Pair Again")
+        try await accessible()
+        try activate("host.pairAgain")
+        await spin()
+        XCTAssertEqual(asked, [.pairAgain(desk)])
+    }
+
     // MARK: - Home and new agent
 
     /// A reopened app draws its home before its saved hosts are read; it must

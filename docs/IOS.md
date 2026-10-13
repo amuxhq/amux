@@ -195,8 +195,10 @@ can pair and connect to them directly." When access is denied, the Hosts tab
 says so, lists no machine and offers the Settings route.
 
 Tapping a host on the Hosts tab opens its page: how the phone reaches it,
-its platform, version, providers and addresses, the last dial error while it
-is offline, and its key's fingerprint in full. The page and the Devices sheet
+its platform, version, providers and addresses, that its last dial failed
+while it is offline (in words, not the dial's raw error), and its key's
+fingerprint in full. A host that no longer trusts this phone offers Pair
+Again, which opens pairing with that host. The page and the Devices sheet
 both offer Revoke, and both ask first, saying the phone stops reaching the
 machine and only pairing again brings it back. Every route the shell can
 push has a built page; `RoutePagesTests` opens each one.

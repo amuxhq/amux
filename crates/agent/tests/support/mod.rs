@@ -38,8 +38,11 @@ pub fn agent_release() -> PathBuf {
 }
 
 /// Runs the fake, then stays until the hold file exists: a provider that is
-/// slow to go away after its input closes.
-const HOLD_SCRIPT: &str = r#""$0" "$@"; while [ ! -e "$AMUX_TEST_HOLD" ]; do sleep 0.02; done"#;
+/// slow to go away after it is asked to finish. The agent asks with the end
+/// of its input and SIGTERM, so the shell traps SIGTERM to outlast it; a
+/// trap with a command is reset in the fake, which keeps the default.
+const HOLD_SCRIPT: &str =
+    r#"trap : TERM; "$0" "$@"; while [ ! -e "$AMUX_TEST_HOLD" ]; do sleep 0.02; done"#;
 
 /// The fake provider binaries and the install path's stand-in, built once
 /// per test run.

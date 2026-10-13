@@ -1227,12 +1227,39 @@ fn claude_launch(spec: &AgentSpec, dir: &Path, hooks: bool) -> io::Result<(Vec<S
         permissions_allow: tools
             .iter()
             .map(|_| format!("mcp__{}__*", interpret::AMUX_TOOL_SERVER))
-            .chain([format!("Read(/{}/**)", dir.join(dir::BLOBS).display())])
+            .chain([format!("Read(/{}/**)", rule_path(&dir.join(dir::BLOBS)))])
             .collect(),
         ..Default::default()
     };
     let settings = claude::launch::merged_settings(user, &managed).into_value();
     Ok((args, settings.to_string()))
+}
+
+/// An absolute path as Claude's permission rules name it: Claude matches
+/// rules against paths in POSIX form, so on Windows `C:\Users\alice` is
+/// `/c/Users/alice`. Written with the native separator, a Windows rule
+/// matched no file and Claude asked before reading every attachment.
+fn rule_path(path: &Path) -> String {
+    use std::path::{Component, Prefix};
+    let mut rule = String::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => match prefix.kind() {
+                Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => {
+                    rule.push('/');
+                    rule.push(char::from(drive).to_ascii_lowercase());
+                }
+                _ => rule.push_str(&prefix.as_os_str().to_string_lossy().replace('\\', "/")),
+            },
+            Component::RootDir | Component::CurDir => {}
+            Component::ParentDir => rule.push_str("/.."),
+            Component::Normal(name) => {
+                rule.push('/');
+                rule.push_str(&name.to_string_lossy());
+            }
+        }
+    }
+    rule
 }
 
 /// Codex's global arguments: the spec's, then amux's tool server as
@@ -1590,19 +1617,16 @@ mod tests {
                 }],
             },
         });
-        let written = super::codex_turn_input(
-            request.to_string().as_bytes(),
-            &[file],
-            Path::new("/agents/helper/blobs"),
-        )
-        .unwrap();
+        let blobs = Path::new("/agents/helper/blobs");
+        let written =
+            super::codex_turn_input(request.to_string().as_bytes(), &[file], blobs).unwrap();
         let written: serde_json::Value = serde_json::from_slice(&written).unwrap();
         let text = written["params"]["items"][0]["content"][0]["text"]
             .as_str()
             .unwrap();
         assert!(
             text.starts_with("[message from agent lead]\nPlease read <amux-attachment")
-                && text.contains(&format!("/agents/helper/blobs/{}", "cd".repeat(32))),
+                && text.contains(&blobs.join("cd".repeat(32)).display().to_string()),
             "the injected message does not name the file here: {text}"
         );
     }
@@ -1618,12 +1642,37 @@ mod tests {
             cwd: std::env::temp_dir().to_string_lossy().into_owned(),
             ..Default::default()
         };
-        let (args, settings) = super::claude_launch(&spec, &dir, false).unwrap();
-        let blobs = dir.join("blobs").to_string_lossy().into_owned();
+        let (_, settings) = super::claude_launch(&spec, &dir, false).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
+        let rule = format!("Read(/{}/**)", super::rule_path(&dir.join("blobs")));
         assert!(
-            args.iter().any(|arg| arg.contains(&blobs)) || settings.contains(&blobs),
-            "neither the arguments nor the settings let Claude read {blobs}: {args:?} {settings}"
+            settings["permissions"]["allow"]
+                .as_array()
+                .is_some_and(|allow| allow.iter().any(|allowed| *allowed == rule)),
+            "the settings do not let Claude read the blobs with {rule}: {settings}"
         );
+    }
+
+    /// Claude matches permission rules against POSIX paths, so a Windows
+    /// path's drive becomes its first folder and its separators slashes.
+    #[test]
+    fn a_rule_names_a_path_as_claude_matches_it() {
+        #[cfg(unix)]
+        assert_eq!(
+            super::rule_path(Path::new("/agents/a/blobs")),
+            "/agents/a/blobs"
+        );
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                super::rule_path(Path::new(r"C:\Users\RUNNER~1\AppData\blobs")),
+                "/c/Users/RUNNER~1/AppData/blobs"
+            );
+            assert_eq!(
+                super::rule_path(Path::new(r"\\?\D:\agents\a\blobs")),
+                "/d/agents/a/blobs"
+            );
+        }
     }
 
     #[test]

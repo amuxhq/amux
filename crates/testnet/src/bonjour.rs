@@ -225,6 +225,7 @@ mod tests {
                 "127.0.0.1",
                 "v=4",
                 "hid=d6e6b93c-114e-4d20-b29a-6fac10bfb78d",
+                "name=desk",
                 "scope=journey",
             ]
         );

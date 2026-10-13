@@ -236,8 +236,15 @@ fn advertisement_from_service(service: &ResolvedService) -> Result<Advertisement
         .ok_or_else(|| "missing TXT property hid".to_string())?
         .parse::<HostId>()
         .map_err(|_| "TXT property hid is not a host id".to_string())?;
-    let name = instance_name(service.get_fullname())
+    let instance = instance_name(service.get_fullname())
         .ok_or_else(|| "service fullname is outside the amux service type".to_string())?;
+    // The record's own name, because conflict resolution may have renamed
+    // the instance ("desk (2)"); the instance name only for a record that
+    // carries none.
+    let name = service
+        .get_property_val_str("name")
+        .filter(|name| !name.is_empty())
+        .map_or(instance, str::to_owned);
     // A host that names no scope is in the empty one.
     let scope = service
         .get_property_val_str("scope")

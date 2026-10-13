@@ -30,12 +30,17 @@ pub const SERVICE_TYPE: &str = "_amux._udp.local.";
 
 /// The TXT properties an advertisement carries. Everything that publishes one
 /// writes these, so a browser reads the same record whoever put it up.
-pub fn txt_properties(advert: &Advertisement) -> [(&'static str, String); 3] {
+pub fn txt_properties(advert: &Advertisement) -> [(&'static str, String); 4] {
     [
         ("v", advert.version.to_string()),
         // Hyphenated: the iPhone app parses this with Foundation's
         // `UUID(uuidString:)`, which rejects the 32-digit simple form.
         ("hid", advert.host_id.hyphenated().to_string()),
+        // The host's own name, apart from the instance name: a responder
+        // that meets another instance of the same name renames this one
+        // "desk (2)", and a browser reading that would offer one machine as
+        // if it were the second of two.
+        ("name", advert.name.clone()),
         ("scope", advert.scope.clone()),
     ]
 }

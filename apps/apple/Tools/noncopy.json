@@ -250,6 +250,7 @@
       {"literal": "\"yyyy-MM-dd'T'HH:mm:ss'Z'\"", "context": "formatter.dateFormat = \"yyyy-MM-dd'T'HH:mm:ss'Z'\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Discovery.swift": [
+      {"literal": "\"name\"", "context": "let name = record[\"name\"].flatMap { $0.isEmpty ? nil : $0 }", "reason": "TXT record key the machines advertise, not interface copy.", "count": 1},
       {"literal": "\"sh.amux.discovery\"", "context": "nonisolated private static let browsing = DispatchQueue(label: \"sh.amux.discovery\", qos: .utility)", "reason": "Dispatch queue label, not interface copy.", "count": 1},
       {"literal": "\"_amux._udp\"", "context": "public nonisolated static let service = \"_amux._udp\"", "reason": "Advertisement record field, service type or dialable address syntax; preserve its exact spelling.", "count": 1},
       {"literal": "\"hid\"", "context": "guard let hid = record[\"hid\"], let host = HostId(hid),", "reason": "Advertisement record field, service type or dialable address syntax; preserve its exact spelling.", "count": 1},
@@ -258,7 +259,7 @@
       {"literal": "\"[\\(unscoped(address))]:\\(port.rawValue)\"", "context": "return \"[\\(unscoped(address))]:\\(port.rawValue)\"", "reason": "Advertisement record field, service type or dialable address syntax; preserve its exact spelling.", "count": 1},
       {"literal": "\"\\(address)\"", "context": "String(\"\\(address)\".prefix { $0 != \"%\" })", "reason": "Advertisement record field, service type or dialable address syntax; preserve its exact spelling.", "count": 1},
       {"literal": "\"%\"", "context": "String(\"\\(address)\".prefix { $0 != \"%\" })", "reason": "Advertisement record field, service type or dialable address syntax; preserve its exact spelling.", "count": 1},
-      {"literal": "\"scope\"", "context": "return (host, version, record[\"scope\"] ?? \"\")", "reason": "TXT record key the machines advertise, not interface copy.", "count": 1}
+      {"literal": "\"scope\"", "context": "return (host, version, record[\"scope\"] ?? \"\", name)", "reason": "TXT record key the machines advertise, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift": [
       {"literal": "\"s\"", "context": "return \"\\(needYou) need you · \\(agents) agent\\(agents == 1 ? \"\" : \"s\")\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},

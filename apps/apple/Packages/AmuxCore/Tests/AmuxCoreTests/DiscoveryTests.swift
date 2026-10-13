@@ -32,6 +32,18 @@ final class DiscoveryTests: XCTestCase {
         let claim = LocalDiscovery.claim(from: NWTXTRecord(fixture.txt))
         XCTAssertEqual(claim?.host, HostId(try XCTUnwrap(UUID(uuidString: fixture.hostId))))
         XCTAssertEqual(claim?.version, fixture.version)
+        XCTAssertEqual(claim?.name, fixture.txt["name"])
+    }
+
+    @MainActor
+    func testARenamedInstanceIsOfferedByTheNameItsRecordCarries() {
+        // A responder that meets a second "kitchen" on the network renames
+        // this one "kitchen (2)". There is one kitchen, and its record says
+        // what it is called.
+        let browser = Browser()
+        browser.discovery.saw([browser.sighting(instance: "kitchen (2)", routes: ["wifi"])])
+        browser.lookups[0].settle("192.168.1.24:41234")
+        XCTAssertEqual(browser.handedOver.last, [browser.found("192.168.1.24:41234")])
     }
 
     func testAnIncompleteOrUnreadableRecordIsPassedOver() {
@@ -248,10 +260,12 @@ private final class Browser {
         },
         handOver: { [unowned self] in self.handedOver.append($0) })
 
-    func sighting(version: UInt32 = 7, routes: [String]) -> LocalDiscovery.Sighting {
+    func sighting(
+        version: UInt32 = 7, instance: String = "kitchen", routes: [String]
+    ) -> LocalDiscovery.Sighting {
         LocalDiscovery.Sighting(
-            endpoint: .service(name: "kitchen", type: LocalDiscovery.service, domain: "local.", interface: nil),
-            record: NWTXTRecord(["hid": host.description, "v": String(version)]),
+            endpoint: .service(name: instance, type: LocalDiscovery.service, domain: "local.", interface: nil),
+            record: NWTXTRecord(["hid": host.description, "v": String(version), "name": "kitchen"]),
             routes: routes.map { .hostPort(host: .name($0, nil), port: 1) })
     }
 

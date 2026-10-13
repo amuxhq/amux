@@ -236,7 +236,7 @@ public final class LocalDiscovery {
             guard let record = sighting.record,
                   let claimed = Self.claim(from: record),
                   only?.contains(claimed.host) ?? true,
-                  let name = Self.serviceName(of: sighting.endpoint)
+                  let name = claimed.name ?? Self.serviceName(of: sighting.endpoint)
             else { continue }
             let claim = Claim(
                 host: claimed.host, name: name, version: claimed.version, scope: claimed.scope)
@@ -378,16 +378,22 @@ public final class LocalDiscovery {
     /// A record missing either field is not an amux host advertising itself —
     /// some other service on the same name, or a version that predates them —
     /// and is passed over rather than guessed at.
+    ///
+    /// The machine's name is the record's own, where it carries one: a
+    /// responder that meets a second "desk" on the network renames this
+    /// instance "desk (2)", which is not what the machine is called.
     nonisolated static func claim(
         from record: NWTXTRecord
-    ) -> (host: HostId, version: UInt32, scope: String)? {
+    ) -> (host: HostId, version: UInt32, scope: String, name: String?)? {
         guard let hid = record["hid"], let host = HostId(hid),
               let claimed = record["v"], let version = UInt32(claimed)
         else { return nil }
-        return (host, version, record["scope"] ?? "")
+        let name = record["name"].flatMap { $0.isEmpty ? nil : $0 }
+        return (host, version, record["scope"] ?? "", name)
     }
 
-    /// The instance name a Bonjour endpoint carries, which is the machine's own.
+    /// The instance name a Bonjour endpoint carries: the machine's own,
+    /// unless a name conflict on the network renamed it.
     nonisolated static func serviceName(of endpoint: NWEndpoint) -> String? {
         guard case .service(let name, _, _, _) = endpoint else { return nil }
         return name

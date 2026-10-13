@@ -1,3 +1,14 @@
+2026-10-13 — **A found host is offered by its own name.** The phone
+offered the only desk on the network as "desk (2)". A Bonjour responder
+that meets a second instance of the same name renames its own (two test
+networks each advertising a "desk" did it here; two machines of one name
+would too), and both the phone's browser and the desktop's named a found
+host by its instance name. The advertisement's TXT record now carries the
+host's name, and both browsers read it, falling back to the instance name
+only for a record without one. Tests: the record carries the name (the
+shared fixture both platforms read), and a renamed instance decodes, on
+the Mac and on the phone, as the name its record carries.
+
 2026-10-13 — **The phone's chat header stays dark over large text.** At
 accessibility text sizes in the dark appearance the header pill turned
 bright with its place line nearly unreadable, and ran over the first row:

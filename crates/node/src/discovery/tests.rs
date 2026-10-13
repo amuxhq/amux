@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -17,7 +17,7 @@ fn advert(name: &str) -> Advertisement {
 
 #[test]
 #[cfg(not(target_os = "ios"))]
-fn txt_encoding_carries_version_host_id_and_scope() {
+fn txt_encoding_carries_version_host_id_name_and_scope() {
     let advert = Advertisement {
         scope: "worktree-a".to_owned(),
         ..advert("Studio")
@@ -25,7 +25,8 @@ fn txt_encoding_carries_version_host_id_and_scope() {
     let service = mdns::service_info_for_test(&advert).unwrap();
     let properties = service.get_properties();
 
-    assert_eq!(properties.len(), 3);
+    assert_eq!(properties.len(), 4);
+    assert_eq!(service.get_property_val_str("name"), Some("Studio"));
     assert_eq!(service.get_property_val_str("scope"), Some("worktree-a"));
     assert_eq!(service.get_property_val_str("v"), Some("7"));
     assert_eq!(
@@ -81,6 +82,30 @@ fn txt_decoding_builds_an_advertisement() {
     let decoded = mdns::advertisement_from_service_for_test(&resolved).unwrap();
 
     assert_eq!(decoded, expected);
+}
+
+/// A responder that finds a second "Studio" on the network renames this
+/// one's instance "Studio (2)". The machine is still called Studio, and its
+/// own record says so.
+#[test]
+#[cfg(not(target_os = "ios"))]
+fn a_renamed_instance_is_known_by_the_name_its_record_carries() {
+    let advert = advert("Studio");
+    let properties = txt_properties(&advert);
+    let renamed = mdns_sd::ServiceInfo::new(
+        SERVICE_TYPE,
+        "Studio (2)",
+        "amux-renamed.local.",
+        &[IpAddr::V4(Ipv4Addr::new(192, 0, 2, 8))][..],
+        4819,
+        &properties[..],
+    )
+    .unwrap()
+    .as_resolved_service();
+
+    let decoded = mdns::advertisement_from_service_for_test(&renamed).unwrap();
+
+    assert_eq!(decoded.name, "Studio");
 }
 
 #[tokio::test]

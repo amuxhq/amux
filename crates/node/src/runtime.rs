@@ -486,7 +486,7 @@ struct ForwardedChild {
 /// A child of an agent being deleted: as its parent's host lists it, or
 /// known only from having been made elsewhere at this daemon's asking.
 enum Child {
-    Listed(AgentRow),
+    Listed(Box<AgentRow>),
     Forwarded(ForwardedChild),
 }
 
@@ -1659,7 +1659,10 @@ impl ProfileRuntime {
     async fn children_of(&self, id: AgentId) -> Result<Vec<Child>, RegistryError> {
         let key = self.key(id);
         let listed = self.store.lock().await.agents_of_parent(&key)?;
-        let mut children: Vec<Child> = listed.into_iter().map(Child::Listed).collect();
+        let mut children: Vec<Child> = listed
+            .into_iter()
+            .map(|row| Child::Listed(Box::new(row)))
+            .collect();
         let forwarded = self.births(id).forwarded.lock().unwrap().clone();
         for child in forwarded {
             if !children.iter().any(|known| known.key() == &child.key) {

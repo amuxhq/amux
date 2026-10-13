@@ -3142,6 +3142,19 @@ fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
         (1, 0),
         "the header counts agents whose rows say their host is away"
     );
+    // The sections agree with the header: an agent whose host is away does
+    // not wait in Needs you while the header says nobody does.
+    let needs_you: usize = view
+        .sections
+        .iter()
+        .filter(|section| section.kind == SectionKind::NeedsYou)
+        .map(|section| section.rows.len())
+        .sum();
+    assert_eq!(
+        needs_you, view.need_you as usize,
+        "the header counts {} needing you and Needs you lists {needs_you}",
+        view.need_you
+    );
 }
 
 /// A step that edits a file inside the agent's folder names it relative to

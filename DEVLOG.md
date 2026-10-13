@@ -1,3 +1,15 @@
+2026-10-13 — **Home's header and its Needs you section agree while a host is
+away.** With desk's daemon stopped, the terminal's header said "desk away
+· 1 needs you" while the Needs you section just below listed three,
+desk's two drawn "desk is away". The header left out agents whose host is
+out of reach (each is only as it last said), and the sections placed them
+by their last phase. The shared fleet view now places and counts from one
+rule: an agent whose host is out of reach is neither working nor waiting
+on the person from here, so its family sits in Live until the host is
+back, and a folded family's loud member is never one of them. The phone
+builds its home from the same view. The header-count test now also
+checks the Needs you section against the header.
+
 2026-10-13 — **A plan approved with its switch shows where it switched at
 once.** A QA run approved a terminal Claude plan with "switch to Accept
 edits" and Claude ended in auto mode while amux's row said accept edits.

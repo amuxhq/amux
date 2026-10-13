@@ -22,4 +22,5 @@
   permission* unlisted custom "" "" unsettable
   mode* unlisted "default" "default" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Codex Spec No Such Model") effort=None permission=None mode=Some("default")

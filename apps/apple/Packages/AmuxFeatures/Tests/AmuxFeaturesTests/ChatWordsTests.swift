@@ -188,8 +188,8 @@ final class ChatWordsTests: XCTestCase {
             ChatWords.placeholder(.send, agent: "refactor-auth", host: "Studio", away: nil, working: true),
             "Queue a message")
         XCTAssertEqual(
-            ChatWords.placeholder(.disabled(.detached), agent: "a", host: "Studio", away: .plain, working: false),
-            "Studio is out of reach · your draft is kept")
+            ChatWords.placeholder(.holds(.detached), agent: "a", host: "Studio", away: .plain, working: false),
+            "Studio is out of reach · sends when back")
         XCTAssertEqual(
             ChatWords.placeholder(.resume, agent: "a", host: "Studio", away: nil, working: false),
             "a has exited · a message resumes it")

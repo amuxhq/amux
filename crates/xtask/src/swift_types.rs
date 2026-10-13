@@ -39,7 +39,6 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::Row,
         ui_view::AskCard,
         ui_view::AgentNameProblem,
-        ui_view::Pick,
         ui_view::QuestionResponse,
         ui_view::FormValue,
         ui_view::FormProblem,
@@ -68,6 +67,7 @@ pub fn definitions() -> Map<String, Value> {
         app_runtime::values::FrozenReview,
         app_runtime::values::SendOutcome,
         app_runtime::values::ActOutcome,
+        app_runtime::values::CommandOutcome,
         app_runtime::values::PageOutcome,
         app_runtime::values::HostView,
         app_runtime::values::FleetChanges,
@@ -786,6 +786,9 @@ mod tests {
             // and hands it to ui_view::fleet_view, which returns the cards
             // the phone draws.
             "SessionLine",
+            // What a typed draft is to the terminal; the phone asks the
+            // bridge's command call, which answers a CommandOutcome.
+            "Slash",
         ];
         let definitions = definitions();
         let root = repository();

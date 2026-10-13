@@ -4,6 +4,7 @@
 use ratatui::text::{Line, Span};
 use ui_state::{Composer, Waiting};
 use ui_view::{Away, Overview, QueuedRow, Reach, Segment, composer_tokens};
+use unicode_segmentation::UnicodeSegmentation as _;
 
 use super::rows::chip;
 use crate::editor::Editor;
@@ -223,6 +224,13 @@ pub enum QueueEntry {
         input_id: Vec<u8>,
         text: Vec<Segment>,
     },
+    /// This client's prompt that never left, the agent's host out of
+    /// reach: the client holds it and sends it when `host` is back.
+    Held {
+        input_id: Vec<u8>,
+        text: Vec<Segment>,
+        host: String,
+    },
 }
 
 impl QueueEntry {
@@ -237,6 +245,7 @@ impl QueueEntry {
             QueueEntry::Unconfirmed { .. } => {
                 "enter resend · backspace discard · ↑/↓ queued · esc back"
             }
+            QueueEntry::Held { .. } => "enter cancel · ↑/↓ queued · esc back",
             QueueEntry::Queued(_) | QueueEntry::Sending { .. } => "↑/↓ queued · esc back",
         }
     }
@@ -244,7 +253,9 @@ impl QueueEntry {
     pub fn text(&self) -> &[Segment] {
         match self {
             QueueEntry::Queued(row) => &row.text,
-            QueueEntry::Sending { text, .. } | QueueEntry::Unconfirmed { text, .. } => text,
+            QueueEntry::Sending { text, .. }
+            | QueueEntry::Unconfirmed { text, .. }
+            | QueueEntry::Held { text, .. } => text,
         }
     }
 
@@ -262,6 +273,7 @@ impl QueueEntry {
             } => format!("waiting for {host}…"),
             QueueEntry::Sending { .. } => "queued".to_owned(),
             QueueEntry::Unconfirmed { .. } => "may not have arrived".to_owned(),
+            QueueEntry::Held { host, .. } => format!("sends when {host} is back"),
         }
     }
 
@@ -281,6 +293,7 @@ impl QueueEntry {
             }
             QueueEntry::Sending { .. } => Vec::new(),
             QueueEntry::Unconfirmed { .. } => vec!["[Resend]", "[Discard]"],
+            QueueEntry::Held { .. } => vec!["[Cancel]"],
         }
     }
 }
@@ -290,17 +303,17 @@ pub fn placeholder(mode: &Composer, name: &str, host: &str, reach: Reach) -> Str
     match mode {
         Composer::Send => format!("Message {name}"),
         Composer::Resume => format!("{name} has exited · type to resume it with a message"),
-        // The hint under the composer says the draft is kept and what sending waits
-        // for, so the placeholder only names the cause.
-        Composer::Disabled(Waiting::CatchingUp) => "Catching up".into(),
-        Composer::Disabled(Waiting::Detached) => match reach {
+        // The hint under the composer says a send is held and what it
+        // waits for, so the placeholder only names the cause.
+        Composer::Holds(Waiting::CatchingUp) => "Catching up".into(),
+        Composer::Holds(Waiting::Detached) => match reach {
             Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
             Reach::Away(Away::SignedOut) => format!("{host} is away · this machine is signed out"),
             Reach::Online(_) | Reach::Away(Away::Plain) | Reach::Offline => {
                 format!("{host} is away")
             }
         },
-        Composer::Disabled(Waiting::Reconnecting) => "Reconnecting to amux".into(),
+        Composer::Holds(Waiting::Reconnecting) => "Reconnecting to amux".into(),
     }
 }
 
@@ -390,23 +403,25 @@ pub fn editor_lines(
         };
     for segment in composer_tokens(editor.text(), editor.attachments()) {
         match segment {
+            // A grapheme at a time, so a combining accent stays on its
+            // letter and the cursor never stops inside a character.
             Segment::Text(text) => {
-                for c in text.chars() {
+                for grapheme in text.graphemes(true) {
                     place(&rows, used, at, &mut position);
-                    at += 1;
-                    if c == '\n' {
+                    at += grapheme.chars().count();
+                    if grapheme == "\n" || grapheme == "\r\n" {
                         rows.push(Vec::new());
                         used = 0;
                         continue;
                     }
-                    let shown = if editor.secret { '•' } else { c };
-                    let w = text::str_width(shown.encode_utf8(&mut [0; 4]));
+                    let shown = if editor.secret { "•" } else { grapheme };
+                    let w = text::str_width(shown);
                     if used + w > room {
                         rows.push(Vec::new());
                         used = 0;
                     }
                     if let Some(row) = rows.last_mut() {
-                        row.push(Span::styled(shown.to_string(), theme.text()));
+                        row.push(Span::styled(shown.to_owned(), theme.text()));
                     }
                     used += w;
                 }

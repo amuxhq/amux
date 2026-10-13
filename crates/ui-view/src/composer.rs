@@ -67,19 +67,24 @@ pub fn sign_in(state: &SessionState) -> Option<SignInView> {
 pub struct ComposerView {
     pub mode: Composer,
     pub activity: Option<Activity>,
+    /// The agent's own view is on another conversation: prompts are
+    /// refused until a switch back.
+    pub switched_away: bool,
 }
 
 pub fn composer(state: &SessionState, now_ms: i64) -> ComposerView {
     ComposerView {
         mode: state.composer(),
-        activity: state.activity(now_ms),
+        activity: crate::fleet::activity(state, now_ms),
+        switched_away: switched_away(state),
     }
 }
 
-/// The waiting reason, for a client that words the disabled composer.
+/// Why the chat is not current, for a client that words the composer
+/// holding its sends.
 pub fn waiting(state: &SessionState) -> Option<Waiting> {
     match state.composer() {
-        Composer::Disabled(why) => Some(why),
+        Composer::Holds(why) => Some(why),
         Composer::Send | Composer::Resume => None,
     }
 }
@@ -155,6 +160,9 @@ pub enum Underway {
     /// neither queued nor in the transcript: only the person can say
     /// whether to send it again or discard it.
     MayNotHaveArrived,
+    /// It never left: the agent's host cannot be reached. It goes once the
+    /// host is back; Cancel takes it back into the draft.
+    Held,
 }
 
 /// A prompt of this client's on its way to the agent.
@@ -217,6 +225,7 @@ pub fn prompts_underway(state: &SessionState, in_feed: impl Fn(&[u8]) -> bool) -
             InputState::Uncertain => {
                 unconfirmed.push(prompt(Lands::Queue, Underway::MayNotHaveArrived))
             }
+            InputState::Held => sending.push(prompt(Lands::Queue, Underway::Held)),
             InputState::Rejected(_) | InputState::Settled => {}
         }
     }
@@ -237,4 +246,12 @@ pub fn refused_prompts(state: &SessionState) -> Vec<RefusedPrompt> {
             _ => None,
         })
         .collect()
+}
+
+/// Whether the agent's own view is on another conversation than the
+/// agent's (terminal Claude resumed another in its own screen): the agent
+/// takes no prompt until it is back, and a switch back takes it back.
+pub fn switched_away(state: &SessionState) -> bool {
+    !matches!(state.composer(), Composer::Resume)
+        && state.agent_state().switched_away_to.is_some()
 }

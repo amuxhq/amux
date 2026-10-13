@@ -1015,6 +1015,7 @@ mod tests {
                 "claude-sdk-ask-question",
                 "ask-escape",
                 "composer-chips",
+                "large-text",
                 "origin-rewind"
             ]
         );

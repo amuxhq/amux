@@ -52,19 +52,19 @@ pub(crate) fn control_words(controls: &ControlsSummary) -> Option<String> {
 }
 
 /// How a setting that changes only by typing the agent's own command is
-/// changed, "type /model <name> in the composer"; both when model and
-/// effort do.
+/// changed, "Change the model by typing /model <name>."; both when model
+/// and effort do. Short enough for a one-line notice at 80 columns.
 pub(crate) fn by_typing_words(model: &Changeable, effort: &Changeable) -> Option<String> {
     match (model, effort) {
         (Changeable::ByTyping(model), Changeable::ByTyping(effort)) => Some(format!(
-            "To change the model or effort, type {model} <name> or {effort} <level> in the composer."
+            "Change the model or effort by typing {model} <name> or {effort} <level>."
         )),
-        (Changeable::ByTyping(model), _) => Some(format!(
-            "To change the model, type {model} <name> in the composer."
-        )),
-        (_, Changeable::ByTyping(effort)) => Some(format!(
-            "To change the effort, type {effort} <level> in the composer."
-        )),
+        (Changeable::ByTyping(model), _) => {
+            Some(format!("Change the model by typing {model} <name>."))
+        }
+        (_, Changeable::ByTyping(effort)) => {
+            Some(format!("Change the effort by typing {effort} <level>."))
+        }
         _ => None,
     }
 }

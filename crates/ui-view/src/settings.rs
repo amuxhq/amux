@@ -184,6 +184,198 @@ pub struct CommandView {
     pub source: String,
 }
 
+/// A command the client runs itself, on every kind, and never sends to the
+/// agent: amux's model and effort pickers and amux's rename.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ClientCommand {
+    Model,
+    Effort,
+    Rename,
+}
+
+impl ClientCommand {
+    fn name(self) -> &'static str {
+        match self {
+            ClientCommand::Model => "model",
+            ClientCommand::Effort => "effort",
+            ClientCommand::Rename => "rename",
+        }
+    }
+
+    fn view(self) -> CommandView {
+        let (description, argument_hint) = match self {
+            ClientCommand::Model => ("Choose the model the agent runs", "[model]"),
+            ClientCommand::Effort => ("Choose how hard the model thinks", "[effort]"),
+            ClientCommand::Rename => ("Rename the agent", "<name>"),
+        };
+        CommandView {
+            name: self.name().to_owned(),
+            description: description.to_owned(),
+            argument_hint: argument_hint.to_owned(),
+            source: String::new(),
+        }
+    }
+}
+
+/// The client's own commands this agent offers: the model and effort only
+/// when there is a choice to make (two models listed; two efforts for the
+/// running model, or for any model while the running one is unknown), and
+/// rename always. Terminal Claude has none of the model or effort inputs, so
+/// there its picks are typed as Claude's own commands.
+fn clients_commands(
+    models: &[ModelChoice],
+    current: Option<&ModelChoice>,
+    kind: Kind,
+) -> Vec<ClientCommand> {
+    if kind == Kind::Unspecified {
+        return Vec::new();
+    }
+    let listed = || models.iter().filter(|model| !model.unlisted);
+    let mut own = Vec::new();
+    if listed().count() >= 2 {
+        own.push(ClientCommand::Model);
+    }
+    let efforts = |model: &ModelChoice| model.efforts.len() >= 2;
+    let effort_choice = match current.filter(|model| !model.unlisted) {
+        Some(model) => efforts(model),
+        None => listed().any(efforts),
+    };
+    if effort_choice {
+        own.push(ClientCommand::Effort);
+    }
+    own.push(ClientCommand::Rename);
+    own
+}
+
+/// What a message typed into the composer is, when it starts with "/".
+#[derive(Clone, Debug, PartialEq)]
+pub enum Slash {
+    /// Not a command the client handles: it is sent as typed. Claude runs
+    /// its own commands from the text; anything else is a prompt.
+    Prompt,
+    /// The client's picker for this setting, which a bare command opens.
+    Pick(ClientCommand),
+    /// The client's command with its value: send this input, never the text.
+    Set(wire::Input),
+    /// The client's command with a value it sets by typing the agent's own
+    /// command (terminal Claude takes no model or effort input): send this
+    /// text as typed.
+    Typed(String),
+    /// amux's rename to this name; empty when none was given.
+    Rename(String),
+    /// A command this agent does not run: Codex runs only the commands amux
+    /// implements for it and its skills, and anything else would reach its
+    /// model as words. Refused in the composer, with the commands it does
+    /// run.
+    Refused {
+        command: String,
+        offered: Vec<String>,
+    },
+    /// The client's command names a value the agent does not offer.
+    Unknown {
+        command: ClientCommand,
+        value: String,
+        offered: Vec<String>,
+    },
+}
+
+/// What `text` typed into this chat's composer is: the client's own
+/// command, an agent's command it does not run, or words to send. Only a
+/// first word of a slash and a name (no other slash, so a path is words)
+/// is a command.
+pub fn slash(state: &SessionState, text: &str) -> Slash {
+    let text = text.trim();
+    let Some(rest) = text.strip_prefix('/') else {
+        return Slash::Prompt;
+    };
+    let (name, value) = match rest.split_once(char::is_whitespace) {
+        Some((name, value)) => (name, value.trim()),
+        None => (rest, ""),
+    };
+    let is_name = name
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
+    if !is_name {
+        return Slash::Prompt;
+    }
+    let kind = state.kind();
+    let view = settings(state);
+    let own = [
+        ClientCommand::Model,
+        ClientCommand::Effort,
+        ClientCommand::Rename,
+    ]
+    .into_iter()
+    .find(|own| own.name() == name && view.commands.iter().any(|offered| offered.name == name));
+    match own {
+        Some(ClientCommand::Rename) => Slash::Rename(value.to_owned()),
+        Some(command) if value.is_empty() => Slash::Pick(command),
+        Some(command) => {
+            let (offered, change) = match command {
+                ClientCommand::Model => {
+                    let models = &view.models;
+                    let found = models.iter().find(|model| {
+                        model.value == value || model.display_name.eq_ignore_ascii_case(value)
+                    });
+                    (
+                        models.iter().map(|model| model.value.clone()).collect(),
+                        found.map(|model| SettingChange::Model(model.value.clone())),
+                    )
+                }
+                _ => (
+                    view.efforts
+                        .iter()
+                        .map(|effort| effort.value.clone())
+                        .collect(),
+                    view.efforts
+                        .iter()
+                        .find(|effort| effort.value.eq_ignore_ascii_case(value))
+                        .map(|effort| SettingChange::Effort(effort.value.clone())),
+                ),
+            };
+            let Some(change) = change else {
+                return Slash::Unknown {
+                    command,
+                    value: value.to_owned(),
+                    offered,
+                };
+            };
+            match setting_input(kind, &change) {
+                Some(input) => Slash::Set(input),
+                None => typed_setting(&change).map_or(Slash::Prompt, Slash::Typed),
+            }
+        }
+        None if kind == Kind::Codex
+            && !view.commands.iter().any(|offered| offered.name == name) =>
+        {
+            Slash::Refused {
+                command: name.to_owned(),
+                offered: view
+                    .commands
+                    .iter()
+                    .map(|offered| offered.name.clone())
+                    .collect(),
+            }
+        }
+        None => Slash::Prompt,
+    }
+}
+
+/// A model or effort pick as the agent's own command, for an agent that
+/// changes them only by typing that (terminal Claude); None for any other
+/// setting.
+pub fn typed_setting(change: &SettingChange) -> Option<String> {
+    match change {
+        SettingChange::Model(value) => Some(format!("/model {value}")),
+        SettingChange::Effort(value) => Some(format!("/effort {value}")),
+        _ => None,
+    }
+}
+
 /// What a new agent will start with, by catalogue values. None leaves the
 /// model, effort and permission to the host's defaults, and starts in the
 /// agent's normal mode.
@@ -264,16 +456,24 @@ pub fn settings(state: &SessionState) -> SettingsView {
     let modes = mode_choices(agent.modes.iter(), agent.mode.as_deref());
     let terminal_only =
         |name: &str| kind == Kind::ClaudeSdk && TERMINAL_ONLY_COMMANDS.contains(&name);
-    let commands = agent
-        .commands
+    let own = clients_commands(&models, current_model, kind);
+    let commands = own
         .iter()
-        .filter(|command| !terminal_only(&command.name))
-        .map(|command| CommandView {
-            name: command.name.clone(),
-            description: command.description.clone(),
-            argument_hint: command.argument_hint.clone(),
-            source: command.source.clone(),
-        })
+        .map(|command| command.view())
+        .chain(
+            agent
+                .commands
+                .iter()
+                .filter(|command| !terminal_only(&command.name))
+                // The client's own command of a name wins over the agent's.
+                .filter(|command| !own.iter().any(|own| own.name() == command.name))
+                .map(|command| CommandView {
+                    name: command.name.clone(),
+                    description: command.description.clone(),
+                    argument_hint: command.argument_hint.clone(),
+                    source: command.source.clone(),
+                }),
+        )
         .collect();
     let changeable = match kind {
         // Terminal Claude lists no models or efforts and takes no model,

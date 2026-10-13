@@ -8,6 +8,7 @@
 
 use attachments::PLACEHOLDER;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use unicode_segmentation::UnicodeSegmentation as _;
 use wire::{Attachment, InlineText, attachment};
 
 /// A paste at least this many lines long becomes a text attachment.
@@ -19,7 +20,9 @@ pub const PASTE_TOKEN_CHARS: usize = 1_000;
 pub struct Editor {
     text: String,
     attachments: Vec<Attachment>,
-    /// A byte offset at a char boundary.
+    /// A byte offset at a grapheme boundary: the cursor steps, and
+    /// Backspace removes, whole characters as the person sees them (an
+    /// accented letter, an emoji with its skin tone).
     cursor: usize,
     kill: Option<(String, Vec<Attachment>)>,
     pasted: u32,
@@ -234,16 +237,16 @@ impl Editor {
 
     fn prev(&self, at: usize) -> usize {
         self.text[..at]
-            .char_indices()
+            .graphemes(true)
             .next_back()
-            .map_or(0, |(i, _)| i)
+            .map_or(0, |grapheme| at - grapheme.len())
     }
 
     fn next(&self, at: usize) -> usize {
         self.text[at..]
-            .chars()
+            .graphemes(true)
             .next()
-            .map_or(at, |c| at + c.len_utf8())
+            .map_or(at, |grapheme| at + grapheme.len())
     }
 
     fn line_start(&self, at: usize) -> usize {

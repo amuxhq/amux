@@ -106,3 +106,17 @@ pub fn send_now(kind: Kind, queued_input_id: &[u8]) -> Option<Input> {
 pub fn interrupt(kind: Kind) -> Option<Input> {
     wrap(kind, Act::Interrupt)
 }
+
+/// Takes terminal Claude's own view back to the agent's conversation; None
+/// for a kind whose view cannot switch away.
+pub fn switch_back(kind: Kind) -> Option<Input> {
+    use wire::claude_pty_input::Of;
+    (kind == Kind::ClaudePty).then(|| {
+        Input::new(
+            Vec::new(),
+            wire::ClaudePtyInput {
+                of: Some(Of::SwitchBack(wire::SwitchBack {})),
+            },
+        )
+    })
+}

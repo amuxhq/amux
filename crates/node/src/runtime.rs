@@ -402,6 +402,8 @@ pub struct ProfileRuntime {
     pub(crate) hosts: Mutex<crate::hosts::HostSet>,
     /// The directories this profile's agents were started in.
     recent: Arc<Mutex<crate::repositories::Recent>>,
+    /// This machine's clients' unsent drafts.
+    drafts: Mutex<crate::drafts::Drafts>,
     analytics: analytics::Analytics,
     /// Turns ended since the last check-in.
     turns: crate::telemetry::Turns,
@@ -645,6 +647,7 @@ impl ProfileRuntime {
             replica_blobs: Mutex::new(None),
             hosts: Mutex::new(crate::hosts::HostSet::new()),
             recent: Arc::new(Mutex::new(crate::repositories::Recent::load(&dir))),
+            drafts: Mutex::new(crate::drafts::Drafts::load(&dir)),
             offers: crate::offers::Offers::load(&dir),
             peer_providers: Mutex::new(HashMap::new()),
             dir,
@@ -987,6 +990,17 @@ impl ProfileRuntime {
         })
         .await
         .expect("listing repositories does not panic")
+    }
+
+    /// An agent's unsent draft, as this machine's clients last saved it.
+    pub fn draft(&self, agent_id: &[u8]) -> wire::ComposerDraft {
+        self.drafts.lock().unwrap().get(agent_id)
+    }
+
+    /// Keeps an agent's unsent draft for this machine's clients; an empty
+    /// one forgets it.
+    pub fn save_draft(&self, agent_id: &[u8], draft: &wire::ComposerDraft) {
+        self.drafts.lock().unwrap().save(agent_id, draft);
     }
 
     /// The host a create request is for: the one it names, by id or by name
@@ -1403,6 +1417,7 @@ impl ProfileRuntime {
     pub async fn delete(&self, id: AgentId) -> Result<DeleteAgentResponse, RegistryError> {
         let mut response = DeleteAgentResponse::default();
         self.delete_into(id, &mut response).await?;
+        self.drafts.lock().unwrap().forget(id.as_bytes());
         Ok(response)
     }
 

@@ -274,6 +274,18 @@ impl ClientService for Fleet {
     ) -> Result<Response<wire::DumpReport>, Status> {
         Err(Status::unimplemented("dump"))
     }
+    async fn save_draft(
+        &self,
+        _: Request<wire::SaveDraftRequest>,
+    ) -> Result<Response<wire::Empty>, Status> {
+        Err(Status::unimplemented("save_draft"))
+    }
+    async fn get_draft(
+        &self,
+        _: Request<wire::GetDraftRequest>,
+    ) -> Result<Response<wire::ComposerDraft>, Status> {
+        Err(Status::unimplemented("get_draft"))
+    }
 }
 
 /// A connection the stand-in daemon accepted, which fails its reads and

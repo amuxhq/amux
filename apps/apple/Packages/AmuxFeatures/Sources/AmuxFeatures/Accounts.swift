@@ -373,24 +373,51 @@ public struct YouScreen: View {
 
     /// Appearance is the value, not a page holding it: three words, and the
     /// screen changes under your thumb.
+    /// When the label and the three words do not fit on one line, as at
+    /// the largest text sizes, the words go under the label, and one under
+    /// another if even that is too narrow: a word is never broken.
     private var appearanceRow: some View {
-        HStack(spacing: 12) {
-            Text("Appearance")
-                .designFont(.body, design)
-                .foregroundStyle(design.ink.color)
-            Spacer(minLength: 8)
-            HStack(spacing: 0) {
-                choice("Light", .light)
-                choice("Dark", .dark)
-                choice("System", nil)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                appearanceLabel
+                Spacer(minLength: 8)
+                appearanceChoices
             }
-            .padding(2)
-            .background(Capsule().fill(design.sunken.color))
+            VStack(alignment: .leading, spacing: 8) {
+                appearanceLabel
+                appearanceChoices
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                appearanceLabel
+                VStack(alignment: .leading, spacing: 4) {
+                    choice("Light", .light)
+                    choice("Dark", .dark)
+                    choice("System", nil)
+                }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .accessibilityElement(children: .contain)
         .identified("you.appearance", value: appearance?.rawValue ?? "system")
+    }
+
+    private var appearanceLabel: some View {
+        Text("Appearance")
+            .designFont(.body, design)
+            .foregroundStyle(design.ink.color)
+            .fixedSize()
+    }
+
+    private var appearanceChoices: some View {
+        HStack(spacing: 0) {
+            choice("Light", .light)
+            choice("Dark", .dark)
+            choice("System", nil)
+        }
+        .padding(2)
+        .background(Capsule().fill(design.sunken.color))
     }
 
     /// A switch, not a page: what it sends is described on amux.sh, and the
@@ -420,6 +447,7 @@ public struct YouScreen: View {
             Text(title)
                 .designFont(.caption, design)
                 .foregroundStyle(chosen ? design.ground.color : design.inkMuted.color)
+                .fixedSize()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background {

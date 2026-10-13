@@ -382,6 +382,29 @@ fn x_stops_a_live_agent_and_deletes_only_an_exited_one() {
     );
 }
 
+/// A stop its host could not take is held: the row says it waits for the
+/// host and `x` takes it back instead of asking to stop again.
+#[test]
+fn a_held_stop_reads_on_its_row_and_x_cancels_it() {
+    let mut fleet = home_fleet();
+    let alpha = fleet
+        .agents()
+        .find(|row| row.name == "alpha")
+        .map(ui_state::agent_key)
+        .expect("alpha");
+    fleet.update(ui_state::FleetMsg::HoldStop(alpha.clone()));
+    let mut home = crate::home::Home::default();
+    home_at(&mut home, &fleet, W, H);
+    focus(&mut home, &fleet, "alpha");
+    let screen = home_at(&mut home, &fleet, W, H);
+    assert!(screen.contains("stop held"), "{screen}");
+    let effects = home.key(&fleet, key(KeyCode::Char('x')), false);
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::CancelStop(agent)] if *agent == alpha),
+        "x on a held stop did {effects:?}:\n{screen}"
+    );
+}
+
 /// Decided: the stop window names what a stop will cut. An agent that is
 /// working says so, and one with sub-agents counts them (background jobs
 /// join the sentence once the fleet row carries them), as in "alpha is
@@ -738,6 +761,104 @@ fn enter_on_a_multi_select_with_nothing_ticked_submits_an_empty_pick() {
     );
 }
 
+/// Options ticked on a multi-select and words typed as "Something else"
+/// go to the agent together: the typed words used to replace the ticks.
+#[test]
+fn a_multi_select_sends_its_ticks_with_the_words_typed_as_something_else() {
+    let body = wire::ClaudeSdkSnapshot {
+        asks: vec![wire::Ask {
+            key: "q-1".into(),
+            item_key: "call-q".into(),
+            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+                questions: vec![wire::Question {
+                    header: "Toppings".into(),
+                    question: "Which toppings?".into(),
+                    options: ["Cheese", "Basil", "Olives"]
+                        .map(|label| wire::QuestionOption {
+                            label: label.into(),
+                            ..Default::default()
+                        })
+                        .into(),
+                    multi_select: true,
+                    allow_other: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut state = chat(replies(1, 2));
+    state.update(snapshot(Phase::NeedsYou, body.encode_to_vec(), vec![]));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    screen_of(&mut view, &state, 0, W, H);
+    let mut effects = Vec::new();
+    for code in [KeyCode::Char('1'), KeyCode::Char('3'), KeyCode::Char('4')] {
+        effects.extend(view.key(&state, key(code), theme()));
+    }
+    for c in "pepper".chars() {
+        effects.extend(view.key(&state, key(KeyCode::Char(c)), theme()));
+    }
+    effects.extend(view.key(&state, key(KeyCode::Enter), theme()));
+    let screen = screen_of(&mut view, &state, 0, W, H);
+    let answer = effects
+        .iter()
+        .find_map(|effect| match effect {
+            ChatEffect::Answer(input) => Some(input.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no answer from {effects:?}:\n{screen}"));
+    let Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+        of: Some(wire::claude_sdk_input::Of::Answer(wire::ClaudeAnswer {
+            of: Some(wire::claude_answer::Of::Question(sent)),
+            ..
+        })),
+    })) = answer.decode_body()
+    else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(sent.answers[0].selected, [0, 2], "{screen}");
+    assert_eq!(sent.answers[0].other.as_deref(), Some("pepper"), "{screen}");
+}
+
+/// Terminal Claude's own view on another conversation: the composer's edge
+/// says so and offers the way back, and Ctrl+B takes it.
+#[test]
+fn a_conversation_switched_away_in_claudes_view_offers_switch_back() {
+    let mut state = SessionState::new(
+        fixtures::agent(Kind::ClaudePty),
+        crate::chat::layout::CAP as usize,
+    );
+    state.update(Msg::Connection(ui_state::Connection::Live));
+    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
+        kind: Kind::ClaudePty as i32,
+        body: wire::ClaudePtySnapshot {
+            switched_away_to: Some("another-session".into()),
+            ..Default::default()
+        }
+        .encode_to_vec(),
+        phase: Phase::Idle as i32,
+        ..wire::Snapshot::default()
+    })));
+    state.update(caught_up(0));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    let screen = screen_of(&mut view, &state, 0, W, H);
+    assert!(
+        screen.contains("switched to another conversation") && screen.contains("ctrl+b"),
+        "{screen}"
+    );
+    let effects = view.key(
+        &state,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        theme(),
+    );
+    assert!(
+        matches!(effects.as_slice(), [ChatEffect::SwitchBack]),
+        "ctrl+b did {effects:?}"
+    );
+}
+
 /// Up in an empty composer with nothing queued recalls this chat's last
 /// sent prompt: there was no way to send an earlier prompt again without
 /// retyping it.
@@ -781,15 +902,17 @@ fn leader_o_with_nothing_focused_opens_the_newest_fold() {
     );
 }
 
-/// Decided: an attachment larger than 64 MB (ATTACHMENT_SIZE_LIMIT) is
-/// refused before upload in plain words naming the limit; it went up and
-/// failed with "h2 protocol error".
+/// Decided: an attachment larger than the limit (ATTACHMENT_SIZE_LIMIT,
+/// 64 MiB of the file's bytes, worded "64 MB") is refused before upload in
+/// plain words naming the limit; it went up and failed with "h2 protocol
+/// error". 64 MiB and one byte is the first size refused.
 #[test]
 fn a_file_over_the_attachment_limit_is_refused_naming_the_limit() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("t65m.bin");
     let file = std::fs::File::create(&path).unwrap();
-    file.set_len(64_000_001).unwrap();
+    file.set_len(wire::ATTACHMENT_SIZE_LIMIT as u64 + 1)
+        .unwrap();
     drop(file);
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let result = view.paste(ClipboardContent::Path(path));

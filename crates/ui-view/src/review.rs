@@ -76,11 +76,7 @@ pub fn review_doc(diff: &Diff, patch: &str, comments: &[ReviewComment]) -> Revie
     let mut new_line = 0;
     for line in patch.lines() {
         if let Some(rest) = line.strip_prefix("diff --git ") {
-            let path = rest
-                .rsplit_once(" b/")
-                .map(|(_, path)| path)
-                .unwrap_or(rest)
-                .to_owned();
+            let path = new_path(rest);
             doc.files.push(ReviewFile {
                 path,
                 ..ReviewFile::default()
@@ -97,9 +93,9 @@ pub fn review_doc(diff: &Diff, patch: &str, comments: &[ReviewComment]) -> Revie
                 file.status = FileStatus::Deleted;
             } else if let Some(from) = line.strip_prefix("rename from ") {
                 file.status = FileStatus::Renamed;
-                file.old_path = Some(from.to_owned());
+                file.old_path = Some(git_path(from));
             } else if let Some(to) = line.strip_prefix("rename to ") {
-                file.path = to.to_owned();
+                file.path = git_path(to);
             } else if line.starts_with("Binary files ") {
                 file.binary = true;
             }
@@ -176,6 +172,80 @@ pub fn review_doc(diff: &Diff, patch: &str, comments: &[ReviewComment]) -> Revie
     doc.added = doc.files.iter().map(|file| file.added).sum();
     doc.removed = doc.files.iter().map(|file| file.removed).sum();
     doc
+}
+
+/// The new side's path from a `diff --git a/… b/…` header, as it is on
+/// disk: git quotes it when it must (see [`git_path`]), else it follows the
+/// last " b/". A rename names its paths again on their own lines.
+fn new_path(header: &str) -> String {
+    match header.rfind(" \"b/") {
+        Some(at) => {
+            let path = git_path(&header[at + 1..]);
+            path.strip_prefix("b/").unwrap_or(&path).to_owned()
+        }
+        None => header
+            .rsplit_once(" b/")
+            .map(|(_, path)| path)
+            .unwrap_or(header)
+            .to_owned(),
+    }
+}
+
+/// A path as git writes it in a patch. Git quotes a path holding a quote,
+/// a backslash, a control character or (by default) any byte past ASCII,
+/// writing those as C escapes and octal bytes (`"we ird\"\303\251.txt"`);
+/// unquoted, the path is the text as it is.
+fn git_path(text: &str) -> String {
+    let Some(quoted) = text.strip_prefix('"') else {
+        return text.to_owned();
+    };
+    let mut bytes = Vec::new();
+    let mut chars = quoted.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return String::from_utf8_lossy(&bytes).into_owned(),
+            '\\' => match chars.next() {
+                Some(digit @ '0'..='7') => {
+                    let mut value = digit as u32 - '0' as u32;
+                    for _ in 0..2 {
+                        let rest = chars.as_str();
+                        match rest.chars().next() {
+                            Some(next @ '0'..='7') => {
+                                value = value * 8 + (next as u32 - '0' as u32);
+                                chars.next();
+                            }
+                            _ => break,
+                        }
+                    }
+                    bytes.push(value as u8);
+                }
+                Some(escaped) => {
+                    let byte = match escaped {
+                        'a' => 0x07,
+                        'b' => 0x08,
+                        'f' => 0x0c,
+                        'n' => b'\n',
+                        'r' => b'\r',
+                        't' => b'\t',
+                        'v' => 0x0b,
+                        other => {
+                            let mut buf = [0; 4];
+                            bytes.extend_from_slice(other.encode_utf8(&mut buf).as_bytes());
+                            continue;
+                        }
+                    };
+                    bytes.push(byte);
+                }
+                None => break,
+            },
+            c => {
+                let mut buf = [0; 4];
+                bytes.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+            }
+        }
+    }
+    // No closing quote: the text was not a quoted path after all.
+    text.to_owned()
 }
 
 /// "-12,7 +12,9 @@ …" → (12, 12).

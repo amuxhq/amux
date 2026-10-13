@@ -584,3 +584,80 @@ async fn a_chat_on_screen_fetches_its_catalogue_once_per_hash_and_home_never_doe
     assert_eq!(models(&reopened), ["gpt-2"]);
     calls.none().await;
 }
+
+fn inventory_host(presence: wire::Presence) -> wire::InventoryEvent {
+    wire::InventoryEvent {
+        of: Some(wire::inventory_event::Of::Host(wire::HostEntry {
+            host_id: b"host-a".to_vec(),
+            name: "desk".into(),
+            presence: presence as i32,
+            ..Default::default()
+        })),
+    }
+}
+
+/// A stop whose host cannot be reached never left: the fleet holds it,
+/// the agent's row says so, and it goes once the host is seen back. One
+/// cancelled before then never goes.
+#[tokio::test]
+async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back() {
+    let clock = ManualClock::new(0);
+    let (client, mut calls) = runtime();
+    let open = tokio::spawn(Fleet::connect(client, clock.clone()));
+    let feed = calls.inventory().await;
+    feed.send(inventory_host(wire::Presence::Online));
+    feed.send(inventory_agent(named(b"a")));
+    feed.send(inventory_caught_up());
+    let fleet = Arc::new(open.await.unwrap().expect("the fleet opens"));
+    let mut streams = Streams::default();
+    streams.answer(&mut calls).await;
+    let key = AgentKey {
+        host: b"host-a".to_vec(),
+        agent: b"a".to_vec(),
+    };
+    let stopping = tokio::spawn({
+        let fleet = fleet.clone();
+        let key = key.clone();
+        async move { fleet.stop(&key).await }
+    });
+    let (request, reply) = calls.stop().await;
+    assert_eq!(request.agent_id, b"a");
+    reply
+        .send(Err(client::RpcError::Refused(wire::Error {
+            code: wire::ErrorCode::Unavailable as i32,
+            message: "desk cannot be reached".into(),
+            details: Vec::new(),
+        })))
+        .ok();
+    assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Stop::Held);
+    assert!(fleet.state().stop_held(&key), "the row shows the stop held");
+
+    // The host goes and comes back: the stop goes again.
+    feed.send(inventory_host(wire::Presence::Away));
+    feed.send(inventory_host(wire::Presence::Online));
+    let (request, reply) = calls.stop().await;
+    assert_eq!(request.agent_id, b"a");
+    reply.send(Ok(())).ok();
+    until(fleet.changed(), || (!fleet.state().stop_held(&key)).then_some(())).await;
+
+    // Cancelled while held, it never goes.
+    let stopping = tokio::spawn({
+        let fleet = fleet.clone();
+        let key = key.clone();
+        async move { fleet.stop(&key).await }
+    });
+    let (_, reply) = calls.stop().await;
+    reply
+        .send(Err(client::RpcError::Refused(wire::Error {
+            code: wire::ErrorCode::Unavailable as i32,
+            message: "desk cannot be reached".into(),
+            details: Vec::new(),
+        })))
+        .ok();
+    assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Stop::Held);
+    fleet.cancel_stop(&key);
+    feed.send(inventory_host(wire::Presence::Away));
+    feed.send(inventory_host(wire::Presence::Online));
+    calls.none().await;
+    assert!(!fleet.state().stop_held(&key));
+}

@@ -22,6 +22,9 @@
   mode  "default" "Default" normal
   mode  "plan" "Plan"
   changes: model Pick · effort Pick · permission Pick · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
+  command /rename source="" hint="<name>" "Rename the agent"
   command /compact source="codex" hint="" "Summarize the conversation to free up context"
   command /clear source="codex" hint="" "Start a new conversation"
   command /review source="codex" hint="[instructions]" "Review the uncommitted changes, or what the instructions say"

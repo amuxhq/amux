@@ -370,7 +370,7 @@ public enum ChatWords {
     public static func subject(of row: Row) -> String? {
         switch row.kind {
         case .command(let command, _, _, _, _, _, _, _): firstLine(command)
-        case .explore(_, let subject, _): subject
+        case .explore(_, let subject, _, _): subject
         case .toolCall(let server, let tool, _, _, _): server.isEmpty ? tool : "\(server) · \(tool)"
         case .fileChange(let files, _): files.first?.path
         case .subagent(let description, _, _, _, _, _): firstLine(description)
@@ -392,18 +392,19 @@ public enum ChatWords {
                 : String(localized: "Message \(agent)")
         case .resume?:
             return String(localized: "\(agent) has exited · a message resumes it")
-        case .disabled(.catchingUp)?:
-            return String(localized: "Catching up · your draft is kept")
-        case .disabled(.reconnecting)?:
-            return String(localized: "Reconnecting · your draft is kept")
-        case .disabled(.detached)?:
+        // Not current: a message sent now is held and goes when the chat is.
+        case .holds(.catchingUp)?:
+            return String(localized: "Catching up · sends once caught up")
+        case .holds(.reconnecting)?:
+            return String(localized: "Reconnecting · sends when \(host) is back")
+        case .holds(.detached)?:
             switch away {
             case .revoked?:
                 return String(localized: "\(host) no longer trusts this phone · your draft is kept")
             case .signedOut?:
                 return String(localized: "This phone is signed out · your draft is kept")
             default:
-                return String(localized: "\(host) is out of reach · your draft is kept")
+                return String(localized: "\(host) is out of reach · sends when back")
             }
         }
     }
@@ -421,6 +422,18 @@ public enum ChatWords {
         case .sending(waiting: false): String(localized: "sending")
         case .sending(waiting: true): String(localized: "waiting for \(host)…")
         case .mayNotHaveArrived: String(localized: "may not have arrived")
+        case .held: String(localized: "held · sends when \(host) is back")
+        }
+    }
+
+    /// Where one file starts in a patch of several: its path, and what
+    /// happens to it when that is more than an edit.
+    public static func fileHeader(_ file: FileRow) -> String {
+        switch file.change {
+        case .created: String(localized: "\(file.path) (new file)")
+        case .deleted: String(localized: "\(file.path) (deleted)")
+        case .moved(let to): String(localized: "\(file.path) → \(to)")
+        case .edited, .writing: file.path
         }
     }
 
@@ -547,6 +560,32 @@ public enum ChatWords {
             case .ended: return String(localized: "exited")
             case .failed(let cause): return String(localized: "exited · \(cause)")
             }
+        }
+    }
+
+    /// What stopping an agent cuts, as the stop confirm asks it: "desk-1 is
+    /// working and has 2 background jobs and 1 sub-agent. Stop anyway?" Nil
+    /// when a stop cuts nothing under way, for the plain confirm.
+    public static func stopCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
+        var held: [String] = []
+        if jobs > 0 {
+            held.append(jobs == 1 ? String(localized: "1 background job") : String(localized: "\(jobs) background jobs"))
+        }
+        if subAgents > 0 {
+            held.append(subAgents == 1 ? String(localized: "1 sub-agent") : String(localized: "\(subAgents) sub-agents"))
+        }
+        let has = held.joined(separator: String(localized: " and "))
+        switch phase {
+        case .working?:
+            return has.isEmpty
+                ? String(localized: "\(name) is working. Stop anyway?")
+                : String(localized: "\(name) is working and has \(has). Stop anyway?")
+        case .needsYou?:
+            return has.isEmpty
+                ? String(localized: "\(name) needs you mid-turn. Stop anyway?")
+                : String(localized: "\(name) needs you mid-turn and has \(has). Stop anyway?")
+        default:
+            return has.isEmpty ? nil : String(localized: "\(name) has \(has). Stop anyway?")
         }
     }
 

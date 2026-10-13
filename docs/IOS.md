@@ -83,9 +83,38 @@ only what changed. A chat is a `ChatModel` over an open `Chat`:
 - The whole list is read again only when a change batch says it was reloaded,
   which is what a Reset's swap and the reload of a head that moved on do: the
   rows on screen stay until the rebuilt transcript replaces them.
-- It keeps the draft, attachments, the head ask's unsent answers and a review
-  in progress for as long as the chat is open, so leaving the page loses none
-  of them.
+- It keeps the head ask's unsent answers and a review in progress for as
+  long as the chat is open, so leaving the page loses none of them. The
+  draft and its attachments last longer: `DraftShelf` keeps each one on the
+  phone, per account and agent, as it changes, so a draft outlives its
+  chat's session and the app being closed. Drafts never leave the device,
+  and removing an account from the phone forgets its drafts.
+- An attachment is checked against the stated limit, 64 MB of content
+  (`wire::ATTACHMENT_SIZE_LIMIT`, copied as `ChatModel.attachmentLimit`),
+  before anything is read or uploaded, and one over it is refused in words
+  naming the file and the limit. One that fails to store is named with the
+  reason in the chat's notice.
+- A send while the chat is not current (catching up, reconnecting, or its
+  host out of reach) is handed to the client library rather than refused:
+  Send stays enabled, the field says when the message goes, and the library
+  holds the prompt, answer or stop and sends it, with the same id, once the
+  host can be reached. A held prompt is drawn pending with "held · sends
+  when desk is back" and a Cancel that returns its words to the draft; a held
+  answer shows on the ask card with Cancel; a held stop shows under the
+  chat's header and on the agent's home row, and the chat's menu offers
+  Cancel Stop.
+- A draft starting with `/` goes to the library's client commands first:
+  what the library runs itself (opening settings, renaming, choosing a
+  model) happens on the phone, a word the agent does not take is refused in
+  words naming what it does take, and anything else is sent to the agent as
+  typed.
+- When terminal Claude's own view resumes another conversation, the chat
+  says so above the composer ("Claude's own view switched to another
+  conversation") with Switch Back, which asks the library to return that
+  view to this chat.
+- A multi-select question sends the options ticked and any words typed as
+  "Something else" together; typing does not untick anything. A
+  single-choice question sends one or the other.
 
 A bundle keeps every chat a page shows open, plus chats viewed in the last
 five minutes, plus a chat a push is bringing current.
@@ -160,6 +189,13 @@ The app declares `_amux._udp` in `NSBonjourServices` and explains the
 local-network permission as "amux finds hosts on your network so this phone
 can pair and connect to them directly." When access is denied, the Hosts tab
 says so, lists no machine and offers the Settings route.
+
+Tapping a host on the Hosts tab opens its page: how the phone reaches it,
+its platform, version, providers and addresses, the last dial error while it
+is offline, and its key's fingerprint in full. The page and the Devices sheet
+both offer Revoke, and both ask first, saying the phone stops reaching the
+machine and only pairing again brings it back. Every route the shell can
+push has a built page; `RoutePagesTests` opens each one.
 
 ## Foreground, background and pushes
 
@@ -420,6 +456,16 @@ failure, never a flaky one. These in-process images say nothing about system
 chrome, keyboards, scrolling or layering between screens; those belong to the
 goldens and journeys.
 
+Examples whose ids end in `-large-text` are drawn at an accessibility text
+size (accessibility3, accessibility5 for the question card). For these the
+suite also reads the window's accessibility tree, which a SwiftUI screen
+builds only while something reads it, so the suite turns on the automation
+reading that UI test drivers use. It fails when one piece of text is drawn
+over another, or when a control reaches more than a thumb target's slack
+past the canvas. The tree combines a row's words into one element, so this
+check finds text overprinting text and controls cut off. It does not find
+words clipped inside a single element. The pictures cover that case.
+
 ### Whole-screen goldens
 
 ```sh
@@ -434,8 +480,10 @@ sentence saying what it shows. `components` is every example the component
 catalogue pins, and the snapshot suite checks that the two name the same
 pictures. `screens` is the handful of whole screens the phone is held to:
 pairing, hosts, the fleet, a chat with its strip, a question ask, the way out
-of an ask the phone cannot answer, and a chat through its host's power loss
-before and after the swap.
+of an ask the phone cannot answer, the screens read most at accessibility3
+(`large-text`: the fleet, hosts, You, New Agent, a chat and a docked
+question), and a chat through its host's power loss before and after the
+swap.
 
 `scripts/ios-goldens.py` reaches every screen the way a person does. It
 serves `journeys/topologies/phone-goldens.json`, installs the debug app
@@ -519,6 +567,28 @@ prose are judged on their name only and listed in the record, which lands in
 `just ios loopback-smoke` links the driving bridge from a bare Swift
 executable, pairs it with a served machine by the link that machine prints,
 and reads the machine and its agents back.
+
+## Large text
+
+At accessibility text sizes the phone reflows rather than cuts:
+
+- A docked ask card is never taller than the chat less its header and a
+  48-point glimpse of the feed. Past that, its subject and choices scroll
+  under its answer buttons, which stay pinned at the foot of the card. Two
+  buttons that do not fit side by side stack.
+- A settings row (`FieldRow`) puts its value under its label and wraps it.
+  The Appearance control goes under its label, one choice under another if
+  it must, and never breaks a word.
+- The Agents header puts the account disc and New Agent on a line above the
+  title, with the subtitle's facts one to a line. A row's second line keeps
+  two lines, and its place keeps one line and loses its middle.
+- New Agent puts the back link above the title, and its last row always
+  scrolls clear of the Start bar, whose height it measures.
+- The chat header pill stops growing at the largest ordinary size, as the
+  system's own bars do. A tap shows the place in full. The composer's model
+  chip gets a line of its own and wraps.
+- A step row stacks its verb, its subject (two lines, cut in the middle) and
+  its counts, so a file keeps its name.
 
 ## Copy
 
@@ -611,7 +681,10 @@ stacks the rows by height, measures a row with one hidden hosting view
 when it first comes within a screen of view (as if photographed, so a row
 that parses its markdown on a background task is measured at its final
 shape), and forgets a height only when the model says that row was read
-again, the width changes or the environment does. UIKit's self-sizing was
+again, the width changes or the environment does. The list reports no safe
+area to its cells: it runs under the status bar, the header and the home
+indicator, and a hosted cell passing under them took their insets as
+padding and drew taller than it was placed, over the row below. UIKit's self-sizing was
 tried first and measured out: it measures from estimates on demand, keeps
 what it measured by index path, animates each result, and measures every
 cell on screen again whenever one moves, which under the stream at the
@@ -643,7 +716,8 @@ What the leaf owns, and what stays in `ChatModel`:
   at the same position on screen before anything is drawn, so nothing the
   reader is looking at moves. A reader following the newest row is kept at
   the bottom in every layout pass instead: rows arriving, rows measured,
-  the keyboard or a card changing the space. `ChatFeedTests` holds rows
+  the keyboard, a notice or a card changing the space under the rows.
+  `ChatFeedTests` holds rows
   still to the pixel under a landing page and under arrivals, holds the
   bottom while following, and shows a streamed chat exactly as the same
   rows open.

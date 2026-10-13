@@ -371,8 +371,11 @@ fn send_now_marks_a_queued_prompt_steered_until_its_reflection() {
     }
 }
 
+/// A prompt refused because its host could not be reached certainly never
+/// left: it is held, never uncertain, and goes again under its own id once
+/// the chat has caught up again.
 #[test]
-fn a_host_unreachable_rejection_is_never_uncertain() {
+fn a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up() {
     for kind in KINDS {
         let mut state = live(kind, Phase::Idle, &[]);
         apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
@@ -380,12 +383,20 @@ fn a_host_unreachable_rejection_is_never_uncertain() {
             &mut state,
             Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::HostUnreachable)),
         );
-        assert_eq!(
-            state.input_state(b"p1"),
-            Some(InputState::Rejected(Refusal::of(
-                RefusalReason::HostUnreachable
-            )))
-        );
+        assert_eq!(state.input_state(b"p1"), Some(InputState::Held));
         assert_eq!(state.not_confirmed().count(), 0);
+        assert_eq!(state.held().count(), 1);
+        let outcome = apply_checked(
+            &mut state,
+            Msg::Event(wire::SessionEvent {
+                of: Some(wire::session_event::Of::CaughtUp(wire::CaughtUp::default())),
+            }),
+        );
+        assert_eq!(
+            outcome.resend.iter().map(|input| input.input_id.clone()).collect::<Vec<_>>(),
+            vec![b"p1".to_vec()],
+            "caught up, the held prompt goes again under its id"
+        );
+        assert_eq!(state.input_state(b"p1"), Some(InputState::Sent));
     }
 }

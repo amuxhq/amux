@@ -21,6 +21,7 @@ use crate::theme::Theme;
 const W: u16 = 100;
 const H: u16 = 30;
 
+mod narrow;
 mod round2;
 mod text_layout;
 
@@ -494,7 +495,7 @@ fn every_ask_body_draws_in_the_box_with_the_way_to_stop() {
         let screen = text(&buffer);
         assert!(screen.contains("╭"), "{label}: {screen}");
         assert_eq!(
-            screen.contains("ctrl+x stop"),
+            screen.contains("ctrl+x interrupt"),
             card.stops_turn,
             "{label}: {screen}"
         );
@@ -579,7 +580,7 @@ fn an_unanswerable_ask_offers_the_terminal_and_stop() {
     let screen = text(&buffer);
     assert!(screen.contains("Can't answer this here"), "{screen}");
     assert!(screen.contains("Open Claude's terminal"), "{screen}");
-    assert!(screen.contains("ctrl+x stop"), "{screen}");
+    assert!(screen.contains("ctrl+x interrupt"), "{screen}");
     assert_eq!(
         view.key(&state, key(KeyCode::Enter), theme()),
         vec![ChatEffect::RawAttach]
@@ -750,8 +751,11 @@ fn an_unconfirmed_answer_offers_resend_and_discard() {
 
 // --- the composer ----------------------------------------------------------
 
+/// A draft is taken at any time, and Enter always hands it on: while the
+/// chat is not yet current the client library holds it, pending, and sends
+/// it once the chat catches up.
 #[test]
-fn a_draft_is_taken_any_time_and_sent_only_when_caught_up_and_live() {
+fn a_draft_is_taken_any_time_and_held_until_the_chat_is_current() {
     let mut state = SessionState::new(
         fixtures::agent(Kind::ClaudeSdk),
         crate::chat::layout::CAP as usize,
@@ -760,12 +764,8 @@ fn a_draft_is_taken_any_time_and_sent_only_when_caught_up_and_live() {
     state.update(snapshot(Phase::Idle, vec![], vec![]));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     typed(&mut view, &state, "hello");
-    assert!(view.key(&state, key(KeyCode::Enter), theme()).is_empty());
-    assert_eq!(view.editor.text(), "hello");
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     assert!(text(&buffer).contains("catching up"), "{}", text(&buffer));
-
-    state.update(caught_up(0));
     let effects = view.key(&state, key(KeyCode::Enter), theme());
     assert_eq!(
         effects,
@@ -775,6 +775,29 @@ fn a_draft_is_taken_any_time_and_sent_only_when_caught_up_and_live() {
         }]
     );
     assert!(view.editor.is_empty());
+    // The library holds it, pending, while the chat catches up.
+    let held = wire::Input::new(
+        b"held-1".to_vec(),
+        wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+            of: Some(wire::claude_sdk_input::Of::Prompt(wire::PromptInput {
+                text: "hello".into(),
+                attachments: vec![],
+            })),
+        }),
+    );
+    state.update(Msg::Send(held));
+    assert_eq!(
+        state.input_state(b"held-1"),
+        Some(ui_state::InputState::Held)
+    );
+    let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
+    assert!(
+        text(&buffer).contains("sends when"),
+        "the held prompt shows pending: {}",
+        text(&buffer)
+    );
+    let outcome = state.update(caught_up(0));
+    assert_eq!(outcome.resend.len(), 1, "caught up, it goes");
 }
 
 #[test]
@@ -919,12 +942,15 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
         })
     );
     typed(&mut view, &state, "see ");
-    view.attach_blob(wire::BlobRef {
-        hash: vec![7; 32],
-        name: "shot.png".into(),
-        mime: "image/png".into(),
-        size: 9,
-    });
+    view.attach_blob(
+        &state,
+        wire::BlobRef {
+            hash: vec![7; 32],
+            name: "shot.png".into(),
+            mime: "image/png".into(),
+            size: 9,
+        },
+    );
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     assert!(
         text(&buffer).contains("see [shot.png · 9 B]"),
@@ -1012,7 +1038,7 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("Draft kept · sending waits until this machine signs in"),
+        screen.contains("it sends once this machine signs in"),
         "{screen}"
     );
 
@@ -1112,10 +1138,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         screen.contains("desk no longer trusts this machine"),
         "{screen}"
     );
-    assert!(
-        screen.contains("sending waits until you pair again"),
-        "{screen}"
-    );
+    assert!(screen.contains("it sends once you pair again"), "{screen}");
 }
 
 #[test]
@@ -1310,13 +1333,14 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
     let refusal = |agent: &wire::Agent| crate::app::terminal_refusal(agent, &config);
     assert_eq!(refusal(&agent(b"a", Kind::ClaudePty)), None);
     assert_eq!(refusal(&agent(b"a", Kind::Codex)), None);
-    assert!(refusal(&agent(b"a", Kind::ClaudeSdk)).is_some_and(|why| why.contains("its chat")));
-    // Every agent on another host opens its chat with the same notice:
-    // raw attach reads the agent's directory on this machine.
+    assert!(refusal(&agent(b"a", Kind::ClaudeSdk)).is_some_and(|why| why.contains("no terminal")));
+    // Every agent on another host is refused with the same reason: raw
+    // attach reads the agent's directory on this machine. Home adds that
+    // Enter opens its chat; a chat does not, since Enter there sends.
     for kind in [Kind::ClaudePty, Kind::Codex, Kind::ClaudeSdk] {
         assert_eq!(
             refusal(&agent(b"b", kind)),
-            Some("its terminal is on another machine; enter opens its chat"),
+            Some("its terminal is on another machine"),
         );
     }
 }
@@ -2493,7 +2517,8 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     );
     home.key(&fleet, key(KeyCode::Char('k')), false);
     home_screen(&mut home, &fleet, theme());
-    // The × stops, after asking.
+    // The × stops, after asking; beta is working, so the window says the
+    // stop cuts its turn, and Enter on the focused [Stop] confirms.
     let effects = home.mouse(
         &fleet,
         mouse(MouseEventKind::Down(MouseButton::Left), W - 5, beta),
@@ -2501,8 +2526,8 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     );
     assert!(effects.is_empty());
     let screen = home_screen(&mut home, &fleet, theme());
-    assert!(screen.contains("Stop beta?"), "{screen}");
-    let effects = home.key(&fleet, key(KeyCode::Char('y')), false);
+    assert!(screen.contains("beta is working. Stop anyway?"), "{screen}");
+    let effects = home.key(&fleet, key(KeyCode::Enter), false);
     assert!(matches!(effects.as_slice(), [FleetEffect::Stop(agent)] if agent.agent == b"w2"));
 }
 
@@ -3619,11 +3644,11 @@ fn the_keys_under_the_composer_follow_what_is_happening() {
         !keys.contains("attach") && !keys.contains("review"),
         "{keys}"
     );
-    // Working: Enter queues, and stopping is at hand.
+    // Working: Enter queues, and interrupting is at hand.
     state.update(snapshot(Phase::Working, vec![], vec![]));
     let keys = keys_of(&feed(&mut view, &state).0);
     assert!(keys.contains("enter queue"), "{keys}");
-    assert!(keys.contains("ctrl+x stop"), "{keys}");
+    assert!(keys.contains("ctrl+x interrupt"), "{keys}");
     // Exited: Enter resumes.
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
@@ -3930,10 +3955,10 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
             let screen = text(&buffer);
             assert!(screen.contains("Plan"), "{name} {when}:\n{screen}");
             // Codex proposes its plan as its turn ends, so there is no turn
-            // to stop; Claude asks mid-turn.
+            // to interrupt; Claude asks mid-turn.
             if when == "open" {
                 assert_eq!(
-                    screen.contains("ctrl+x stop"),
+                    screen.contains("ctrl+x interrupt"),
                     kind != Kind::Codex,
                     "{name}:\n{screen}"
                 );

@@ -40,6 +40,8 @@ public enum FleetWords {
                 String(localized: "Usage limit reached · resets \(ChatWords.resets(at, now: now))"),
                 .warning)
         case .exited(.failed(let cause)): return (cause, .error)
+        case .hostRevoked:
+            return (String(localized: "Its host no longer trusts this phone · pair again to reach it"), .warning)
         case .exited(.finished), .exited(.ended), .hostAway, .blank: return nil
         }
     }

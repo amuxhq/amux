@@ -45,6 +45,26 @@ public protocol ChatSource: AnyObject, Sendable {
     /// Fetches the files changed for `comparison`; `overview()` lists them
     /// from then on.
     func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure>
+    /// Runs a draft that names a command the client runs itself (`/model`,
+    /// `/effort`, `/rename`) or one the agent does not run; `.send` says to
+    /// send it as typed.
+    func command(_ draft: Draft) async -> CommandOutcome?
+    /// Brings terminal Claude's own view back to this agent's conversation.
+    func switchBack() async -> ActOutcome?
+}
+
+extension ChatSource {
+    /// A source with no client commands of its own sends every draft.
+    public func command(_ draft: Draft) async -> CommandOutcome? { .send }
+    /// A source whose agent never leaves its conversation has nothing to
+    /// switch back to.
+    public func switchBack() async -> ActOutcome? { .done }
+}
+
+/// What a client command asks of the screen: a picker or the rename card.
+public enum ChatAsk: Equatable, Sendable {
+    case settings
+    case rename
 }
 
 /// One row of the list, held by its key. A cell observes only its own row,
@@ -161,8 +181,15 @@ public final class ChatModel {
     /// Bumped whenever the list should go to its newest row: a swap, a send,
     /// or the reader asking.
     public private(set) var toNewest = 0
-    public var draft = ""
-    public private(set) var attachments: [DraftAttachment] = []
+    public var draft = "" {
+        didSet { if draft != oldValue { keepDraft() } }
+    }
+    public private(set) var attachments: [DraftAttachment] = [] {
+        didSet { if attachments != oldValue { keepDraft() } }
+    }
+    /// Told the draft as it stands each time it changes, so it can be kept
+    /// past the session and the app: the phone's drafts live on the device.
+    @ObservationIgnored public var keeping: (@MainActor (Draft) -> Void)?
     /// Attachments still being stored.
     public private(set) var uploading = 0
     /// A send or resume on its way.
@@ -586,9 +613,15 @@ public final class ChatModel {
 
     /// Sending waits for the rows to be current and the agent live; the draft
     /// never does.
+    /// A chat that is not current still sends: the library holds the
+    /// prompt, drawn pending with Cancel, and sends it once it is.
     public var canSend: Bool {
-        guard let frame, frame.caughtUp, !sending, uploading == 0 else { return false }
-        return frame.composer.mode == .send && hasDraft
+        guard let frame, !sending, uploading == 0, hasDraft else { return false }
+        switch frame.composer.mode {
+        case .send: return frame.caughtUp
+        case .holds: return true
+        default: return false
+        }
     }
 
     public var canResume: Bool {
@@ -607,9 +640,86 @@ public final class ChatModel {
         Draft(words: draft, attachments: attachments)
     }
 
+    /// Something a command the client runs asked the screen to open; the
+    /// screen opens it and clears this.
+    public var asks: ChatAsk?
+
     public func send() {
         guard canSend else { return }
         dictation.stop()
+        if draft.trimmingCharacters(in: .whitespaces).hasPrefix("/") {
+            runCommand(composed)
+            return
+        }
+        sendAsTyped()
+    }
+
+    /// A draft that starts with "/" goes to the client library first: its
+    /// own commands run here and never reach the agent, and one the agent
+    /// does not run is refused with the draft kept.
+    private func runCommand(_ typed: Draft) {
+        sending = true
+        notice = nil
+        Task {
+            let outcome = await source.command(typed)
+            sending = false
+            switch outcome {
+            case .send?:
+                if composed == typed { sendAsTyped() }
+                return
+            case .pick?:
+                if composed == typed { clearDraft() }
+                asks = .settings
+            case .askName?:
+                if composed == typed { clearDraft() }
+                asks = .rename
+            case .acted(let acted)?:
+                switch acted {
+                case .done, .held: if composed == typed { clearDraft() }
+                case .rejected(let reason): notice = Self.notSent(reason)
+                case .failed(let reason): notice = reason
+                case .notConfirmed: notice = Self.notConfirmed
+                }
+            case .sent?:
+                if composed == typed { clearDraft() }
+                setFollowing(true)
+                toNewest += 1
+            case .refused(let command, let offered)?:
+                notice = Self.refused(command: command, offered: offered, kind: frame?.kind)
+            case .unknown(let command, let value, let offered)?:
+                notice = Self.unknown(command, value: value, offered: offered)
+            case nil:
+                notice = Self.closed
+            }
+            woke()
+        }
+    }
+
+    /// "Codex does not run /status here. It runs /compact, /clear and its skills."
+    static func refused(command: String, offered: [String], kind: Kind?) -> String {
+        let name = command.hasPrefix("/") ? command : "/" + command
+        let agent = kind == .codex ? "Codex" : String(localized: "This agent")
+        let runs = offered.map { $0.hasPrefix("/") || $0.hasPrefix("$") ? $0 : "/" + $0 }
+        guard !runs.isEmpty else { return String(localized: "\(agent) does not run \(name) here.") }
+        return String(localized: "\(agent) does not run \(name) here. It runs \(runs.joined(separator: ", ")).")
+    }
+
+    /// "No model named fast. It offers sonnet, opus."
+    static func unknown(_ command: ClientCommand, value: String, offered: [String]) -> String {
+        let list = offered.joined(separator: ", ")
+        switch command {
+        case .effort:
+            return offered.isEmpty
+                ? String(localized: "No effort level named \(value).")
+                : String(localized: "No effort level named \(value). It offers \(list).")
+        default:
+            return offered.isEmpty
+                ? String(localized: "No model named \(value).")
+                : String(localized: "No model named \(value). It offers \(list).")
+        }
+    }
+
+    private func sendAsTyped() {
         let sent = composed
         clearDraft()
         sending = true
@@ -643,6 +753,10 @@ public final class ChatModel {
                 if composed == sent { clearDraft() }
                 setFollowing(true)
                 toNewest += 1
+            // The library holds it until the host is back, drawn pending
+            // with Cancel; the draft has gone with it.
+            case .held?:
+                if composed == sent { clearDraft() }
             case .rejected(let reason)?: notice = Self.notSent(reason)
             case .failed(let reason)?: notice = reason
             case .notConfirmed?: notice = Self.notConfirmed
@@ -766,6 +880,16 @@ public final class ChatModel {
         attachments = []
     }
 
+    /// Puts back a draft kept from an earlier session, ahead of anything
+    /// typed since.
+    public func reopen(_ kept: Draft) {
+        restore(kept)
+    }
+
+    private func keepDraft() {
+        keeping?(composed)
+    }
+
     private func restore(_ sent: Draft) {
         let words = sent.words
         if draft.isEmpty {
@@ -776,8 +900,27 @@ public final class ChatModel {
         attachments = (sent.attachments ?? []) + attachments
     }
 
-    /// Stores a photo or file and adds it to the draft once it is stored.
+    /// The most an attachment may hold, in bytes: 64 MiB of its content,
+    /// worded "64 MB". The hosts refuse more; the phone says so before it
+    /// uploads anything. A copy of `wire::ATTACHMENT_SIZE_LIMIT`, because the
+    /// bridge carries values and no constants: the two change together.
+    public static let attachmentLimit = 64 * 1024 * 1024
+
+    /// Whether an attachment this large may be stored. One over the limit is
+    /// refused here, in words naming the file and the limit, so nothing is
+    /// read or uploaded for it.
+    @discardableResult
+    public func admits(name: String, size: Int) -> Bool {
+        guard size > Self.attachmentLimit else { return true }
+        notice = String(localized: "\(name) is not attached because it is over the 64 MB limit for attachments.")
+        return false
+    }
+
+    /// Stores a photo or file and adds it to the draft once it is stored. One
+    /// that cannot be stored is named in the notice with the reason, so it
+    /// never leaves the draft without a word.
     public func attach(_ data: Data, name: String, mime: String, image: Bool) {
+        guard admits(name: name, size: data.count) else { return }
         uploading += 1
         notice = nil
         Task {
@@ -785,7 +928,8 @@ public final class ChatModel {
             uploading -= 1
             switch stored {
             case .success(let blob): attachments.append(image ? .image(blob) : .file(blob))
-            case .failure(let failure): notice = failure.description
+            case .failure(let failure):
+                notice = String(localized: "\(name) is not attached: \(failure.description)")
             }
         }
     }
@@ -851,6 +995,20 @@ public final class ChatModel {
         woke()
     }
 
+    /// Takes back a prompt held while its host could not be reached: it
+    /// never left, so its words and attachments return to the draft.
+    public func cancelHeld(_ input: [UInt8]) {
+        if let held = source.draft(of: input) { restore(held) }
+        discard(input)
+    }
+
+    /// Takes back an answer held while its host could not be reached; the
+    /// card opens again to be answered.
+    public func cancelHeldAnswer() {
+        guard let input = frame?.askInput else { return }
+        discard(input)
+    }
+
     /// A prompt the agent refused, back into the draft with the reason
     /// said: its words and attachments to change and send again.
     private func takeBack(_ refused: RefusedPrompt) {
@@ -896,6 +1054,12 @@ public final class ChatModel {
     /// agent stays.
     public func interrupt() {
         act({ await $0.interrupt() })
+    }
+
+    /// Terminal Claude's own view resumed another conversation: puts this
+    /// agent's back, so prompts reach it again.
+    public func switchBack() {
+        act({ await $0.switchBack() })
     }
 
     /// Sends a pick from the settings card. Nothing changes here until the
@@ -949,14 +1113,21 @@ public final class ChatModel {
         notice = nil
         let source = self.source
         Task {
-            switch await body(source) {
+            let outcome = await body(source)
+            woke()
+            switch outcome {
             case .done?: done?()
+            // Held by the library until the host is back; what holds it says
+            // so, with Cancel.
+            case .held?: break
             case .rejected(let reason)?: notice = Self.notSent(reason)
             case .failed(let reason)?: notice = reason
-            case .notConfirmed?: notice = Self.notConfirmed
+            case .notConfirmed?:
+                // An answer the card itself now says was not confirmed, with
+                // Resend and Discard, is not said a second time above it.
+                if case .notConfirmed? = ask?.state {} else { notice = Self.notConfirmed }
             case nil: notice = Self.closed
             }
-            woke()
         }
     }
 

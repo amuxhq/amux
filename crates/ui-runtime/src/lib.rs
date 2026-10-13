@@ -16,7 +16,7 @@ pub mod trace;
 use std::io;
 use std::path::{Component, Path};
 
-pub use fleet::{Fleet, FleetGuard, HELD_ROWS, OpenError, Window};
+pub use fleet::{Fleet, FleetGuard, HELD_ROWS, OpenError, Stop, Window};
 pub use session::{Changes, InputError, PageError, Sent, Session, StateGuard};
 pub use trace::{DriverEvent, DriverTrace, Structure, TRACE_EVENTS, TraceEvent, Traced};
 

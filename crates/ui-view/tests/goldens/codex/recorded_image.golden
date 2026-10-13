@@ -54,10 +54,10 @@
 ## 67 recorded 66: fact Rpc method=item/completed
   row    4 msg_00365b873261f7c9016ab729260c7887d283ffa615f041c702 Prose { text: [Text("I’ll inspect the working directory for `square.png`, then compare it with the attached image.")], streaming: false, working_note: true }
 ## 71 recorded 70: fact Rpc method=item/started
-  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Running } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
+  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Running, result: "" } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Running { key: "exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad" }) queue=[] underway=[] refused=[]
 ## 72 recorded 71: fact Rpc method=item/completed
-  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
+  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded, result: "./square.png" } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 77 recorded 76: fact Rpc method=item/started
   row    6 rs_00365b873261f7c9016ab729296da087d29c6bff9af878d3a5 Thinking { text: "", open: true, duration_ms: None }
@@ -66,7 +66,7 @@
   row    6 rs_00365b873261f7c9016ab729296da087d29c6bff9af878d3a5 Thinking { text: "", open: false, duration_ms: Some(932) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 81 recorded 80: fact Rpc method=item/started
-  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1 live]
+  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded, result: "./square.png" } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1 live]
   row    6 rs_00365b873261f7c9016ab729296da087d29c6bff9af878d3a5 Thinking { text: "", open: false, duration_ms: Some(932) } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 live] collapsed
   row    7 exec-3611d2c8-226d-481d-a506-c22a13328f1f Image { image: None, path: "<MACHINE_PATH>", generated: false } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }]
   composer Send activity=Some(Running { key: "exec-3611d2c8-226d-481d-a506-c22a13328f1f" }) queue=[] underway=[] refused=[]
@@ -80,7 +80,7 @@
   row    8 rs_00365b873261f7c9016ab7292bca2087d2a45c9404a8a22c66 Thinking { text: "", open: false, duration_ms: Some(945) }
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 92 recorded 91: fact Rpc method=item/started
-  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1] collapsed
+  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded, result: "./square.png" } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1] collapsed
   row    6 rs_00365b873261f7c9016ab729296da087d29c6bff9af878d3a5 Thinking { text: "", open: false, duration_ms: Some(932) } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2] collapsed
   row    7 exec-3611d2c8-226d-481d-a506-c22a13328f1f Image { image: None, path: "<MACHINE_PATH>", generated: false } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }]
   row    9 msg_00365b873261f7c9016ab7292ce0a887d2a8ec0e389920ec7e Prose { text: [], streaming: true, working_note: false }
@@ -107,7 +107,7 @@
 ## 110 recorded 109: fact Rpc method=item/completed
   row    9 msg_00365b873261f7c9016ab7292ce0a887d2a8ec0e389920ec7e Prose { text: [Text("Red. Yes, it is the same image.")], streaming: false, working_note: false }
 ## 117 recorded 116: fact Rpc method=turn/completed
-  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1] collapsed
+  row    5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded, result: "./square.png" } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1] collapsed
   row    7 exec-3611d2c8-226d-481d-a506-c22a13328f1f Image { image: None, path: "<MACHINE_PATH>", generated: false } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }]
   row   10 turn:1 TurnEnd { duration_ms: Some(10680), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
@@ -116,7 +116,7 @@
      2 prompt:737464696e2d34 Prompt { text: [Text("Name the color of the attached image in one word. Then look at square.png in the working directory with your image viewing tool and say whether it is the same image.")], steered: false }
      3 rs_00365b873261f7c9016ab7292531b087d2a48dca9cd3bcd319 Thinking { text: "", open: false, duration_ms: Some(2709) }
      4 msg_00365b873261f7c9016ab729260c7887d283ffa615f041c702 Prose { text: [Text("I’ll inspect the working directory for `square.png`, then compare it with the attached image.")], streaming: false, working_note: true }
-     5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1] collapsed
+     5 exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad Explore { verb: List, subject: "rg --files -g 'square.png' -g '*.png' -g '*.jpg' -g '*.jpeg' .", state: Succeeded, result: "./square.png" } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=1] collapsed
      6 rs_00365b873261f7c9016ab729296da087d29c6bff9af878d3a5 Thinking { text: "", open: false, duration_ms: Some(932) } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2] collapsed
      7 exec-3611d2c8-226d-481d-a506-c22a13328f1f Image { image: None, path: "<MACHINE_PATH>", generated: false } run[exec-d22e9fa0-0647-45d3-8e8a-4be8c0370cad..exec-3611d2c8-226d-481d-a506-c22a13328f1f x2 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 2 }]
      8 rs_00365b873261f7c9016ab7292bca2087d2a45c9404a8a22c66 Thinking { text: "", open: false, duration_ms: Some(945) }
@@ -128,4 +128,5 @@
   model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
   permission* unlisted custom "" "" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None

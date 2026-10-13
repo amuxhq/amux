@@ -471,6 +471,7 @@ meanwhile.
 | `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
 | `ListRepositories` | Where a host offers to start an agent: recent working directories and repositories under its configured roots. |
 | `Dump` | A debug report; see [debugging](DEBUGGING.md). |
+| `SaveDraft`, `GetDraft` | An agent's unsent draft, kept by this machine's daemon for its own clients so it outlives a client closing; never synced, and refused to a paired host. |
 
 The implementation is `ClientApi` in `crates/node/src/grpc.rs`, a thin mapping
 onto the profile runtime. It holds the runtime weakly, so a connection that

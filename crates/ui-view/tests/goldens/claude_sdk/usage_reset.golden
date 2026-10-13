@@ -10,4 +10,5 @@
   model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]
   permission* unlisted "default" "default" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Opus 5.5") effort=None permission=None mode=None

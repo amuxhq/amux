@@ -53,7 +53,10 @@ pub async fn run(
     let mut app = App::new(client, fleet, config);
     loop {
         match session(&mut app).await? {
-            Leave::Quit => return Ok(()),
+            Leave::Quit => {
+                app.keep_drafts().await;
+                return Ok(());
+            }
             Leave::Attach(agent) => {
                 let Some(attach) = attach.as_mut() else {
                     continue;

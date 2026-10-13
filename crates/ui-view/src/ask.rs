@@ -8,7 +8,10 @@ use ui_state::{InputState, OpenAsk, Refusal, SessionState};
 use wire::{ClaudeAnswer, CodexAnswer, Decision as CodexDecision, ask, claude_answer, codex_ask};
 
 use crate::form::{FormField, form_fields};
-use crate::rows::{EditLine, change_lines, counts, first_change, plan_parts, replaced_lines};
+use crate::rows::{
+    EditLine, change_lines, codex_file, counts, first_change, plan_parts, replaced_lines,
+};
+use crate::text::within;
 
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 pub struct AskCard {
@@ -52,6 +55,9 @@ pub enum CardState {
     Rejected(Refusal),
     /// The connection dropped before a reply: resend or discard.
     NotConfirmed,
+    /// The answer never left: the agent's host cannot be reached, and it
+    /// goes once it is back. Cancel takes it back.
+    Held,
     /// The agent exited with the ask open.
     Dismissed,
 }
@@ -80,6 +86,10 @@ pub enum AskBody {
         /// which only once it is done ("Wants to write").
         created: Option<bool>,
     },
+    /// A tool call. Its arguments are the input pretty-printed, except
+    /// for Claude's web fetch and web search, whose arguments are the
+    /// address it would fetch or the words it would search for, as Claude's
+    /// own dialog shows them.
     Tool {
         server: String,
         tool: String,
@@ -230,6 +240,7 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
             Some(InputState::Sent | InputState::Settled | InputState::Queued) => CardState::Sending,
             Some(InputState::Rejected(reason)) => CardState::Rejected(reason.clone()),
             Some(InputState::Uncertain) => CardState::NotConfirmed,
+            Some(InputState::Held) => CardState::Held,
             None => CardState::Open,
         }
     };
@@ -253,22 +264,6 @@ pub fn ask_card(state: &SessionState) -> Option<AskCard> {
         ),
         state: card_state,
     })
-}
-
-/// `path` relative to the agent's folder `cwd` when the file is inside it,
-/// else whole. A file the agent edits is nearly always in its own folder,
-/// and the absolute path repeats that folder at the front, where a narrow
-/// screen has to cut it to show the file's name. Paths are the host's, so
-/// either separator ends the folder.
-fn within(cwd: &str, path: &str) -> String {
-    let folder = cwd.trim_end_matches(['/', '\\']);
-    if folder.is_empty() {
-        return path.to_owned();
-    }
-    match path.strip_prefix(folder) {
-        Some(rest) if rest.starts_with(['/', '\\']) && rest.len() > 1 => rest[1..].to_owned(),
-        _ => path.to_owned(),
-    }
 }
 
 /// Whether terminal Claude's form for the ask ends in its review screen: a
@@ -466,6 +461,22 @@ fn permission_body(p: &wire::PermissionAsk) -> AskBody {
                 p.description.clone()
             },
         },
+        "WebFetch" | "WebSearch" => {
+            let subject = text(if p.tool_name == "WebFetch" {
+                "url"
+            } else {
+                "query"
+            });
+            AskBody::Tool {
+                server: String::new(),
+                tool: p.tool_name.clone(),
+                arguments: if subject.is_empty() {
+                    pretty(&input)
+                } else {
+                    subject
+                },
+            }
+        }
         "Edit" | "MultiEdit" | "Write" | "NotebookEdit" => {
             let path = [text("file_path"), text("notebook_path")]
                 .into_iter()
@@ -657,12 +668,23 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
         .iter()
         .filter_map(|d| CodexDecision::try_from(*d).ok())
         .collect();
-    let decision_choices = |similar: Vec<String>, hosts: Vec<String>| {
+    // `files`: what approving for the session covers, when it covers
+    // only these files (a patch's) rather than everything like this ask.
+    let decision_choices = |similar: Vec<String>, hosts: Vec<String>, files: Vec<String>| {
         decisions
             .iter()
             .filter_map(|decision| {
                 let outcome = match decision {
                     CodexDecision::Approve => ChoiceOutcome::AllowOnce,
+                    CodexDecision::ApproveSession if !files.is_empty() => {
+                        ChoiceOutcome::AllowAlways {
+                            subjects: files.clone(),
+                            directories: vec![],
+                            mode: String::new(),
+                            mode_name: String::new(),
+                            scope: Scope::Session,
+                        }
+                    }
                     CodexDecision::ApproveSession => ChoiceOutcome::AllowForSession,
                     CodexDecision::ApproveSimilar => ChoiceOutcome::AllowSimilar {
                         prefix: similar.clone(),
@@ -701,11 +723,31 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                 reason: c.reason.clone(),
                 description: String::new(),
             },
-            decision_choices(c.allow_prefix.clone(), c.network_hosts.clone()),
+            decision_choices(c.allow_prefix.clone(), c.network_hosts.clone(), vec![]),
         ),
         Some(codex_ask::Body::FileChange(f)) => {
-            let lines: Vec<EditLine> = f.changes.iter().flat_map(change_lines).collect();
+            // A patch of several files marks where each file's lines start,
+            // with what happens to it, so no file reads as holding the
+            // others' lines.
+            let cwd = &state.agent().cwd;
+            let several = f.changes.len() > 1;
+            let lines: Vec<EditLine> = f
+                .changes
+                .iter()
+                .flat_map(|change| {
+                    several
+                        .then(|| EditLine::File(codex_file(cwd, change, true)))
+                        .into_iter()
+                        .chain(change_lines(change))
+                })
+                .collect();
             let (added, removed) = counts(&lines);
+            // Codex's "don't ask again" on a patch covers its files.
+            let files = f
+                .changes
+                .iter()
+                .map(|change| within(cwd, &change.path))
+                .collect();
             (
                 AskBody::Edit {
                     path: f
@@ -723,7 +765,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                         f.changes.len() == 1 && f.changes[0].kind() == wire::FileChangeKind::Add,
                     ),
                 },
-                decision_choices(vec![], vec![]),
+                decision_choices(vec![], vec![], files),
             )
         }
         Some(codex_ask::Body::McpTool(t)) => (
@@ -734,7 +776,7 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
                     &serde_json::from_slice(&t.arguments_json).unwrap_or(Value::Null),
                 ),
             },
-            decision_choices(vec![], vec![]),
+            decision_choices(vec![], vec![], vec![]),
         ),
         Some(codex_ask::Body::McpForm(form)) => {
             let action = |action: wire::FormAction| {
@@ -806,18 +848,17 @@ fn codex(state: &SessionState, ask: &wire::CodexAsk) -> (AskBody, Vec<Choice>) {
     (body, choices)
 }
 
-/// One question's answer as the person gave it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum Pick {
-    /// The chosen options; none, with no text, skips the question.
-    Options(Vec<u32>),
-    Other(String),
-}
-
-/// One question's pick and the person's note on it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// One question's answer as the person gave it: the options picked, the
+/// words typed as "Something else", and a note. A multi-select carries
+/// picks and typed words together; nothing picked and nothing typed skips
+/// the question.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct QuestionResponse {
-    pub pick: Pick,
+    #[serde(default)]
+    pub picked: Vec<u32>,
+    /// The words typed as "Something else"; None when nothing was typed.
+    #[serde(default)]
+    pub other: Option<String>,
     /// Empty when there is none.
     #[serde(default)]
     pub note: String,
@@ -826,10 +867,7 @@ pub struct QuestionResponse {
 impl QuestionResponse {
     /// The question left unanswered.
     pub fn skip() -> QuestionResponse {
-        QuestionResponse {
-            pick: Pick::Options(Vec::new()),
-            note: String::new(),
-        }
+        QuestionResponse::default()
     }
 }
 
@@ -837,13 +875,9 @@ fn responses(given: &[QuestionResponse]) -> Vec<wire::QuestionResponse> {
     given
         .iter()
         .map(|response| {
-            let (selected, other) = match &response.pick {
-                Pick::Options(selected) => (selected.clone(), None),
-                Pick::Other(text) => (vec![], Some(text.clone())),
-            };
             wire::QuestionResponse {
-                selected,
-                other,
+                selected: response.picked.clone(),
+                other: response.other.clone().filter(|other| !other.is_empty()),
                 note: (!response.note.is_empty()).then(|| response.note.clone()),
             }
         })

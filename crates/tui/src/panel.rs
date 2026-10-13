@@ -124,9 +124,11 @@ pub(crate) fn centre(paint: &mut Paint<'_>, lines: Vec<Line<'static>>, area: Rec
     rect
 }
 
-/// A row of buttons (`[Stop]  [Cancel]`), each with its columns in the row.
+/// A row of buttons (`[Stop]  [Cancel]`), each with its columns in the row;
+/// the `focus`th, which Enter presses, stands out on a chip.
 pub(crate) fn buttons<H: Clone>(
     labels: &[(&str, H)],
+    focus: usize,
     theme: Theme,
 ) -> (Line<'static>, Vec<(usize, usize, H)>) {
     let mut line = Line::default();
@@ -136,8 +138,12 @@ pub(crate) fn buttons<H: Clone>(
             line.spans.push(Span::raw("  "));
         }
         let from = text::line_width(&line);
-        line.spans
-            .push(Span::styled(format!("[{label}]"), theme.text()));
+        let ink = if i == focus {
+            theme.chip().add_modifier(Modifier::BOLD)
+        } else {
+            theme.text()
+        };
+        line.spans.push(Span::styled(format!("[{label}]"), ink));
         spots.push((from, text::line_width(&line), hit.clone()));
     }
     (line, spots)

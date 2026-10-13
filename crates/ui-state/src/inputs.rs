@@ -34,6 +34,8 @@ pub enum InputOutcome {
     Reply(SendInputResponse),
     /// The transport failed before a reply.
     Lost,
+    /// It never left: the client holds it to send once the host is back.
+    Held,
 }
 
 /// What an input asked for, as far as the model needs it.
@@ -58,6 +60,15 @@ pub enum InputWhat {
 }
 
 impl InputWhat {
+    /// Whether a send of this that certainly never left is held to send
+    /// again once the host is back: a prompt or an answer, the person's own
+    /// words and choices. An interrupt, a withdraw, a send-now or a setting
+    /// sent later would act on whatever the agent is doing then, so those
+    /// are refused at once with the reason instead.
+    pub fn holds(&self) -> bool {
+        matches!(self, InputWhat::Prompt { .. } | InputWhat::Answer { .. })
+    }
+
     pub fn of(input: &Input) -> InputWhat {
         use wire::{
             KindInput, claude_pty_input as pty, claude_sdk_input as sdk, codex_input as codex,

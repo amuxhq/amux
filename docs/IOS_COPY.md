@@ -40,11 +40,28 @@ consequences. Do not add reassurance or describe implementation choices.
 | Leaving an account or ending a device's access | sign out / revoke |
 | The debug bundle | report |
 | A plan you do not accept | send back |
+| Ending the turn under way; the agent stays live | interrupt |
+| Ending a live agent; it goes to exited and can be resumed | stop |
+| Removing an exited agent for good | delete |
 
 Use **away** only when the relay currently sees the host but the selected
 account has no subscription. Use **offline** when there is no usable route and
 the relay does not currently see the host. Never describe an offline host as
 away, and never offer a subscription merely because a host is offline.
+
+A live agent's menu offers **Stop Agent** and never **Delete Agent**; only an
+exited agent is deleted. The square button under a working turn and the ask
+card's way out of the turn read **Interrupt**. A stop confirm names what the
+stop cuts, "desk-1 is working and has 2 background jobs and 1 sub-agent. Stop
+anyway?", and asks plainly when it cuts nothing under way.
+
+Something sent while the host cannot be reached is **held**, never refused,
+and says when it goes: "held · sends when desk is back", "Stop held · sends
+when desk is back". The empty field says the same before anything is typed,
+short enough for one line: "Catching up · sends once caught up",
+"Reconnecting · sends when desk is back", "desk is out of reach · sends when
+back". Revoking a host asks first: "Revoke desk? This phone stops reaching it,
+and only pairing again brings it back."
 
 Use second person and present tense. An agent or host is *it*. Avoid hedging,
 filler and exclamation marks. Use digits for numbers, a middle dot between

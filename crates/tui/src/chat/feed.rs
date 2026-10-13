@@ -1022,6 +1022,7 @@ fn step_words(row: &Row) -> (String, String, String) {
             verb,
             subject,
             state,
+            ..
         } => {
             let said = state_meta(*state, row.decision.is_some());
             let meta = decided(said.map(str::to_owned).into_iter().collect(), row, false);
@@ -1145,6 +1146,11 @@ fn step_words(row: &Row) -> (String, String, String) {
     }
 }
 
+/// The columns of a step's subject kept before its meta is cut.
+const SUBJECT_LEAST: usize = 24;
+/// A step's meta cut shorter than this is left out.
+const META_LEAST: usize = 8;
+
 /// The step's facts with how the person answered its ask after them:
 /// "allowed", "always allowed" when the answer made a rule, "denied"
 /// unless the verb already says so. A refusal's note goes on its own line,
@@ -1213,13 +1219,27 @@ fn step(
     pad_to(&mut line, WORDS);
     // The diff has one place, the header's [Diff]; a step opens to its
     // own patch.
+    // Two blank columns at the right, as at the left.
+    let width = width.saturating_sub(2);
+    // The verb and some of the subject keep their place; a long meta
+    // ("always allowed … in this project") gives way to them, cut, or goes.
+    let least = text::str_width(&verb)
+        + if subject.is_empty() {
+            0
+        } else {
+            1 + text::str_width(&subject).min(SUBJECT_LEAST)
+        };
+    let spare = width.saturating_sub(WORDS + least);
+    let meta = if meta.is_empty() || spare < META_LEAST + 3 {
+        String::new()
+    } else {
+        text::ellipsize_words(&meta, spare - 3)
+    };
     let tail_width = if meta.is_empty() {
         0
     } else {
         text::str_width(&meta) + 3
     };
-    // Two blank columns at the right, as at the left.
-    let width = width.saturating_sub(2);
     let room = width.saturating_sub(tail_width);
     push(&mut line, verb.clone(), words, room);
     if !subject.is_empty() {
@@ -1362,6 +1382,15 @@ fn step_detail(row: &Row, facts: &RowFacts, width: usize, theme: Theme) -> Vec<L
             .unwrap_or_default(),
         RowKind::ToolCall { result, .. } if !result.is_empty() => {
             detail(result, width, theme.muted(), DETAIL_LINES, theme)
+        }
+        // Why a read or search failed, or what it found.
+        RowKind::Explore { result, state, .. } if !result.is_empty() => {
+            let style = if *state == CallPhase::Failed {
+                theme.error()
+            } else {
+                theme.muted()
+            };
+            detail(result, width, style, DETAIL_LINES, theme)
         }
         RowKind::Subagent { answer, .. } if !answer.is_empty() => {
             detail(answer, width, theme.muted(), DETAIL_LINES, theme)

@@ -46,4 +46,5 @@
   model* unlisted claude-sonnet-5 "Sonnet 5" efforts=[]
   permission* unlisted "default" "default" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Sonnet 5") effort=None permission=None mode=None

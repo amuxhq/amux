@@ -100,4 +100,5 @@
 == settings
   model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Opus 5.5") effort=None permission=None mode=None

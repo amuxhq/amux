@@ -100,11 +100,22 @@ public final class NewAgentStore {
     /// both providers after a listing leaves the listing's answer current.
     @ObservationIgnored private var offerAsks = 0
     @ObservationIgnored private var offerAsked: [Provider: Int] = [:]
+    /// Whether the chosen machine could be reached when last told.
+    @ObservationIgnored private var machineOnline: Bool?
 
     public init() {}
 
+    /// The chosen machine's reach as the host list says it now. A refusal
+    /// given while the machine could not be reached goes once it can be:
+    /// what it said is no longer so, and starting again is the next step.
+    public func machineReached(_ online: Bool) {
+        defer { machineOnline = online }
+        if online, machineOnline == false, failure != nil { failure = nil }
+    }
+
     public func open(on host: HostId?) {
         machine = host
+        machineOnline = nil
         listing = .none
         recent = []
         repositories = []
@@ -130,6 +141,7 @@ public final class NewAgentStore {
     public func point(at host: HostId) {
         guard machine != host else { return }
         machine = host
+        machineOnline = nil
         listing = .none
         recent = []
         repositories = []

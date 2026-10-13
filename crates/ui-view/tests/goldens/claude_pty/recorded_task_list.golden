@@ -12,10 +12,10 @@
 ## 44 recorded 42: fact Transcript type=assistant uuid=68fa42d7-c859-4afd-8213-7b6a74e8a80b
   row    3 68fa42d7-c859-4afd-8213-7b6a74e8a80b Thinking { text: "", open: false, duration_ms: Some(2890) }
 ## 46 recorded 44: fact Transcript type=assistant uuid=7a0a8edb-b7a7-412b-9f3e-730b270f100e
-  row    4 toolu_01Tmg9854UcvaHTAXtXVEBrK Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Running } run[toolu_01Tmg9854UcvaHTAXtXVEBrK..toolu_01Tmg9854UcvaHTAXtXVEBrK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01Tmg9854UcvaHTAXtXVEBrK Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Running, result: "" } run[toolu_01Tmg9854UcvaHTAXtXVEBrK..toolu_01Tmg9854UcvaHTAXtXVEBrK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01Tmg9854UcvaHTAXtXVEBrK" }) queue=[] underway=[] refused=[]
 ## 47 recorded 45: fact Transcript type=user uuid=0a6703b1-dbc8-4bc3-9881-699995a3a38f
-  row    4 toolu_01Tmg9854UcvaHTAXtXVEBrK Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded } run[toolu_01Tmg9854UcvaHTAXtXVEBrK..toolu_01Tmg9854UcvaHTAXtXVEBrK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+  row    4 toolu_01Tmg9854UcvaHTAXtXVEBrK Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01Tmg9854UcvaHTAXtXVEBrK..toolu_01Tmg9854UcvaHTAXtXVEBrK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 73 recorded 71: fact Transcript type=assistant uuid=42194556-0da4-4d4a-bb89-3942d514553b
   row    5 42194556-0da4-4d4a-bb89-3942d514553b Thinking { text: "", open: false, duration_ms: Some(1663) }
@@ -27,7 +27,7 @@
      1 boundary:1 Boundary { kind: Started, cause: "" }
      2 76dc41bf-53b0-4d06-910f-4a68e1a34710 Prompt { text: [Text("Track this work with your task tools: create three tasks named Draft, Review and Publish. Then mark Draft in progress, then mark Draft completed. Do nothing else, then stop.")], steered: false }
      3 68fa42d7-c859-4afd-8213-7b6a74e8a80b Thinking { text: "", open: false, duration_ms: Some(2890) }
-     4 toolu_01Tmg9854UcvaHTAXtXVEBrK Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded } run[toolu_01Tmg9854UcvaHTAXtXVEBrK..toolu_01Tmg9854UcvaHTAXtXVEBrK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
+     4 toolu_01Tmg9854UcvaHTAXtXVEBrK Explore { verb: Search, subject: "select:TaskCreate,TaskUpdate", state: Succeeded, result: "" } run[toolu_01Tmg9854UcvaHTAXtXVEBrK..toolu_01Tmg9854UcvaHTAXtXVEBrK x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, subagents: 0, other: 0 }]
      5 42194556-0da4-4d4a-bb89-3942d514553b Thinking { text: "", open: false, duration_ms: Some(1663) }
      6 295a6153-94f6-4a6a-9649-e9001eaf80d5 Thinking { text: "", open: false, duration_ms: Some(2702) }
      7 8bc6c3ec-f7b7-4962-b95a-e657cebebaa9 Thinking { text: "", open: false, duration_ms: Some(1783) }
@@ -41,4 +41,5 @@
   permission  "auto" "Auto" unsettable
   permission* unlisted "bypassPermissions" "bypassPermissions" unsettable
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Haiku 4.5") effort=None permission=Some("bypassPermissions") mode=None

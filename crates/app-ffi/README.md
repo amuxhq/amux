@@ -126,11 +126,11 @@ does the work in the wake.
 
 Acts that wait on the agent take a callback, called once on a worker thread
 with a JSON result the callback borrows until it returns:
-`amux_session_send`, `amux_session_answer` (by choice index),
+`amux_session_send`, `amux_session_command` (a draft that may be one of the client's own commands or a refused one; the result says which), `amux_session_answer` (by choice index),
 `amux_session_answer_questions`, `amux_session_reply_instead`, `amux_session_answer_form`
 (one `FormValue` per field, checked and encoded in Rust), `amux_session_change_setting` (a pick from
 the settings view), `amux_session_withdraw`,
-`amux_session_send_now`, `amux_session_resend`, `amux_session_interrupt`,
+`amux_session_send_now`, `amux_session_resend`, `amux_session_interrupt`, `amux_session_switch_back`,
 `amux_session_resume` (the exited composer's draft), `amux_session_page_older`,
 `amux_session_put_blob`, `amux_session_open_overview` (the changed files for
 a `Comparison`, fetched without a patch as the overview opens),

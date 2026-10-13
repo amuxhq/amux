@@ -11,9 +11,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ui_view::{
-    AskBody, AskCard, CardState, Choice, ChoiceOutcome, EditLine, FieldProblem, FormField as Field,
-    FormFieldKind as FieldKind, FormValue, LineKind, PermissionGrant, Pick, QuestionResponse,
-    QuestionView, Scope, answer_input, form_answer, form_problems, question_answer, reply_answer,
+    AskBody, AskCard, CardState, Choice, ChoiceOutcome, EditLine, FieldProblem, FileChangeView,
+    FileRow, FormField as Field, FormFieldKind as FieldKind, FormValue, LineKind, PermissionGrant,
+    QuestionResponse, QuestionView, Scope, answer_input, form_answer, form_problems,
+    question_answer, reply_answer,
 };
 
 use crate::editor::Editor;
@@ -41,13 +42,16 @@ struct QuestionPick {
     other: Option<String>,
     /// Left unanswered on purpose: the person chose Skip.
     skipped: bool,
+    /// A multi-select confirmed with nothing ticked: an empty pick is its
+    /// answer, as the provider's own Submit sends one.
+    none: bool,
     /// The person's note on this question.
     note: String,
 }
 
 impl QuestionPick {
     fn answered(&self) -> bool {
-        !self.selected.is_empty() || self.other.as_ref().is_some_and(|o| !o.is_empty())
+        self.none || !self.selected.is_empty() || self.other.as_ref().is_some_and(|o| !o.is_empty())
     }
 
     /// Answered or skipped: nothing more to ask of it.
@@ -57,10 +61,8 @@ impl QuestionPick {
 
     fn response(&self) -> QuestionResponse {
         QuestionResponse {
-            pick: match self.other.as_ref().filter(|other| !other.is_empty()) {
-                Some(other) => Pick::Other(other.clone()),
-                None => Pick::Options(self.selected.clone()),
-            },
+            picked: self.selected.clone(),
+            other: self.other.clone().filter(|other| !other.is_empty()),
             note: self.note.trim().to_owned(),
         }
     }
@@ -421,6 +423,19 @@ fn box_label(choice: &Choice, kind: wire::Kind) -> String {
     }
 }
 
+/// A file of a patch of several, where its lines start: its path and what
+/// the patch does to it.
+fn file_words(file: &FileRow) -> String {
+    match &file.change {
+        FileChangeView::Created { .. } | FileChangeView::Writing { .. } => {
+            format!("{} (new file)", file.path)
+        }
+        FileChangeView::Deleted => format!("{} (deleted)", file.path),
+        FileChangeView::Moved { to } => format!("{} → {to}", file.path),
+        FileChangeView::Edited => file.path.clone(),
+    }
+}
+
 /// "cargo test -p ui-runtime…": the subject short enough for one line.
 fn short_subject(card: &AskCard) -> String {
     let subject = match &card.body {
@@ -544,6 +559,13 @@ impl AskUi {
                 return match key.code {
                     KeyCode::Char('r') => AskAction::Resend,
                     KeyCode::Char('d') => AskAction::Discard,
+                    _ => AskAction::None,
+                };
+            }
+            // Cancel takes the held answer back, and the card is open again.
+            CardState::Held => {
+                return match key.code {
+                    KeyCode::Char('c') => AskAction::Discard,
                     _ => AskAction::None,
                 };
             }
@@ -691,6 +713,15 @@ impl AskUi {
                     .push(line("r resend · d discard".into(), theme.faint()));
                 return out;
             }
+            CardState::Held => {
+                out.lines.push(line(
+                    "Your answer is held: the agent's host can't be reached. It sends when the host is back."
+                        .into(),
+                    theme.warning(),
+                ));
+                out.lines.push(line("c cancel".into(), theme.faint()));
+                return out;
+            }
             _ => {}
         }
         match &card.body {
@@ -828,7 +859,11 @@ impl AskUi {
                 // The path and where in the file, then why, then the patch.
                 // A path too long for the line loses its folders from the
                 // front: the file's name is what the approval is about.
-                let more = (*files > 1).then(|| format!(" and {} more files", files - 1));
+                let more = (*files > 1).then(|| {
+                    let others = files - 1;
+                    let s = if others == 1 { "" } else { "s" };
+                    format!(" and {others} more file{s}")
+                });
                 let at = first.map(|line| format!(" · line {line}"));
                 let after = more
                     .iter()
@@ -851,11 +886,17 @@ impl AskUi {
                 }
                 // The patch's first lines as the review page draws them; the
                 // line beside the path says where its change starts, so the
-                // hunks' starts are not drawn.
-                let lines: Vec<_> = patch
+                // hunks' starts are not drawn. A patch of several files names
+                // each file where its lines start.
+                let lines: Vec<(char, Style, String)> = patch
                     .iter()
                     .filter_map(|line| match line {
-                        EditLine::Line(line) => Some(line),
+                        EditLine::Line(line) => Some(match line.kind {
+                            LineKind::Added => ('+', theme.diff_added(), line.text.clone()),
+                            LineKind::Removed => ('-', theme.diff_removed(), line.text.clone()),
+                            LineKind::Context => (' ', theme.diff_context(), line.text.clone()),
+                        }),
+                        EditLine::File(file) => Some((' ', theme.code(), file_words(file))),
                         EditLine::Hunk { .. } => None,
                     })
                     .collect();
@@ -880,13 +921,8 @@ impl AskUi {
                 } else {
                     lines.len()
                 };
-                for l in lines.iter().skip(scroll).take(take) {
-                    let (mark, style) = match l.kind {
-                        LineKind::Added => ('+', theme.diff_added()),
-                        LineKind::Removed => ('-', theme.diff_removed()),
-                        LineKind::Context => (' ', theme.diff_context()),
-                    };
-                    let body = &l.text;
+                for (mark, style, body) in lines.iter().skip(scroll).take(take) {
+                    let (mark, style) = (*mark, *style);
                     let mut row = Line::default();
                     push(
                         &mut row,
@@ -1090,8 +1126,9 @@ fn takes_notes(card: &AskCard) -> bool {
     matches!(card.body, AskBody::Question(_)) && card.question_note
 }
 
-/// "The shell", "The fleet, The chat", "\"tmux style\"": an answer in words,
-/// empty when the question was skipped.
+/// "The shell", "The fleet, The chat", "The fleet, tmux style": an answer
+/// in words, the options picked then the words typed, empty when the
+/// question was skipped.
 fn pick_words(question: &QuestionView, pick: &QuestionPick) -> String {
     if !pick.answered() {
         return String::new();
@@ -1099,13 +1136,15 @@ fn pick_words(question: &QuestionView, pick: &QuestionPick) -> String {
     if question.secret && pick.answered() {
         return "answered (hidden)".to_owned();
     }
-    if let Some(other) = pick.other.as_ref().filter(|other| !other.is_empty()) {
-        return other.clone();
+    let other = pick.other.as_ref().filter(|other| !other.is_empty());
+    if pick.selected.is_empty() && other.is_none() {
+        return "nothing picked".to_owned();
     }
     pick.selected
         .iter()
         .filter_map(|i| question.options.get(*i as usize))
         .map(|option| option.label.clone())
+        .chain(other.cloned())
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -1302,12 +1341,12 @@ impl AskUi {
                 return self.question_answered(card, questions);
             }
             if confirm {
-                if !pick.answered() && questions.len() == 1 {
-                    return AskAction::None;
-                }
+                pick.none = !pick.answered();
                 return self.question_answered(card, questions);
             }
-            pick.other = None;
+            // Ticking keeps any words typed as "Something else": a
+            // multi-select sends both.
+            pick.none = false;
             match pick.selected.iter().position(|s| *s == option) {
                 Some(found) => {
                     pick.selected.remove(found);
@@ -1332,7 +1371,12 @@ impl AskUi {
             }
             if confirm && !typed.is_empty() {
                 let pick = &mut self.picks[self.step];
-                pick.selected.clear();
+                // A multi-select keeps its ticks beside the typed words;
+                // a single choice is one or the other.
+                if !question.multi_select {
+                    pick.selected.clear();
+                }
+                pick.none = false;
                 pick.other = Some(typed);
                 pick.skipped = false;
                 return self.question_answered(card, questions);
@@ -1344,6 +1388,7 @@ impl AskUi {
             pick.selected.clear();
             pick.other = None;
             pick.skipped = true;
+            pick.none = false;
             self.other = Editor::default();
             if let Some(draft) = self.drafts.get_mut(self.step) {
                 draft.clear();
@@ -1567,13 +1612,13 @@ impl AskUi {
                 } else {
                     "enter choose"
                 };
-                return Some(format!("{enter} · ctrl+x stop · ctrl+{leader} more"));
+                return Some(format!("{enter} · ctrl+x interrupt · ctrl+{leader} more"));
             }
             AskBody::Unanswerable { .. } => {
                 return Some(if self.attach {
-                    "enter open the terminal · ctrl+x stop".to_owned()
+                    "enter open the terminal · ctrl+x interrupt".to_owned()
                 } else {
-                    "ctrl+x stop".to_owned()
+                    "ctrl+x interrupt".to_owned()
                 });
             }
             _ => return None,
@@ -1584,18 +1629,18 @@ impl AskUi {
         let several = questions.len() > 1;
         let tabs = if several { " · ←/→ questions" } else { "" };
         if self.replying {
-            return Some("enter send · esc clear · ctrl+x stop".to_owned());
+            return Some("enter send · esc clear · ctrl+x interrupt".to_owned());
         }
         if self.annotating {
-            return Some("enter choose · tab done · esc clear · ctrl+x stop".to_owned());
+            return Some("enter choose · tab done · esc clear · ctrl+x interrupt".to_owned());
         }
         if self.in_review(questions) {
             if let Some(at) = self.missing(card) {
                 let name = question_name(&questions[at], at);
-                return Some(format!("enter go to {name}{tabs} · ctrl+x stop"));
+                return Some(format!("enter go to {name}{tabs} · ctrl+x interrupt"));
             }
             return Some(format!(
-                "enter send{tabs} · ctrl+x stop · ctrl+{leader} more"
+                "enter send{tabs} · ctrl+x interrupt · ctrl+{leader} more"
             ));
         }
         let form = matches!(card.body, AskBody::Form { .. });
@@ -1613,7 +1658,7 @@ impl AskUi {
             } else {
                 ""
             };
-            return Some(format!("{enter}{tab} · esc clear · ctrl+x stop"));
+            return Some(format!("{enter}{tab} · esc clear · ctrl+x interrupt"));
         }
         if self.on_other_row(questions) {
             // A draft kept from earlier answers on Enter.
@@ -1622,12 +1667,14 @@ impl AskUi {
             } else {
                 "enter answer"
             };
-            return Some(format!("{enter}{tabs} · ctrl+x stop · ctrl+{leader} more"));
+            return Some(format!(
+                "{enter}{tabs} · ctrl+x interrupt · ctrl+{leader} more"
+            ));
         }
         let rows = QuestionRows::of(&questions[self.step], card);
         if rows.skip == Some(self.selected) {
             return Some(format!(
-                "enter skip{tabs} · ctrl+x stop · ctrl+{leader} more"
+                "enter skip{tabs} · ctrl+x interrupt · ctrl+{leader} more"
             ));
         }
         if rows.out == Some(self.selected) {
@@ -1636,7 +1683,9 @@ impl AskUi {
             } else {
                 "enter to type"
             };
-            return Some(format!("{enter}{tabs} · ctrl+x stop · ctrl+{leader} more"));
+            return Some(format!(
+                "{enter}{tabs} · ctrl+x interrupt · ctrl+{leader} more"
+            ));
         }
         let note = if takes_notes(card) {
             " · tab note"
@@ -1656,12 +1705,14 @@ impl AskUi {
         };
         if questions[self.step].multi_select {
             // Four at most: the stop stays, the leader goes.
-            Some(format!("space select · {enter}{tabs}{note} · ctrl+x stop"))
+            Some(format!(
+                "space select · {enter}{tabs}{note} · ctrl+x interrupt"
+            ))
         } else if several && !note.is_empty() {
-            Some(format!("enter choose{tabs}{note} · ctrl+x stop"))
+            Some(format!("enter choose{tabs}{note} · ctrl+x interrupt"))
         } else {
             Some(format!(
-                "enter choose{tabs}{note} · ctrl+x stop · ctrl+{leader} more"
+                "enter choose{tabs}{note} · ctrl+x interrupt · ctrl+{leader} more"
             ))
         }
     }
@@ -1886,6 +1937,8 @@ impl AskUi {
 
         let question = &questions[self.step];
         let rows = QuestionRows::of(question, card);
+        let asked =
+            out.lines.len()..out.lines.len() + text::wrap(&question.question, width.max(1)).len();
         for part in text::wrap(&question.question, width.max(1)) {
             let mut line = Line::default();
             push(&mut line, part, theme.text(), width);
@@ -1944,7 +1997,44 @@ impl AskUi {
         } else {
             "Reply instead"
         };
-        let left = self.question_rows(question, &rows, left_width, !previews, footer, theme);
+        let mut left = self.question_rows(question, &rows, left_width, !previews, footer, theme);
+        // A short screen keeps the way out, the free-text row and the keys,
+        // as the boxed ask keeps its choices: the options' descriptions go
+        // first, then the question's words down to two lines, then the
+        // options show a window around the highlight.
+        if !previews && self.room != 0 {
+            let budget = self.room.saturating_sub(BOX_CHROME);
+            if out.lines.len() + left.lines.len() > budget {
+                left = self.question_rows(question, &rows, left_width, false, footer, theme);
+            }
+            let over = (out.lines.len() + left.lines.len()).saturating_sub(budget);
+            let cut = over.min(asked.len().saturating_sub(QUESTION_LEAST));
+            if cut > 0 {
+                let last = asked.end - cut - 1;
+                let kept = text::wrap(&question.question, width.max(1))
+                    .get(last - asked.start)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut line = Line::default();
+                push(
+                    &mut line,
+                    text::ellipsize(&format!("{kept}…"), width.max(1)),
+                    theme.text(),
+                    width,
+                );
+                out.lines[last] = line;
+                out.lines.drain(last + 1..asked.end);
+                for spot in &mut out.spots {
+                    if spot.0 > last {
+                        spot.0 -= cut;
+                    }
+                }
+            }
+            let over = (out.lines.len() + left.lines.len()).saturating_sub(budget);
+            if over > 0 {
+                window_options(&mut left, rows.options, self.selected, over, theme);
+            }
+        }
         let preview = question
             .options
             .get(self.selected)
@@ -2037,6 +2127,84 @@ impl AskUi {
             out.cursor = Some((base + row, col));
         }
         out
+    }
+}
+
+/// A question cut for a short screen keeps this many lines of its words.
+const QUESTION_LEAST: usize = 2;
+
+/// Drops `over` of a question's option lines (the first `options` choices),
+/// keeping the highlight in view: what is hidden above or below is marked
+/// with an arrow in place of the line nearest it. The rows after the
+/// options, the free-text row and the way out, always stay.
+fn window_options(left: &mut BoxLines, options: usize, selected: usize, over: usize, theme: Theme) {
+    let option_rows = left
+        .spots
+        .iter()
+        .filter_map(|(row, _, spot)| match spot {
+            BoxSpot::Choice(at) if *at < options => Some(*row + 1),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    let show = option_rows.saturating_sub(over).max(1);
+    if show >= option_rows {
+        return;
+    }
+    let lit = left
+        .spots
+        .iter()
+        .find(|(_, _, spot)| *spot == BoxSpot::Choice(selected))
+        .map_or(option_rows, |(row, ..)| *row);
+    // The highlight a little above the window's foot, or the window at the
+    // options' end when the highlight is below them.
+    let from = lit
+        .saturating_sub(show.saturating_sub(2))
+        .min(option_rows - show);
+    let to = from + show;
+    let mut lines: Vec<Line<'static>> = left.lines.drain(..option_rows).collect();
+    let mut kept: Vec<Line<'static>> = lines.drain(from..to).collect();
+    let marker = |words: &str| {
+        let mut line = Line::default();
+        push(
+            &mut line,
+            format!("  {words}"),
+            theme.faint(),
+            usize::MAX / 4,
+        );
+        line
+    };
+    if from > 0
+        && let Some(first) = kept.first_mut()
+    {
+        *first = marker("↑ more");
+    }
+    if to < option_rows
+        && let Some(last) = kept.last_mut()
+    {
+        *last = marker("↓ more");
+    }
+    let shown = kept.len();
+    kept.append(&mut left.lines);
+    left.lines = kept;
+    // A marker answers no click.
+    let marked = |row: usize| (from > 0 && row == from) || (to < option_rows && row + 1 == to);
+    left.spots.retain_mut(|(row, _, _)| {
+        if *row < option_rows {
+            let keep = (from..to).contains(row) && !marked(*row);
+            *row = row.saturating_sub(from);
+            keep
+        } else {
+            *row = *row - option_rows + shown;
+            true
+        }
+    });
+    if let Some((row, _)) = &mut left.cursor {
+        if *row >= option_rows {
+            *row = *row - option_rows + shown;
+        } else {
+            *row = row.saturating_sub(from);
+        }
     }
 }
 

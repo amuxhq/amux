@@ -38,4 +38,5 @@
   effort* unlisted high
   permission* unlisted "plan" "plan" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Sonnet 5") effort=Some("high") permission=None mode=None

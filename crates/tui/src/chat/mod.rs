@@ -29,8 +29,9 @@ use ui_state::{
 };
 pub use ui_view::Comparison;
 use ui_view::{
-    AskBody, AskCard, Away, CardState, Changeable, ChatOptions, ExitCause, FamilyHeader, Reach,
-    RowKind, ToolRows, ask_card, chat_rows_for, composer, overview, queue_rows,
+    AskBody, AskCard, Away, CardState, Changeable, ChatOptions, ClientCommand, ExitCause,
+    FamilyHeader, Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview,
+    queue_rows,
 };
 use wire::{Attachment, attachment};
 
@@ -62,9 +63,10 @@ fn wheel_lines(direction: Direction) -> isize {
 /// How long an empty chat waits before saying it is loading.
 pub const LOADING_HINT_MS: i64 = 300;
 
-/// How long after an ask is first drawn keys still go to the draft. A
-/// person typing as an ask opens has not read it yet, and a digit or Enter
-/// among their words would answer it unseen.
+/// How long an ask must be on screen with no key pressed before it takes
+/// keys. A person typing as an ask opens has not read it yet, and a digit or
+/// Enter among their words would answer it unseen; every key they press
+/// restarts the wait, so steady typing never reaches the ask.
 pub const ASK_ARMS_MS: i64 = 500;
 
 /// What a key asks the event loop to do with the session.
@@ -99,6 +101,13 @@ pub enum ChatEffect {
     Discard {
         id: Vec<u8>,
     },
+    /// Takes Claude's own view back to this agent's conversation.
+    SwitchBack,
+    /// Takes a held prompt back before it goes; its words return to the
+    /// composer.
+    Cancel {
+        id: Vec<u8>,
+    },
     Page(u32),
     /// Ctrl+V: read the clipboard and attach what it holds.
     Paste,
@@ -125,6 +134,36 @@ pub enum ChatEffect {
     Chord(char),
     /// Say this in the notice line.
     Notice(String),
+    /// amux's rename of this chat's agent: `/rename <name>`.
+    Rename(String),
+}
+
+/// Why a file was not attached: it is over the limit, said in the unit a
+/// person reads (the limit is 64 MiB of the file's own bytes).
+fn too_large_words(name: &str) -> String {
+    format!(
+        "{name} is too large to attach: files can be at most {} MB",
+        wire::ATTACHMENT_SIZE_LIMIT / (1024 * 1024)
+    )
+}
+
+/// Why a slash command was not sent: the agent does not run it, and what it
+/// does run.
+fn refused_command_words(state: &SessionState, command: &str, offered: &[String]) -> String {
+    let agent = match state.kind() {
+        wire::Kind::Codex => "Codex",
+        wire::Kind::ClaudePty | wire::Kind::ClaudeSdk => "Claude",
+        wire::Kind::Unspecified => "This agent",
+    };
+    let commands: Vec<String> = offered.iter().map(|name| format!("/{name}")).collect();
+    if commands.is_empty() {
+        format!("{agent} does not run /{command} here")
+    } else {
+        format!(
+            "{agent} does not run /{command} here; it runs {}",
+            commands.join(" ")
+        )
+    }
 }
 
 /// Takes a queued prompt back; its words return to the composer (after any
@@ -258,6 +297,9 @@ pub struct ChatView {
     panel_spots: Vec<(u16, (u16, u16), char)>,
     /// The pinned prompt's rows and its key.
     pin_spot: Option<((u16, u16), Key)>,
+    /// A page down moved the feed: the next frame keeps the lines the pin
+    /// would cover below it, so paging skips none.
+    paged: bool,
     /// The overview pane: the row above the composer, unfolded. Whether it
     /// shows is the client's layout, kept across chats by the app.
     pub pane_open: bool,
@@ -331,6 +373,18 @@ pub struct ChatView {
     /// The head ask's key and when it was first drawn, for the time it
     /// leaves keys with the draft.
     ask_drawn: Option<(String, i64)>,
+    /// Files on their way into the draft, by name: a prompt sent before
+    /// they land waits for them.
+    attaching: Vec<String>,
+    /// Enter was pressed while files were attaching: the draft goes once
+    /// the last of them is in.
+    send_when_attached: bool,
+    /// When the last timed key was pressed: an ask arms only after
+    /// [`ASK_ARMS_MS`] with no key.
+    last_key_at: Option<i64>,
+    /// The ask that has armed. Once it takes keys it keeps them, so moving
+    /// through its choices quickly never hands keys back to the draft.
+    ask_armed: Option<String>,
     /// The last frame's layout, for scrolling and focus.
     laid: Laid,
     feed: (usize, usize),
@@ -368,6 +422,7 @@ impl ChatView {
             hint_spots: Vec::new(),
             panel_spots: Vec::new(),
             pin_spot: None,
+            paged: false,
             pane_open: false,
             pane_keys: false,
             pane_focus: None,
@@ -403,6 +458,10 @@ impl ChatView {
             epoch: 0,
             opened_at_ms: now_ms,
             ask_drawn: None,
+            attaching: Vec::new(),
+            send_when_attached: false,
+            last_key_at: None,
+            ask_armed: None,
             laid: Laid::default(),
             feed: (0, 0),
             told_following: true,
@@ -461,6 +520,11 @@ impl ChatView {
                     input_id: prompt.input_id,
                     text: prompt.text,
                 },
+                ui_view::Underway::Held => QueueEntry::Held {
+                    input_id: prompt.input_id,
+                    text: prompt.text,
+                    host: host.to_owned(),
+                },
             });
         }
         entries
@@ -499,10 +563,14 @@ impl ChatView {
                 continue;
             }
             match &sent.state {
-                InputState::Sent | InputState::Queued | InputState::Uncertain => {
+                InputState::Sent
+                | InputState::Queued
+                | InputState::Uncertain
+                | InputState::Held => {
                     self.sending.entry(sent.id.clone()).or_insert(Sending {
                         at_ms: now_ms,
-                        in_feed: to_feed && sent.state != InputState::Queued,
+                        in_feed: to_feed
+                            && !matches!(sent.state, InputState::Queued | InputState::Held),
                     });
                 }
                 InputState::Rejected(_) | InputState::Settled => {}
@@ -602,6 +670,10 @@ impl ChatView {
         theme: Theme,
         now_ms: Option<i64>,
     ) -> Vec<ChatEffect> {
+        let quiet_since = self.last_key_at;
+        if now_ms.is_some() {
+            self.last_key_at = now_ms;
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if self.review_open
             && let Some(page) = &mut self.review
@@ -621,6 +693,14 @@ impl ChatView {
             return effects;
         }
         match key.code {
+            KeyCode::Char('b') if ctrl => {
+                // Takes Claude's own view back to this agent's conversation.
+                return if ui_view::switched_away(state) {
+                    vec![ChatEffect::SwitchBack]
+                } else {
+                    vec![]
+                };
+            }
             KeyCode::Char('x') if ctrl => {
                 let stops = ui_view::ask_card(state).is_some_and(|card| card.stops_turn);
                 return if state.phase() == PhaseView::Working || stops {
@@ -630,7 +710,12 @@ impl ChatView {
                 };
             }
             KeyCode::PageUp => {
-                let page = self.feed.1.saturating_sub(2).max(1) as isize;
+                // The pin covers the top of the page above too.
+                let pin = self
+                    .pin_spot
+                    .as_ref()
+                    .map_or(0, |((from, to), _)| usize::from(to - from) + 1);
+                let page = self.feed.1.saturating_sub(2 + pin).max(1) as isize;
                 if !self.scroll_box_diff(state, -page) {
                     self.scroll(state, -page, theme);
                 }
@@ -640,6 +725,7 @@ impl ChatView {
                 let page = self.feed.1.saturating_sub(2).max(1) as isize;
                 if !self.scroll_box_diff(state, page) {
                     self.scroll(state, page, theme);
+                    self.paged = true;
                 }
                 return vec![];
             }
@@ -664,7 +750,7 @@ impl ChatView {
             return self.pane_key(state, key);
         }
         if let Some(card) = self.card_takes_keys(state) {
-            if !self.ask_armed(&card, now_ms) {
+            if !self.arm_ask(&card, now_ms, quiet_since) {
                 // Words typed as the ask appears are still the draft's; Enter
                 // neither sends the draft nor answers what was not read.
                 if key.code != KeyCode::Enter && self.editor.key(key) == Edit::Changed {
@@ -688,17 +774,28 @@ impl ChatView {
         self.composer_key(state, key)
     }
 
-    /// Whether `card` takes keys pressed at `now_ms`: once it has been on
-    /// screen for [`ASK_ARMS_MS`]. An ask not drawn yet has not been seen
-    /// at all.
-    fn ask_armed(&self, card: &AskCard, now_ms: Option<i64>) -> bool {
+    /// Whether `card` takes a key pressed at `now_ms`, the key before it
+    /// having been pressed at `last_key`: once it has been on screen for
+    /// [`ASK_ARMS_MS`] with no key pressed. An ask not drawn yet has not been
+    /// seen at all. Once armed it stays armed.
+    fn arm_ask(&mut self, card: &AskCard, now_ms: Option<i64>, last_key: Option<i64>) -> bool {
         let Some(now_ms) = now_ms else {
             return true;
         };
-        match &self.ask_drawn {
-            Some((key, at)) if *key == card.key => now_ms.saturating_sub(*at) >= ASK_ARMS_MS,
-            _ => false,
+        if self.ask_armed.as_deref() == Some(card.key.as_str()) {
+            return true;
         }
+        let armed = match &self.ask_drawn {
+            Some((key, drawn)) if *key == card.key => {
+                let quiet_from = last_key.map_or(*drawn, |at| at.max(*drawn));
+                now_ms.saturating_sub(quiet_from) >= ASK_ARMS_MS
+            }
+            _ => false,
+        };
+        if armed {
+            self.ask_armed = Some(card.key.clone());
+        }
+        armed
     }
 
     /// What the chat does for an action on the ask card.
@@ -759,6 +856,25 @@ impl ChatView {
             }
             KeyCode::Up if self.editor.is_empty() && !self.queue_entries(state, "").is_empty() => {
                 self.tray = Some(self.queue_entries(state, "").len() - 1);
+                vec![]
+            }
+            // Nothing queued: the chat's last prompt comes back to send
+            // again or edit, as a shell's history does.
+            KeyCode::Up if self.editor.is_empty() => {
+                if let Some(last) = state.transcript().iter().rev().find(|held| {
+                    matches!(
+                        held.class,
+                        ui_state::ItemClass::Prompt | ui_state::ItemClass::Steer
+                    )
+                }) {
+                    let words: String = last
+                        .item
+                        .text
+                        .chars()
+                        .filter(|c| *c != attachments::PLACEHOLDER)
+                        .collect();
+                    self.editor.set(words.trim(), Vec::new());
+                }
                 vec![]
             }
             _ => {
@@ -839,6 +955,9 @@ impl ChatView {
             (QueueEntry::Unconfirmed { input_id, .. }, 1) => Some(ChatEffect::Discard {
                 id: input_id.clone(),
             }),
+            (QueueEntry::Held { input_id, .. }, 0) => Some(ChatEffect::Cancel {
+                id: input_id.clone(),
+            }),
             _ => None,
         }
     }
@@ -847,11 +966,28 @@ impl ChatView {
     /// exited agent with the draft, and otherwise keep the draft.
     fn submit(&mut self, state: &SessionState) -> Vec<ChatEffect> {
         // Enter on an exited agent resumes it, with or without a message.
-        if self.editor.is_empty() && state.composer() != Composer::Resume {
+        // A draft of only blanks is no message: it would spend a turn.
+        let blank = self.editor.attachments().is_empty() && self.editor.text().trim().is_empty();
+        if blank && state.composer() != Composer::Resume {
             return vec![];
         }
         match state.composer() {
-            Composer::Send if state.can_send() => {
+            // A prompt never goes without a file still on its way into it.
+            Composer::Send | Composer::Holds(_) | Composer::Resume
+                if !self.attaching.is_empty() =>
+            {
+                self.send_when_attached = true;
+                vec![ChatEffect::Notice(format!(
+                    "Sends once {} is attached",
+                    self.attaching.join(", ")
+                ))]
+            }
+            // Not current, the client library holds what is sent and sends
+            // it once the chat is current again.
+            Composer::Send | Composer::Holds(_) => {
+                if let Some(effects) = self.slash_command(state) {
+                    return effects;
+                }
                 let (text, attachments) = self.editor.take_prompt();
                 self.not_sent = None;
                 self.follow();
@@ -864,8 +1000,66 @@ impl ChatView {
                 self.follow();
                 vec![ChatEffect::Resume { text, attachments }]
             }
-            _ => vec![],
         }
+    }
+
+    /// A draft that is a command the client handles, or one this agent
+    /// does not run: what it does instead of going as a prompt. None sends
+    /// the draft as typed.
+    fn slash_command(&mut self, state: &SessionState) -> Option<Vec<ChatEffect>> {
+        use crate::setup::{Item, Picker};
+        let text = self.editor.text().to_owned();
+        if !self.editor.attachments().is_empty() {
+            return None;
+        }
+        let effects = match ui_view::slash(state, &text) {
+            Slash::Prompt => return None,
+            Slash::Typed(typed) => vec![ChatEffect::Prompt {
+                text: typed,
+                attachments: Vec::new(),
+            }],
+            Slash::Set(input) => vec![ChatEffect::Answer(input)],
+            Slash::Pick(command) => {
+                let view = ui_view::settings(state);
+                let (item, title, choices) = match command {
+                    ClientCommand::Effort => {
+                        (Item::Effort, "Effort", crate::setup::effort_choices(&view))
+                    }
+                    _ => (Item::Model, "Model", crate::setup::model_choices(&view)),
+                };
+                self.picker = Some(Picker::new(item, title, choices, false));
+                vec![]
+            }
+            Slash::Rename(name) if name.is_empty() => {
+                return Some(vec![ChatEffect::Notice(
+                    "Name the agent after the command: /rename <name>".into(),
+                )]);
+            }
+            Slash::Rename(name) => vec![ChatEffect::Rename(name)],
+            // The draft stays, so the person can fix it.
+            Slash::Refused { command, offered } => {
+                return Some(vec![ChatEffect::Notice(refused_command_words(
+                    state, &command, &offered,
+                ))]);
+            }
+            Slash::Unknown {
+                command,
+                value,
+                offered,
+            } => {
+                let what = match command {
+                    ClientCommand::Effort => "effort",
+                    _ => "model",
+                };
+                return Some(vec![ChatEffect::Notice(format!(
+                    "No {what} {value} here; it offers {}",
+                    offered.join(", ")
+                ))]);
+            }
+        };
+        self.editor.take_prompt();
+        self.not_sent = None;
+        Some(effects)
     }
 
     /// Ctrl+S and what follows it: a running chat's model, effort and
@@ -873,6 +1067,20 @@ impl ChatView {
     /// not this.
     fn setting_key(&mut self, state: &SessionState, key: KeyEvent) -> Option<Vec<ChatEffect>> {
         use crate::setup::{Item, Picker};
+        // An open ask holds the composer's box, where a picker would be
+        // drawn: a picker opened under it would take keys unseen, so the ask
+        // wins and the settings wait until it is answered.
+        if self.card_takes_keys(state).is_some() {
+            self.picker = None;
+            self.setting_prefix = false;
+            let settings_key =
+                key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL);
+            return settings_key.then(|| {
+                vec![ChatEffect::Notice(
+                    "Answer the ask first; settings change once it is answered".into(),
+                )]
+            });
+        }
         if let Some(picker) = &mut self.picker {
             let pick = picker.key(key);
             return Some(self.picked(state, pick));
@@ -883,7 +1091,10 @@ impl ChatView {
                 KeyCode::Char('m') => (&view.changeable.model, Item::Model, "Model"),
                 KeyCode::Char('e') => (&view.changeable.effort, Item::Effort, "Effort"),
                 KeyCode::Char('p') => (&view.changeable.permission, Item::Permission, "Permission"),
-                _ => return Some(vec![]),
+                // Esc takes the settings key back; any other key was never
+                // meant for it and goes on as typed.
+                KeyCode::Esc => return Some(vec![]),
+                _ => return None,
             };
             if *setting != Changeable::Pick {
                 // A setting this agent can't change from here says why
@@ -926,10 +1137,18 @@ impl ChatView {
                     Item::Permission => ui_view::SettingChange::Permission(value),
                     _ => ui_view::SettingChange::Model(value),
                 };
-                ui_view::setting_input(state.kind(), &change)
-                    .map(ChatEffect::Answer)
-                    .into_iter()
-                    .collect()
+                match ui_view::setting_input(state.kind(), &change) {
+                    Some(input) => vec![ChatEffect::Answer(input)],
+                    // An agent that changes it only by its own command
+                    // (terminal Claude) gets that command typed.
+                    None => ui_view::typed_setting(&change)
+                        .map(|text| ChatEffect::Prompt {
+                            text,
+                            attachments: Vec::new(),
+                        })
+                        .into_iter()
+                        .collect(),
+                }
             }
         }
     }
@@ -1490,9 +1709,23 @@ impl ChatView {
     }
 
     /// `<leader> o`: a folded run opens, an open run's first step folds it
-    /// again, and any other step opens its detail.
+    /// again, and any other step opens its detail. With no row focused, the
+    /// newest run on screen opens or folds, so a run is never out of the
+    /// keyboard's reach.
     pub fn toggle_expanded(&mut self, state: &SessionState) {
         let Some(key) = self.focus.clone() else {
+            let newest = self
+                .laid
+                .blocks
+                .iter()
+                .rev()
+                .find_map(|block| match &block.toggle {
+                    Toggle::Run(id) => Some(id.clone()),
+                    _ => None,
+                });
+            if let Some(id) = newest {
+                self.feed_hit(state, FeedHit::Run(id));
+            }
             return;
         };
         if let Some(block) = self.laid.blocks.iter().find(|block| block.key == key) {
@@ -1574,18 +1807,30 @@ impl ChatView {
     /// is stored and attached.
     pub fn paste(&mut self, content: ClipboardContent) -> Result<Option<ChatEffect>, String> {
         match content {
-            ClipboardContent::Image { mime, bytes } => Ok(Some(ChatEffect::Attach {
-                name: "clipboard.png".into(),
-                mime,
-                bytes,
-            })),
+            ClipboardContent::Image { mime, bytes } => {
+                let name = "clipboard.png".to_owned();
+                if bytes.len() > wire::ATTACHMENT_SIZE_LIMIT {
+                    return Err(too_large_words(&name));
+                }
+                self.attaching.push(name.clone());
+                Ok(Some(ChatEffect::Attach { name, mime, bytes }))
+            }
             ClipboardContent::Path(path) => {
                 let name = path
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
+                // Refused before it is read or sent: the daemon would refuse
+                // it after the whole upload.
+                let size = std::fs::metadata(&path)
+                    .map_err(|error| format!("{name} could not be read: {error}"))?
+                    .len();
+                if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+                    return Err(too_large_words(&name));
+                }
                 let bytes = std::fs::read(&path)
                     .map_err(|error| format!("{name} could not be read: {error}"))?;
+                self.attaching.push(name.clone());
                 Ok(Some(ChatEffect::Attach {
                     mime: mime_of(&name).to_owned(),
                     name,
@@ -1601,13 +1846,45 @@ impl ChatView {
     }
 
     /// A stored blob, attached at the cursor as an image or a file.
-    pub fn attach_blob(&mut self, blob: wire::BlobRef) {
+    /// A file stored for the draft: its chip goes in. When Enter waited
+    /// for it and it was the last on its way, the draft is sent now.
+    pub fn attach_blob(&mut self, state: &SessionState, blob: wire::BlobRef) -> Vec<ChatEffect> {
+        self.landed(&blob.name);
         let of = if blob.mime.starts_with("image/") {
             attachment::Of::Image(blob)
         } else {
             attachment::Of::File(blob)
         };
         self.editor.attach(Attachment { of: Some(of) });
+        if self.attaching.is_empty() && std::mem::take(&mut self.send_when_attached) {
+            return self.submit(state);
+        }
+        vec![]
+    }
+
+    /// A file could not be stored: it is not in the draft, a send waiting
+    /// for it waits no longer, and why stays on the composer's edge until
+    /// the draft changes.
+    pub fn attach_failed(&mut self, name: &str, why: &str) {
+        self.landed(name);
+        self.send_when_attached = false;
+        self.not_sent = Some(format!("could not attach {name}: {why}"));
+    }
+
+    fn landed(&mut self, name: &str) {
+        match self.attaching.iter().position(|pending| pending == name) {
+            Some(at) => {
+                self.attaching.remove(at);
+            }
+            None => {
+                self.attaching.pop();
+            }
+        }
+    }
+
+    /// The files still on their way into the draft.
+    pub fn attaching(&self) -> &[String] {
+        &self.attaching
     }
 
     /// `<leader> r` with a review already in the draft: back to its page.
@@ -1722,6 +1999,9 @@ impl ChatView {
         let pane_width = (full / 3).clamp(PANE_MIN, PANE_MAX).min(full);
         let beside = side && full.saturating_sub(pane_width) >= CHAT_MIN;
         let width = if beside { full - pane_width } else { full };
+        // Lying over the feed, the pane leaves the feed the columns to its
+        // left, and the feed's words wrap there rather than hide under it.
+        let feed_width = if side { full - pane_width } else { full };
         let name = state.agent().name.clone();
         let host = state
             .host()
@@ -1794,10 +2074,10 @@ impl ChatView {
             } else {
                 feed::clock(seen.at_ms)
             };
-            tail.extend(feed::pending_prompt(&prompt.text, &when, width, theme));
+            tail.extend(feed::pending_prompt(&prompt.text, &when, feed_width, theme));
         }
         if let Some(activity) = &view.activity {
-            tail.push(quiet_activity(activity, width, theme));
+            tail.push(quiet_activity(activity, feed_width, theme));
             tail.push(Line::default());
         }
         // An exited agent's feed ends saying so, like a session boundary,
@@ -1805,7 +2085,7 @@ impl ChatView {
         if let PhaseView::Exited { cause } = state.phase()
             && !ends_with_exit(state)
         {
-            tail.push(rows::rule(&exit_words(&cause), width, theme));
+            tail.push(rows::rule(&exit_words(&cause), feed_width, theme));
             tail.push(Line::default());
         }
         self.feed_tail = tail;
@@ -1939,7 +2219,7 @@ impl ChatView {
             // Kept from sending, or exited, the box's edge says why; the
             // empty field still invites the draft.
             let invite = match state.composer() {
-                Composer::Disabled(_) | Composer::Resume => format!("Message {name}"),
+                Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
                 composer => placeholder(&composer, &name, &host, self.reach),
             };
             let boxed = boxed_composer(editor, &invite, &edge_words, !pane_keys, width, theme);
@@ -1990,13 +2270,13 @@ impl ChatView {
                     hint = Err(words);
                 } else if footer.is_none() {
                     let stop = if card.stops_turn {
-                        "ctrl+x stop · "
+                        "ctrl+x interrupt · "
                     } else {
                         ""
                     };
                     hint = Err(if self.ask.in_box_note(card) {
                         if card.stops_turn {
-                            "enter send · esc clear · ctrl+x stop".to_owned()
+                            "enter send · esc clear · ctrl+x interrupt".to_owned()
                         } else {
                             "enter send · esc clear".to_owned()
                         }
@@ -2071,11 +2351,13 @@ impl ChatView {
         }
         // The plain composer's top edge says what stands in the way of
         // sending, most pressing first: the last prompt refused (error
-        // ink), the link to the host down, an exited agent that Enter
-        // resumes, a usage limit reached (warning ink; sending stays open).
+        // ink), Claude's own view on another conversation (warning ink),
+        // the link to the host down, an exited agent that Enter resumes, a
+        // usage limit reached (warning ink; sending stays open).
         if let Some(at) = plain_box {
             let words = edge_title(
                 self.not_sent.as_deref(),
+                ui_view::switched_away(state),
                 &state.composer(),
                 &host,
                 self.reach,
@@ -2099,7 +2381,7 @@ impl ChatView {
 
         let height = usize::from(area.height);
         let feed_height = height.saturating_sub(top.len() + bottom.len());
-        self.feed = (width, feed_height);
+        self.feed = (feed_width, feed_height);
         self.feed_origin = (area.x, area.y + top.len() as u16);
         let feed_top = top.len();
         let mut lines = top;
@@ -2132,11 +2414,12 @@ impl ChatView {
             if laid.at_bottom {
                 self.anchor = Anchor::Bottom;
             }
-            // The pinned prompt would cover the plan's first lines: the plan
-            // starts just below it instead.
-            if plan_arrived
+            // The pinned prompt would cover the plan's first lines, or the
+            // lines a page down brought to the top: they start just below
+            // it instead.
+            if (plan_arrived || std::mem::take(&mut self.paged))
                 && !laid.at_bottom
-                && let Some((pinned, _)) = pinned(state, &laid, feed_height, width, theme)
+                && let Some((pinned, _)) = pinned(state, &laid, feed_height, feed_width, theme)
             {
                 self.anchor = self
                     .frame(theme)
@@ -2145,7 +2428,7 @@ impl ChatView {
             }
             let mut feed: Vec<Line<'static>> = laid.lines.clone();
             text::drop_cut_padding(&mut feed);
-            if let Some((pinned, key)) = pinned(state, &laid, feed_height, width, theme) {
+            if let Some((pinned, key)) = pinned(state, &laid, feed_height, feed_width, theme) {
                 let rows = pinned.len();
                 // The blank line under the block is not the pin's to click.
                 let block_rows = rows.saturating_sub(1);
@@ -2703,7 +2986,7 @@ fn problem_words(
 ) -> Option<(String, ratatui::style::Style)> {
     let (words, style) = state_words(state, reach, host, theme);
     match (state.composer(), state.phase()) {
-        (_, PhaseView::Exited { .. }) | (Composer::Disabled(_), _) => Some((
+        (_, PhaseView::Exited { .. }) | (Composer::Holds(_), _) => Some((
             words,
             if style == theme.muted() {
                 theme.faint()
@@ -2854,25 +3137,33 @@ fn sign_in_lines(
 /// down, for the box's edge; None when it can.
 fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String> {
     Some(match composer {
-        Composer::Disabled(Waiting::Detached) => match reach {
+        Composer::Holds(Waiting::Detached) => match reach {
             Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
             Reach::Away(Away::SignedOut) => format!("{host} is away · this machine is signed out"),
             Reach::Online(_) | Reach::Away(Away::Plain) | Reach::Offline => {
                 format!("{host} is away")
             }
         },
-        Composer::Disabled(Waiting::Reconnecting) => format!("reconnecting to {host}"),
-        Composer::Disabled(Waiting::CatchingUp) => "catching up".to_owned(),
+        // The client talks only to this machine's daemon: reconnecting is
+        // that daemon gone, never the agent's host, as home says it.
+        Composer::Holds(Waiting::Reconnecting) => "reconnecting to amux".to_owned(),
+        Composer::Holds(Waiting::CatchingUp) => "catching up".to_owned(),
         Composer::Send | Composer::Resume => return None,
     })
 }
 
+/// The composer's top edge while terminal Claude's own view is on another
+/// conversation: prompts are refused until it is back on this one.
+const SWITCHED_AWAY_WORDS: &str =
+    "Claude's own view switched to another conversation · ctrl+b switch back";
+
 /// What the plain composer's top edge says stands in the way of sending,
-/// most pressing first, with its ink: the last prompt refused, the link to
-/// the host down, an exited agent that Enter resumes, a usage limit
-/// reached (sending stays open).
+/// most pressing first, with its ink: the last prompt refused, Claude's own
+/// view on another conversation, the link to the host down, an exited agent
+/// that Enter resumes, a usage limit reached (sending stays open).
 fn edge_title(
     not_sent: Option<&str>,
+    switched_away: bool,
     composer: &Composer,
     host: &str,
     reach: Reach,
@@ -2881,6 +3172,9 @@ fn edge_title(
 ) -> Option<(String, ratatui::style::Style)> {
     if let Some(reason) = not_sent {
         return Some((reason.to_owned(), theme.error()));
+    }
+    if switched_away {
+        return Some((SWITCHED_AWAY_WORDS.to_owned(), theme.warning()));
     }
     waiting_words(composer, host, reach)
         .map(|words| (words, theme.faint()))
@@ -2904,7 +3198,7 @@ pub(crate) fn composer_lines(
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let invite = match composer {
-        Composer::Disabled(_) | Composer::Resume => format!("Message {name}"),
+        Composer::Holds(_) | Composer::Resume => format!("Message {name}"),
         composer => placeholder(composer, name, host, reach),
     };
     let edge = EdgeWords {
@@ -2913,7 +3207,7 @@ pub(crate) fn composer_lines(
         controls: None,
     };
     let mut lines = boxed_composer(editor, &invite, &edge, true, width, theme).lines;
-    if let Some((words, ink)) = edge_title(None, composer, host, reach, None, theme)
+    if let Some((words, ink)) = edge_title(None, false, composer, host, reach, None, theme)
         && let Some(top) = lines.first_mut()
     {
         *top = marked_edge_in(&words, ink, width, theme);
@@ -3154,7 +3448,7 @@ fn turn_hint_words(state: &SessionState, editor: &Editor, reach: Reach, leader: 
         Composer::Send => {
             if working {
                 pairs.push("enter queue".into());
-                pairs.push("ctrl+x stop".into());
+                pairs.push("ctrl+x interrupt".into());
             } else if !editor.is_empty() && !crate::terminal::shift_enter_reported() {
                 // Shift+Enter is the newline everyone expects; where the
                 // terminal cannot tell it from Enter, say the key that works.
@@ -3165,13 +3459,22 @@ fn turn_hint_words(state: &SessionState, editor: &Editor, reach: Reach, leader: 
             }
         }
         Composer::Resume => pairs.push("enter resume".into()),
-        Composer::Disabled(Waiting::Detached) if reach == Reach::Away(Away::SignedOut) => {
-            return "Draft kept · sending waits until this machine signs in".to_owned();
+        // A send now is held, shown pending with Cancel, and goes by itself.
+        Composer::Holds(Waiting::Detached) if reach == Reach::Away(Away::SignedOut) => {
+            return "enter holds it · it sends once this machine signs in".to_owned();
         }
-        Composer::Disabled(Waiting::Detached) if reach == Reach::Away(Away::Revoked) => {
-            return "Draft kept · sending waits until you pair again".to_owned();
+        Composer::Holds(Waiting::Detached) if reach == Reach::Away(Away::Revoked) => {
+            return "enter holds it · it sends once you pair again".to_owned();
         }
-        Composer::Disabled(_) => return "Draft kept · sending waits".to_owned(),
+        Composer::Holds(Waiting::Detached) => {
+            return "enter holds it · it sends when the host is back".to_owned();
+        }
+        Composer::Holds(Waiting::Reconnecting) => {
+            return "enter holds it · it sends once amux is back".to_owned();
+        }
+        Composer::Holds(Waiting::CatchingUp) => {
+            return "enter holds it · it sends once caught up".to_owned();
+        }
     }
     pairs.push(more);
     pairs.join(" · ")
@@ -3236,7 +3539,7 @@ fn key_event(key: &str) -> Option<KeyEvent> {
     Some(KeyEvent::new(code, modifiers))
 }
 
-/// "enter send now" → ("enter", "send now"); "ctrl+x stop" → ("ctrl+x", "stop").
+/// "enter send now" → ("enter", "send now"); "ctrl+x interrupt" → ("ctrl+x", "interrupt").
 fn split_key(pair: &str) -> (String, String) {
     match pair.split_once(' ') {
         Some((key, action)) => (key.to_owned(), action.to_owned()),
@@ -3464,11 +3767,9 @@ fn state_words(
             (format!("{ended} · {}", away_words()), theme.warning())
         }
         (_, PhaseView::Exited { cause }) => (exit_words(&cause), theme.muted()),
-        (Composer::Disabled(Waiting::Detached), _) => (away_words(), theme.warning()),
-        (Composer::Disabled(Waiting::Reconnecting), _) => {
-            ("reconnecting".to_owned(), theme.warning())
-        }
-        (Composer::Disabled(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.muted()),
+        (Composer::Holds(Waiting::Detached), _) => (away_words(), theme.warning()),
+        (Composer::Holds(Waiting::Reconnecting), _) => ("reconnecting".to_owned(), theme.warning()),
+        (Composer::Holds(Waiting::CatchingUp), _) => ("catching up".to_owned(), theme.muted()),
         (_, _) if state.reset_pending() => ("refreshing".to_owned(), theme.muted()),
         (_, PhaseView::NeedsYou) => ("needs you".to_owned(), theme.attention()),
         (_, PhaseView::Working) => ("working".to_owned(), theme.muted()),
@@ -3567,7 +3868,7 @@ fn empty_feed(
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let mut lines = vec![Line::default(); height];
-    let away = matches!(state.composer(), Composer::Disabled(Waiting::Detached)) || !reach.online();
+    let away = matches!(state.composer(), Composer::Holds(Waiting::Detached)) || !reach.online();
     let words = if away {
         Some("Its host is away, and nothing of this chat is held here yet.")
     } else if state.has_snapshot() && state.caught_up() {

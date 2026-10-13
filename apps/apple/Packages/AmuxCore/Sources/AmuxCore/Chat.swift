@@ -240,7 +240,19 @@ public final class Chat: ChatSource, @unchecked Sendable {
         }
     }
 
+    public func switchBack() async -> ActOutcome? {
+        await value(ActOutcome.self) { live, callback, context in
+            amux_session_switch_back(live, callback, context)
+        }
+    }
+
     /// Sends a pick from the settings view in the agent's kind.
+    public func command(_ draft: Draft) async -> CommandOutcome? {
+        await value(CommandOutcome.self) { live, callback, context in
+            Bridge.json(draft).withCString { amux_session_command(live, $0, callback, context) }
+        }
+    }
+
     public func change(_ setting: SettingChange) async -> ActOutcome? {
         await value(ActOutcome.self) { live, callback, context in
             Bridge.json(setting).withCString { amux_session_change_setting(live, $0, callback, context) }

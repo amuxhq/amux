@@ -20,6 +20,9 @@ public enum AskAction: Equatable, Sendable {
     /// The answer was not confirmed: send it again, or forget it.
     case resend
     case discard
+    /// The answer is held while the host cannot be reached: take it back
+    /// and answer again.
+    case cancelHeld
 }
 
 /// Where a card starts, for a capture of one part-way through: a note being
@@ -29,7 +32,7 @@ public enum AskPreset: Equatable, Sendable {
     case noting(Int)
     case other(String)
     case highlighted(UInt32)
-    case reviewing([Pick])
+    case reviewing([QuestionResponse])
     case autoAccept
     /// The first question's note being written.
     case questionNote(String)
@@ -127,7 +130,7 @@ public struct AskCardView: View {
     private var showsBody: Bool {
         switch card.state {
         case .open, .rejected: true
-        case .sending, .notConfirmed, .dismissed: false
+        case .sending, .notConfirmed, .dismissed, .held: false
         }
     }
 
@@ -137,6 +140,7 @@ public struct AskCardView: View {
         case .sending: "sending"
         case .rejected: "rejected"
         case .notConfirmed: "not-confirmed"
+        case .held: "held"
         case .dismissed: "dismissed"
         }
     }
@@ -159,7 +163,7 @@ public struct AskCardView: View {
             MenuButton(
                 name: String(localized: "More"), identifier: "ask.more",
                 items: [MenuItem(
-                    title: String(localized: "Stop the turn"), systemImage: "stop.circle",
+                    title: String(localized: "Interrupt"), systemImage: "stop.circle",
                     destructive: true
                 ) { act(.stop) }]
             ) {
@@ -197,6 +201,17 @@ public struct AskCardView: View {
                     choiceButton(String(localized: "Discard"), kind: .outline, id: "ask.discard") {
                         act(.discard)
                     }
+                }
+            }
+        case .held:
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Your answer is held: the agent’s host can’t be reached. It sends when the host is back.")
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.inkMuted.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .identified("ask.held", label: String(localized: "Your answer is held"))
+                choiceButton(String(localized: "Cancel"), kind: .outline, id: "ask.held.cancel") {
+                    act(.cancelHeld)
                 }
             }
         case .dismissed:
@@ -249,12 +264,40 @@ func choiceButton(
         .identified(id, label: title, enabled: enabled)
 }
 
-/// A card's buttons side by side, sharing the width equally.
+/// A card's buttons side by side, sharing the width equally, or one above
+/// the other when their words do not fit side by side, as at the largest
+/// text sizes.
 struct ButtonPair<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        HStack(spacing: 8) { content() }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { content() }
+            VStack(spacing: 8) { content() }
+        }
+    }
+}
+
+/// A card's content over its buttons. The content scrolls once the card is
+/// given less height than it needs, as a long question is at a large text
+/// size, and the buttons stay in sight under it; until then the card is
+/// exactly as tall as what it holds.
+struct PinnedFooter<Content: View, Footer: View>: View {
+    @ViewBuilder let content: () -> Content
+    @ViewBuilder let footer: () -> Footer
+    @State private var height: CGFloat?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) { content() }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: height)
+            footer()
+        }
     }
 }
 
@@ -381,12 +424,19 @@ private struct AskBodyView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            subject
-            if noting {
-                noteStep
-            } else {
-                choices
+        if case .question(let asked) = card.body {
+            // A question card scrolls and pins its own buttons, which change
+            // from step to step.
+            QuestionCard(
+                questions: asked, takesNote: card.questionNote, skips: card.questionSkip,
+                replies: card.questionReply, preset: preset, keeping: self.questions,
+                send: { act(.respond($0)) }, reply: { act(.reply($0, soFar: $1)) })
+        } else {
+            PinnedFooter {
+                subject
+                if noting { noteRows } else { choiceRows }
+            } footer: {
+                if noting { noteButtons } else { choiceButtons }
             }
         }
     }
@@ -397,7 +447,9 @@ private struct AskBodyView: View {
     private var subject: some View {
         switch card.body {
         case .command(let command, let cwd, let reason, let description):
-            SubjectBox(text: command)
+            // In full: it is what is being allowed, and the card's body
+            // scrolls when it runs long.
+            SubjectBox(text: command, lines: nil)
             let purpose = [description.isEmpty ? reason : description,
                            cwd.isEmpty ? "" : String(localized: "in \(cwd)")]
                 .filter { !$0.isEmpty }.joined(separator: " · ")
@@ -441,7 +493,7 @@ private struct AskBodyView: View {
             }
         case .unanswerable(let reason):
             why(reason.isEmpty
-                ? String(localized: "The agent is showing a menu this build can’t read. Attach from a terminal to answer it, or stop the turn.")
+                ? String(localized: "The agent is showing a menu this build can’t read. Attach from a terminal to answer it, or interrupt the turn.")
                 : reason)
         }
     }
@@ -488,28 +540,33 @@ private struct AskBodyView: View {
 
     // MARK: The choices
 
+    /// What the card offers above its buttons: scope rows, a plan's switch,
+    /// how long a grant lasts, a form's fields.
     @ViewBuilder
-    private var choices: some View {
+    private var choiceRows: some View {
         switch card.body {
-        case .question(let questions):
-            QuestionCard(
-                questions: questions, takesNote: card.questionNote, skips: card.questionSkip,
-                replies: card.questionReply, preset: preset, keeping: self.questions,
-                send: { act(.respond($0)) }, reply: { act(.reply($0, soFar: $1)) })
-        case .plan:
-            planChoices
-        case .access:
-            accessChoices
-        case .form(_, _, let asked):
-            formChoices(asked)
-        case .link(_, _, let url):
-            linkChoices(url)
+        case .plan: planRows
+        case .access: accessRows
+        case .form(_, _, let asked): formRows(asked)
+        case .command, .edit, .tool: permissionRows
+        case .question, .link, .unanswerable: EmptyView()
+        }
+    }
+
+    /// The buttons that answer, pinned under whatever scrolls.
+    @ViewBuilder
+    private var choiceButtons: some View {
+        switch card.body {
+        case .question: EmptyView()
+        case .plan: planButtons
+        case .access: accessButtons
+        case .form(_, _, let asked): formButtons(asked)
+        case .link(_, _, let url): linkButtons(url)
         case .unanswerable:
-            choiceButton(String(localized: "Stop the turn"), kind: .outline, id: "ask.stop") {
+            choiceButton(String(localized: "Interrupt"), kind: .outline, id: "ask.stop") {
                 act(.stop)
             }
-        case .command, .edit, .tool:
-            permissionChoices
+        case .command, .edit, .tool: permissionButtons
         }
     }
 
@@ -520,131 +577,160 @@ private struct AskBodyView: View {
         }
     }
 
-    /// The scopes the agent offered as rows, then Allow beside Deny. Deny
-    /// opens its own step when there is a note to write or a choice between
-    /// carrying on and stopping; a single deny without a note answers at once.
+    private var permissionPrimary: Int? { card.choices.firstIndex { $0.primary } }
+    private var permissionDenies: [Int] { card.choices.indices.filter { isDeny(card.choices[$0]) } }
+
+    /// The scopes the agent offered, as rows above Allow and Deny.
     @ViewBuilder
-    private var permissionChoices: some View {
-        let primary = card.choices.firstIndex { $0.primary }
-        let denies = card.choices.indices.filter { isDeny(card.choices[$0]) }
+    private var permissionRows: some View {
+        let primary = permissionPrimary
+        let denies = permissionDenies
         let scopes = card.choices.indices.filter { $0 != primary && !denies.contains($0) }
-        VStack(spacing: 8) {
-            ForEach(scopes, id: \.self) { index in
-                let row = ChatWords.scopeRow(card.choices[index])
-                ChoiceRow(title: row.title, detail: row.detail, id: "ask.choice.\(index)") {
+        if !scopes.isEmpty {
+            VStack(spacing: 8) {
+                ForEach(scopes, id: \.self) { index in
+                    let row = ChatWords.scopeRow(card.choices[index])
+                    ChoiceRow(title: row.title, detail: row.detail, id: "ask.choice.\(index)") {
+                        act(.choose(index, note: nil))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Allow beside Deny. Deny opens its own step when there is a note to
+    /// write or a choice between carrying on and stopping; a single deny
+    /// without a note answers at once.
+    @ViewBuilder
+    private var permissionButtons: some View {
+        let primary = permissionPrimary
+        let denies = permissionDenies
+        ButtonPair {
+            if let primary {
+                choiceButton(ChatWords.button(card.choices[primary]), kind: .primary, id: "ask.choice.\(primary)") {
+                    act(.choose(primary, note: nil))
+                }
+            }
+            if let deny = denies.first {
+                if denies.count == 1 && !card.choices[deny].takesNote {
+                    choiceButton(ChatWords.button(card.choices[deny]), kind: .outline, id: "ask.choice.\(deny)") {
+                        act(.choose(deny, note: nil))
+                    }
+                } else {
+                    choiceButton(String(localized: "Deny…"), kind: .outline, id: "ask.deny") {
+                        note = ""
+                        noting = true
+                    }
+                }
+            }
+        }
+    }
+
+    private var planApprove: [Int] {
+        card.choices.indices.filter {
+            if case .approvePlan = card.choices[$0].outcome { true } else { false }
+        }
+    }
+
+    private var planSwitched: Int? {
+        planApprove.first {
+            if case .approvePlan(let mode, _) = card.choices[$0].outcome { !mode.isEmpty } else { false }
+        }
+    }
+
+    private var planPlain: Int? {
+        planApprove.first {
+            if case .approvePlan(let mode, _) = card.choices[$0].outcome { mode.isEmpty } else { false }
+        }
+    }
+
+    /// The switch to the permission the agent offers to move to as the work
+    /// starts.
+    @ViewBuilder
+    private var planRows: some View {
+        if let switched = planSwitched, planPlain != nil {
+            let title = ChatWords.planSwitch(card.choices[switched])
+            Toggle(isOn: $autoAccept) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .designFont(.body, design)
+                        .foregroundStyle(design.ink.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("As the work starts")
+                        .designFont(.monoSmall, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(design.ink.color)
+            .oneSwitch(
+                String(localized: "\(title), As the work starts"),
+                isOn: $autoAccept)
+            .identified("ask.plan.auto", value: autoAccept ? "on" : "off")
+        }
+    }
+
+    /// Approve, and Send back.
+    private var planButtons: some View {
+        let approve = planApprove
+        return ButtonPair {
+            if let index = (autoAccept ? planSwitched : planPlain) ?? approve.first {
+                choiceButton(String(localized: "Approve"), kind: .primary, id: "ask.approve") {
                     act(.choose(index, note: nil))
                 }
             }
-            ButtonPair {
-                if let primary {
-                    choiceButton(ChatWords.button(card.choices[primary]), kind: .primary, id: "ask.choice.\(primary)") {
-                        act(.choose(primary, note: nil))
-                    }
-                }
-                if let deny = denies.first {
-                    if denies.count == 1 && !card.choices[deny].takesNote {
-                        choiceButton(ChatWords.button(card.choices[deny]), kind: .outline, id: "ask.choice.\(deny)") {
-                            act(.choose(deny, note: nil))
-                        }
-                    } else {
-                        choiceButton(String(localized: "Deny…"), kind: .outline, id: "ask.deny") {
-                            note = ""
-                            noting = true
-                        }
-                    }
-                }
+            ForEach(card.choices.indices.filter { !approve.contains($0) }, id: \.self) { index in
+                choiceButton(
+                    ChatWords.choice(card.choices[index]), kind: .outline,
+                    id: "ask.choice.\(index)"
+                ) { pick(index) }
             }
         }
     }
 
-    /// Approve, with a switch to the permission the agent offers to move
-    /// to as the work starts, and Send back.
+    private var grantForTurn: Int? { card.choices.firstIndex { $0.outcome == .grantForTurn } }
+    private var grantForSession: Int? { card.choices.firstIndex { $0.outcome == .grantForSession } }
+
+    /// For this turn or this session.
     @ViewBuilder
-    private var planChoices: some View {
-        let approve = card.choices.indices.filter {
-            if case .approvePlan = card.choices[$0].outcome { true } else { false }
-        }
-        let switched = approve.first {
-            if case .approvePlan(let mode, _) = card.choices[$0].outcome { !mode.isEmpty } else { false }
-        }
-        let plain = approve.first {
-            if case .approvePlan(let mode, _) = card.choices[$0].outcome { mode.isEmpty } else { false }
-        }
-        VStack(alignment: .leading, spacing: 12) {
-            if let switched, plain != nil {
-                let title = ChatWords.planSwitch(card.choices[switched])
-                Toggle(isOn: $autoAccept) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(title)
-                            .designFont(.body, design)
-                            .foregroundStyle(design.ink.color)
-                        Text("As the work starts")
-                            .designFont(.monoSmall, design)
-                            .foregroundStyle(design.inkMuted.color)
-                    }
-                }
-                .tint(design.ink.color)
-                .oneSwitch(
-                    String(localized: "\(title), As the work starts"),
-                    isOn: $autoAccept)
-                .identified("ask.plan.auto", value: autoAccept ? "on" : "off")
+    private var accessRows: some View {
+        if grantForTurn != nil, grantForSession != nil {
+            Picker(String(localized: "How long"), selection: $forSession) {
+                Text("This turn").tag(false)
+                Text("This session").tag(true)
             }
-            ButtonPair {
-                if let index = (autoAccept ? switched : plain) ?? approve.first {
-                    choiceButton(String(localized: "Approve"), kind: .primary, id: "ask.approve") {
-                        act(.choose(index, note: nil))
-                    }
-                }
-                ForEach(card.choices.indices.filter { !approve.contains($0) }, id: \.self) { index in
-                    choiceButton(
-                        ChatWords.choice(card.choices[index]), kind: .outline,
-                        id: "ask.choice.\(index)"
-                    ) { pick(index) }
-                }
-            }
+            .pickerStyle(.segmented)
+            .identified("ask.grant.length", value: forSession ? "session" : "turn")
         }
     }
 
-    /// Grant for this turn or this session, or deny.
-    @ViewBuilder
-    private var accessChoices: some View {
-        let turn = card.choices.firstIndex { $0.outcome == .grantForTurn }
-        let session = card.choices.firstIndex { $0.outcome == .grantForSession }
-        VStack(alignment: .leading, spacing: 12) {
-            if turn != nil, session != nil {
-                Picker(String(localized: "How long"), selection: $forSession) {
-                    Text("This turn").tag(false)
-                    Text("This session").tag(true)
+    /// Grant, or deny.
+    private var accessButtons: some View {
+        let turn = grantForTurn
+        let session = grantForSession
+        return ButtonPair {
+            if let index = (forSession ? session : turn) ?? turn ?? session {
+                choiceButton(String(localized: "Grant"), kind: .primary, id: "ask.grant") {
+                    act(.choose(index, note: nil))
                 }
-                .pickerStyle(.segmented)
-                .identified("ask.grant.length", value: forSession ? "session" : "turn")
             }
-            ButtonPair {
-                if let index = (forSession ? session : turn) ?? turn ?? session {
-                    choiceButton(String(localized: "Grant"), kind: .primary, id: "ask.grant") {
-                        act(.choose(index, note: nil))
-                    }
-                }
-                ForEach(
-                    card.choices.indices.filter { $0 != turn && $0 != session }, id: \.self
-                ) { index in
-                    choiceButton(
-                        ChatWords.choice(card.choices[index]), kind: .outline,
-                        id: "ask.choice.\(index)"
-                    ) { pick(index) }
-                }
+            ForEach(
+                card.choices.indices.filter { $0 != turn && $0 != session }, id: \.self
+            ) { index in
+                choiceButton(
+                    ChatWords.choice(card.choices[index]), kind: .outline,
+                    id: "ask.choice.\(index)"
+                ) { pick(index) }
             }
         }
     }
 
     /// Native fields from the tool server's schema. Whether the form can go,
     /// and what is wrong with a field, is the shared view's check.
-    @ViewBuilder
-    private func formChoices(_ asked: [FormField]) -> some View {
+    private func formRows(_ asked: [FormField]) -> some View {
         let current = fields ?? FormEntry.entries(asked, kept: form.kept)
-        let values = current.map(\.value)
-        let problems = Bridge.formProblems(asked, values)
-        VStack(alignment: .leading, spacing: 12) {
+        let problems = Bridge.formProblems(asked, current.map(\.value))
+        return VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(current.enumerated()), id: \.offset) { index, field in
                 FormFieldView(entry: field, problem: FormEntry.shown(problems, at: index, of: field)) { value in
                     // From the form as it is now: a control can hold on to
@@ -656,29 +742,33 @@ private struct AskBodyView: View {
                     form.keep(edited.map(\.value))
                 }
             }
-            ButtonPair {
-                ForEach(Array(card.choices.enumerated()), id: \.offset) { index, choice in
-                    if choice.outcome == .submit {
-                        choiceButton(
-                            String(localized: "Submit"), kind: .primary, id: "ask.submit",
-                            enabled: problems?.isEmpty == true
-                        ) { act(.submit(values)) }
-                    } else {
-                        choiceButton(
-                            ChatWords.choice(choice), kind: .outline, id: "ask.choice.\(index)"
-                        ) { pick(index) }
-                    }
+        }
+    }
+
+    private func formButtons(_ asked: [FormField]) -> some View {
+        let values = (fields ?? FormEntry.entries(asked, kept: form.kept)).map(\.value)
+        let problems = Bridge.formProblems(asked, values)
+        return ButtonPair {
+            ForEach(Array(card.choices.enumerated()), id: \.offset) { index, choice in
+                if choice.outcome == .submit {
+                    choiceButton(
+                        String(localized: "Submit"), kind: .primary, id: "ask.submit",
+                        enabled: problems?.isEmpty == true
+                    ) { act(.submit(values)) }
+                } else {
+                    choiceButton(
+                        ChatWords.choice(choice), kind: .outline, id: "ask.choice.\(index)"
+                    ) { pick(index) }
                 }
             }
         }
     }
 
     /// Open the link, then say it is done.
-    @ViewBuilder
-    private func linkChoices(_ url: String) -> some View {
+    private func linkButtons(_ url: String) -> some View {
         let done = card.choices.indices.filter { card.choices[$0].outcome == .openLink }
         let rest = card.choices.indices.filter { !done.contains($0) }
-        VStack(spacing: 8) {
+        return VStack(spacing: 8) {
             if let link = URL(string: url), !opened {
                 choiceButton(String(localized: "Open link"), kind: .primary, id: "ask.open") {
                     opened = true
@@ -710,19 +800,21 @@ private struct AskBodyView: View {
         }
     }
 
+    private var noteEnds: [Int] { card.choices.indices.filter { isDeny(card.choices[$0]) } }
+    private var noteRequired: Bool { noteEnds.contains { card.choices[$0].outcome == .sendBack } }
+
     /// The deny step, or the note a plan's send-back needs: the note field
-    /// when a choice takes one, then the choices that end it side by side,
-    /// carrying on filled.
-    private var noteStep: some View {
-        let ends = card.choices.indices.filter { isDeny(card.choices[$0]) }
-        let takesNote = ends.contains { card.choices[$0].takesNote }
-        let required = ends.contains { card.choices[$0].outcome == .sendBack }
-        return VStack(alignment: .leading, spacing: 10) {
-            if takesNote {
+    /// when a choice takes one, above the choices that end it.
+    @ViewBuilder
+    private var noteRows: some View {
+        let required = noteRequired
+        if noteEnds.contains(where: { card.choices[$0].takesNote }) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(required ? String(localized: "What should change") : String(localized: "Tell it why (optional)"))
                         .designFont(.monoSmall, design)
                         .foregroundStyle(design.inkMuted.color)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 6)
                     backButton
                 }
@@ -738,25 +830,30 @@ private struct AskBodyView: View {
                     }
                     .accessibilityLabel(required ? String(localized: "What should change") : String(localized: "Tell it why (optional)"))
                     .identified("ask.note", value: note)
-            } else {
-                HStack {
-                    Spacer()
-                    backButton
-                }
             }
-            ButtonPair {
-                // Stopping first, carrying on filled beside it.
-                ForEach(ends.sorted { stops(card.choices[$0]) && !stops(card.choices[$1]) }, id: \.self) { index in
-                    let choice = card.choices[index]
-                    let blank = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    choiceButton(
-                        ChatWords.choice(Choice(outcome: choice.outcome, primary: choice.primary, takesNote: false)),
-                        kind: stops(choice) && ends.count > 1 ? .outline : .primary,
-                        id: "ask.choice.\(index)",
-                        enabled: !(choice.outcome == .sendBack && blank)
-                    ) {
-                        act(.choose(index, note: choice.takesNote && !blank ? note : nil))
-                    }
+        } else {
+            HStack {
+                Spacer()
+                backButton
+            }
+        }
+    }
+
+    /// The choices that end the note step side by side, carrying on filled.
+    private var noteButtons: some View {
+        let ends = noteEnds
+        return ButtonPair {
+            // Stopping first, carrying on filled beside it.
+            ForEach(ends.sorted { stops(card.choices[$0]) && !stops(card.choices[$1]) }, id: \.self) { index in
+                let choice = card.choices[index]
+                let blank = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                choiceButton(
+                    ChatWords.choice(Choice(outcome: choice.outcome, primary: choice.primary, takesNote: false)),
+                    kind: stops(choice) && ends.count > 1 ? .outline : .primary,
+                    id: "ask.choice.\(index)",
+                    enabled: !(choice.outcome == .sendBack && blank)
+                ) {
+                    act(.choose(index, note: choice.takesNote && !blank ? note : nil))
                 }
             }
         }
@@ -817,6 +914,7 @@ struct DiffPreview: View {
 
     private func text(_ line: EditLine) -> String {
         switch line {
+        case .file(let file): ChatWords.fileHeader(file)
         case .hunk(_, let newStart): String(localized: "Line \(newStart)")
         case .line(let line):
             switch line.kind {
@@ -829,6 +927,7 @@ struct DiffPreview: View {
 
     private func ink(_ line: EditLine) -> Color {
         if case .hunk = line { return design.inkFaint.color }
+        if case .file = line { return design.inkMuted.color }
         return design.ink.color
     }
 
@@ -1079,11 +1178,15 @@ struct QuestionCard: View {
             }
         case .reviewing(let answers)?:
             for (index, answer) in answers.enumerated() where index < count {
-                switch answer {
-                case .options(let chosen) where chosen.isEmpty: skipped[index] = true
-                case .options(let chosen): picks[index] = Set(chosen)
-                case .other(let text): others[index] = text
+                let chosen = answer.picked ?? []
+                let typed = answer.other.flatMap { $0.isEmpty ? nil : $0 }
+                if chosen.isEmpty && typed == nil {
+                    skipped[index] = true
+                } else {
+                    picks[index] = Set(chosen)
+                    others[index] = typed
                 }
+                notes[index] = answer.note ?? ""
             }
             _reviewing = State(initialValue: true)
         case .questionNote(let text)?:
@@ -1105,7 +1208,7 @@ struct QuestionCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PinnedFooter {
             if replying {
                 replyStep
             } else {
@@ -1114,6 +1217,16 @@ struct QuestionCard: View {
                     review
                 } else if questions.indices.contains(step) {
                     question(questions[step], at: step)
+                }
+            }
+        } footer: {
+            if replying {
+                replyButtons
+            } else {
+                if reviewing {
+                    reviewButtons
+                } else if questions.indices.contains(step) {
+                    questionButtons(questions[step], at: step)
                 }
                 if replies { replyLink }
             }
@@ -1196,6 +1309,18 @@ struct QuestionCard: View {
 
     private var hasPreviews: Bool { questions.contains { $0.options.contains { !$0.preview.isEmpty } } }
 
+    /// Whose preview the question shows: the option last touched, else the
+    /// first that has one. A phone has no hover, so waiting for a touch would
+    /// hide every preview until something was already picked.
+    private func previewed(_ question: QuestionView, at index: Int) -> Int? {
+        let highlight = highlighted.indices.contains(index) ? highlighted[index].map(Int.init) : nil
+        if let highlight, question.options.indices.contains(highlight),
+           !question.options[highlight].preview.isEmpty {
+            return highlight
+        }
+        return question.options.firstIndex { !$0.preview.isEmpty }
+    }
+
     /// One tap answers only one pick-one question with no previews, while
     /// its note is not being written.
     private var tapAnswers: Bool {
@@ -1209,19 +1334,26 @@ struct QuestionCard: View {
             .foregroundStyle(design.ink.color)
             .fixedSize(horizontal: false, vertical: true)
             .identified("ask.question", label: question.question)
-        let highlight = highlighted.indices.contains(index) ? highlighted[index] : nil
-        if let highlight, question.options.indices.contains(Int(highlight)),
-           !question.options[Int(highlight)].preview.isEmpty {
-            Text(question.options[Int(highlight)].preview)
-                .designFont(.monoSmall, design)
-                .foregroundStyle(design.ink.color)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous)
-                        .fill(design.sunken.color)
-                }
-                .identified("ask.preview")
+        if let shown = previewed(question, at: index) {
+            let option = question.options[shown]
+            VStack(alignment: .leading, spacing: 4) {
+                // Named, because before a pick it is the first option's,
+                // which nothing else on the card says.
+                Text(option.label)
+                    .designFont(.caption, design)
+                    .foregroundStyle(design.inkMuted.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(option.preview)
+                    .designFont(.monoSmall, design)
+                    .foregroundStyle(design.ink.color)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous)
+                            .fill(design.sunken.color)
+                    }
+            }
+            .identified("ask.preview", label: option.label)
         }
         VStack(spacing: 6) {
             ForEach(Array(question.options.enumerated()), id: \.offset) { position, option in
@@ -1230,6 +1362,11 @@ struct QuestionCard: View {
             if question.allowOther { other(question, at: index) }
         }
         if takesNote { noteField(at: index) }
+    }
+
+    /// Skip and Send (or Next), pinned under the question.
+    @ViewBuilder
+    private func questionButtons(_ question: QuestionView, at index: Int) -> some View {
         let typing = others.indices.contains(index) && others[index] != nil
         if !tapAnswers || typing || skips {
             let count = picks.indices.contains(index) ? picks[index].count : 0
@@ -1307,7 +1444,6 @@ struct QuestionCard: View {
 
     private func select(_ position: UInt32, in question: QuestionView, at index: Int) {
         guard picks.indices.contains(index) else { return }
-        others[index] = nil
         skipped[index] = false
         highlighted[index] = position
         if question.multiSelect {
@@ -1316,6 +1452,7 @@ struct QuestionCard: View {
             }
             return
         }
+        others[index] = nil
         picks[index] = [position]
         if tapAnswers {
             send(responses)
@@ -1330,7 +1467,13 @@ struct QuestionCard: View {
         if open {
             let binding = Binding(
                 get: { others.indices.contains(index) ? others[index] ?? "" : "" },
-                set: { others[index] = $0; picks[index] = []; skipped[index] = false })
+                set: {
+                    // A multi-select keeps its ticks beside the typed words;
+                    // a single choice is one or the other.
+                    others[index] = $0
+                    if !question.multiSelect { picks[index] = [] }
+                    skipped[index] = false
+                })
             Group {
                 if question.secret {
                     SecureField(String(localized: "Something else"), text: binding)
@@ -1350,7 +1493,7 @@ struct QuestionCard: View {
         } else {
             Button {
                 others[index] = ""
-                picks[index] = []
+                if !question.multiSelect { picks[index] = [] }
             } label: {
                 OptionRow(
                     label: String(localized: "Something else…"), detail: "", recommended: false,
@@ -1372,18 +1515,15 @@ struct QuestionCard: View {
         }
     }
 
-    /// One response per question, in order: what was picked or typed, an
-    /// empty pick for one not answered, and its note.
+    /// One response per question, in order: the options ticked and the
+    /// words typed (a multi-select carries both; a single choice one or the
+    /// other), nothing for one not answered, and its note.
     private var responses: [QuestionResponse] {
         questions.indices.map { index in
             let note = notes[index].trimmingCharacters(in: .whitespacesAndNewlines)
-            let pick: Pick
-            if let other = others[index], !other.isEmpty {
-                pick = .other(other)
-            } else {
-                pick = .options(picks[index].sorted())
-            }
-            return QuestionResponse(pick: pick, note: note.isEmpty ? nil : note)
+            let other = others[index].flatMap { $0.isEmpty ? nil : $0 }
+            let picked = other != nil && !questions[index].multiSelect ? [] : picks[index].sorted()
+            return QuestionResponse(note: note.isEmpty ? nil : note, other: other, picked: picked)
         }
     }
 
@@ -1419,24 +1559,27 @@ struct QuestionCard: View {
                 .buttonStyle(.amuxControl)
                 .identified("ask.review.\(index)", value: stepState(index))
             }
-            choiceButton(
-                String(localized: "Send answers"), kind: .primary, id: "ask.send",
-                enabled: questions.indices.allSatisfy(decided)
-            ) {
-                send(responses)
-            }
+        }
+    }
+
+    private var reviewButtons: some View {
+        choiceButton(
+            String(localized: "Send answers"), kind: .primary, id: "ask.send",
+            enabled: questions.indices.allSatisfy(decided)
+        ) {
+            send(responses)
         }
     }
 
     private func summary(_ question: QuestionView, at index: Int) -> String {
         guard picks.indices.contains(index) else { return "" }
-        if let other = others[index], !other.isEmpty {
-            return question.secret ? String(localized: "answered (hidden)") : "“\(other)”"
-        }
-        let labels = picks[index].sorted().compactMap { position in
+        var parts = picks[index].sorted().compactMap { position in
             question.options.indices.contains(Int(position)) ? question.options[Int(position)].label : nil
         }
-        if !labels.isEmpty { return labels.joined(separator: ", ") }
+        if let other = others[index], !other.isEmpty {
+            parts.append(question.secret ? String(localized: "answered (hidden)") : "“\(other)”")
+        }
+        if !parts.isEmpty { return parts.joined(separator: ", ") }
         return skipped[index] ? String(localized: "Skipped") : String(localized: "Not answered")
     }
 
@@ -1449,8 +1592,7 @@ struct QuestionCard: View {
     /// The person's own words in place of the answers; what they had
     /// answered so far goes with them.
     private var replyStep: some View {
-        let blank = replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Reply in your own words")
                     .designFont(.monoSmall, design)
@@ -1478,11 +1620,15 @@ struct QuestionCard: View {
                 }
                 .accessibilityLabel(String(localized: "Reply in your own words"))
                 .identified("ask.reply.text", value: replyText)
-            choiceButton(
-                String(localized: "Send reply"), kind: .primary, id: "ask.reply.send", enabled: !blank
-            ) {
-                reply(replyText, responses)
-            }
+        }
+    }
+
+    private var replyButtons: some View {
+        let blank = replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return choiceButton(
+            String(localized: "Send reply"), kind: .primary, id: "ask.reply.send", enabled: !blank
+        ) {
+            reply(replyText, responses)
         }
     }
 
@@ -1519,18 +1665,16 @@ struct OptionRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             box.alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(label)
-                        .designFont(quiet ? .body : .bodyEmphasis, design)
-                        .foregroundStyle(quiet ? design.inkMuted.color : design.ink.color)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if recommended {
-                        Text("RECOMMENDED")
-                            .designFont(.sectionTitle, design)
-                            .foregroundStyle(design.inkMuted.color)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(design.hairline.color, lineWidth: 1))
+                // The tag beside the label while both fit whole, under it
+                // when they do not: neither is ever broken mid-word.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        labelText.fixedSize()
+                        if recommended { tag }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        labelText
+                        if recommended { tag }
                     }
                 }
                 if !detail.isEmpty {
@@ -1551,6 +1695,23 @@ struct OptionRow: View {
                 .strokeBorder(selected ? design.ink.color : .clear, lineWidth: 1.5)
         }
         .contentShape(Rectangle())
+    }
+
+    private var labelText: some View {
+        Text(label)
+            .designFont(quiet ? .body : .bodyEmphasis, design)
+            .foregroundStyle(quiet ? design.inkMuted.color : design.ink.color)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var tag: some View {
+        Text("RECOMMENDED")
+            .designFont(.sectionTitle, design)
+            .foregroundStyle(design.inkMuted.color)
+            .fixedSize()
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(design.hairline.color, lineWidth: 1))
     }
 
     private var box: some View {

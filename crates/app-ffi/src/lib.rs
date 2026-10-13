@@ -1907,6 +1907,33 @@ pub unsafe extern "C" fn amux_session_send(
     }
 }
 
+/// Runs a `Draft`, as JSON, that names a command the client handles itself
+/// (`/model`, `/effort`, `/rename`) or one the agent does not run; the
+/// callback gets a `CommandOutcome`, whose `Send` says to send the draft as
+/// typed.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; `draft` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_command(
+    chat: *const AmuxChat,
+    draft: *const c_char,
+    callback: AmuxCallback,
+    context: *mut c_void,
+) {
+    // SAFETY: the caller's contract.
+    let draft: Option<Draft> = unsafe { parse(draft) };
+    // SAFETY: the caller's contract.
+    unsafe {
+        act(chat, callback, context, |chat| async move {
+            match draft {
+                Some(draft) => Answered::Ok(chat.command(&draft).await),
+                None => Answered::Err("the draft is not a Draft".into()),
+            }
+        })
+    }
+}
+
 /// Answers the head ask, named by its key, with the choice at `index` on
 /// its card; `note` goes back with a choice that takes one. The callback
 /// gets an `ActOutcome`.
@@ -2174,6 +2201,25 @@ pub unsafe extern "C" fn amux_session_interrupt(
     unsafe {
         act(chat, callback, context, |chat| async move {
             chat.interrupt().await
+        })
+    }
+}
+
+/// Takes terminal Claude's own view back to the agent's conversation
+/// after it switched to another. The callback gets an `ActOutcome`.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_switch_back(
+    chat: *const AmuxChat,
+    callback: AmuxCallback,
+    context: *mut c_void,
+) {
+    // SAFETY: the caller's contract.
+    unsafe {
+        act(chat, callback, context, |chat| async move {
+            chat.switch_back().await
         })
     }
 }

@@ -1,33 +1,33 @@
 shell |  | agents | 0,62,402,778
 chat |  | asker | 0,62,402,778
-chat.row.boundary | Started |  | 18,132,366,34
-chat.row.prompt | Tidy the release notes. |  | 18,166,366,40
-chat.row.question | Asking |  | 18,217,366,20
+chat.row.boundary | Started |  | 18,43,366,34
+chat.row.prompt | Tidy the release notes. |  | 18,76,366,40
+chat.row.question | Asking |  | 18,128,366,20
 chat.header | /t/a/n/d/work · desk | live | 18,64,202,54
 chat.back | Back |  | 16,68,42,46
 chat.title | asker | asker | 51,72,156,38
 chat.more | More |  | 344,69,44,44
-ask | Question | open | 12,402,378,428
-ask.more | More |  | 338,410,44,44
-ask.question | Which changes should the release notes keep? |  | 28,458,343,20
-ask.option.0 | Only what users will notice |  | 28,490,346,48
-ask.option.1 | Every change |  | 28,544,346,48
-ask.option.other |  |  | 28,598,346,48
-ask.addNote.0 | Add a note |  | 28,658,94,44
-ask.skip | Skip |  | 28,714,346,44
-ask.reply | Reply instead |  | 28,770,114,44
+ask | Question | open | 12,282,378,428
+ask.more | More |  | 338,290,44,44
+ask.question | Which changes should the release notes keep? |  | 28,338,343,20
+ask.option.0 | Only what users will notice |  | 28,370,346,48
+ask.option.1 | Every change |  | 28,424,346,48
+ask.option.other |  |  | 28,478,346,48
+ask.addNote.0 | Add a note |  | 28,538,94,44
+ask.skip | Skip |  | 28,594,346,44
+ask.reply | Reply instead |  | 28,650,114,44
  | Back |  | 16,68,42,46
  | asker, /t/a/n/d/work · desk |  | 51,72,156,38
  | More |  | 344,69,44,44
- | Question |  | 62,423,70,20
- | More |  | 338,410,44,44
- | Which changes should the release notes keep? |  | 28,458,343,20
- | Only what users will notice |  | 28,490,346,48
- | Every change |  | 28,544,346,48
- | Something else… |  | 28,598,346,48
- | Add a note |  | 28,670,94,20
- | Skip |  | 28,714,346,44
- | Reply instead |  | 28,782,114,20
- | Started |  | 18,132,366,34
- | Tidy the release notes. |  | 18,166,366,40
- | Asking |  | 18,217,366,20
+ | Question |  | 62,302,70,20
+ | More |  | 338,290,44,44
+ | Which changes should the release notes keep? |  | 28,338,343,20
+ | Only what users will notice |  | 28,370,346,48
+ | Every change |  | 28,424,346,48
+ | Something else… |  | 28,478,346,48
+ | Add a note |  | 28,550,94,20
+ | Skip |  | 28,594,346,44
+ | Reply instead |  | 28,662,114,20
+ | Started |  | 18,43,366,34
+ | Tidy the release notes. |  | 18,76,366,40
+ | Asking |  | 18,128,366,20

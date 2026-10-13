@@ -1,3 +1,12 @@
+2026-10-13 — **The clients half of the second QA round, merged.** The
+clients' switch back sends the SwitchBack input the terminal Claude
+interpreter types as `/resume <session>`, and their /model and /effort on
+terminal Claude send Claude's own command as typed, the one way that kind
+takes a model or effort. The view goldens the two halves both changed were
+written again from the merged views: a reply that ends a question's turn is
+drawn as a turn end, not a stop, and terminal Claude's effort now shows from
+its assistant rows.
+
 2026-10-13 — **Two family specs wait for what the stop cascade does later.**
 A stop ends its agent and starts its descendants' stops without waiting for
 them. The stop tool's spec read the grandchild's row as soon as the child
@@ -287,6 +296,298 @@ it, and whenever the daemon recounts it (the same count the fleet row
 shows). It lets a one-shot sub-agent wait for its own children before it
 exits. Each write reads the newest count under the connection's lock, so
 writes that race each other still end on the latest.
+2026-10-13 — **The phone reflows at accessibility text sizes instead of overprinting or cutting words.**
+A docked ask card at a large text size was squeezed until its words
+overprinted and its buttons fell off the screen. The card now stops growing
+short of the chat's header, and its subject and choices scroll under answer
+buttons pinned at its foot. Two buttons that do not fit side by side go one
+above the other, so a plan's Approve and Send back read whole. A command
+waiting for permission is shown in full, and a RECOMMENDED tag goes under
+its option rather than splitting the option's name.
+
+Elsewhere at those sizes: a settings row puts its value under its label, so
+this phone's identity and the relay's state are no longer cut from the
+front. The Appearance control drops under its label and never breaks a
+word. The Agents header puts the account and New Agent buttons above the
+title, with one fact to a line beneath it, and a row's place keeps one line.
+New Agent puts its back link above the title, and its last rows scroll clear
+of the Start bar. The chat's header pill stops growing at the largest
+ordinary size, the composer's model chip gets a line of its own, and a step
+row stacks its verb, file and counts so the file keeps its name. Component
+pictures at accessibility3 (accessibility5 for a question) fail when one
+piece of text is drawn over another or a control leaves the canvas. A
+whole-screen golden run now also photographs the fleet, hosts, You, New
+Agent, a chat and a docked question at accessibility3.
+
+2026-10-13 — **The chat vocabulary's terminal figures show the terminal as it draws today.**
+Six of the figures in the chat vocabulary were drawn before recent changes:
+answered asks with their notes and skips, plans with their switch, step rows,
+and asks whose key lines and wording have since moved. They are rendered
+again from the terminal's own components, and the figure manifest's sizes
+and checksums follow.
+
+2026-10-13 — **The phone opens a host's own page, holds sends while a host is away, and runs the client's commands.**
+Tapping a host on the Hosts tab opened a blank page. It now opens the host's
+page: how the phone reaches it, its platform, version, providers, addresses
+and key fingerprint, and Revoke. Revoke asks first there and on the Devices
+sheet, saying the phone stops reaching the machine and only pairing again
+brings it back. A test opens every page the shell can push and fails on one
+with nothing built behind it.
+
+A message, answer or stop sent while the chat is catching up or its host is
+out of reach is handed to the client library to hold rather than refused, so
+Send stays enabled. A held prompt is drawn pending with Cancel, which returns
+its words to the draft; a held answer shows on the ask card with Cancel; a
+held stop shows under the chat's header and on the agent's home row, and the
+menu offers Cancel Stop. The empty field says when a message goes in words
+short enough for one line. A draft starting with `/` runs the library's own
+commands (settings, rename, model) on the phone and says which words an
+agent does not take. When terminal Claude's own view switches to another
+conversation, the chat says so with Switch Back, readable at large text
+sizes. A multi-select question now sends its ticked options together with
+the words typed as Something else; typing no longer unticks them.
+
+2026-10-13 — **The terminal attaches up to 64 MB, waits for a file still attaching, and keeps drafts across closing.**
+A file over the attachment limit was uploaded and then failed with a raw
+error; it is now refused before upload in words naming the limit ("files can
+be at most 64 MB"; the limit is 64 MiB of content). Enter while a file is
+still attaching waits for it, says so, and sends once it lands, instead of
+sending the prompt without it. A failed attachment says why above the
+composer. Every draft in the client, held prompts' words included, is handed
+to this machine's daemon when the client closes and read back when a chat
+opens, so detaching no longer loses it.
+
+2026-10-13 — **A conversation switched away in terminal Claude's own view says so, with a way back.**
+When someone resumes another conversation inside terminal Claude's own
+screen, the agent's conversation has left that process and prompts are
+refused. The chat now says so on the composer's edge ("Claude's own view
+switched to another conversation") with the way back: Ctrl+B in the
+terminal, a Switch back button on the phone, both sending the input that
+types the resume of this agent's conversation. The snapshot's effort is now
+read as the one in force for terminal Claude too.
+
+2026-10-13 — **`/model`, `/effort` and `/rename` are the client's own commands, and Codex refuses what it does not run.**
+Typing `/model` sent a slash command to the agent, which on terminal Claude
+opened a dialog amux could not see, and Codex took any "/..." as a prompt for
+the model. The command list both clients offer now starts with the client's
+own `/model` and `/effort` (where there is a choice) and `/rename`, ahead of
+the agent's commands of the same name. Bare `/model` or `/effort` opens the
+picker, `/model <name>` sets it without a prompt, and `/rename <name>` is
+amux's rename. On Codex any other command it does not run is refused in the
+composer with the commands it does offer; an unknown model or effort is
+refused the same way. The phone reaches the same decisions through one bridge
+call that classifies a draft before it is sent.
+
+2026-10-13 — **A prompt, an answer or a stop that never left waits for the host and goes by itself.**
+A send refused because the agent's host could not be reached, or made while
+the chat was not yet current, certainly never reached the agent, yet clients
+showed it as failed and the person had to send it again. The client library
+now holds such a prompt or answer: it shows pending with Cancel ("sends when
+desk is back"), and goes again under its own id once the chat is current,
+whether the chat caught up or the host's entry turned online. A send whose
+connection dropped after it was written still waits as "may not have arrived"
+for the person to resend or discard, since nothing can tell whether the agent
+already has it. A stop is held the same way by the fleet and shown on the
+agent's row on home (`x` cancels it); rename and delete still fail at once
+with the reason. Held inputs live as long as the client; a held answer or
+stop is dropped when it closes. The composer's
+"waiting" mode is now "holds": typing and Enter are open while the chat
+catches up or reconnects, and the key line says when it will send.
+
+2026-10-13 — **A multi-select sends its ticked options with the words typed as "Something else".**
+The shared answer for a question held either picks or typed words, never
+both, so ticking two options and then typing "Something else" sent only the
+words, on both clients. A question's response now carries the picked options
+and the typed words side by side; a multi-select sends both, a single choice
+one or the other, and nothing in either skips the question. The terminal's
+review line lists the picks then the typed words.
+
+2026-10-13 — **Home's stop window sizes itself with a clamp.**
+The width of the window that asks before a stop is now bounded with one clamp
+rather than a max and a min, which the linter refuses; nothing it draws moves.
+
+2026-10-13 — **The chat edits whole characters, pages without skipping a line, and says interrupt for ending a turn.**
+The composer drew and edited one code point at a time, so a combining accent
+was drawn apart from its letter and Backspace left half an emoji behind. The
+cursor and Backspace now step over whole characters as the person sees them.
+A tab in an agent's code block drew as nothing and glued the words either
+side together; it now widens to the next fourth column. Page Down brought
+lines to the top that the pinned prompt then covered, so a long answer read a
+page at a time lost lines; a page now starts just below the pin, and Page Up
+moves by the same amount.
+
+A long question on a short screen pushed its way out and its keys off the
+bottom. The options' descriptions now give way first, then the question's
+words down to two lines, then the options show a window around the highlight
+marked `↑ more` / `↓ more`, so the free-text row, the way out and the keys
+stay. Enter on a multi-select with nothing ticked sends the empty pick, as
+the provider's own Submit does, where it did nothing.
+
+The leader then `o` with no row focused opens the newest run on screen
+instead of nothing. Up in an empty composer with nothing queued brings back
+the chat's last prompt. A prompt of only spaces is no longer sent. `ctrl+x`
+reads "interrupt" everywhere, since it ends the turn and the agent stays;
+"stop" is home's word for ending the agent. A chat whose link to this
+machine's own daemon dropped says "reconnecting to amux" rather than naming
+the agent's host, which was never the one gone.
+
+At 80 columns the overview lies over the feed's right side, and the chat's
+words now wrap to the columns it leaves rather than hide under it. A running
+step whose permission was answered "always allow" kept the long grant and
+lost its verb and command; the grant now gives way, cut or left out. These
+and the earlier 80-column fixes have tests drawn at 80 columns.
+
+2026-10-13 — **This machine's daemon keeps each agent's unsent draft for its own clients.**
+A draft typed into the terminal client lived only in that process, so
+detaching or closing the client threw it away. The daemon now answers two
+calls, `SaveDraft` and `GetDraft`: a client hands over an agent's draft (its
+words and attachments) as it closes or leaves the chat, and gets it back when
+it opens that chat again. Drafts are kept in a small file in the profile's
+directory, per agent, forgotten when the agent is deleted or the draft is
+emptied, and never synced: a paired host refuses the calls, so a draft stays
+on the machine it was typed on.
+
+2026-10-13 — **Home ends an agent with one key and asks in a window the arrows work; a new agent's folder follows its host.**
+On home, `x` is now the one key that ends an agent: a live agent is stopped
+(it exits and can be resumed later) and only an exited one is deleted; the
+separate `s` key is gone. The window that asks first confirmed on `y` and
+ignored the arrows, so moving to Cancel and pressing Enter still stopped the
+agent, and a sentence typed into a chat that had just closed ("so sure, yes")
+stopped a healthy one. Its buttons now answer ← → and Tab, Enter presses the
+one shown on a chip, Esc cancels, and no letter answers it. When a stop cuts
+something the window says what, as the phone does: "desk-1 is working and has
+2 background jobs and 1 sub-agent. Stop anyway?", counting from the fleet row
+and from the sub-agents this machine sees itself. A chat that closes under the
+person now says why in their terms (its agent was deleted, or its host is no
+longer linked to this machine) rather than "no agent with that id", and home
+then takes no key until half a second passes with none, as an ask arms, so
+the rest of what they were typing does nothing.
+
+Typing a filter moves the highlight to the first agent it finds, so `/ name`
+then Enter twice opens that agent instead of starting a new one. Emptying a
+rename says why Enter does nothing. A folder name with no separators to cut
+at is cut in its middle, so its row keeps the agent's kind and host.
+
+A new agent's folder now follows its host: choosing another host takes the
+folder that host's agents last worked in, or leaves one to be chosen (Enter
+then opens the folder's panel), where it kept this machine's path, which on
+another machine names nothing or something else. Choosing a host that is
+away says why it cannot take the agent instead of doing nothing. A new agent
+left with nothing typed opens with the defaults next time, rather than with
+a permission cycled and abandoned. Raw attach to a stopped agent says it is
+stopped instead of failing on its socket's path, and asked for from inside a
+chat the notice no longer says Enter opens the chat, since Enter there sends.
+
+At 80 columns key lines keep their way out: they tighten, then drop whole
+keys from their end with a `…` where it fits, so the new agent's settings
+letters keep `a agent` and `esc back` and the review page keeps `q back`. The
+keys reference wraps its words instead of cutting them, and terminal Claude's
+hint for changing its model is short enough to fit.
+
+2026-10-13 — **The phone stops, interrupts and deletes as decided, and keeps its drafts.**
+On the phone, a live agent's menu now offers Stop Agent and never Delete
+Agent: stopping ends the agent but keeps it, resumable, and only an exited
+agent can be deleted. Stopping asks first, and when the stop cuts something
+the question says what: "desk-1 is working and has 2 background jobs and 1
+sub-agent. Stop anyway?" The counts come from the agent's fleet row, which now
+carries how many agents run below it on every host and how many background
+jobs it has, so a child on a host the phone is not paired with is counted too.
+The square button under a working turn, and the ask card's way out of a turn,
+now read Interrupt, since they end the turn and leave the agent running.
+
+A half-typed message on the phone used to be lost when its chat closed after
+five minutes away or when the app was reopened. Drafts are now kept on the
+phone for each account and agent, and never sent to other devices. A file over
+the 64 MB attachment limit is refused before it is read, in words naming the
+file and the limit, and an attachment that fails to upload is named with the
+reason rather than disappearing. A question whose options carry code previews
+shows the first one straight away, since a phone has nothing to hover with.
+
+2026-10-13 — **Chat rows, asks and home rows say what happened, in the person's words.**
+Several things both clients draw from the shared views were wrong or hard to
+read; the views now hand both clients the corrected facts.
+
+Steps: a file step names a file in the agent's folder from that folder, as
+its ask already did, rather than by an absolute path cut off before the
+file's name. A read, search or fetch keeps why it failed or what it found
+(`Explore.result`), where before a failed search said only "failed". A
+command's output is what a terminal leaves on screen: colour codes are gone
+and the words after a carriage return are kept, where the phone drew
+`[31mRED[0m` and lost `bbb` from `aaa\rbbb`. A command's time runs from when
+it started running, after any wait for the person's approval, so a curl that
+waited 37 seconds to be allowed no longer reads "39s". A Codex patch that
+failed (refused in Codex's own view, say) no longer reads "Created" for a
+file it never wrote. A step still running when its agent exited is drawn
+cancelled, not "Running" under the exit. Codex's opened web page reads as a
+fetch of its address rather than an empty search.
+
+Turns: answering a Codex question with "Reply instead" interrupts the turn
+so the words can go as the next prompt; nobody stopped the agent, so the
+chat now ends that turn as any other, not with "You stopped it". A working
+Codex agent's activity line and home row name the command still running,
+even once Codex writes a reasoning item after it, instead of "Working".
+
+Asks: a Codex patch of several files marks where each file's lines start,
+with whether it is added, deleted, moved or edited, so one file no longer
+seems to hold every file's lines (the terminal draws each as a header line,
+and "1 more files" reads "1 more file"). Codex's "don't ask again" on a patch
+names the files it covers, as Codex's own view does, rather than promising
+the whole session. A web fetch or web search ask shows the address or the
+words, as Claude's own dialog does, not the tool's input as JSON with the
+address cut off. A notebook edit ask shows the cell's new source instead of
+nothing.
+
+Home: an agent's last line reads its markdown as words ("Updated README.md",
+not the link syntax with a full path and backticks). Agents on a host out of
+reach no longer count as working or needing the person in the header, as
+their rows already said the host was away. An agent on a host that unpaired
+this machine says the host no longer trusts it (`SecondLine::HostRevoked`)
+rather than that the host is away, which read as something to wait out.
+Right-to-left and other direction controls are dropped from agent names,
+attachment names and message text, so `invoice\u{202E}fdp.exe` cannot read
+as a PDF and every client spells a name the same way.
+
+The review page names a file git quotes in its patch headers (a quote, a
+backslash or a non-ASCII letter in the name) as it is on disk, which is also
+the path a review comment gives the agent.
+
+The phone's generated value types follow (`EditLine.file`,
+`RowKind.explore`'s `result`, `SecondLine.hostRevoked`); the phone's own
+code that matches on them still needs the new cases.
+
+2026-10-13 — **The phone's chat rows sit where they draw, and home's ages count.**
+Long replies on the phone had the turn's "Worked …" line drawn over their last
+lines. The chat list runs under the status bar and the header, and every row
+cell passing under them took the window's safe area as padding that the row's
+measured height never included, so the cell drew taller than the place it was
+given. The list now reports no safe area to its cells. A chat following its
+newest row also failed to keep it in view when the space under the rows grew,
+as when the keyboard came up or a notice appeared over the composer; it now
+keeps the newest row above whatever grew.
+
+Home's "how long ago" ages froze at "0s" for minutes, because they were read
+against the moment the list was last pulled to refresh. They now count every
+second while home is on screen, and never read a row as older than nothing.
+A reopened app no longer flashes "Nothing paired yet" before it has read its
+saved hosts: home waits until it knows. The New Agent form now drops "desk
+cannot be reached" once desk is reachable again, instead of keeping it until
+the person edited something.
+
+2026-10-13 — **An ask waits for a pause in typing, and the settings key lets other keys through.**
+An ask that opens while the person is typing took the next key typed half a
+second after it was first drawn, so someone typing a key every second or so
+answered permission asks with the digits of a sentence, one of them writing a
+standing always-allow rule. The ask now takes keys only once it has been on
+screen for half a second with no key pressed; every key restarts the wait,
+and once armed it keeps the keys. Someone typing about one key a second can
+still land a key on an armed ask; that is accepted.
+
+After Ctrl+S, a key that names no setting was swallowed, so the "/" of a
+"/model sonnet" typed after reading its hint was lost and the rest went to the
+model. It now goes on to the draft as typed. Under an open ask, Ctrl+S opened a
+model or effort picker that was never drawn but took arrows and Enter, changing
+the setting blind; the ask now wins, and Ctrl+S says the settings wait for the
+answer.
 
 2026-10-13 — **The second QA round's protocol changes.** The wire changes
 the round's decisions need, with only the code that keeps everything

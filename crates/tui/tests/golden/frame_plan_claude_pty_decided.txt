@@ -27,7 +27,7 @@
   │ › Message worker                                                                             │
   ╰──────────────────────────────────────────────────────────────────── Opus 5.5 · accept edits ─╯
 
-  enter queue   ctrl+x stop   shift+tab permission   ctrl+a more
+  enter queue   ctrl+x interrupt   shift+tab permission   ctrl+a more
 --- styles
 ....................................................................................................
 ..??????...........................................................................mmmmmm???mmmmmm..
@@ -58,4 +58,4 @@
 ..mmmmmmmmmmmmmmmmmm.............................................................................m..
 ..mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm???????????............mmm..
 ....................................................................................................
-..eeeee?????????eeeeee????????eeeeeeeee??????????????eeeeee?????....................................
+..eeeee?????????eeeeee?????????????eeeeeeeee??????????????eeeeee?????...............................

@@ -10,12 +10,27 @@ public struct ChatSubject: Equatable, Sendable {
     public let directory: String
     /// How this phone reaches the agent's host.
     public let reach: Reach
+    /// Live agents below this one on every host its host knows of, as its
+    /// fleet row counts them: children on hosts this phone is not paired
+    /// with included.
+    public let descendants: Int
+    /// Jobs its provider runs in the background, as its fleet row counts them.
+    public let backgroundJobs: Int
+    /// A stop of it from this phone is held: its host cannot be reached, and
+    /// the stop goes when the host is back.
+    public let stopHeld: Bool
 
-    public init(name: String, host: String, directory: String, reach: Reach) {
+    public init(
+        name: String, host: String, directory: String, reach: Reach, descendants: Int = 0,
+        backgroundJobs: Int = 0, stopHeld: Bool = false
+    ) {
         self.name = name
         self.host = host
         self.directory = directory
         self.reach = reach
+        self.descendants = descendants
+        self.backgroundJobs = backgroundJobs
+        self.stopHeld = stopHeld
     }
 
     public var reachable: Bool { reach.online }
@@ -52,6 +67,8 @@ public enum ChatAction: Equatable, Sendable {
     case rename(String)
     /// End the agent's process. Resume starts it again.
     case stopAgent
+    /// Take back a stop held while the agent's host cannot be reached.
+    case cancelStop
     case delete
     case copyAddress
     /// A parent or child in this chat's family.
@@ -67,6 +84,8 @@ public enum ChatAction: Equatable, Sendable {
 /// What the chat has open over itself; one at a time.
 public enum ChatOverlay: String, Equatable, Sendable {
     case rename
+    /// Stopping the agent, with what the stop cuts named first.
+    case stop
     case delete
     /// The model, effort and permission mode.
     case settings
@@ -84,6 +103,7 @@ public enum ChatOverlay: String, Equatable, Sendable {
 /// them.
 public struct ChatScreen: View {
     @Environment(\.design) private var design
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
     let model: ChatModel
     let subject: ChatSubject
@@ -94,6 +114,10 @@ public struct ChatScreen: View {
     @State private var overviewOpen = false
     /// Bumped to put the keyboard down.
     @State private var putDown = 0
+    /// The screen's height and its header's, which bound how tall a docked
+    /// card may grow.
+    @State private var screenHeight: CGFloat?
+    @State private var headerHeight: CGFloat = 0
 
     public init(
         model: ChatModel, subject: ChatSubject, family: FamilyHeader? = nil,
@@ -106,10 +130,16 @@ public struct ChatScreen: View {
         _showing = State(initialValue: showing)
     }
 
-    /// Everyone below this agent in its family, on any host: a delete takes
-    /// them all with it.
+    /// How much of the chat a docked ask card always leaves showing above
+    /// it, so a long one at a large text size still reads as part of the
+    /// conversation rather than a page of its own.
+    static let feedGlimpse: CGFloat = 48
+
+    /// Everyone below this agent in its family, on any host: a stop or a
+    /// delete takes them all with it. The fleet row counts them on hosts this
+    /// phone cannot see; the family this phone lists is the floor.
     private var descendants: Int {
-        family?.children.reduce(0) { $0 + Int($1.members) } ?? 0
+        max(subject.descendants, family?.children.reduce(0) { $0 + Int($1.members) } ?? 0)
     }
 
     public var body: some View {
@@ -141,13 +171,17 @@ public struct ChatScreen: View {
                 .identified("chat.newActivity", label: String(localized: "New activity"), value: "shown")
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { header }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            header.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ChatStanding(
                 model: model, subject: subject, children: family?.children ?? [],
                 descendants: descendants, showing: $showing, putDown: putDown,
+                askRoom: screenHeight.map { max(0, $0 - headerHeight - Self.feedGlimpse) },
                 openOverview: { overviewOpen = true }, actions: actions)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
         .toolbar(.hidden, for: .navigationBar)
         .accessibilityElement(children: .contain)
         .reported("chat", value: subject.name)
@@ -219,7 +253,7 @@ public struct ChatScreen: View {
                                 Text(placeLine)
                                     .designFont(.monoSmall, design)
                                     .foregroundStyle(design.inkFaint.color)
-                                    .lineLimit(1)
+                                    .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
                                     .truncationMode(placeIsPath ? .middle : .tail)
                             }
                         }
@@ -231,6 +265,11 @@ public struct ChatScreen: View {
                 }
                 .padding(.horizontal, 13)
                 .padding(.vertical, 8)
+                // A bar over the chat, sized as the system sizes its own bars:
+                // past the largest ordinary size it stops growing, so at an
+                // accessibility size it does not cover the rows it heads.
+                // Tapping it shows the place in full at any size.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .frosted(Capsule(), as: .glass)
                 .identified(
                     "chat.header", label: placeLine,
@@ -297,14 +336,21 @@ public struct ChatScreen: View {
                 actions(.copyAddress)
             },
         ]
-        if running {
-            items.append(MenuItem(title: String(localized: "Stop Agent"), systemImage: "stop.circle") {
-                actions(.stopAgent)
+        // A live agent is stopped, which keeps it to resume; only an exited
+        // one is deleted, so nothing live is ever removed from here.
+        if running && subject.stopHeld {
+            items.append(MenuItem(title: String(localized: "Cancel Stop"), systemImage: "arrow.uturn.backward") {
+                actions(.cancelStop)
             })
+        } else if running {
+            items.append(MenuItem(
+                title: String(localized: "Stop Agent"), systemImage: "stop.circle", destructive: true
+            ) { showing = .stop })
+        } else {
+            items.append(MenuItem(
+                title: String(localized: "Delete Agent"), systemImage: "trash", destructive: true
+            ) { showing = .delete })
         }
-        items.append(MenuItem(
-            title: String(localized: "Delete Agent"), systemImage: "trash", destructive: true
-        ) { showing = .delete })
         return MenuButton(
             name: String(localized: "More"), identifier: "chat.more", items: items,
             opened: { putDown += 1 }
@@ -439,6 +485,9 @@ public struct ChatStanding: View {
     let descendants: Int
     @Binding var showing: ChatOverlay?
     let putDown: Int
+    /// The most height an ask card docked here may take; past it the card's
+    /// content scrolls under its pinned buttons.
+    let askRoom: CGFloat?
     /// Opens what runs around the chat, from the facts strip.
     let openOverview: () -> Void
     let actions: (ChatAction) -> Void
@@ -447,6 +496,7 @@ public struct ChatStanding: View {
     public init(
         model: ChatModel, subject: ChatSubject, children: [FleetCard] = [], dockExpanded: Bool = false,
         descendants: Int = 0, showing: Binding<ChatOverlay?> = .constant(nil), putDown: Int = 0,
+        askRoom: CGFloat? = nil,
         openOverview: @escaping () -> Void = {}, actions: @escaping (ChatAction) -> Void = { _ in }
     ) {
         self.model = model
@@ -456,12 +506,25 @@ public struct ChatStanding: View {
         self.descendants = descendants
         _showing = showing
         self.putDown = putDown
+        self.askRoom = askRoom
         self.openOverview = openOverview
         self.actions = actions
     }
 
     public var body: some View {
-        standing.onChange(of: putDown) { focused = false }
+        standing
+            .onChange(of: putDown) { focused = false }
+            // A bare /model, /effort or /rename opens amux's own picker or
+            // the rename card, as the menu would.
+            .onChange(of: model.asks) { _, asks in
+                guard let asks else { return }
+                model.asks = nil
+                focused = false
+                switch asks {
+                case .settings: showing = .settings
+                case .rename: showing = .rename
+                }
+            }
     }
 
     /// A question card's picks live on the chat, like the draft.
@@ -481,6 +544,8 @@ public struct ChatStanding: View {
     @ViewBuilder
     private var standing: some View {
         VStack(spacing: 8) {
+            if subject.stopHeld { heldStop }
+            if model.frame?.composer.switchedAway == true { switchedAway }
             if let notice = model.notice {
                 Text(notice)
                     .designFont(.detail, design)
@@ -494,6 +559,18 @@ public struct ChatStanding: View {
                 RenameCard(current: subject.name, cancel: { showing = nil }) { name in
                     showing = nil
                     actions(.rename(name))
+                }
+            case .stop?:
+                StopCard(
+                    name: subject.name,
+                    cuts: ChatWords.stopCuts(
+                        name: subject.name, phase: model.frame?.phase,
+                        jobs: max(subject.backgroundJobs, model.overview?.jobs.count ?? 0),
+                        subAgents: descendants),
+                    cancel: { showing = nil }
+                ) {
+                    showing = nil
+                    actions(.stopAgent)
                 }
             case .delete?:
                 DeleteCard(name: subject.name, descendants: descendants, cancel: { showing = nil }) {
@@ -521,6 +598,7 @@ public struct ChatStanding: View {
             case nil:
                 if let ask = model.ask, ask.state != .dismissed {
                     AskCardView(card: ask, questions: keeping(ask), form: formKeeping(ask), act: answer)
+                        .frame(maxHeight: askRoom)
                 } else {
                     if let ask = model.ask { AskCardView(card: ask, questions: keeping(ask), form: formKeeping(ask), act: answer) }
                     composerStack
@@ -530,6 +608,50 @@ public struct ChatStanding: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
         .animation(photographed ? nil : Motion.standard, value: showing)
+    }
+
+    /// Terminal Claude's own view resumed another conversation: prompts are
+    /// refused until this one is back, which one tap does.
+    private var switchedAway: some View {
+        let words = String(localized: "Claude’s own view switched to another conversation")
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(words)
+                .designFont(.detail, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { model.switchBack() } label: {
+                ActionLabel(String(localized: "Switch Back"), kind: .primary, fill: true)
+            }
+            .buttonStyle(.amuxControl)
+            .identified("chat.switchBack", label: String(localized: "Switch Back"))
+        }
+        .padding(14)
+        .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
+        .identified("chat.switchedAway", label: words)
+    }
+
+    /// A stop that has not gone yet, with the way to take it back.
+    private var heldStop: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock")
+                .font(.system(size: 14))
+                .foregroundStyle(design.inkMuted.color)
+            Text(String(localized: "Stop held · sends when \(subject.host) is back"))
+                .designFont(.detail, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { actions(.cancelStop) } label: {
+                ActionLabel(String(localized: "Cancel"), kind: .outline)
+            }
+            .buttonStyle(.amuxControl)
+            .identified("chat.stopHeld.cancel", label: String(localized: "Cancel"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
+        .identified("chat.stopHeld", label: String(localized: "Stop held · sends when \(subject.host) is back"))
     }
 
     @ViewBuilder
@@ -587,6 +709,7 @@ public struct ChatStanding: View {
         case .stop: model.interrupt()
         case .resend: model.resendAnswer()
         case .discard: model.discardAnswer()
+        case .cancelHeld: model.cancelHeldAnswer()
         }
     }
 }
@@ -704,7 +827,43 @@ private struct RenameCard: View {
     }
 }
 
-/// Deleting the agent, with what that does named first.
+/// Stopping the agent: a stop is always now, so when it cuts a turn,
+/// background jobs or sub-agents the confirm says which, and otherwise asks
+/// plainly.
+private struct StopCard: View {
+    @Environment(\.design) private var design
+    let name: String
+    /// What the stop cuts, as a question, or nil when it cuts nothing under way.
+    let cuts: String?
+    let cancel: () -> Void
+    let confirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(String(localized: "Stop \(name)?"))
+                .designFont(.screenTitle, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+            if let cuts {
+                Text(cuts)
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.ink.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .identified("chat.stop.cuts", label: cuts)
+            }
+            Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay. Resume starts it again."))
+            ButtonPair {
+                choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.stop.cancel", action: cancel)
+                choiceButton(String(localized: "Stop"), kind: .destructive, id: "chat.stop.confirm", action: confirm)
+            }
+        }
+        .padding(16)
+        .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
+        .identified("chat.stop.card", label: cuts ?? String(localized: "Stop \(name)?"))
+    }
+}
+
+/// Deleting an exited agent, with what that does named first.
 private struct DeleteCard: View {
     @Environment(\.design) private var design
     let name: String
@@ -718,7 +877,6 @@ private struct DeleteCard: View {
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
             Consequence("checkmark", kept: true, String(localized: "Its edits stay. Nothing is reverted."))
-            Consequence("xmark", kept: false, String(localized: "Its session ends. Unfinished work stops."))
             Consequence("xmark", kept: false, String(localized: "The chat is deleted on every device."))
             if descendants == 1 {
                 Consequence("xmark", kept: false, String(localized: "Its child agent is deleted too."))

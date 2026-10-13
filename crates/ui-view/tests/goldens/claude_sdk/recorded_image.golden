@@ -11,7 +11,7 @@
 ## 18 recorded 17: fact Stream type=assistant uuid=4d2c868b-922b-47e9-9b79-2fd63788b6e4
   row    4 msg_011CfREFf9nvrZmWw7punpnJ:1 Prose { text: [Text("The color is **red**.\n\nNow let me read square.png from the working directory:")], streaming: false, working_note: false }
 ## 20 recorded 19: fact Stream type=assistant uuid=c4dd1a3e-2fdc-4513-9e79-f53a3213be69
-  row    5 toolu_01Afb6dgP2n3vt4oAb6wKGn2 Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running } run[toolu_01Afb6dgP2n3vt4oAb6wKGn2..toolu_01Afb6dgP2n3vt4oAb6wKGn2 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    5 toolu_01Afb6dgP2n3vt4oAb6wKGn2 Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running, result: "" } run[toolu_01Afb6dgP2n3vt4oAb6wKGn2..toolu_01Afb6dgP2n3vt4oAb6wKGn2 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01Afb6dgP2n3vt4oAb6wKGn2" }) queue=[] underway=[] refused=[]
 ## 24 recorded 23: fact Stream type=user uuid=70e29741-cd9c-47a0-951d-37e32158115d
   row    5 toolu_01Afb6dgP2n3vt4oAb6wKGn2 Image { image: Some(BlobRef { hash: [13, 188, 137, 79, 133, 238, 125, 12, 106, 7, 238, 253, 141, 85, 231, 43, 84, 34, 114, 38, 133, 218, 117, 229, 18, 219, 233, 73, 35, 210, 211, 35], name: "", mime: "image/png", size: 99 }), path: "<MACHINE_PATH>", generated: false } run[toolu_01Afb6dgP2n3vt4oAb6wKGn2..toolu_01Afb6dgP2n3vt4oAb6wKGn2 x1 recent=0 live RunCounts {…
@@ -53,6 +53,8 @@
   permission  "plan" "Plan"
   permission  "auto" "Auto" unsettable
   changes: model Pick · effort NotOffered · permission Pick · mode NotOffered
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /rename source="" hint="<name>" "Rename the agent"
   command /autopilot source="" hint="" "Execute confirmed software work on an unattended loop of fresh agents when it spans contexts or must continue while the operator is away. Requires an approved plan; decline work that fits one sitting unless explicitly requested. (user)"
   command /delegate source="" hint="" "Resolve or diagnose agent staffing by mapping a requested role and effort through the operator-owned roster to a mind and dispatch specification. Use when an agent or driver will dispatch work, or when a binding cannot launch. Do not use merely because ordinary work is being discussed or performed locally. (user)"
   command /frontend-design source="" hint="" "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.…
@@ -102,7 +104,6 @@
   command /workflow-launch-exec source="" hint="" "Execute a server-launched workflow handoff (workflow_launch event sessions only)"
   command /reload-plugins source="" hint="[--force]" "Activate pending plugin changes in the current session"
   command /reload-skills source="" hint="" "Pick up skills added or changed on disk during this session"
-  command /rename source="" hint="[name]" "Rename the current conversation"
   command /ultrareview source="" hint="" "Start a cloud agent that finds and verifies bugs in your branch (~15-25 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web"
   command /security-review source="" hint="" "Complete a security review of the pending changes on the current branch"
   command /usage-credits source="" hint="" "Configure usage credits or request them from your admin when you hit a limit"

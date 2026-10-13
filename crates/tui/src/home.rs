@@ -47,6 +47,8 @@ const COMPOSER_SHARE: usize = 2;
 /// The highlighted row's action: stop, or delete once exited. Brackets mark
 /// what can be clicked.
 const CLOSE: &str = "[x]";
+/// The fewest columns a folder is cut to before the host gives way.
+const FOLDER_LEAST: usize = 8;
 
 /// Something the list can highlight.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -151,6 +153,8 @@ enum Overlay {
         agent: AgentKey,
         name: String,
         delete: bool,
+        /// The button Enter presses; the arrows and Tab move it.
+        focus: Confirmed,
     },
 }
 
@@ -252,6 +256,13 @@ fn where_it_runs(kind: Kind, cwd: &str, elsewhere: Option<&str>, room: usize) ->
         }
     }
     let last = folders.last().map_or("", String::as_str);
+    // A last name too long to fit (a folder with no separators) is cut in
+    // the middle before the host or the agent gives way to it.
+    let fixed = text::str_width(&join(&[who, "x", elsewhere.unwrap_or("")])) - 1;
+    if room >= fixed + FOLDER_LEAST {
+        let folder = text::ellipsize_middle(last, room - fixed);
+        return join(&[who, &folder, elsewhere.unwrap_or("")]);
+    }
     for parts in [[who, last], ["", last]] {
         let line = join(&parts);
         if text::str_width(&line) <= room {
@@ -299,6 +310,18 @@ impl Home {
     fn open_draft(&mut self) {
         self.draft.open = true;
         self.draft.error = None;
+    }
+
+    /// Back home from the new agent's screen. Words typed stay for the next
+    /// visit with their settings; a draft left empty is abandoned, so the
+    /// next new agent opens with the defaults again.
+    fn leave_draft(&mut self) {
+        self.draft.open = false;
+        self.draft.picker = None;
+        if self.draft.editor.is_empty() {
+            self.draft.setup = None;
+            self.draft.form = None;
+        }
     }
 
     /// The new agent's setup while its screen is open, made from the
@@ -519,17 +542,16 @@ impl Home {
         vec![]
     }
 
-    /// Asks before stopping a live agent or deleting an exited one.
-    fn confirm_close(&mut self, fleet: &FleetState, agent: AgentKey, delete: bool) {
+    /// Asks before stopping a live agent or deleting an exited one: a live
+    /// agent is never offered deletion.
+    fn confirm_close(&mut self, fleet: &FleetState, agent: AgentKey) {
         if let Some(entry) = fleet.agent(&agent) {
-            let exited = ui_state::attention(entry) == Attention::Exited;
-            if delete || !exited {
-                self.overlay = Some(Overlay::Confirm {
-                    name: entry.name.clone(),
-                    agent,
-                    delete: delete || exited,
-                });
-            }
+            self.overlay = Some(Overlay::Confirm {
+                name: entry.name.clone(),
+                delete: ui_state::attention(entry) == Attention::Exited,
+                agent,
+                focus: Confirmed::Yes,
+            });
         }
     }
 
@@ -548,7 +570,7 @@ impl Home {
         }
         let targets = self.targets_of(fleet);
         if self.filtering {
-            self.filter_key(&targets, key);
+            self.filter_key(fleet, &targets, key);
             return vec![];
         }
         let current = self.settle(&targets);
@@ -614,14 +636,12 @@ impl Home {
                     self.overlay = Some(Overlay::Rename { agent, editor });
                 }
             }
-            KeyCode::Char('s') => {
-                if let Some(agent) = agent {
-                    self.confirm_close(fleet, agent, false);
-                }
-            }
             KeyCode::Char('x') => {
                 if let Some(agent) = agent {
-                    self.confirm_close(fleet, agent, true);
+                    if fleet.stop_held(&agent) {
+                        return vec![FleetEffect::CancelStop(agent)];
+                    }
+                    self.confirm_close(fleet, agent);
                 }
             }
             _ => {}
@@ -629,7 +649,7 @@ impl Home {
         vec![]
     }
 
-    fn filter_key(&mut self, targets: &[Target], key: KeyEvent) {
+    fn filter_key(&mut self, fleet: &FleetState, targets: &[Target], key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
                 self.filter = None;
@@ -648,6 +668,16 @@ impl Home {
                     filter.key(key);
                 }
                 self.top = 0;
+                // The highlight goes to the first agent the filter finds, so
+                // Enter opens what was searched for.
+                if let Some(found) = self
+                    .targets_of(fleet)
+                    .into_iter()
+                    .find(|target| matches!(target, Target::Agent(_)))
+                {
+                    self.selected = Some(found);
+                    self.reveal = true;
+                }
             }
         }
     }
@@ -679,19 +709,33 @@ impl Home {
                     vec![]
                 }
             },
+            // Enter presses the focused button, never a letter: words
+            // typed into a chat that closed under the person must not
+            // answer it.
             Overlay::Confirm {
                 agent,
                 name,
                 delete,
+                focus,
             } => match key.code {
-                KeyCode::Char('y') | KeyCode::Enter if delete => vec![FleetEffect::Delete(agent)],
-                KeyCode::Char('y') | KeyCode::Enter => vec![FleetEffect::Stop(agent)],
-                KeyCode::Char('n') | KeyCode::Esc => vec![],
-                _ => {
+                KeyCode::Enter if focus == Confirmed::Yes && delete => {
+                    vec![FleetEffect::Delete(agent)]
+                }
+                KeyCode::Enter if focus == Confirmed::Yes => vec![FleetEffect::Stop(agent)],
+                KeyCode::Enter | KeyCode::Esc => vec![],
+                code => {
+                    let focus = match code {
+                        KeyCode::Left => Confirmed::Yes,
+                        KeyCode::Right => Confirmed::No,
+                        KeyCode::Tab | KeyCode::BackTab if focus == Confirmed::Yes => Confirmed::No,
+                        KeyCode::Tab | KeyCode::BackTab => Confirmed::Yes,
+                        _ => focus,
+                    };
                     self.overlay = Some(Overlay::Confirm {
                         agent,
                         name,
                         delete,
+                        focus,
                     });
                     vec![]
                 }
@@ -720,7 +764,7 @@ impl Home {
             return match form.key(setup, fleet, key) {
                 FormOutcome::None => vec![],
                 FormOutcome::Close => {
-                    self.draft.open = false;
+                    self.leave_draft();
                     vec![]
                 }
                 FormOutcome::Start => {
@@ -743,6 +787,7 @@ impl Home {
                     let item = picker.item;
                     if let Some(setup) = &mut self.draft.setup {
                         setup.pick(item, &value);
+                        setup.fill_folder(fleet);
                     }
                     self.draft.picker = None;
                 }
@@ -768,7 +813,7 @@ impl Home {
             return vec![];
         }
         match key.code {
-            KeyCode::Esc => self.draft.open = false,
+            KeyCode::Esc => self.leave_draft(),
             KeyCode::Char('s') if ctrl => self.draft.prefix = true,
             KeyCode::BackTab => {
                 if let Some(setup) = &mut self.draft.setup {
@@ -782,6 +827,11 @@ impl Home {
                 let Some(setup) = self.draft.setup.clone() else {
                     return vec![];
                 };
+                // A host with no folder known yet: one must be chosen.
+                if setup.folder.is_empty() {
+                    self.open_setting(fleet, Setting::Folder);
+                    return vec![];
+                }
                 self.draft.starting = true;
                 self.draft.error = None;
                 return vec![FleetEffect::Start {
@@ -884,9 +934,9 @@ impl Home {
                     .map(|(_, _, hit)| hit.clone())
                 && let (Some(setup), Some(form)) = (&mut self.draft.setup, &mut self.draft.form)
             {
-                match form.click(setup, hit) {
+                match form.click(setup, fleet, hit) {
                     FormOutcome::None => {}
-                    FormOutcome::Close => self.draft.open = false,
+                    FormOutcome::Close => self.leave_draft(),
                     FormOutcome::Start => {
                         self.draft.starting = true;
                         self.draft.error = None;
@@ -917,6 +967,7 @@ impl Home {
                     let item = self.draft.picker.as_ref().map(|picker| picker.item);
                     if let (Some(setup), Some(item)) = (&mut self.draft.setup, item) {
                         setup.pick(item, &value);
+                        setup.fill_folder(fleet);
                     }
                     self.draft.picker = None;
                 }
@@ -959,8 +1010,11 @@ impl Home {
                     self.open_setting(fleet, item);
                     vec![]
                 }
+                Some(Hit::Close(agent)) if listing && fleet.stop_held(&agent) => {
+                    vec![FleetEffect::CancelStop(agent)]
+                }
                 Some(Hit::Close(agent)) if listing => {
-                    self.confirm_close(fleet, agent, false);
+                    self.confirm_close(fleet, agent);
                     vec![]
                 }
                 Some(Hit::Fold(agent)) if listing => {
@@ -1119,42 +1173,50 @@ impl Home {
                 let lines = crate::panel::bordered("Hosts", rows, inner, &[], None, theme);
                 crate::panel::centre(paint, lines, area);
             }
-            Some(Overlay::Confirm { name, delete, .. }) => {
+            Some(Overlay::Confirm {
+                agent,
+                name,
+                delete,
+                focus,
+            }) => {
                 let (sentence, verb) = if *delete {
                     (format!("Delete {name} and its history?"), "Delete")
                 } else {
-                    (format!("Stop {name}? It can be resumed later."), "Stop")
+                    (stop_sentence(fleet, agent, name), "Stop")
                 };
                 let (buttons, spots) = crate::panel::buttons(
                     &[(verb, Confirmed::Yes), ("Cancel", Confirmed::No)],
+                    usize::from(*focus == Confirmed::No),
                     theme,
                 );
-                let rows = vec![
-                    Line::default(),
-                    Line::from(Span::styled(sentence, theme.text())),
-                    Line::default(),
-                    buttons,
-                    crate::panel::legend(
-                        &[("enter", &verb.to_lowercase()), ("esc", "cancel")],
-                        theme,
-                    ),
-                ];
-                let inner = crate::panel::content_width(&rows)
-                    .max(36)
+                let legend = crate::panel::legend(
+                    &[("←→", "choose"), ("enter", "press"), ("esc", "cancel")],
+                    theme,
+                );
+                // The sentence wraps rather than widen the window past the
+                // screen.
+                let inner = text::str_width(&sentence)
+                    .max(crate::panel::content_width(std::slice::from_ref(&legend)))
+                    .clamp(36, 48)
                     .min(width.saturating_sub(8));
+                let said = text::wrap(&sentence, inner);
+                let mut rows = vec![Line::default()];
+                rows.extend(
+                    said.iter()
+                        .map(|words| Line::from(Span::styled(words.clone(), theme.text()))),
+                );
+                rows.extend([Line::default(), buttons, legend]);
                 let title = if *delete { "Delete" } else { "Stop" };
                 let lines = crate::panel::bordered(title, rows, inner, &[], None, theme);
                 let rect = crate::panel::centre(paint, lines, area);
-                // The buttons' row: the border, a blank, the sentence, a
-                // blank, then the buttons; two columns of border and padding.
+                // The buttons' row: the border, a blank, the sentence's
+                // lines, a blank, then the buttons; two columns of border
+                // and padding.
+                let row = rect.y + 3 + said.len() as u16;
                 self.overlay_spots = spots
                     .into_iter()
                     .map(|(from, to, hit)| {
-                        (
-                            rect.y + 4,
-                            (rect.x + 2 + from as u16, rect.x + 2 + to as u16),
-                            hit,
-                        )
+                        (row, (rect.x + 2 + from as u16, rect.x + 2 + to as u16), hit)
                     })
                     .collect();
             }
@@ -1624,9 +1686,7 @@ impl Home {
         let hints: Vec<(&str, &str, Hit)> = match &self.overlay {
             // Renaming in place: only its keys, or why the name will not do.
             Some(Overlay::Rename { editor, .. }) => {
-                if let Some(problem) =
-                    wire::agent_name_problem(editor.text().trim()).filter(|_| !editor.is_empty())
-                {
+                if let Some(problem) = wire::agent_name_problem(editor.text().trim()) {
                     // The way out stays on the line; the reason gives way,
                     // a whole word at a time.
                     let room = width.saturating_sub(MARGIN + text::str_width(" · esc cancel"));
@@ -1683,15 +1743,17 @@ impl Home {
                         (keys, action, key(code))
                     })
                     .collect(),
+                // In the edge's order; the worktree, not on the edge until
+                // it is on, gives way first.
                 (None, true) => [
                     ("n", "name", key(KeyCode::Char('n'))),
+                    ("a", "agent", key(KeyCode::Char('a'))),
                     ("m", "model", key(KeyCode::Char('m'))),
                     ("e", "effort", key(KeyCode::Char('e'))),
                     ("p", "permission", key(KeyCode::Char('p'))),
                     ("d", "folder", key(KeyCode::Char('d'))),
                     ("h", "host", key(KeyCode::Char('h'))),
                     ("w", "worktree", key(KeyCode::Char('w'))),
-                    ("a", "agent", key(KeyCode::Char('a'))),
                     ("esc", "back", key(KeyCode::Esc)),
                 ]
                 .into(),
@@ -1749,6 +1811,52 @@ impl Home {
     }
 }
 
+/// What the stop window asks: what a stop cuts when the agent is working,
+/// has background jobs or has sub-agents ("desk-1 is working and has 2
+/// background jobs and 1 sub-agent. Stop anyway?"), else the plain
+/// question. Sub-agents are the live descendants the agent's host counts,
+/// or those this fleet sees when it sees more.
+fn stop_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
+    let Some(entry) = fleet.agent(agent) else {
+        return format!("Stop {name}? It can be resumed later.");
+    };
+    let working = entry.phase() == wire::Phase::Working;
+    let jobs = entry.background_jobs as usize;
+    let seen = live_descendants(fleet, agent);
+    let subs = (entry.descendants as usize).max(seen);
+    let count = |n: usize, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
+    let mut has = Vec::new();
+    if jobs > 0 {
+        has.push(count(jobs, "background job"));
+    }
+    if subs > 0 {
+        has.push(count(subs, "sub-agent"));
+    }
+    let has = has.join(" and ");
+    match (working, has.is_empty()) {
+        (false, true) => format!("Stop {name}? It can be resumed later."),
+        (true, true) => format!("{name} is working. Stop anyway?"),
+        (true, false) => format!("{name} is working and has {has}. Stop anyway?"),
+        (false, false) => format!("{name} has {has}. Stop anyway?"),
+    }
+}
+
+/// The live agents under `agent` in this fleet, at any depth.
+fn live_descendants(fleet: &FleetState, agent: &AgentKey) -> usize {
+    let mut count = 0;
+    let mut under: Vec<&AgentKey> = fleet.families().children(agent).collect();
+    while let Some(child) = under.pop() {
+        if fleet
+            .agent(child)
+            .is_some_and(|child| child.lifecycle() == Lifecycle::Live)
+        {
+            count += 1;
+        }
+        under.extend(fleet.families().children(child));
+    }
+    count
+}
+
 /// Home's part of the key help.
 pub fn help_rows() -> Vec<(&'static str, String)> {
     vec![
@@ -1776,8 +1884,10 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
         ),
         ("→ / ←, space", "show or hide a family's agents".into()),
         ("r", "rename, in place".into()),
-        ("s", "stop; it can be resumed".into()),
-        ("x", "delete; it asks first".into()),
+        (
+            "x",
+            "stop (it can be resumed), or delete once exited; it asks first".into(),
+        ),
         ("h", "hosts".into()),
         (
             "b",
@@ -1804,7 +1914,7 @@ pub struct Place<'a> {
     pub defaults: &'a crate::setup::Defaults,
 }
 
-/// `key word` pairs, three blanks apart, as many as fit; each is a click
+/// `key word` pairs, laid out by [`text::fit_hints`]; each is a click
 /// target for its key. `? keys` is last and the first to go.
 fn append_hints(
     line: &mut Line<'static>,
@@ -1814,11 +1924,18 @@ fn append_hints(
     width: usize,
     theme: Theme,
 ) {
+    let pairs: Vec<(&str, &str)> = hints.iter().map(|(key, word, _)| (*key, *word)).collect();
+    let fitted = text::fit_hints(&pairs, width.saturating_sub(MARGIN + start));
     let mut at = start;
-    for (i, (key, word, hit)) in hints.iter().enumerate() {
-        let gap = if i == 0 { 0 } else { 3 };
-        let need = gap + text::str_width(key) + 1 + text::str_width(word);
-        if at + need > width - MARGIN {
+    for (i, &index) in fitted.shown.iter().enumerate() {
+        let (key, word, hit) = &hints[index];
+        let size = text::str_width(key) + 1 + text::str_width(word);
+        if fitted.mark == Some(i) {
+            line.spans.push(Span::styled(" …", theme.faint()));
+            at += 2;
+        }
+        let gap = if i == 0 { 0 } else { fitted.gap };
+        if at + gap + size > width - MARGIN {
             break;
         }
         line.spans.push(Span::raw(" ".repeat(gap)));
@@ -1828,8 +1945,11 @@ fn append_hints(
             .push(Span::styled(key.to_string(), theme.emphasis()));
         line.spans
             .push(Span::styled(format!(" {word}"), theme.faint()));
-        at += need;
+        at = from + size;
         spots.push((Some((from, at)), hit.clone()));
+    }
+    if fitted.mark == Some(fitted.shown.len()) {
+        line.spans.push(Span::styled(" …", theme.faint()));
     }
 }
 
@@ -2032,6 +2152,18 @@ fn second_words(
     now_ms: i64,
     theme: Theme,
 ) -> Option<(String, Style)> {
+    // A stop the person gave while the host was out of reach waits to be
+    // sent; `x` takes it back.
+    if row.card.stop_held {
+        let host = match row.card.host.as_str() {
+            "" => "its host",
+            host => host,
+        };
+        return Some((
+            format!("stop held · it goes when {host} is back · x cancels"),
+            theme.warning(),
+        ));
+    }
     Some(match line {
         // What it asks is the most important line on home.
         SecondLine::Ask(ask) => (ask_words(ask), theme.text()),
@@ -2065,6 +2197,16 @@ fn second_words(
             };
             (format!("{host} is away"), theme.faint())
         }
+        SecondLine::HostRevoked => {
+            let host = match row.card.host.as_str() {
+                "" => "its host",
+                host => host,
+            };
+            (
+                format!("{host} no longer trusts this machine"),
+                theme.warning(),
+            )
+        }
         SecondLine::Blank => return None,
     })
 }
@@ -2089,7 +2231,10 @@ fn agent_lines(
     let target = Target::Agent(card.agent.clone());
     let quiet = card.attention == Attention::Exited;
     // A live agent on a host out of reach is only as it last said.
-    let unreached = row.second_line == SecondLine::HostAway;
+    let unreached = matches!(
+        row.second_line,
+        SecondLine::HostAway | SecondLine::HostRevoked
+    );
     let indent = 2 * row.depth as usize;
     // Text sits a margin inside the card's edge, on the right as on the left.
     let end = width - 2 * MARGIN;

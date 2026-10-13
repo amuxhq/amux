@@ -32,6 +32,8 @@ pub enum FleetEffect {
         name: String,
     },
     Stop(AgentKey),
+    /// Takes back a stop held while the agent's host was out of reach.
+    CancelStop(AgentKey),
     Delete(AgentKey),
     /// Leave amux.
     Quit,

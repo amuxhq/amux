@@ -17,8 +17,8 @@ use wire::{BlobRef, send_input_response};
 
 use crate::coalesce::{Coalescer, WakeFn};
 use crate::values::{
-    ActOutcome, ChatChanges, ChatFrame, Draft, FrozenReview, GitView, PageOutcome, RowOptions,
-    SendOutcome,
+    ActOutcome, ChatChanges, ChatFrame, CommandOutcome, Draft, FrozenReview, GitView, PageOutcome,
+    RowOptions, SendOutcome,
 };
 
 /// An open chat. Row ids are item keys and never move, so the host's id
@@ -236,6 +236,58 @@ impl Chat {
         }
     }
 
+    /// Runs a draft that is a command the client handles itself, the same
+    /// on every client: `/model` and `/effort` set the setting (bare, they
+    /// ask for amux's picker), `/rename` renames the agent, and a command
+    /// the agent does not run is refused. Anything else comes back as
+    /// `Send`, for the draft to go as typed. A draft with attachments is
+    /// always a prompt.
+    pub async fn command(&self, draft: &Draft) -> CommandOutcome {
+        let (text, attachments) = draft.to_prompt();
+        if !attachments.is_empty() {
+            return CommandOutcome::Send;
+        }
+        let slash = ui_view::slash(&self.session.state(), &text);
+        match slash {
+            ui_view::Slash::Prompt => CommandOutcome::Send,
+            ui_view::Slash::Pick(command) => CommandOutcome::Pick(command),
+            ui_view::Slash::Rename(name) if name.is_empty() => CommandOutcome::AskName,
+            ui_view::Slash::Rename(name) => {
+                CommandOutcome::Acted(match self.session.rename(&name).await {
+                    Ok(_) => ActOutcome::Done,
+                    Err(error) => ActOutcome::Failed(error.to_string()),
+                })
+            }
+            ui_view::Slash::Set(input) => {
+                CommandOutcome::Acted(acted(self.session.answer(input).await))
+            }
+            ui_view::Slash::Typed(typed) => {
+                let sent = self.session.send_prompt(&typed, Vec::new()).await;
+                let state = self
+                    .session
+                    .state()
+                    .input_state(&sent.id)
+                    .unwrap_or_else(|| outcome_state(&sent.outcome));
+                CommandOutcome::Sent(SendOutcome {
+                    input_id: sent.id,
+                    state,
+                })
+            }
+            ui_view::Slash::Refused { command, offered } => {
+                CommandOutcome::Refused { command, offered }
+            }
+            ui_view::Slash::Unknown {
+                command,
+                value,
+                offered,
+            } => CommandOutcome::Unknown {
+                command,
+                value,
+                offered,
+            },
+        }
+    }
+
     /// Answers the head ask with its choice at `index`; `note` goes back
     /// with a choice that takes one.
     pub async fn answer_choice(&self, ask_key: &str, index: usize, note: &str) -> ActOutcome {
@@ -349,6 +401,12 @@ impl Chat {
 
     pub async fn interrupt(&self) -> ActOutcome {
         acted(self.session.interrupt().await)
+    }
+
+    /// Takes the agent's own view back to its conversation after it
+    /// switched to another; the composer says so (`switched_away`).
+    pub async fn switch_back(&self) -> ActOutcome {
+        acted(self.session.switch_back().await)
     }
 
     /// Sends a not-confirmed input again under a new id, forgetting the
@@ -492,6 +550,7 @@ pub(crate) fn frame(
 fn outcome_state(outcome: &InputOutcome) -> InputState {
     match outcome {
         InputOutcome::Lost => InputState::Uncertain,
+        InputOutcome::Held => InputState::Held,
         InputOutcome::Reply(reply) => match &reply.of {
             Some(send_input_response::Of::Accepted(accepted)) if accepted.queued => {
                 InputState::Queued
@@ -510,6 +569,7 @@ fn acted(result: Result<(), InputError>) -> ActOutcome {
         Ok(()) => ActOutcome::Done,
         Err(InputError::Rejected(reason)) => ActOutcome::Rejected(reason),
         Err(InputError::Uncertain) => ActOutcome::NotConfirmed,
+        Err(InputError::Held) => ActOutcome::Held,
     }
 }
 

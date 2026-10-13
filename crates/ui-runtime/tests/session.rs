@@ -81,7 +81,7 @@ async fn open_paints_the_snapshot_and_held_rows_before_it_returns() {
         assert!(state.has_snapshot());
         assert_eq!(state.transcript().len(), 2, "held rows are applied");
         assert!(!state.caught_up(), "the origin has not been reached");
-        assert_eq!(state.composer(), Composer::Disabled(Waiting::CatchingUp));
+        assert_eq!(state.composer(), Composer::Holds(Waiting::CatchingUp));
     }
     feed.send(caught_up(7));
     until(session.changed(), || {
@@ -110,7 +110,7 @@ async fn an_away_host_paints_its_held_rows_then_detached_with_send_disabled() {
     let state = session.state();
     assert_eq!(state.transcript().len(), 2, "the rows stay");
     assert!(!state.can_send());
-    assert_eq!(state.composer(), Composer::Disabled(Waiting::Detached));
+    assert_eq!(state.composer(), Composer::Holds(Waiting::Detached));
 }
 
 #[tokio::test]

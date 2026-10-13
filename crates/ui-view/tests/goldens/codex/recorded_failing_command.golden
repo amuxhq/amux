@@ -40,13 +40,13 @@
 ## 55 recorded 54: fact Rpc method=item/completed
   row    4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and report its result.")], streaming: false, working_note: true }
 ## 57 recorded 56: fact Rpc method=item/started
-  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Running } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
+  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Running, result: "" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
   composer Send activity=Some(Running { key: "exec-8bcf460a-8814-4073-b121-3c591c0497e5" }) queue=[] underway=[] refused=[]
 ## 58 recorded 57: fact Rpc method=item/completed
-  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
+  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 65 recorded 64: fact Rpc method=item/started
-  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
+  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
   row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [], streaming: true, working_note: false }
 ## 67 recorded 66: fact Rpc method=item/agentMessage/delta
   row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes")], streaming: true, working_note: false }
@@ -77,7 +77,7 @@
 ## 93 recorded 92: fact Rpc method=item/completed
   row    6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status `1`.")], streaming: false, working_note: false }
 ## 100 recorded 99: fact Rpc method=turn/completed
-  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
+  row    5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
   row    7 turn:1 TurnEnd { duration_ms: Some(6013), cost_usd: None, failed: false }
   composer Send activity=None queue=[] underway=[] refused=[]
 == chat
@@ -85,7 +85,7 @@
      2 prompt:737464696e2d34 Prompt { text: [Text("Run exactly this shell command once: ls does-not-exist. Then tell me whether it failed.")], steered: false }
      3 rs_03fb63819d44799e016ab7291326c487d281862d482de41fea Thinking { text: "", open: false, duration_ms: Some(2333) }
      4 msg_03fb63819d44799e016ab72913776c87d2b354e9d6fd8962c6 Prose { text: [Text("I’ll run the exact command once and report its result.")], streaming: false, working_note: true }
-     5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
+     5 exec-8bcf460a-8814-4073-b121-3c591c0497e5 Explore { verb: List, subject: "ls does-not-exist", state: Failed, result: "ls: does-not-exist: No such file or directory" } run[exec-8bcf460a-8814-4073-b121-3c591c0497e5..exec-8bcf460a-8814-4073-b121-3c591c0497e5 x1 recent=0 unresolved RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }] attention
      6 msg_03fb63819d44799e016ab72916853087d297467639b8929672 Prose { text: [Text("Yes, it failed. The command exited with status `1`.")], streaming: false, working_note: false }
      7 turn:1 TurnEnd { duration_ms: Some(6013), cost_usd: None, failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
@@ -94,4 +94,5 @@
   model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
   permission* unlisted custom "" "" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None

@@ -97,9 +97,13 @@ public final class FleetStore {
     public private(set) var expanded: Set<[UInt8]> = []
     /// The sections opened or folded against their default.
     public private(set) var flipped: Set<SectionKind> = []
-    /// When the list was last pulled or shown again; ages are read against
-    /// it so a list at rest does not tick.
+    /// The clock ages are read against: moved on by the screen while the
+    /// list is on it, so ages count, and never behind the newest row it
+    /// shows, so no age reads less than nothing.
     public private(set) var orderedAt: Date
+    /// Whether the runtime has said what it lists at all: until then an empty
+    /// list is not yet read, not a phone with nothing paired.
+    public private(set) var loaded = false
     /// The relay link, as the account screens report it.
     public private(set) var relay: RelayLink = .off
 
@@ -120,10 +124,12 @@ public final class FleetStore {
     /// What the runtime lists now.
     public func show(_ view: FleetView, hosts views: [HostView]) {
         self.view = view
+        loaded = true
         hosts = Dictionary(
             views.filter(\.trusted).compactMap { view in view.id.map { ($0, view) } },
             uniquingKeysWith: { _, last in last })
         rebuild()
+        if let newest = rows.map(\.lastActivity).max(), newest > orderedAt { orderedAt = newest }
         if !markedFirstFrame && !self.rows.isEmpty {
             markedFirstFrame = true
             presenting = true
@@ -145,9 +151,10 @@ public final class FleetStore {
         relay = link
     }
 
-    /// The list was pulled or shown again: ages are read from now.
+    /// The clock moved on: ages are read from now. Never backwards, so a
+    /// row changed on a host whose clock runs ahead reads 0s, not less.
     public func refreshOrder(now: Date) {
-        orderedAt = now
+        if now > orderedAt { orderedAt = now }
     }
 
     /// Opens a folded section, or folds an open one.

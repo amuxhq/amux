@@ -14,10 +14,10 @@
 ## 27 recorded 25: fact Transcript type=assistant uuid=851351a8-c18d-47a6-b496-e7693d0052ba
   row    4 851351a8-c18d-47a6-b496-e7693d0052ba Prose { text: [Text("I'll read config.txt, edit it, and then display the result.")], streaming: false, working_note: false }
 ## 28 recorded 26: fact Transcript type=assistant uuid=38b7cfca-6491-427c-9c86-3799df4e999d
-  row    5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01YappKR9wgb79BsMWZ9T7Mk x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Running, result: "" } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01YappKR9wgb79BsMWZ9T7Mk x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01YappKR9wgb79BsMWZ9T7Mk" }) queue=[] underway=[] refused=[]
 ## 30 recorded 28: fact Transcript type=user uuid=83163616-3f4f-496e-9470-ee1770442189
-  row    5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01YappKR9wgb79BsMWZ9T7Mk x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
+  row    5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01YappKR9wgb79BsMWZ9T7Mk x1 recent=0 live RunCounts { commands: 0, edits: 0, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 33 recorded 31: fact Hook hook_event_name=PreToolUse tool_use_id=toolu_01Mxtd6WkCNMK9U7KSDpsLGD
   composer Send activity=Some(Running { key: "toolu_01Mxtd6WkCNMK9U7KSDpsLGD" }) queue=[] underway=[] refused=[]
@@ -26,7 +26,7 @@
 ## 37 recorded 35: fact Transcript type=assistant uuid=7d0e65d1-38fd-4c61-891b-11adb2d2315a
   row    6 7d0e65d1-38fd-4c61-891b-11adb2d2315a Thinking { text: "", open: false, duration_ms: Some(1379) }
 ## 38 recorded 36: fact Transcript type=assistant uuid=34d89cb5-34b1-455b-9ca8-044bc1031850
-  row    5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01Mxtd6WkCNMK9U7KSDpsLGD x2 recent=1 live]
+  row    5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01Mxtd6WkCNMK9U7KSDpsLGD x2 recent=1 live]
   row    6 7d0e65d1-38fd-4c61-891b-11adb2d2315a Thinking { text: "", open: false, duration_ms: Some(1379) } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01Mxtd6WkCNMK9U7KSDpsLGD x2 live] collapsed
   row    7 toolu_01Mxtd6WkCNMK9U7KSDpsLGD FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: None }], state: Running } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01Mxtd6WkCNMK9U7KSDpsLGD x2 recent=0 live RunCounts { commands: 0, edits: 1, reads: 1, searches: 0, subagents: 0, other: 0 }]
   composer Send activity=Some(Running { key: "toolu_01Mxtd6WkCNMK9U7KSDpsLGD" }) queue=[] underway=[] refused=[]
@@ -40,7 +40,7 @@
 ## 53 recorded 51: fact Transcript type=assistant uuid=9a47d77e-a173-4a51-a3bf-d840f3bf3892
   row    8 9a47d77e-a173-4a51-a3bf-d840f3bf3892 Thinking { text: "", open: false, duration_ms: Some(1564) }
 ## 54 recorded 52: fact Transcript type=assistant uuid=7926690b-7218-4fd1-aa45-23199f2bc0ba
-  row    5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 recent=2 live]
+  row    5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 recent=2 live]
   row    6 7d0e65d1-38fd-4c61-891b-11adb2d2315a Thinking { text: "", open: false, duration_ms: Some(1379) } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 live] collapsed
   row    7 toolu_01Mxtd6WkCNMK9U7KSDpsLGD FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 recent=1 live]
   row    8 9a47d77e-a173-4a51-a3bf-d840f3bf3892 Thinking { text: "", open: false, duration_ms: Some(1564) } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 live] collapsed
@@ -54,7 +54,7 @@
      2 0ad68786-0c40-4108-b045-a0c537018e34 Prompt { text: [Text("First use Read to inspect config.txt. Then use Edit to change its only line from VALUE=1 to VALUE=2. Then use Bash to run exactly: cat config.txt. Do all three in this turn, in that order, then stop.")], steered: false }
      3 2a1a909f-7381-4686-b5aa-4f4143cc2ccd Thinking { text: "", open: false, duration_ms: Some(1726) }
      4 851351a8-c18d-47a6-b496-e7693d0052ba Prose { text: [Text("I'll read config.txt, edit it, and then display the result.")], streaming: false, working_note: false }
-     5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 recent=2 live]
+     5 toolu_01YappKR9wgb79BsMWZ9T7Mk Explore { verb: Read, subject: "<MACHINE_PATH>", state: Succeeded, result: "" } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 recent=2 live]
      6 7d0e65d1-38fd-4c61-891b-11adb2d2315a Thinking { text: "", open: false, duration_ms: Some(1379) } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 live] collapsed
      7 toolu_01Mxtd6WkCNMK9U7KSDpsLGD FileChange { files: [FileRow { path: "<MACHINE_PATH>", change: Edited, added: 1, removed: 1, line: Some(1) }], state: Succeeded } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 recent=1 live]
      8 9a47d77e-a173-4a51-a3bf-d840f3bf3892 Thinking { text: "", open: false, duration_ms: Some(1564) } run[toolu_01YappKR9wgb79BsMWZ9T7Mk..toolu_01KZYaYpW6mGjKYjYSTBax7p x3 live] collapsed
@@ -69,4 +69,5 @@
   permission  "auto" "Auto" unsettable
   permission* unlisted "bypassPermissions" "bypassPermissions" unsettable
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("Haiku 4.5") effort=None permission=Some("bypassPermissions") mode=None

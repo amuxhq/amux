@@ -8,10 +8,13 @@ use attachments::PLACEHOLDER;
 use schemars::JsonSchema;
 use serde::Serialize;
 pub use ui_state::ExitCause;
-use ui_state::{Activity, ActivityKind, AgentKey, Attention, FleetState, ItemBody, SessionState};
+use ui_state::{
+    Activity, ActivityKind, AgentKey, Attention, FleetState, ItemBody, ItemClass, SessionState,
+};
 use wire::{Agent, Kind, Presence, RouteKind, SignInState, UsageState};
 
 use crate::ask::{AskBody, ask_card};
+use crate::text::{markdown_words, within, without_direction_controls};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct FleetCard {
@@ -34,6 +37,15 @@ pub struct FleetCard {
     /// The whole family below and including this agent: what a folded
     /// family stands for when a client counts its fleet.
     pub members: u32,
+    /// Live agents below this one on every host its host knows of, as its
+    /// row reports them: what a stop or delete would cut. It counts children
+    /// on hosts this client cannot see, which `members` leaves out.
+    pub descendants: u32,
+    /// Jobs its provider runs in the background, as its row reports them.
+    pub background_jobs: u32,
+    /// This client's stop of it is held: its host could not be reached, and
+    /// the stop goes when the host is back. Cancel takes it back.
+    pub stop_held: bool,
 }
 
 /// Home's sections, computed once for every client. Empty sections are
@@ -43,7 +55,8 @@ pub struct FleetView {
     pub sections: Vec<FleetSection>,
     /// Agents across the whole fleet that need the person, and that are
     /// working or starting: counted by agent, not by family, whatever is
-    /// folded or filtered out of the sections.
+    /// folded or filtered out of the sections. An agent whose host is out
+    /// of reach is not counted: its row says only that.
     pub need_you: u32,
     pub working: u32,
 }
@@ -103,6 +116,10 @@ pub enum SecondLine {
     Exited(ExitCause),
     /// The agent's host is out of reach; the agent is only as it last said.
     HostAway,
+    /// The agent's host no longer trusts this machine: it will not come
+    /// back on its own, only by pairing again. The agent is only as it last
+    /// said.
+    HostRevoked,
     /// Starting, or nothing known yet.
     Blank,
 }
@@ -206,7 +223,7 @@ pub fn session_line(state: &SessionState, now_ms: i64) -> SessionLine {
             subject: subject(card.body),
             count: card.count as u32,
         }),
-        step: state.activity(now_ms).map(|activity| ActivityLine {
+        step: activity(state, now_ms).map(|activity| ActivityLine {
             step: step_subject(state, &activity),
             activity,
         }),
@@ -249,14 +266,54 @@ fn subject(body: AskBody) -> AskSubject {
     }
 }
 
+/// The activity line, for the chat and the agent's row alike. While
+/// nothing more specific is under way, a step still running in this turn
+/// is what the agent is doing: Codex writes reasoning and notes while a
+/// command runs, and the newest item alone would say only "Working".
+pub(crate) fn activity(state: &SessionState, now_ms: i64) -> Option<Activity> {
+    let activity = state.activity(now_ms)?;
+    if activity.kind != ActivityKind::Working {
+        return Some(activity);
+    }
+    let running = state
+        .transcript()
+        .iter()
+        .rev()
+        .take_while(|held| {
+            !matches!(
+                held.class,
+                ItemClass::Prompt
+                    | ItemClass::Steer
+                    | ItemClass::AgentMessage
+                    | ItemClass::Turn
+                    | ItemClass::Boundary
+            )
+        })
+        .find(|held| {
+            matches!(&held.class, ItemClass::Tool(tool)
+                if tool.in_flight && !tool.subagent && !tool.child && !tool.hidden)
+        });
+    Some(match running {
+        Some(held) => Activity {
+            kind: ActivityKind::Running {
+                key: held.item.key.clone(),
+            },
+            since_ms: held.item.at_ms,
+            elapsed_ms: (now_ms - held.item.at_ms).max(0),
+        },
+        None => activity,
+    })
+}
+
 /// The subject of the step a running activity names: its row's, or for a
-/// call announced before its row landed, the tool's name.
+/// call announced before its row landed, the tool's name. A path in the
+/// agent's folder is named from it, as on the step's row.
 fn step_subject(state: &SessionState, activity: &Activity) -> Option<String> {
     let ActivityKind::Running { key } = &activity.kind else {
         return None;
     };
     let subject = match state.transcript().get(key) {
-        Some(held) => crate::rows::subject_of(held),
+        Some(held) => within(&state.agent().cwd, &crate::rows::subject_of(held)),
         None => state
             .agent_state()
             .running_calls
@@ -268,7 +325,8 @@ fn step_subject(state: &SessionState, activity: &Activity) -> Option<String> {
     (!subject.is_empty()).then_some(subject)
 }
 
-/// The first line of the newest message the agent wrote to the person.
+/// The first line of the newest message the agent wrote to the person, as
+/// the words the chat draws it with: its markdown read, not shown.
 fn last_said(state: &SessionState) -> Option<String> {
     use wire::claude_pty_item::Kind as Pty;
     use wire::claude_sdk_item::Kind as Sdk;
@@ -292,7 +350,11 @@ fn last_said(state: &SessionState) -> Option<String> {
             held.item
                 .text
                 .lines()
-                .map(|line| line.replace(PLACEHOLDER, "").trim().to_owned())
+                .filter(|line| !line.trim_start().starts_with("```"))
+                .map(|line| {
+                    without_direction_controls(&markdown_words(&line.replace(PLACEHOLDER, "")))
+                })
+                .map(|line| line.trim().to_owned())
                 .find(|line| !line.is_empty())
                 .or_else(|| held.item.attachments.iter().find_map(attachment_name))
         })
@@ -305,7 +367,7 @@ fn attachment_name(attachment: &wire::Attachment) -> Option<String> {
         Of::Text(text) => &text.name,
         Of::Review(review) => &review.diff.as_ref()?.patch.as_ref()?.name,
     };
-    (!name.is_empty()).then(|| name.clone())
+    (!name.is_empty()).then(|| without_direction_controls(name))
 }
 
 /// The row's second line: the state comes from the inventory row, so it
@@ -322,8 +384,10 @@ fn second_line(
     if attention == Attention::Exited {
         return SecondLine::Exited(ui_state::exit_cause(agent));
     }
-    if !reach(fleet, local_host, &agent.host_id).online() {
-        return SecondLine::HostAway;
+    match reach(fleet, local_host, &agent.host_id) {
+        Reach::Online(_) => {}
+        Reach::Away(Away::Revoked) => return SecondLine::HostRevoked,
+        Reach::Away(_) | Reach::Offline => return SecondLine::HostAway,
     }
     let Some(line) = line else {
         return SecondLine::Blank;
@@ -353,7 +417,7 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
     let at = ui_state::agent_key(agent);
     let attention = ui_state::attention(agent);
     FleetCard {
-        name: agent.name.clone(),
+        name: without_direction_controls(&agent.name),
         kind: agent.kind(),
         attention,
         exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
@@ -368,6 +432,9 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         children: fleet.families().children(&at).count() as u32,
         family_attention: fleet.family_attention(&at).unwrap_or(Attention::Exited),
         members: fleet.family(&at).len() as u32,
+        descendants: agent.descendants,
+        background_jobs: agent.background_jobs,
+        stop_held: fleet.stop_held(&at),
         agent: at,
     }
 }
@@ -436,10 +503,13 @@ pub fn fleet_view(
         })
     })
     .collect();
+    // An agent whose host is out of reach is only as it last said, as its
+    // row says: it is not counted as working or needing the person.
     let counted = |wanted: &[Attention]| {
         fleet
             .agents()
             .filter(|agent| wanted.contains(&ui_state::attention(agent)))
+            .filter(|agent| reach(fleet, local_host, &agent.host_id).online())
             .count() as u32
     };
     FleetView {
@@ -484,7 +554,7 @@ fn push(
                 .map(|member| {
                     let key = ui_state::agent_key(member);
                     LoudMember {
-                        name: member.name.clone(),
+                        name: without_direction_controls(&member.name),
                         second_line: second_line(fleet, local_host, member, lines.get(&key)),
                         agent: key,
                     }

@@ -18,9 +18,10 @@ mod rows;
 mod run;
 mod segments;
 mod settings;
+mod text;
 
 pub use ask::{
-    Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, Pick, QuestionResponse,
+    Answer, AskBody, AskCard, CardState, Choice, ChoiceOutcome, OptionView, QuestionResponse,
     QuestionView, Scope, answer_input, ask_card, question_answer, reply_answer,
 };
 /// The character that marks an attachment's place in text.
@@ -28,7 +29,7 @@ pub use attachments::PLACEHOLDER;
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, ComposerView, ContextView, Lands, QueuedRow, RefusedPrompt,
     SentPrompt, SignInView, Underway, composer, composer_tokens, context, prompts_underway,
-    queue_rows, refused_prompts, sends_to_feed, sign_in, waiting,
+    queue_rows, refused_prompts, sends_to_feed, sign_in, switched_away, waiting,
 };
 pub use fleet::{
     ActivityLine, AskSubject, AskSummary, Away, ExitCause, FamilyHeader, FleetCard, FleetRow,
@@ -53,9 +54,10 @@ pub use rows::{
 pub use run::{LIVE_STEPS, Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
 pub use segments::{AttachmentView, Segment, segments};
 pub use settings::{
-    Changeability, Changeable, CommandView, ControlsSummary, EffortChoice, ModeChoice, ModelChoice,
-    NewAgentChoices, NewAgentPick, PermissionChoice, SettingChange, SettingsView, controls,
-    new_agent_pick, new_agent_settings, setting_input, settings,
+    Changeability, Changeable, ClientCommand, CommandView, ControlsSummary, EffortChoice,
+    ModeChoice, ModelChoice, NewAgentChoices, NewAgentPick, PermissionChoice, SettingChange,
+    SettingsView, Slash, controls, new_agent_pick, new_agent_settings, setting_input, settings,
+    slash, typed_setting,
 };
 /// Why an input was refused, which every client words.
 pub use ui_state::{Refusal, RefusalReason};

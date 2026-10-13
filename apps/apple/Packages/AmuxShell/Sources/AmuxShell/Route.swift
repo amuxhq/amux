@@ -52,7 +52,6 @@ public enum Route: Hashable, Sendable {
     /// Subscribing, pushed onto whichever stack asked for it, for the same
     /// reason signing in is.
     case paywall(Tab)
-    case accounts
 
     /// Which tab this page belongs under. A route opened from elsewhere takes
     /// its tab with it, so the tab bar always agrees with what is on screen.
@@ -61,7 +60,6 @@ public enum Route: Hashable, Sendable {
         case .conversation, .changes, .newAgent: .agents
         case .pairByCode, .pairConfirmation, .host: .hosts
         case .signIn(let from), .paywall(let from): from
-        case .accounts: .you
         }
     }
 
@@ -69,7 +67,7 @@ public enum Route: Hashable, Sendable {
     /// one account's machines or agents.
     public var outlivesAccount: Bool {
         switch self {
-        case .signIn, .accounts: true
+        case .signIn: true
         case .conversation, .changes, .newAgent, .pairByCode, .pairConfirmation, .host, .paywall:
             false
         }
@@ -87,7 +85,6 @@ public enum Route: Hashable, Sendable {
         case .host: "host"
         case .signIn: "sign-in"
         case .paywall: "paywall"
-        case .accounts: "profiles"
         }
     }
 }

@@ -135,6 +135,12 @@ final class ComponentSnapshotTests: XCTestCase {
         settlingAll: Bool
     ) async {
         let name = "\(example.id).\(appearance.name)"
+        // An example at an accessibility text size is also read, as
+        // VoiceOver reads it, for text drawn over text and controls off the
+        // canvas; the tree it is read from exists only while something reads.
+        let reading = example.dynamicTypeSize.isAccessibilitySize
+        if reading { AccessibilityReading.on() }
+        defer { if reading { AccessibilityReading.off() } }
         await showing(example, appearance, reducesTransparency: true, perturbing: perturbing) {
             controller, window, deadline in
             let traits = Self.traits(appearance)
@@ -165,6 +171,7 @@ final class ComponentSnapshotTests: XCTestCase {
                 picture = settledPicture
             }
             guard let settled = picture else { return }
+            if reading { await Self.assertReadable(name, in: window) }
             let frosted = Self.frostedLayers(in: window.layer)
             guard frosted == 0 else {
                 XCTFail(
@@ -449,6 +456,36 @@ final class ComponentSnapshotTests: XCTestCase {
         image.cgImage?.dataProvider?.data as Data?
     }
 
+    /// At an accessibility text size, no piece of text is drawn over
+    /// another and every control is whole on the canvas: what an example
+    /// that wraps, stacks or scrolls instead of overprinting shows.
+    private static func assertReadable(_ name: String, in window: UIWindow) async {
+        var drawn: [ReadElement] = []
+        for _ in 0..<50 {
+            drawn = ReadElement.all(in: window)
+            if !drawn.isEmpty { break }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(drawn.isEmpty, "\(name): nothing could be read from the accessibility tree")
+        // A control's touch target reaches past what it draws, by up to the
+        // slack that makes it a thumb's size; only past that is it off.
+        let canvas = window.bounds.insetBy(dx: -12, dy: -12)
+        for control in drawn where control.control {
+            XCTAssertTrue(
+                canvas.contains(control.frame),
+                "\(name): the control \"\(control.label)\" is not whole on the canvas: \(control.frame)")
+        }
+        let texts = drawn.filter { !$0.control && !$0.frame.isEmpty }
+        print("AMUX_SNAPSHOT_READABLE component=\(name) texts=\(texts.count) controls=\(drawn.count - texts.count)")
+        for (index, text) in texts.enumerated() {
+            for other in texts.dropFirst(index + 1) {
+                let shared = text.frame.intersection(other.frame)
+                guard !shared.isNull, shared.width > 1, shared.height > 1 else { continue }
+                XCTFail("\(name): \"\(text.label)\" is drawn over \"\(other.label)\" (\(text.frame) and \(other.frame))")
+            }
+        }
+    }
+
     private static func requestedIDs(_ raw: String?) -> Set<String> {
         Set((raw ?? "").split(separator: ",").map(String.init).filter { !$0.isEmpty })
     }
@@ -491,4 +528,59 @@ private final class DisplayFrame: NSObject {
         continuation?.resume()
         continuation = nil
     }
+}
+
+/// One element VoiceOver would read, where it is drawn, in window points.
+@MainActor
+private struct ReadElement {
+    let label: String
+    let frame: CGRect
+    let control: Bool
+
+    static func all(in window: UIWindow) -> [ReadElement] {
+        var found: [ReadElement] = []
+        var seen = Set<ObjectIdentifier>()
+        func visit(_ node: NSObject) {
+            guard seen.insert(ObjectIdentifier(node)).inserted else { return }
+            if let view = node as? UIView, view.isHidden || view.alpha == 0 { return }
+            if node.isAccessibilityElement {
+                let frame = window.convert(node.accessibilityFrame, from: nil)
+                let traits = node.accessibilityTraits
+                let control = traits.contains(.button) || traits.contains(.adjustable)
+                    || node is UIControl || node is UITextField || node is UITextView
+                if frame.width > 0, frame.height > 0 {
+                    found.append(ReadElement(
+                        label: node.accessibilityLabel ?? "", frame: frame, control: control))
+                }
+            }
+            if let listed = node.accessibilityElements as? [NSObject] {
+                listed.forEach(visit)
+            } else {
+                let count = node.accessibilityElementCount()
+                if count != NSNotFound, count > 0 {
+                    for index in 0..<count {
+                        if let child = node.accessibilityElement(at: index) as? NSObject { visit(child) }
+                    }
+                }
+            }
+            if let view = node as? UIView { view.subviews.forEach(visit) }
+        }
+        visit(window)
+        return found
+    }
+}
+
+/// The automation reading of the accessibility tree a UI test driver turns
+/// on. A SwiftUI screen builds its tree only while something reads it.
+@MainActor
+private enum AccessibilityReading {
+    private static let set: (@convention(c) (Int32) -> Void)? = {
+        guard let handle = dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW),
+              let symbol = dlsym(handle, "_AXSSetAutomationEnabled")
+        else { return nil }
+        return unsafeBitCast(symbol, to: (@convention(c) (Int32) -> Void).self)
+    }()
+
+    static func on() { set?(1) }
+    static func off() { set?(0) }
 }

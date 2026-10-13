@@ -21,12 +21,12 @@
   composer Send activity=Some(Running { key: "fc-1" }) queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"rpc","json":{"id":8,"method":"item/fileChange/requestApproval","params":{"grantRoot":"/work","itemId":"fc-1","reason":"Edit outside the workspace","threadId":"t1","turnId":"turn-1"}}}
   ask 8 -> "fc-1" 1/1 Open
-    choices AllowOnce*, AllowForSession, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["/work/a.txt"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
     body Edit { path: "/work/a.txt", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "a" }), Line(PatchLine { number: Some(1), kind: Added, text: "b" })], line: Some(1), reason: "Edit outside the workspace", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 10 input {"answer":{"answer":{"decision":"approve_similar"},"ask":"8"},"id":"a3"}
   ask 8 -> "fc-1" 1/1 Rejected(Refusal { reason: Unsupported, detail: None })
-    choices AllowOnce*, AllowForSession, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["/work/a.txt"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
     body Edit { path: "/work/a.txt", files: 1, added: 1, removed: 1, lines: [Hunk { old_start: 1, new_start: 1 }, Line(PatchLine { number: Some(1), kind: Removed, text: "a" }), Line(PatchLine { number: Some(1), kind: Added, text: "b" })], line: Some(1), reason: "Edit outside the workspace", created: Some(false) }
 ## 11 input {"answer":{"answer":{"decision":"deny"},"ask":"8"},"id":"a4"}
   row    4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Denied } run[cmd-1..fc-1 x2 recent=0 live RunCounts { commands: 1, edits: 1, reads: 0, searches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
@@ -163,4 +163,5 @@
   model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
   permission* unlisted "default" "default" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None

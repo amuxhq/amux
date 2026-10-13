@@ -15,9 +15,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use tokio::sync::mpsc;
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
-use ui_state::{AgentKey, Composer, PhaseView};
+use ui_state::{AgentKey, Composer, InputWhat, PhaseView};
 use ui_view::family_header;
-use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest, StopAgentRequest};
+use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
 
 use crate::chat::layout::{CAP, PAGE};
 use crate::chat::{ChatEffect, ChatView};
@@ -170,6 +170,9 @@ pub enum AppEvent {
     Opened {
         agent: AgentKey,
         result: Result<Arc<Session>, String>,
+        /// The draft this machine kept for the agent, from an earlier
+        /// client.
+        kept: Option<wire::ComposerDraft>,
     },
     Notice(String, Tone),
     /// Put words back in the composer of this agent's chat, saying why
@@ -183,6 +186,12 @@ pub enum AppEvent {
     Attached {
         agent_id: Vec<u8>,
         blob: wire::BlobRef,
+    },
+    /// A file could not be stored for the draft.
+    AttachFailed {
+        agent_id: Vec<u8>,
+        name: String,
+        why: String,
     },
     /// An agent created with its first prompt: its chat opens, or home
     /// stays and says it started.
@@ -271,6 +280,11 @@ pub struct App {
     /// prompt is the person's work, and it waits in the composer for the
     /// chat's return, as on the phone.
     drafts: HashMap<AgentKey, crate::editor::Editor>,
+    /// A chat closed under the person: home takes no key until
+    /// [`crate::chat::ASK_ARMS_MS`] pass with none, as an ask arms, so the
+    /// rest of what they were typing never acts on another agent. The last
+    /// key's time, or the close's.
+    home_held: Option<i64>,
     events: mpsc::UnboundedSender<AppEvent>,
     pub receiver: mpsc::UnboundedReceiver<AppEvent>,
 }
@@ -281,15 +295,54 @@ fn now_ms() -> i64 {
 }
 
 /// Why an agent's own terminal cannot be attached from here: raw attach
-/// reads the agent's directory on this machine, and headless Claude has no
-/// terminal at all. Its chat is the way in either way.
+/// reads the agent's directory on this machine, headless Claude has no
+/// terminal at all, and a stopped agent's terminal is gone until it is
+/// resumed. Its chat is the way in either way.
 pub(crate) fn terminal_refusal(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
+    terminal_elsewhere(agent, config)
+        .or_else(|| (agent.lifecycle() == wire::Lifecycle::Exited).then_some("it is stopped"))
+}
+
+/// Why `agent` has no terminal on this machine at all, running or not.
+fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
     if agent.host_id != config.local_host {
-        Some("its terminal is on another machine; enter opens its chat")
+        Some("its terminal is on another machine")
     } else if agent.kind() == wire::Kind::ClaudeSdk {
-        Some("headless Claude has no terminal; enter opens its chat")
+        Some("headless Claude has no terminal")
     } else {
         None
+    }
+}
+
+/// A composer's words and attachments, as the daemon keeps them.
+fn composer_draft(editor: &crate::editor::Editor) -> wire::ComposerDraft {
+    wire::ComposerDraft {
+        text: editor.text().to_owned(),
+        attachments: editor.attachments().to_vec(),
+    }
+}
+
+/// Saves drafts with this machine's daemon; a failure loses only what a
+/// client kept in memory anyway.
+async fn save_drafts(client: Arc<dyn Client>, drafts: Vec<(Vec<u8>, wire::ComposerDraft)>) {
+    for (agent_id, draft) in drafts {
+        let request = wire::SaveDraftRequest {
+            agent_id,
+            draft: Some(draft),
+        };
+        // Nowhere to say it as the client closes; the draft was only ever
+        // in this client's memory before.
+        let _ = client.save_draft(request).await;
+    }
+}
+
+impl Drop for App {
+    /// A client dropped without quitting (a test, an embedding) still
+    /// hands its drafts on, where a runtime is there to send them.
+    fn drop(&mut self) {
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(self.keep_drafts());
+        }
     }
 }
 
@@ -298,7 +351,7 @@ fn plain(error: InputError) -> String {
         InputError::Rejected(reason) => {
             format!("not sent: {}", crate::chat::refusal_words(&reason))
         }
-        InputError::Uncertain => error.to_string(),
+        InputError::Uncertain | InputError::Held => error.to_string(),
     }
 }
 
@@ -333,6 +386,7 @@ impl App {
             report: None,
             host_offers: HashMap::new(),
             drafts: HashMap::new(),
+            home_held: None,
             offers_asked: HashSet::new(),
             events,
             receiver,
@@ -427,7 +481,11 @@ impl App {
 
     pub fn event(&mut self, event: AppEvent) -> Flow {
         match event {
-            AppEvent::Opened { agent, result } => {
+            AppEvent::Opened {
+                agent,
+                result,
+                kept,
+            } => {
                 if self.opening.as_ref() != Some(&agent) {
                     if result.is_ok() {
                         self.fleet.close(&agent);
@@ -442,11 +500,15 @@ impl App {
                             self.keep_draft(open);
                         }
                         let terminal = self.fleet.state().agent(&agent).is_some_and(|entry| {
-                            self.config.attach && terminal_refusal(entry, &self.config).is_none()
+                            self.config.attach && terminal_elsewhere(entry, &self.config).is_none()
                         });
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
-                        if let Some(draft) = self.drafts.remove(&agent) {
-                            view.editor = draft;
+                        match (self.drafts.remove(&agent), kept) {
+                            (Some(draft), _) => view.editor = draft,
+                            // A draft this machine kept from an earlier
+                            // client comes back from its daemon.
+                            (None, Some(kept)) => view.editor.set(&kept.text, kept.attachments),
+                            (None, None) => {}
                         }
                         view.leader = self.config.leader;
                         view.local = agent.host == self.config.local_host;
@@ -487,13 +549,35 @@ impl App {
                 }
             }
             AppEvent::Attached { agent_id, blob } => {
+                let effects = match self
+                    .chat
+                    .as_mut()
+                    .filter(|chat| chat.view.agent_id == agent_id)
+                {
+                    Some(chat) => {
+                        let state = chat.session.state();
+                        chat.view.attach_blob(&state, blob)
+                    }
+                    None => Vec::new(),
+                };
+                // A send that waited for the file goes now.
+                for effect in effects {
+                    self.chat_effect(effect);
+                }
+            }
+            AppEvent::AttachFailed {
+                agent_id,
+                name,
+                why,
+            } => {
                 if let Some(chat) = self
                     .chat
                     .as_mut()
                     .filter(|chat| chat.view.agent_id == agent_id)
                 {
-                    chat.view.attach_blob(blob);
+                    chat.view.attach_failed(&name, &why);
                 }
+                self.notice(format!("could not attach {name}: {why}"), Tone::Warn);
             }
             AppEvent::Review {
                 agent_id,
@@ -550,9 +634,10 @@ impl App {
                     if refusal.is_none() && self.config.attach {
                         return Flow::Attach(Box::new(agent));
                     }
-                    let why = refusal.unwrap_or(
-                        "its own terminal would open here, but this amux cannot hand the terminal over; its chat opens instead",
-                    );
+                    let why = match refusal {
+                        Some(why) => format!("{why}; its chat opens instead"),
+                        None => "its own terminal would open here, but this amux cannot hand the terminal over; its chat opens instead".to_owned(),
+                    };
                     self.notice(why, Tone::Warn);
                     self.config.initial_chat = Some(agent.agent_id.clone());
                     self.fleet_changed();
@@ -580,6 +665,7 @@ impl App {
         }
         self.opening = Some(agent.clone());
         let fleet = self.fleet.clone();
+        let client = self.client.clone();
         self.spawn(async move {
             let window = Window {
                 tail: PAGE,
@@ -589,7 +675,19 @@ impl App {
                 .open(&agent, window)
                 .await
                 .map_err(|error| error.to_string());
-            Some(AppEvent::Opened { agent, result })
+            let request = wire::GetDraftRequest {
+                agent_id: agent.agent.clone(),
+            };
+            let kept = client
+                .get_draft(request)
+                .await
+                .ok()
+                .filter(|draft| !draft.text.is_empty() || !draft.attachments.is_empty());
+            Some(AppEvent::Opened {
+                agent,
+                result,
+                kept,
+            })
         });
     }
 
@@ -602,11 +700,62 @@ impl App {
         }
     }
 
-    /// Keeps a closing chat's draft for when it opens again.
+    /// Keeps a closing chat's draft for when it opens again, here and with
+    /// this machine's daemon, so it outlives this client.
     fn keep_draft(&mut self, chat: OpenChat) {
+        let draft = composer_draft(&chat.view.editor);
+        let client = self.client.clone();
+        let agent_id = chat.agent.agent.clone();
+        self.spawn(async move {
+            save_drafts(client, vec![(agent_id, draft)]).await;
+            None
+        });
         if !chat.view.editor.is_empty() {
             self.drafts.insert(chat.agent, chat.view.editor);
         }
+    }
+
+    /// Every draft this client holds, for its daemon to keep as the client
+    /// closes: the open chat's, those of chats left, and, in each agent's,
+    /// the words of prompts held for an unreachable host, which go back to
+    /// the draft rather than being lost with the client.
+    fn drafts_to_keep(&mut self) -> Vec<(Vec<u8>, wire::ComposerDraft)> {
+        let mut editors: HashMap<AgentKey, crate::editor::Editor> =
+            std::mem::take(&mut self.drafts);
+        if let Some(chat) = &self.chat {
+            editors.insert(chat.agent.clone(), chat.view.editor.clone());
+        }
+        for session in self.fleet.sessions() {
+            let held: Vec<(String, Vec<Attachment>)> = session
+                .state()
+                .held()
+                .filter_map(|sent| match &sent.what {
+                    InputWhat::Prompt { text, attachments } => {
+                        Some((text.clone(), attachments.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            if held.is_empty() {
+                continue;
+            }
+            let key = ui_state::agent_key(session.state().agent());
+            let editor = editors.entry(key).or_default();
+            for (text, attachments) in held {
+                editor.restore(&text, attachments);
+            }
+        }
+        editors
+            .into_iter()
+            .map(|(agent, editor)| (agent.agent, composer_draft(&editor)))
+            .collect()
+    }
+
+    /// Hands every draft to this machine's daemon; awaited as the client
+    /// quits.
+    pub fn keep_drafts(&mut self) -> impl std::future::Future<Output = ()> + Send + 'static {
+        let drafts = self.drafts_to_keep();
+        save_drafts(self.client.clone(), drafts)
     }
 
     fn field_text(&self) -> bool {
@@ -870,6 +1019,14 @@ impl App {
     }
 
     fn fleet_key(&mut self, key: KeyEvent) -> Flow {
+        if let Some(since) = self.home_held {
+            let now = now_ms();
+            if now.saturating_sub(since) < crate::chat::ASK_ARMS_MS {
+                self.home_held = Some(now);
+                return Flow::Continue;
+            }
+            self.home_held = None;
+        }
         let effects = {
             let fleet = self.fleet.state();
             self.fleet_view.key(&fleet, key)
@@ -927,14 +1084,19 @@ impl App {
                     })
                 })
             }
+            FleetEffect::CancelStop(agent) => self.fleet.cancel_stop(&agent),
             FleetEffect::Stop(agent) => {
+                let fleet = self.fleet.clone();
                 self.spawn(async move {
-                    let request = StopAgentRequest {
-                        agent_id: agent.agent,
-                    };
-                    client.stop_agent(request).await.err().map(|error| {
-                        AppEvent::Notice(format!("could not stop: {error}"), Tone::Warn)
-                    })
+                    // A stop whose host cannot be reached is held by the
+                    // fleet and shown on the agent's row until it goes.
+                    match fleet.stop(&agent).await {
+                        Ok(_) => None,
+                        Err(error) => Some(AppEvent::Notice(
+                            format!("could not stop: {error}"),
+                            Tone::Warn,
+                        )),
+                    }
                 })
             }
             FleetEffect::Delete(agent) => self.spawn(async move {
@@ -1022,9 +1184,15 @@ impl App {
                     .await
                     .err()
                     .and_then(|error| match error {
-                        // The card itself says it was rejected or not confirmed.
-                        InputError::Rejected(_) | InputError::Uncertain => None,
+                        // The card itself says it was rejected, not
+                        // confirmed or held.
+                        InputError::Rejected(_) | InputError::Uncertain | InputError::Held => None,
                     })
+            }),
+            ChatEffect::SwitchBack => self.spawn(async move {
+                session.switch_back().await.err().map(|error| {
+                    AppEvent::Notice(format!("could not switch back: {}", plain(error)), Tone::Warn)
+                })
             }),
             ChatEffect::Interrupt => self.spawn(async move {
                 session
@@ -1074,6 +1242,27 @@ impl App {
                 }
             }
             ChatEffect::Discard { id } => session.discard(&id),
+            ChatEffect::Cancel { id } => {
+                let words = match session.state().inputs().get(&id).map(|sent| &sent.what) {
+                    Some(InputWhat::Prompt { text, attachments }) => {
+                        Some((text.clone(), attachments.clone()))
+                    }
+                    _ => None,
+                };
+                session.discard(&id);
+                if let Some((text, attachments)) = words {
+                    chat.view.editor.restore(&text, attachments);
+                }
+            }
+            ChatEffect::Rename(name) => {
+                let client = self.client.clone();
+                self.spawn(async move {
+                    let request = RenameAgentRequest { agent_id, name };
+                    client.rename_agent(request).await.err().map(|error| {
+                        AppEvent::Notice(format!("could not rename: {error}"), Tone::Warn)
+                    })
+                })
+            }
             ChatEffect::Page(n) => {
                 {
                     let state = session.state();
@@ -1097,10 +1286,11 @@ impl App {
                 self.spawn(async move {
                     Some(match session.put_blob(&name, &mime, bytes).await {
                         Ok(blob) => AppEvent::Attached { agent_id, blob },
-                        Err(error) => AppEvent::Notice(
-                            format!("could not attach {name}: {error}"),
-                            Tone::Warn,
-                        ),
+                        Err(error) => AppEvent::AttachFailed {
+                            agent_id,
+                            name,
+                            why: error.to_string(),
+                        },
                     })
                 });
             }
@@ -1139,26 +1329,67 @@ impl App {
     }
 
     /// Hands the terminal to the agent's own interface when it is on this
-    /// machine and has one; says why not otherwise.
+    /// machine and has one; says why not otherwise, and from home, that
+    /// Enter opens its chat (in the chat, Enter sends the draft).
     fn raw_attach(&mut self, agent: &AgentKey) -> Option<Flow> {
         let entry = self.fleet.state().agent(agent).cloned()?;
         match terminal_refusal(&entry, &self.config) {
             None => Some(Flow::Attach(Box::new(entry))),
-            Some(why) => {
+            Some(why) if self.chat.is_some() => {
                 self.notice(why, Tone::Warn);
                 None
             }
+            Some(why) => {
+                self.notice(format!("{why}; enter opens its chat"), Tone::Warn);
+                None
+            }
         }
+    }
+
+    /// Why the open chat can no longer be served, in the person's terms:
+    /// its agent deleted, or its host no longer linked to this machine (the
+    /// runtime says only that it knows no such agent). None while it can.
+    fn chat_gone(&self) -> Option<String> {
+        let chat = self.chat.as_ref()?;
+        let fleet = self.fleet.state();
+        let ended = chat.session.ended();
+        let listed = fleet.agent(&chat.agent).is_some();
+        // An agent the fleet stopped listing, once the fleet is current.
+        let dropped =
+            !listed && fleet.caught_up() && fleet.connection() == ui_state::Connection::Live;
+        if ended.is_none() && !dropped {
+            return None;
+        }
+        let state = chat.session.state();
+        let linked = fleet
+            .host(&chat.agent.host)
+            .is_some_and(|host| host.trust() == wire::Trust::Trusted);
+        let host = state
+            .host()
+            .map(|host| host.name.clone())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "its host".to_owned());
+        let not_found = ended
+            .as_ref()
+            .is_some_and(|error| error.code() == Some(wire::ErrorCode::NotFound));
+        Some(match ended {
+            _ if !linked && (dropped || not_found) => {
+                format!("{host} is no longer linked to this machine")
+            }
+            _ if dropped || not_found => format!("{} was deleted", state.agent().name),
+            Some(error) => error.to_string(),
+            None => return None,
+        })
     }
 
     /// What the loop does before each frame: a deleted agent's open chat
     /// closes to the fleet, and the changed files its overview lists are
     /// fetched when it asks.
     pub fn housekeep(&mut self) {
-        let ended = self.chat.as_ref().and_then(|chat| chat.session.ended());
-        if let Some(error) = ended {
+        if let Some(why) = self.chat_gone() {
             self.close_chat();
-            self.notice(format!("the chat closed: {error}"), Tone::Warn);
+            self.home_held = Some(now_ms());
+            self.notice(format!("the chat closed: {why}"), Tone::Warn);
             return;
         }
         self.ask_host_offers();
@@ -1542,7 +1773,7 @@ fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
     entries
 }
 
-fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {
+pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {
     let leader = format!("ctrl+{leader}");
     let mut rows: Vec<(&str, String)> = crate::home::help_rows();
     rows.extend([
@@ -1559,9 +1790,9 @@ fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {
         ),
         (
             "↑ in an empty composer",
-            "the queued messages: enter sends one now, backspace withdraws it".into(),
+            "the queued messages: enter sends one now, backspace withdraws it; with none queued, the last prompt again".into(),
         ),
-        ("ctrl+x", "stop the turn; the agent stays".into()),
+        ("ctrl+x", "interrupt: end the turn; the agent stays".into()),
         ("ctrl+c", "clear the draft; twice on nothing quits".into()),
         ("ctrl+o", "the overview of what is in flight".into()),
         (
@@ -1651,7 +1882,21 @@ fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {
             push(&mut line, "─".repeat(rule), theme.hairline(), width);
         } else if !words.is_empty() {
             push(&mut line, format!("{key:<24}"), theme.emphasis(), width);
-            push(&mut line, words, theme.faint(), width);
+            // The words wrap under their own column: cut at the edge, a
+            // narrow terminal lost the end of a rule ("never stops the
+            // agent").
+            let room = width.saturating_sub(2 * 2 + 24).max(12);
+            let mut parts = text::wrap(&words, room).into_iter();
+            if let Some(first) = parts.next() {
+                push(&mut line, first, theme.faint(), width);
+            }
+            lines.push(line);
+            for part in parts {
+                let mut more = Line::from(Span::raw(" ".repeat(2 + 24)));
+                push(&mut more, part, theme.faint(), width);
+                lines.push(more);
+            }
+            continue;
         }
         lines.push(line);
     }

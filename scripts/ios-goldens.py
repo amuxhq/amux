@@ -239,6 +239,53 @@ class Goldens:
         journey.app({"kind": "dynamicType", "size": "large"})
         self.back()
 
+    def large_text(self) -> None:
+        """Every screen a person reads most, at an accessibility text size:
+        nothing overprints, nothing is cut mid-word, and every control is
+        on the screen. The answered chat is opened before the text grows,
+        since its row is below the fold at that size. The text size goes
+        back afterwards, so the screens after this one are drawn as they
+        always were."""
+        journey = self.journey
+        desk = journey.host_id("desk")
+        self.open("planner", lambda drawn: labelled(drawn, "share one string") and TURN[0] in drawn, "the answered chat")
+        journey.app({"kind": "dynamicType", "size": "accessibility3"})
+        journey.app({"kind": "settle"})
+        self.photograph("large-text", "chat", volatile=TURN)
+        self.back()
+        journey.wait(lambda drawn: f"home.row.{self.agent('asker')}" in drawn, "the fleet at a large text size")
+        journey.app({"kind": "settle"})
+        self.photograph("large-text", "fleet")
+        journey.tap("tab.hosts")
+        journey.wait(lambda drawn: f"hosts.row.{desk}" in drawn, "the hosts at a large text size")
+        journey.app({"kind": "settle"})
+        self.photograph("large-text", "hosts")
+        journey.tap("tab.you")
+        journey.wait(lambda drawn: "you.appearance" in drawn, "the You tab at a large text size")
+        journey.app({"kind": "settle"})
+        self.photograph("large-text", "you")
+        journey.tap("tab.agents")
+        journey.tap("home.newAgent")
+        journey.wait(
+            lambda drawn: drawn.get(f"new-agent.host.{desk}", {}).get("value") == "chosen"
+            and drawn.get("new-agent.directory", {}).get("value"),
+            "New Agent at a large text size",
+        )
+        journey.app({"kind": "settle"})
+        self.photograph("large-text", "new-agent")
+        journey.tap("new-agent.back")
+        journey.wait(lambda drawn: "new-agent" not in drawn, "the fleet again")
+        journey.app({"kind": "settle"})
+        self.open(
+            "asker",
+            lambda drawn: "ask" in drawn and labelled(drawn, "Only what users will notice"),
+            "the question card at a large text size",
+        )
+        journey.app({"kind": "settle"})
+        self.photograph("large-text", "question")
+        self.back()
+        journey.app({"kind": "dynamicType", "size": "large"})
+
     def origin_rewind(self) -> None:
         """The desk checkpoints, moves on a turn the phone sees, then loses
         power back to the checkpoint: the phone's replica is Reset and the
@@ -293,6 +340,7 @@ WAY = {
     "claude-sdk-ask-question": Goldens.question,
     "ask-escape": Goldens.escape,
     "composer-chips": Goldens.composer_chips,
+    "large-text": Goldens.large_text,
     "origin-rewind": Goldens.origin_rewind,
 }
 

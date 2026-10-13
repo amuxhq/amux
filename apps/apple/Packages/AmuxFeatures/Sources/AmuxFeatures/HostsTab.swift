@@ -10,8 +10,8 @@ public enum HostsAction: Equatable, Sendable {
     /// with one machine: a code typed for no machine has nowhere to go.
     case pair(HostId)
     case newAgent
-    /// Stop trusting a machine. Destructive and immediate: what it ends is
-    /// the access this phone granted, not a preference.
+    /// Stop trusting a machine, once the person has confirmed it: what it
+    /// ends is the access this phone granted, not a preference.
     case revoke(HostId)
     /// Take the person to this app's own page in the system's settings, which
     /// is the only place a refused local network can be granted again. The app
@@ -515,6 +515,9 @@ private struct DevicesSheet: View {
     @Environment(\.design) private var design
     let model: HostsStore
     let actions: @MainActor (HostsAction) -> Void
+    /// The machine whose revoke is being confirmed: one tap must not end a
+    /// pairing that only pairing again can bring back.
+    @State private var confirming: [UInt8]?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -609,6 +612,39 @@ private struct DevicesSheet: View {
     }
 
     private func row(_ device: PairedPeer) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            deviceLine(device)
+            if confirming == device.id { confirm(device) }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .contain)
+        .identified(
+            "hosts.device.\(device.host?.description ?? device.name)", label: "\(device.name), \(device.fingerprint)",
+            value: device.fingerprint)
+    }
+
+    /// Revoking one machine, with what it ends said first.
+    private func confirm(_ device: PairedPeer) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(String(localized: "Revoke \(device.name)? This phone stops reaching it, and only pairing again brings it back."))
+                .designFont(.detail, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+            ButtonPair {
+                choiceButton(String(localized: "Cancel"), kind: .outline, id: "hosts.revoke.cancel") {
+                    confirming = nil
+                }
+                choiceButton(String(localized: "Revoke"), kind: .destructive, id: "hosts.revoke.confirm") {
+                    confirming = nil
+                    if let host = device.host { actions(.revoke(host)) }
+                }
+            }
+        }
+    }
+
+    private func deviceLine(_ device: PairedPeer) -> some View {
         HStack(spacing: 11) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name)
@@ -620,19 +656,12 @@ private struct DevicesSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 6)
-            Button { if let host = device.host { actions(.revoke(host)) } } label: {
+            Button { confirming = device.id } label: {
                 ActionLabel("Revoke", kind: .outline)
             }
             .buttonStyle(.amuxRow)
             .accessibilityLabel("Revoke \(device.name)")
             .identified("hosts.revoke.\(device.host?.description ?? device.name)", label: "Revoke \(device.name)")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minHeight: 44)
-        .accessibilityElement(children: .contain)
-        .identified(
-            "hosts.device.\(device.host?.description ?? device.name)", label: "\(device.name), \(device.fingerprint)",
-            value: device.fingerprint)
     }
 }

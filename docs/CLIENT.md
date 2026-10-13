@@ -6,7 +6,8 @@ amux has two rich clients, the terminal client ([TERMINAL.md](TERMINAL.md)) and 
 ([IOS.md](IOS.md)). Both are thin shells over one Rust library: a pure model of an open chat and of the fleet,
 a driver that owns the streams and does every piece of I/O, and a set of views that turn the model into plain
 content values. Each client composes those values in its own layout and owns only what is ephemeral: panes,
-scroll position, focus, drafts and which rows are expanded.
+scroll position, focus, drafts and which rows are expanded. A client hands its unsent drafts to its own machine's
+daemon (`SaveDraft`, `GetDraft`) so a draft outlives the client; they never leave that machine.
 
 Three rules shape the library:
 
@@ -177,7 +178,8 @@ The state answers the questions every client asks, so no client re-derives them:
 | Method | Answer |
 |---|---|
 | `can_send()` | Caught up, and the entry does not say exited. Drafting is never gated. |
-| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); or `Disabled(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`. |
+| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); or `Holds(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, and a send is held until it is. |
+| `held()` | This client's inputs held until the host is back, drawn pending with Cancel. |
 | `phase()` | `PhaseView`: lifecycle from the entry, everything else from the snapshot. |
 | `open_asks()` | The asks to draw, head first. Before CaughtUp an ask is drawn only if the entry says needs-you, so an ask answered on another device does not flash from a cached snapshot and vanish. |
 | `activity(now_ms)` | The activity line, derived from the newest items and the phase (see [the chat vocabulary](CHAT_VOCABULARY.md)). |
@@ -202,10 +204,20 @@ Each input this client sends becomes a `SentInput` with an `InputState`:
 | `Settled` | Accepted and, for a prompt, reflected by an item carrying its input id. |
 | `Rejected(refusal)` | The verdict was a rejection: a `Refusal` holding the typed reason and the provider's own words when it gave any. A rejection never touches the transcript. |
 | `Uncertain` | The connection dropped before a reply. |
+| `Held` | A prompt or answer that certainly never left: sent while the chat was not current, or refused with `REFUSAL_HOST_UNREACHABLE`. The client holds it, shown pending with Cancel. |
 
 An uncertain input is resolved only at the next CaughtUp: found in the snapshot's queue it is queued; found among
 the items it is settled; found in neither it stays uncertain and the person decides to resend or discard it.
-Nothing is resent automatically. A rejection with the refusal `REFUSAL_EXITED` flips the composer to Resume for that
+Nothing uncertain is resent automatically: it may have reached the agent (handed to the provider and not yet
+reflected looks the same as never arrived), and agents do not drop a person's input sent twice.
+
+A held input is different: it never left, so the state releases it at the next CaughtUp, or when the agent's host
+entry turns online again while the chat is current. Each one is `Sent` again from that moment and listed in the
+update's `Outcome::resend`, and the driver sends it under its own id. One already reflected or queued is settled
+instead. Only prompts and answers are held: an interrupt, a withdraw, a send-now or a setting sent later would act
+on whatever the agent is doing then, so those are refused at once with the reason. Discarding a held input is its
+Cancel. Held inputs live as long as the client: when the client closes, a held prompt's words go back to its
+draft and a held answer is dropped. A rejection with the refusal `REFUSAL_EXITED` flips the composer to Resume for that
 incarnation, so a send that raced the exit keeps its draft.
 
 ### The fleet state
@@ -253,7 +265,9 @@ host, and from its replica for another host's agent even while that host is away
 | `resume_with(draft)` | ResumeAgent with the draft as the next incarnation's first prompt; on failure the draft is discarded from the state and handed back to the composer. |
 | `withdraw(queued)`, `send_now(queued)` | Take a queued prompt back, or steer it into the running turn. |
 | `answer(input)` | Answer an ask with the input `ui_view::answer_input` built. Any open ask can be answered. |
-| `interrupt()` | Stop the turn; the agent stays live and idle. |
+| `interrupt()` | Interrupt the turn; the agent stays live and idle. |
+| `switch_back()` | Takes terminal Claude's own view back to the agent's conversation after it switched to another; never held. |
+| `rename(name)` | amux's rename, never held: an unreachable host fails it at once with its reason. |
 | `discard(id)` | Forget an input that was not confirmed. |
 | `blob(hash)`, `fetch_blob(hash)`, `put_blob(name, mime, bytes)` | Attachment bytes; see [attachments](#attachments). |
 | `working_tree_review()` | The agent's working-tree `Diff` and the patch it names, for a review page. |
@@ -262,8 +276,8 @@ host, and from its replica for another host's agent even while that host is away
 | `trace()`, `dump_part()` | The bounded trace, and this chat's part of a dump bundle. |
 | `close()` | Drops the stream. Nothing is flushed; results of calls still in flight change nothing. |
 
-The acts that wait on the agent return `InputError::Rejected(refusal)` or `InputError::Uncertain` when they do
-not take effect. `page_older` returns `PageError::OriginUnreachable` when older history is held only by the
+The acts that wait on the agent return `InputError::Rejected(refusal)`, `InputError::Uncertain`, or
+`InputError::Held` (it never left and goes when the host is back) when they do not take effect. `page_older` returns `PageError::OriginUnreachable` when older history is held only by the
 agent's host and that host cannot be reached; the chat says so rather than showing an empty page.
 
 **The pump.** A background task reads the stream. `Lagged` means the runtime closed the stream because this
@@ -289,6 +303,8 @@ host did. It also holds the sessions:
 | `close(agent)` | The chat left the screen. The last close narrows a live agent's session back to its few rows and drops an exited agent's. Every `open` is paired with a `close`. |
 | `set_foreground(foreground)` | The phone leaving or returning to the foreground: every session's stream is dropped, or reopened with a tail. |
 | `sessions()` | Every session held, for a dump. |
+| `stop(agent)` | A person's stop. One whose host cannot be reached (`UNAVAILABLE` or `UNREACHABLE`: the daemon wrote nothing) never left: it is held, `FleetState::stop_held` and the card's `stop_held` say so, and it goes when the agent's host is seen away and back. `Stop::Held` says it was held. Rename and delete are never held. |
+| `cancel_stop(agent)` | Takes a held stop back. |
 
 **The trace.** Each driver keeps a bounded trace (between 200 and `TRACE_EVENTS` = 400 events, memory only) of
 every message it applied and every act of its own (`DriverEvent`: subscribed, stream ended, backoff, re-tail,
@@ -322,9 +338,9 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `chat_rows(state, range, opts)` | One `Row` per held item whose order is in `range`, widened to include any run that crosses either edge. The terminal's call, for what is on screen. |
 | `chat_rows_for(state, keys, opts)` | Rows for these keys, in order. The phone's call, for the cells an update changed. |
 | `ask_card(state)` | The head ask as an `AskCard`, with its count, or `None`. |
-| `answer_input(card, answer, note)`, `question_answer(card, picks, note)` | The input that answers the card in its kind's arm. |
+| `answer_input(card, answer, note)`, `question_answer(card, responses)` | The input that answers the card in its kind's arm; a question's response carries its picks and its typed "Something else" words together. |
 | `form_problems(fields, values)`, `form_answer(card, values)` | A tool server's form, checked and encoded once for every client: given one `FormValue` per field (typed text, a toggle, a choice or picks by position), each field's `FieldProblem` (required and empty, not a number or not a whole one, out of the schema's range, too short or long, too few or many picked), or the Submit carrying the JSON object the schema describes. |
-| `composer(state, now_ms)`, `waiting(state)` | The composer mode and the activity line inside it; the waiting reason. |
+| `composer(state, now_ms)`, `waiting(state)`, `switched_away(state)` | The composer mode, the activity line inside it, and whether terminal Claude's own view is on another conversation (prompts are refused until `Session::switch_back` takes it back); the waiting reason. |
 | `composer_tokens(draft, attachments)`, `segments(text, attachments)` | Text runs and attachment chips at their placeholder positions. |
 | `queue_rows(state)`, `sends_to_feed(state)`, `prompts_underway(state, in_feed)`, `refused_prompts(state)` | Queued prompts (withdraw, send now); whether a new prompt lands at the feed's end or in the queue; this client's prompts on their way, each where it was first drawn, sending or may not have arrived; the prompts the agent refused, with why. |
 | `overview(state, diff)`, `changes(diff)`, `diff_base(state, comparison)` | The `Overview`: tasks, background jobs, failed tool servers, usage near a limit, and the changed files by folder (root files first) from a `Diff` fetched without a patch; the base a comparison asks `Diff` for. |
@@ -389,12 +405,12 @@ so the first render is correct at once. CaughtUp follows at once
 if the runtime's source for that agent is current, or after the delta if it is catching up; live events follow.
 
 - The header always paints from the inventory entry and host presence.
-- The composer takes a draft at any time. Send is enabled only while `caught_up` is true, which CaughtUp sets and
-  Detached clears: a person can type while a chat catches up but cannot send into one that is stale or
-  unreachable.
+- The composer takes a draft at any time, and Send is always offered. While the chat is not current (before
+  CaughtUp, after Detached, or reconnecting to the runtime) the composer is `Holds`: a prompt or answer sent then
+  is held, pending with Cancel, and goes by itself once the chat catches up.
 - An agent with no rows yet arrives as a Snapshot with no items. The client shows a loading hint after 300 ms
   (`LOADING_HINT_MS` in the terminal, `loadingHintDelay` on the phone) until the tail lands.
-- Losing the host mid-chat arrives as Detached: the header changes, send disables, the rows stay. When the
+- Losing the host mid-chat arrives as Detached: the header changes, sends are held, the rows stay. When the
   runtime's source reconnects, the delta or a Reset follows under the same rules; the client does nothing.
 - A deleted agent's session reports `ended()`, and the client closes it to the fleet. The fleet is home: no
   client reopens a chat on its own.
@@ -417,6 +433,19 @@ found neither queued nor in the transcript, reads "may not have arrived" with re
 
 When the entry says exited, the composer is `Resume`: the draft goes through `resume_with` as the next
 incarnation's first prompt, one tap.
+
+### The client's own commands
+
+Some commands are the client's, the same on every client, and never reach the agent: `/model` and `/effort` (bare,
+they open amux's picker; with a value, they set it through the kind's typed input) and `/rename` (amux's rename).
+`settings(state).commands` lists them first, `/model` only with two models to choose between and `/effort` only
+with two efforts, and a provider command of the same name gives way to them (headless Claude lists all three
+itself). `slash(state, text)` says what a typed draft is: `Prompt` (send it as typed; Claude runs its own commands
+from the text), `Pick`, `Set(input)`, `Rename(name)`, `Typed(text)` (terminal Claude takes no model or effort
+input, so the pick is typed as Claude's own `/model <value>`), `Unknown` for a value the agent does not offer, and
+`Refused` for a command Codex does not run: Codex runs only the commands amux implements for it and its skills,
+and any other `/…` would reach its model as words. Only a first word of a slash and a name is a command, so a path
+is words. The phone's runtime runs the same rule through `Chat::command`, which answers a `CommandOutcome`.
 
 ### Answering an ask
 
@@ -454,8 +483,11 @@ streams. A folded family whose head does not need the person carries the member 
 Each row's second line goes by the state the inventory row says, in words its session supplies: the head ask
 when it needs you; the step it is running (the chat's activity line, with the step's command or file) when
 working; when idle, why it is stuck (signed out, a spent usage window) or else the first line of what it last
-said; nothing while starting or before its session opens; how it ended once exited, whatever its host is doing;
-and that its host is away when the host is out of reach. How an agent ended is typed from the row's `ExitCause`
+said, its markdown read as words; nothing while starting or before its session opens; how it ended once exited,
+whatever its host is doing; that its host is away when the host is out of reach (`HostAway`), or that the host no
+longer trusts this machine (`HostRevoked`), which only pairing again undoes. The header's working and needs-you
+counts leave out agents whose host is out of reach, as their rows do. Names reach the row without direction
+controls, so a right-to-left override cannot make one read as something else. How an agent ended is typed from the row's `ExitCause`
 (`ui_state::exit_cause`): finished for `FINISHED`; ended for a stop, for `UNSPECIFIED` and for a cause this build
 does not know, since unknown is not failure; failed for every other cause, carrying the cause's words followed by
 its own ("the provider exited: exit code 1"), as on the chat's phase. What an agent is working on is how agents find each

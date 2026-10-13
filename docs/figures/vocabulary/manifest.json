@@ -29,7 +29,7 @@
         1000,
         220
       ],
-      "sha256": "a6723924b101211776297b23f9a9405a20fd187934f43b9b4ebe968a0001bf6e"
+      "sha256": "37d3ba69f65cfd001cfdd25c8a86ee30a0cf360c23ee20462d188603ccf501e4"
     },
     {
       "fixture": "row_command",
@@ -41,9 +41,9 @@
       ],
       "pixels": [
         1000,
-        330
+        462
       ],
-      "sha256": "5499dc44fd830703adf153f85497ddd619a00887b7d8d8641eb85f2078117d79"
+      "sha256": "72929d1f2b9c52cd9e42f268e4759850a5adc875f24b186fe9e006787f8c00a7"
     },
     {
       "fixture": "row_file_change",
@@ -69,9 +69,9 @@
       ],
       "pixels": [
         1000,
-        572
+        902
       ],
-      "sha256": "a768a6b134a14f47e0e2a26b0bc325ff7d5c57f811b1ff00383266b38da0f0b8"
+      "sha256": "abe64a939726fc130218b0450126e39de952ae54b9fdd0032f32f47cec5adcc6"
     },
     {
       "fixture": "row_boundary",
@@ -139,9 +139,9 @@
       ],
       "pixels": [
         1000,
-        154
+        220
       ],
-      "sha256": "0f7938af03757a93e5f0d7530ae1307cc3bdff6be6bcfed5da3c31cb2dc10bbc"
+      "sha256": "869502234c8dc585eecf0b7e8fefedad42e69940dd66cae5af755fa17bc4ee7a"
     },
     {
       "fixture": "ask_plan",
@@ -155,7 +155,7 @@
         1000,
         110
       ],
-      "sha256": "02a1784838ca1211ea71601243dde0aaa7c0b3b94fc108c818f54e2a16501d9d"
+      "sha256": "6998df9f531ab0fb436cb30d59b16ea7458527493b17c246325d7214450e65ee"
     },
     {
       "fixture": "ask_form",
@@ -169,7 +169,7 @@
         1000,
         242
       ],
-      "sha256": "d282096b77cae7dd26a7dc1a70fcc47086f418da5122932427a48f7ebe6530a0"
+      "sha256": "c808d467409e3cc0f1d90023bf5f60f87919cc9430219089e30c02da6a5a0e07"
     },
     {
       "fixture": "ask_unanswerable",

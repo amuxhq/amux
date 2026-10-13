@@ -36,9 +36,11 @@
 == context Some(ContextView { used_tokens: 48643, window_tokens: None, percent: None, near_full: false }) sign-in None
 == settings
   model* unlisted claude-sonnet-5 "Sonnet 5" efforts=[]
+  effort* unlisted high
   permission  "default" "Ask" normal unsettable
   permission  "acceptEdits" "Accept edits" unsettable
   permission  "plan" "Plan" unsettable
   permission* "auto" "Auto" unsettable
   changes: model ByTyping("/model") · effort ByTyping("/effort") · permission Cycle · mode NotOffered
-  controls: model=Some("Sonnet 5") effort=None permission=Some("auto") mode=None
+  command /rename source="" hint="<name>" "Rename the agent"
+  controls: model=Some("Sonnet 5") effort=Some("high") permission=Some("auto") mode=None

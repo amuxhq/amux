@@ -36,6 +36,7 @@ pub enum Call {
     Resume(ResumeAgentRequest, Reply<Agent>),
     GetBlob(GetBlobRequest, Reply<GetBlobResponse>),
     PutBlob(PutBlobRequest, Reply<BlobRef>),
+    Stop(StopAgentRequest, Reply<()>),
 }
 
 impl std::fmt::Debug for Call {
@@ -49,6 +50,7 @@ impl std::fmt::Debug for Call {
             Call::Resume(request, _) => write!(f, "Resume({request:?})"),
             Call::GetBlob(request, _) => write!(f, "GetBlob({request:?})"),
             Call::PutBlob(request, _) => write!(f, "PutBlob({:?})", request.name),
+            Call::Stop(request, _) => write!(f, "Stop({request:?})"),
         }
     }
 }
@@ -141,8 +143,8 @@ impl Client for FakeRuntime {
         unimplemented!("rename_agent")
     }
 
-    async fn stop_agent(&self, _: StopAgentRequest) -> Result<(), RpcError> {
-        unimplemented!("stop_agent")
+    async fn stop_agent(&self, request: StopAgentRequest) -> Result<(), RpcError> {
+        self.call(|reply| Call::Stop(request, reply)).await
     }
 
     async fn resume_agent(&self, request: ResumeAgentRequest) -> Result<Agent, RpcError> {
@@ -266,6 +268,13 @@ impl Calls {
         match self.next().await {
             Call::GetBlob(request, reply) => (request, reply),
             other => panic!("expected GetBlob, got {other:?}"),
+        }
+    }
+
+    pub async fn stop(&mut self) -> (StopAgentRequest, Reply<()>) {
+        match self.next().await {
+            Call::Stop(request, reply) => (request, reply),
+            other => panic!("expected Stop, got {other:?}"),
         }
     }
 

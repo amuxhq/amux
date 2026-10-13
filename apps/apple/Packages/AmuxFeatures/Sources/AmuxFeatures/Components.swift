@@ -111,6 +111,7 @@ public struct RowGroup<Item: Identifiable, Content: View>: View {
 /// can be used for a button or for a fact that has nowhere deeper to open.
 public struct FieldRow: View {
     @Environment(\.design) private var design
+    @Environment(\.dynamicTypeSize) private var typeSize
     private let label: String
     private let value: String?
     private let mono: Bool
@@ -142,16 +143,30 @@ public struct FieldRow: View {
                     .foregroundStyle(design.inkMuted.color)
                     .frame(width: 20)
             }
-            Text(label)
-                .designFont(.body, design)
-                .foregroundStyle(tint ?? design.ink.color)
-            Spacer(minLength: 10)
-            if let value {
-                Text(value)
-                    .designFont(mono ? .mono : .body, design)
-                    .foregroundStyle(design.inkMuted.color)
-                    .lineLimit(1)
-                    .truncationMode(.head)
+            // At an accessibility text size a label and its value side by
+            // side leave neither room: the value goes under the label and
+            // wraps whole rather than being cut to a few characters.
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    labelText
+                    if let value {
+                        Text(value)
+                            .designFont(mono ? .mono : .body, design)
+                            .foregroundStyle(design.inkMuted.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                labelText
+                Spacer(minLength: 10)
+                if let value {
+                    Text(value)
+                        .designFont(mono ? .mono : .body, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
             }
             if chevron {
                 Image(systemName: "chevron.right")
@@ -163,6 +178,13 @@ public struct FieldRow: View {
         .padding(.vertical, 13)
         .frame(minHeight: 44)
         .contentShape(Rectangle())
+    }
+
+    private var labelText: some View {
+        Text(label)
+            .designFont(.body, design)
+            .foregroundStyle(tint ?? design.ink.color)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

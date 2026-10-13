@@ -65,7 +65,7 @@
   composer Send activity=Some(Running { key: "exec-1a0fca9e-2c71-46fa-bc5c-ffb0c1bb9a17" }) queue=[] underway=[] refused=[]
 ## 77 recorded 76: fact Rpc method=item/fileChange/requestApproval
   ask 1 -> "exec-1a0fca9e-2c71-46fa-bc5c-ffb0c1bb9a17" 1/1 Open
-    choices AllowOnce*, AllowForSession, Deny { stops: false }, DenyAndStop
+    choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny { stops: false }, DenyAndStop
     body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: Some(1), kind: Added, text: "one" })], line: Some(1), reason: "", created: Some(true) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 79 recorded 78: input stdin-6
@@ -133,4 +133,5 @@
   model* unlisted gpt-5.6-luna "GPT-5.6 Luna" efforts=[]
   permission* unlisted "read-only" "read-only" unsettable
   changes: model NotOffered · effort NotOffered · permission NotOffered · mode NotOffered
+  command /rename source="" hint="<name>" "Rename the agent"
   controls: model=Some("GPT-5.6 Luna") effort=None permission=None mode=None

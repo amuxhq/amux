@@ -39,6 +39,7 @@ public enum HomeAction: Equatable, Sendable {
 public struct AgentsHome: View {
     @Environment(\.design) private var design
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.photographed) private var photographed
     private let model: FleetStore
     private let accounts: AccountRegistry
     /// The machines, for the one thing this screen says about them: a phone
@@ -92,6 +93,11 @@ public struct AgentsHome: View {
                 // would say the pairing it just did never happened.
                 if !model.rows.isEmpty {
                     fleet
+                } else if !model.loaded {
+                    // A reopened app draws before its saved hosts are read;
+                    // saying nothing is paired then would be untrue a moment
+                    // later, so nothing is said until it is known.
+                    Color.clear
                 } else if !model.machines.isEmpty {
                     noAgentsYet
                 } else {
@@ -101,6 +107,15 @@ public struct AgentsHome: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .onAppear { actions(.refresh) }
+        // Ages count while the list is on screen, as the terminal's do. A
+        // compared picture holds its clock still.
+        .task(id: photographed) {
+            guard !photographed else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                model.refreshOrder(now: Date())
+            }
+        }
         // A screen is a container of the things on it, not a name for all of
         // them. Without this the system spreads this identifier over every
         // element underneath — the title, the buttons, the rows — so
@@ -127,35 +142,72 @@ public struct AgentsHome: View {
         model.machines.contains(where: \.online)
     }
 
+    /// The account disc, the title and what the fleet holds, with New Agent
+    /// at the end of the line. At an accessibility text size the title and
+    /// its subtitle need the whole width, so the disc and New Agent sit on a
+    /// line of their own above them.
+    @ViewBuilder
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            if switchable { accountDisc }
-            VStack(alignment: .leading, spacing: 1) {
-                title
-                Text(subtitle)
-                    .designFont(.caption, design)
-                    .foregroundStyle(design.inkMuted.color)
-                    .identified("home.subtitle", value: subtitle)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // Starting an agent needs a machine something can be started on.
-            // Not an account — a phone paired with a host on its own network
-            // has one — and not a subscription, which buys the route to a
-            // machine rather than the right to use it. Without one the button
-            // would open onto a screen with nothing on it.
-            if canStartAnAgent {
-                Button { actions(.newAgent) } label: {
-                    GlassIcon(glyph: "plus", prominent: true)
-                        .thumbTarget(x: 5, y: 5)
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 6) {
+                    if switchable || canStartAnAgent {
+                        HStack(spacing: 10) {
+                            if switchable { accountDisc }
+                            Spacer(minLength: 0)
+                            newAgentButton
+                        }
+                    }
+                    title
+                    // One fact a line, so no line starts or ends on a
+                    // stranded "·".
+                    Text(subtitle.replacingOccurrences(of: " · ", with: "\n"))
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .identified("home.subtitle", value: subtitle)
                 }
-                .buttonStyle(.amuxControl)
-                .accessibilityLabel("New Agent")
-                .identified("home.newAgent", label: "New Agent")
-                .reclaimingThumbTarget(x: 5, y: 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .center, spacing: 10) {
+                    if switchable { accountDisc }
+                    VStack(alignment: .leading, spacing: 1) {
+                        title
+                        subtitleText
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    newAgentButton
+                }
             }
         }
         .padding(.horizontal, design.metrics.gutter)
         .padding(.vertical, 10)
+    }
+
+    private var subtitleText: some View {
+        Text(subtitle)
+            .designFont(.caption, design)
+            .foregroundStyle(design.inkMuted.color)
+            .identified("home.subtitle", value: subtitle)
+    }
+
+    // Starting an agent needs a machine something can be started on. Not an
+    // account — a phone paired with a host on its own network has one — and
+    // not a subscription, which buys the route to a machine rather than the
+    // right to use it. Without one the button would open onto a screen with
+    // nothing on it.
+    @ViewBuilder
+    private var newAgentButton: some View {
+        if canStartAnAgent {
+            Button { actions(.newAgent) } label: {
+                GlassIcon(glyph: "plus", prominent: true)
+                    .thumbTarget(x: 5, y: 5)
+            }
+            .buttonStyle(.amuxControl)
+            .accessibilityLabel("New Agent")
+            .identified("home.newAgent", label: "New Agent")
+            .reclaimingThumbTarget(x: 5, y: 5)
+        }
     }
 
     /// The title carries the account menu only when there is an account
@@ -261,6 +313,7 @@ public struct AgentsHome: View {
                 : "\(entry.name) · \(waiting) need you"
         }
         if !model.rows.isEmpty { return model.subtitle }
+        if !model.loaded { return "" }
         if !model.machines.isEmpty {
             let count = model.machines.count
             return "No agents yet · \(count) host\(count == 1 ? "" : "s")"
@@ -314,9 +367,14 @@ public struct AgentsHome: View {
     /// listing its members beside it.
     private func agentRow(_ row: AgentRow) -> some View {
         let state = RowState(row: row)
+        // A stop that is held until the host is back says so before anything
+        // else the row would say; the chat has its Cancel.
+        let second = row.card.stopHeld
+            ? (text: String(localized: "Stop held · sends when \(row.hostName) is back"), ink: FleetWords.Ink.warning)
+            : FleetWords.secondLine(row.secondLine, kind: row.card.kind, now: model.orderedAt)
         let content = AgentRowView(
             row: row, state: state, host: PlaceNames.host(row.hostName), now: model.orderedAt,
-            second: FleetWords.secondLine(row.secondLine, kind: row.card.kind, now: model.orderedAt))
+            second: second)
         return HStack(spacing: 0) {
             if row.depth > 0 {
                 Rectangle()
@@ -690,7 +748,10 @@ struct AgentRowView: View {
                 Text(verbatim: second.text)
                     .designFont(.detail, design)
                     .foregroundStyle(ink(second.ink))
-                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                    // Two lines at an accessibility size: enough to say what
+                    // the agent is on, while a screen still holds more than
+                    // two rows.
+                    .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
                     .reported("home.row.\(row.id).second")
             }
             words
@@ -713,11 +774,19 @@ struct AgentRowView: View {
                 // characters and an ellipsis once the text is turned up —
                 // "Fini… · 1 fi… mini" says less than nothing. The same words
                 // stacked and allowed to wrap still say what happened.
+                // A place is a path, which wraps a letter at a time; it keeps
+                // one line of its own and loses its middle instead.
                 VStack(alignment: .leading, spacing: 2) {
-                    Text([state.word, detail].compactMap { $0 }.joined(separator: " · "))
-                    if let host, showsHost { Text(host) }
+                    let head = [state.word, showsHost ? host : nil].compactMap { $0 }
+                    if !head.isEmpty {
+                        Text(head.joined(separator: " · "))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(detail)
+                        .lineLimit(state.word != nil && state.elaboration != nil ? 3 : 1)
+                        .truncationMode(state.word != nil && state.elaboration != nil ? .tail : .middle)
+                        .reported("home.row.\(row.id).detail.volatile")
                 }
-                .fixedSize(horizontal: false, vertical: true)
             } else {
                 HStack(spacing: 6) {
                     if let word = state.word {

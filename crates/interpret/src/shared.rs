@@ -359,6 +359,11 @@ pub struct Shared<A: OpenAsk> {
     #[serde(with = "serde_pb::bytes_set")]
     pending_messages: BTreeSet<Vec<u8>>,
     working_on: Option<String>,
+    /// The agent declared its work with the status tool: from then on only
+    /// that call changes working_on. Until then it is the first line of
+    /// the newest prompt the agent took.
+    #[serde(default)]
+    declared: bool,
     turn: TurnCounter,
     /// Prompts handed to the provider and not yet reflected, oldest first:
     /// the reflection FIFO.
@@ -406,6 +411,7 @@ impl<A: OpenAsk> Shared<A> {
             asks: Asks::default(),
             pending_messages: BTreeSet::new(),
             working_on: None,
+            declared: false,
             turn: TurnCounter::default(),
             submitted: Vec::new(),
             open_items: BTreeMap::new(),
@@ -417,7 +423,7 @@ impl<A: OpenAsk> Shared<A> {
             stopping: false,
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
-            shared.working_on = first_line(&entry.text);
+            shared.prompted(&entry.text);
             shared.queue.push(entry);
         }
         shared
@@ -435,7 +441,7 @@ impl<A: OpenAsk> Shared<A> {
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap)
             && !self.queue.contains(&entry.input_id)
         {
-            self.working_on = first_line(&entry.text);
+            self.prompted(&entry.text);
             self.queue.push(entry);
         }
     }
@@ -697,6 +703,7 @@ impl<A: OpenAsk> Shared<A> {
             sender: Some(sender),
         };
         if self.ready() && self.queue.is_empty() {
+            self.prompted(&entry.text);
             self.mark_submitted(&entry.input_id);
             self.accept(emit, input_id, false);
             Some(entry)
@@ -714,6 +721,7 @@ impl<A: OpenAsk> Shared<A> {
             return None;
         }
         let entry = self.queue.pop()?;
+        self.prompted(&entry.text);
         self.mark_submitted(&entry.input_id);
         Some(entry)
     }
@@ -963,7 +971,19 @@ impl<A: OpenAsk> Shared<A> {
 
     /// Set from the status tool call; never cleared automatically.
     pub fn set_working_on(&mut self, working_on: Option<String>) {
+        self.declared = true;
         self.working_on = working_on.filter(|text| !text.trim().is_empty());
+    }
+
+    /// A prompt handed to the provider: what the agent works on, until it
+    /// declares its work itself. A slash command is not work.
+    fn prompted(&mut self, text: &str) {
+        if self.declared {
+            return;
+        }
+        if let Some(line) = first_line(text).filter(|line| !line.starts_with('/')) {
+            self.working_on = Some(line);
+        }
     }
 
     pub fn working_on(&self) -> Option<&str> {
@@ -1623,6 +1643,46 @@ mod tests {
         let mut shared = shared();
         shared.set_working_on(Some("  ".into()));
         assert_eq!(shared.working_on(), None);
+    }
+
+    /// An agent made with a prompt that never declares its work reads as
+    /// working on its newest prompt, not its first for good; a declaration
+    /// rules from then on, and a slash command is not work.
+    #[test]
+    fn undeclared_work_follows_the_newest_prompt() {
+        let spec = AgentSpec {
+            agent_id: b"a".to_vec(),
+            bootstrap: Some(wire::Bootstrap {
+                of: Some(bootstrap::Of::Prompt(wire::PromptSubmission {
+                    input_id: b"p0".to_vec(),
+                    prompt: Some(PromptInput {
+                        text: "Run the first thing".into(),
+                        ..Default::default()
+                    }),
+                })),
+            }),
+            ..Default::default()
+        };
+        let mut shared: Shared<Ask> = Shared::new(&spec, wire::Kind::Unspecified, "v");
+        assert_eq!(shared.working_on(), Some("Run the first thing"));
+        shared.provider_started();
+        assert!(shared.next_queued().is_some());
+        let mut emit = Emit::default();
+        let mut turn = |shared: &mut Shared<Ask>, id: &[u8], text: &str| {
+            shared.turn_ended(&mut emit, wire::TurnOutcome::Completed);
+            let prompt = PromptInput {
+                text: text.into(),
+                ..Default::default()
+            };
+            shared.admit_prompt(&mut emit, id, prompt, human());
+        };
+        turn(&mut shared, b"p1", "\nChange hello.txt\nto bye");
+        assert_eq!(shared.working_on(), Some("Change hello.txt"));
+        turn(&mut shared, b"p2", "/compact");
+        assert_eq!(shared.working_on(), Some("Change hello.txt"));
+        shared.set_working_on(Some("Reviewing the parser".into()));
+        turn(&mut shared, b"p3", "Something else");
+        assert_eq!(shared.working_on(), Some("Reviewing the parser"));
     }
 
     #[test]

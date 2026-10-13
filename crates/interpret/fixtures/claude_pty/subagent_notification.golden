@@ -7,55 +7,57 @@ snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=cl
 ## 2 input {"id":"p1","prompt":{"text":"Ask a subagent what this project is."}}
 effect reply p1 accepted
 effect terminal prompt "Ask a subagent what this project is."
+snapshot IDLE queue=[] working_on="Ask a subagent what this project is." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 3 fact {"channel":"transcript","json":{"message":{"content":"Ask a subagent what this project is.","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.010Z","type":"user","uuid":"u1"}}
 item u1 prompt final input=p1 at=1800000000010 text="Ask a subagent what this project is."
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot WORKING queue=[] working_on="Ask a subagent what this project is." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
 ## 4 fact {"channel":"hook","json":{"hook_event_name":"PreToolUse","tool_input":{"description":"Look around","prompt":"List the files and say what the project is."},"tool_name":"Agent","tool_use_id":"toolu_agent"}}
 ## 5 fact {"channel":"transcript","json":{"message":{"content":[{"id":"toolu_agent","input":{"description":"Look around","prompt":"List the files and say what the project is."},"name":"Agent","type":"tool_use"}],"id":"m0","model":"claude-opus-5-5","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.020Z","type":"assistant","uuid":"a0"}}
 item toolu_agent tool final at=1800000000020 text="" Agent TOOL_STATE_RUNNING subagent=0 input="{\"description\":\"Look around\",\"prompt\":\"List the files and sa…"
 ## 6 fact {"channel":"hook","json":{"duration_ms":8,"hook_event_name":"PostToolUse","tool_input":{"description":"Look around","prompt":"List the files and say what the project is."},"tool_name":"Agent","tool_response":{"agentId":"ag1","description":"Look around","isAsync":true,"status":"async_launched"},"tool_use_id":"toolu_agent"}}
 ## 7 fact {"channel":"transcript","json":{"message":{"content":[{"content":[{"text":"Async agent launched successfully.","type":"text"}],"tool_use_id":"toolu_agent","type":"tool_result"}],"role":"user"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.030Z","toolUseResult":{"agentId":"ag1","isAsync":true,"status":"async_launched"},"type":"user","uuid":"u2"}}
 item toolu_agent tool final at=1800000000020 text="" Agent TOOL_STATE_RUNNING background subagent=0 started=1800000000020 input="{\"description\":\"Look around\",\"prompt\":\"List the files and sa…"
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
+snapshot WORKING queue=[] working_on="Ask a subagent what this project is." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
 ## 8 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","hook_event_name":"PreToolUse","tool_input":{"command":"ls"},"tool_name":"Bash","tool_use_id":"toolu_sub1"}}
 item toolu_agent tool final at=1800000000020 text="" Agent TOOL_STATE_RUNNING background subagent=1 last=Bash started=1800000000020 input="{\"description\":\"Look around\",\"prompt\":\"List the files and sa…"
 ## 9 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","hook_event_name":"PermissionRequest","tool_input":{"command":"ls"},"tool_name":"Bash"}}
-snapshot NEEDS_YOU queue=[] working_on=- at=1800000000000 asks=[ask:1->toolu_agent permission:Bash deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
+snapshot NEEDS_YOU queue=[] working_on="Ask a subagent what this project is." at=1800000000000 asks=[ask:1->toolu_agent permission:Bash deny-stops] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
 ## 10 fact {"channel":"hook","json":{"agent_id":"ag1","agent_type":"general-purpose","hook_event_name":"PostToolUse","tool_input":{"command":"ls"},"tool_name":"Bash","tool_response":{"stdout":"README.md"},"tool_use_id":"toolu_sub1"}}
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
+snapshot WORKING queue=[] working_on="Ask a subagent what this project is." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
 ## 11 fact {"channel":"transcript","json":{"message":{"content":[{"text":"It is running in the background.","type":"text"}],"id":"m1","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.040Z","type":"assistant","uuid":"a1"}}
 item a1 message final at=1800000000040 text="It is running in the background."
 ## 12 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.050Z","type":"system","uuid":"d1"}}
 item turn:1 turn final at=1800000000050 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000045
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
+snapshot IDLE queue=[] working_on="Ask a subagent what this project is." at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
 turn_end 1 last=a1
 ## 13 input {"id":"p2","prompt":{"text":"Meanwhile, what time is it?"}}
 effect reply p2 accepted
 effect terminal prompt "Meanwhile, what time is it?"
+snapshot IDLE queue=[] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[toolu_agent:"Look around"@1800000000020]
 ## 14 fact {"channel":"transcript","json":{"message":{"content":"<task-notification>\n<task-id>ag1</task-id>\n<tool-use-id>toolu_agent</tool-use-id>\n<status>completed</status>\n<summary>Agent \"Look around\" finished</summary>\n<result>A command-line multiplexer for agents.</result>\n</task-notification>","role":"user"},"origin":{"kind":"task-notification"},"promptSource":"system","sessionId":"s1","timestamp":"2027-01-15T08:00:00.060Z","turnOrigin":"task_notification","type":"user","uuid":"n1"}}
 item toolu_agent tool final at=1800000000020 text="" Agent TOOL_STATE_SUCCEEDED background subagent=1 last=Bash finished started=1800000000020 ended=1800000000060 input="{\"description\":\"Look around\",\"prompt\":\"List the files and sa…" out="A command-line multiplexer for agents."
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
+snapshot WORKING queue=[] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 ## 15 fact {"channel":"transcript","json":{"message":{"content":[{"text":"The subagent says it is a command-line multiplexer for agents.","type":"text"}],"id":"m2","role":"assistant"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.070Z","type":"assistant","uuid":"a2"}}
 item a2 message final at=1800000000070 text="The subagent says it is a command-line multiplexer for agents."
 ## 16 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.080Z","type":"system","uuid":"d2"}}
 item turn:2 turn final at=1800000000080 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000075
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
+snapshot IDLE queue=[] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 turn_end 2 last=a2
 ## 17 fact {"channel":"transcript","json":{"message":{"content":"Meanwhile, what time is it?","role":"user"},"origin":{"kind":"human"},"promptSource":"typed","sessionId":"s1","timestamp":"2027-01-15T08:00:00.090Z","type":"user","uuid":"u3"}}
 item u3 prompt final input=p2 at=1800000000090 text="Meanwhile, what time is it?"
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
+snapshot WORKING queue=[] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 ## 18 input {"id":"p3","prompt":{"text":"Use UTC."}}
 effect reply p3 queued
-snapshot WORKING queue=[p3] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
+snapshot WORKING queue=[p3] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 ## 19 input {"id":"n3","send_now":{"target":"p3"}}
 effect reply n3 accepted
 effect terminal send now "Use UTC."
-snapshot WORKING queue=[p3(steered)] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
+snapshot WORKING queue=[p3(steered)] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 ## 20 fact {"channel":"transcript","json":{"message":{"content":"<task-notification>\n<task-id>ag1</task-id>\n<tool-use-id>toolu_gone</tool-use-id>\n<status>completed</status>\n<summary>Agent \"Look around\" finished</summary>\n<result>An answer for a call that is no longer drawn.</result>\n</task-notification>","role":"user"},"origin":{"kind":"task-notification"},"promptSource":"system","sessionId":"s1","timestamp":"2027-01-15T08:00:00.100Z","turnOrigin":"task_notification","type":"user","uuid":"n2"}}
 ## 21 fact {"channel":"transcript","json":{"attachment":{"commandMode":"prompt","prompt":"Use UTC.","type":"queued_command"},"sessionId":"s1","timestamp":"2027-01-15T08:00:00.110Z","type":"attachment","uuid":"q1"}}
 item q1 steer final input=p3 at=1800000000110 text="Use UTC."
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
+snapshot WORKING queue=[] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 ## 22 fact {"channel":"transcript","json":{"durationMs":5,"sessionId":"s1","subtype":"turn_duration","timestamp":"2027-01-15T08:00:00.120Z","type":"system","uuid":"d3"}}
 item turn:3 turn final at=1800000000120 text="" #3 TURN_OUTCOME_COMPLETED started=1800000000115
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
+snapshot IDLE queue=[] working_on="Meanwhile, what time is it?" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=[]
 turn_end 3 last=-

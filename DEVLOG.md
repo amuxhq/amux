@@ -1,3 +1,12 @@
+2026-10-13 — **An agent that never says what it works on reads as on its
+newest prompt.** An agent that never called the status tool kept the first
+line of its first prompt as what it worked on, for good: `amux ls` and the
+fleet showed an idle headless Claude "idle: Run exactly this shell command…"
+five turns later. Until an agent declares its work, what it works on now
+follows each prompt handed to its provider (a slash command aside); once it
+declares, only its declarations change it. A shared-core test pins it; the
+interpreter goldens' snapshots now name the prompt each turn runs.
+
 2026-10-13 — **A command's time starts after its approval, on every
 kind.** The chat counts a command's time from when it began running, after
 any approval it waited for, but no interpreter filled in when that was, so

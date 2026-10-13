@@ -18,10 +18,10 @@ turn_end 1 last=-
 effect reply p2 accepted
 effect user 70320000-0000-4000-8000-000000000000 "go"
 item 70320000-0000-4000-8000-000000000000 prompt final input=p2 at=1800000000000 text="go"
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="go" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 6 fact {"channel":"stream","json":{"api_refusal_explanation":"The request was declined by the safety system","content":"Switched model","direction":"down","fallback_model":"claude-sonnet-5","original_model":"claude-opus-5-5","request_id":null,"subtype":"model_refusal_fallback","trigger":"refusal","type":"system","uuid":"mr"}}
 item mr model_switch final at=1800000000000 text="" claude-opus-5-5 -> claude-sonnet-5 "The request was declined by the safety system"
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
+snapshot WORKING queue=[] working_on="go" at=1800000000000 asks=[] session=s1 model=claude-sonnet-5 model_name="Sonnet 5" effort=? mode=default context=? tasks=? active=[] usage=? servers=? sign_in=? background=?
 ## 7 fact {"channel":"stream","json":{"content":"Declined","original_model":"claude-sonnet-5","request_id":null,"subtype":"model_refusal_no_fallback","type":"system","uuid":"mn"}}
 item mn api_error final at=1800000000000 text="" refusal "Declined" retry=false 0/0
 ## 8 tick 1800000001000

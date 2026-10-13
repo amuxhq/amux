@@ -22,4 +22,4 @@ snapshot STARTING queue=[p1] working_on=- at=1800000000000 asks=[] session=? mod
 effect follow "/t/s1.jsonl"
 effect terminal prompt "look around"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED session=s1 version=2.1.283 keymap=claude-2.1
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?
+snapshot IDLE queue=[] working_on="look around" at=1800000000000 asks=[] session=s1 model=claude-opus-5-5 model_name="Opus 5.5" mode=? context=? tasks=? background=?

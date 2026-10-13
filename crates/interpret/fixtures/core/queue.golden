@@ -6,27 +6,27 @@ snapshot STARTING queue=[early] working_on=- at=1000 asks=[] model=?
 ## 2 tick 1100
 ## 3 fact {"channel":"stream","json":{"type":"ready"}}
 effect write "{\"text\":\"before the provider is up\",\"type\":\"user\"}"
-snapshot WORKING queue=[] working_on=- at=1100 asks=[] model=?
+snapshot WORKING queue=[] working_on="before the provider is up" at=1100 asks=[] model=?
 ## 4 fact {"channel":"stream","json":{"id":"u1","text":"before the provider is up","type":"user"}}
 item u1 prompt final input=early at=1100 text="before the provider is up"
 ## 5 fact {"channel":"stream","json":{"type":"turn_end"}}
 item turn:1 turn final at=1100 text="" #1 started=1100
-snapshot IDLE queue=[] working_on=- at=1100 asks=[] model=?
+snapshot IDLE queue=[] working_on="before the provider is up" at=1100 asks=[] model=?
 turn_end 1 last=-
 ## 6 tick 2000
 ## 7 input {"id":"p1","prompt":{"text":"first"}}
 effect reply p1 accepted
 effect write "{\"text\":\"first\",\"type\":\"user\"}"
-snapshot WORKING queue=[] working_on=- at=2000 asks=[] model=?
+snapshot WORKING queue=[] working_on="first" at=2000 asks=[] model=?
 ## 8 input {"id":"p2","prompt":{"text":"from the phone"}}
 effect reply p2 queued
-snapshot WORKING queue=[p2] working_on=- at=2000 asks=[] model=?
+snapshot WORKING queue=[p2] working_on="first" at=2000 asks=[] model=?
 ## 9 input {"id":"p3","prompt":{"text":"from the terminal"}}
 effect reply p3 queued
-snapshot WORKING queue=[p2,p3] working_on=- at=2000 asks=[] model=?
+snapshot WORKING queue=[p2,p3] working_on="first" at=2000 asks=[] model=?
 ## 10 input {"id":"w1","withdraw":{"target":"p3"}}
 effect reply w1 accepted
-snapshot WORKING queue=[p2] working_on=- at=2000 asks=[] model=?
+snapshot WORKING queue=[p2] working_on="first" at=2000 asks=[] model=?
 ## 11 input {"id":"w2","withdraw":{"target":"p3"}}
 effect reply w2 rejected:NOT_QUEUED
 ## 12 fact {"channel":"stream","json":{"id":"u2","text":"first","type":"user"}}
@@ -39,7 +39,7 @@ item m1 message final at=2000 text="done"
 ## 16 fact {"channel":"stream","json":{"type":"turn_end"}}
 effect write "{\"text\":\"from the phone\",\"type\":\"user\"}"
 item turn:2 turn final at=3000 text="" #2 started=2000
-snapshot WORKING queue=[] working_on=- at=3000 asks=[] model=?
+snapshot WORKING queue=[] working_on="from the phone" at=3000 asks=[] model=?
 turn_end 2 last=m1
 ## 17 input {"id":"w3","withdraw":{"target":"p2"}}
 effect reply w3 rejected:NOT_QUEUED
@@ -47,7 +47,7 @@ effect reply w3 rejected:NOT_QUEUED
 item u3 prompt final input=p2 at=3000 text="from the phone"
 ## 19 fact {"channel":"stream","json":{"type":"turn_end"}}
 item turn:3 turn final at=3000 text="" #3 started=3000
-snapshot IDLE queue=[] working_on=- at=3000 asks=[] model=?
+snapshot IDLE queue=[] working_on="from the phone" at=3000 asks=[] model=?
 turn_end 3 last=-
 ## 20 input {"id":"x1","raw":{"hex":""}}
 effect reply x1 rejected:UNSUPPORTED

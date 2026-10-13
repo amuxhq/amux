@@ -5,7 +5,7 @@ snapshot IDLE queue=[] working_on=- at=1000 asks=[] model=?
 ## 2 input {"id":"p1","prompt":{"text":"go"}}
 effect reply p1 accepted
 effect write "{\"text\":\"go\",\"type\":\"user\"}"
-snapshot WORKING queue=[] working_on=- at=1000 asks=[] model=?
+snapshot WORKING queue=[] working_on="go" at=1000 asks=[] model=?
 ## 3 fact {"channel":"stream","json":{"id":"u1","text":"go","type":"user"}}
 item u1 prompt final input=p1 at=1000 text="go"
 ## 4 fact {"channel":"stream","json":{"id":"s1","input":{"working_on":"auditing the queue"},"name":"status","server":"amux","type":"tool"}}

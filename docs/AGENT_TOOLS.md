@@ -144,7 +144,9 @@ sees the `amux` server's `status` call in the provider's record and sets
 `working_on` in its next snapshot, and the daemon copies it onto the agent's
 inventory row at commit. Nothing else clears it: an idle agent's last
 declared work is exactly what another agent may want to know. An agent that
-never calls it shows the first line of its first prompt.
+never calls it shows the first line of the newest prompt handed to it (a
+slash command aside), so an agent given many prompts does not read as still
+on its first.
 
 ### attach
 

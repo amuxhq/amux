@@ -49,7 +49,8 @@ recipient's provider has the message, or says why it could not. When a message r
 from an amux agent, reply with this tool to that agent's name.";
 const SPAWN: &str = "Start a child agent of any kind with a first prompt: claude_pty (Claude \
 in a terminal), claude_sdk (headless Claude) or codex. It runs on this host unless you name \
-another trusted host, in your working directory unless you give one there. The child does \
+another trusted host, in your working directory unless you give one. On another host, give \
+a folder there: ask the person which one if you do not know one. The child does \
 its work and stops; you are sent its last message when it finishes, and a later send to it \
 resumes it.";
 const STOP: &str = "Stop one of your own child agents now: its turn is cancelled, it ends, \
@@ -354,8 +355,8 @@ impl Server {
         // The daemon resolves the name against the hosts it trusts.
         let host = optional(arguments, "host");
         let cwd = optional(arguments, "cwd").unwrap_or_else(|| match host {
-            // A named host may be this one or another; the daemon picks:
-            // this agent's directory here, where that host's agents work
+            // A named host may be this one or another; the daemon decides:
+            // this agent's directory here, a refusal asking for a folder
             // elsewhere.
             Some(_) => String::new(),
             None => self.cwd.clone(),
@@ -804,7 +805,7 @@ fn definitions() -> Value {
             "kind": { "type": "string", "enum": SPAWNABLE.map(kind_word) },
             "prompt": { "type": "string" },
             "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": wire::AGENT_NAME_MOST, "description": "Lowercase letters, digits and hyphens; one is chosen when omitted." },
-            "cwd": { "type": "string", "description": "A path on the host the child runs on." },
+            "cwd": { "type": "string", "description": "A path on the host the child runs on; required when that is another host." },
             "host": { "type": "string", "description": "A trusted host's name; this host when omitted." },
           }), &["kind", "prompt"]) },
         { "name": "stop", "description": STOP, "inputSchema": object(json!({

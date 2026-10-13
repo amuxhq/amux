@@ -119,11 +119,9 @@ names the kind by its arm with that kind's default settings. `name` names it. `h
 resolves it, and omitted it means the caller's own host. `cwd` is a path on
 the host the child runs on: omitted on the caller's host (named or not, by
 any of its names) it is the caller's own working directory, and omitted on
-another host that host picks: the folder its own agents most recently
-worked in, which is also the folder a person starting an agent there is
-offered first, else the home directory of the user its daemon runs as. The
-caller becomes the
-child's parent; the request cannot name any other parent.
+another host the spawn is refused in words that name that host and ask for
+a folder on it: no folder there is a safe guess, so the caller asks the
+person or uses a path it knows. The caller becomes the child's parent; the request cannot name any other parent.
 [Families](#families) describes what a child is.
 
 ### stop

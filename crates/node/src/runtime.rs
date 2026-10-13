@@ -214,6 +214,11 @@ pub enum RegistryError {
     NoKind,
     #[error("the working directory {0} is not a directory on this host")]
     BadCwd(String),
+    #[error(
+        "starting an agent on {0} needs a folder there: pass cwd as a path on {0}, \
+         asking the person which one if you do not know one"
+    )]
+    NoFarCwd(String),
     #[error("{}", name_words(*.0))]
     BadName(wire::AgentNameProblem),
     #[error("another agent on this host is already named {0}; names are unique on a host")]
@@ -319,9 +324,11 @@ impl RegistryError {
             Self::NotFound(_) | Self::NoSpec(_) => ErrorCode::NotFound,
             Self::AlreadyExists(_) | Self::NameTaken(_) => ErrorCode::AlreadyExists,
             Self::Live(_) | Self::StillLocked(_) => ErrorCode::FailedPrecondition,
-            Self::BadId(_) | Self::NoKind | Self::BadCwd(_) | Self::BadName(_) => {
-                ErrorCode::InvalidArgument
-            }
+            Self::BadId(_)
+            | Self::NoKind
+            | Self::BadCwd(_)
+            | Self::NoFarCwd(_)
+            | Self::BadName(_) => ErrorCode::InvalidArgument,
             Self::OtherHost => ErrorCode::Unimplemented,
             Self::KindNotRun { .. } | Self::ParentStopping(_) => ErrorCode::FailedPrecondition,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
@@ -1084,20 +1091,7 @@ impl ProfileRuntime {
                 .map(|parent| parent.cwd)
                 .unwrap_or_default();
         }
-        if request.cwd.is_empty() {
-            // A spawn from another host names no path here unless it knows
-            // one: the child starts where this host's agents work (the most
-            // recently busy one's folder, which a person's new agent here is
-            // offered first), else in the home directory of the user this
-            // daemon runs as.
-            request.cwd = match self.recent_folder().await? {
-                Some(folder) => folder,
-                None => home_dir()
-                    .map(|home| home.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-            };
-        }
-        if request.cwd.is_empty() || !Path::new(&request.cwd).is_dir() {
+        if !Path::new(&request.cwd).is_dir() {
             return Err(RegistryError::BadCwd(request.cwd));
         }
         let parent = match caller {
@@ -1235,30 +1229,6 @@ impl ProfileRuntime {
         self.drafts.lock().unwrap().save(agent_id, draft);
     }
 
-    /// The folder this host's own agents most recently worked in, while it
-    /// is still a folder here.
-    async fn recent_folder(&self) -> Result<Option<String>, RegistryError> {
-        let mut own: Vec<AgentRow> = self
-            .store
-            .lock()
-            .await
-            .agents()?
-            .into_iter()
-            .filter(|row| row.agent.host == self.host.as_bytes() && !row.cwd.is_empty())
-            .collect();
-        own.sort_by_key(|row| {
-            std::cmp::Reverse(
-                row.phase_since_ms
-                    .or(row.last_activity_ms)
-                    .unwrap_or(row.created_at_ms),
-            )
-        });
-        Ok(own
-            .into_iter()
-            .map(|row| row.cwd)
-            .find(|cwd| Path::new(cwd).is_dir()))
-    }
-
     /// The host a create request is for: the one it names, by id or by name
     /// resolved against this host and the trusted ones, else this host.
     pub fn target_host(&self, request: &CreateAgentRequest) -> Result<HostId, RegistryError> {
@@ -1288,6 +1258,11 @@ impl ProfileRuntime {
             && let Some(kind) = request.agent.as_ref().map(|agent| agent.kind())
         {
             self.runs_kind(capabilities, &entry.name, kind)?;
+        }
+        // No folder there is a default worth guessing: the caller asks the
+        // person or names a path it knows on that host.
+        if request.cwd.is_empty() {
+            return Err(RegistryError::NoFarCwd(self.host_name(host)));
         }
         let birth = match caller {
             Some(parent) => Some((parent, self.open_birth(parent).await?)),
@@ -2744,13 +2719,6 @@ pub const AGENT_LOG: &str = "agent.log";
 /// Waits on a child this daemon started, so it never lingers as a zombie.
 async fn reap(mut child: tokio::process::Child) {
     let _ = child.wait().await;
-}
-
-/// The home directory of the user this daemon runs as.
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .filter(|home| !home.is_empty())
-        .map(PathBuf::from)
 }
 
 #[cfg(unix)]

@@ -1142,8 +1142,9 @@ public enum Attention: String, Codable, Hashable, Sendable, CaseIterable {
 /// machine look the same from here, so the cause is only ever a fact about
 /// this machine, never a claim about the host.
 public enum Away: String, Codable, Hashable, Sendable, CaseIterable {
-    /// The host's link says it is away: seen, as through the relay, and not
-    /// reachable from here.
+    /// The host's link says it is away: only the relay sees it, and the
+    /// account is on the free plan, whose relay opens no connection
+    /// between hosts.
     case plain = "Plain"
     /// This machine is signed out of its account, so the relay carries
     /// nothing for it; a host only the relay reaches is away until it signs

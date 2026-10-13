@@ -3143,6 +3143,10 @@ fn sign_in_lines(
     lines
 }
 
+/// Why a host is away when its daemon lists it so: the relay alone sees
+/// it, and on the free plan the relay opens no connection between hosts.
+pub(crate) const FREE_PLAN_AWAY: &str = "the free plan does not relay between hosts";
+
 /// Why the composer cannot send while the link to the agent's host is
 /// down, for the box's edge; None when it can.
 fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String> {
@@ -3150,9 +3154,8 @@ fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String
         Composer::Holds(Waiting::Detached) => match reach {
             Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
             Reach::Away(Away::SignedOut) => format!("{host} is away · this machine is signed out"),
-            Reach::Online(_) | Reach::Away(Away::Plain) | Reach::Offline => {
-                format!("{host} is away")
-            }
+            Reach::Away(Away::Plain) => format!("{host} is away · {FREE_PLAN_AWAY}"),
+            Reach::Online(_) | Reach::Offline => format!("{host} is away"),
         },
         // The client talks only to this machine's daemon: reconnecting is
         // that daemon gone, never the agent's host, as home says it.
@@ -3762,9 +3765,8 @@ fn state_words(
         match reach {
             Reach::Away(Away::SignedOut) => format!("{host} away · this machine is signed out"),
             Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
-            Reach::Online(_) | Reach::Away(Away::Plain) | Reach::Offline => {
-                format!("{host} away · not current")
-            }
+            Reach::Away(Away::Plain) => format!("{host} away · {FREE_PLAN_AWAY}"),
+            Reach::Online(_) | Reach::Offline => format!("{host} away · not current"),
         }
     };
     match (state.composer(), state.phase()) {

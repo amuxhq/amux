@@ -309,9 +309,8 @@ pub fn placeholder(mode: &Composer, name: &str, host: &str, reach: Reach) -> Str
         Composer::Holds(Waiting::Detached) => match reach {
             Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
             Reach::Away(Away::SignedOut) => format!("{host} is away · this machine is signed out"),
-            Reach::Online(_) | Reach::Away(Away::Plain) | Reach::Offline => {
-                format!("{host} is away")
-            }
+            Reach::Away(Away::Plain) => format!("{host} is away · {}", super::FREE_PLAN_AWAY),
+            Reach::Online(_) | Reach::Offline => format!("{host} is away"),
         },
         Composer::Holds(Waiting::Reconnecting) => "Reconnecting to amux".into(),
     }

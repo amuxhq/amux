@@ -570,6 +570,11 @@ fn peer_table(trusted: &[PeerEntry], hosts: &[HostEntry]) -> String {
                 wire::RouteKind::Ssh => "online, over SSH",
                 _ => "online, on this network",
             },
+            // The daemon lists a host away only when the relay alone sees it
+            // and the account is on the free plan.
+            Some(host) if host.presence() == wire::Presence::Away => {
+                "away: the free plan does not relay between hosts"
+            }
             Some(_) => "away",
             None => "not listed",
         };
@@ -864,5 +869,29 @@ mod tests {
         assert!(lines[1].contains("online, through the relay"), "{table}");
         assert!(lines[2].starts_with("den mac"), "{table}");
         assert!(lines[2].ends_with("no: amux pair 'den mac'"), "{table}");
+    }
+
+    /// A host the daemon lists away is one only the relay sees while the
+    /// account is on the free plan: the table says so, not a bare "away".
+    #[test]
+    fn a_peer_away_on_the_free_plan_names_the_plan() {
+        let away = HostEntry {
+            host_id: vec![1; 16],
+            name: "plap".into(),
+            trust: Trust::Trusted as i32,
+            presence: wire::Presence::Away as i32,
+            via: wire::RouteKind::Relay as i32,
+            ..HostEntry::default()
+        };
+        let trusted = [PeerEntry {
+            host_id: vec![1; 16],
+            name: "plap".into(),
+            ..PeerEntry::default()
+        }];
+        let table = peer_table(&trusted, &[away]);
+        assert!(
+            table.contains("away: the free plan does not relay between hosts"),
+            "{table}"
+        );
     }
 }

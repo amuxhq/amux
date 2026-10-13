@@ -1110,6 +1110,62 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
     assert!(!screen.contains("signed out"), "{screen}");
 }
 
+/// A host only the relay sees while the account is on the free plan is
+/// away because the free plan relays nothing between hosts, and every
+/// place that says it is away says so: the hosts overlay put a stale
+/// direct-dial error in its place, and the chat said only "away".
+#[test]
+fn a_host_away_on_the_free_plan_names_the_plan() {
+    let mut fleet = FleetState::new();
+    inventory(
+        &mut fleet,
+        host(
+            b"laptop",
+            "laptop",
+            wire::Trust::Trusted,
+            wire::Presence::Online,
+        ),
+    );
+    let mut desk = host(b"host", "desk", wire::Trust::Trusted, wire::Presence::Away);
+    if let wire::inventory_event::Of::Host(entry) = &mut desk {
+        entry.via = wire::RouteKind::Relay as i32;
+        entry.account_signed_in = Some(true);
+        entry.last_dial_error = Some("127.0.0.1:61393: the QUIC handshake timed out".into());
+    }
+    inventory(&mut fleet, desk);
+
+    let mut state = chat(replies(1, 5));
+    state.update(Msg::Host(fleet.host(b"host").unwrap().clone()));
+    state.update(event(session_event::Of::Detached(wire::Detached {})));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    view.reach = ui_view::reach(&fleet, b"laptop", b"host");
+    let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
+    let screen = text(&buffer);
+    assert!(
+        screen.contains("desk away · the free plan does not relay between hosts"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("desk is away · the free plan does not relay between hosts"),
+        "{screen}"
+    );
+
+    let rows: Vec<String> = crate::hosts::modal_rows(&fleet, b"laptop", theme())
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect()
+        })
+        .collect();
+    let rows = rows.join("\n");
+    assert!(
+        rows.contains("away · the free plan does not relay between hosts"),
+        "{rows}"
+    );
+}
+
 /// A host that closed its link saying it no longer trusts this machine is
 /// captioned and headed with that, never with its own old sign-in.
 #[test]

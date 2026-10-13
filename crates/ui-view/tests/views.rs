@@ -3796,3 +3796,23 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
         "back on its own conversation"
     );
 }
+
+/// A chat whose host went out of reach mid-turn shows no working clock:
+/// the turn may have ended there long ago, and "Working · 1m 18s" kept
+/// counting beside a header that said the host is away.
+#[test]
+fn a_chat_whose_host_is_away_counts_no_working_time() {
+    let mut state = SessionState::new(agent(Kind::Codex), CAP);
+    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
+        kind: Kind::Codex as i32,
+        phase: Phase::Working as i32,
+        ..wire::Snapshot::default()
+    })));
+    state.update(caught_up());
+    assert!(
+        composer(&state, 60_000).activity.is_some(),
+        "a working agent on a reachable host shows its clock"
+    );
+    state.update(event(session_event::Of::Detached(wire::Detached {})));
+    assert_eq!(composer(&state, 60_000).activity, None);
+}

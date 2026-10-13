@@ -134,9 +134,14 @@ fn state(agent: &Agent) -> String {
 /// `amux ls`: every agent, children beneath their parent.
 pub async fn ls(client: &mut Client) -> Result<()> {
     let (hosts, agents) = inventory(client).await?;
+    print!("{}", ls_table(&hosts, &agents));
+    Ok(())
+}
+
+fn ls_table(hosts: &[HostEntry], agents: &[Agent]) -> String {
+    use std::fmt::Write as _;
     if agents.is_empty() {
-        println!("No agents.");
-        return Ok(());
+        return "No agents.\n".to_owned();
     }
     let host_name = |id: &[u8]| {
         hosts
@@ -181,7 +186,7 @@ pub async fn ls(client: &mut Client) -> Result<()> {
         }
     }
     for root in roots {
-        walk(root, 0, &agents, &mut rows);
+        walk(root, 0, agents, &mut rows);
     }
     let names: Vec<String> = rows
         .iter()
@@ -196,16 +201,34 @@ pub async fn ls(client: &mut Client) -> Result<()> {
         })
         .collect();
     let width = names.iter().map(String::len).max().unwrap_or(4).max(4);
-    println!("{:width$}  {:8}  {:10}  STATE", "NAME", "ID", "KIND");
+    let mut out = String::new();
+    let _ = writeln!(out, "{:width$}  {:8}  {:10}  STATE", "NAME", "ID", "KIND");
     for (name, (_, agent)) in names.iter().zip(&rows) {
-        println!(
+        let _ = writeln!(
+            out,
             "{name:width$}  {:8}  {:10}  {}",
             short_id(&agent.agent_id),
             kind_word(agent.kind),
-            state(agent),
+            listed_state(agent, hosts, &host_name(&agent.host_id)),
         );
     }
-    Ok(())
+    out
+}
+
+/// A live agent's state as this machine can vouch for it. One whose host
+/// is out of reach reads as that, as the clients' rows do: the phase last
+/// heard from the host is not what the agent is doing now.
+fn listed_state(agent: &Agent, hosts: &[HostEntry], host_name: &str) -> String {
+    let live = Lifecycle::try_from(agent.lifecycle) != Ok(Lifecycle::Exited);
+    match hosts.iter().find(|host| host.host_id == agent.host_id) {
+        Some(host) if live && host.revoked == Some(true) => {
+            format!("{host_name} no longer trusts this machine")
+        }
+        Some(host) if live && host.presence() != wire::Presence::Online => {
+            format!("{host_name} is away")
+        }
+        _ => state(agent),
+    }
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -428,4 +451,52 @@ pub async fn dump(
         .into_inner();
     println!("{}", response.report_path);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An agent whose host is out of reach reads as its host away, as the
+    /// clients' rows do: the last phase this machine heard ("working") is
+    /// not what the agent is doing now.
+    #[test]
+    fn ls_says_an_agent_on_an_away_host_is_away_not_its_last_phase() {
+        let host = |id: u8, name: &str, presence: wire::Presence| HostEntry {
+            host_id: vec![id; 16],
+            name: name.into(),
+            trust: wire::Trust::Trusted as i32,
+            presence: presence as i32,
+            ..HostEntry::default()
+        };
+        let agent = |id: u8, host: u8, name: &str| Agent {
+            agent_id: vec![id; 16],
+            host_id: vec![host; 16],
+            name: name.into(),
+            kind: Kind::Codex as i32,
+            lifecycle: Lifecycle::Live as i32,
+            phase: Phase::Working as i32,
+            working_on: Some("Reply with only the word hello.".into()),
+            ..Agent::default()
+        };
+        let table = ls_table(
+            &[
+                host(1, "pdesk", wire::Presence::Online),
+                host(2, "plap", wire::Presence::Away),
+            ],
+            &[agent(1, 1, "here"), agent(2, 2, "c1")],
+        );
+        let line = |name: &str| {
+            table
+                .lines()
+                .find(|line| line.contains(name))
+                .unwrap_or_else(|| panic!("{name} is not listed:\n{table}"))
+                .to_owned()
+        };
+        assert!(
+            line("pdesk/here").ends_with("working: Reply with only the word hello."),
+            "{table}"
+        );
+        assert!(line("plap/c1").ends_with("plap is away"), "{table}");
+    }
 }

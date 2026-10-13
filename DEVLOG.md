@@ -1,3 +1,15 @@
+2026-10-13 — **A sub-agent waits for each child's report, not for a count
+of them.** A one-shot sub-agent whose children have all ended exits once the
+reports it waited for have come, but it compared the most children live at
+once with the reports it had taken. When one child's report started a turn
+that spawned the next before the daemon's count fell to none, both counts
+read one live child, the first child's report stood in for the second's,
+and when the second ended the sub-agent could exit before its report
+arrived. The daemon's `Children` frame now also names each live direct
+child with its incarnation, and the agent awaits a report from every
+incarnation it was told of; a resumed child's next report is awaited too.
+Unit tests pin the sequential and resumed cases.
+
 2026-10-13 — **The merged clients half is formatted.** Eight files from the
 clients half did not match the pinned rustfmt; `just fmt` rewrote them,
 with no change of behaviour.

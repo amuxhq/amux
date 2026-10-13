@@ -24,6 +24,7 @@
 //!   is refused as `REFUSAL_EXITING`.
 //! - The provider exiting ends the agent, whatever state it was in.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -91,16 +92,65 @@ impl Drain {
 /// them. Each child's report starts a turn that ends with the usual one-shot
 /// check; but the daemon's word that the last of them ended can come after
 /// the report it sent, and then no turn end is left to check at. So the
-/// agent counts the most agents live below it at once and the reports it
-/// took meanwhile, and when the count falls to none, a one-shot agent with
-/// nothing else to do exits if it has taken as many reports: never while a
-/// report may still be on its way, which starts a turn of its own.
+/// agent keeps every direct child's incarnation the daemon named live
+/// meanwhile and whether it has reported since, and when the count falls to
+/// none, a one-shot agent with nothing else to do exits if each has: never
+/// while a report may still be on its way, which starts a turn of its own.
+///
+/// Children are told apart because one child's report can start a turn that
+/// spawns the next before the count ever falls to none: a bare count of
+/// reports would let the first child's report stand in for the second's.
 #[derive(Default)]
 struct Spell {
-    /// The most agents live below this one at once.
-    most: u32,
-    /// Finished and failed reports taken.
-    reports: u32,
+    /// Each direct child seen live, by agent id: its incarnation, none when
+    /// its report came before the daemon named it, and whether that
+    /// incarnation has reported.
+    children: HashMap<Vec<u8>, Owed>,
+}
+
+struct Owed {
+    incarnation: Option<u32>,
+    reported: bool,
+}
+
+impl Spell {
+    /// The daemon's word of what is live below this agent. A child's new
+    /// incarnation, a resume, owes a report of its own; one named again
+    /// owes nothing more.
+    fn children(&mut self, frame: &wire::Children) {
+        for child in &frame.children {
+            let owed = self.children.entry(child.agent_id.clone()).or_insert(Owed {
+                incarnation: Some(child.incarnation),
+                reported: false,
+            });
+            match owed.incarnation {
+                None => owed.incarnation = Some(child.incarnation),
+                Some(seen) if seen != child.incarnation => {
+                    *owed = Owed {
+                        incarnation: Some(child.incarnation),
+                        reported: false,
+                    };
+                }
+                Some(_) => {}
+            }
+        }
+    }
+
+    /// A finished or failed report taken from the child `from`.
+    fn report(&mut self, from: &[u8]) {
+        self.children
+            .entry(from.to_vec())
+            .or_insert(Owed {
+                incarnation: None,
+                reported: false,
+            })
+            .reported = true;
+    }
+
+    /// No report is still on its way: every child seen live has reported.
+    fn waited_out(&self) -> bool {
+        self.children.values().all(|owed| owed.reported)
+    }
 }
 
 /// The daemon's connection: its id, so frames from a replaced one are
@@ -129,7 +179,8 @@ pub(crate) struct Host<I: Interpreter> {
     queue_empty: bool,
     /// How many agents below this one are live, as the daemon last said.
     children: u32,
-    /// Set while agents below this one are live.
+    /// Set while agents below this one are live, or a child's report came
+    /// before the daemon's word of it.
     spell: Option<Spell>,
     /// The spell that ended with the last count, for `settle`.
     spell_ended: Option<Spell>,
@@ -501,13 +552,15 @@ impl<I: Interpreter> Host<I> {
             }
             Some(ctl_frame::Of::AgentMessage(envelope)) => {
                 let id = envelope.id.clone();
-                if let Some(spell) = &mut self.spell
-                    && matches!(
-                        envelope.kind(),
-                        wire::EnvelopeKind::Finished | wire::EnvelopeKind::Failed
-                    )
-                {
-                    spell.reports += 1;
+                // Kept even with none counted live yet: the report can come
+                // before the daemon's word of the child it is from.
+                if matches!(
+                    envelope.kind(),
+                    wire::EnvelopeKind::Finished | wire::EnvelopeKind::Failed
+                ) {
+                    self.spell
+                        .get_or_insert_with(Spell::default)
+                        .report(sender_id(&envelope));
                 }
                 self.take(id, Event::AgentMessage(envelope)).await?
             }
@@ -522,8 +575,9 @@ impl<I: Interpreter> Host<I> {
             Some(ctl_frame::Of::Children(children)) => {
                 self.children = children.live;
                 if children.live > 0 {
-                    let spell = self.spell.get_or_insert_with(Spell::default);
-                    spell.most = spell.most.max(children.live);
+                    self.spell
+                        .get_or_insert_with(Spell::default)
+                        .children(&children);
                 } else {
                     self.spell_ended = self.spell.take();
                 }
@@ -624,7 +678,7 @@ impl<I: Interpreter> Host<I> {
         let waited_out = self
             .spell_ended
             .take()
-            .is_some_and(|spell| spell.reports >= spell.most);
+            .is_some_and(|spell| spell.waited_out());
         let cause = match &mut self.mode {
             Mode::Exiting { .. } => None,
             _ if asked.is_some() => asked,
@@ -928,5 +982,87 @@ async fn hook_payloads(mut listener: LocalListener, events: mpsc::Sender<Provide
         if events.send(ProviderEvent::Fact(fact)).await.is_err() {
             return;
         }
+    }
+}
+
+/// The agent that sent a message; empty for a person's.
+fn sender_id(envelope: &wire::Envelope) -> &[u8] {
+    match envelope.from.as_ref().and_then(|from| from.value.as_ref()) {
+        Some(wire::sender::Value::Agent(agent)) => &agent.agent_id,
+        _ => &[],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(live: u32, children: &[(&[u8], u32)]) -> wire::Children {
+        wire::Children {
+            live,
+            children: children
+                .iter()
+                .map(|(id, incarnation)| wire::LiveChild {
+                    agent_id: id.to_vec(),
+                    incarnation: *incarnation,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_report_from_the_only_child_ends_the_wait() {
+        let mut spell = Spell::default();
+        spell.children(&frame(1, &[(b"a", 1)]));
+        spell.report(b"a");
+        assert!(spell.waited_out());
+    }
+
+    /// The child's report can come before the daemon's first word of it.
+    #[test]
+    fn a_report_before_its_child_is_counted_still_ends_the_wait() {
+        let mut spell = Spell::default();
+        spell.report(b"a");
+        spell.children(&frame(1, &[(b"a", 1)]));
+        assert!(spell.waited_out());
+    }
+
+    /// A's report starts a turn that spawns B before the count falls to
+    /// none: the two counts read one live child each, and A's report must
+    /// not stand in for B's, still on its way when B's end empties the
+    /// count.
+    #[test]
+    fn an_earlier_childs_report_never_stands_in_for_a_later_childs() {
+        let mut spell = Spell::default();
+        spell.children(&frame(1, &[(b"a", 1)]));
+        spell.report(b"a");
+        spell.children(&frame(1, &[(b"b", 1)]));
+        assert!(!spell.waited_out());
+        spell.report(b"b");
+        assert!(spell.waited_out());
+    }
+
+    /// A child resumed by its parent's message reports again.
+    #[test]
+    fn a_resumed_childs_next_report_is_awaited() {
+        let mut spell = Spell::default();
+        spell.children(&frame(1, &[(b"a", 1)]));
+        spell.report(b"a");
+        spell.children(&frame(1, &[(b"a", 2)]));
+        assert!(!spell.waited_out());
+        spell.report(b"a");
+        assert!(spell.waited_out());
+    }
+
+    /// A count that names the same child again, even after its report,
+    /// awaits nothing more of it.
+    #[test]
+    fn a_child_named_again_after_its_report_is_not_awaited_again() {
+        let mut spell = Spell::default();
+        spell.children(&frame(2, &[(b"a", 1), (b"b", 1)]));
+        spell.report(b"a");
+        spell.children(&frame(1, &[(b"a", 1)]));
+        spell.report(b"b");
+        assert!(spell.waited_out());
     }
 }

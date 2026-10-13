@@ -257,6 +257,27 @@ fn own_names(store: &Sqlite, host: &[u8]) -> Result<HashSet<String>, StoreError>
         .collect())
 }
 
+/// What a `Children` frame tells `parent`: `live` descendants, and the live
+/// agents directly below it on any host with their incarnations, in agent
+/// id order so two frames compare equal when nothing changed.
+fn children_frame(
+    store: &Sqlite,
+    parent: &AgentKey,
+    live: u32,
+) -> Result<wire::Children, StoreError> {
+    let mut children: Vec<wire::LiveChild> = store
+        .agents_of_parent(parent)?
+        .into_iter()
+        .filter(|row| row.lifecycle == Lifecycle::Live as i32)
+        .map(|row| wire::LiveChild {
+            agent_id: row.agent.agent,
+            incarnation: row.incarnation,
+        })
+        .collect();
+    children.sort_by(|a, b| a.agent_id.cmp(&b.agent_id));
+    Ok(wire::Children { live, children })
+}
+
 /// Why a host will not start an agent of a kind, as a sentence.
 fn kind_not_run_words(host: &str, kind: Kind, runs_none: bool) -> String {
     if runs_none {
@@ -456,9 +477,9 @@ pub(crate) struct AgentHandle {
     running: watch::Sender<bool>,
     pub(crate) exited: watch::Sender<bool>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
-    /// The agent's count of live descendants, as last counted: what the
-    /// next `Children` frame says.
-    children: std::sync::atomic::AtomicU32,
+    /// The agent's live descendants and live direct children, as last
+    /// counted: what the next `Children` frame says.
+    children: Mutex<wire::Children>,
 }
 
 impl AgentHandle {
@@ -478,7 +499,7 @@ impl AgentHandle {
             running: watch::Sender::new(pid.is_some()),
             exited: watch::Sender::new(false),
             tasks: Mutex::new(Vec::new()),
-            children: std::sync::atomic::AtomicU32::new(0),
+            children: Mutex::new(wire::Children::default()),
         })
     }
 
@@ -488,10 +509,9 @@ impl AgentHandle {
     pub(crate) async fn send_children(&self, patience: Duration) {
         let _ = tokio::time::timeout(patience, async {
             if let Some(ctl) = self.ctl.lock().await.as_mut() {
+                let children = self.children.lock().unwrap().clone();
                 let frame = CtlFrame {
-                    of: Some(ctl_frame::Of::Children(wire::Children {
-                        live: self.children.load(Ordering::SeqCst),
-                    })),
+                    of: Some(ctl_frame::Of::Children(children)),
                 };
                 let _ = agent_dir::write_frame(ctl, &frame).await;
             }
@@ -1949,11 +1969,17 @@ impl ProfileRuntime {
         *handle.ctl.lock().await = Some(writer);
         handle.hello.send_replace(Some(hello));
         handle.caught_up_due.store(true, Ordering::SeqCst);
-        let count = match self.store.lock().await.agent(&self.key(id)) {
-            Ok(Some(row)) => row.descendants,
-            _ => 0,
+        let key = self.key(id);
+        let children = {
+            let store = self.store.lock().await;
+            match store.agent(&key) {
+                Ok(Some(row)) => children_frame(&store, &key, row.descendants),
+                _ => Ok(wire::Children::default()),
+            }
         };
-        handle.children.store(count, Ordering::SeqCst);
+        let children = children.unwrap_or_default();
+        let count = children.live;
+        *handle.children.lock().unwrap() = children;
         if count > 0 {
             handle.send_children(ms(self.launch().ctl_write_ms)).await;
         }
@@ -2117,6 +2143,7 @@ impl ProfileRuntime {
         store: &mut Sqlite,
         mut parent: Option<AgentKey>,
     ) -> Result<(), StoreError> {
+        let mut direct = true;
         while let Some(key) = parent {
             if key.host != self.host.as_bytes() {
                 break;
@@ -2125,29 +2152,47 @@ impl ProfileRuntime {
                 break;
             };
             let count = store.live_descendants(&key)?;
-            if count == row.descendants {
+            let changed = count != row.descendants;
+            if changed {
+                store.set_descendants(&key, count)?;
+                self.publish_row(store, &key)?;
+            }
+            // The direct parent's live children can change while its count
+            // does not: a far host's one update can end one incarnation of
+            // a child and start the next.
+            if changed || direct {
+                self.tell_children(store, &key, count)?;
+            }
+            if !changed {
                 break;
             }
-            store.set_descendants(&key, count)?;
-            self.publish_row(store, &key)?;
-            self.tell_children(&key, count);
+            direct = false;
             parent = row.parent;
         }
         Ok(())
     }
 
-    /// Tells a running agent its new count of live descendants: a one-shot
-    /// agent exits only once none is left.
-    fn tell_children(&self, key: &AgentKey, count: u32) {
+    /// Tells a running agent what is now live below it, when that changed:
+    /// a one-shot agent exits only once none is left and every child it
+    /// saw live has reported.
+    fn tell_children(&self, store: &Sqlite, key: &AgentKey, count: u32) -> Result<(), StoreError> {
         let Ok(id) = AgentId::from_slice(&key.agent) else {
-            return;
+            return Ok(());
         };
         let Some(handle) = self.agents.lock().unwrap().get(&id).cloned() else {
-            return;
+            return Ok(());
         };
-        handle.children.store(count, Ordering::SeqCst);
+        let children = children_frame(store, key, count)?;
+        {
+            let mut told = handle.children.lock().unwrap();
+            if *told == children {
+                return Ok(());
+            }
+            *told = children;
+        }
         let patience = ms(self.launch().ctl_write_ms);
         tokio::spawn(async move { handle.send_children(patience).await });
+        Ok(())
     }
 
     /// Marks the row exited, then settles what the process leaves: its

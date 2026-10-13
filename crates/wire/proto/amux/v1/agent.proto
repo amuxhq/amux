@@ -148,9 +148,18 @@ message AgentHello {
 message Nudge {}
 
 // The live descendants of the agent, on every host its daemon knows of; best
-// effort, it may undercount a host out of reach.
+// effort, it may undercount a host out of reach. `children` names the live
+// agents directly below it, each with its incarnation: every incarnation of a
+// child reports to its parent, so the agent knows whose report it still
+// awaits even when one child ends and the next starts between two frames.
 message Children {
   uint32 live = 1;
+  repeated LiveChild children = 2;
+}
+
+message LiveChild {
+  bytes agent_id = 1;
+  uint32 incarnation = 2;
 }
 
 // The daemon ends its agent. Without `kill`, the running turn is cancelled

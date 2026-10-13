@@ -272,9 +272,10 @@ queued, nothing running, no accepted message still pending and no agent
 below it still live; its exit cause is `FINISHED`, which its journal's last
 step records. A sub-agent whose own child still works therefore stays: the
 child's report starts its next turn, and it reports up as usual. Its daemon
-tells it how many agents below it are live (the `children` control frame),
-and when that count falls to none after the report that ended its last turn
-already arrived, it exits then. An unreachable child's host leaves it
+tells it how many agents below it are live and which of its own children,
+in which incarnation (the `children` control frame), and when that count
+falls to none after every such child's report already arrived, it exits
+then. An unreachable child's host leaves it
 waiting, and stopping it (or a stop cascading from above) ends it. Input
 that arrives while it exits is answered `REFUSAL_EXITING`. Its transcript
 and its parent edge stay.

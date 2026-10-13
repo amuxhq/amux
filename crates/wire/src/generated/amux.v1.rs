@@ -12737,11 +12737,16 @@ impl ::prost::Name for Nudge {
     }
 }
 /// The live descendants of the agent, on every host its daemon knows of; best
-/// effort, it may undercount a host out of reach.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+/// effort, it may undercount a host out of reach. `children` names the live
+/// agents directly below it, each with its incarnation: every incarnation of a
+/// child reports to its parent, so the agent knows whose report it still
+/// awaits even when one child ends and the next starts between two frames.
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Children {
     #[prost(uint32, tag = "1")]
     pub live: u32,
+    #[prost(message, repeated, tag = "2")]
+    pub children: ::prost::alloc::vec::Vec<LiveChild>,
 }
 impl ::prost::Name for Children {
     const NAME: &'static str = "Children";
@@ -12751,6 +12756,23 @@ impl ::prost::Name for Children {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.Children".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LiveChild {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "2")]
+    pub incarnation: u32,
+}
+impl ::prost::Name for LiveChild {
+    const NAME: &'static str = "LiveChild";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.LiveChild".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.LiveChild".into()
     }
 }
 /// The daemon ends its agent. Without `kill`, the running turn is cancelled

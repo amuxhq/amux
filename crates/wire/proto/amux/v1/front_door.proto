@@ -151,7 +151,11 @@ message PairingWindow {
   }
 }
 
-message PairingStatus { bool active = 1; }
+message PairingStatus {
+  bool active = 1;
+  // Too many wrong secrets closed the last window; a new one is needed.
+  bool locked_out = 2;
+}
 
 message BeginPairRequest {
   bytes profile_id = 1;

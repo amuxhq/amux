@@ -10069,6 +10069,9 @@ impl ::prost::Name for PairingWindow {
 pub struct PairingStatus {
     #[prost(bool, tag = "1")]
     pub active: bool,
+    /// Too many wrong secrets closed the last window; a new one is needed.
+    #[prost(bool, tag = "2")]
+    pub locked_out: bool,
 }
 impl ::prost::Name for PairingStatus {
     const NAME: &'static str = "PairingStatus";

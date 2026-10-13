@@ -1,3 +1,5 @@
+2026-10-13 — **Say a pairing window closed for too many wrong PINs.** After five wrong PINs the host closed its window, and the right PIN was then refused with the same "did not match" as a wrong one while `amux pair` on the host kept waiting silently. The host now remembers the lockout until a new window opens (or the old one would have expired), still takes the connection, and refuses with PAIRING_LOCKED, which the pairing side words as "closed its pairing window after too many wrong PINs; run `amux pair` there again". Its pairing status carries `locked_out`, so the waiting `amux pair` ends saying the window closed after too many wrong PINs. Before the cap every refusal still reads the same; after it, saying so tells a guesser nothing a closed window doesn't.
+
 2026-10-13 — **Ask cards fit a short terminal.** Three cards ran out of
 room on small terminals. A multi-select question at 80x16 showed only
 "↓ more" and "Something else": its window of options shrank to one row,

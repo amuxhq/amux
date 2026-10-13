@@ -38,6 +38,9 @@ pub enum PairModeError {
     InvalidPinFormat,
     #[error("failed to generate pairing secret")]
     SecretGeneration,
+    /// Too many wrong secrets closed the window; a new one is needed.
+    #[error("pairing mode closed after too many wrong secrets")]
+    LockedOut,
 }
 
 /// The one-shot pairing secret with its attempt accounting. The delivery
@@ -75,6 +78,10 @@ pub struct PairMode {
 struct PairModeState {
     next_session_id: u64,
     session: Option<PairModeSession>,
+    /// The window that too many wrong secrets closed would have lasted
+    /// until then: until a new window opens, or that time, an attempt is
+    /// told it is locked out rather than that its secret did not match.
+    locked_out_until: Option<Instant>,
 }
 
 pub(crate) struct PairModeAttempt {
@@ -101,6 +108,14 @@ impl PairMode {
         let mut state = self.state.lock().expect("pair mode mutex poisoned");
         purge_expired(&mut state);
         state.session.is_some()
+    }
+
+    /// Whether too many wrong secrets closed the last window, and no new
+    /// one has opened since.
+    pub(crate) fn is_locked_out(&self) -> bool {
+        let mut state = self.state.lock().expect("pair mode mutex poisoned");
+        purge_expired(&mut state);
+        state.locked_out_until.is_some()
     }
 
     pub(crate) fn start_pin(&self) -> Result<String, PairModeError> {
@@ -163,6 +178,9 @@ impl PairMode {
     pub(crate) fn begin_attempt(&self) -> Result<PairModeAttempt, PairModeError> {
         let mut state = self.state.lock().expect("pair mode mutex poisoned");
         purge_expired(&mut state);
+        if state.session.is_none() && state.locked_out_until.is_some() {
+            return Err(PairModeError::LockedOut);
+        }
         let Some(session) = state.session.as_mut() else {
             return Err(PairModeError::NotActive);
         };
@@ -211,6 +229,7 @@ impl PairMode {
         secret.in_flight_attempts = secret.in_flight_attempts.saturating_sub(1);
         secret.failed_attempts = secret.failed_attempts.saturating_add(1);
         if !secret.reusable && secret.failed_attempts >= PAIR_ATTEMPT_LIMIT {
+            state.locked_out_until = Some(session.expires_at);
             state.session = None;
         }
         attempt.active = false;
@@ -277,6 +296,7 @@ impl PairMode {
         let mut state = self.state.lock().expect("pair mode mutex poisoned");
         let was_active = state.session.is_some();
         state.session = None;
+        state.locked_out_until = None;
         was_active
     }
 
@@ -288,6 +308,7 @@ impl PairMode {
         }
         let id = state.next_session_id;
         state.next_session_id = state.next_session_id.wrapping_add(1);
+        state.locked_out_until = None;
         state.session = Some(PairModeSession {
             id,
             secret,
@@ -395,6 +416,12 @@ impl Drop for PairModeCommit {
 }
 
 fn purge_expired(state: &mut PairModeState) {
+    if state
+        .locked_out_until
+        .is_some_and(|until| Instant::now() >= until)
+    {
+        state.locked_out_until = None;
+    }
     let Some(session) = state.session.as_ref() else {
         return;
     };
@@ -513,7 +540,26 @@ mod tests {
             pair_mode.record_failure(&mut attempt).unwrap();
         }
         assert!(!pair_mode.is_active());
-        assert_eq!(pair_mode.begin_attempt(), Err(PairModeError::NotActive));
+        assert!(pair_mode.is_locked_out());
+        assert_eq!(pair_mode.begin_attempt(), Err(PairModeError::LockedOut));
+    }
+
+    #[test]
+    fn a_new_window_lifts_the_lockout() {
+        let pair_mode = PairMode::new();
+        pair_mode
+            .start_pin_for_duration("123456".to_string(), Duration::from_secs(60))
+            .unwrap();
+        for _ in 0..PAIR_ATTEMPT_LIMIT {
+            let mut attempt = pair_mode.begin_attempt().unwrap();
+            pair_mode.record_failure(&mut attempt).unwrap();
+        }
+        assert!(pair_mode.is_locked_out());
+        pair_mode
+            .start_pin_for_duration("654321".to_string(), Duration::from_secs(60))
+            .unwrap();
+        assert!(!pair_mode.is_locked_out());
+        assert!(pair_mode.begin_attempt().is_ok());
     }
 
     #[test]

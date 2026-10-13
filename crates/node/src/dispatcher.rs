@@ -484,7 +484,9 @@ impl TunnelDispatcher {
             );
         }
 
-        if self.pair_mode.is_active() {
+        // A window closed by too many wrong secrets still takes the
+        // connection, so the attempt hears it is locked out.
+        if self.pair_mode.is_active() || self.pair_mode.is_locked_out() {
             Ok(DispatchTarget::Pairing)
         } else {
             audit::auth_mtls_handshake_failure(

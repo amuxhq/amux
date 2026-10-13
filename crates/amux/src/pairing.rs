@@ -95,15 +95,20 @@ pub async fn wait(mut door: Door, profile: &ProfileInfo, qr: bool, link: bool) -
         tokio::select! {
             () = &mut ended => return cancel(door, profile).await,
             () = tokio::time::sleep(PAIRING_POLL) => {
-                let active = door
+                let status = door
                     .get_pairing_status(ProfileRequest {
                         profile_id: profile.id.clone(),
                     })
                     .await
                     .map_err(plain)?
-                    .into_inner()
-                    .active;
-                if !active || tokio::time::Instant::now() >= deadline {
+                    .into_inner();
+                if status.locked_out {
+                    bail!(
+                        "Pairing mode closed after too many wrong PINs; \
+                         run `amux pair` again for a new one."
+                    );
+                }
+                if !status.active || tokio::time::Instant::now() >= deadline {
                     println!("Pairing mode ended.");
                     return Ok(());
                 }
@@ -392,6 +397,12 @@ async fn confirm(mut door: Door, pairing: BeginPairRequest) -> Result<()> {
 /// window read the same on the wire, so a guesser learns nothing, and so
 /// the words name both.
 fn refused(status: tonic::Status, secret: &str) -> anyhow::Error {
+    if status.code() == tonic::Code::PermissionDenied && status.message() == "PAIRING_LOCKED" {
+        return anyhow!(
+            "the other host closed its pairing window after too many wrong {secret}s; \
+             run `amux pair` there again for a new {secret}"
+        );
+    }
     if status.code() == tonic::Code::PermissionDenied && status.message() == "INVALID_PIN" {
         return anyhow!(
             "the {secret} did not match, or the other host's pairing window has closed; \
@@ -734,6 +745,12 @@ mod tests {
              check the PIN it shows and try again"
         );
         assert!(!refusal.contains("INVALID_PIN"));
+        // Locked out after too many wrong PINs: said so, with the way on.
+        let locked = refused(tonic::Status::permission_denied("PAIRING_LOCKED"), "PIN").to_string();
+        assert!(
+            locked.contains("too many wrong PINs") && locked.contains("amux pair"),
+            "{locked}"
+        );
         // Any other refusal reads as it did.
         assert_eq!(
             refused(tonic::Status::permission_denied("not allowed"), "PIN").to_string(),

@@ -47,9 +47,9 @@ pub enum ForwardError {
     /// trusted, or no channel could be opened. Nothing reached it.
     #[error("{name} cannot be reached")]
     NotSent { host: HostId, name: String },
-    /// The call never left: only the relay reaches the owner, and the
-    /// account's plan lapsed to free, on which the relay carries no calls
-    /// between hosts. Said at once, so no surface blames the network.
+    /// The call never left: the relay refused it because the account's
+    /// plan lapsed to free, which carries no calls between hosts. Said as
+    /// such, so no surface blames the network.
     #[error(
         "{name} can be reached only through the relay, and this account's subscription has \
          lapsed to the free plan, which carries no calls between hosts; renew it to reach {name}"
@@ -170,29 +170,21 @@ impl ProfileRuntime {
         if !edge.is_trusted(host) {
             return Err(not_sent());
         }
-        // On a free account the relay lists the account's hosts and opens
-        // no tunnel between them, as the host set's presence says.
-        let free = matches!(
-            edge.observed(),
-            crate::edge::Observed::Connected {
-                tier: crate::Tier::Free,
-                ..
-            }
-        );
-        if free && edge.via(host).await == crate::routing::LiveRoute::Relay {
-            return Err(ForwardError::Lapsed {
-                host,
-                name: self.host_name(host),
-            });
-        }
         match tokio::time::timeout(REACH_PATIENCE, edge.peer(host)).await {
             Ok(Ok(client)) => Ok(client),
+            // On a free account the relay lists the account's hosts and
+            // opens no tunnel between them; the host already reads away.
+            Ok(Err(crate::link::ChannelError::Refused(
+                wire::pb::StreamRefusal::PaymentRequired,
+            ))) => Err(ForwardError::Lapsed {
+                host,
+                name: self.host_name(host),
+            }),
             Ok(Err(_)) | Err(_) => {
                 // A host listed as reachable that takes no call is not
-                // reachable: its route goes down, so presence says so, and
-                // comes back once a call gets through, which is what
-                // releases sends held for the host. A host that revoked
-                // this one already reads as away.
+                // reachable: it reads offline until a channel to it opens
+                // again, which is what releases sends held for the host. A
+                // host that revoked this one already reads offline.
                 if !edge.revoked(host) && edge.via(host).await != crate::routing::LiveRoute::Offline
                 {
                     edge.calls_failed(host).await;

@@ -15,8 +15,6 @@ use std::collections::{BTreeMap, HashSet};
 
 use wire::{HostEntry, HostRemoved, Presence, ProviderOnHost, Trust, inventory_event};
 
-use crate::Tier;
-use crate::edge::Observed;
 use crate::routing::LiveRoute;
 use crate::runtime::ProfileRuntime;
 use crate::serve::inventory;
@@ -27,7 +25,7 @@ pub(crate) type HostSet = BTreeMap<Vec<u8>, HostEntry>;
 impl ProfileRuntime {
     /// This host's entry: always trusted and online to itself, and signed
     /// in or out of its account as it is now, so a client can say a host
-    /// only the relay reaches is away because this machine signed out. The
+    /// only the relay reaches is offline because this machine signed out. The
     /// replication manager recomputes it every tick, so signing out or in
     /// republishes it without any link changing.
     pub fn host_entry(&self) -> HostEntry {
@@ -73,14 +71,6 @@ impl ProfileRuntime {
         let own_host = own.host_id.clone();
         let mut trusted = HashSet::new();
         if let Some(edge) = self.edge() {
-            // A profile is one account, so a peer on it shares its tier.
-            let free = matches!(
-                edge.observed(),
-                Observed::Connected {
-                    tier: Tier::Free,
-                    ..
-                }
-            );
             for (host, name, _) in edge.trusted() {
                 trusted.insert(host);
                 // A host that said it no longer trusts this one takes no
@@ -88,18 +78,10 @@ impl ProfileRuntime {
                 // keeps saying it is online, which pairing again needs and
                 // a client must not read as a working host.
                 let revoked = edge.revoked(host);
-                let via = if revoked {
-                    LiveRoute::Offline
+                let (presence, via) = if revoked {
+                    (Presence::Offline, LiveRoute::Offline)
                 } else {
-                    edge.via(host).await
-                };
-                // On a free account the relay lists the account's hosts and
-                // opens no tunnel between them: a host only it reaches is
-                // seen and cannot be called, which is away.
-                let presence = match via {
-                    LiveRoute::Offline => Presence::Offline,
-                    LiveRoute::Relay if free => Presence::Away,
-                    LiveRoute::Relay | LiveRoute::Direct | LiveRoute::Ssh => Presence::Online,
+                    edge.presence(host).await
                 };
                 let (version, capabilities) = edge.described(host).await.unzip();
                 fresh.insert(

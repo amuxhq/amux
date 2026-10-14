@@ -151,14 +151,40 @@ carry the sender's current adjacent-neighbor snapshot. Later `NeighborUp` and
 these claims to one account; a direct or self-hosted link scopes them to that
 adjacent peer.
 
-Presence is a derivation, not an independent assertion: a host is reachable
+A route is a derivation, not an independent assertion: a host is reachable
 through a relay when that relay says it has an adjacent link to the host. This
 can make an untrusted host a pairing candidate, but does not grant authority or
 make a discovery result online. A trusted host stays in the inventory whatever
-its presence; losing the last route shows it offline, and only untrusting it
-removes it. A host the relay alone reaches while the account is on the free
-tier shows away: the relay lists it but carries no stream to it. A profile is
-one account, so this host's own tier is the peer's.
+its presence, and only untrusting it removes it.
+
+A trusted host's presence is the outcome of opening a channel to it, decided in
+one place, the daemon's connection manager (`crates/node/src/connection.rs`):
+
+- **Online:** a channel to the host opened on a route still listed. The route
+  it opened on is the one the host entry's `via` names.
+- **Away:** the relay refused the channel with `PAYMENT_REQUIRED`, because the
+  account's free plan carries no connection between hosts. Upgrading reaches
+  the host; nothing else reads away.
+- **Offline:** everything else. No route is listed, or the channel failed for
+  any other reason: no route at the relay, rate limited, shutting down,
+  revoked, a TLS, handshake or identity failure, a timeout, a link gone. A host
+  that said it no longer trusts this one is offline and carries `revoked` on
+  its entry.
+
+Every route that comes up is tried at once: a direct link's first channel opens
+as the link's event is handled, and a relay's claim for a trusted host is tried
+in the background. Every channel any call opens records its outcome too. A host
+whose route has come up and whose first attempt on it has not concluded keeps
+the presence it had, so a host that connects goes from offline straight to
+online, and one whose link went while the relay still lists it reads online
+until the try on the relay concludes. A failure counts only on the route the
+routing table prefers by then, and only while no other route carries the
+host's traffic.
+
+When the account's plan changes, every host the relay carried or refused is
+tried again at once on a fresh channel, so a host away for the plan turns
+online as soon as the account is paid, and one the relay carried stops reading
+online once the plan lapses.
 
 Each `Host` in a handshake or neighbor message carries the host's name, its
 build version, its capabilities (whether it serves as a cloud relay, and the
@@ -211,15 +237,17 @@ idle timeout are 20 and 60 seconds on iOS, 10 and 30 seconds elsewhere, so a
 desktop notices a link that died silently within about forty seconds (the
 shorter timeout of a link's two ends applies).
 
-A host's presence says whether a call to it can get through, so a call that
-cannot open a channel on a route still listed does not wait for that timeout.
-On the host's own direct or SSH link it closes the link, as the idle timeout
-would, and redialling and discovery bring it back as they do any lost link. On
-the relay, or on a link through another host, the route is marked down for that
-host and a fresh call channel is tried in the background, one second after and
-doubling to thirty; the first that opens, or any call that gets through, brings
-the route back. Either way the host reads as offline until a call can reach it,
-and a client releases what it held for the host when it reads as online again.
+Presence says whether a channel to a host opens, so a call that cannot open
+one on a route still listed does not wait for that timeout: the host reads
+offline at once. On the host's own direct or SSH link the call closes the link,
+as the idle timeout would, and redialling and discovery bring it back as they
+do any lost link; the new link's first channel says whether the host is online
+again, so a link that comes back and still carries no call leaves it offline. On
+the relay, or on a link through another host, the channel cached on the route
+is dropped. While a route stays listed and no channel to the host is open, one
+background retry per host tries a fresh channel, one second after the failure
+and doubling to thirty; an away host is retried the same way. A client
+releases what it held for the host when it reads online again.
 
 An SSH link reaches the far daemon through `amux relay`, a hidden command the
 SSH session runs, which joins its stdio to the profile's `link.sock`.

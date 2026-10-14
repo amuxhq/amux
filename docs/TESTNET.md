@@ -389,7 +389,7 @@ verb without fields is a bare string (`"Shutdown"`).
 | `{"Sever": {"a", "b"}}`, `{"Restore": {"a", "b"}}` | Cut or restore a link: a declared or added one, or on a gated LAN any pairing between the two. |
 | `{"Link": {"a", "b"}}` | Whether both ends route to each other directly: `{"up": true}`. |
 | `{"Trust": {"a", "b"}}`, `{"Untrust": {"a", "b"}}` | Trust as pairing does; forget as unpairing does. |
-| `{"RefuseCalls": {"a", "b", "refuse"}}` | While `refuse` is true, `a` fails every call to `b` before it goes out, as when no channel for it opens, with the link listed. The first call that fails takes the route down, as in production: an in-process link between them closes and `b` reads as offline to `a`, or the relay's route is marked down and retried. Lifting it links an in-process link again, as redialling would. |
+| `{"RefuseCalls": {"a", "b", "refuse"}}` | While `refuse` is true, `a` fails every channel to `b` before it opens, as when the far end refuses each one, with the link listed; `b` reads offline to `a` as soon as one fails, and stays offline over a link that comes back. The first call that fails acts as in production: an in-process link between them closes, or the relay's cached channel is dropped and a fresh one retried. Lifting it has `a` try a channel at once and links an in-process link again, as redialling would (`Net::redial` does that alone). |
 | `{"SetTier": {"account", "tier"}}` | Change what an account has bought (`pro` or `free`). |
 | `{"SignIn": {"host", "account"}}` | Sign a host's profile in to a declared account. |
 | `{"KillDaemon": {"host"}}`, `{"StopDaemon": {"host"}}` | Crash or cleanly stop a host's daemon. |

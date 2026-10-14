@@ -115,8 +115,8 @@ pub(crate) enum LinkCloseRequest {
     /// drops the message.
     Revoked,
     /// A call could not open a channel on the link while it stayed up: it
-    /// closes as a dead connection would, so the host reads as away until
-    /// a link that carries calls replaces it.
+    /// closes as a dead connection would, and the host reads offline until
+    /// a channel opens on a link that replaces it.
     CallsFailed,
 }
 

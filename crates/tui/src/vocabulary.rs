@@ -15,10 +15,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ui_state::{Composer, Waiting};
 use ui_view::{
-    AnswerView, AskBody, AskCard, AskRow, AttachmentView, Away, CallPhase, CardState, Choice,
+    AnswerView, AskBody, AskCard, AskRow, AttachmentView, CallPhase, CardState, Choice,
     ChoiceOutcome, Decision, DecisionView, EditLine, ExploreVerb, FileChangeView, FileRow, Granted,
-    LineKind, OptionView, PatchHead, PatchLine, PermissionGrant, PlanVerdict, QuestionView,
-    QueuedRow, Reach, Refusal, RefusalReason, Resolution, Row, RowKind, Scope, Segment,
+    LineKind, Offline, OptionView, PatchHead, PatchLine, PermissionGrant, PlanVerdict,
+    QuestionView, QueuedRow, Reach, Refusal, RefusalReason, Resolution, Row, RowKind, Scope,
+    Segment,
 };
 use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
@@ -2019,21 +2020,21 @@ fn composers() -> Vec<(&'static str, &'static str, Composer, Reach, &'static str
             "composer_detached",
             "The composer while the agent's host is away: a send is held, shown pending with Cancel, and goes when the host is back.",
             Composer::Holds(Waiting::Detached),
-            Reach::Offline,
+            Reach::Offline(Offline::Plain),
             "",
         ),
         (
             "composer_detached_signed_out",
             "The composer while the agent's host is away and this machine is signed out of its account: the cause is this machine's, and a send is held until it signs in.",
             Composer::Holds(Waiting::Detached),
-            Reach::Away(Away::SignedOut),
+            Reach::Offline(Offline::SignedOut),
             "",
         ),
         (
             "composer_detached_revoked",
             "The composer while the agent's host has said it no longer trusts this machine: a send is held until the two are paired again.",
             Composer::Holds(Waiting::Detached),
-            Reach::Away(Away::Revoked),
+            Reach::Offline(Offline::Revoked),
             "",
         ),
     ]

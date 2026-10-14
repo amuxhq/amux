@@ -35,8 +35,8 @@ consequences. Do not add reassurance or describe implementation choices.
 | A host reached on the local network | on this network |
 | The route to a host on the local network | direct |
 | An unpaired host discovered on the local network | found |
-| A host visible through a free relay link but unavailable for agent operations | away |
-| A host with no usable route and no relay presence | offline |
+| A host the relay refused to connect for the account's free plan | away |
+| A host no channel reaches, for any other reason | offline |
 | Leaving an account or ending a device's access | sign out / revoke |
 | The debug bundle | report |
 | A plan you do not accept | send back |
@@ -44,9 +44,10 @@ consequences. Do not add reassurance or describe implementation choices.
 | Ending a live agent; it goes to exited and can be resumed | stop |
 | Removing an exited agent for good | delete |
 
-Use **away** only when the relay currently sees the host but the selected
-account has no subscription. Use **offline** when there is no usable route and
-the relay does not currently see the host. Never describe an offline host as
+Use **away** only when the daemon says the relay refused the host because the
+selected account has no subscription: upgrading reaches it. Use **offline** for
+every other host out of reach, including one that no longer trusts this phone
+and one only a signed-out phone cannot reach. Never describe an offline host as
 away, and never offer a subscription merely because a host is offline.
 
 A live agent's menu offers **Stop Agent** and never **Delete Agent**; only an

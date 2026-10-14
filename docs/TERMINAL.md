@@ -48,7 +48,7 @@ key in a key line too.
 The client opens on home, and every chat returns to it. The top line is `amux` and the overall state at the
 right: hosts it does not reach now, how many agents are working or starting and how many need you (agents, not
 families, folded or not), a daemon running another build (`amux 0.8.0 running · restart to update`) and, when
-this machine's hosts are away because it is signed out, `signed out · amux login`. `/` turns the top line into a filter over names, folders and hosts; Enter keeps it, Esc
+this machine's hosts are out of reach because it is signed out, `signed out · amux login`. `/` turns the top line into a filter over names, folders and hosts; Enter keeps it, Esc
 clears it, and it looks into folded sections too. It matches names, branches, folders and hosts.
 
 Below it, `+ New Agent`, then the agents in sections drawn alike (a fold marker, the label, a count, a faint rule):
@@ -106,8 +106,9 @@ chat's agent, folder and host instead.
 ### Hosts
 
 `h`, or the leader then `h` from a chat, opens the hosts window over home: every trusted host whatever its
-presence, with `this machine`, how it is reached (`direct`, `relay`) or why not (`offline · not signed in`, `away ·
-this machine is signed out`, `no longer trusts this machine`). Hosts that local-network discovery sees and that are
+presence, with `this machine`, how it is reached (`direct`, `relay`) or why not (`offline · not signed in`, `offline ·
+this machine is signed out`, `offline · no longer trusts this machine`, `away` and the free plan's words when the relay
+refused the host for the plan). Hosts that local-network discovery sees and that are
 not yet trusted are listed faint, with the command that pairs them (`found nearby · amux pair desk`); a faint line
 says to pair another with `amux pair`. Esc, `q` or `h` closes it. Pairing, unpairing and signing in happen from the
 command line ([`amux pair`](#command-line-verbs) and friends); [HOW_IT_WORKS.md](HOW_IT_WORKS.md) explains hosts,

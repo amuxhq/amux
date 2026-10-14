@@ -52,7 +52,7 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::FleetRow,
         ui_view::FleetCard,
         ui_view::FamilyHeader,
-        ui_view::Away,
+        ui_view::Offline,
         ui_view::ReviewDoc,
         ui_view::SettingsView,
         ui_view::SettingChange,

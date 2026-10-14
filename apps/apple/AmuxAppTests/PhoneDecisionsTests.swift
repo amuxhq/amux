@@ -343,7 +343,7 @@ final class PhoneDecisionsTests: XCTestCase {
         let hosts = HostsStore()
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
-            reach: .away(.revoked), addrs: ["127.0.0.1:55186"], current: false, providers: [],
+            reach: .offline(.revoked), addrs: ["127.0.0.1:55186"], current: false, providers: [],
             lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
             platform: "macOS", signedIn: nil, version: nil)])
         var asked: [HostPageAction] = []
@@ -414,7 +414,7 @@ final class PhoneDecisionsTests: XCTestCase {
                 signedIn: nil, version: nil)
         }
         let hosts = HostsStore()
-        hosts.show([view(.offline)])
+        hosts.show([view(.offline(.plain))])
         let form = NewAgentStore()
         form.open(on: desk)
         form.starts()

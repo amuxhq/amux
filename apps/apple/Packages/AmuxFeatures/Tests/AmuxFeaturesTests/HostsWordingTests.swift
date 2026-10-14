@@ -31,7 +31,7 @@ final class HostsWordingTests: XCTestCase {
         XCTAssertEqual(tab([direct]).0.status(direct, direct.group), "Mac Studio · direct")
         let relayed = host(reach: .online(.relay), platform: nil)
         XCTAssertEqual(tab([relayed]).0.status(relayed, relayed.group), "via relay")
-        let away = host(reach: .away(.plain))
+        let away = host(reach: .away)
         XCTAssertEqual(tab([away]).0.status(away, away.group), "Mac Studio · away on the free plan")
     }
 
@@ -39,25 +39,25 @@ final class HostsWordingTests: XCTestCase {
     /// which relays nothing between hosts: every place that says it is away
     /// names the plan as the reason.
     func testAnAwayHostNamesTheFreePlan() {
-        let away = host(reach: .away(.plain))
+        let away = host(reach: .away)
         XCTAssertEqual(HostPage.reach(away), "Away · the free plan does not relay between hosts")
         XCTAssertEqual(
-            ChatSubject(name: "a", host: "studio", directory: "~/src", reach: .away(.plain)).place,
+            ChatSubject(name: "a", host: "studio", directory: "~/src", reach: .away).place,
             "studio · away on the free plan")
     }
 
     /// An offline row says the one cause this phone knows, most telling first.
     func testAnOfflineRowSaysTheCauseThisPhoneKnows() {
-        let revoked = host(reach: .away(.revoked), addrs: ["10.0.0.2:7"])
+        let revoked = host(reach: .offline(.revoked), addrs: ["10.0.0.2:7"])
         XCTAssertEqual(
             tab([revoked]).0.status(revoked, revoked.group), "Mac Studio · no longer trusts this phone")
-        let found = host(reach: .offline, addrs: ["10.0.0.2:7"])
+        let found = host(reach: .offline(.plain), addrs: ["10.0.0.2:7"])
         XCTAssertEqual(tab([found]).0.status(found, found.group), "Mac Studio · found, not answering")
-        let signedOut = host(reach: .away(.signedOut))
+        let signedOut = host(reach: .offline(.signedOut))
         XCTAssertEqual(
             tab([signedOut]).0.status(signedOut, signedOut.group),
             "Mac Studio · offline, this phone is signed out")
-        let gone = host(reach: .offline)
+        let gone = host(reach: .offline(.plain))
         XCTAssertEqual(tab([gone]).0.status(gone, gone.group), "Mac Studio · offline")
     }
 
@@ -65,7 +65,7 @@ final class HostsWordingTests: XCTestCase {
     func testAWatchedDepartureSaysHowLongAgo() {
         var now = Date(timeIntervalSince1970: 1_000)
         let (view, model) = tab([host()], clock: { now })
-        let gone = host(reach: .offline)
+        let gone = host(reach: .offline(.plain))
         model.show([gone])
         now = Date(timeIntervalSince1970: 1_000 + 3 * 86_400)
         XCTAssertEqual(view.status(gone, gone.group), "Mac Studio · offline for 3d")
@@ -85,7 +85,7 @@ final class HostsWordingTests: XCTestCase {
         XCTAssertEqual(
             view.caption(.offline, offers: false),
             "Agents on an offline host report their state as unknown.")
-        let found = tab([host(reach: .offline, addrs: ["10.0.0.2:7"])]).0
+        let found = tab([host(reach: .offline(.plain), addrs: ["10.0.0.2:7"])]).0
         XCTAssertNotEqual(
             found.caption(.offline, offers: false),
             "Agents on an offline host report their state as unknown.",

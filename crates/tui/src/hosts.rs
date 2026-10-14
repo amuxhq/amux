@@ -5,7 +5,7 @@
 
 use ratatui::text::{Line, Span};
 use ui_state::FleetState;
-use ui_view::{Away, Reach};
+use ui_view::{Offline, Reach};
 use wire::{HostEntry, RouteKind, Trust};
 
 use crate::text::{self, pad_to};
@@ -21,31 +21,31 @@ pub fn route(reach: Reach, local: bool) -> &'static str {
         Reach::Online(RouteKind::Ssh) => "ssh",
         Reach::Online(RouteKind::Unspecified) if local => "local",
         Reach::Online(RouteKind::Unspecified) => "online",
-        Reach::Away(_) => "away",
-        Reach::Offline => "offline",
+        Reach::Away => "away",
+        Reach::Offline(_) => "offline",
     }
 }
 
 /// The overlay's words for a trusted host: its route, then what stands in
 /// its way. A host that said it no longer trusts this machine says that;
-/// one away because this machine is signed out names this machine rather
+/// one offline because this machine is signed out names this machine rather
 /// than the host.
 pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> String {
     let reach = ui_view::reach(fleet, local_host, &entry.host_id);
     let mut parts = vec![format!("·{}", route(reach, entry.host_id == local_host))];
     match reach {
-        Reach::Away(Away::Revoked) => parts.push("no longer trusts this machine".into()),
-        Reach::Away(Away::SignedOut) => parts.push("this machine is signed out".into()),
+        Reach::Offline(Offline::Revoked) => parts.push("no longer trusts this machine".into()),
+        Reach::Offline(Offline::SignedOut) => parts.push("this machine is signed out".into()),
         // Why it is away comes before any old error from dialing it
         // directly, which is not the reason.
-        Reach::Away(Away::Plain) => parts.push(crate::chat::FREE_PLAN_AWAY.into()),
+        Reach::Away => parts.push(crate::chat::FREE_PLAN_AWAY.into()),
         // Signing in matters only for reaching a host through the relay.
-        Reach::Online(RouteKind::Relay) | Reach::Offline
+        Reach::Online(RouteKind::Relay) | Reach::Offline(Offline::Plain)
             if entry.account_signed_in == Some(false) =>
         {
             parts.push("not signed in".into());
         }
-        Reach::Online(_) | Reach::Offline => {}
+        Reach::Online(_) | Reach::Offline(Offline::Plain) => {}
     }
     if let Some(error) = entry.last_dial_error.as_ref().filter(|e| !e.is_empty()) {
         parts.push(error.clone());

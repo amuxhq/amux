@@ -35,21 +35,15 @@ public struct ChatSubject: Equatable, Sendable {
 
     public var reachable: Bool { reach.online }
 
-    /// Why the host is away, when this phone can say.
-    public var away: Away? {
-        if case .away(let why) = reach { return why }
-        return nil
-    }
-
     /// "~/s/amux · Studio", or why the host cannot be reached.
     public var place: String {
         switch reach {
         case .online:
             return PlaceNames.place(host: host.isEmpty ? nil : host, directory: directory)
-        case .away(.revoked): return String(localized: "\(host) · no longer trusts this phone")
-        case .away(.signedOut): return String(localized: "\(host) · this phone is signed out")
-        case .away(.plain): return String(localized: "\(host) · away on the free plan")
-        case .offline: return String(localized: "\(host) · away")
+        case .offline(.revoked): return String(localized: "\(host) · no longer trusts this phone")
+        case .offline(.signedOut): return String(localized: "\(host) · this phone is signed out")
+        case .away: return String(localized: "\(host) · away on the free plan")
+        case .offline(.plain): return String(localized: "\(host) · away")
         }
     }
 
@@ -413,7 +407,7 @@ public struct ChatScreen: View {
         }
         if model.empty, !(model.frame?.caughtUp ?? false) {
             if !subject.reachable {
-                notices.append(FeedNotice(id: "chat.away", text: awayNotice, value: subject.away.map { "\($0)" } ?? "plain"))
+                notices.append(FeedNotice(id: "chat.away", text: awayNotice, value: awayCause))
             } else if model.loadingHint {
                 notices.append(FeedNotice(
                     id: "chat.loading", text: String(localized: "Loading this chat from \(subject.host)…"),
@@ -424,15 +418,24 @@ public struct ChatScreen: View {
     }
 
     private var awayNotice: String {
-        switch subject.away {
-        case .revoked?:
+        switch subject.reach {
+        case .offline(.revoked):
             String(localized: "\(subject.host) no longer trusts this phone. Pair again to see this chat.")
-        case .signedOut?:
+        case .offline(.signedOut):
             String(localized: "This phone is signed out, so \(subject.host) is out of reach. This chat fills in when you sign in again.")
-        case .plain?:
+        case .away:
             String(localized: "\(subject.host) is away because the free plan does not relay between hosts. This chat fills in once it can be reached.")
-        case nil:
+        case .online, .offline(.plain):
             String(localized: "\(subject.host) is away. This chat fills in when it is back.")
+        }
+    }
+
+    /// The notice's cause, as a test reads it.
+    private var awayCause: String {
+        switch subject.reach {
+        case .offline(.revoked): "revoked"
+        case .offline(.signedOut): "signedOut"
+        case .online, .away, .offline(.plain): "plain"
         }
     }
 }
@@ -710,7 +713,7 @@ public struct ChatStanding: View {
         if case .working? = model.frame?.phase { working = true }
         return ChatWords.placeholder(
             model.frame?.composer.mode, agent: subject.name, host: subject.host,
-            away: subject.away, working: working)
+            reach: subject.reach, working: working)
     }
 
     private var activitySubject: String? {

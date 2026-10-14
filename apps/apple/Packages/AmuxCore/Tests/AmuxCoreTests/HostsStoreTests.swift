@@ -28,21 +28,21 @@ final class HostsStoreTests: XCTestCase {
         XCTAssertEqual(Cards.host(reach: .online(.direct)).group, .onThisNetwork)
         XCTAssertEqual(Cards.host(reach: .online(.relay)).group, .throughTheRelay)
         XCTAssertEqual(Cards.host(reach: .online(.ssh)).group, .throughTheRelay)
-        XCTAssertEqual(Cards.host(reach: .away(.plain)).group, .away)
-        XCTAssertEqual(Cards.host(reach: .offline).group, .offline)
+        XCTAssertEqual(Cards.host(reach: .away).group, .away)
+        XCTAssertEqual(Cards.host(reach: .offline(.plain)).group, .offline)
         // Only a host the relay sees is away here: one that no longer trusts
         // this phone, or that only a signed-out phone misses, has no route.
-        XCTAssertEqual(Cards.host(reach: .away(.revoked)).group, .offline)
-        XCTAssertEqual(Cards.host(reach: .away(.signedOut)).group, .offline)
+        XCTAssertEqual(Cards.host(reach: .offline(.revoked)).group, .offline)
+        XCTAssertEqual(Cards.host(reach: .offline(.signedOut)).group, .offline)
         XCTAssertTrue(Cards.host(reach: .online(.direct)).online)
-        XCTAssertFalse(Cards.host(reach: .away(.plain)).online)
+        XCTAssertFalse(Cards.host(reach: .away).online)
     }
 
     func testOnlineHostsListFirstThenByName() {
         let hosts = HostsStore()
         hosts.show([
-            Cards.host(studio, name: "Zed", reach: .offline),
-            Cards.host(mini, name: "alpha", reach: .offline),
+            Cards.host(studio, name: "Zed", reach: .offline(.plain)),
+            Cards.host(mini, name: "alpha", reach: .offline(.plain)),
             Cards.host(found, name: "mid"),
         ])
         XCTAssertEqual(hosts.hosts.map(\.name), ["mid", "alpha", "Zed"])
@@ -51,11 +51,11 @@ final class HostsStoreTests: XCTestCase {
     func testOnlyADepartureThisPhoneWatchedHasATime() {
         var clock = Date(timeIntervalSince1970: 1_000)
         let hosts = HostsStore(clock: { clock })
-        hosts.show([Cards.host(studio, reach: .offline)])
+        hosts.show([Cards.host(studio, reach: .offline(.plain))])
         XCTAssertNil(hosts.wentOffline(studio), "already gone when first seen")
         hosts.show([Cards.host(studio)])
         clock = Date(timeIntervalSince1970: 2_000)
-        hosts.show([Cards.host(studio, reach: .offline)])
+        hosts.show([Cards.host(studio, reach: .offline(.plain))])
         XCTAssertEqual(hosts.wentOffline(studio), clock)
         hosts.show([Cards.host(studio)])
         XCTAssertNil(hosts.wentOffline(studio))

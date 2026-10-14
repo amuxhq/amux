@@ -268,10 +268,8 @@ impl Edge {
             trust.clone(),
             routing.revocations().clone(),
         ));
-        let connections = Arc::new(
-            ConnectionManager::new(routing.clone(), channels.clone())
-                .with_analytics(analytics.clone()),
-        );
+        let connections =
+            ConnectionManager::new(routing.clone(), channels.clone(), analytics.clone());
         let (incoming_streams_tx, incoming_streams_rx) = mpsc::channel(64);
         let (trusted_tx, trusted_rx) = mpsc::channel(64);
         let (pairing_tx, pairing_rx) = mpsc::channel(64);
@@ -423,6 +421,10 @@ impl Edge {
             tasks: Mutex::new(tasks),
             analytics,
         });
+        edge.tasks
+            .lock()
+            .unwrap()
+            .push(follow_plan(&edge.status, &edge.connections));
         if signed_in {
             edge.start_cloud().await;
         }
@@ -576,18 +578,23 @@ impl Edge {
     }
 
     /// A call to `host` could not open a channel on the route that lists
-    /// it: the route is taken down, so the host reads as away until a call
-    /// can get through again.
+    /// it: the host reads offline until a channel to it opens again.
     pub(crate) async fn calls_failed(&self, host: HostId) {
         self.connections.calls_failed(host).await;
     }
 
-    /// From now on no call channel to `host` opens, or opens again, while
-    /// the link and its sessions stay up: a call to it fails before it goes
-    /// out. For a test network.
+    /// How `host` reads now, and the route its calls take while it is not
+    /// offline.
+    pub async fn presence(&self, host: HostId) -> (wire::Presence, LiveRoute) {
+        self.connections.presence_for(host).await
+    }
+
+    /// From now on no channel to `host` opens, or opens again, while the
+    /// link and the streams it already carries stay up: a call to it fails
+    /// before it goes out. For a test network.
     #[doc(hidden)]
-    pub fn refuse_calls(&self, host: HostId, refuse: bool) {
-        self.connections.refuse_calls(host, refuse);
+    pub async fn refuse_calls(&self, host: HostId, refuse: bool) {
+        self.connections.refuse_calls(host, refuse).await;
     }
 
     /// The channel calls to a trusted host ride, for a caller that speaks
@@ -915,6 +922,29 @@ impl Drop for LoopbackLink {
     fn drop(&mut self) {
         self.sever();
     }
+}
+
+/// Tells the connections whenever the account's plan is seen to change,
+/// from one connected tier to another: what the relay carries changes with
+/// it, and hosts it refused or carried need not wait for a retry's backoff
+/// or a call to read as they now are.
+fn follow_plan(status: &RuntimeStatus, connections: &Arc<ConnectionManager>) -> JoinHandle<()> {
+    let mut observed = status.subscribe();
+    let connections = Arc::downgrade(connections);
+    tokio::spawn(async move {
+        let mut plan = None;
+        while observed.changed().await.is_ok() {
+            let Observed::Connected { tier, .. } = *observed.borrow_and_update() else {
+                continue;
+            };
+            if plan.replace(tier).is_some_and(|before| before != tier) {
+                let Some(connections) = connections.upgrade() else {
+                    return;
+                };
+                connections.plan_changed().await;
+            }
+        }
+    })
 }
 
 /// Binds the LAN listener, preferring the profile's last port.

@@ -1283,10 +1283,11 @@ fn relay_host(name: &str, account: &str) -> testnet::HostDecl {
     }
 }
 
-/// On a free account the relay lists a host it cannot open a tunnel to:
-/// a trusted host only the relay reaches is away, which the phone draws as
-/// its away banner and host group. A direct link to the same host makes it
-/// online again, and so does the account going Pro.
+/// On a free account the relay lists a host and refuses the tunnel to it
+/// for the plan: a trusted host only the relay reaches is away, which the
+/// phone draws as its away banner and host group. A direct link to the
+/// same host makes it online again, and so does the account going Pro, at
+/// once rather than after the backoff of the retry the refusal started.
 #[tokio::test(flavor = "multi_thread")]
 async fn free_tier_relay_only_host_is_away() {
     let mut topology = Topology::new()
@@ -1344,6 +1345,14 @@ async fn free_tier_relay_only_host_is_away() {
         presence(row) == (wire::Presence::Away, wire::RouteKind::Relay)
     })
     .await;
+    // Long enough for the refused desk's retry to back off past a few
+    // seconds, so only the plan change can turn it online promptly.
+    holds_for("the desk away", Duration::from_secs(8), || async {
+        edge(&net, "laptop").presence(desk).await.0 == wire::Presence::Away
+    })
+    .await
+    .unwrap();
+    let paid = std::time::Instant::now();
     net.set_tier("ada", testnet::TierDecl::Pro).await.unwrap();
     let row = row_until(
         &mut fleet,
@@ -1352,7 +1361,15 @@ async fn free_tier_relay_only_host_is_away() {
         |row| presence(row) == (wire::Presence::Online, wire::RouteKind::Relay),
     )
     .await;
-    println!("relay only, Pro: the desk is {:?}", presence(&row));
+    let took = paid.elapsed();
+    println!(
+        "relay only, Pro: the desk is {:?} {took:?} after the plan changed",
+        presence(&row)
+    );
+    assert!(
+        took < Duration::from_secs(5),
+        "a host away for the plan turns online promptly once it is paid: {took:?}"
+    );
 
     net.shutdown().await.unwrap();
 }
@@ -2278,6 +2295,67 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
 
 /// Waits until `viewer`'s own inventory describes `host` as `check` wants,
 /// and returns that row.
+/// A host that connects goes from offline straight to online: while its
+/// link is up and no channel on it has opened yet, it reads as it did,
+/// never away and never online on another route first.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_that_connects_reads_offline_until_its_first_channel_opens() {
+    let mut net = Net::start(
+        Topology::new()
+            .host("desk")
+            .host("laptop")
+            .link("desk", "laptop"),
+    )
+    .await
+    .unwrap();
+    let laptop = host_id(&net, "laptop");
+    until_via(&net, "desk", "laptop", LiveRoute::Direct).await;
+    net.sever_link("desk", "laptop").unwrap();
+    net.wait_link("desk", "laptop", false).await.unwrap();
+    let mut fleet = net.observe_inventory("desk").await.unwrap();
+    row_until(&mut fleet, laptop, "the laptop offline", |row| {
+        row.presence() == wire::Presence::Offline
+    })
+    .await;
+
+    net.restore_link("desk", "laptop").await.unwrap();
+    row_until(&mut fleet, laptop, "the laptop online", |row| {
+        (row.presence(), row.via()) == (wire::Presence::Online, wire::RouteKind::Direct)
+    })
+    .await;
+    let rows = rows_seen(&mut fleet, laptop).await;
+    println!("connecting, the laptop read {rows:?}");
+    let (last, before) = rows.split_last().expect("rows");
+    assert_eq!(*last, (wire::Presence::Online, wire::RouteKind::Direct));
+    assert!(
+        before
+            .iter()
+            .all(|row| *row == (wire::Presence::Offline, wire::RouteKind::Unspecified)),
+        "the laptop read offline until it was online: {rows:?}"
+    );
+    net.shutdown().await.unwrap();
+}
+
+/// How `host` read in each entry `fleet` has carried so far, in order.
+async fn rows_seen(
+    fleet: &mut testnet::InventoryObserver,
+    host: uuid::Uuid,
+) -> Vec<(wire::Presence, wire::RouteKind)> {
+    let events = fleet
+        .observe_until(|_| true, testnet::PATIENCE)
+        .await
+        .expect("the inventory stream is open");
+    events
+        .iter()
+        .filter_map(|event| match &event.of {
+            Some(wire::inventory_event::Of::Host(row)) if row.host_id == host.as_bytes() => {
+                Some((row.presence(), row.via()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 async fn row_until(
     fleet: &mut testnet::InventoryObserver,
     host: uuid::Uuid,
@@ -2948,14 +3026,16 @@ async fn an_attachment_at_the_stated_limit_stores_and_one_over_it_is_refused_nam
     );
 }
 
-/// Presence says whether a call can get through. A host whose route stays
-/// listed while no call channel opens on it (a hiccup shorter than the
-/// link's idle timeout, a relay listing a host it opens no tunnel to) is
-/// taken down by the first call that fails: the desk reads the laptop as
-/// offline at once, over a direct link (closed, as its idle timeout would)
-/// and over the relay (marked down and retried). Once calls open again the
-/// laptop reads online, which is what releases a client's held sends, and
-/// the same send goes through.
+/// Presence says whether a channel to a host opens. A host whose route
+/// stays listed while no channel opens on it (a hiccup shorter than the
+/// link's idle timeout, a relay listing a host whose tunnel fails) reads
+/// offline once a call fails, never away: away is only the relay refusing
+/// for the account's plan. Over a direct link the failed call closes the
+/// link, as its idle timeout would; a link that comes back while channels
+/// still fail leaves the host offline, where it used to read online the
+/// moment the link was up. Over the relay a fresh channel is retried. Once
+/// channels open again the laptop reads online, which is what releases a
+/// client's held sends, and the same send goes through.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_no_call_can_reach_reads_offline_until_one_can() {
     for relayed in [false, true] {
@@ -3044,6 +3124,33 @@ async fn a_host_no_call_can_reach_reads_offline_until_one_can() {
             "relayed {relayed}: a refused call takes the laptop {:?}",
             away.presence()
         );
+        if !relayed {
+            // The link comes back while every channel is still refused:
+            // the laptop is seen again and still cannot be called.
+            net.redial("desk", "laptop").await.unwrap();
+            assert_eq!(
+                edge(&net, "desk").presence(laptop).await,
+                (wire::Presence::Offline, LiveRoute::Offline),
+                "a link back up with no channel open on it reads offline"
+            );
+            let refused = net
+                .client("desk")
+                .unwrap()
+                .send_input(tonic::Request::new(send("Are you there?")))
+                .await
+                .expect("the send is answered")
+                .into_inner();
+            assert!(
+                matches!(
+                    &refused.of,
+                    Some(wire::send_input_response::Of::Rejected(rejected))
+                        if rejected.refusal() == wire::Refusal::HostUnreachable
+                ),
+                "a send over the link back up is still refused: {refused:?}"
+            );
+            println!("the link came back while calls were refused; the laptop stayed offline");
+        }
+        let since_refused = rows_seen(&mut fleet, laptop).await;
 
         net.refuse_calls("desk", "laptop", false).await.unwrap();
         let back = row_until(
@@ -3054,6 +3161,20 @@ async fn a_host_no_call_can_reach_reads_offline_until_one_can() {
         )
         .await;
         assert_eq!(back.via(), route.to_wire(), "back on the route it had");
+        // From the first offline row until calls were let through, the
+        // laptop read nothing but offline: no flip back to online on a
+        // link that carried no call, and no away for a refusal that was
+        // not about the plan.
+        let first_offline = since_refused
+            .iter()
+            .position(|row| row.0 == wire::Presence::Offline)
+            .expect("the laptop read offline");
+        assert!(
+            since_refused[first_offline..]
+                .iter()
+                .all(|row| *row == (wire::Presence::Offline, wire::RouteKind::Unspecified)),
+            "the laptop read only offline while calls were refused: {since_refused:?}"
+        );
         let sent = net
             .client("desk")
             .unwrap()

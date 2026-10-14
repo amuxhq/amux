@@ -95,7 +95,7 @@ public struct HostPage: View {
             }
             // A machine that dropped this phone is still on its list; pairing
             // again is the way back, and the first thing to offer.
-            if view.reach == .away(.revoked), let id = view.id {
+            if view.reach == .offline(.revoked), let id = view.id {
                 Button { actions(.pairAgain(id)) } label: {
                     ActionLabel(String(localized: "Pair Again"), kind: .primary, fill: true)
                 }
@@ -172,7 +172,7 @@ public struct HostPage: View {
         // The dial's own error names an address and a status code, which say
         // nothing a person can act on. A machine that dropped this phone has
         // its reason said above it; any other failed dial is said in words.
-        if !view.online, view.reach != .away(.revoked), let error = view.lastDialError, !error.isEmpty {
+        if !view.online, view.reach != .offline(.revoked), let error = view.lastDialError, !error.isEmpty {
             facts.append(Fact(
                 id: "last-error", label: String(localized: "Last try"),
                 value: String(localized: "Could not connect")))
@@ -196,13 +196,13 @@ public struct HostPage: View {
         switch view.group {
         case .onThisNetwork: return String(localized: "Reachable on this network, direct")
         case .throughTheRelay: return String(localized: "Reachable through the relay")
-        // The daemon lists a host away only when the relay alone sees it and
-        // the account is on the free plan, which relays nothing between hosts.
+        // The daemon lists a host away only when the relay refused to
+        // connect to it because the free plan relays nothing between hosts.
         case .away: return String(localized: "Away · the free plan does not relay between hosts")
         case .offline:
             switch view.reach {
-            case .away(.revoked): return String(localized: "Offline · it no longer trusts this phone")
-            case .away(.signedOut): return String(localized: "Offline while this phone is signed out")
+            case .offline(.revoked): return String(localized: "Offline · it no longer trusts this phone")
+            case .offline(.signedOut): return String(localized: "Offline while this phone is signed out")
             default: return String(localized: "Offline")
             }
         }

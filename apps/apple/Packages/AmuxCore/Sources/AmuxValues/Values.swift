@@ -1138,23 +1138,6 @@ public enum Attention: String, Codable, Hashable, Sendable, CaseIterable {
     case needsYou = "NeedsYou"
 }
 
-/// Why a host is away from here. A powered-off host and a signed-out
-/// machine look the same from here, so the cause is only ever a fact about
-/// this machine, never a claim about the host.
-public enum Away: String, Codable, Hashable, Sendable, CaseIterable {
-    /// The host's link says it is away: only the relay sees it, and the
-    /// account is on the free plan, whose relay opens no connection
-    /// between hosts.
-    case plain = "Plain"
-    /// This machine is signed out of its account, so the relay carries
-    /// nothing for it; a host only the relay reaches is away until it signs
-    /// in again.
-    case signedOut = "SignedOut"
-    /// The host said it no longer trusts this machine, as it closed its
-    /// link or refused a stream; only pairing again brings it back.
-    case revoked = "Revoked"
-}
-
 public enum Base: Codable, Hashable, Sendable {
     /// From the folder's HEAD commit.
     case head(Empty)
@@ -3939,6 +3922,21 @@ public struct OfferedPermission: Codable, Hashable, Sendable {
     }
 }
 
+/// Why a host is offline from here. A powered-off host and a signed-out
+/// machine look the same from here, so the cause is only ever a fact about
+/// this machine, never a claim about the host.
+public enum Offline: String, Codable, Hashable, Sendable, CaseIterable {
+    /// No channel to it opens, or nothing reaches it at all.
+    case plain = "Plain"
+    /// This machine is signed out of its account, so the relay carries
+    /// nothing for it; a host only the relay reaches is offline until it
+    /// signs in again.
+    case signedOut = "SignedOut"
+    /// The host said it no longer trusts this machine, as it closed its
+    /// link or refused a stream; only pairing again brings it back.
+    case revoked = "Revoked"
+}
+
 public struct OptionView: Codable, Hashable, Sendable {
     /// "(Recommended)" lifted out into `recommended`.
     public var label: String
@@ -4536,16 +4534,18 @@ public struct QueuedRow: Codable, Hashable, Sendable {
 /// How this machine reaches a host now: one answer every client words, for
 /// the host itself and for every agent on it.
 public enum Reach: Codable, Hashable, Sendable {
-    /// A link stands, over this route; this machine's own host has none.
+    /// A channel to it opened, over this route; this machine's own host
+    /// has none.
     case online(RouteKind)
-    /// Out of reach for a reason this machine can name.
-    case away(Away)
-    /// Out of reach with no route, or not known to be reachable at all.
-    case offline
+    /// Seen, and only the relay reaches it, which carries no connection
+    /// between hosts on the account's free plan: upgrading reaches it.
+    case away
+    /// Out of reach, for a reason this machine can name or for none.
+    case offline(Offline)
 
     private enum Tag: String, CodingKey {
         case online = "Online"
-        case away = "Away"
+        case offline = "Offline"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4553,7 +4553,7 @@ public enum Reach: Codable, Hashable, Sendable {
            let _name = try? _single.decode(String.self)
         {
             switch _name {
-            case "Offline": self = .offline
+            case "Away": self = .away
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no Reach is named \(_name)")
@@ -4570,8 +4570,8 @@ public enum Reach: Codable, Hashable, Sendable {
         switch _tag {
         case .online:
             self = .online(try _container.decode(RouteKind.self, forKey: .online))
-        case .away:
-            self = .away(try _container.decode(Away.self, forKey: .away))
+        case .offline:
+            self = .offline(try _container.decode(Offline.self, forKey: .offline))
         }
     }
 
@@ -4580,12 +4580,12 @@ public enum Reach: Codable, Hashable, Sendable {
         case .online(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .online)
-        case .away(let _value):
-            var _container = encoder.container(keyedBy: Tag.self)
-            try _container.encode(_value, forKey: .away)
-        case .offline:
+        case .away:
             var _container = encoder.singleValueContainer()
-            try _container.encode("Offline")
+            try _container.encode("Away")
+        case .offline(let _value):
+            var _container = encoder.container(keyedBy: Tag.self)
+            try _container.encode(_value, forKey: .offline)
         }
     }
 }

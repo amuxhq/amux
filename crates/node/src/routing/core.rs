@@ -559,6 +559,15 @@ impl RoutingCore {
         }
     }
 
+    /// Whether this host trusts `host_id` now.
+    pub(crate) fn trusts(&self, host_id: HostId) -> bool {
+        self.trust_store.as_ref().is_some_and(|store| {
+            store
+                .read()
+                .is_ok_and(|store| store.entry(host_id).is_some())
+        })
+    }
+
     fn trusted_host_ids(&self) -> HashSet<HostId> {
         let Some(trust_store) = &self.trust_store else {
             return HashSet::new();

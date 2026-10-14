@@ -465,7 +465,7 @@ private struct ChatPage: View {
             name: name.isEmpty ? agent.description : name,
             host: host?.name ?? row?.hostName ?? "",
             directory: row?.workingDirectory ?? "",
-            reach: host?.reach ?? row?.hostReach ?? .offline,
+            reach: host?.reach ?? row?.hostReach ?? .offline(.plain),
             descendants: Int(card?.descendants ?? 0),
             backgroundJobs: Int(card?.backgroundJobs ?? 0),
             stopHeld: card?.stopHeld ?? false)

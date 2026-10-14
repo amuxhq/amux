@@ -6436,12 +6436,21 @@ impl Trust {
         }
     }
 }
+/// How a host reads from the daemon that lists it, from the outcome of
+/// opening a channel to it. A host whose route comes up keeps the presence it
+/// had until the first channel attempt on that route concludes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Presence {
     Unspecified = 0,
+    /// A channel to the host opened on a route still listed.
     Online = 1,
+    /// Anything else: no route, or a channel that failed for any reason but
+    /// the plan (no route at the relay, rate limited, shutting down, revoked,
+    /// TLS or identity failure, timeout, link gone).
     Offline = 2,
+    /// The relay refused the channel because the account's plan carries no
+    /// connection between hosts: upgrading reaches this host.
     Away = 3,
 }
 impl Presence {

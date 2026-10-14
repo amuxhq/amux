@@ -953,7 +953,7 @@ enum CatalogFixtures {
     static let subject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", reach: .online(.direct))
     static let awaySubject = ChatSubject(
-        name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", reach: .away(.plain))
+        name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", reach: .away)
 
     static let markdown = """
         Done. The three arms are **one** now:

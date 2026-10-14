@@ -54,10 +54,10 @@ enum RowState: Equatable {
         let machine = PlaceNames.host(row.hostName)
         switch row.hostReach {
         case .online: break
-        case .away(.plain):
+        case .away:
             self = .hostAway(machine)
             return
-        case .away(.signedOut), .away(.revoked), .offline:
+        case .offline:
             self = .hostOffline(machine)
             return
         }

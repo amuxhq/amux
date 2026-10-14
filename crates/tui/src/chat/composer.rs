@@ -3,7 +3,7 @@
 
 use ratatui::text::{Line, Span};
 use ui_state::{Composer, Waiting};
-use ui_view::{Away, Overview, QueuedRow, Reach, Segment, composer_tokens};
+use ui_view::{Offline, Overview, QueuedRow, Reach, Segment, composer_tokens};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use super::rows::chip;
@@ -307,10 +307,12 @@ pub fn placeholder(mode: &Composer, name: &str, host: &str, reach: Reach) -> Str
         // waits for, so the placeholder only names the cause.
         Composer::Holds(Waiting::CatchingUp) => "Catching up".into(),
         Composer::Holds(Waiting::Detached) => match reach {
-            Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
-            Reach::Away(Away::SignedOut) => format!("{host} is away · this machine is signed out"),
-            Reach::Away(Away::Plain) => format!("{host} is away · {}", super::FREE_PLAN_AWAY),
-            Reach::Online(_) | Reach::Offline => format!("{host} is away"),
+            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
+            Reach::Offline(Offline::SignedOut) => {
+                format!("{host} is away · this machine is signed out")
+            }
+            Reach::Away => format!("{host} is away · {}", super::FREE_PLAN_AWAY),
+            Reach::Online(_) | Reach::Offline(Offline::Plain) => format!("{host} is away"),
         },
         Composer::Holds(Waiting::Reconnecting) => "Reconnecting to amux".into(),
     }

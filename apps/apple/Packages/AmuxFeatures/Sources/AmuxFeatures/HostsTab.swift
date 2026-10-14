@@ -417,7 +417,7 @@ public struct HostsTab: View {
         case .throughTheRelay: parts.append("via relay")
         case .away: parts.append("away on the free plan")
         case .offline:
-            if host.reach == .away(.revoked) {
+            if host.reach == .offline(.revoked) {
                 parts.append("no longer trusts this phone")
             } else if let id = host.id, model.foundButUnreachable.contains(id) {
                 parts.append("found, not answering")
@@ -426,7 +426,7 @@ public struct HostsTab: View {
             // anywhere but its own network whatever anybody buys, so the one
             // thing to do about it is on the machine — and offering a
             // subscription for it would be selling a fix that is not one.
-            } else if host.reach == .away(.signedOut) {
+            } else if host.reach == .offline(.signedOut) {
                 parts.append("offline, this phone is signed out")
             } else if let id = host.id, let gone = model.wentOffline(id) {
                 parts.append("offline for \(since(gone))")
@@ -457,11 +457,11 @@ public struct HostsTab: View {
             parts.append("away")
             parts.append("the free plan does not relay between hosts")
         case .offline:
-            if host.reach == .away(.revoked) {
+            if host.reach == .offline(.revoked) {
                 parts.append("it no longer trusts this phone, pair again to reach it")
             } else if let id = host.id, model.foundButUnreachable.contains(id) {
                 parts.append("found on this network and not answering")
-            } else if host.reach == .away(.signedOut) {
+            } else if host.reach == .offline(.signedOut) {
                 parts.append("offline while this phone is signed out")
             } else if let id = host.id, let gone = model.wentOffline(id) {
                 parts.append("offline for \(since(gone))")

@@ -40,17 +40,17 @@ extension HostView: Identifiable {
     ///
     /// A candidate is found on this network by definition. A trusted host
     /// online is grouped by the route its link runs over. Away is kept for
-    /// a host the relay sees and this account cannot reach; one that no
-    /// longer trusts this phone, or that only a signed-out phone cannot
-    /// reach, has no route and is offline here.
+    /// a host the relay refused to connect for the account's free plan; one
+    /// that no longer trusts this phone, or that only a signed-out phone
+    /// cannot reach, is offline here.
     public var group: HostGroup {
         if candidate { return .onThisNetwork }
         switch reach {
         case .online(let via):
             return via == .direct ? .onThisNetwork : .throughTheRelay
-        case .away(.plain):
+        case .away:
             return .away
-        case .away(.signedOut), .away(.revoked), .offline:
+        case .offline:
             return .offline
         }
     }

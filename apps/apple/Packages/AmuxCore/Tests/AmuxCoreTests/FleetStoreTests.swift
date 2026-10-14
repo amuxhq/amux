@@ -193,7 +193,7 @@ final class FleetStoreTests: XCTestCase {
 
     func testAnOfflineHostIsTheExceptionAndTheRelayOutranksIt() {
         let fleet = FleetStore(now: Cards.now)
-        fleet.show(Cards.view([Cards.row(1, "a")]), hosts: [Cards.host(reach: .offline)])
+        fleet.show(Cards.view([Cards.row(1, "a")]), hosts: [Cards.host(reach: .offline(.plain))])
         XCTAssertEqual(fleet.exceptions, "desk offline")
         XCTAssertEqual(fleet.unreachableHost, "desk")
         fleet.relay(.signInAgain)

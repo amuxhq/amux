@@ -542,8 +542,8 @@ fn hosts(fleet: &FleetState, setup: &Setup, chosen_first: bool) -> Vec<Choice> {
         .map(|host| {
             let (detail, away) = match ui_view::reach(fleet, &setup.local_host, &host.host_id) {
                 Reach::Online(_) => (String::new(), false),
-                Reach::Away(_) => ("away".to_owned(), true),
-                Reach::Offline => ("offline".to_owned(), true),
+                Reach::Away => ("away".to_owned(), true),
+                Reach::Offline(_) => ("offline".to_owned(), true),
             };
             Choice {
                 label: host_name(fleet, &host.host_id),

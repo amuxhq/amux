@@ -29,8 +29,8 @@ use ui_state::{
 };
 pub use ui_view::Comparison;
 use ui_view::{
-    AskBody, AskCard, Away, CardState, Changeable, ChatOptions, ClientCommand, ExitCause,
-    FamilyHeader, Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview,
+    AskBody, AskCard, CardState, Changeable, ChatOptions, ClientCommand, ExitCause, FamilyHeader,
+    Offline, Reach, RowKind, Slash, ToolRows, ask_card, chat_rows_for, composer, overview,
     queue_rows,
 };
 use wire::{Attachment, attachment};
@@ -3157,10 +3157,12 @@ pub(crate) const FREE_PLAN_AWAY: &str = "the free plan does not relay between ho
 fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String> {
     Some(match composer {
         Composer::Holds(Waiting::Detached) => match reach {
-            Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
-            Reach::Away(Away::SignedOut) => format!("{host} is away · this machine is signed out"),
-            Reach::Away(Away::Plain) => format!("{host} is away · {FREE_PLAN_AWAY}"),
-            Reach::Online(_) | Reach::Offline => format!("{host} is away"),
+            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
+            Reach::Offline(Offline::SignedOut) => {
+                format!("{host} is away · this machine is signed out")
+            }
+            Reach::Away => format!("{host} is away · {FREE_PLAN_AWAY}"),
+            Reach::Online(_) | Reach::Offline(Offline::Plain) => format!("{host} is away"),
         },
         // The client talks only to this machine's daemon: reconnecting is
         // that daemon gone, never the agent's host, as home says it.
@@ -3479,10 +3481,10 @@ fn turn_hint_words(state: &SessionState, editor: &Editor, reach: Reach, leader: 
         }
         Composer::Resume => pairs.push("enter resume".into()),
         // A send now is held, shown pending with Cancel, and goes by itself.
-        Composer::Holds(Waiting::Detached) if reach == Reach::Away(Away::SignedOut) => {
+        Composer::Holds(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
             return "enter holds it · it sends once this machine signs in".to_owned();
         }
-        Composer::Holds(Waiting::Detached) if reach == Reach::Away(Away::Revoked) => {
+        Composer::Holds(Waiting::Detached) if reach == Reach::Offline(Offline::Revoked) => {
             return "enter holds it · it sends once you pair again".to_owned();
         }
         Composer::Holds(Waiting::Detached) => {
@@ -3768,10 +3770,14 @@ fn state_words(
     let away_words = || {
         let host = if host.is_empty() { "host" } else { host };
         match reach {
-            Reach::Away(Away::SignedOut) => format!("{host} away · this machine is signed out"),
-            Reach::Away(Away::Revoked) => format!("{host} no longer trusts this machine"),
-            Reach::Away(Away::Plain) => format!("{host} away · {FREE_PLAN_AWAY}"),
-            Reach::Online(_) | Reach::Offline => format!("{host} away · not current"),
+            Reach::Offline(Offline::SignedOut) => {
+                format!("{host} away · this machine is signed out")
+            }
+            Reach::Offline(Offline::Revoked) => format!("{host} no longer trusts this machine"),
+            Reach::Away => format!("{host} away · {FREE_PLAN_AWAY}"),
+            Reach::Online(_) | Reach::Offline(Offline::Plain) => {
+                format!("{host} away · not current")
+            }
         }
     };
     match (state.composer(), state.phase()) {

@@ -871,8 +871,8 @@ mod tests {
         assert!(lines[2].ends_with("no: amux pair 'den mac'"), "{table}");
     }
 
-    /// A host the daemon lists away is one only the relay sees while the
-    /// account is on the free plan: the table says so, not a bare "away".
+    /// A host the daemon lists away is one the relay refused for the
+    /// account's free plan: the table says so, not a bare "away".
     #[test]
     fn a_peer_away_on_the_free_plan_names_the_plan() {
         let away = HostEntry {

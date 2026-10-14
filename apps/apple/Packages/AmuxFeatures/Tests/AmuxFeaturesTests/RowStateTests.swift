@@ -52,31 +52,31 @@ final class RowStateTests: XCTestCase {
     }
 
     func testAKindThisBuildCannotOpenOutranksEverything() {
-        let state = RowState(row: row(.needsYou, kind: .unspecified, reach: .offline))
+        let state = RowState(row: row(.needsYou, kind: .unspecified, reach: .offline(.plain)))
         XCTAssertEqual(state, .unsupported)
         XCTAssertEqual(state.elaboration, "update amux to open it")
     }
 
     func testAnOfflineMachineOutranksARequest() {
-        let state = RowState(row: row(.needsYou, reach: .offline))
+        let state = RowState(row: row(.needsYou, reach: .offline(.plain)))
         XCTAssertEqual(state, .hostOffline("Studio"))
         XCTAssertEqual(state.word, "Studio offline")
         XCTAssertTrue(state.namesTheHost)
         // A machine that no longer trusts this phone, or that a signed-out
         // phone cannot reach, has no route: offline here, never away.
-        XCTAssertEqual(RowState(row: row(.working, reach: .away(.revoked))), .hostOffline("Studio"))
-        XCTAssertEqual(RowState(row: row(.working, reach: .away(.signedOut))), .hostOffline("Studio"))
+        XCTAssertEqual(RowState(row: row(.working, reach: .offline(.revoked))), .hostOffline("Studio"))
+        XCTAssertEqual(RowState(row: row(.working, reach: .offline(.signedOut))), .hostOffline("Studio"))
     }
 
     /// How an agent ended is history, whatever its machine is doing now: the
     /// order the runtime's second line has.
     func testAnEndingOutranksAnOfflineMachine() {
         XCTAssertEqual(
-            RowState(row: row(.exited, reach: .offline, exitCause: .finished)), .exited(.finished))
+            RowState(row: row(.exited, reach: .offline(.plain), exitCause: .finished)), .exited(.finished))
     }
 
     func testAnAwayMachineIsNotLive() {
-        let state = RowState(row: row(.working, reach: .away(.plain)))
+        let state = RowState(row: row(.working, reach: .away))
         XCTAssertEqual(state, .hostAway("Studio"))
         XCTAssertEqual(state.elaboration, "not live")
         XCTAssertEqual(state.spoken, "Studio is away, not live")

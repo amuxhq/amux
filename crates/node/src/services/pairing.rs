@@ -1414,7 +1414,7 @@ mod tests {
         let channels = Arc::new(crate::link::ChannelPool::new(Arc::new(
             crate::routing::LinkRegistry::default(),
         )));
-        let connections = Arc::new(ConnectionManager::new(routing, channels));
+        let connections = ConnectionManager::new(routing, channels, analytics::Analytics::off());
         let service = PairingService::new(
             pair_mode.clone(),
             LocalPairingIdentity::from_device_identity(&responder),
@@ -2477,10 +2477,11 @@ mod tests {
             links_for_close.remove(&peer_link).await;
         });
 
-        let connections = Arc::new(ConnectionManager::new(
+        let connections = ConnectionManager::new(
             routing,
             Arc::new(crate::link::ChannelPool::new(links.clone())),
-        ));
+            analytics::Analytics::off(),
+        );
         let service = PairingService::new(
             pair_mode.clone(),
             LocalPairingIdentity::from_device_identity(&responder),

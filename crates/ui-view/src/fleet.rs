@@ -386,8 +386,8 @@ fn second_line(
     }
     match reach(fleet, local_host, &agent.host_id) {
         Reach::Online(_) => {}
-        Reach::Away(Away::Revoked) => return SecondLine::HostRevoked,
-        Reach::Away(_) | Reach::Offline => return SecondLine::HostAway,
+        Reach::Offline(Offline::Revoked) => return SecondLine::HostRevoked,
+        Reach::Away | Reach::Offline(_) => return SecondLine::HostAway,
     }
     let Some(line) = line else {
         return SecondLine::Blank;
@@ -596,12 +596,14 @@ fn push(
 /// the host itself and for every agent on it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub enum Reach {
-    /// A link stands, over this route; this machine's own host has none.
+    /// A channel to it opened, over this route; this machine's own host
+    /// has none.
     Online(RouteKind),
-    /// Out of reach for a reason this machine can name.
-    Away(Away),
-    /// Out of reach with no route, or not known to be reachable at all.
-    Offline,
+    /// Seen, and only the relay reaches it, which carries no connection
+    /// between hosts on the account's free plan: upgrading reaches it.
+    Away,
+    /// Out of reach, for a reason this machine can name or for none.
+    Offline(Offline),
 }
 
 impl Reach {
@@ -610,18 +612,16 @@ impl Reach {
     }
 }
 
-/// Why a host is away from here. A powered-off host and a signed-out
+/// Why a host is offline from here. A powered-off host and a signed-out
 /// machine look the same from here, so the cause is only ever a fact about
 /// this machine, never a claim about the host.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-pub enum Away {
-    /// The host's link says it is away: only the relay sees it, and the
-    /// account is on the free plan, whose relay opens no connection
-    /// between hosts.
+pub enum Offline {
+    /// No channel to it opens, or nothing reaches it at all.
     Plain,
     /// This machine is signed out of its account, so the relay carries
-    /// nothing for it; a host only the relay reaches is away until it signs
-    /// in again.
+    /// nothing for it; a host only the relay reaches is offline until it
+    /// signs in again.
     SignedOut,
     /// The host said it no longer trusts this machine, as it closed its
     /// link or refused a stream; only pairing again brings it back.
@@ -638,7 +638,7 @@ fn signed_out(fleet: &FleetState, local_host: &[u8]) -> bool {
 
 /// How this machine reaches `host`. Its own host is always online. What the
 /// host itself said comes first: a host that no longer trusts this machine
-/// is away for that reason whatever route still reaches it. A host this
+/// is offline for that reason whatever route still reaches it. A host this
 /// machine knows nothing about, or whose presence is unknown, is offline.
 pub fn reach(fleet: &FleetState, local_host: &[u8], host: &[u8]) -> Reach {
     let entry = fleet.host(host);
@@ -646,16 +646,18 @@ pub fn reach(fleet: &FleetState, local_host: &[u8], host: &[u8]) -> Reach {
         return Reach::Online(entry.map_or(RouteKind::Unspecified, |entry| entry.via()));
     }
     let Some(entry) = entry else {
-        return Reach::Offline;
+        return Reach::Offline(Offline::Plain);
     };
     if entry.revoked == Some(true) {
-        return Reach::Away(Away::Revoked);
+        return Reach::Offline(Offline::Revoked);
     }
     match entry.presence() {
         Presence::Online => Reach::Online(entry.via()),
-        _ if signed_out(fleet, local_host) => Reach::Away(Away::SignedOut),
-        Presence::Away => Reach::Away(Away::Plain),
-        Presence::Offline | Presence::Unspecified => Reach::Offline,
+        Presence::Away => Reach::Away,
+        Presence::Offline | Presence::Unspecified if signed_out(fleet, local_host) => {
+            Reach::Offline(Offline::SignedOut)
+        }
+        Presence::Offline | Presence::Unspecified => Reach::Offline(Offline::Plain),
     }
 }
 

@@ -1017,11 +1017,11 @@ fn detached_keeps_the_rows_and_disables_send() {
     assert_eq!(view.editor.text(), "still typing");
 }
 
-/// Signed out, this machine names itself as the reason a host is away:
+/// Signed out, this machine names itself as the reason a host is out of reach:
 /// the header, the placeholder, the keys under the composer and both rows
 /// of the hosts overlay, never a claim about the host.
 #[test]
-fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
+fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign_out() {
     let mut fleet = FleetState::new();
     let mut laptop = host(
         b"laptop",
@@ -1079,7 +1079,7 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
         .collect();
     let screen = screen.join("\n");
     assert!(
-        screen.contains("away · this machine is signed out"),
+        screen.contains("offline · this machine is signed out"),
         "{screen}"
     );
     assert!(!screen.contains("not signed in"), "{screen}");
@@ -1110,7 +1110,7 @@ fn a_host_away_while_this_machine_is_signed_out_names_this_machines_sign_out() {
     assert!(!screen.contains("signed out"), "{screen}");
 }
 
-/// A host only the relay sees while the account is on the free plan is
+/// A host the relay refused while the account is on the free plan is
 /// away because the free plan relays nothing between hosts, and every
 /// place that says it is away says so: the hosts overlay put a stale
 /// direct-dial error in its place, and the chat said only "away".
@@ -1204,7 +1204,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         .collect();
     let screen = screen.join("\n");
     assert!(
-        screen.contains("away · no longer trusts this machine"),
+        screen.contains("offline · no longer trusts this machine"),
         "{screen}"
     );
     assert!(!screen.contains("not signed in"), "{screen}");
@@ -1949,7 +1949,7 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
         ..Default::default()
     }));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
-    view.reach = ui_view::Reach::Away(ui_view::Away::SignedOut);
+    view.reach = ui_view::Reach::Offline(ui_view::Offline::SignedOut);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(

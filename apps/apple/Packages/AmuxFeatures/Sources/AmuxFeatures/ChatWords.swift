@@ -383,7 +383,7 @@ public enum ChatWords {
     /// What the empty field says: who a message goes to, or why sending
     /// waits while the draft is kept.
     public static func placeholder(
-        _ composer: Composer?, agent: String, host: String, away: Away?, working: Bool
+        _ composer: Composer?, agent: String, host: String, reach: Reach, working: Bool
     ) -> String {
         switch composer {
         case .send?, nil:
@@ -398,10 +398,10 @@ public enum ChatWords {
         case .holds(.reconnecting)?:
             return String(localized: "Reconnecting · sends when \(host) is back")
         case .holds(.detached)?:
-            switch away {
-            case .revoked?:
+            switch reach {
+            case .offline(.revoked):
                 return String(localized: "\(host) no longer trusts this phone · your draft is kept")
-            case .signedOut?:
+            case .offline(.signedOut):
                 return String(localized: "This phone is signed out · your draft is kept")
             default:
                 return String(localized: "\(host) is out of reach · sends when back")
@@ -544,8 +544,8 @@ public enum ChatWords {
         if card.attention != .exited {
             switch card.hostReach {
             case .online: break
-            case .away(.plain): return String(localized: "\(card.host) away")
-            case .away(.signedOut), .away(.revoked), .offline:
+            case .away: return String(localized: "\(card.host) away")
+            case .offline:
                 return String(localized: "\(card.host) offline")
             }
         }

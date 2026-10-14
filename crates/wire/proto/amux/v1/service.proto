@@ -99,10 +99,19 @@ enum Trust {
   TRUST_CANDIDATE = 2;
 }
 
+// How a host reads from the daemon that lists it, from the outcome of
+// opening a channel to it. A host whose route comes up keeps the presence it
+// had until the first channel attempt on that route concludes.
 enum Presence {
   PRESENCE_UNSPECIFIED = 0;
+  // A channel to the host opened on a route still listed.
   PRESENCE_ONLINE = 1;
+  // Anything else: no route, or a channel that failed for any reason but
+  // the plan (no route at the relay, rate limited, shutting down, revoked,
+  // TLS or identity failure, timeout, link gone).
   PRESENCE_OFFLINE = 2;
+  // The relay refused the channel because the account's plan carries no
+  // connection between hosts: upgrading reaches this host.
   PRESENCE_AWAY = 3;
 }
 

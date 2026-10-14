@@ -1032,7 +1032,7 @@ fn set_host(fleet: &mut FleetState, host: &str, change: impl FnOnce(&mut wire::H
 }
 
 #[test]
-fn a_host_is_reached_by_its_route_or_away_or_offline_for_what_this_machine_knows() {
+fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_machine_knows() {
     let mut fleet = FleetState::new();
     fleet.update(host_entry("desk", Some(true)));
     // A profile never bound to an account is not signed out.
@@ -1047,28 +1047,41 @@ fn a_host_is_reached_by_its_route_or_away_or_offline_for_what_this_machine_knows
     // This machine always reaches itself, and knows nothing of a host it
     // was never told about.
     assert!(reach(&fleet, b"laptop", b"laptop").online());
-    assert_eq!(reach(&fleet, b"laptop", b"cabin"), Reach::Offline);
+    assert_eq!(
+        reach(&fleet, b"laptop", b"cabin"),
+        Reach::Offline(Offline::Plain)
+    );
 
     set_host(&mut fleet, "desk", |entry| {
         entry.presence = wire::Presence::Offline as i32
     });
-    assert_eq!(reach(&fleet, b"laptop", b"desk"), Reach::Offline);
+    assert_eq!(
+        reach(&fleet, b"laptop", b"desk"),
+        Reach::Offline(Offline::Plain)
+    );
     set_host(&mut fleet, "desk", |entry| {
         entry.presence = wire::Presence::Unspecified as i32
     });
-    assert_eq!(reach(&fleet, b"laptop", b"desk"), Reach::Offline);
+    assert_eq!(
+        reach(&fleet, b"laptop", b"desk"),
+        Reach::Offline(Offline::Plain)
+    );
     set_host(&mut fleet, "desk", |entry| {
         entry.presence = wire::Presence::Away as i32
     });
-    assert_eq!(reach(&fleet, b"laptop", b"desk"), Reach::Away(Away::Plain));
+    assert_eq!(reach(&fleet, b"laptop", b"desk"), Reach::Away);
 
-    // Signed out, a host this machine does not reach is away for that.
+    // Signed out, a host this machine does not reach is offline for that:
+    // with no relay link, nothing the relay refused reads away.
+    set_host(&mut fleet, "desk", |entry| {
+        entry.presence = wire::Presence::Offline as i32
+    });
     set_host(&mut fleet, "laptop", |entry| {
         entry.account_signed_in = Some(false)
     });
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
-        Reach::Away(Away::SignedOut)
+        Reach::Offline(Offline::SignedOut)
     );
     assert!(reach(&fleet, b"laptop", b"laptop").online());
     // The desk's own sign-in says nothing about this machine.
@@ -1088,7 +1101,7 @@ fn a_host_is_reached_by_its_route_or_away_or_offline_for_what_this_machine_knows
     set_host(&mut fleet, "desk", |entry| entry.revoked = Some(true));
     assert_eq!(
         reach(&fleet, b"laptop", b"desk"),
-        Reach::Away(Away::Revoked)
+        Reach::Offline(Offline::Revoked)
     );
 }
 
@@ -2327,7 +2340,7 @@ fn each_row_says_what_its_state_calls_for() {
     let far = fleet_card(&fleet, b"a", b"far-done").unwrap();
     assert_eq!(
         (far.exit_cause, far.host_reach),
-        (Some(ExitCause::Ended), Reach::Offline)
+        (Some(ExitCause::Ended), Reach::Offline(Offline::Plain))
     );
     assert_eq!(
         fleet_card(&fleet, b"a", b"worker").unwrap().exit_cause,

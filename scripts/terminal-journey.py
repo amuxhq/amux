@@ -964,14 +964,14 @@ def send_rejected(journey: TerminalJourney) -> list[str]:
     journey.type(pane, NOT_SENT)
     journey.wait_terms(pane, NOT_SENT)
     journey.keys(pane, "Enter")
-    # The failed call takes the cabin's route down, so the cabin reads as
-    # away at once rather than staying listed while nothing reaches it.
+    # The failed call leaves the cabin offline at once (the chat words it
+    # "cabin away") rather than online while nothing reaches it.
     journey.wait_terms(pane, "cabin away", NOT_SENT, "sends when cabin is back")
     journey.frame(pane, "not-sent")
     time.sleep(2)
     refused = journey.chat("cabin", "backups", "refused")
     never_sent(refused, NOT_SENT)
-    # Once calls reach the cabin again it reads as reachable, and the held
+    # Once a channel to the cabin opens again it reads online, and the held
     # prompt goes by itself.
     journey.request({"RefuseCalls": {"a": "laptop", "b": "cabin", "refuse": False}})
     journey.wait(pane, lambda frame: at_rest(frame, NOT_SENT, BACKUP_DONE) and "sends when" not in frame, "the reply")
@@ -981,7 +981,7 @@ def send_rejected(journey: TerminalJourney) -> list[str]:
     journey.frame(pane, "sent")
     journey.quit_client(pane)
     return [
-        "a send that could not leave the laptop was held, to send when the cabin is back, and the cabin read as away",
+        "a send that could not leave the laptop was held, to send when the cabin is back, and the cabin read as out of reach",
         "the cabin never received it",
         f"once the cabin was back the held prompt went by itself, and the cabin holds {NOT_SENT!r} once",
         control,

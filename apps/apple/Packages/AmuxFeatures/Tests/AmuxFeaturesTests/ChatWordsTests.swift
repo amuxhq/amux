@@ -182,16 +182,16 @@ final class ChatWordsTests: XCTestCase {
 
     func testTheEmptyFieldSaysWhoAMessageGoesToOrWhySendingWaits() {
         XCTAssertEqual(
-            ChatWords.placeholder(.send, agent: "refactor-auth", host: "Studio", away: nil, working: false),
+            ChatWords.placeholder(.send, agent: "refactor-auth", host: "Studio", reach: .online(.direct), working: false),
             "Message refactor-auth")
         XCTAssertEqual(
-            ChatWords.placeholder(.send, agent: "refactor-auth", host: "Studio", away: nil, working: true),
+            ChatWords.placeholder(.send, agent: "refactor-auth", host: "Studio", reach: .online(.direct), working: true),
             "Queue a message")
         XCTAssertEqual(
-            ChatWords.placeholder(.holds(.detached), agent: "a", host: "Studio", away: .plain, working: false),
+            ChatWords.placeholder(.holds(.detached), agent: "a", host: "Studio", reach: .away, working: false),
             "Studio is out of reach · sends when back")
         XCTAssertEqual(
-            ChatWords.placeholder(.resume, agent: "a", host: "Studio", away: nil, working: false),
+            ChatWords.placeholder(.resume, agent: "a", host: "Studio", reach: .online(.direct), working: false),
             "a has exited · a message resumes it")
     }
 

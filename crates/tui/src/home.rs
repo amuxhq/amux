@@ -20,7 +20,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ui_state::{ActivityKind, AgentKey, Attention, Connection, FleetState};
 use ui_view::{
-    ActivityLine, AskSubject, AskSummary, Away, ExitCause, FleetRow, FleetSection, FleetView,
+    ActivityLine, AskSubject, AskSummary, ExitCause, FleetRow, FleetSection, FleetView, Offline,
     Reach, SecondLine, SectionKind, SessionLine, StuckReason,
 };
 use wire::{Agent, Kind, Lifecycle, SignInState, Trust};
@@ -1351,7 +1351,7 @@ impl Home {
         // signing in.
         if reaches
             .iter()
-            .any(|(_, reach)| *reach == Reach::Away(Away::SignedOut))
+            .any(|(_, reach)| *reach == Reach::Offline(Offline::SignedOut))
         {
             parts.push(("signed out · amux login".into(), theme.warning()));
         }

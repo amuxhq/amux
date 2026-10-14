@@ -2317,13 +2317,16 @@ async fn a_host_that_connects_reads_offline_until_its_first_channel_opens() {
         row.presence() == wire::Presence::Offline
     })
     .await;
+    // The stream opened before the lost link reached presence can carry
+    // the laptop online first; only rows from reconnecting on are judged.
+    let before_restore = rows_seen(&mut fleet, laptop).await.len();
 
     net.restore_link("desk", "laptop").await.unwrap();
     row_until(&mut fleet, laptop, "the laptop online", |row| {
         (row.presence(), row.via()) == (wire::Presence::Online, wire::RouteKind::Direct)
     })
     .await;
-    let rows = rows_seen(&mut fleet, laptop).await;
+    let rows = rows_seen(&mut fleet, laptop).await[before_restore..].to_vec();
     println!("connecting, the laptop read {rows:?}");
     let (last, before) = rows.split_last().expect("rows");
     assert_eq!(*last, (wire::Presence::Online, wire::RouteKind::Direct));

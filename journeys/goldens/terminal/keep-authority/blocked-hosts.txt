@@ -6,14 +6,14 @@
 
   ▾ Live 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-  › ○ guarded  Claude · /tmp/jou╭─ Hosts ────────────────────────────────────╮                         [x]
-      desk is away              │                                            │
-                                │ desk     away · this machine is signed out │
-                                │ laptop   this machine                      │
-                                │                                            │
-                                │ Pair another machine with amux pair        │
-                                │ esc close                                  │
-                                ╰────────────────────────────────────────────╯
+  › ○ guarded  Claude · /tmp/j╭─ Hosts ───────────────────────────────────────╮                        [x]
+      desk is away            │                                               │
+                              │ desk     offline · this machine is signed out │
+                              │ laptop   this machine                         │
+                              │                                               │
+                              │ Pair another machine with amux pair           │
+                              │ esc close                                     │
+                              ╰───────────────────────────────────────────────╯
 
 
 

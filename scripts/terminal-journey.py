@@ -517,7 +517,7 @@ def keep_authority(journey: TerminalJourney) -> list[str]:
     journey.wait_terms(pane, "desk away · this machine is signed out", "it sends once this machine signs in")
     journey.home(pane)
     journey.keys(pane, "h")
-    journey.wait_terms(pane, "signed out · amux login", "away · this machine is signed out")
+    journey.wait_terms(pane, "signed out · amux login", "offline · this machine is signed out")
     journey.frame(pane, "blocked-hosts")
     journey.keys(pane, "Escape")
     journey.open_chat(pane, "guarded")

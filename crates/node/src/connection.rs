@@ -262,17 +262,8 @@ impl ConnectionManager {
                 )
                 .await;
                 match tried {
-                    Ok(Ok(_)) => {
-                        let mut state = manager.state.write().await;
-                        if state
-                            .retrying
-                            .get(&peer)
-                            .is_some_and(|ours| Arc::ptr_eq(ours, &kick))
-                        {
-                            state.retrying.remove(&peer);
-                        }
-                        return;
-                    }
+                    // Opening it retired this retry.
+                    Ok(Ok(_)) => return,
                     Ok(Err(_)) => {}
                     Err(_) => {
                         let error = ChannelError::Handshake("no channel opened in time".to_owned());
@@ -656,6 +647,9 @@ impl ConnectionManager {
                 return Err(ChannelError::NoRoute { host_id: peer });
             }
             state.reached.insert(peer, Presence::Online);
+            // A channel is open, so a retry still sleeping has nothing left
+            // to do; a later failure starts its own from the first pause.
+            state.retrying.remove(&peer);
             match state.active.get(&peer) {
                 Some(active @ Route::Direct(_)) if !route.is_direct() && *active != route => None,
                 _ => state.active.insert(peer, route),

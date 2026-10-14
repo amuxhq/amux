@@ -3100,6 +3100,9 @@ async fn a_host_no_call_can_reach_reads_offline_until_one_can() {
             agent_id: agent_id.clone(),
             input: Some(sdk_prompt(text)),
         };
+        // The stream keeps every row since it opened, the laptop's coming
+        // online included; only rows after the refusal are judged.
+        let before_refusal = rows_seen(&mut fleet, laptop).await.len();
         net.refuse_calls("desk", "laptop", true).await.unwrap();
         let refused = net
             .client("desk")
@@ -3165,6 +3168,7 @@ async fn a_host_no_call_can_reach_reads_offline_until_one_can() {
         // laptop read nothing but offline: no flip back to online on a
         // link that carried no call, and no away for a refusal that was
         // not about the plan.
+        let since_refused = &since_refused[before_refusal..];
         let first_offline = since_refused
             .iter()
             .position(|row| row.0 == wire::Presence::Offline)

@@ -504,7 +504,6 @@ impl<I: Interpreter> Host<I> {
         self.grace_until = None;
         self.send(ctl_frame::Of::Hello(AgentHello {
             agent_id: self.spec.agent_id.clone(),
-            agent_version: VERSION.to_owned(),
         }));
     }
 

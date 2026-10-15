@@ -74,7 +74,6 @@ mod tests {
         let hello = CtlFrame {
             of: Some(ctl_frame::Of::Hello(AgentHello {
                 agent_id: vec![7; 16],
-                agent_version: "v".into(),
             })),
         };
         let mut bytes = Vec::new();

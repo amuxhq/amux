@@ -257,7 +257,6 @@ impl SyntheticAgent {
                     let hello = CtlFrame {
                         of: Some(ctl_frame::Of::Hello(AgentHello {
                             agent_id: id.as_bytes().to_vec(),
-                            agent_version: "synthetic".to_owned(),
                         })),
                     };
                     if agent_dir::write_frame(&mut writer, &hello).await.is_err() {

@@ -722,9 +722,8 @@ Nothing else carries a version integer:
   compare its own version with its host's `HostEntry.version`; the terminal
   client shows "amux *version* is running · restart to update" when they
   differ.
-- **`ctl.sock` and the journal** have no version integer at all. The agent's
-  `AgentHello` carries its binary version, and every item carries the
-  `producer_version` of the binary that wrote it.
+- **`ctl.sock` and the journal** have no version integer at all. Every item
+  carries the `producer_version` of the binary that wrote it.
 - **The store** has a schema stamp, the minimum number of migrations a binary
   needs to open it, and records the migrations it was built by; a store
   written before the release schema is refused, by name, and left as it is

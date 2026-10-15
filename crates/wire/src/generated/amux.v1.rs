@@ -12721,8 +12721,6 @@ impl ::prost::Name for Rename {
 pub struct AgentHello {
     #[prost(bytes = "vec", tag = "1")]
     pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, tag = "2")]
-    pub agent_version: ::prost::alloc::string::String,
 }
 impl ::prost::Name for AgentHello {
     const NAME: &'static str = "AgentHello";

@@ -438,6 +438,122 @@ mod tests {
         assert_eq!(PtyMode::default(), PtyMode::Files);
     }
 
+    /// The types code encodes on its own rather than inside another
+    /// message or a call: frames on an agent's sockets, the journal's
+    /// steps, the spec an agent starts from, the link's framing and its
+    /// refusal codes, error details, the SSH pairing hand-off, and each
+    /// provider's item, input and snapshot bodies, which travel as bytes.
+    const ENCODED_ON_THEIR_OWN: &[&str] = &[
+        "AgentSpec",
+        "CtlFrame",
+        "PtyFrame",
+        "ProviderOffer",
+        "Step",
+        "Message",
+        "StreamPreface",
+        "StreamRefusal",
+        "ProtocolVersionMismatch",
+        "AmbiguousAgentName",
+        "AmbiguousHostName",
+        "SshPairingIdentity",
+        "ClaudePtyItem",
+        "ClaudePtyInput",
+        "ClaudePtySnapshot",
+        "ClaudeSdkItem",
+        "ClaudeSdkInput",
+        "ClaudeSdkSnapshot",
+        "CodexItem",
+        "CodexInput",
+        "CodexSnapshot",
+    ];
+
+    /// Every message, nested ones included, and every enum, by full name.
+    fn types(set: &FileDescriptorSet) -> (BTreeMap<String, DescriptorProto>, BTreeSet<String>) {
+        fn walk(
+            prefix: &str,
+            message: &DescriptorProto,
+            messages: &mut BTreeMap<String, DescriptorProto>,
+            enums: &mut BTreeSet<String>,
+        ) {
+            let name = format!("{prefix}.{}", message.name());
+            for enumeration in &message.enum_type {
+                enums.insert(format!("{name}.{}", enumeration.name()));
+            }
+            for nested in &message.nested_type {
+                walk(&name, nested, messages, enums);
+            }
+            messages.insert(name, message.clone());
+        }
+        let (mut messages, mut enums) = (BTreeMap::new(), BTreeSet::new());
+        for file in &set.file {
+            let package = format!(".{}", file.package());
+            for message in &file.message_type {
+                walk(&package, message, &mut messages, &mut enums);
+            }
+            for enumeration in &file.enum_type {
+                enums.insert(format!("{package}.{}", enumeration.name()));
+            }
+        }
+        (messages, enums)
+    }
+
+    /// A type stays only while something carries it. The compiler cannot
+    /// tell: a generated type is public, so deleting the last field or call
+    /// that used a message would otherwise leave it behind unnoticed.
+    #[test]
+    fn every_type_is_reachable_from_a_call_or_a_type_encoded_on_its_own() {
+        let set = descriptor();
+        let (messages, enums) = types(&set);
+        for name in ENCODED_ON_THEIR_OWN {
+            assert!(
+                messages.contains_key(&format!(".amux.v1.{name}"))
+                    || enums.contains(&format!(".amux.v1.{name}")),
+                "{name} is listed as encoded on its own but not declared"
+            );
+        }
+        let mut pending = set
+            .file
+            .iter()
+            .flat_map(|file| file.service.iter())
+            .flat_map(|service| service.method.iter())
+            .flat_map(|method| {
+                [
+                    method.input_type().to_owned(),
+                    method.output_type().to_owned(),
+                ]
+            })
+            .chain(
+                ENCODED_ON_THEIR_OWN
+                    .iter()
+                    .map(|name| format!(".amux.v1.{name}")),
+            )
+            .collect::<Vec<_>>();
+        let mut reached = BTreeSet::new();
+        while let Some(name) = pending.pop() {
+            if let Some(message) = messages.get(&name)
+                && !reached.contains(&name)
+            {
+                pending.extend(
+                    message
+                        .field
+                        .iter()
+                        .map(|field| field.type_name().to_owned())
+                        .filter(|name| !name.is_empty()),
+                );
+            }
+            reached.insert(name);
+        }
+        let unreached = messages
+            .keys()
+            .chain(&enums)
+            .filter(|name| !reached.contains(*name))
+            .collect::<Vec<_>>();
+        assert!(
+            unreached.is_empty(),
+            "nothing carries these; delete them, or list a type code encodes on its own: {unreached:?}"
+        );
+    }
+
     /// Top-level enum values share one namespace in the package, so each
     /// carries its enum's name as a prefix; prost strips it in Rust.
     #[test]

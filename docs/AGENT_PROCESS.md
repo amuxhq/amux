@@ -236,7 +236,7 @@ version integer, and a frame a reader does not know is ignored.
 
 | Frame | Direction | Meaning |
 |---|---|---|
-| `hello` | agent → daemon | Sent at once on every connection: the agent id and the agent's version |
+| `hello` | agent → daemon | Sent at once on every connection: the agent id |
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
 | `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |

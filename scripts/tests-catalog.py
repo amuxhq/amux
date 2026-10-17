@@ -27,6 +27,7 @@ BOUNDARIES = {
     "Native presentation",
     "System composition",
     "Journeys",
+    "Model",
 }
 TIMES = {"driven", "real", "none"}
 LANES = {"fast", "system", "journey", "qualification", "tool"}

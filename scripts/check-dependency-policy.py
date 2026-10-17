@@ -101,6 +101,7 @@ TEST_SUPPORT = {
     "fake-amux",
     "shot",
     "tui-set",
+    "models",
 }
 SUPPORT_ALLOWED_LOCAL = {
     # The many-daemons harness: real daemons in process, real agents on the
@@ -131,6 +132,10 @@ SUPPORT_ALLOWED_LOCAL = {
     # Serves a declared world with `testnet serve` and runs the terminal
     # client on it, or draws it headlessly through `shot`.
     "tui-set": {"agent-dir", "client", "settings", "shot", "tui", "ui-runtime", "wire"},
+    # The protocol's properties, explored over the real code: the store, the
+    # journal and the message types today, and each state-machine core as it
+    # lands.
+    "models": {"journal", "store", "wire"},
 }
 
 def local_edges(package: dict[str, object]) -> set[str]:

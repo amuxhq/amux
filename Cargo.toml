@@ -21,6 +21,7 @@ members = [
     "crates/interpret",
     "crates/journal",
     "crates/model",
+    "crates/models",
     "crates/node",
     "crates/patience",
     "crates/provider-fakes",
@@ -64,6 +65,7 @@ client = { path = "crates/client" }
 interpret = { path = "crates/interpret" }
 journal = { path = "crates/journal" }
 model = { path = "crates/model" }
+models = { path = "crates/models" }
 store = { path = "crates/store" }
 wire = { path = "crates/wire" }
 settings = { path = "crates/settings" }
@@ -158,6 +160,9 @@ if-addrs = "0.13"
 vt100 = "0.15"
 # Compression for the channels between daemons; the raw streaming API only.
 zstd = { version = "0.13", default-features = false }
+# The exhaustive checker the protocol models run under; its seeded chooser
+# drives their walks.
+stateright = "0.31"
 
 # Cargo defaults macOS debug profiles to split-debuginfo = "unpacked", which
 # keeps every codegen unit's object file under target/<profile>/deps for the

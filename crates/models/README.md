@@ -20,6 +20,17 @@ prints the shortest path to a failing state. `walk(model, bounds, seed)` follows
 one schedule chosen by the seed: the same seed walks the same schedule on every
 run, so a failing walk is reproduced by its seed alone.
 
+## Parked properties
+
+When the checker finds a property failing and what to do about it is a
+decision still waiting, the property is parked rather than weakened: it
+keeps its sentence and predicate, and `.parked(Parked { since,
+counterexample, reason })` records when, the path that broke it and the
+decision it waits on. The checker reports a parked property with its reason
+instead of exploring it, so `just test` stays green meanwhile, and
+`just parked-check` lists every parked property and fails while any
+remains, so nothing lands with one.
+
 ## Replication
 
 `Replication` follows one agent from its origin to one replica, both real

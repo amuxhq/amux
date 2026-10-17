@@ -13,3 +13,8 @@ rusqlite = { workspace = true }
 stateright = { workspace = true }
 store = { workspace = true }
 wire = { workspace = true }
+
+[[bin]]
+name = "parked-check"
+path = "src/bin/parked-check.rs"
+test = false

@@ -205,6 +205,11 @@ tests-list:
 tests-check:
     {{bounded}} 120 scripts/python -B scripts/tests-catalog.py check
 
+# List every parked property of the protocol models, with its reason, and fail
+# while any remains: the landing gate for decisions still waiting.
+parked-check:
+    {{bounded}} 600 cargo run --locked -q -p models --bin parked-check
+
 # Fail when a contract in tests/contracts.toml names no test or a test that
 # does not exist; `--table PATH` also writes the coverage table as Markdown.
 contracts-check *ARGS:

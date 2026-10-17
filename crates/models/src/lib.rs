@@ -17,6 +17,20 @@ use stateright::{Checker, Chooser, UniformChooser};
 pub mod replication;
 pub use replication::Replication;
 
+/// Every parked property of the protocol's models: the model, the
+/// property's sentence and why it is parked. The landing gate,
+/// `just parked-check`, fails while this is not empty.
+pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
+    fn of<M: Machine>(name: &'static str, model: &M) -> Vec<(&'static str, &'static str, Parked)> {
+        model
+            .properties()
+            .into_iter()
+            .filter_map(|property| Some((name, property.sentence, property.parked?)))
+            .collect()
+    }
+    of("replication", &Replication::ci())
+}
+
 /// Turns off SQLite's memory statistics for this process before any
 /// database opens. Every SQLite allocation otherwise takes one global lock
 /// to count itself, so checker threads exploring real stores side by side
@@ -77,6 +91,23 @@ pub struct Property<M: Machine> {
     pub kind: PropertyKind,
     pub sentence: &'static str,
     pub holds: fn(&M, &M::State) -> bool,
+    /// Set while a decision about the property waits: the checker reports
+    /// it with its reason instead of exploring it.
+    pub parked: Option<Parked>,
+}
+
+/// A property whose decision waits, with the counterexample that raised it
+/// and why it waits. The property keeps its sentence and predicate as they
+/// were written; it is never weakened to pass. `just parked-check` fails
+/// while any property is parked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Parked {
+    /// The date it was parked.
+    pub since: &'static str,
+    /// The path to the failing state, as the checker printed it, in short.
+    pub counterexample: &'static str,
+    /// What decision it waits on.
+    pub reason: &'static str,
 }
 
 impl<M: Machine> Property<M> {
@@ -85,6 +116,7 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Always,
             sentence,
             holds,
+            parked: None,
         }
     }
 
@@ -93,6 +125,7 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Sometimes,
             sentence,
             holds,
+            parked: None,
         }
     }
 
@@ -101,6 +134,15 @@ impl<M: Machine> Property<M> {
             kind: PropertyKind::Eventually,
             sentence,
             holds,
+            parked: None,
+        }
+    }
+
+    /// Parks the property while a decision about it waits.
+    pub fn parked(self, parked: Parked) -> Self {
+        Self {
+            parked: Some(parked),
+            ..self
         }
     }
 }
@@ -111,6 +153,7 @@ impl<M: Machine> Clone for Property<M> {
             kind: self.kind,
             sentence: self.sentence,
             holds: self.holds,
+            parked: self.parked,
         }
     }
 }
@@ -194,6 +237,8 @@ pub enum Outcome {
     Fails(Counterexample),
     /// A `Sometimes` held in no explored state.
     NeverReached,
+    /// Not explored: the property is parked while a decision waits.
+    Parked(Parked),
 }
 
 /// One property's sentence and outcome.
@@ -217,7 +262,7 @@ impl Verdict {
     pub fn holds(&self) -> bool {
         self.properties
             .iter()
-            .all(|judged| judged.outcome == Outcome::Holds)
+            .all(|judged| matches!(judged.outcome, Outcome::Holds | Outcome::Parked(_)))
     }
 
     /// The outcome of the property with this sentence.
@@ -252,8 +297,13 @@ impl Display for Verdict {
                 Outcome::Holds => ("holds", None),
                 Outcome::Fails(path) => ("FAILS", Some(path)),
                 Outcome::NeverReached => ("NEVER REACHED", None),
+                Outcome::Parked(_) => ("PARKED", None),
             };
             writeln!(f, "  {mark}: {:?} {}", judged.kind, judged.sentence)?;
+            if let Outcome::Parked(parked) = &judged.outcome {
+                writeln!(f, "    since {}: {}", parked.since, parked.reason)?;
+                writeln!(f, "    counterexample: {}", parked.counterexample)?;
+            }
             if let Some(path) = path {
                 for (step, (action, state)) in path.actions.iter().zip(&path.states).enumerate() {
                     writeln!(f, "    {}. {action}\n       {state}", step + 1)?;
@@ -268,7 +318,7 @@ impl Display for Verdict {
 /// every property in every explored state.
 pub fn check<M: Machine>(model: &M, bounds: Bounds) -> Verdict {
     let adapter = Adapter::new(model);
-    let properties = Arc::clone(&adapter.properties);
+    let properties = model.properties();
     let mut builder = stateright::Model::checker(adapter).threads(bounds.threads.max(1));
     if let Some(depth) = bounds.depth {
         builder = builder.target_max_depth(depth);
@@ -280,6 +330,13 @@ pub fn check<M: Machine>(model: &M, bounds: Bounds) -> Verdict {
     let judged = properties
         .iter()
         .map(|property| {
+            if let Some(parked) = property.parked {
+                return Judged {
+                    kind: property.kind,
+                    sentence: property.sentence,
+                    outcome: Outcome::Parked(parked),
+                };
+            }
             let found = checker.discovery(property.sentence);
             let outcome = match (property.kind, found) {
                 (PropertyKind::Sometimes, Some(_)) => Outcome::Holds,
@@ -365,7 +422,11 @@ impl<M: Machine> Display for Walk<M> {
 /// schedule on every run; every property is judged on every state reached.
 pub fn walk<M: Machine>(model: &M, bounds: Bounds, seed: u64) -> Walk<M> {
     let depth = bounds.depth.expect("a walk needs a depth bound");
-    let properties = model.properties();
+    let properties: Vec<_> = model
+        .properties()
+        .into_iter()
+        .filter(|property| property.parked.is_none())
+        .collect();
     let mut chooser = <UniformChooser as Chooser<Adapter<M>>>::new_state(&UniformChooser, seed);
     let mut walk = Walk {
         seed,
@@ -462,7 +523,12 @@ impl<M: Machine> Adapter<M> {
         }
         Self {
             machine: machine.clone(),
-            properties: Arc::new(properties),
+            properties: Arc::new(
+                properties
+                    .into_iter()
+                    .filter(|property| property.parked.is_none())
+                    .collect(),
+            ),
         }
     }
 }

@@ -91,9 +91,9 @@ message EffectiveConfig {
   optional string model = 5;
   optional string permission = 6;
   optional string mode = 7;
+  optional string effort = 8;
   // The canonical install path the hook binary and tool server run from.
-  string install_path = 8;
-  optional string effort = 9;
+  string install_path = 9;
 }
 
 // ctl.sock frames, length-prefixed, no version integer.
@@ -125,9 +125,10 @@ message CtlFrame {
     // input's verdict as the SendInput reply and uses a message's verdict
     // to settle its delivery.
     Verdict reply = 9;
-    // Daemon to agent: how many agents below this one are live, sent when
-    // the agent connects and whenever the count changes. A one-shot agent
-    // waits for its children before it exits.
+    // Daemon to agent: the live agents directly below this one, on any
+    // host, with their incarnations; sent when the agent connects and
+    // whenever that changes. A one-shot agent waits for each one's last
+    // report before it exits.
     Children children = 10;
   }
 }

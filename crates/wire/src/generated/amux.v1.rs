@@ -851,9 +851,12 @@ pub enum ExitCause {
     Unspecified = 0,
     /// A child's turn ended with nothing queued: the one-shot rule.
     Finished = 1,
-    /// Stopped by a person, a parent's stop or its parent exiting: the turn was
-    /// cancelled the provider's own way, then the agent exited.
+    /// Stopped by a person or an agent's stop tool, by a delete (which stops a
+    /// live agent first), or because its parent exited or was deleted: the
+    /// turn was cancelled the provider's own way, then the agent exited.
     Stopped = 2,
+    /// The daemon killed the provider's process group at once: its escalation
+    /// when a stop overruns its deadline, or a runtime being torn down.
     Killed = 3,
     /// The provider process ended on its own; the detail is its exit code
     /// or signal.
@@ -7006,7 +7009,6 @@ pub mod client_service_client {
                 .insert(GrpcMethod::new("amux.v1.ClientService", "RenameAgent"));
             self.inner.unary(req, path, codec).await
         }
-        /// A registry operation for the CLI, never a chat control.
         pub async fn stop_agent(
             &mut self,
             request: impl tonic::IntoRequest<super::StopAgentRequest>,
@@ -7348,7 +7350,6 @@ pub mod client_service_server {
             &self,
             request: tonic::Request<super::RenameAgentRequest>,
         ) -> std::result::Result<tonic::Response<super::Agent>, tonic::Status>;
-        /// A registry operation for the CLI, never a chat control.
         async fn stop_agent(
             &self,
             request: tonic::Request<super::StopAgentRequest>,
@@ -12688,11 +12689,11 @@ pub struct EffectiveConfig {
     pub permission: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, optional, tag = "7")]
     pub mode: ::core::option::Option<::prost::alloc::string::String>,
-    /// The canonical install path the hook binary and tool server run from.
-    #[prost(string, tag = "8")]
-    pub install_path: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "9")]
+    #[prost(string, optional, tag = "8")]
     pub effort: ::core::option::Option<::prost::alloc::string::String>,
+    /// The canonical install path the hook binary and tool server run from.
+    #[prost(string, tag = "9")]
+    pub install_path: ::prost::alloc::string::String,
 }
 impl ::prost::Name for EffectiveConfig {
     const NAME: &'static str = "EffectiveConfig";
@@ -12749,9 +12750,10 @@ pub mod ctl_frame {
         /// to settle its delivery.
         #[prost(message, tag = "9")]
         Reply(super::Verdict),
-        /// Daemon to agent: how many agents below this one are live, sent when
-        /// the agent connects and whenever the count changes. A one-shot agent
-        /// waits for its children before it exits.
+        /// Daemon to agent: the live agents directly below this one, on any
+        /// host, with their incarnations; sent when the agent connects and
+        /// whenever that changes. A one-shot agent waits for each one's last
+        /// report before it exits.
         #[prost(message, tag = "10")]
         Children(super::Children),
     }

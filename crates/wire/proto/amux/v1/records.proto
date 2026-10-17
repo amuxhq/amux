@@ -214,9 +214,12 @@ enum ExitCause {
   EXIT_CAUSE_UNSPECIFIED = 0;
   // A child's turn ended with nothing queued: the one-shot rule.
   EXIT_CAUSE_FINISHED = 1;
-  // Stopped by a person, a parent's stop or its parent exiting: the turn was
-  // cancelled the provider's own way, then the agent exited.
+  // Stopped by a person or an agent's stop tool, by a delete (which stops a
+  // live agent first), or because its parent exited or was deleted: the
+  // turn was cancelled the provider's own way, then the agent exited.
   EXIT_CAUSE_STOPPED = 2;
+  // The daemon killed the provider's process group at once: its escalation
+  // when a stop overruns its deadline, or a runtime being torn down.
   EXIT_CAUSE_KILLED = 3;
   // The provider process ended on its own; the detail is its exit code
   // or signal.

@@ -205,7 +205,6 @@ service ClientService {
   rpc SendInput(SendInputRequest) returns (SendInputResponse);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc RenameAgent(RenameAgentRequest) returns (Agent);
-  // A registry operation for the CLI, never a chat control.
   rpc StopAgent(StopAgentRequest) returns (Empty);
   // Spawn the directory again.
   rpc ResumeAgent(ResumeAgentRequest) returns (Agent);

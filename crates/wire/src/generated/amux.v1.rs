@@ -2960,9 +2960,6 @@ pub struct BackgroundJob {
     pub started_at_ms: i64,
     #[prost(enumeration = "BackgroundKind", tag = "4")]
     pub kind: i32,
-    /// The provider's own id for the job: Claude's task id, Codex's process id.
-    #[prost(string, tag = "5")]
-    pub id: ::prost::alloc::string::String,
 }
 impl ::prost::Name for BackgroundJob {
     const NAME: &'static str = "BackgroundJob";

@@ -613,6 +613,14 @@ ROWS = [
         "the agent's binary version in the hello it sends its daemon, which nothing read",
         [r"(^|[^_a-z])agent_version"],
     ),
+    Row(
+        "a background job's provider id",
+        "the provider's own id for a background job (Claude's task id, Codex's process id) on the wire, which no client read",
+        [
+            r"own id for the job",
+            r"id: terminal\.process_id",
+        ],
+    ),
 ]
 
 # Files that name removed things on purpose, to hold them gone.

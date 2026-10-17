@@ -633,12 +633,11 @@ impl Jobs {
             .iter()
             .filter_map(|id| Some((id, self.jobs.get(id)?)))
             .chain(launched)
-            .map(|(id, job)| BackgroundJob {
+            .map(|(_, job)| BackgroundJob {
                 item_key: job.step.clone(),
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
                 kind: job.kind,
-                id: id.clone(),
             })
             .collect()
     }

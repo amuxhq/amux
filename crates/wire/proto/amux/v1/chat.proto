@@ -630,8 +630,6 @@ message BackgroundJob {
   string command = 2;
   int64 started_at_ms = 3;
   BackgroundKind kind = 4;
-  // The provider's own id for the job: Claude's task id, Codex's process id.
-  string id = 5;
 }
 
 enum BackgroundKind {

@@ -1296,7 +1296,8 @@ impl State {
     /// An agent message goes to Claude's messaging socket and is accepted
     /// at once; its item is the record that it arrived.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
-        let envelope = crate::shared::worded(envelope);
+        let words = crate::shared::words(&envelope);
+        let attachments = crate::shared::attachments(&envelope).to_vec();
         self.shared.message_accepted(&envelope.id);
         // Claude shows the model the text as carried, label and all, and
         // that is what its transcript reflects.
@@ -1304,21 +1305,20 @@ impl State {
         self.messages.push(PendingMessage {
             id: envelope.id.clone(),
             text: carried.clone(),
-            words: envelope.text.clone(),
+            words: words.clone(),
         });
         emit.effect(Effect::Inject {
-            envelope: Box::new(Envelope {
-                text: carried,
-                ..envelope.clone()
-            }),
+            id: envelope.id.clone(),
+            text: carried,
+            attachments: attachments.clone(),
             via: Carrier::MessagingSocket,
         });
         self.shared.item(
             emit,
             ItemDraft {
                 key: agent_message_key(&envelope.id),
-                text: envelope.text.clone(),
-                attachments: envelope.attachments.clone(),
+                text: words,
+                attachments,
                 input_id: envelope.id.clone(),
                 body: item_body(claude_pty_item::Kind::AgentMessage(agent_message_body(
                     &envelope,

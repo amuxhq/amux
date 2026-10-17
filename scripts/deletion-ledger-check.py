@@ -635,6 +635,17 @@ ROWS = [
             r"\"switch_to\"",
         ],
     ),
+    Row(
+        "the flat envelope",
+        "one envelope message whose kind said which fields held, with a child's report fields beside a message's, the interpreters rewriting its text in place, and the store keeping a report's kind as the envelope's",
+        [
+            r"envelope\.(kind|ended|outcome|last|incarnation|text|attachments)([^A-Za-z_]|$)",
+            r"shared::worded|fn worded",
+            r"EnvelopeKind: finished or failed",
+            r"Inject \{ envelope[^_]",
+            r"delivery\.kind",
+        ],
+    ),
 ]
 
 # Files that name removed things on purpose, to hold them gone.

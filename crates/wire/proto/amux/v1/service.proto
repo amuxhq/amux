@@ -414,8 +414,8 @@ message DeleteAgentRequest {
 // A message to an agent. `id` is the caller's, so the recipient's daemon
 // can dedupe a resend against the recipient's items; the tool server mints
 // one per send. Who it is from is the caller: a person on a client socket,
-// or the agent whose tools socket made the call. Finished and failed
-// messages are the daemon's own and cannot be submitted.
+// or the agent whose tools socket made the call. A child's reports to its
+// parent are the daemon's own and cannot be submitted.
 message SendMessageRequest {
   bytes id = 1;
   AgentRef to = 2;

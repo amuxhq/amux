@@ -614,7 +614,7 @@ fn commit(
             committed.records.push(Record::Snapshot(snapshot));
         }
         if let (Some(turn_end), Some(parent)) = (&step.turn_end, &row.parent) {
-            let body = if turn_end.last_message_key.is_empty() {
+            let text = if turn_end.last_message_key.is_empty() {
                 String::new()
             } else {
                 rows.item_text(agent, &turn_end.last_message_key)?
@@ -627,11 +627,11 @@ fn commit(
                 turn_id: turn_end.turn_id,
                 parent: parent.clone(),
                 parent_incarnation,
-                kind: wire::EnvelopeKind::Finished as i32,
-                body,
-                ended: None,
-                outcome: Some(turn_end.outcome),
-                last: turn_end.last,
+                end: wire::child_report::End::TurnEnded(wire::TurnEnded {
+                    text,
+                    outcome: turn_end.outcome,
+                    last: turn_end.last,
+                }),
             })?;
         }
         // The last turn's report is the incarnation's last. A step that ends

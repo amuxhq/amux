@@ -1174,11 +1174,15 @@ async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() 
         .deliveries()
         .unwrap()
         .into_iter()
-        .map(|row| (wire::EnvelopeKind::try_from(row.kind).unwrap(), row.body))
+        .map(|row| row.end)
         .collect();
     assert_eq!(
         deliveries,
-        vec![(wire::EnvelopeKind::Finished, "the tests pass".to_owned())],
+        vec![wire::child_report::End::TurnEnded(wire::TurnEnded {
+            text: "the tests pass".to_owned(),
+            outcome: wire::TurnOutcome::Completed as i32,
+            last: true,
+        })],
         "one finished delivery and no failed one"
     );
     let mut subscription = runtime.subscribe(child.id.as_bytes(), 10).await.unwrap();

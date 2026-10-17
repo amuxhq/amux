@@ -19,8 +19,8 @@ use support::*;
 use tonic::{Code, Request};
 use wire::client_service_server::ClientService as _;
 use wire::{
-    AgentRef, ClaudeSdkInput, EnvelopeKind, Input, Lifecycle, PromptInput, SendInputRequest,
-    SendInputResponse, SendMessageRequest, claude_sdk_input, send_input_response, sender,
+    AgentRef, ClaudeSdkInput, Input, Lifecycle, PromptInput, SendInputRequest, SendInputResponse,
+    SendMessageRequest, claude_sdk_input, send_input_response, sender,
 };
 
 const SEGMENTS: u64 = 1 << 20;
@@ -86,16 +86,35 @@ fn to(agent: &SyntheticAgent, install: &Install) -> Option<AgentRef> {
     })
 }
 
-/// The agent messages an agent was handed, as (kind, text).
-fn messages(agent: &SyntheticAgent) -> Vec<(EnvelopeKind, String)> {
+/// What an envelope's body is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Is {
+    Message,
+    TurnEnded,
+    Exited,
+}
+
+/// What an envelope is, and its text: a message's or a turn report's,
+/// empty for an exit report.
+fn told(envelope: &wire::Envelope) -> (Is, String) {
+    use wire::child_report::End;
+    use wire::envelope::Body;
+    match envelope.body.as_ref().expect("an envelope has a body") {
+        Body::Message(message) => (Is::Message, message.text.clone()),
+        Body::Report(report) => match report.end.as_ref().expect("a report has an end") {
+            End::TurnEnded(turn) => (Is::TurnEnded, turn.text.clone()),
+            End::Exited(_) => (Is::Exited, String::new()),
+        },
+    }
+}
+
+/// The agent messages an agent was handed, as what each is and its text.
+fn messages(agent: &SyntheticAgent) -> Vec<(Is, String)> {
     agent
         .inputs()
         .into_iter()
         .filter_map(|handed| match handed {
-            Handed::Message(envelope) => Some((
-                EnvelopeKind::try_from(envelope.kind).unwrap(),
-                envelope.text,
-            )),
+            Handed::Message(envelope) => Some(told(&envelope)),
             Handed::Input(_) => None,
         })
         .collect()
@@ -279,7 +298,7 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         }
         other => panic!("the sender is the calling agent, not {other:?}"),
     }
-    assert_eq!(handed.kind, EnvelopeKind::Message as i32);
+    assert_eq!(told(handed).0, Is::Message);
 
     // A retry of the same envelope: the lane finds the item and answers
     // without handing it over again.
@@ -385,8 +404,7 @@ async fn send_message_sender_is_the_caller() {
         "the person sent it: {from_person:?}"
     );
     for envelope in &handed {
-        assert_eq!(envelope.kind, EnvelopeKind::Message as i32);
-        assert_eq!(envelope.incarnation, None);
+        assert_eq!(told(envelope).0, Is::Message);
     }
     crash(daemon, runtime).await;
 }
@@ -537,7 +555,10 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     match first.of {
         Some(wire::bootstrap::Of::AgentMessage(message)) => {
             assert_eq!(message.id, b"wrap-up");
-            assert_eq!(message.text, "wrap up and report");
+            assert_eq!(
+                told(&message),
+                (Is::Message, "wrap up and report".to_owned())
+            );
         }
         other => panic!("the parent's message, not {other:?}"),
     }
@@ -664,7 +685,7 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
         .unwrap();
     assert_eq!(
         messages(&parent),
-        vec![(EnvelopeKind::Message, "a word".to_owned())],
+        vec![(Is::Message, "a word".to_owned())],
         "the new incarnation never hears of the old one's child"
     );
     crash(daemon, runtime).await;
@@ -692,7 +713,7 @@ async fn a_child_finishing_while_the_daemon_is_down_reaches_its_parent_once() {
     until("the delivery", || rows(&runtime, 0)).await.unwrap();
     assert_eq!(
         messages(&parent),
-        vec![(EnvelopeKind::Finished, "the tests pass".to_owned())],
+        vec![(Is::TurnEnded, "the tests pass".to_owned())],
         "one finished message, carrying the child's last message, and no failed one"
     );
     let delivered = items_with_input(&runtime, &parent.key(&install)).await;
@@ -804,7 +825,7 @@ async fn a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_k
     until("the delivery", || rows(&runtime, 0)).await.unwrap();
     assert_eq!(
         messages(&parent),
-        vec![(EnvelopeKind::Finished, "the tests pass".to_owned())],
+        vec![(Is::TurnEnded, "the tests pass".to_owned())],
         "stamped with the parent's incarnation once its row was held, then delivered"
     );
     crash(daemon, runtime).await;
@@ -850,8 +871,8 @@ async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
     assert_eq!(
         heard,
         vec![
-            (EnvelopeKind::Finished, "done".to_owned()),
-            (EnvelopeKind::Failed, String::new()),
+            (Is::TurnEnded, "done".to_owned()),
+            (Is::Exited, String::new()),
         ],
         "one thing per event: finished once, failed only for the child that never finished"
     );
@@ -861,9 +882,13 @@ async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
         .inputs()
         .into_iter()
         .filter_map(|handed| match handed {
-            Handed::Message(envelope) if envelope.kind == EnvelopeKind::Failed as i32 => {
-                Some(envelope.ended)
-            }
+            Handed::Message(envelope) => match envelope.body {
+                Some(wire::envelope::Body::Report(wire::ChildReport {
+                    end: Some(wire::child_report::End::Exited(exited)),
+                    ..
+                })) => Some(exited.ended),
+                _ => None,
+            },
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -875,13 +900,24 @@ async fn a_child_gone_without_a_turn_end_tells_its_parent_it_failed() {
         })]
     );
     // Each report names the child incarnation it is from, and is that
-    // incarnation's last: the parent matches it whichever comes first, the
-    // report or its daemon's word of the incarnation.
+    // incarnation's last (an exit report always is): the parent matches it
+    // whichever comes first, the report or its daemon's word of the
+    // incarnation.
     let reports = parent
         .inputs()
         .into_iter()
         .filter_map(|handed| match handed {
-            Handed::Message(envelope) => Some((envelope.from_incarnation, envelope.last)),
+            Handed::Message(envelope) => match envelope.body {
+                Some(wire::envelope::Body::Report(report)) => Some((
+                    report.from_incarnation,
+                    match report.end {
+                        Some(wire::child_report::End::TurnEnded(turn)) => turn.last,
+                        Some(wire::child_report::End::Exited(_)) => true,
+                        None => false,
+                    },
+                )),
+                _ => None,
+            },
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -946,7 +982,7 @@ async fn an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill()
     );
     assert_eq!(
         messages(&other),
-        vec![(EnvelopeKind::Finished, "the tests pass".to_owned())]
+        vec![(Is::TurnEnded, "the tests pass".to_owned())]
     );
     // The other parent's row goes once its item commits; the wedged
     // parent's rows wait.

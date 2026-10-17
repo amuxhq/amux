@@ -264,11 +264,13 @@ pub struct Page {
     pub end: PageEnd,
 }
 
-/// The outbox row that tells a parent its child finished or failed.
+/// The outbox row that carries a child's report to its parent: a turn of
+/// the child's ended, or its incarnation exited without a turn end.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Delivery {
     pub child_id: Vec<u8>,
     pub incarnation: u32,
+    /// The turn that ended; zero for an exit report.
     pub turn_id: u64,
     pub parent: AgentKey,
     /// The parent's incarnation when the row was written; the receiving
@@ -276,18 +278,16 @@ pub struct Delivery {
     /// held then, which incarnations never are: unknown, and stamped by the
     /// drain once the parent's row is held, never sent as it is.
     pub parent_incarnation: u32,
-    /// `wire::EnvelopeKind` as an integer: finished or failed.
-    pub kind: i32,
-    /// A finished turn's last message; empty for a failed incarnation.
-    pub body: String,
-    /// How a failed incarnation ended; None for a finished turn.
-    pub ended: Option<wire::IncarnationEnd>,
-    /// How a finished turn ended (`wire::TurnOutcome` as an integer); None
-    /// for a failed incarnation.
-    pub outcome: Option<i32>,
-    /// The child incarnation's last report: a finished turn marked last,
-    /// and every failed incarnation.
-    pub last: bool,
+    /// What the report says, as the envelope carries it.
+    pub end: wire::child_report::End,
+}
+
+impl Delivery {
+    /// Whether this is the report of an incarnation that exited without a
+    /// turn end, rather than of a turn that ended.
+    pub fn is_exit(&self) -> bool {
+        matches!(self.end, wire::child_report::End::Exited(_))
+    }
 }
 
 /// The push outbox row for one turn into needs_you, built from envelope

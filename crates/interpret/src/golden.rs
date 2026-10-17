@@ -47,7 +47,7 @@ use prost::Message as _;
 use serde::Deserialize;
 use serde_json::Value;
 use wire::{
-    AgentSpec, ClaudeAnswer, CodexAnswer, Envelope, EnvelopeKind, Input, Item, Phase, PromptInput,
+    AgentSpec, ClaudeAnswer, CodexAnswer, Envelope, Input, Item, Phase, PromptInput,
     SendInputResponse, SendQueuedNow, Sender, Snapshot, Step, WithdrawQueued, claude_answer,
     claude_pty_input, claude_sdk_input, codex_input, send_input_response, sender,
 };
@@ -732,14 +732,10 @@ fn agent_message(body: &Value) -> Result<Envelope, String> {
             })),
         }),
         to: None,
-        kind: EnvelopeKind::Message as i32,
-        text: message.text,
-        ended: None,
-        incarnation: None,
-        attachments: Vec::new(),
-        outcome: None,
-        last: false,
-        from_incarnation: 0,
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
+            text: message.text,
+            attachments: Vec::new(),
+        })),
     })
 }
 
@@ -1660,8 +1656,8 @@ fn render_effect(effect: &Effect, catalogue: Option<&[u8]>) -> String {
         Effect::Reply { input_id, verdict } => {
             format!("reply {} {}", display_id(input_id), verdict_name(verdict))
         }
-        Effect::Inject { envelope, via } => {
-            format!("inject {} via {via:?}", display_id(&envelope.id))
+        Effect::Inject { id, via, .. } => {
+            format!("inject {} via {via:?}", display_id(id))
         }
         Effect::CodexTurnInput {
             request,

@@ -217,19 +217,28 @@ fn finish_item((mut item, attachments): (Item, Option<Vec<u8>>)) -> Result<Item,
 }
 
 fn delivery_row(row: &Row<'_>) -> rusqlite::Result<Delivery> {
-    let cause: Option<i32> = row.get(8)?;
-    let detail: Option<String> = row.get(9)?;
+    use wire::child_report::End;
+    let end = if row.get::<_, i64>(6)? != 0 {
+        End::Exited(wire::Exited {
+            ended: Some(wire::IncarnationEnd {
+                cause: row.get::<_, Option<i32>>(8)?.unwrap_or_default(),
+                detail: row.get(9)?,
+            }),
+        })
+    } else {
+        End::TurnEnded(wire::TurnEnded {
+            text: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+            outcome: row.get::<_, Option<i32>>(10)?.unwrap_or_default(),
+            last: row.get::<_, i64>(11)? != 0,
+        })
+    };
     Ok(Delivery {
         child_id: row.get(0)?,
         incarnation: row.get(1)?,
         turn_id: row.get::<_, i64>(2)? as u64,
         parent: AgentKey::new(row.get::<_, Vec<u8>>(3)?, row.get::<_, Vec<u8>>(4)?),
         parent_incarnation: row.get(5)?,
-        kind: row.get(6)?,
-        body: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
-        ended: cause.map(|cause| wire::IncarnationEnd { cause, detail }),
-        outcome: row.get(10)?,
-        last: row.get::<_, i64>(11)? != 0,
+        end,
     })
 }
 
@@ -614,10 +623,15 @@ impl Rows<'_> {
     }
 
     pub(crate) fn put_delivery(&self, delivery: &Delivery) -> Result<(), StoreError> {
+        use wire::child_report::End;
+        let (text, ended, outcome, last) = match &delivery.end {
+            End::TurnEnded(turn) => (Some(turn.text.clone()), None, Some(turn.outcome), turn.last),
+            End::Exited(exited) => (None, exited.ended.clone(), None, false),
+        };
         self.conn
             .prepare(
                 "INSERT OR REPLACE INTO deliveries (child_id, incarnation, turn_id, parent_host, \
-                 parent_id, parent_incarnation, kind, body, exit_cause, exit_detail, outcome, \
+                 parent_id, parent_incarnation, exited, text, exit_cause, exit_detail, outcome, \
                  last) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             )?
             .execute(params![
@@ -627,12 +641,12 @@ impl Rows<'_> {
                 delivery.parent.host,
                 delivery.parent.agent,
                 delivery.parent_incarnation,
-                delivery.kind,
-                delivery.body,
-                delivery.ended.as_ref().map(|end| end.cause),
-                delivery.ended.as_ref().and_then(|end| end.detail.clone()),
-                delivery.outcome,
-                i64::from(delivery.last),
+                i64::from(delivery.is_exit()),
+                text,
+                ended.as_ref().map(|end| end.cause),
+                ended.and_then(|end| end.detail),
+                outcome,
+                i64::from(last),
             ])?;
         Ok(())
     }
@@ -640,8 +654,8 @@ impl Rows<'_> {
     pub(crate) fn deliveries(&self) -> Result<Vec<Delivery>, StoreError> {
         let mut statement = self.conn.prepare(
             "SELECT child_id, incarnation, turn_id, parent_host, parent_id, parent_incarnation, \
-             kind, body, exit_cause, exit_detail, outcome, last FROM deliveries \
-             ORDER BY child_id, incarnation, kind, turn_id",
+             exited, text, exit_cause, exit_detail, outcome, last FROM deliveries \
+             ORDER BY child_id, incarnation, exited, turn_id",
         )?;
         let rows = statement
             .query_map([], delivery_row)?
@@ -651,12 +665,12 @@ impl Rows<'_> {
 
     pub(crate) fn remove_delivery(&self, delivery: &Delivery) -> Result<(), StoreError> {
         self.conn.execute(
-            "DELETE FROM deliveries WHERE child_id = ?1 AND incarnation = ?2 AND kind = ?3 \
+            "DELETE FROM deliveries WHERE child_id = ?1 AND incarnation = ?2 AND exited = ?3 \
              AND turn_id = ?4",
             params![
                 delivery.child_id,
                 delivery.incarnation,
-                delivery.kind,
+                i64::from(delivery.is_exit()),
                 signed(delivery.turn_id)
             ],
         )?;

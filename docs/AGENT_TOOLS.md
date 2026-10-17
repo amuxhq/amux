@@ -328,23 +328,22 @@ A parent hears one thing per event, from the daemon, through an outbox: the
 
 - **Finished.** When the daemon commits a step whose `turn_end` is set for an
   agent with a parent, the same transaction inserts a deliveries row keyed by
-  child, incarnation, kind and turn. Its body is a copy of the turn's last
+  child, incarnation, which report it is and turn. Its text is a copy of the turn's last
   message, taken when the row is written, so retention removing the child's
   transcript later cannot empty a delivery still waiting for a parent on an
   away host. The row also keeps how the turn ended (completed, interrupted,
-  stopped or failed), which the envelope carries as `outcome`. A turn the
+  stopped or failed), which the report carries as `outcome`. A turn the
   daemon's stop cut short (a stop, the stop tool, or a delete, which stops
   first) ends stopped, never completed, so a deleted or stopped child never
   reports that it finished.
-- **Failed.** When a child's process ends while a turn is open (a crash, a
-  stop, a child that never came up) the daemon writes a row of kind `failed`
-  whose body is the cause in words, followed by its own words when it has
-  any ("the provider exited: exit code 1"). So does a child whose process
-  ends idle without having marked a turn its last, as a sub-agent stopped
-  while it waits for its own child does. A one-shot exit after a turn marked
-  last sends nothing more: each child incarnation sends exactly one last
-  report, the finished one marked `last` or the failed one, and the envelope
-  says so in `last`.
+- **Exited.** When a child's process ends while a turn is open (a crash, a
+  stop, a child that never came up) the daemon writes an exit report's row
+  carrying how the incarnation ended as data, the cause and its own words
+  when it has any. So does a child whose process ends idle without having
+  marked a turn its last, as a sub-agent stopped while it waits for its own
+  child does. A one-shot exit after a turn marked last sends nothing more:
+  each child incarnation sends exactly one last report, the finished turn's
+  report marked `last` or the exit report, which always is.
 
 A row records the parent's incarnation as it was when the row was written, or
 zero when the parent's row is not held yet, in which case the drain stamps it
@@ -360,12 +359,13 @@ wait it retries every 30 seconds. For each row it:
   parent has been deleted, or when the parent's host is no longer paired;
 - keeps it while the parent has exited (a later resume makes it stale) or
   its host is away;
-- otherwise sends it as an `Envelope` from the child, of kind `finished` (the
-  child's last message as its text) or `failed` (how the incarnation ended as
-  data, which the parent's interpreter words for its model, as "the provider
-  exited: exit code 1"), carrying the parent's incarnation, with an id derived from the
-  child, incarnation, kind and turn, so every re-send of one row has the same
-  id. A local parent gets it through its lane; a remote parent through
+- otherwise sends it as an `Envelope` from the child whose body is a
+  `ChildReport`: a turn that ended (the child's last message as its text) or
+  an incarnation that exited (how it ended as data, which the parent's
+  interpreter words for its model, as "the provider exited: exit code 1"),
+  carrying the parent's incarnation and the child's, with an id derived from
+  the child, incarnation, which report it is and turn, so every re-send of
+  one row has the same id. A local parent gets it through its lane; a remote parent through
   `SendMessage` to its daemon. The row is deleted once the parent has
   accepted.
 

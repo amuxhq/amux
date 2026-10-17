@@ -219,6 +219,19 @@ message AgentMessage {
   string rejection = 7;
 }
 
+// What a received agent message was, from its envelope's body: a message,
+// a child's report that its turn ended, or a child's report that its
+// incarnation exited.
+enum EnvelopeKind {
+  ENVELOPE_KIND_UNSPECIFIED = 0;
+  // A message from an agent or a person.
+  ENVELOPE_KIND_MESSAGE = 1;
+  // A child's turn ended; the text is its last message.
+  ENVELOPE_KIND_FINISHED = 2;
+  // A child's incarnation ended without a turn end; the text says how.
+  ENVELOPE_KIND_FAILED = 3;
+}
+
 enum SendState {
   SEND_STATE_UNSPECIFIED = 0;
   // The send is in flight; envelope_id is still empty.

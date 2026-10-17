@@ -25,8 +25,7 @@ use uuid::Uuid;
 use wire::client_service_server::ClientService as _;
 use wire::{
     AgentRef, AgentSender, AmbiguousHostName, ClaudeSdkInput, CreateAgentRequest, Envelope,
-    EnvelopeKind, InventoryEvent, Kind, Lifecycle, Phase, Sender, claude_sdk_input,
-    inventory_event, sender,
+    InventoryEvent, Kind, Lifecycle, Phase, Sender, claude_sdk_input, inventory_event, sender,
 };
 
 fn text(text: &str) -> Step {
@@ -87,7 +86,10 @@ fn envelope(id: &[u8], to: &AgentRef, text: &str) -> Envelope {
     Envelope {
         id: id.to_vec(),
         to: Some(to.clone()),
-        text: text.into(),
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
+            text: text.into(),
+            ..Default::default()
+        })),
         ..Envelope::default()
     }
 }
@@ -943,9 +945,15 @@ async fn an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped() {
     let current = row(&net, "desk", "lead").await.unwrap().incarnation;
     let stale = Envelope {
         from: Some(from),
-        kind: EnvelopeKind::Finished as i32,
-        incarnation: Some(current - 1),
-        ..envelope(b"stale", &net.agent("lead").unwrap().parent(), "late news")
+        body: Some(wire::envelope::Body::Report(wire::ChildReport {
+            to_incarnation: current - 1,
+            end: Some(wire::child_report::End::TurnEnded(wire::TurnEnded {
+                text: "late news".into(),
+                ..Default::default()
+            })),
+            ..Default::default()
+        })),
+        ..envelope(b"stale", &net.agent("lead").unwrap().parent(), "")
     };
     let mut peer = net.edge("server").unwrap().peer(desk).await.unwrap();
     let refused = peer.send_message(stale).await.unwrap_err();

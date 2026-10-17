@@ -1199,15 +1199,14 @@ impl State {
     /// An agent message: its item now, since Codex reports nothing about an
     /// injected item, then the inject.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
-        let envelope = crate::shared::worded(envelope);
         let id = envelope.id.clone();
         self.shared.message_accepted(&id);
         self.emit_item(
             emit,
             ItemDraft {
                 key: agent_message_key(&envelope.id),
-                text: envelope.text.clone(),
-                attachments: envelope.attachments.clone(),
+                text: crate::shared::words(&envelope),
+                attachments: crate::shared::attachments(&envelope).to_vec(),
                 input_id: envelope.id.clone(),
                 body: item_body(codex_item::Kind::AgentMessage(agent_message_body(
                     &envelope,
@@ -1260,12 +1259,13 @@ impl State {
             },
         );
         // The agent process names each attachment by its path on this host.
-        emit.effect(if envelope.attachments.is_empty() {
+        let attachments = crate::shared::attachments(envelope);
+        emit.effect(if attachments.is_empty() {
             Effect::ProviderWrite(request)
         } else {
             Effect::CodexTurnInput {
                 request,
-                attachments: envelope.attachments.clone(),
+                attachments: attachments.to_vec(),
             }
         });
     }

@@ -137,8 +137,10 @@ impl ::prost::Name for AgentRef {
         "/amux.v1.AgentRef".into()
     }
 }
-/// An agent message. `from` is set by the daemon from the caller's identity;
-/// the recipient's daemon dedupes by id against the recipient's items.
+/// What travels to an agent from another agent, a person or a child: a
+/// message, or a child's report to its parent. `from` is set by the daemon
+/// from the caller's identity; the recipient's daemon dedupes by id against
+/// the recipient's items.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Envelope {
     #[prost(bytes = "vec", tag = "1")]
@@ -149,40 +151,18 @@ pub struct Envelope {
     pub from: ::core::option::Option<Sender>,
     #[prost(message, optional, tag = "4")]
     pub to: ::core::option::Option<AgentRef>,
-    #[prost(enumeration = "EnvelopeKind", tag = "5")]
-    pub kind: i32,
-    /// A message's text, or a finished child's last message; empty on a
-    /// failed report.
-    #[prost(string, tag = "6")]
-    pub text: ::prost::alloc::string::String,
-    /// Set only on a failed report: how the child's incarnation ended. The
-    /// recipient's interpreter words it for the parent's provider.
-    #[prost(message, optional, tag = "7")]
-    pub ended: ::core::option::Option<IncarnationEnd>,
-    /// The recipient's incarnation the message is for, when only that one
-    /// may have it: a child's finished or failed message to its parent. The
-    /// recipient's daemon drops it for any other incarnation.
-    #[prost(uint32, optional, tag = "8")]
-    pub incarnation: ::core::option::Option<u32>,
-    /// A message's attachments, referencing blobs in the sender's directory on
-    /// the sender's host.
-    #[prost(message, repeated, tag = "9")]
-    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
-    /// Set only on a finished report: how the child's turn ended, so the
-    /// parent hears a stopped or interrupted turn as that, not as finished.
-    #[prost(enumeration = "TurnOutcome", optional, tag = "10")]
-    pub outcome: ::core::option::Option<i32>,
-    /// On a child's report: it is the child incarnation's last, sent as it
-    /// exits. Always set on a failed report; on a finished one, when its turn
-    /// was the incarnation's last. A parent waiting on its children waits for
-    /// each incarnation's last report, not merely for one.
-    #[prost(bool, tag = "11")]
-    pub last: bool,
-    /// On a child's report: the child's own incarnation it is from, so its
-    /// parent matches the report to that incarnation whichever comes first,
-    /// the report or the daemon's word that the incarnation is live.
-    #[prost(uint32, tag = "12")]
-    pub from_incarnation: u32,
+    #[prost(oneof = "envelope::Body", tags = "5, 6")]
+    pub body: ::core::option::Option<envelope::Body>,
+}
+/// Nested message and enum types in `Envelope`.
+pub mod envelope {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Body {
+        #[prost(message, tag = "5")]
+        Message(super::MessageBody),
+        #[prost(message, tag = "6")]
+        Report(super::ChildReport),
+    }
 }
 impl ::prost::Name for Envelope {
     const NAME: &'static str = "Envelope";
@@ -192,6 +172,106 @@ impl ::prost::Name for Envelope {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.Envelope".into()
+    }
+}
+/// What an agent or a person sends.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MessageBody {
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+    /// Blobs in the sender's directory on the sender's host.
+    #[prost(message, repeated, tag = "2")]
+    pub attachments: ::prost::alloc::vec::Vec<Attachment>,
+}
+impl ::prost::Name for MessageBody {
+    const NAME: &'static str = "MessageBody";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.MessageBody".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.MessageBody".into()
+    }
+}
+/// A child's report to its parent, written by the child's daemon from its
+/// outbox; no sender can send one.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ChildReport {
+    /// The parent's incarnation the report is for: the recipient's daemon
+    /// drops it for any other.
+    #[prost(uint32, tag = "1")]
+    pub to_incarnation: u32,
+    /// The child's own incarnation it is from, so its parent matches the
+    /// report to that incarnation whichever comes first, the report or the
+    /// daemon's word that the incarnation is live.
+    #[prost(uint32, tag = "2")]
+    pub from_incarnation: u32,
+    #[prost(oneof = "child_report::End", tags = "3, 4")]
+    pub end: ::core::option::Option<child_report::End>,
+}
+/// Nested message and enum types in `ChildReport`.
+pub mod child_report {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum End {
+        #[prost(message, tag = "3")]
+        TurnEnded(super::TurnEnded),
+        #[prost(message, tag = "4")]
+        Exited(super::Exited),
+    }
+}
+impl ::prost::Name for ChildReport {
+    const NAME: &'static str = "ChildReport";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ChildReport".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ChildReport".into()
+    }
+}
+/// A child's turn ended.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TurnEnded {
+    /// The child's last message; empty when the turn ended with no text.
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+    /// How the turn ended, so the parent hears a stopped or interrupted turn
+    /// as that, not as finished.
+    #[prost(enumeration = "TurnOutcome", tag = "2")]
+    pub outcome: i32,
+    /// The turn was the incarnation's last, reported as it exits. A parent
+    /// waiting on its children waits for each incarnation's last report, not
+    /// merely for one.
+    #[prost(bool, tag = "3")]
+    pub last: bool,
+}
+impl ::prost::Name for TurnEnded {
+    const NAME: &'static str = "TurnEnded";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.TurnEnded".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.TurnEnded".into()
+    }
+}
+/// A child's incarnation ended without a turn end. Always the
+/// incarnation's last report.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Exited {
+    /// How it ended; the recipient's interpreter words it for the parent's
+    /// provider.
+    #[prost(message, optional, tag = "1")]
+    pub ended: ::core::option::Option<IncarnationEnd>,
+}
+impl ::prost::Name for Exited {
+    const NAME: &'static str = "Exited";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Exited".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.Exited".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -727,41 +807,6 @@ impl ::prost::Name for ReviewComment {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.ReviewComment".into()
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum EnvelopeKind {
-    Unspecified = 0,
-    Message = 1,
-    /// A child's turn ended; the text is its last message.
-    Finished = 2,
-    /// A child's incarnation ended without a turn end; `ended` says how.
-    Failed = 3,
-}
-impl EnvelopeKind {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "ENVELOPE_KIND_UNSPECIFIED",
-            Self::Message => "ENVELOPE_KIND_MESSAGE",
-            Self::Finished => "ENVELOPE_KIND_FINISHED",
-            Self::Failed => "ENVELOPE_KIND_FAILED",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "ENVELOPE_KIND_UNSPECIFIED" => Some(Self::Unspecified),
-            "ENVELOPE_KIND_MESSAGE" => Some(Self::Message),
-            "ENVELOPE_KIND_FINISHED" => Some(Self::Finished),
-            "ENVELOPE_KIND_FAILED" => Some(Self::Failed),
-            _ => None,
-        }
     }
 }
 /// The kind is the interpreter.
@@ -3468,6 +3513,45 @@ impl BoundaryKind {
         }
     }
 }
+/// What a received agent message was, from its envelope's body: a message,
+/// a child's report that its turn ended, or a child's report that its
+/// incarnation exited.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum EnvelopeKind {
+    Unspecified = 0,
+    /// A message from an agent or a person.
+    Message = 1,
+    /// A child's turn ended; the text is its last message.
+    Finished = 2,
+    /// A child's incarnation ended without a turn end; the text says how.
+    Failed = 3,
+}
+impl EnvelopeKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ENVELOPE_KIND_UNSPECIFIED",
+            Self::Message => "ENVELOPE_KIND_MESSAGE",
+            Self::Finished => "ENVELOPE_KIND_FINISHED",
+            Self::Failed => "ENVELOPE_KIND_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ENVELOPE_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "ENVELOPE_KIND_MESSAGE" => Some(Self::Message),
+            "ENVELOPE_KIND_FINISHED" => Some(Self::Finished),
+            "ENVELOPE_KIND_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -5960,8 +6044,8 @@ impl ::prost::Name for DeleteAgentRequest {
 /// A message to an agent. `id` is the caller's, so the recipient's daemon
 /// can dedupe a resend against the recipient's items; the tool server mints
 /// one per send. Who it is from is the caller: a person on a client socket,
-/// or the agent whose tools socket made the call. Finished and failed
-/// messages are the daemon's own and cannot be submitted.
+/// or the agent whose tools socket made the call. A child's reports to its
+/// parent are the daemon's own and cannot be submitted.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SendMessageRequest {
     #[prost(bytes = "vec", tag = "1")]

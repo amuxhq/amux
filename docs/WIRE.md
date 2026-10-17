@@ -390,28 +390,64 @@ message SendMessageRequest {
 A message to an agent, on this host or another. The daemon stamps who it is
 from: the person on a client socket, the agent whose tools socket made the
 call. The request has nowhere to name a sender, so no caller can speak for
-anyone else. Finished and failed messages are the daemon's own, sent when a
-child's turn or incarnation ends, and cannot be submitted. A finished message's
-text is the child's last message, and its `outcome` is how the turn ended (a
-`TurnOutcome`: completed, interrupted, stopped or failed), taken from the
-step's `TurnEnd`; a failed one has no text and carries how the
-child's incarnation ended as `ended` (an `IncarnationEnd`: the `ExitCause` and
-its own words), which the parent's interpreter words for its provider. A
-report's `last` says it is the child incarnation's last: a finished one whose
-step's `TurnEnd` was marked `last` (the child exits after that turn), and every
-failed one. Each child incarnation ends with exactly one last report: an
-incarnation that exits without having sent one (its turn open, or ended
-idle, as a stopped sub-agent waiting on its own child is) sends a failed one.
-A report's `from_incarnation` names the child incarnation it is from. A
-sub-agent waiting on its children waits for each incarnation's last report,
-matching reports to incarnations, so it does not matter whether a report or
-its daemon's word that the incarnation is live comes first. A
-message's `attachments` reference blobs in the sender's directory on the
-sender's host; the envelope carries them as the request gave them. The recipient's daemon dedupes by
-`id` against the recipient's items, so a resend after a lost answer is one
-message. The answer comes once the recipient has accepted it. A paired host
-forwards the envelope its daemon stamped, and the receiving daemon takes that
-sender as given.
+anyone else.
+
+```proto
+message Envelope {
+  bytes id = 1;
+  optional bytes context = 2;
+  Sender from = 3;              // stamped by the sending daemon
+  AgentRef to = 4;
+  oneof body {
+    MessageBody message = 5;    // text, attachments
+    ChildReport report = 6;
+  }
+}
+
+message ChildReport {
+  uint32 to_incarnation = 1;    // the parent's incarnation it is for
+  uint32 from_incarnation = 2;  // the child's own
+  oneof end {
+    TurnEnded turn_ended = 3;   // text, outcome, last
+    Exited exited = 4;          // ended
+  }
+}
+```
+
+The daemon carries a message, and a child's report to its parent, in one
+`Envelope`: it goes where a message goes (`SendMessage` between hosts, the
+agent's `agent_message` frame, a resumed agent's bootstrap), is deduped by
+`id` and routed by `to`, and only its body differs. A message's body is its
+text and its `attachments`, which reference blobs in the sender's directory on
+the sender's host as the request gave them. Reports are the daemon's own,
+sent when a child's turn or incarnation ends, and cannot be submitted:
+`SendMessageRequest` has no report. A report names the parent incarnation it
+is for (`to_incarnation`; the recipient's daemon drops it for any other) and
+the child incarnation it is from (`from_incarnation`). Its end is one of two:
+
+- `TurnEnded`: the child's turn ended. Its `text` is the child's last
+  message, its `outcome` how the turn ended (a `TurnOutcome`: completed,
+  interrupted, stopped or failed), taken from the step's `TurnEnd`, and its
+  `last` says the turn was the incarnation's last (the step's `TurnEnd` was
+  marked `last`: the child exits after that turn).
+- `Exited`: the child's incarnation ended without a turn end marked last
+  (its turn open, or ended idle, as a stopped sub-agent waiting on its own
+  child is). It carries how as `ended` (an `IncarnationEnd`: the `ExitCause`
+  and its own words), which the parent's interpreter words for its provider,
+  and it is always the incarnation's last report.
+
+Each child incarnation ends with exactly one last report. A sub-agent waiting
+on its children waits for each incarnation's last report, matching reports to
+incarnations by `from_incarnation`, so it does not matter whether a report or
+its daemon's word that the incarnation is live comes first. The recipient's
+daemon dedupes by `id` against the recipient's items, so a resend after a lost
+answer is one message. The answer comes once the recipient has accepted it. A
+paired host forwards the envelope its daemon stamped, and the receiving
+daemon takes that sender as given.
+
+A received envelope becomes an `AgentMessage` item in the recipient's
+transcript, whose `EnvelopeKind` says what its body was: `MESSAGE`, `FINISHED`
+for a turn report and `FAILED` for an exit report.
 
 ## Inputs
 

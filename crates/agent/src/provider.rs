@@ -673,14 +673,15 @@ impl Provider {
                 attachments,
             } => self.user_message(&uuid, &text, &attachments).await,
             Effect::Inject {
-                envelope,
+                id,
+                text,
+                attachments,
                 via: interpret::Carrier::Stdin,
             } => {
-                let uuid = interpret::claude_sdk::client_uuid(&envelope.id);
+                let uuid = interpret::claude_sdk::client_uuid(&id);
                 // Files another agent sent were brought into this agent's
                 // blobs by its daemon, so their elements name paths here.
-                self.user_message(&uuid, &envelope.text, &envelope.attachments)
-                    .await
+                self.user_message(&uuid, &text, &attachments).await
             }
             Effect::CodexTurnInput {
                 request,
@@ -711,10 +712,12 @@ impl Provider {
                 self.type_keys(steps)
             }
             Effect::Inject {
-                envelope,
+                text,
+                attachments,
                 via: interpret::Carrier::MessagingSocket,
+                ..
             } => {
-                let text = self.with_attachments(&envelope.text, &envelope.attachments);
+                let text = self.with_attachments(&text, &attachments);
                 self.message_terminal(&text).await
             }
             other => Err(io::Error::new(

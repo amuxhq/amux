@@ -2532,12 +2532,16 @@ public struct Empty: Codable, Hashable, Sendable {
     }
 }
 
+/// What a received agent message was, from its envelope's body: a message,
+/// a child's report that its turn ended, or a child's report that its
+/// incarnation exited.
 public enum EnvelopeKind: String, Codable, Hashable, Sendable, CaseIterable {
     case unspecified = "Unspecified"
+    /// A message from an agent or a person.
     case message = "Message"
     /// A child's turn ended; the text is its last message.
     case finished = "Finished"
-    /// A child's incarnation ended without a turn end; `ended` says how.
+    /// A child's incarnation ended without a turn end; the text says how.
     case failed = "Failed"
 }
 

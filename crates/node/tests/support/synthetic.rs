@@ -398,7 +398,14 @@ async fn answer_input(
                             "message:{}",
                             Uuid::from_slice(&envelope.id).unwrap_or_default()
                         ),
-                        text: envelope.text.clone(),
+                        text: match &envelope.body {
+                            Some(wire::envelope::Body::Message(message)) => message.text.clone(),
+                            Some(wire::envelope::Body::Report(wire::ChildReport {
+                                end: Some(wire::child_report::End::TurnEnded(turn)),
+                                ..
+                            })) => turn.text.clone(),
+                            _ => String::new(),
+                        },
                         input_id: envelope.id.clone(),
                         kind: KIND as i32,
                         at_ms: 1_000,

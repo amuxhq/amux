@@ -120,7 +120,10 @@ fn agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model() {
     ] {
         let envelope = wire::Envelope {
             id: id.as_bytes().to_vec(),
-            text: text.to_owned(),
+            body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                text: text.to_owned(),
+                ..Default::default()
+            })),
             ..Default::default()
         };
         ClaudePty::step(&mut state, Event::AgentMessage(envelope));
@@ -335,11 +338,15 @@ fn failed_report(id: &[u8]) -> Event {
                 ..Default::default()
             })),
         }),
-        kind: wire::EnvelopeKind::Failed as i32,
-        ended: Some(wire::IncarnationEnd {
-            cause: wire::ExitCause::ProviderExited as i32,
-            detail: Some("exit code 1".into()),
-        }),
+        body: Some(wire::envelope::Body::Report(wire::ChildReport {
+            end: Some(wire::child_report::End::Exited(wire::Exited {
+                ended: Some(wire::IncarnationEnd {
+                    cause: wire::ExitCause::ProviderExited as i32,
+                    detail: Some("exit code 1".into()),
+                }),
+            })),
+            ..Default::default()
+        })),
         ..Default::default()
     })
 }
@@ -352,7 +359,7 @@ fn a_failed_report_is_worded_for_the_parents_provider() {
     let (mut state, _) = ClaudePty::initial(&wire::AgentSpec::default(), "test");
     let stepped = ClaudePty::step(&mut state, failed_report(b"env-failed"));
     let injected = stepped.effects.iter().find_map(|effect| match effect {
-        Effect::Inject { envelope, .. } => Some(envelope.text.clone()),
+        Effect::Inject { text, .. } => Some(text.clone()),
         _ => None,
     });
     assert_eq!(
@@ -528,8 +535,10 @@ fn a_parents_message_that_resumes_its_child_reaches_terminal_claude_labelled() {
                         ..Default::default()
                     })),
                 }),
-                kind: wire::EnvelopeKind::Message as i32,
-                text: "Pick it up again.".into(),
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                    text: "Pick it up again.".into(),
+                    ..Default::default()
+                })),
                 ..Default::default()
             })),
         }),

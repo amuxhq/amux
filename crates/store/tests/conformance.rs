@@ -4,7 +4,7 @@ use store::{
     Absorb, AgentKey, AgentRow, CommitClock, Cut, Delivery, Marker, PageEnd, Record, SourceEvent,
     Sqlite, StoreError,
 };
-use wire::{Append, EnvelopeKind, Item, Phase, Snapshot, Step, TurnEnd};
+use wire::{Append, Item, Phase, Snapshot, Step, TurnEnd};
 
 const OWN: &[u8] = b"own-host";
 const PEER: &[u8] = b"peer-host";
@@ -473,35 +473,33 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
             turn_id: 7,
             parent: parent.clone(),
             parent_incarnation: 3,
-            kind: EnvelopeKind::Finished as i32,
-            body: "the answer".into(),
-            ended: None,
-            outcome: Some(wire::TurnOutcome::Interrupted as i32),
-            last: true,
+            end: wire::child_report::End::TurnEnded(wire::TurnEnded {
+                text: "the answer".into(),
+                outcome: wire::TurnOutcome::Interrupted as i32,
+                last: true,
+            }),
         }]
     );
     let delivery = store.deliveries().unwrap().remove(0);
     store.remove_delivery(&delivery).unwrap();
     assert!(store.deliveries().unwrap().is_empty());
 
-    // A failed incarnation's row keeps its cause as data.
-    let failed = Delivery {
+    // An exit report's row keeps its cause as data.
+    let exited = Delivery {
         child_id: b"child".to_vec(),
         incarnation: 2,
         turn_id: 0,
         parent: parent.clone(),
         parent_incarnation: 3,
-        kind: EnvelopeKind::Failed as i32,
-        body: String::new(),
-        ended: Some(wire::IncarnationEnd {
-            cause: wire::ExitCause::ProviderExited as i32,
-            detail: Some("exit code 1".into()),
+        end: wire::child_report::End::Exited(wire::Exited {
+            ended: Some(wire::IncarnationEnd {
+                cause: wire::ExitCause::ProviderExited as i32,
+                detail: Some("exit code 1".into()),
+            }),
         }),
-        outcome: None,
-        last: true,
     };
-    store.put_delivery(&failed).unwrap();
-    assert_eq!(store.deliveries().unwrap(), vec![failed]);
+    store.put_delivery(&exited).unwrap();
+    assert_eq!(store.deliveries().unwrap(), vec![exited]);
 }
 
 #[test]

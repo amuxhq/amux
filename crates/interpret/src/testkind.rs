@@ -223,14 +223,16 @@ impl<const FORGET: bool> TestKind<FORGET> {
         let shared = &mut state.shared;
         shared.message_accepted(&envelope.id);
         emit.effect(Effect::Inject {
-            envelope: Box::new(envelope.clone()),
+            id: envelope.id.clone(),
+            text: crate::shared::words(&envelope),
+            attachments: crate::shared::attachments(&envelope).to_vec(),
             via: Carrier::Stdin,
         });
         shared.item(
             emit,
             ItemDraft {
                 key: agent_message_key(&envelope.id),
-                text: envelope.text.clone(),
+                text: crate::shared::words(&envelope),
                 input_id: envelope.id.clone(),
                 body: body(claude_sdk_item::Kind::AgentMessage(agent_message_body(
                     &envelope,

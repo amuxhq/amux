@@ -210,9 +210,13 @@ pub enum Effect {
         input_id: Vec<u8>,
         verdict: SendInputResponse,
     },
-    /// Hand an agent message to the provider's own injection channel.
+    /// Hand an agent message to the provider's own injection channel: its
+    /// envelope id, the text the model reads, label and all, and a
+    /// message's attachments.
     Inject {
-        envelope: Box<Envelope>,
+        id: Vec<u8>,
+        text: String,
+        attachments: Vec<wire::Attachment>,
         via: Carrier,
     },
     /// The agent process should exit with this cause.

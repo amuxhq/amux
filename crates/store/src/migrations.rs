@@ -53,21 +53,21 @@ CREATE TABLE agents (
   PRIMARY KEY (origin_host, agent_id)
 );
 
--- Finished and failed messages owed to a parent, kept until delivered.
+-- A child's reports owed to its parent, kept until delivered.
 CREATE TABLE deliveries (
   child_id            BLOB    NOT NULL,  -- the own agent whose turn or incarnation ended
   incarnation         INTEGER NOT NULL,  -- the child's incarnation that ended it
-  turn_id             INTEGER NOT NULL,  -- the turn that finished; 0 for a failed incarnation
-  parent_host         BLOB    NOT NULL,  -- the parent the message is owed to
+  turn_id             INTEGER NOT NULL,  -- the turn that ended; 0 for an exit report
+  parent_host         BLOB    NOT NULL,  -- the parent the report is owed to
   parent_id           BLOB    NOT NULL,
   parent_incarnation  INTEGER NOT NULL,  -- 0 until the parent's row is held, then stamped
-  kind                INTEGER NOT NULL,  -- amux.v1.EnvelopeKind: finished or failed
-  body                TEXT,              -- finished: the child's last message
-  exit_cause          INTEGER,           -- failed: amux.v1.ExitCause, how the incarnation ended
-  exit_detail         TEXT,              -- failed: the cause's own words, when it has any
-  outcome             INTEGER,           -- finished: amux.v1.TurnOutcome, how the turn ended
-  last                INTEGER NOT NULL DEFAULT 0, -- the child incarnation's last report: always for failed
-  PRIMARY KEY (child_id, incarnation, kind, turn_id)
+  exited              INTEGER NOT NULL,  -- 1: the incarnation exited without a turn end; 0: a turn ended
+  text                TEXT,              -- turn: the child's last message
+  exit_cause          INTEGER,           -- exit: amux.v1.ExitCause, how the incarnation ended
+  exit_detail         TEXT,              -- exit: the cause's own words, when it has any
+  outcome             INTEGER,           -- turn: amux.v1.TurnOutcome, how the turn ended
+  last                INTEGER NOT NULL DEFAULT 0, -- turn: it was the incarnation's last (an exit report always is)
+  PRIMARY KEY (child_id, incarnation, exited, turn_id)
 );
 
 -- A needs-you transition owed to the person, keyed by the snapshot that

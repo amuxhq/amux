@@ -196,7 +196,7 @@ that provider reads (`crates/agent/src/provider.rs`):
 | `codex` | The turn's input with each attachment appended after the text: an image as a `localImage` item naming its blob's path, anything else as its element text naming the same path. |
 
 **Between agents.** An agent message carries attachments as a prompt does:
-`SendMessageRequest` and `Envelope` hold positioned text and the ordered
+`SendMessageRequest` and an `Envelope`'s message body hold positioned text and the ordered
 attachments. The `send` tool moves each element the model wrote (the
 `attach` tool's) out of the text into the list, since an element names the
 file by its path on the sender's host. Before the recipient's daemon hands

@@ -145,8 +145,10 @@ fn writes(effects: &[Effect]) -> Vec<Value> {
 fn agent_message(id: &[u8]) -> Event {
     Event::AgentMessage(wire::Envelope {
         id: id.to_vec(),
-        kind: wire::EnvelopeKind::Message as i32,
-        text: "from a peer".into(),
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
+            text: "from a peer".into(),
+            ..Default::default()
+        })),
         ..Default::default()
     })
 }
@@ -980,11 +982,15 @@ fn failed_report(id: &[u8]) -> Event {
                 ..Default::default()
             })),
         }),
-        kind: wire::EnvelopeKind::Failed as i32,
-        ended: Some(wire::IncarnationEnd {
-            cause: wire::ExitCause::ProviderExited as i32,
-            detail: Some("exit code 1".into()),
-        }),
+        body: Some(wire::envelope::Body::Report(wire::ChildReport {
+            end: Some(wire::child_report::End::Exited(wire::Exited {
+                ended: Some(wire::IncarnationEnd {
+                    cause: wire::ExitCause::ProviderExited as i32,
+                    detail: Some("exit code 1".into()),
+                }),
+            })),
+            ..Default::default()
+        })),
         ..Default::default()
     })
 }
@@ -1072,8 +1078,10 @@ fn a_parents_message_that_resumes_its_child_reaches_codex_labelled() {
                         ..Default::default()
                     })),
                 }),
-                kind: wire::EnvelopeKind::Message as i32,
-                text: "Pick it up again.".into(),
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                    text: "Pick it up again.".into(),
+                    ..Default::default()
+                })),
                 ..Default::default()
             })),
         }),

@@ -34,9 +34,8 @@ use codex_protocol::{
 };
 use serde::Deserialize;
 use wire::{
-    CodexAnswer, CodexInput, Envelope, EnvelopeKind, FormAction, FormAnswer, GrantAnswer, Input,
-    Interrupt, LinkAnswer, PromptInput, QuestionAnswer, QuestionResponse, codex_answer,
-    codex_input,
+    CodexAnswer, CodexInput, Envelope, FormAction, FormAnswer, GrantAnswer, Input, Interrupt,
+    LinkAnswer, PromptInput, QuestionAnswer, QuestionResponse, codex_answer, codex_input,
 };
 
 use crate::{Channel, Event, Fact};
@@ -371,8 +370,10 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                         .join("\n");
                     push(Event::AgentMessage(Envelope {
                         id: input_id,
-                        kind: EnvelopeKind::Message as i32,
-                        text,
+                        body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                            text,
+                            attachments: Vec::new(),
+                        })),
                         ..Default::default()
                     }));
                     continue;

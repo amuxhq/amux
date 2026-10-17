@@ -32,8 +32,8 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
     Agent, AgentHello, AgentRef, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest, CtlFrame,
-    DumpPart, EnvelopeKind, ErrorCode, ExitCause, Kind, Lifecycle, RemovalReason, Rename,
-    SendInputResponse, Stop, ctl_frame, inventory_event, session_event,
+    DumpPart, ErrorCode, ExitCause, Kind, Lifecycle, RemovalReason, Rename, SendInputResponse,
+    Stop, ctl_frame, inventory_event, session_event,
 };
 
 use crate::fanout::Fanout;
@@ -2294,11 +2294,7 @@ impl ProfileRuntime {
             turn_id: 0,
             parent: parent.clone(),
             parent_incarnation,
-            kind: EnvelopeKind::Failed as i32,
-            body: String::new(),
-            ended: Some(cause),
-            outcome: None,
-            last: true,
+            end: wire::child_report::End::Exited(wire::Exited { ended: Some(cause) }),
         })?;
         self.deliveries_due.notify_one();
         Ok(())

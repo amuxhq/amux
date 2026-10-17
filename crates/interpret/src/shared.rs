@@ -10,7 +10,8 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use wire::{
     AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item, Phase, PromptInput,
-    QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap, sender,
+    QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap, child_report,
+    envelope, sender,
 };
 
 use crate::{Effect, Stepped, reply, serde_pb};
@@ -1216,47 +1217,64 @@ pub fn agent_message_key(envelope_id: &[u8]) -> String {
     format!("agent-message:{}", serde_pb::to_hex(envelope_id))
 }
 
-/// An agent message with the text its recipient's provider reads. A failed
-/// report carries how the child's incarnation ended as data, so it is worded
-/// here, for a model; every other message is its own text.
-pub fn worded(mut envelope: Envelope) -> Envelope {
-    if envelope.kind == wire::EnvelopeKind::Failed as i32 {
-        envelope.text = ended_words(envelope.ended.as_ref());
+/// The words an agent message brings its recipient's provider, before any
+/// label: a message's text, a child's last message when its turn ended, or
+/// how its incarnation ended, which an exit report carries as data and is
+/// worded here, for a model.
+pub fn words(envelope: &Envelope) -> String {
+    match &envelope.body {
+        Some(envelope::Body::Message(message)) => message.text.clone(),
+        Some(envelope::Body::Report(report)) => match &report.end {
+            Some(child_report::End::TurnEnded(turn)) => turn.text.clone(),
+            Some(child_report::End::Exited(exited)) => ended_words(exited.ended.as_ref()),
+            None => String::new(),
+        },
+        None => String::new(),
     }
-    envelope
 }
 
-/// A worded agent message as its recipient's model reads it, labelled with
-/// its sender and what it is: `[agent <name> finished its turn]` before a
+/// A message's attachments, referencing blobs its recipient's daemon
+/// brought into the recipient's directory; a report has none.
+pub fn attachments(envelope: &Envelope) -> &[Attachment] {
+    match &envelope.body {
+        Some(envelope::Body::Message(message)) => &message.attachments,
+        _ => &[],
+    }
+}
+
+/// An agent message as its recipient's model reads it, labelled with its
+/// sender and what it is: `[agent <name> finished its turn]` before a
 /// child's report (or how else its turn ended: stopped, interrupted or
-/// failed before it finished), `[agent <name> stopped: <cause>]` for a failed one, and
-/// `[message from agent <name>]` before anything else an agent sends. The
-/// provider's own channel carries only text, so without the label a model
-/// takes another agent's words for its person's. A message from no agent
-/// is its own text.
+/// failed before it finished), `[agent <name> stopped: <cause>]` for an
+/// incarnation that exited, and `[message from agent <name>]` before
+/// anything else an agent sends. The provider's own channel carries only
+/// text, so without the label a model takes another agent's words for its
+/// person's. A message from no agent is its own text.
 pub(crate) fn carried(envelope: &Envelope) -> String {
-    use wire::{EnvelopeKind, sender};
+    let text = words(envelope);
     let from = match envelope.from.as_ref().and_then(|from| from.value.as_ref()) {
         Some(sender::Value::Agent(agent)) if !agent.name.is_empty() => {
             format!("agent {}", agent.name)
         }
         Some(sender::Value::Agent(_)) => "another agent".to_owned(),
-        _ => return envelope.text.clone(),
+        _ => return text,
     };
-    match EnvelopeKind::try_from(envelope.kind).unwrap_or_default() {
-        EnvelopeKind::Finished => {
-            let ended = match envelope.outcome.map(wire::TurnOutcome::try_from) {
-                Some(Ok(wire::TurnOutcome::Stopped)) => "was stopped before it finished",
-                Some(Ok(wire::TurnOutcome::Interrupted)) => {
-                    "was interrupted before it finished its turn"
-                }
-                Some(Ok(wire::TurnOutcome::Failed)) => "failed before it finished its turn",
+    let end = match &envelope.body {
+        Some(envelope::Body::Report(report)) => report.end.as_ref(),
+        _ => None,
+    };
+    match end {
+        Some(child_report::End::TurnEnded(turn)) => {
+            let ended = match wire::TurnOutcome::try_from(turn.outcome) {
+                Ok(wire::TurnOutcome::Stopped) => "was stopped before it finished",
+                Ok(wire::TurnOutcome::Interrupted) => "was interrupted before it finished its turn",
+                Ok(wire::TurnOutcome::Failed) => "failed before it finished its turn",
                 _ => "finished its turn",
             };
-            format!("[{from} {ended}]\n{}", envelope.text)
+            format!("[{from} {ended}]\n{text}")
         }
-        EnvelopeKind::Failed => format!("[{from} stopped: {}]", envelope.text),
-        _ => format!("[message from {from}]\n{}", envelope.text),
+        Some(child_report::End::Exited(_)) => format!("[{from} stopped: {text}]"),
+        None => format!("[message from {from}]\n{text}"),
     }
 }
 
@@ -1268,8 +1286,10 @@ pub(crate) fn provider_text(entry: &QueuedInput) -> String {
     match entry.sender.as_ref().and_then(|from| from.value.as_ref()) {
         Some(sender::Value::Agent(_)) => carried(&Envelope {
             from: entry.sender.clone(),
-            kind: wire::EnvelopeKind::Message as i32,
-            text: entry.text.clone(),
+            body: Some(envelope::Body::Message(wire::MessageBody {
+                text: entry.text.clone(),
+                attachments: Vec::new(),
+            })),
             ..Default::default()
         }),
         _ => entry.text.clone(),
@@ -1307,9 +1327,18 @@ fn ended_words(end: Option<&wire::IncarnationEnd>) -> String {
 
 /// The body every kind's agent-message item carries.
 pub fn agent_message_body(envelope: &Envelope) -> AgentMessage {
+    let kind = match &envelope.body {
+        Some(envelope::Body::Message(_)) => wire::EnvelopeKind::Message,
+        Some(envelope::Body::Report(report)) => match report.end {
+            Some(child_report::End::TurnEnded(_)) => wire::EnvelopeKind::Finished,
+            Some(child_report::End::Exited(_)) => wire::EnvelopeKind::Failed,
+            None => wire::EnvelopeKind::Unspecified,
+        },
+        None => wire::EnvelopeKind::Unspecified,
+    };
     AgentMessage {
         envelope_id: envelope.id.clone(),
-        kind: envelope.kind,
+        kind: kind as i32,
         from: envelope.from.clone(),
         context: envelope.context.clone().unwrap_or_default(),
         ..Default::default()
@@ -1321,8 +1350,8 @@ fn queued_from_bootstrap(bootstrap: &Bootstrap) -> Option<QueuedInput> {
     Some(match bootstrap.of.as_ref()? {
         bootstrap::Of::AgentMessage(envelope) => QueuedInput {
             input_id: envelope.id.clone(),
-            text: worded(envelope.clone()).text,
-            attachments: envelope.attachments.clone(),
+            text: words(envelope),
+            attachments: attachments(envelope).to_vec(),
             steer: false,
             sender: envelope.from.clone(),
         },

@@ -225,7 +225,10 @@ fn split_and_coalesced_stream_events_yield_the_same_final_items() {
 fn agent_message(envelope: &[u8], text: &str) -> Event {
     Event::AgentMessage(wire::Envelope {
         id: envelope.to_vec(),
-        text: text.to_owned(),
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
+            text: text.to_owned(),
+            ..Default::default()
+        })),
         ..Default::default()
     })
 }
@@ -242,7 +245,7 @@ fn probe_decided_sdk_correlation() {
         let stepped = ClaudeSdk::step(&mut state, agent_message(envelope, text));
         assert!(stepped.effects.iter().any(|effect| matches!(
             effect,
-            Effect::Inject { envelope: sent, .. } if sent.id == envelope
+            Effect::Inject { id, .. } if id == envelope
         )));
         uuids.push(client_uuid(envelope));
     }
@@ -742,11 +745,15 @@ fn failed_report(id: &[u8]) -> Event {
                 ..Default::default()
             })),
         }),
-        kind: wire::EnvelopeKind::Failed as i32,
-        ended: Some(wire::IncarnationEnd {
-            cause: wire::ExitCause::ProviderExited as i32,
-            detail: Some("exit code 1".into()),
-        }),
+        body: Some(wire::envelope::Body::Report(wire::ChildReport {
+            end: Some(wire::child_report::End::Exited(wire::Exited {
+                ended: Some(wire::IncarnationEnd {
+                    cause: wire::ExitCause::ProviderExited as i32,
+                    detail: Some("exit code 1".into()),
+                }),
+            })),
+            ..Default::default()
+        })),
         ..Default::default()
     })
 }
@@ -759,7 +766,7 @@ fn a_failed_report_is_worded_for_the_parents_provider() {
     let mut state = started();
     let stepped = ClaudeSdk::step(&mut state, failed_report(b"env-failed"));
     let injected = stepped.effects.iter().find_map(|effect| match effect {
-        Effect::Inject { envelope, .. } => Some(envelope.text.clone()),
+        Effect::Inject { text, .. } => Some(text.clone()),
         _ => None,
     });
     assert_eq!(
@@ -789,8 +796,10 @@ fn a_parents_message_that_resumes_its_child_reaches_claude_labelled() {
                         ..Default::default()
                     })),
                 }),
-                kind: wire::EnvelopeKind::Message as i32,
-                text: "Pick it up again.".into(),
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                    text: "Pick it up again.".into(),
+                    ..Default::default()
+                })),
                 ..Default::default()
             })),
         }),

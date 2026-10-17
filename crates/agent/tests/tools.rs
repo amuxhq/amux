@@ -626,15 +626,15 @@ async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
         )
         .await;
     let calls = fleet.calls();
-    let [Call::Resolve(name), Call::Send(envelope)] = calls.as_slice() else {
+    let [Call::Resolve(name), Call::Send(request)] = calls.as_slice() else {
         panic!("resolve then send, got {calls:?}");
     };
     assert_eq!(name, "reviewer");
-    assert_eq!(sent, json!({ "id": interpret::to_hex(&envelope.id) }));
-    assert_eq!(envelope.text, "Please review.");
-    assert_eq!(envelope.context.as_deref(), Some(b"parser".as_slice()));
+    assert_eq!(sent, json!({ "id": interpret::to_hex(&request.id) }));
+    assert_eq!(request.text, "Please review.");
+    assert_eq!(request.context.as_deref(), Some(b"parser".as_slice()));
     assert_eq!(
-        envelope.to,
+        request.to,
         Some(AgentRef {
             host_id: STUDIO.to_vec(),
             agent_id: REVIEWER.to_vec(),

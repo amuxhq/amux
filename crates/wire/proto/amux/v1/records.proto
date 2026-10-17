@@ -28,39 +28,63 @@ message AgentRef {
   bytes agent_id = 2;
 }
 
-// An agent message. `from` is set by the daemon from the caller's identity;
-// the recipient's daemon dedupes by id against the recipient's items.
+// What travels to an agent from another agent, a person or a child: a
+// message, or a child's report to its parent. `from` is set by the daemon
+// from the caller's identity; the recipient's daemon dedupes by id against
+// the recipient's items.
 message Envelope {
   bytes id = 1;
   optional bytes context = 2;
   Sender from = 3;
   AgentRef to = 4;
-  EnvelopeKind kind = 5;
-  // A message's text, or a finished child's last message; empty on a
-  // failed report.
-  string text = 6;
-  // Set only on a failed report: how the child's incarnation ended. The
-  // recipient's interpreter words it for the parent's provider.
-  optional IncarnationEnd ended = 7;
-  // The recipient's incarnation the message is for, when only that one
-  // may have it: a child's finished or failed message to its parent. The
-  // recipient's daemon drops it for any other incarnation.
-  optional uint32 incarnation = 8;
-  // A message's attachments, referencing blobs in the sender's directory on
-  // the sender's host.
-  repeated Attachment attachments = 9;
-  // Set only on a finished report: how the child's turn ended, so the
-  // parent hears a stopped or interrupted turn as that, not as finished.
-  optional TurnOutcome outcome = 10;
-  // On a child's report: it is the child incarnation's last, sent as it
-  // exits. Always set on a failed report; on a finished one, when its turn
-  // was the incarnation's last. A parent waiting on its children waits for
-  // each incarnation's last report, not merely for one.
-  bool last = 11;
-  // On a child's report: the child's own incarnation it is from, so its
-  // parent matches the report to that incarnation whichever comes first,
-  // the report or the daemon's word that the incarnation is live.
-  uint32 from_incarnation = 12;
+  oneof body {
+    MessageBody message = 5;
+    ChildReport report = 6;
+  }
+}
+
+// What an agent or a person sends.
+message MessageBody {
+  string text = 1;
+  // Blobs in the sender's directory on the sender's host.
+  repeated Attachment attachments = 2;
+}
+
+// A child's report to its parent, written by the child's daemon from its
+// outbox; no sender can send one.
+message ChildReport {
+  // The parent's incarnation the report is for: the recipient's daemon
+  // drops it for any other.
+  uint32 to_incarnation = 1;
+  // The child's own incarnation it is from, so its parent matches the
+  // report to that incarnation whichever comes first, the report or the
+  // daemon's word that the incarnation is live.
+  uint32 from_incarnation = 2;
+  oneof end {
+    TurnEnded turn_ended = 3;
+    Exited exited = 4;
+  }
+}
+
+// A child's turn ended.
+message TurnEnded {
+  // The child's last message; empty when the turn ended with no text.
+  string text = 1;
+  // How the turn ended, so the parent hears a stopped or interrupted turn
+  // as that, not as finished.
+  TurnOutcome outcome = 2;
+  // The turn was the incarnation's last, reported as it exits. A parent
+  // waiting on its children waits for each incarnation's last report, not
+  // merely for one.
+  bool last = 3;
+}
+
+// A child's incarnation ended without a turn end. Always the
+// incarnation's last report.
+message Exited {
+  // How it ended; the recipient's interpreter words it for the parent's
+  // provider.
+  IncarnationEnd ended = 1;
 }
 
 message Sender {
@@ -77,15 +101,6 @@ message AgentSender {
 }
 
 message Human {}
-
-enum EnvelopeKind {
-  ENVELOPE_KIND_UNSPECIFIED = 0;
-  ENVELOPE_KIND_MESSAGE = 1;
-  // A child's turn ended; the text is its last message.
-  ENVELOPE_KIND_FINISHED = 2;
-  // A child's incarnation ended without a turn end; `ended` says how.
-  ENVELOPE_KIND_FAILED = 3;
-}
 
 // ---------------------------------------------------------------------------
 // Envelope

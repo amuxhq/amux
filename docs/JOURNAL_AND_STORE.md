@@ -375,7 +375,7 @@ The rest:
 
 | Table | Rows |
 | --- | --- |
-| `deliveries` | The daemon's outbox to parents: a child's `finished` (turn ended; body is its last message, `outcome` how the turn ended) or `failed` (the incarnation ended without a last report; `exit_cause` and `exit_detail` say how, as the row's do), and `last`: set on a finished turn marked last and on every failed row, so each child incarnation sends exactly one last report. Keyed by child, incarnation, kind and turn id. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
+| `deliveries` | The daemon's outbox to parents: a child's report that a turn ended (`text` is its last message, `outcome` how the turn ended, `last` whether it was the incarnation's last) or, with `exited` set, that the incarnation ended without a last report (`exit_cause` and `exit_detail` say how, as the row's do; always the incarnation's last), so each child incarnation sends exactly one last report. Keyed by child, incarnation, `exited` and turn id. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
 | `notifications` | The push outbox: one row per turn into `needs_you`, keyed by agent and snapshot revision, with a due time (`due_at_ms`) and the push's `name`, `working_on` and `text`, built from envelope fields only. Deleted unsent if the phase leaves `needs_you` first, and with the agent. |
 | `hosts` | One row per peer host: the generation its inventory last reported, for the host entry this machine publishes. |
 | `schema_migrations` | Each applied migration's number and SHA-256 |

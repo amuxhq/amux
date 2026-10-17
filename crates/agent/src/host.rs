@@ -91,8 +91,8 @@ impl Drain {
 }
 
 /// The children this agent waits on. Every child incarnation ends with
-/// exactly one last report to its parent: a finished report whose turn the
-/// child marked as its incarnation's last, or a failed one. So the agent
+/// exactly one last report to its parent: the report of a turn the child
+/// marked as its incarnation's last, or the report that it exited. So the agent
 /// keeps each direct child incarnation the daemon names live, and whether
 /// its last report has come; a one-shot agent exits at a turn end only
 /// once every one has. A child's last report starts a turn of its own, at
@@ -122,7 +122,7 @@ impl Awaited {
         }
     }
 
-    /// A finished or failed report taken from incarnation `incarnation` of
+    /// A turn or exit report taken from incarnation `incarnation` of
     /// the child `from`; `last` when it is that incarnation's last. A
     /// mid-way report alone leaves the incarnation awaited.
     fn report(&mut self, from: &[u8], incarnation: u32, last: bool) {
@@ -535,15 +535,15 @@ impl<I: Interpreter> Host<I> {
                 let id = envelope.id.clone();
                 // Kept even before the daemon names the child: the report
                 // can come first.
-                if matches!(
-                    envelope.kind(),
-                    wire::EnvelopeKind::Finished | wire::EnvelopeKind::Failed
-                ) {
-                    self.awaited.report(
-                        sender_id(&envelope),
-                        envelope.from_incarnation,
-                        envelope.last,
-                    );
+                if let Some(wire::envelope::Body::Report(report)) = &envelope.body {
+                    // An exit report is always its incarnation's last.
+                    let last = match &report.end {
+                        Some(wire::child_report::End::TurnEnded(turn)) => turn.last,
+                        Some(wire::child_report::End::Exited(_)) => true,
+                        None => false,
+                    };
+                    self.awaited
+                        .report(sender_id(&envelope), report.from_incarnation, last);
                 }
                 self.take(id, Event::AgentMessage(envelope)).await?
             }

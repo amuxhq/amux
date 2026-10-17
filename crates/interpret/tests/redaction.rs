@@ -346,7 +346,10 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
     // An agent message is a ring entry of its own, with a person's words.
     let mut messages = vec![wire::Envelope {
         id: b"message-1".to_vec(),
-        text: prompt(),
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
+            text: prompt(),
+            ..Default::default()
+        })),
         ..Default::default()
     }];
     let mut facts = Vec::new();

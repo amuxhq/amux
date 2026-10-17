@@ -1,5 +1,5 @@
-//! The two outboxes the daemon drains: deliveries, which tell a parent its
-//! child finished or failed, and notifications, which push "needs you" to
+//! The two outboxes the daemon drains: deliveries, which tell a parent a
+//! turn of its child's ended or the child's incarnation exited, and notifications, which push "needs you" to
 //! the person's devices.
 //!
 //! A deliveries row is written in the transaction that commits the child's
@@ -24,7 +24,7 @@ use std::pin::Pin;
 
 use store::{Delivery, Notification};
 use uuid::Uuid;
-use wire::{AgentRef, Envelope, ErrorCode, Lifecycle};
+use wire::{AgentRef, ChildReport, Envelope, ErrorCode, Lifecycle, envelope};
 
 use crate::forward::ForwardError;
 use crate::relay::{RelayError, delivery_envelope_id};
@@ -238,14 +238,11 @@ impl ProfileRuntime {
                 host_id: row.parent.host.clone(),
                 agent_id: row.parent.agent.clone(),
             }),
-            kind: row.kind,
-            text: row.body.clone(),
-            ended: row.ended.clone(),
-            incarnation: Some(row.parent_incarnation),
-            attachments: Vec::new(),
-            outcome: row.outcome,
-            last: row.last,
-            from_incarnation: row.incarnation,
+            body: Some(envelope::Body::Report(ChildReport {
+                to_incarnation: row.parent_incarnation,
+                from_incarnation: row.incarnation,
+                end: Some(row.end.clone()),
+            })),
         };
         let sent = if row.parent.host == self.host().as_bytes() {
             self.deliver(parent_id, envelope, false, Some(row.parent_incarnation))

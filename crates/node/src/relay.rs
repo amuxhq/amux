@@ -17,9 +17,9 @@ use store::{AgentKey, StoreError};
 use tokio::sync::oneshot;
 use uuid::Uuid;
 use wire::{
-    AgentSender, Bootstrap, Envelope, EnvelopeKind, ErrorCode, Human, Lifecycle, Refusal, Rejected,
+    AgentSender, Bootstrap, Envelope, ErrorCode, Human, Lifecycle, MessageBody, Refusal, Rejected,
     SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, Sender,
-    bootstrap, ctl_frame, send_input_response, sender,
+    bootstrap, ctl_frame, envelope, send_input_response, sender,
 };
 
 use crate::runtime::{AgentId, ProfileRuntime, RegistryError, Sent, ms};
@@ -157,7 +157,7 @@ fn blob_of(attachment: &wire::Attachment) -> Option<&wire::BlobRef> {
 pub(crate) fn delivery_envelope_id(delivery: &store::Delivery) -> Vec<u8> {
     let mut name = delivery.child_id.clone();
     name.extend(delivery.incarnation.to_be_bytes());
-    name.extend(delivery.kind.to_be_bytes());
+    name.push(u8::from(delivery.is_exit()));
     name.extend(delivery.turn_id.to_be_bytes());
     Uuid::new_v5(&Uuid::NAMESPACE_OID, &name)
         .as_bytes()
@@ -255,9 +255,8 @@ impl ProfileRuntime {
     /// Sends a message a person or one of this host's agents submitted.
     /// `caller` is the agent whose tools socket the call came in on, else
     /// the person; the envelope's sender is set from it, since the request
-    /// cannot name one. It is an ordinary message: finished and failed
-    /// messages come only from the outbox. Answers once the recipient has
-    /// accepted.
+    /// cannot name one. It is an ordinary message: a child's reports come
+    /// only from the outbox. Answers once the recipient has accepted.
     pub async fn send_message(
         &self,
         request: SendMessageRequest,
@@ -268,14 +267,10 @@ impl ProfileRuntime {
             context: request.context,
             from: None,
             to: request.to,
-            kind: EnvelopeKind::Message as i32,
-            text: request.text,
-            ended: None,
-            incarnation: None,
-            attachments: request.attachments,
-            outcome: None,
-            last: false,
-            from_incarnation: 0,
+            body: Some(envelope::Body::Message(MessageBody {
+                text: request.text,
+                attachments: request.attachments,
+            })),
         };
         self.send_message_from(envelope, caller.map_or(From::Person, From::Agent))
             .await
@@ -339,7 +334,11 @@ impl ProfileRuntime {
         envelope.from = Some(from);
         self.bring_attachments(id, &envelope).await?;
         let envelope_id = envelope.id.clone();
-        let incarnation = envelope.incarnation;
+        // A child's report is for one incarnation of its parent.
+        let incarnation = match &envelope.body {
+            Some(envelope::Body::Report(report)) => Some(report.to_incarnation),
+            _ => None,
+        };
         self.deliver(id, envelope, is_parent, incarnation).await?;
         Ok(SendMessageResponse { envelope_id })
     }
@@ -388,7 +387,10 @@ impl ProfileRuntime {
             return Ok(());
         };
         let blobs = self.agent_dir(recipient).join(agent_dir::BLOBS);
-        for blob in envelope.attachments.iter().filter_map(blob_of) {
+        let Some(envelope::Body::Message(message)) = &envelope.body else {
+            return Ok(());
+        };
+        for blob in message.attachments.iter().filter_map(blob_of) {
             let name = if blob.name.is_empty() {
                 crate::blobs::hex(&blob.hash)
             } else {

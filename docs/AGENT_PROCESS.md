@@ -212,7 +212,7 @@ turn end that leaves it quiescent, one the interpreter asks to exit after,
 and any while it drains or exits. Its parent's report of that turn is the
 incarnation's last. An incarnation that exits without one, its turn open or
 ended idle (a sub-agent stopped while it waits for its own child), gets a
-failed report from its daemon instead, so every child incarnation ends with
+report from its daemon that it exited instead, so every child incarnation ends with
 exactly one last report, which names the child incarnation it is from. A
 waiting sub-agent matches reports to incarnations, so a report that comes
 before the daemon names its incarnation (a resumed child's, say) is kept for

@@ -697,7 +697,10 @@ impl Daemon {
                     name: "parent".into(),
                 })),
             }),
-            text: text.to_owned(),
+            body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                text: text.to_owned(),
+                ..Default::default()
+            })),
             ..Default::default()
         };
         self.verdict(id.to_vec(), ctl_frame::Of::AgentMessage(envelope))

@@ -64,6 +64,16 @@ impl Replication {
             wrong: false,
         }
     }
+
+    /// The larger bounds a nightly run explores: a fifth revision and a
+    /// third message in flight. About two million states.
+    pub const fn nightly() -> Self {
+        Self {
+            revisions: 5,
+            in_flight: 3,
+            ..Self::ci()
+        }
+    }
 }
 
 /// What the replica asked the origin for when it opened a stream.
@@ -234,11 +244,7 @@ impl Machine for Replication {
             return;
         }
         if s.seen.minted < self.revisions {
-            out.extend(
-                KEYS[..self.keys]
-                    .iter()
-                    .map(|&key| Action::Commit { key }),
-            );
+            out.extend(KEYS[..self.keys].iter().map(|&key| Action::Commit { key }));
         }
         if s.seen.origin_rows > 1 {
             out.push(Action::Trim);

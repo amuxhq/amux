@@ -1156,10 +1156,8 @@ fn sdk_answer(
                     PermissionMode::Default,
                     Verdict::of(wire::PlanVerdict::Approved),
                 ),
-                // The switch the ask offered, and only that one.
-                wire::PlanChoice::StartSwitching
-                    if !switch.is_empty() && plan.permission == *switch =>
-                {
+                // The switch the ask offered, the one the person was shown.
+                wire::PlanChoice::StartSwitching if !switch.is_empty() => {
                     start(PermissionMode::parse(switch), Verdict::switching(switch))
                 }
                 wire::PlanChoice::StartSwitching => None,

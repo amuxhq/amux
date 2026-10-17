@@ -418,7 +418,9 @@ enum PlanChoice {
   // Start building (Claude) or implement the plan (Codex), the permission
   // left as it was before planning.
   PLAN_CHOICE_START = 1;
-  // Start, switching to the ask's switch_permission (Claude).
+  // Start, switching to the ask's switch_permission (Claude). The switch is
+  // fixed when the ask is made, so the answer names none; an ask with no
+  // switch_permission refuses it.
   PLAN_CHOICE_START_SWITCHING = 2;
   // Keep planning; the note, if any, goes to the agent.
   PLAN_CHOICE_KEEP_PLANNING = 3;
@@ -428,10 +430,6 @@ message PlanAnswer {
   PlanChoice choice = 1;
   // With keep planning: what to change.
   optional string note = 2;
-  // With START_SWITCHING: the permission the person was shown and agreed
-  // to switch to, the ask's switch_permission. An answer naming another is
-  // refused, so nobody is switched to a permission they were not shown.
-  string permission = 3;
 }
 
 message FormAsk {

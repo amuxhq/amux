@@ -1271,7 +1271,7 @@ fn a_plan_approved_with_its_switch_lands_in_the_switch_it_names() {
         b"a1".to_vec(),
         &interpret::FixtureInput::Answer {
             ask: ask.key.clone(),
-            answer: serde_json::json!({"approve_plan": {"switch_to": "auto"}}),
+            answer: serde_json::json!({"approve_plan": {"switching": true}}),
         },
     )
     .expect("an answer");

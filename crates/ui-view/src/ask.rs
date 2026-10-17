@@ -645,34 +645,27 @@ fn plan_card(
     let choices = plan
         .choices()
         .filter_map(|offered| {
-            let (outcome, permission) = match offered {
-                wire::PlanChoice::Start => (
-                    ChoiceOutcome::ApprovePlan {
-                        mode: String::new(),
-                        mode_name: String::new(),
-                    },
-                    String::new(),
-                ),
+            let outcome = match offered {
+                wire::PlanChoice::Start => ChoiceOutcome::ApprovePlan {
+                    mode: String::new(),
+                    mode_name: String::new(),
+                },
                 wire::PlanChoice::StartSwitching if !plan.switch_permission.is_empty() => {
                     let mode = plan.switch_permission.clone();
-                    (
-                        ChoiceOutcome::ApprovePlan {
-                            mode_name: crate::rows::permission_name(
-                                &state.agent_state().permissions,
-                                &mode,
-                            ),
-                            mode: mode.clone(),
-                        },
+                    ChoiceOutcome::ApprovePlan {
+                        mode_name: crate::rows::permission_name(
+                            &state.agent_state().permissions,
+                            &mode,
+                        ),
                         mode,
-                    )
+                    }
                 }
-                wire::PlanChoice::KeepPlanning => (ChoiceOutcome::SendBack, String::new()),
+                wire::PlanChoice::KeepPlanning => ChoiceOutcome::SendBack,
                 wire::PlanChoice::StartSwitching | wire::PlanChoice::Unspecified => return None,
             };
             let answer = answer(wire::PlanAnswer {
                 choice: offered as i32,
                 note: None,
-                permission,
             });
             Some(choice(outcome, answer))
         })

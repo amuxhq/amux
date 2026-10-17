@@ -94,7 +94,8 @@ pub enum FixtureInput {
     Clear {},
     /// `answer` is the kind's answer in JSON: for Claude `{"allow": {}}`,
     /// `{"allow": {"scope": 1}}`, `{"deny": {"note": "…", "stop": true}}`,
-    /// `{"approve_plan": {}}`, `{"send_back": {"note": "…"}}`,
+    /// `{"approve_plan": {}}`, `{"approve_plan": {"switching": true}}`,
+    /// `{"send_back": {"note": "…"}}`,
     /// `{"selected": [0, [1, 2], "typed", null], "notes": ["…", null]}`
     /// (one entry per question: an index, indices, a typed answer, or null
     /// to skip; a lone `"note"` goes on the last question), `{"reply":
@@ -796,28 +797,18 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
             })),
         })
     } else if let Some(approve) = answer.get("approve_plan") {
-        // `switch_to` names the permission the approval switches to; the
-        // older `auto_accept_edits` form agrees to accept edits.
-        let switch = Some(text(approve, "switch_to"))
-            .filter(|permission| !permission.is_empty())
-            .or_else(|| {
-                approve
-                    .get("auto_accept_edits")
-                    .and_then(Value::as_bool)
-                    .filter(|accepting| *accepting)
-                    .map(|_| "acceptEdits".to_owned())
-            });
-        claude_answer::Of::Plan(match switch {
-            Some(permission) => wire::PlanAnswer {
-                choice: wire::PlanChoice::StartSwitching as i32,
-                note: None,
-                permission,
-            },
-            None => wire::PlanAnswer {
-                choice: wire::PlanChoice::Start as i32,
-                note: None,
-                permission: String::new(),
-            },
+        // `switching` agrees to the switch the ask offers.
+        let switching = approve
+            .get("switching")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        claude_answer::Of::Plan(wire::PlanAnswer {
+            choice: if switching {
+                wire::PlanChoice::StartSwitching
+            } else {
+                wire::PlanChoice::Start
+            } as i32,
+            note: None,
         })
     } else if answer.get("selected").is_some() {
         claude_answer::Of::Question(question_answer(answer))
@@ -846,7 +837,6 @@ fn claude_answer(ask: &str, answer: &Value) -> Option<ClaudeAnswer> {
         claude_answer::Of::Plan(wire::PlanAnswer {
             choice: wire::PlanChoice::KeepPlanning as i32,
             note: Some(text(send_back, "note")).filter(|note| !note.is_empty()),
-            permission: String::new(),
         })
     };
     Some(ClaudeAnswer {
@@ -1040,7 +1030,6 @@ fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
                 choice.to_uppercase()
             ))? as i32,
             note: plan.get("note").and_then(Value::as_str).map(str::to_owned),
-            permission: String::new(),
         })
     } else {
         let grant = answer.get("grant")?;

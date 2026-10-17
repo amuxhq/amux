@@ -626,6 +626,15 @@ ROWS = [
         "the other conversation's session id on terminal Claude's snapshot, where clients only asked whether there was one",
         [r"switched_away_to"],
     ),
+    Row(
+        "a plan answer's permission",
+        "the permission a plan's start-switching answer echoed back from its ask, and the refusal when the two differed; the ask's own switch is the one taken",
+        [
+            r"plan\.permission ==",
+            r"auto_accept_edits",
+            r"\"switch_to\"",
+        ],
+    ),
 ]
 
 # Files that name removed things on purpose, to hold them gone.

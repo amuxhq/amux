@@ -27,7 +27,7 @@
     choices ApprovePlan { mode: "", mode_name: "" }*, ApprovePlan { mode: "acceptEdits", mode_name: "" }, SendBack+note
     body Plan { title: None, body: "- edit" }
   composer Send activity=None queue=[] underway=[] refused=[]
-## 9 input {"answer":{"answer":{"approve_plan":{"auto_accept_edits":true}},"ask":"req-2"},"id":"a2"}
+## 9 input {"answer":{"answer":{"approve_plan":{"switching":true}},"ask":"req-2"},"id":"a2"}
   row    4 t2 Ask(Plan { title: None, body: "- edit", verdict: ApprovedSwitching, mode: "acceptEdits", mode_name: "", note: None, writing: false })
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]

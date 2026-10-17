@@ -410,7 +410,7 @@
           "ask": "ask:3",
           "answer": {
             "approve_plan": {
-              "auto_accept_edits": true
+              "switching": true
             }
           }
         }

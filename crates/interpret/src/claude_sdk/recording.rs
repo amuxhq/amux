@@ -239,20 +239,17 @@ fn answer(request: &ControlRequestBody, response: &ControlResponse) -> Option<cl
                             PlanAnswer {
                                 choice: PlanChoice::StartSwitching as i32,
                                 note: None,
-                                permission: mode.as_str().to_owned(),
                             }
                         }
                         _ => PlanAnswer {
                             choice: PlanChoice::Start as i32,
                             note: None,
-                            permission: String::new(),
                         },
                     }
                 } else {
                     PlanAnswer {
                         choice: PlanChoice::KeepPlanning as i32,
                         note: Some(message).filter(|note| !note.is_empty()),
-                        permission: String::new(),
                     }
                 })),
                 QUESTION_TOOL if allow => {

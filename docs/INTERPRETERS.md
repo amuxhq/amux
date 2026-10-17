@@ -241,8 +241,9 @@ draw both from these facts alone.
   Claude's own plan menu makes: auto mode where Claude offers it for the
   running model, accept edits otherwise; for terminal Claude launched
   allowing never ask, never ask. Terminal Claude's switch follows from its
-  launch arguments and the host's catalogue, and a switch naming another
-  permission is refused. While Claude is in plan mode,
+  launch arguments and the host's catalogue. The ask names the switch when
+  it opens; an answer agreeing to it names no permission, so it can only
+  agree to the one the person was shown. While Claude is in plan mode,
   its `Write`, `Edit`, `MultiEdit` and `NotebookEdit` calls draw nothing:
   plan mode lets Claude write only its plan file, and the declaration
   carries the whole plan. The ask closes on the person's answer, when the

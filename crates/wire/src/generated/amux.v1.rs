@@ -2581,11 +2581,6 @@ pub struct PlanAnswer {
     /// With keep planning: what to change.
     #[prost(string, optional, tag = "2")]
     pub note: ::core::option::Option<::prost::alloc::string::String>,
-    /// With START_SWITCHING: the permission the person was shown and agreed
-    /// to switch to, the ask's switch_permission. An answer naming another is
-    /// refused, so nobody is switched to a permission they were not shown.
-    #[prost(string, tag = "3")]
-    pub permission: ::prost::alloc::string::String,
 }
 impl ::prost::Name for PlanAnswer {
     const NAME: &'static str = "PlanAnswer";
@@ -3515,7 +3510,9 @@ pub enum PlanChoice {
     /// Start building (Claude) or implement the plan (Codex), the permission
     /// left as it was before planning.
     Start = 1,
-    /// Start, switching to the ask's switch_permission (Claude).
+    /// Start, switching to the ask's switch_permission (Claude). The switch is
+    /// fixed when the ask is made, so the answer names none; an ask with no
+    /// switch_permission refuses it.
     StartSwitching = 2,
     /// Keep planning; the note, if any, goes to the agent.
     KeepPlanning = 3,

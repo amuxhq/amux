@@ -56,8 +56,8 @@
 //!   plan menu moves to, which follows from how Claude was launched and
 //!   what its model offers: never ask where Claude was launched allowing
 //!   it, else auto mode where the host's Claude offers it for the running
-//!   model, else accept edits. A switch answered for any other permission
-//!   is refused: the menu's first entry would not do it.
+//!   model, else accept edits. The answer agreeing to the switch names no
+//!   permission: it is the ask's, fixed when the ask was made.
 //! - In manual mode, where Claude offers auto mode, its permission menu
 //!   has "Yes, and switch to auto mode" after the scope entries; on a menu
 //!   the keymap knows, the ask offers it as a last scope switching to auto.
@@ -1625,11 +1625,8 @@ fn terminal_answer(
                     Verdict::of(wire::PlanVerdict::Approved),
                 ),
                 // The menu's first entry switches to the permission the ask
-                // names; an answer agreeing to another is not what that key
-                // would do.
-                Ok(wire::PlanChoice::StartSwitching)
-                    if !switch.is_empty() && plan.permission == *switch =>
-                {
+                // names, the one the person was shown.
+                Ok(wire::PlanChoice::StartSwitching) if !switch.is_empty() => {
                     (PlanChoice::ApproveSwitching, Verdict::switching(switch))
                 }
                 Ok(wire::PlanChoice::KeepPlanning) => {

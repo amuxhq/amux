@@ -236,7 +236,7 @@
           "ask": "req-2",
           "answer": {
             "approve_plan": {
-              "auto_accept_edits": true
+              "switching": true
             }
           }
         }

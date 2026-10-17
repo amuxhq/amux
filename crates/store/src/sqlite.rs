@@ -37,9 +37,13 @@ pub enum OpenError {
 }
 
 pub struct Sqlite {
-    conn: Connection,
-    own_host: Vec<u8>,
-    markers: HashMap<AgentKey, Marker>,
+    pub(crate) conn: Connection,
+    pub(crate) own_host: Vec<u8>,
+    pub(crate) markers: HashMap<AgentKey, Marker>,
+    /// How many resets each replica row has absorbed since the store
+    /// opened: what a replica that was told to forget its block went
+    /// through, for the checks that judge it.
+    pub(crate) resets: HashMap<AgentKey, u64>,
 }
 
 impl std::fmt::Debug for Sqlite {
@@ -59,6 +63,13 @@ impl Sqlite {
         Self::with_connection(conn, &path.display().to_string(), own_host.into())
     }
 
+    /// A store with the same schema that lives only in memory: gone when
+    /// it is dropped, for exploring the store's own transitions.
+    pub fn open_in_memory(own_host: impl Into<Vec<u8>>) -> Result<Self, OpenError> {
+        let conn = Connection::open_in_memory()?;
+        Self::with_connection(conn, ":memory:", own_host.into())
+    }
+
     fn with_connection(
         mut conn: Connection,
         name: &str,
@@ -71,6 +82,7 @@ impl Sqlite {
             conn,
             own_host,
             markers: HashMap::new(),
+            resets: HashMap::new(),
         })
     }
 
@@ -165,7 +177,7 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
 }
 
 /// The lowest order the block counts from.
-fn block_floor(row: &AgentRow, own: bool) -> Option<u64> {
+pub(crate) fn block_floor(row: &AgentRow, own: bool) -> Option<u64> {
     match (own, row.complete_from_order) {
         (_, Some(order)) => Some(order),
         (true, None) => Some(0),
@@ -205,7 +217,10 @@ fn last_n(rows: &Rows<'_>, agent: &AgentKey, n: u32) -> Result<Vec<Item>, StoreE
 impl Sqlite {
     /// Runs `f` in one read transaction: every read inside sees one commit
     /// point.
-    fn read<R>(&self, f: impl FnOnce(&Rows<'_>) -> Result<R, StoreError>) -> Result<R, StoreError> {
+    pub(crate) fn read<R>(
+        &self,
+        f: impl FnOnce(&Rows<'_>) -> Result<R, StoreError>,
+    ) -> Result<R, StoreError> {
         let tx = self.conn.unchecked_transaction()?;
         let result = f(&Rows {
             conn: &tx,
@@ -236,7 +251,7 @@ impl Sqlite {
         &self.own_host
     }
 
-    fn is_own(&self, agent: &AgentKey) -> bool {
+    pub(crate) fn is_own(&self, agent: &AgentKey) -> bool {
         agent.host == self.own_host
     }
 
@@ -419,6 +434,7 @@ impl Sqlite {
     /// Removes an agent whole: row, items, deliveries and notifications.
     pub fn delete_agent(&mut self, agent: &AgentKey) -> Result<(), StoreError> {
         self.markers.remove(agent);
+        self.resets.remove(agent);
         self.write(|rows| rows.remove_agent(agent))
     }
 
@@ -459,9 +475,13 @@ impl Sqlite {
             Absorb::Reset { .. } => Some(None),
             _ => None,
         };
+        let reset = matches!(what, Absorb::Reset { .. });
         let absorbed = self.write(|rows| absorb(rows, agent, what))?;
         if let Some(marker) = marker {
             self.set_marker(agent, marker);
+        }
+        if reset {
+            *self.resets.entry(agent.clone()).or_default() += 1;
         }
         Ok(absorbed)
     }
@@ -501,6 +521,7 @@ impl Sqlite {
         let sweep = self.write(|rows| retention::sweep_own(rows, budget, chunk, floor_k))?;
         for agent in &sweep.removed {
             self.markers.remove(agent);
+            self.resets.remove(agent);
         }
         Ok(sweep)
     }
@@ -523,6 +544,7 @@ impl Sqlite {
             .write(|rows| retention::sweep_replicas(rows, budget, floor_k, sourced, last_used))?;
         for agent in &sweep.removed {
             self.markers.remove(agent);
+            self.resets.remove(agent);
         }
         Ok(sweep)
     }

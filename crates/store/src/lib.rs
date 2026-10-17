@@ -20,9 +20,11 @@ mod rows;
 mod sqlite;
 
 mod blobs;
+mod explore;
 mod retention;
 
 pub use blobs::BlobLru;
+pub use explore::{BlockOrders, Dump};
 pub use migrations::{MIGRATIONS, SCHEMA_STAMP, migration_hash};
 pub use retention::{Sweep, SweepStep};
 pub use sqlite::{OpenError, Sqlite};
@@ -231,7 +233,7 @@ pub struct Absorbed {
 }
 
 /// The marker a subscriber reads once at join, after its held rows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Marker {
     CaughtUp,
     Detached,

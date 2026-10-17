@@ -494,7 +494,7 @@ cargo = [
 
 [[suite]]
 name = "sqlite-store-contract"
-contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file keeps its migrations, refuses a store with another history untouched, and keeps its position tripwire, one transaction per commit and its rows across a reopen."
+contract = "The SQLite profile store answers one reader and writer suite, retention trims own and replica rows on a driven clock, and the file keeps its migrations, refuses a store with another history untouched, and keeps its position tripwire, one transaction per commit and its rows across a reopen; a store in memory dumps every row canonically and restores to an equal store."
 paths = ["crates/store/tests"]
 recipe = "just test-store"
 boundary = "Single daemon"
@@ -508,7 +508,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "store", kind = "lib", targets = ["store"], features = ["bundled"] },
-  { package = "store", targets = ["conformance", "retention", "sqlite"], features = ["bundled"] },
+  { package = "store", targets = ["conformance", "explore", "retention", "sqlite"], features = ["bundled"] },
 ]
 
 [[suite]]

@@ -13,7 +13,7 @@ import sqlite_linkage
 
 TRIPLE = "aarch64-apple-ios-sim"
 # The unit tests (named after the crate) and every integration test target.
-EXPECTED_TESTS = {"store", "conformance", "retention", "sqlite"}
+EXPECTED_TESTS = {"store", "conformance", "explore", "retention", "sqlite"}
 
 
 def build_tests() -> dict[str, Path]:

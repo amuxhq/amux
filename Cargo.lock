@@ -2378,6 +2378,8 @@ name = "models"
 version = "0.1.0"
 dependencies = [
  "journal",
+ "prost",
+ "rusqlite",
  "stateright",
  "store",
  "wire",

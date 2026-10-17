@@ -8,6 +8,8 @@ publish = false
 
 [dependencies]
 journal = { workspace = true }
+prost = { workspace = true }
+rusqlite = { workspace = true }
 stateright = { workspace = true }
 store = { workspace = true }
 wire = { workspace = true }

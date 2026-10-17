@@ -20,4 +20,14 @@ prints the shortest path to a failing state. `walk(model, bounds, seed)` follows
 one schedule chosen by the seed: the same seed walks the same schedule on every
 run, so a failing walk is reproduced by its seed alone.
 
+## Replication
+
+`Replication` follows one agent from its origin to one replica, both real
+in-memory stores, over a stream that delivers in order and may die at any
+message. The origin commits keys, trims its oldest row and reboots
+uncleanly, losing its newest commit and minting those revisions again under
+the next generation; the replica opens streams, absorbs what they carry and
+pages below its block. The properties are in `src/replication.rs`, each a
+sentence over the two stores.
+
 Run the models with `just test-crate models`.

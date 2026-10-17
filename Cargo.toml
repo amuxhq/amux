@@ -184,6 +184,19 @@ debug = false
 incremental = true
 panic = "unwind"
 
+# SQLite's C and the protocol models run optimised in development builds too:
+# the models explore real stores in memory, thousands of transactions per
+# second of a test's budget, and unoptimised SQLite and Rust there are ten
+# times slower. Neither is anything a debugger steps through.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
+
+[profile.dev.package.models]
+opt-level = 3
+
+[profile.dev.package.store]
+opt-level = 3
+
 # What a release ships, for the daemon and the phone alike, and what perf runs
 # measure, so the numbers are the shipped binary's. Whole-program optimisation
 # (fat LTO over one codegen unit) makes the binaries smaller and no slower, at

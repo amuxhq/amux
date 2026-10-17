@@ -7,7 +7,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, TransactionBehavior, params};
 
-use crate::migrations::{MIGRATIONS, SCHEMA_STAMP, migration_hash};
+use crate::migrations::{MIGRATIONS, SCHEMA_STAMP, shipped_hash};
 use crate::retention::{self, Sweep};
 use crate::rows::{self, ABSORBED, COMMITTED, Rows};
 use crate::{
@@ -142,9 +142,8 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
     // carries a higher stamp than this build knows, and is the past, not
     // the future.
     for (id, hash) in &applied {
-        if let Some(text) = MIGRATIONS.get(*id as usize - 1)
-            && migration_hash(text) != *hash
-        {
+        let index = (*id as usize).wrapping_sub(1);
+        if index < MIGRATIONS.len() && shipped_hash(index) != hash {
             return Err(OpenError::EditedMigration {
                 path: name.into(),
                 id: *id,
@@ -166,7 +165,7 @@ fn migrate(conn: &mut Connection, name: &str) -> Result<(), OpenError> {
         tx.execute_batch(text)?;
         tx.execute(
             "INSERT INTO schema_migrations (id, sha256) VALUES (?1, ?2)",
-            params![id, migration_hash(text)],
+            params![id, shipped_hash(index)],
         )?;
         tx.pragma_update(None, "application_id", APPLICATION_ID)?;
         let current: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;

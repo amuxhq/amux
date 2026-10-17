@@ -13,8 +13,9 @@ use crate::sqlite::{OpenError, Sqlite, block_floor};
 use crate::{AgentKey, Item, Marker, StoreError};
 
 /// Every row of a store, canonically ordered: equal for two stores that
-/// hold the same rows, markers and reset counts.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// hold the same rows, markers and reset counts. The default is no store
+/// at all, with no tables.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Dump {
     own_host: Vec<u8>,
     tables: Vec<Table>,
@@ -82,19 +83,6 @@ pub struct BlockOrders {
     pub orders: Vec<u64>,
 }
 
-impl BlockOrders {
-    /// Every order from the oldest held to the newest is held, and the
-    /// oldest is the one the block runs from, when the row names one.
-    pub fn is_contiguous(&self) -> bool {
-        let consecutive = self.orders.windows(2).all(|pair| pair[1] == pair[0] + 1);
-        let starts = match (self.from, self.orders.first()) {
-            (Some(from), Some(oldest)) => from == *oldest,
-            _ => true,
-        };
-        consecutive && starts
-    }
-}
-
 impl Sqlite {
     /// Every row this store holds, with its markers and reset counts.
     pub fn dump(&self) -> Result<Dump, StoreError> {
@@ -154,8 +142,18 @@ impl Sqlite {
                 OpenError::Sqlite(error) => StoreError::Sqlite(error),
                 other => StoreError::Corrupt(other.to_string()),
             })?;
-        let tx = store.conn.transaction()?;
+        store.load(dump)?;
+        Ok(store)
+    }
+
+    /// Replaces everything this store holds with the dump's rows, markers
+    /// and reset counts, and takes its host as its own: its dump then
+    /// equals `dump`. Faster than [`Sqlite::restore`] when a store is
+    /// reused, since the schema is already read.
+    pub fn load(&mut self, dump: &Dump) -> Result<(), StoreError> {
+        let tx = self.conn.transaction()?;
         for table in &dump.tables {
+            tx.execute(&format!("DELETE FROM \"{}\"", table.name), [])?;
             let Some(width) = table.rows.first().map(Vec::len) else {
                 continue;
             };
@@ -170,9 +168,10 @@ impl Sqlite {
             }
         }
         tx.commit()?;
-        store.markers = dump.markers.iter().cloned().collect();
-        store.resets = dump.resets.iter().cloned().collect();
-        Ok(store)
+        self.own_host = dump.own_host.clone();
+        self.markers = dump.markers.iter().cloned().collect();
+        self.resets = dump.resets.iter().cloned().collect();
+        Ok(())
     }
 
     /// The orders of the agent's block, oldest first.

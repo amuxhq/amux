@@ -189,7 +189,6 @@ fn a_replica_block_reads_through_the_views() {
             orders: vec![3, 4]
         }
     );
-    assert!(block.is_contiguous());
     assert_eq!(replica.source_generation(&agent).unwrap(), Some(1));
     assert_eq!(replica.reset_count(&agent).unwrap(), 1);
     assert!(replica.current_with(&agent, &origin).unwrap());
@@ -256,22 +255,4 @@ fn a_replica_block_reads_through_the_views() {
             orders: vec![1, 2, 3, 4, 5]
         }
     );
-}
-
-#[test]
-fn a_block_with_a_gap_or_a_wrong_start_is_not_contiguous() {
-    let contiguous = |from, orders: &[u64]| {
-        BlockOrders {
-            from,
-            orders: orders.to_vec(),
-        }
-        .is_contiguous()
-    };
-    assert!(contiguous(None, &[]));
-    assert!(contiguous(Some(5), &[]));
-    assert!(contiguous(None, &[2, 3, 4]));
-    assert!(contiguous(Some(2), &[2, 3, 4]));
-    assert!(!contiguous(Some(2), &[2, 4]));
-    assert!(!contiguous(Some(2), &[3, 4]));
-    assert!(!contiguous(None, &[1, 3]));
 }

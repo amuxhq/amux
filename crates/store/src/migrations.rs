@@ -110,6 +110,14 @@ CREATE INDEX items_by_revision ON items (origin_host, agent_id, revision);
 CREATE INDEX items_by_input ON items (origin_host, agent_id, input_id) WHERE input_id IS NOT NULL;
 "#];
 
+/// The hash of the migration at `index` in [`MIGRATIONS`], computed once:
+/// every store opened compares its recorded history against them.
+pub(crate) fn shipped_hash(index: usize) -> &'static str {
+    static SHIPPED: std::sync::LazyLock<Vec<String>> =
+        std::sync::LazyLock::new(|| MIGRATIONS.iter().map(|text| migration_hash(text)).collect());
+    &SHIPPED[index]
+}
+
 /// The hex SHA-256 of a migration's text, as recorded when it is applied.
 pub fn migration_hash(text: &str) -> String {
     Sha256::digest(text.as_bytes())

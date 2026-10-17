@@ -14,6 +14,30 @@ use std::time::Instant;
 
 use stateright::{Checker, Chooser, UniformChooser};
 
+pub mod replication;
+pub use replication::Replication;
+
+/// Turns off SQLite's memory statistics for this process before any
+/// database opens. Every SQLite allocation otherwise takes one global lock
+/// to count itself, so checker threads exploring real stores side by side
+/// spend their time waiting on each other. Nothing reads the statistics.
+/// Too late once a database has opened, when SQLite refuses the change and
+/// keeps counting.
+pub(crate) fn share_sqlite_across_threads() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // SAFETY: configuration before SQLite initializes, with the integer
+        // argument this option takes; afterwards it returns SQLITE_MISUSE and
+        // changes nothing.
+        unsafe {
+            rusqlite::ffi::sqlite3_config(
+                rusqlite::ffi::SQLITE_CONFIG_MEMSTATUS,
+                0 as std::ffi::c_int,
+            );
+        }
+    });
+}
+
 /// A model: real state, the actions that may happen to it, and its promises.
 ///
 /// The state must be a value (cloned, hashed and compared per explored state);
@@ -155,6 +179,8 @@ impl Measured {
 pub struct Counterexample {
     /// Each action taken, in order.
     pub actions: Vec<String>,
+    /// The state each action reached, in order; the last is `state`.
+    pub states: Vec<String>,
     /// The state the last action reached.
     pub state: String,
 }
@@ -229,10 +255,9 @@ impl Display for Verdict {
             };
             writeln!(f, "  {mark}: {:?} {}", judged.kind, judged.sentence)?;
             if let Some(path) = path {
-                for (step, action) in path.actions.iter().enumerate() {
-                    writeln!(f, "    {}. {action}", step + 1)?;
+                for (step, (action, state)) in path.actions.iter().zip(&path.states).enumerate() {
+                    writeln!(f, "    {}. {action}\n       {state}", step + 1)?;
                 }
-                writeln!(f, "    reaching {}", path.state)?;
             }
         }
         Ok(())
@@ -260,14 +285,24 @@ pub fn check<M: Machine>(model: &M, bounds: Bounds) -> Verdict {
                 (PropertyKind::Sometimes, Some(_)) => Outcome::Holds,
                 (PropertyKind::Sometimes, None) => Outcome::NeverReached,
                 (_, None) => Outcome::Holds,
-                (_, Some(path)) => Outcome::Fails(Counterexample {
-                    state: format!("{:?}", path.last_state()),
-                    actions: path
-                        .into_actions()
-                        .iter()
-                        .map(|action| format!("{action:?}"))
-                        .collect(),
-                }),
+                (_, Some(path)) => {
+                    let state = format!("{:?}", path.last_state());
+                    let steps = path.into_vec();
+                    Outcome::Fails(Counterexample {
+                        state,
+                        // Each pair is a state and the action taken from it.
+                        actions: steps
+                            .iter()
+                            .filter_map(|(_, action)| action.as_ref())
+                            .map(|action| format!("{action:?}"))
+                            .collect(),
+                        states: steps
+                            .iter()
+                            .skip(1)
+                            .map(|(state, _)| format!("{state:?}"))
+                            .collect(),
+                    })
+                }
             };
             Judged {
                 kind: property.kind,

@@ -26,7 +26,7 @@ use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::routing::{LinkId, LinkRegistry, RevocationMark, Revocations, Route};
-use crate::transport::{channel_from_single_io, configure_tonic_endpoint_keepalive};
+use crate::transport::{Compressed, channel_from_single_io, configure_tonic_endpoint_keepalive};
 use crate::trust::SharedTrustStore;
 
 const CHANNEL_TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -450,7 +450,15 @@ impl ChannelPool {
                 Box::new(tls)
             }
         };
-        let tls = TrustAnswer::new(io, key.peer, security.revocations.clone(), begun);
+        // Compressed above the handshake, so the relay copies it as it
+        // copies any ciphertext; the acceptor wraps its end the same way
+        // (`TunnelDispatcher`).
+        let tls = Compressed::new(TrustAnswer::new(
+            io,
+            key.peer,
+            security.revocations.clone(),
+            begun,
+        ));
         let endpoint = configure_tonic_endpoint_keepalive(Endpoint::from_static("https://peer"));
         let hold = (key.class == ChannelClass::Bulk).then(|| {
             self.bulk_response_holds

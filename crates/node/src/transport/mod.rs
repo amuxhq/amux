@@ -1,5 +1,6 @@
 //! Transport helpers for gRPC services.
 
+mod compress;
 mod io;
 mod memory;
 mod single_io;
@@ -9,6 +10,7 @@ mod tls;
 
 use std::time::Duration;
 
+pub(crate) use compress::Compressed;
 pub(crate) use io::{
     BoxedGrpcAuth, BoxedGrpcConnectInfo, BoxedGrpcInner, BoxedGrpcIo, PreTrustPairingReachability,
     TrustedPeerConnections,

@@ -52,6 +52,7 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 version-stamp = { workspace = true }
 wire = { workspace = true }
+zstd = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

@@ -191,6 +191,51 @@ async fn backoff_armed(net: &Net) {
 /// that does not; its markers arrive in sequence with the rows they cover,
 /// again after every reconnect, and never while the host is away. A client
 /// asking for more than K rows gets K.
+/// What crosses from one host to another is compressed: a transcript of
+/// build output reaches the replica in fewer bytes on the link, counted
+/// with everything the link carried beside it, than the origin's rows hold.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_replica_is_carried_compressed() {
+    let output = (0..40)
+        .map(|at| {
+            let lines: String = (0..20)
+                .map(|line| {
+                    format!(
+                        "   Compiling crate-{at}-{line} v0.{line}.{at} (/src/crates/c{at}{line})\n"
+                    )
+                })
+                .collect();
+            text(&format!(
+                "{lines}Finished in {}.{:02}s",
+                at % 7,
+                at * 13 % 100
+            ))
+        })
+        .chain([Step::TurnEnd])
+        .collect();
+    let topology =
+        desk_and_laptop().agent(AgentDecl::new("worker", "desk").steps(output).prompt("go"));
+    let net = Net::start_with(topology, options(200, |_, _| {}))
+        .await
+        .unwrap();
+    wait_origin_says(&net, "worker", "Finished in 4.07s").await;
+    net.current("laptop", "worker").await.unwrap();
+
+    let rows: usize = origin_rows(&net, "worker")
+        .await
+        .iter()
+        .map(|item| item.encoded_len())
+        .sum();
+    let carried = net
+        .link_carried("desk", "laptop")
+        .expect("desk and laptop are linked");
+    println!("the origin holds {rows} bytes of rows; the link carried {carried}");
+    assert!(
+        carried * 2 < rows as u64,
+        "the link carried {carried} bytes for {rows} bytes of rows"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence() {
     const K: u32 = 6;

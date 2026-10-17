@@ -16,7 +16,9 @@ use crate::resource_limits::{
     Admission, EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY, EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT,
     EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW, QUIC_RETRY_REPEAT_INTERVAL, RetryAdmission,
 };
-use crate::transport::{BoxedGrpcIo, PreTrustPairingReachability, TrustedPeerConnections};
+use crate::transport::{
+    BoxedGrpcIo, Compressed, PreTrustPairingReachability, TrustedPeerConnections,
+};
 use crate::trust::SharedTrustStore;
 use crate::{HostId, audit};
 
@@ -301,7 +303,7 @@ impl TunnelDispatcher {
             return self
                 .trusted_tx
                 .send(
-                    BoxedGrpcIo::trusted(stream, adjacent_peer)
+                    BoxedGrpcIo::trusted(Compressed::new(stream), adjacent_peer)
                         .track_trusted_peer(&self.trusted_connections),
                 )
                 .await
@@ -399,10 +401,12 @@ impl TunnelDispatcher {
         let tls_stream = self.accept_tls(stream).await?;
 
         match self.dispatch_target(&tls_stream)? {
+            // A paired host's channel is compressed inside its handshake, as
+            // the opener's is (`ChannelPool::secure_channel`); pairing's is not.
             DispatchTarget::Trusted(peer) => self
                 .trusted_tx
                 .send(
-                    BoxedGrpcIo::trusted(tls_stream, peer)
+                    BoxedGrpcIo::trusted(Compressed::new(tls_stream), peer)
                         .track_trusted_peer(&self.trusted_connections),
                 )
                 .await

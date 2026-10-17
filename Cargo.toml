@@ -156,6 +156,8 @@ if-addrs = "0.13"
 # A screen model of an attached agent's terminal, so leaving it for the
 # fleet and coming back repaints the same process where it was.
 vt100 = "0.15"
+# Compression for the channels between daemons; the raw streaming API only.
+zstd = { version = "0.13", default-features = false }
 
 # Cargo defaults macOS debug profiles to split-debuginfo = "unpacked", which
 # keeps every codegen unit's object file under target/<profile>/deps for the

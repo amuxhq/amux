@@ -2682,6 +2682,15 @@ impl Net {
         ))
     }
 
+    /// The bytes an in-process link between `a` and `b` has carried, both
+    /// ways, since it was last dialled: what crossing between the hosts
+    /// costs on the wire. None while the link is down or not in process.
+    pub fn link_carried(&self, a: &str, b: &str) -> Option<u64> {
+        let link = self.links.get(&link_key(a, b))?;
+        let live = link.live.as_ref()?;
+        Some(live.lock().unwrap().carried())
+    }
+
     /// Whether both ends of a link route to each other directly now.
     pub async fn link_up(&self, a: &str, b: &str) -> bool {
         if matches!(self.process(a), Ok(Some(_))) || matches!(self.process(b), Ok(Some(_))) {

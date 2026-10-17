@@ -379,6 +379,28 @@ queue behind calls at the amux layer. Channel payloads are bounded by
 `ATTACHMENT_SIZE_LIMIT` (64 MiB), with room for the `PutBlobRequest` framing
 around it.
 
+### Compression
+
+Every channel to a paired host is compressed, in all three classes, on every
+route: one streaming zstd compressor each way, between HTTP/2 and the channel's
+TLS (or the plain stream), so a relay copies the compressed ciphertext
+without knowing it is there (`crates/node/src/transport/compress.rs`). The
+opener wraps its end in `ChannelPool::secure_channel`; the acceptor wraps its
+end as `TunnelDispatcher` hands a paired host's stream to `PeerService`.
+Pairing channels, the link's control stream and local sockets are not
+compressed. Nothing on the wire announces it: both ends always compress.
+
+A channel's messages are small and mostly repeat each other (every snapshot is
+the whole snapshot again), so compressing each message alone finds almost
+nothing. One compressor per channel keeps its history across every message
+and every call on the channel, which removes most of it: about 5x on replayed
+agent journals, twenty agents to a channel. Every HTTP/2 flush ends a
+zstd block, so each message reaches the other end as bytes it can decompress
+at once and a live append never waits in the compressor. Bytes that do not
+compress, such as an image's, pass through as zstd's raw blocks; a blob keeps
+its hash, since only the bytes in transit are compressed. Level, window and
+table sizes are on [Parameters](PARAMETERS.md).
+
 ## Chapter 6: Relay forwarding and entitlement
 
 A relay receives a non-control stream, validates its preface, looks up a direct

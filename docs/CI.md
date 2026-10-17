@@ -216,7 +216,7 @@ The terminal journeys and the iOS gate are in `ci.yml` but not in `just ci`.
 The Windows test job compiles every workspace target for
 `x86_64-pc-windows-msvc`, and a Windows-only compile error otherwise shows up
 only there. Type-checking for Windows from a Mac needs no Windows toolchain,
-but it does need help: `ring` and `libsqlite3-sys` compile C in their build
+but it does need help: `ring`, `libsqlite3-sys` and `zstd-sys` compile C in their build
 scripts, and there is no MSVC compiler to run. Type-checking Rust needs no
 real object code, so two stub tools that create the files they are asked for
 are enough. There is no recipe for this; set it up once:

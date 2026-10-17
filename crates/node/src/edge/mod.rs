@@ -21,7 +21,10 @@ mod status;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 pub use account::ACCOUNT_FILE;
@@ -30,6 +33,7 @@ pub use cloud::{FREE_TIER_REFRESH_INTERVAL, UDP_BLOCKED_MEMORY};
 use futures_util::stream;
 pub use relay_server::{CloudLinkServer, JwtCloudLinkAuthenticator, RelayIdentity};
 pub use status::{Observed, RelayCarrier};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
@@ -801,6 +805,11 @@ impl Edge {
             return Err("an in-process link joins two hosts that trust each other".to_owned());
         }
         let (near, far) = tokio::io::duplex(1 << 20);
+        let carried = Arc::new(AtomicU64::new(0));
+        let near = Counted {
+            inner: near,
+            carried: carried.clone(),
+        };
         let connector = Arc::new(MuxCarrier::new(near, MuxRole::Connector, CarrierKind::Quic));
         let acceptor = Arc::new(MuxCarrier::new(far, MuxRole::Acceptor, CarrierKind::Quic));
         let accept_ctx = other.link_ctx().with_authenticated_peer(self.host_id());
@@ -815,6 +824,7 @@ impl Edge {
             crate::link::run::spawn_connector_with_establishment(connect_ctx, connector.clone());
         Ok(LoopbackLink {
             carriers: [connector, acceptor],
+            carried,
         })
     }
 
@@ -905,9 +915,17 @@ impl Drop for Edge {
 /// An in-process link between two edges.
 pub struct LoopbackLink {
     carriers: [Arc<MuxCarrier>; 2],
+    carried: Arc<AtomicU64>,
 }
 
 impl LoopbackLink {
+    /// The bytes the link has carried so far, both ways, as a network
+    /// between the hosts would see them: what a test reads to say what
+    /// crossing from one host to the other costs.
+    pub fn carried(&self) -> u64 {
+        self.carried.load(Ordering::Relaxed)
+    }
+
     /// Cuts the link the way a dead connection would: no LinkClose, the
     /// carrier just stops, and each side's link runtime cleans up as it
     /// does for any connection that went away.
@@ -915,6 +933,48 @@ impl LoopbackLink {
         for carrier in &self.carriers {
             crate::link::LinkCarrier::close(carrier.as_ref(), wire::LinkCloseReason::Unspecified);
         }
+    }
+}
+
+/// One end of a loopback link's pipe, counting what passes it either way.
+struct Counted<T> {
+    inner: T,
+    carried: Arc<AtomicU64>,
+}
+
+impl<T: AsyncRead + Unpin> AsyncRead for Counted<T> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let result = Pin::new(&mut self.inner).poll_read(cx, buf);
+        let read = buf.filled().len() - before;
+        self.carried.fetch_add(read as u64, Ordering::Relaxed);
+        result
+    }
+}
+
+impl<T: AsyncWrite + Unpin> AsyncWrite for Counted<T> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let result = Pin::new(&mut self.inner).poll_write(cx, buf);
+        if let Poll::Ready(Ok(written)) = result {
+            self.carried.fetch_add(written as u64, Ordering::Relaxed);
+        }
+        result
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 

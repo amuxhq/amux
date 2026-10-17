@@ -12,7 +12,7 @@
     "reconciliation through the relay at 100 ms": 1007.3820352554321,
     "streaming hitch time": 0.833074265701191,
     "streaming main-thread CPU": 47.69235581557017,
-    "streaming footprint": 69.47106170654297,
+    "streaming footprint": 77.06483459472656,
     "idle transcript commits": 0,
     "idle display ticks": 0
   }

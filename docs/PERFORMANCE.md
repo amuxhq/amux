@@ -157,6 +157,42 @@ flood ingest cost per frame | 21.002 µs | median 21.002 µs | 100.000 µs | 21.
 `measured` is the metric's named statistic over its samples; `baseline` and `drift` read `ceiling only` for metrics
 without a drift gate. The run fails if any verdict is `FAIL`.
 
+## The relay curve
+
+`just relay-curve` measures how the production relay scales with the hosts holding links to it
+(`crates/qualification/src/perf/relay.rs`). At 10, 100 and 1,000 concurrent connections it starts a fresh relay on
+loopback, links that many hosts to it in pairs, one pair to an account, and measures two things: stream-open
+latency, every host opening twenty streams to its partner one after another, all hosts at once, each timed from the
+open to the partner's one-byte answer; and aggregate throughput, every host writing into one stream to its partner
+as fast as the relay takes the bytes, read over a three-second window after a second's warm-up. Each level runs
+five rounds: throughput is the median round's, and the latency percentiles are taken over every round's opens
+together, so the 99th percentile at ten connections rests on a thousand opens.
+
+```sh
+just relay-curve              # measure and print
+just relay-curve --baseline   # record perf/relay/<hw.model>/baseline.json
+just relay-curve --compare    # judge against it; non-zero outside the noise bands
+```
+
+The hosts link over the relay's TLS-over-TCP listener, the one a deployment runs beside QUIC: the relay admits ten
+new QUIC handshakes a minute from one address, and every host here dials from the same loopback address. They are
+bare links that open raw streams and serve no calls, so the work measured is the relay's and the TLS on both its
+legs, in the same process with the relay on a runtime of its own. The run records the machine model, OS, cores,
+reference state (the flood's busy core) and the load average before and after; the binary refuses a debug build
+and a machine that is not enrolled.
+
+The comparison is one-sided: a run passes unless a figure is worse than its baseline by more than its band, and a
+faster run is reported as such. The bands are constants beside the workload, set from three consecutive runs of
+one build on the enrolled Mac: throughput moved by up to 4% and the median open by up to 2%, so their bands are 15%
+and 25%; the 99th percentile moved by up to 76% and at a thousand connections falls in one of two modes, so it
+fails only past double. A baseline from another model, profile, carrier or reference state is refused.
+
+On macOS the curve is bounded by the kernel's loopback, not by the relay's own code: the process spends about four
+times as long in the kernel as in user code with every core partly idle, the relay completes about 3,300 stream
+opens a second whatever the number of connections, so open latency grows with the number of hosts opening at once,
+and throughput stays near 190 MiB/s from 10 connections to 100. A change to the relay shows when it adds round
+trips, packets or system calls to a stream, or serialises work that the kernel's limit would otherwise hide.
+
 ## The phone
 
 `just ios perf` measures the iPhone app itself, on this Mac's pinned simulator, against a served network built for

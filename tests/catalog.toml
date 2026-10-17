@@ -1099,6 +1099,23 @@ cargo = [
 ]
 
 [[suite]]
+name = "relay-scaling-qualification"
+contract = "The production relay's aggregate throughput and stream-open latency at 10, 100 and 1,000 concurrent connections on loopback stay within noise of the curve recorded from an earlier build on the same enrolled machine."
+paths = ["crates/qualification/src/perf/relay.rs", "crates/qualification/src/bin/relay_curve.rs", "crates/node/src/link/relay_host.rs", "perf/relay"]
+recipe = "just relay-curve --compare"
+boundary = "System composition"
+oracle = "Median throughput and pooled open-latency percentiles against a machine-specific reviewed baseline, within stated one-sided noise bands."
+real = ["release build", "production relay server", "loopback TCP and TLS", "the link multiplexer on both sides"]
+substituted = ["cloud account by a stand-in that names an account per token", "hosts by bare relay links that serve no calls"]
+time = "real"
+capabilities = ["enrolled Mac14,6", "quiet machine", "release toolchain"]
+lane = "qualification"
+evidence = "the printed curve and judgement"
+update = "just relay-curve --baseline"
+baselines = ["perf/relay/Mac14,6/baseline.json"]
+cargo = [{ package = "qualification", kind = "bin", targets = ["relay-curve"], features = ["perf"] }]
+
+[[suite]]
 name = "phone-source-policy"
 contract = "Phone source obeys the registered leaf, platform-conditional, spinner, and localized-copy policies."
 paths = ["apps/apple/Tools/feature-lint.sh", "apps/apple/Tools/strings-lint.sh"]

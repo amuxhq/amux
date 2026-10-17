@@ -3,6 +3,7 @@ pub(crate) mod channels;
 pub(crate) mod mux;
 pub(crate) mod piper;
 pub(crate) mod quic;
+pub(crate) mod relay_host;
 pub(crate) mod run;
 
 pub use carrier::{

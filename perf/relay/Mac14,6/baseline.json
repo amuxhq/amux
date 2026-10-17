@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "model": "Mac14,6",
+  "os": "26.5.2",
+  "profile": "release",
+  "carrier": "TLS over TCP",
+  "reference_state": "one busy core (cluster warmer)",
+  "cpus": 12,
+  "load_before": [
+    2.7001953125,
+    3.84423828125,
+    3.82177734375
+  ],
+  "load_after": [
+    4.1376953125,
+    4.06982421875,
+    3.91455078125
+  ],
+  "rounds": 5,
+  "points": [
+    {
+      "connections": 10,
+      "throughput_mib_s": 188.20029076719274,
+      "open_p50_ms": 3.021208,
+      "open_p99_ms": 8.7385,
+      "opens": 1000
+    },
+    {
+      "connections": 100,
+      "throughput_mib_s": 188.45567108216605,
+      "open_p50_ms": 29.860875,
+      "open_p99_ms": 44.218458000000005,
+      "opens": 10000
+    },
+    {
+      "connections": 1000,
+      "throughput_mib_s": 154.6080153482458,
+      "open_p50_ms": 299.462,
+      "open_p99_ms": 524.9143750000001,
+      "opens": 100000
+    }
+  ]
+}

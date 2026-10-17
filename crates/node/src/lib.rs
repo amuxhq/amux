@@ -105,9 +105,13 @@ pub use worktree::{GitWorktrees, MakeWorktree, WORKTREES};
 /// unstable: reachable only for test infrastructure, never for products.
 #[doc(hidden)]
 pub mod harness {
+    pub use agent_dir::SystemClock;
+
     pub use crate::auth::claims::Tier;
     pub use crate::discovery::{Advertisement, Discovery, DiscoveryEvent, ScriptedDiscovery};
     pub use crate::identity::device_key_path;
+    pub use crate::link::ByteStream;
+    pub use crate::link::relay_host::RelayHost;
     pub use crate::routing::{AuthenticatedLinkUser, LinkTokenAuthenticator, LiveRoute};
     pub use crate::transport::{
         relay_quic_client_config_with_roots, relay_quic_server_config_from_der,

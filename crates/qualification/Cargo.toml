@@ -24,6 +24,12 @@ required-features = ["perf"]
 
 # The phone's performance topology, written for `testnet serve` by
 # `just ios perf`; needs no feature, so the ordinary tools build carries it.
+# The relay's scaling curve, built in release by `just relay-curve`.
+[[bin]]
+name = "relay-curve"
+path = "src/bin/relay_curve.rs"
+required-features = ["perf"]
+
 [[bin]]
 name = "phone-topology"
 path = "src/bin/phone_topology.rs"
@@ -33,12 +39,17 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 node = { workspace = true }
 provider-fakes = { workspace = true }
+rcgen = { workspace = true }
+rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 store = { workspace = true }
 testnet = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+tonic = { workspace = true }
+uuid = { workspace = true }
 wire = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -52,10 +63,8 @@ interpret = { workspace = true }
 prost = { workspace = true }
 pty-host = { workspace = true }
 tempfile = { workspace = true }
-tonic = { workspace = true }
 tower = { workspace = true }
 ui-state = { workspace = true }
-uuid = { workspace = true }
 vt100 = { workspace = true }
 
 [[test]]

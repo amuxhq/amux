@@ -1,8 +1,6 @@
-use std::io::Read;
-use std::process::{Child, ChildStdin, Command, Stdio};
-
 use anyhow::{Context, Result, bail};
 use qualification::perf::flood::{self, FloodOptions};
+use qualification::perf::warmer::{CLUSTER_WARMER_ARG, ClusterWarmer, run_cluster_warmer};
 use qualification::perf::{Baselines, DESKTOP_REFERENCE_STATE, Machine, MetricRun, Report};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,7 +11,7 @@ enum Selection {
 
 fn main() -> Result<()> {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
-    if arguments.as_slice() == ["--cluster-warmer"] {
+    if arguments.as_slice() == [CLUSTER_WARMER_ARG] {
         return run_cluster_warmer();
     }
     if cfg!(debug_assertions) {
@@ -57,76 +55,6 @@ fn run_flood() -> Result<Vec<MetricRun>> {
         .build()
         .context("start the flood's runtime")?
         .block_on(flood::run(&FloodOptions::full()))
-}
-
-/// Keeps one core busy for the whole run, the reference state baselines
-/// are recorded in, so a machine that idles its cores between samples
-/// measures the same as one that does not.
-struct ClusterWarmer {
-    child: Option<Child>,
-    pipe: Option<ChildStdin>,
-}
-
-impl ClusterWarmer {
-    fn start() -> Result<Self> {
-        let mut child = Command::new(std::env::current_exe()?)
-            .arg("--cluster-warmer")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .context("start performance cluster warmer")?;
-        let pipe = child
-            .stdin
-            .take()
-            .context("cluster warmer has no parent pipe")?;
-        Ok(Self {
-            child: Some(child),
-            pipe: Some(pipe),
-        })
-    }
-
-    fn stop(&mut self) -> Result<()> {
-        drop(self.pipe.take());
-        let status = self
-            .child
-            .take()
-            .context("cluster warmer was already reaped")?
-            .wait()
-            .context("reap performance cluster warmer")?;
-        if !status.success() {
-            bail!("performance cluster warmer exited with {status}");
-        }
-        Ok(())
-    }
-}
-
-impl Drop for ClusterWarmer {
-    fn drop(&mut self) {
-        drop(self.pipe.take());
-        if let Some(mut child) = self.child.take() {
-            let _ = child.wait();
-        }
-    }
-}
-
-fn run_cluster_warmer() -> Result<()> {
-    let pipe_monitor = std::thread::spawn(|| {
-        let mut stdin = std::io::stdin().lock();
-        let mut byte = [0_u8; 1];
-        loop {
-            match stdin.read(&mut byte) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {}
-            }
-        }
-    });
-    while !pipe_monitor.is_finished() {
-        std::hint::spin_loop();
-    }
-    pipe_monitor
-        .join()
-        .map_err(|_| anyhow::anyhow!("cluster warmer pipe monitor panicked"))
 }
 
 fn qualification_arguments(arguments: &[String]) -> Result<(bool, Selection)> {

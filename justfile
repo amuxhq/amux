@@ -257,3 +257,9 @@ qa *ARGS:
 # record the current release medians after every absolute budget passes.
 perf *ARGS:
     set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 1800 target/release/perf "$@"
+
+# Records the loopback scaling curve of the production relay at 10, 100 and
+# 1,000 connections (aggregate throughput, stream-open latency p50 and p99);
+# --baseline records, --compare judges within noise (docs/PERFORMANCE.md).
+relay-curve *ARGS:
+    set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin relay-curve --features bundled,perf; {{bounded}} 1200 target/release/relay-curve "$@"

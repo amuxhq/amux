@@ -77,9 +77,10 @@ message ClaudePtySnapshot {
   // The reasoning effort Claude last recorded running with; absent until it
   // has. A provider string, validated against the catalogue's model levels.
   optional string effort = 13;
-  // Claude's own view resumed another conversation: that conversation's
-  // session id. Informational; the phase is left as it is.
-  optional string switched_away_to = 14;
+  // Claude's own view resumed another conversation, so it shows one that is
+  // not this agent's; prompts are refused until it is back. The phase is
+  // left as it is.
+  optional bool switched_away = 14;
 }
 
 message RunningCall {

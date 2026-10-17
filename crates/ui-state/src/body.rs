@@ -318,7 +318,7 @@ pub struct AgentState {
     pub running_calls: Vec<wire::RunningCall>,
     /// Terminal Claude's own view resumed another conversation, this
     /// session: prompts are refused until it is back on the agent's own.
-    pub switched_away_to: Option<String>,
+    pub switched_away: bool,
 }
 
 /// An agent's usage limits as its provider names them.
@@ -376,7 +376,7 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.background = snapshot.background_jobs.unwrap_or_default();
             state.running_calls = snapshot.running_calls;
             state.effort = snapshot.effort;
-            state.switched_away_to = snapshot.switched_away_to;
+            state.switched_away = snapshot.switched_away.unwrap_or(false);
         }
         Kind::ClaudeSdk => {
             let Ok(snapshot) = ClaudeSdkSnapshot::decode(body) else {

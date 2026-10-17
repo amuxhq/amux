@@ -357,10 +357,10 @@ struct Provider {
     /// prompt arrives.
     #[serde(default)]
     launched_model: Option<String>,
-    /// The other conversation Claude's own view resumed, while it shows
-    /// one that is not this agent's.
+    /// Claude's own view resumed another conversation and still shows one
+    /// that is not this agent's.
     #[serde(default)]
-    switched_away_to: Option<String>,
+    switched_away: bool,
     /// What the host's Claude offers, from the spec: a terminal offers
     /// nothing a program can read.
     #[serde(with = "serde_pb::opt_msg")]
@@ -722,7 +722,7 @@ impl State {
                     .map(crate::claude_common::tidy_model)
             }),
             effort: self.provider.effort.clone(),
-            switched_away_to: self.provider.switched_away_to.clone(),
+            switched_away: Some(self.provider.switched_away),
             permission: self.provider.permission_mode.clone(),
             provider_session: self.provider.session.clone(),
             background_jobs: Some(self.shared.jobs()),
@@ -1341,9 +1341,10 @@ impl State {
         match arm {
             // Claude's own view shows a conversation that is not this
             // agent's: nothing is typed into it.
-            claude_pty_input::Of::Prompt(_) if self.provider.switched_away_to.is_some() => self
-                .shared
-                .reject(emit, &id, Refusal::ConversationElsewhere),
+            claude_pty_input::Of::Prompt(_) if self.provider.switched_away => {
+                self.shared
+                    .reject(emit, &id, Refusal::ConversationElsewhere)
+            }
             claude_pty_input::Of::Prompt(prompt) => {
                 self.dismiss_plan(emit);
                 if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
@@ -1356,7 +1357,7 @@ impl State {
             // Back to this agent's conversation: Claude's own resume of it.
             claude_pty_input::Of::SwitchBack(_) => {
                 let ours = self.provider.session.clone();
-                match ours.filter(|_| self.provider.switched_away_to.is_some()) {
+                match ours.filter(|_| self.provider.switched_away) {
                     Some(session) => {
                         emit.effect(Effect::Terminal(TerminalInput::Prompt {
                             text: format!("/resume {session}"),

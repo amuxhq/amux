@@ -621,6 +621,11 @@ ROWS = [
             r"id: terminal\.process_id",
         ],
     ),
+    Row(
+        "the session terminal Claude switched to",
+        "the other conversation's session id on terminal Claude's snapshot, where clients only asked whether there was one",
+        [r"switched_away_to"],
+    ),
 ]
 
 # Files that name removed things on purpose, to hold them gone.

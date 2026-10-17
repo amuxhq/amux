@@ -4001,10 +4001,11 @@ pub struct ClaudePtySnapshot {
     /// has. A provider string, validated against the catalogue's model levels.
     #[prost(string, optional, tag = "13")]
     pub effort: ::core::option::Option<::prost::alloc::string::String>,
-    /// Claude's own view resumed another conversation: that conversation's
-    /// session id. Informational; the phase is left as it is.
-    #[prost(string, optional, tag = "14")]
-    pub switched_away_to: ::core::option::Option<::prost::alloc::string::String>,
+    /// Claude's own view resumed another conversation, so it shows one that is
+    /// not this agent's; prompts are refused until it is back. The phase is
+    /// left as it is.
+    #[prost(bool, optional, tag = "14")]
+    pub switched_away: ::core::option::Option<bool>,
 }
 impl ::prost::Name for ClaudePtySnapshot {
     const NAME: &'static str = "ClaudePtySnapshot";

@@ -920,7 +920,7 @@ fn a_conversation_switched_away_in_claudes_view_offers_switch_back() {
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::ClaudePty as i32,
         body: wire::ClaudePtySnapshot {
-            switched_away_to: Some("another-session".into()),
+            switched_away: Some(true),
             ..Default::default()
         }
         .encode_to_vec(),

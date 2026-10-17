@@ -77,7 +77,7 @@ pub fn claude_pty() -> ClaudePtySnapshot {
         permission: None,
         provider_session: None,
         effort: None,
-        switched_away_to: None,
+        switched_away: None,
         usage: Some(claude_usage()),
         servers: Some(tool_server_health()),
         sign_in: Some(sign_in()),

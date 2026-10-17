@@ -264,7 +264,7 @@ impl State {
         };
         // While Claude's own view shows another conversation, only its
         // next session start concerns this agent.
-        if self.provider.switched_away_to.is_some()
+        if self.provider.switched_away
             && !matches!(payload, Payload::SessionStart(_))
             && self.provider.session.as_deref() != Some(common.session_id.as_str())
         {
@@ -387,10 +387,10 @@ impl State {
             && !common.session_id.is_empty()
             && ours.as_ref().is_some_and(|ours| *ours != common.session_id)
         {
-            self.provider.switched_away_to = Some(common.session_id.clone());
+            self.provider.switched_away = true;
             return;
         }
-        self.provider.switched_away_to = None;
+        self.provider.switched_away = false;
         if !common.session_id.is_empty() {
             self.provider.session = Some(common.session_id.clone());
         }

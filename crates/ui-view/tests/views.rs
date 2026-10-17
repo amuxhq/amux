@@ -3782,12 +3782,12 @@ fn a_steps_time_leaves_out_the_wait_for_approval() {
 
 #[test]
 fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
-    let snapshot = |switched_away_to: Option<&str>| {
+    let snapshot = |switched_away: bool| {
         event(session_event::Of::Snapshot(wire::Snapshot {
             kind: Kind::ClaudePty as i32,
             body: wire::ClaudePtySnapshot {
                 effort: Some("high".into()),
-                switched_away_to: switched_away_to.map(Into::into),
+                switched_away: Some(switched_away),
                 ..Default::default()
             }
             .encode_to_vec(),
@@ -3796,14 +3796,14 @@ fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
         }))
     };
     let mut state = SessionState::new(agent(Kind::ClaudePty), CAP);
-    state.update(snapshot(Some("another-session")));
+    state.update(snapshot(true));
     assert!(composer(&state, 0).switched_away);
     assert_eq!(
         state.agent_state().effort.as_deref(),
         Some("high"),
         "the snapshot's effort is the one in force"
     );
-    state.update(snapshot(None));
+    state.update(snapshot(false));
     assert!(
         !composer(&state, 0).switched_away,
         "back on its own conversation"

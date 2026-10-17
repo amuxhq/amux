@@ -24,14 +24,14 @@ use zstd::zstd_safe::{self, CCtx, CParameter, DCtx, InBuffer, OutBuffer};
 const LEVEL: i32 = 3;
 /// The history a channel compresses against, as a power of two: 128 KiB.
 /// Replayed agent journals, twenty agents to a channel, compress 5.5x with
-/// it against 5.8x with zstd's default 2 MiB; doubling it gains 4% and costs
-/// both ends a quarter more memory, which a phone pays for each of the
-/// channel ends it holds per host. The decompressor's window is the same
-/// size.
+/// it against 5.8x with zstd's default 2 MiB; doubling it gains 4% and adds
+/// 128 KiB to the compressor's 1.1 MB, and the window again to the
+/// decompressor's 0.6 MB, at each of the channel ends a phone holds per
+/// host. The decompressor's window is the same size.
 const WINDOW_LOG: i32 = 17;
 /// The match-finder tables, as powers of two. The level's defaults are sized
-/// for megabytes of input; these cost under 1% of the ratio on the same
-/// measurement.
+/// for megabytes of input; these cost about 1% of the ratio (4.49x against
+/// 4.54x with every replayed agent on one channel at this window).
 const HASH_LOG: i32 = 15;
 const CHAIN_LOG: i32 = 14;
 /// Compressed bytes read from the stream below and not yet decompressed.

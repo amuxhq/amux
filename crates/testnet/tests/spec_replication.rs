@@ -186,11 +186,6 @@ async fn backoff_armed(net: &Net) {
         });
 }
 
-/// A replica starts from a tail of K, follows live records, takes a delta
-/// after a break that fits the cap and a Reset with a fresh tail after one
-/// that does not; its markers arrive in sequence with the rows they cover,
-/// again after every reconnect, and never while the host is away. A client
-/// asking for more than K rows gets K.
 /// What crosses from one host to another is compressed: a transcript of
 /// build output reaches the replica in fewer bytes on the link, counted
 /// with everything the link carried beside it, than the origin's rows hold.
@@ -236,6 +231,11 @@ async fn a_replica_is_carried_compressed() {
     );
 }
 
+/// A replica starts from a tail of K, follows live records, takes a delta
+/// after a break that fits the cap and a Reset with a fresh tail after one
+/// that does not; its markers arrive in sequence with the rows they cover,
+/// again after every reconnect, and never while the host is away. A client
+/// asking for more than K rows gets K.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence() {
     const K: u32 = 6;

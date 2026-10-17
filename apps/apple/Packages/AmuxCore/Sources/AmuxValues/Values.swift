@@ -1138,6 +1138,19 @@ public enum Attention: String, Codable, Hashable, Sendable, CaseIterable {
     case needsYou = "NeedsYou"
 }
 
+public enum BackgroundKind: String, Codable, Hashable, Sendable, CaseIterable {
+    /// The provider has not said what the job is.
+    case unspecified = "Unspecified"
+    /// A shell command.
+    case shell = "Shell"
+    /// A sub-agent the provider runs itself.
+    case subagent = "Subagent"
+    /// A watch the provider keeps on something.
+    case monitor = "Monitor"
+    /// A kind the provider names that amux has no word for.
+    case other = "Other"
+}
+
 public enum Base: Codable, Hashable, Sendable {
     /// From the folder's HEAD commit.
     case head(Empty)
@@ -3572,18 +3585,23 @@ public enum InputState: Codable, Hashable, Sendable {
 public struct JobRow: Codable, Hashable, Sendable {
     public var command: String
     public var startedAtMs: Int64
+    /// What the job is, so a client can tell a command from the provider's
+    /// own sub-agent or monitor, whose `command` is a description.
+    public var kind: BackgroundKind
     /// The step that started it, when the provider said which.
     public var step: String?
 
-    public init(command: String, startedAtMs: Int64, step: String?) {
+    public init(command: String, startedAtMs: Int64, kind: BackgroundKind, step: String?) {
         self.command = command
         self.startedAtMs = startedAtMs
+        self.kind = kind
         self.step = step
     }
 
     private enum CodingKeys: String, CodingKey {
         case command
         case startedAtMs = "started_at_ms"
+        case kind
         case step
     }
 }

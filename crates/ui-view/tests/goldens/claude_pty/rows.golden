@@ -40,7 +40,7 @@
      7 t3 Background { command: "npm run dev", running: false, duration_ms: Some(150) } run[t3..t4 x2 recent=1] collapsed
      8 t4 ToolCall { server: "github", tool: "create_issue", fact: "fails on CI", state: Succeeded, result: "Created issue #42" } run[t3..t4 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, subagents: 0, other: 1 }]
      9 turn:1 TurnEnd { duration_ms: Some(17000), cost_usd: None, failed: false }
-== overview Overview { tasks: None, jobs: [JobRow { step: Some("t3"), command: "npm run dev", started_at_ms: 1800000016100 }, JobRow { step: None, command: "Survey the parsers", started_at_ms: 1800000000000 }], failed_servers: [], usage_near_limit: None, changes: None }
+== overview Overview { tasks: None, jobs: [JobRow { step: Some("t3"), command: "npm run dev", started_at_ms: 1800000016100, kind: Shell }, JobRow { step: None, command: "Survey the parsers", started_at_ms: 1800000000000, kind: Subagent }], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings
   model* unlisted claude-opus-5-5 "Opus 5.5" efforts=[]

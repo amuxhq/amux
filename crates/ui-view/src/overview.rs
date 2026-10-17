@@ -7,7 +7,8 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use ui_state::{Key, SessionState, Usage};
 use wire::{
-    Diff, DiffBase, DiffFileChange, Limit, TaskListStatus, UsageMeter, UsageState, diff_base,
+    BackgroundKind, Diff, DiffBase, DiffFileChange, Limit, TaskListStatus, UsageMeter, UsageState,
+    diff_base,
 };
 
 use crate::review::FileStatus;
@@ -58,6 +59,9 @@ pub struct JobRow {
     pub step: Option<Key>,
     pub command: String,
     pub started_at_ms: i64,
+    /// What the job is, so a client can tell a command from the provider's
+    /// own sub-agent or monitor, whose `command` is a description.
+    pub kind: BackgroundKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
@@ -216,6 +220,7 @@ pub fn overview(state: &SessionState, diff: Option<&Diff>) -> Overview {
                 step: (!job.item_key.is_empty()).then(|| job.item_key.clone()),
                 command: job.command.clone(),
                 started_at_ms: job.started_at_ms,
+                kind: job.kind(),
             })
             .collect()
     } else {

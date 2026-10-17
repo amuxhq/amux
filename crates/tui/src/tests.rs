@@ -3741,6 +3741,71 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
     assert_eq!(pane[at("Fable weekly limit") + 1], "fine");
 }
 
+/// A background command reads as code; the provider's own subagent or
+/// monitor, named by a description, reads as words after a tag saying
+/// which it is.
+#[test]
+fn the_overview_tags_a_subagent_and_a_monitor_and_shows_a_command_as_code() {
+    let job = |command: &str, kind: wire::BackgroundKind| wire::BackgroundJob {
+        command: command.into(),
+        kind: kind as i32,
+        ..Default::default()
+    };
+    let body = wire::ClaudeSdkSnapshot {
+        background_jobs: Some(wire::BackgroundJobs {
+            known: true,
+            jobs: vec![
+                job("npm run dev", wire::BackgroundKind::Shell),
+                job("Review the auth module", wire::BackgroundKind::Subagent),
+                job("build log", wire::BackgroundKind::Monitor),
+            ],
+        }),
+        ..Default::default()
+    }
+    .encode_to_vec();
+    let mut state = chat_in_git(replies(1, 2), Some("main"));
+    state.update(snapshot(Phase::Idle, body, vec![]));
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    view.open_pane();
+    let (buffer, _) = draw(&mut view, &state, 3 * 60_000, 140, 40, theme());
+    let screen = text(&buffer);
+    let line = |words: &str| {
+        screen
+            .lines()
+            .filter_map(|line| line.split_once('│').map(|(_, pane)| pane.trim()))
+            .find(|pane| pane.contains(words))
+            .unwrap_or_else(|| panic!("{words:?} not in the pane:\n{screen}"))
+            .to_owned()
+    };
+    assert!(line("npm run dev").starts_with("npm run dev"), "{screen}");
+    assert!(
+        line("Review the auth").starts_with("subagent  Review the auth module"),
+        "{screen}"
+    );
+    assert!(
+        line("build log").starts_with("monitor  build log"),
+        "{screen}"
+    );
+    // The command in code's style, the descriptions in the text's.
+    let style_of = |words: &str| {
+        let (x, y) = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| (x, y)))
+            .find(|&(x, y)| {
+                let row: String = (x..buffer.area.width)
+                    .take(words.len())
+                    .map(|x| buffer[(x, y)].symbol().to_owned())
+                    .collect();
+                row == words
+            })
+            .unwrap_or_else(|| panic!("{words:?} not drawn"));
+        buffer[(x, y)].style().fg
+    };
+    let theme = theme();
+    assert_eq!(style_of("npm run dev"), theme.code().fg);
+    assert_eq!(style_of("Review the auth module"), theme.text().fg);
+    assert_ne!(theme.code().fg, theme.text().fg);
+}
+
 // --- the chat: keys, the pinned prompt -------------------------------------
 
 /// Your message at `order`, as the agent reflected it.

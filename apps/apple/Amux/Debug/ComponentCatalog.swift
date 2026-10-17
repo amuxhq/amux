@@ -918,8 +918,8 @@ enum CatalogFixtures {
             failedServers: [ServerView(name: "github", error: "The token expired.", needsAuth: true)],
             git: git, changes: changes)
         strip.overview.jobs = [
-            JobRow(command: "npm run dev -- --port 5173", startedAtMs: ms - 14 * 60_000, step: nil),
-            JobRow(command: "cargo watch -x 'test -p amux-ui'", startedAtMs: ms - 40_000, step: nil),
+            JobRow(command: "npm run dev -- --port 5173", startedAtMs: ms - 14 * 60_000, kind: .shell, step: nil),
+            JobRow(command: "cargo watch -x 'test -p amux-ui'", startedAtMs: ms - 40_000, kind: .shell, step: nil),
         ]
         return strip
     }

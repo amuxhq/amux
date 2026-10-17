@@ -48,6 +48,7 @@ fn restamp(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Wire types a view value holds.
 const VIEW_VALUES: &[&str] = &[
+    "amux.v1.BackgroundKind",
     "amux.v1.BlobRef",
     "amux.v1.BoundaryKind",
     "amux.v1.Catalogue",

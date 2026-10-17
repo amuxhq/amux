@@ -249,7 +249,8 @@ turn`.
 
 `ctrl+o` opens the overview beside the chat (over it on a narrow terminal): what the agent has in flight, in
 sections like home's, each foldable: its tasks (`✓` done, `●` current, `○` to do); each background job still
-running, its command with how long it has run, which opens the step that started it; the changed files of the
+running, its command with how long it has run (a subagent or monitor the provider runs itself shows its
+description after `subagent` or `monitor`), which opens the step that started it; the changed files of the
 comparison the header counts, root files first and then each folder with its files and their lines added and
 removed, each opening the review page at that file; its tool servers that need signing in or failed; and, near a
 usage limit, every usage window with its name (`5-hour limit`, `Weekly limit`, `Fable weekly limit`), how full it

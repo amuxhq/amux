@@ -94,7 +94,7 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         git: GitView? = nil, changes: Changes? = nil
     ) -> Surroundings {
         let jobs = (0..<(background ?? 0)).map {
-            JobRow(command: "job \($0 + 1)", startedAtMs: 0, step: nil)
+            JobRow(command: "job \($0 + 1)", startedAtMs: 0, kind: .shell, step: nil)
         }
         return Surroundings(
             overview: Overview(

@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ui_view::{JobRow, Overview, TaskMark};
-use wire::UsageState;
+use wire::{BackgroundKind, UsageState};
 
 use crate::text::{self, pad_to, push};
 use crate::theme::Theme;
@@ -306,14 +306,27 @@ pub fn pane_lines(
             }
             Section::Background => {
                 for job in &contents.overview.jobs {
-                    // Each job on one line: its command, and how long it
-                    // has run. A click (or Enter on the focused one) opens
-                    // the step that started it.
+                    // Each job on one line: what it runs, and how long it
+                    // has run. A command reads as code; the provider's own
+                    // subagent or monitor is named by a description, so it
+                    // reads as words after a tag saying which it is. A
+                    // click (or Enter on the focused one) opens the step
+                    // that started it.
                     let age = ran_for(now_ms - job.started_at_ms);
                     let mut line = Line::default();
-                    let room = inner.saturating_sub(text::str_width(&age) + 2);
+                    let (tag, style) = match job.kind {
+                        BackgroundKind::Subagent => (Some("subagent  "), theme.text()),
+                        BackgroundKind::Monitor => (Some("monitor  "), theme.text()),
+                        BackgroundKind::Shell
+                        | BackgroundKind::Other
+                        | BackgroundKind::Unspecified => (None, theme.code()),
+                    };
+                    if let Some(tag) = tag {
+                        push(&mut line, tag, theme.faint(), inner);
+                    }
+                    let room = inner.saturating_sub(line.width() + text::str_width(&age) + 2);
                     let command = text::ellipsize(text::first_line(&job.command), room);
-                    push(&mut line, command, theme.code(), inner);
+                    push(&mut line, command, style, inner);
                     pad_to(&mut line, inner.saturating_sub(text::str_width(&age)));
                     push(&mut line, age, theme.faint(), inner);
                     let item = PaneItem::Job(job.clone());

@@ -496,7 +496,7 @@ checks.
 | Crate | What it is |
 |---|---|
 | [`store`](../crates/store/src/lib.rs) | The profile store: one SQLite file per profile holding own and replica rows, commit and absorb, retention decisions. |
-| [`node`](../crates/node/src/lib.rs) | The daemon: installation, profile runtimes, agent registry, ingest, fan-out, edges, pairing, the relay server, outboxes, debug bundles and the supervisor. |
+| [`node`](../crates/node/README.md) | The daemon around the cores: installation, profile runtimes and their core threads, agent processes, edges and links, the relay server, debug bundles and the supervisor; its README lists the policy it still owns, its tasks and its locks. |
 
 **The state-machine cores** — each decides everything in one `step` over
 typed inputs and outputs, with no runtime, socket or lock in its graph.

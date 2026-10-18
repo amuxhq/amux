@@ -14,6 +14,7 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows, plus the iOS gate |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | Nightly 03:00 UTC (GitHub often starts it hours late), and by hand | The phone's photographed suites |
+| Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
 Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
@@ -26,7 +27,8 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | Check and Clippy | `ubuntu-latest` | `just check`, `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just docs-check`, `just deletion-ledger-check` |
-| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast`, `just doctest`; on macOS also `just contracts-check` |
+| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models`, `just doctest`; on macOS also `just contracts-check` |
+| Models | `ubuntu-latest`, one job per protocol-models test target | `just test-crate models -- --test <target>`: one model at its CI bounds |
 | Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
 | Embedded client | `ubuntu-latest` | `just embedded-check`, `just embedded-test` |
@@ -98,6 +100,35 @@ the package under test. Started with them, every test crate's build reran
 crate on the macOS runner; that pushed the macOS run from 449 s to past its
 1000 s bound in
 [36616922626](https://github.com/jordanwebster/amux/actions/runs/36616922626).
+
+### Protocol models
+
+The protocol models ([`crates/models`](../crates/models/README.md)) explore
+every state of the real cores within their bounds, a minute or more of
+every core each, so they leave the three Test jobs (`--exclude models`;
+`just test` itself still runs them) for the Models job: one Linux job per
+protocol-models test target, side by side, each building the models crate
+and running one model at its CI bounds on the runner's four cores. `just
+tests-check` fails when a protocol-models test target is missing from the
+job's matrix. Linux minutes cost a public repository nothing, and each job
+stays far inside the run's wall time, which the iOS gate sets.
+
+A model's budget is sized to that runner. CI run
+[39162128137](https://github.com/jordanwebster/amux/actions/runs/39162128137)
+measured the ratio: the family model took 136 s on the enrolled Mac's 12
+threads, 918 s on `windows-latest` (6.75 times) and was stopped past 760 s
+on `ubuntu-latest` (over 5.6 times), about 2 to 2.5 times the Mac's time per
+thread. So a model fits CI when three times its time on four Mac threads is
+inside its budget, and no budget is above 600 s; the models' README records
+each model's times. The job guard is 25 minutes.
+
+The Models at nightly bounds workflow runs each model's ignored nightly
+test, the same matrix, daily and by hand; `just models-nightly` runs the
+same tests locally, one test binary after another. It restores the Models
+job's Rust cache and never saves its own. Its job guard is NIGHTLY_GUARD
+minutes: the slowest model at its nightly bounds, NIGHTLY_SLOWEST, takes
+NIGHTLY_SECONDS s on the Mac's 12 threads, and roughly seven times that on
+the runner.
 
 ### The iOS gate
 

@@ -356,14 +356,13 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
     for baseline in sorted(discovered_baselines - set(catalog_baselines)):
         errors.append(f"performance baseline {baseline} is not listed")
 
-    errors.extend(validate_models_matrix(suites))
+    errors.extend(validate_models_matrix(suites, CI_WORKFLOW.read_text()))
 
     return errors, set(catalog_cargo), set(catalog_swift)
 
 
-def models_matrix() -> set[str] | None:
-    """The test targets the CI workflow's models job runs, one per matrix entry."""
-    text = CI_WORKFLOW.read_text()
+def models_matrix(text: str) -> set[str] | None:
+    """The test targets a CI workflow's models job runs, one per matrix entry."""
     job = re.search(r"^  models:\n((?:    .*\n|\s*\n)*)", text, re.MULTILINE)
     if job is None:
         return None
@@ -373,7 +372,7 @@ def models_matrix() -> set[str] | None:
     return {target.strip() for target in targets.group(1).split(",") if target.strip()}
 
 
-def validate_models_matrix(suites: list[dict[str, Any]]) -> list[str]:
+def validate_models_matrix(suites: list[dict[str, Any]], workflow: str) -> list[str]:
     """Every protocol model's test target is its own entry of the CI models job."""
     suite = next((suite for suite in suites if suite["name"] == MODELS_SUITE), None)
     if suite is None:
@@ -384,7 +383,7 @@ def validate_models_matrix(suites: list[dict[str, Any]]) -> list[str]:
         if entry.get("kind", "test") == "test" and entry.get("package") == "models"
         for target in entry.get("targets", [])
     }
-    matrix = models_matrix()
+    matrix = models_matrix(workflow)
     if matrix is None:
         return [f"{CI_WORKFLOW.relative_to(ROOT)} has no models job with a target matrix"]
     errors = [

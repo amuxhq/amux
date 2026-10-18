@@ -3,15 +3,11 @@
 
 use models::{Bounds, Outcome, Replication, check, walk};
 
-/// How long the exhaustive run may take under `just test`. It takes about
-/// 37 seconds on the enrolled Mac's cores; the budget leaves
-/// room for a smaller CI runner and a busy machine, and a run past it says
-/// the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 120.0;
-
-/// Every core explores at once: the verdict and the state count are the
-/// same on any number of threads, only which of several shortest
-/// counterexamples is printed may differ.
+/// How long the exhaustive run may take under `just test`, sized to CI's
+/// four-core runner: three times the run's time on four of the enrolled
+/// Mac's threads (66 s) fits inside it. A run past it says the bounds have
+/// outgrown their place.
+const BUDGET_SECONDS: f64 = 240.0;
 
 #[test]
 fn every_replication_promise_holds_at_ci_bounds() {

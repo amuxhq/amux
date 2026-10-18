@@ -3,11 +3,11 @@
 
 use models::{Bounds, PresenceRouting, check, walk};
 
-/// How long the exhaustive run may take under `just test`. It takes about
-/// twenty-five seconds on the enrolled Mac's cores; a run past the budget
-/// says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 60.0;
-
+/// How long the exhaustive run may take under `just test`, sized to CI's
+/// four-core runner: three times the run's time on four of the enrolled
+/// Mac's threads (52 s) fits inside it. A run past it says the bounds have
+/// outgrown their place.
+const BUDGET_SECONDS: f64 = 180.0;
 
 #[test]
 fn every_presence_promise_holds_at_ci_bounds() {

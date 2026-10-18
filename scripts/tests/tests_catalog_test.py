@@ -41,6 +41,38 @@ class TestsCatalogTest(unittest.TestCase):
             ["example: recipe selects zero catalogued tests named 'absent'"],
         )
 
+    def test_every_protocol_model_has_its_own_ci_job(self):
+        suites = [
+            {
+                "name": "protocol-models",
+                "cargo": [
+                    {"package": "models", "kind": "lib", "targets": ["models"]},
+                    {"package": "models", "targets": ["family", "presence"]},
+                ],
+            }
+        ]
+        workflow = (
+            "jobs:\n"
+            "  models:\n"
+            "    strategy:\n"
+            "      matrix:\n"
+            "        target: [family, retired]\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+        )
+
+        self.assertEqual(
+            catalog.validate_models_matrix(suites, workflow),
+            [
+                "protocol-models test target presence is not in the CI models job's matrix",
+                "the CI models job's matrix names retired, which is no protocol-models test target",
+            ],
+        )
+        self.assertEqual(
+            catalog.validate_models_matrix(suites, "jobs:\n  test:\n    runs-on: x\n"),
+            [".github/workflows/ci.yml has no models job with a target matrix"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

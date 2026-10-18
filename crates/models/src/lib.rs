@@ -79,7 +79,9 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
 
 /// How many threads a model's test explores with: `MODELS_THREADS` when
 /// set, so a run can price a model on a CI runner's core count, otherwise
-/// every core.
+/// every core. The verdict and the state count are the same on any number
+/// of threads; only which of several shortest counterexamples is printed
+/// may differ.
 pub fn threads() -> usize {
     std::env::var("MODELS_THREADS")
         .ok()

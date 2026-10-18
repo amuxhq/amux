@@ -3,9 +3,11 @@
 
 use models::{Bounds, SingleDaemon, check, walk};
 
-/// How long the exhaustive run may take under `just test`.
-const BUDGET_SECONDS: f64 = 120.0;
-
+/// How long the exhaustive run may take under `just test`, sized to CI's
+/// four-core runner: three times the run's time on four of the enrolled
+/// Mac's threads (96 s) fits inside it. A run past it says the bounds have
+/// outgrown their place.
+const BUDGET_SECONDS: f64 = 300.0;
 
 #[test]
 fn every_single_daemon_promise_holds_at_ci_bounds() {

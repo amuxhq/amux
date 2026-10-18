@@ -171,8 +171,9 @@ impl Daemon {
                 return Err(Violation {
                     invariant: ANSWERED_UNCOMMITTED,
                     detail: format!(
-                        "an answer about {agent:?} carried revision {revision}; the store has \
-                         committed through {committed}"
+                        "an answer about agent {} carried revision {revision}; the store has \
+                         committed through {committed}",
+                        hex(&agent.agent)
                     ),
                 });
             }
@@ -183,8 +184,9 @@ impl Daemon {
                 return Err(Violation {
                     invariant: RECLAIMED_ABOVE_CHECKPOINT,
                     detail: format!(
-                        "{agent:?}'s journal was reclaimed below {below}; the newest checkpoint on \
-                         the drive holds its cursor at {durable:?}"
+                        "agent {}'s journal was reclaimed below {below}; the newest checkpoint on \
+                         the drive holds its cursor at {durable:?}",
+                        hex(&agent.0)
                     ),
                 });
             }
@@ -314,6 +316,11 @@ pub const ANSWERED_UNCOMMITTED: &str =
 pub const RECLAIMED_ABOVE_CHECKPOINT: &str =
     "an agent's journal is reclaimed only below the cursor of the newest checkpoint on the drive";
 pub const GENERATION_FELL: &str = "the generation this host's streams open under only ever rises";
+
+/// An id as a violation names it.
+fn hex(id: &[u8]) -> String {
+    id.iter().map(|byte| format!("{byte:02x}")).collect()
+}
 
 /// What the step under way touched, as the cheap invariants judge it.
 #[derive(Debug, Default)]

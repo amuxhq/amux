@@ -26,7 +26,7 @@ use wire::{
 };
 
 use crate::ids::{AgentId, CallId, JobId, TimerId};
-use crate::io::{Job, Output, ParentSays, ShellWork, Wake};
+use crate::io::{Job, Output, ParentSays, Wake};
 use crate::payload::{CallError, JobResult, Response, Status};
 use crate::serve::{inventory, to_wire};
 use crate::{Daemon, codec};
@@ -984,7 +984,7 @@ impl Daemon {
                 self.answers.unmute(&key);
                 let outcome = match result {
                     JobResult::Done => {
-                        out.push(Output::Shell(ShellWork::ForgetDraft { agent }));
+                        self.forget_draft(&agent.0, out);
                         Ok(None)
                     }
                     other => Err(Refusal::Directory(format!("{other:?}"))),
@@ -1501,6 +1501,9 @@ mod tests {
         let mut rig = rig();
         rig.live(PARENT, "lead", None);
         rig.live(CHILD, "scout", Some(PARENT));
+        rig.step(Input::Drafts {
+            drafts: vec![(PARENT.0.to_vec(), b"draft".to_vec())],
+        });
         rig.step(Input::ControlClosed {
             agent: PARENT,
             ended: Ended::Exited,
@@ -1524,7 +1527,10 @@ mod tests {
             call,
             status: Status::Ok,
         }));
-        assert!(done.contains(&Output::Shell(ShellWork::ForgetDraft { agent: PARENT })));
+        assert!(
+            !rig.daemon.drafts.holds(&PARENT.0),
+            "its draft goes with it"
+        );
 
         // The child was stopping with its exited parent; its delete waits
         // behind that stop, and goes once the child has ended.

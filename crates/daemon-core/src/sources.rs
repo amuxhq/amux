@@ -791,9 +791,12 @@ impl Daemon {
         self.store.delete_agent(key)?;
         // An agent its host no longer lists is gone for good, deleted or
         // removed by retention there; one whose host is untrusted is not.
+        // Its draft goes too.
+        if reason == RemovalReason::NoLongerListed {
+            self.forget_draft(&key.agent, out);
+        }
         out.push(Output::Shell(ShellWork::ReplicaDropped {
             agent: key.clone(),
-            listed: reason == RemovalReason::NoLongerListed,
         }));
         let removed = AgentRemoved {
             host_id: key.host.clone(),
@@ -1939,12 +1942,7 @@ mod tests {
         let untrusted = step(&mut daemon, Input::Trusted { hosts: Vec::new() });
         assert!(untrusted.contains(&Output::HangUp { call: inventory }));
         assert!(untrusted.contains(&Output::HangUp { call: source }));
-        assert!(
-            untrusted.contains(&Output::Shell(ShellWork::ReplicaDropped {
-                agent: key(),
-                listed: false,
-            }))
-        );
+        assert!(untrusted.contains(&Output::Shell(ShellWork::ReplicaDropped { agent: key() })));
         assert!(daemon.store.agent(&key()).unwrap().is_none());
         assert!(!daemon.sources.is_current(HostId(PEER), 1));
         assert_eq!(daemon.pending.peer_calls(), 0, "nothing is left waiting");

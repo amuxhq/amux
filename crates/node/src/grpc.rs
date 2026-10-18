@@ -623,7 +623,8 @@ impl ClientService for ClientApi {
         }
         let request = request.into_inner();
         self.runtime()?
-            .save_draft(&request.agent_id, &request.draft.unwrap_or_default());
+            .save_draft(&request.agent_id, &request.draft.unwrap_or_default())
+            .await;
         Ok(Response::new(wire::Empty {}))
     }
 
@@ -638,7 +639,9 @@ impl ClientService for ClientApi {
             )));
         }
         let request = request.into_inner();
-        Ok(Response::new(self.runtime()?.draft(&request.agent_id)))
+        Ok(Response::new(
+            self.runtime()?.draft(&request.agent_id).await,
+        ))
     }
 
     async fn dump(&self, request: Request<DumpRequest>) -> Result<Response<DumpReport>, Status> {

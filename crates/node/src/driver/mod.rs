@@ -192,7 +192,11 @@ impl Driver {
             fed,
             reports: reports.clone(),
             channel_reply: None,
-            again: VecDeque::new(),
+            // The drafts the profile's file holds are the first thing the
+            // core is told.
+            again: VecDeque::from([Input::Drafts {
+                drafts: crate::drafts::load(&dir),
+            }]),
             inputs: inputs.downgrade(),
             runtime,
             calls: calls.clone(),
@@ -885,8 +889,7 @@ impl CoreThread {
                     });
                 }
             }
-            ShellWork::ReplicaDropped { agent, listed } => runtime.replica_dropped(&agent, listed),
-            ShellWork::ForgetDraft { agent } => runtime.forget_draft(&agent.0),
+            ShellWork::ReplicaDropped { agent } => runtime.replica_dropped(&agent),
         }
     }
 

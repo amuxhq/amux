@@ -20,6 +20,7 @@ use store::Sqlite;
 pub mod blobs;
 pub mod checkpoints;
 mod codec;
+pub mod drafts;
 mod families;
 pub mod generation;
 pub mod ids;
@@ -36,6 +37,7 @@ pub mod sources;
 
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
+pub use drafts::Drafts;
 pub use families::{Create, Ended, FamilyState, Refusal, Resume};
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use ingest::Journals;
@@ -67,6 +69,7 @@ pub struct Daemon {
     checkpoints: Checkpoints,
     notifications: Notifications,
     blobs: Blobs,
+    drafts: Drafts,
     timers: Timers,
     pending: Pending,
     settings: Settings,
@@ -87,6 +90,8 @@ pub struct StartOptions {
     /// The directory holding each paired host's replicas' files, by host
     /// and then by agent.
     pub replicas: PathBuf,
+    /// The file this machine's clients' drafts are kept in.
+    pub drafts: PathBuf,
     /// How long one step may take before it is reported with a dump.
     pub budget: StepBudget,
 }
@@ -107,6 +112,7 @@ impl Daemon {
             checkpoints: Checkpoints::default(),
             notifications: Notifications::default(),
             blobs: Blobs::default(),
+            drafts: Drafts::default(),
             timers: Timers::default(),
             pending: Pending::default(),
             settings: Settings::default(),
@@ -138,7 +144,10 @@ impl Daemon {
                 self.checkpoint_done(result, out)
             }
             Input::JobDone { job, result } => {
-                if !self.push_done(job, &result, out) && !self.blob_done(job, &result, out) {
+                if !self.push_done(job, &result, out)
+                    && !self.blob_done(job, &result, out)
+                    && !self.drafts_written(job, &result, out)
+                {
                     self.registry_job(job, result, out);
                 }
             }
@@ -176,6 +185,7 @@ impl Daemon {
                 id: TimerId::Source(host, agent),
             } => self.source_due(host, agent, out),
             Input::Configure(settings) => self.settings = settings,
+            Input::Drafts { drafts } => self.drafts_read(drafts),
             Input::FromShell(change) => self.shell_changed(change, out),
             Input::LinkUp { link, peer, kind } => self.link_up(link, peer, kind, out),
             Input::LinkDown { link, .. } => self.link_down(link, out),
@@ -308,6 +318,7 @@ impl Daemon {
             &self.checkpoints,
             &self.notifications,
             &self.blobs,
+            &self.drafts,
             &self.timers,
             &self.pending,
             &self.settings,
@@ -339,6 +350,7 @@ impl Daemon {
             checkpoints,
             notifications,
             blobs,
+            drafts,
             timers,
             pending,
             settings,
@@ -356,6 +368,7 @@ impl Daemon {
             checkpoints,
             notifications,
             blobs,
+            drafts,
             timers,
             pending,
             settings,

@@ -160,6 +160,14 @@ impl Daemon {
             } => self.keep_blob(call, &agent_id, hash, bytes, out),
             ClientRequest::GetBlob(request) => self.get_blob(call, &request, out),
             ClientRequest::Diff(request) => self.diff(call, request, out),
+            ClientRequest::SaveDraft { agent_id, draft } => {
+                self.save_draft(call, agent_id, &draft, out);
+                Ok(())
+            }
+            ClientRequest::GetDraft { agent_id } => {
+                self.get_draft(call, &agent_id, out);
+                Ok(())
+            }
         };
         self.end_unanswered(call, answered, out);
     }
@@ -498,6 +506,7 @@ impl Daemon {
             FromShell::Hosts(event) => self.publish_inventory(event, out),
             FromShell::Removed { agent, event } => {
                 self.agent_removed(&agent, event, out);
+                self.forget_draft(&agent.agent, out);
                 // Gone for good, as a delete is: its children here follow.
                 if let Err(error) = self.parent_changed(&agent, crate::ParentSays::Deleted, out) {
                     tracing::warn!(%error, "following a removed parent failed");

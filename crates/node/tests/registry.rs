@@ -759,13 +759,15 @@ async fn delete_aborts_first_and_its_children_here_follow() {
             .unwrap();
     }
     for id in [parent, child, bystander] {
-        runtime.save_draft(
-            id.as_bytes(),
-            &wire::ComposerDraft {
-                text: "unsent".into(),
-                attachments: Vec::new(),
-            },
-        );
+        runtime
+            .save_draft(
+                id.as_bytes(),
+                &wire::ComposerDraft {
+                    text: "unsent".into(),
+                    attachments: Vec::new(),
+                },
+            )
+            .await;
     }
 
     runtime.delete(parent).await.expect("the delete completes");
@@ -775,7 +777,7 @@ async fn delete_aborts_first_and_its_children_here_follow() {
         async move {
             match runtime.agent(child).await {
                 Err(RegistryError::NotFound(_))
-                    if runtime.draft(child.as_bytes()).text.is_empty() =>
+                    if runtime.draft(child.as_bytes()).await.text.is_empty() =>
                 {
                     Ok(())
                 }
@@ -793,7 +795,7 @@ async fn delete_aborts_first_and_its_children_here_follow() {
         ));
         assert!(!runtime.live().contains(&id));
         assert!(
-            runtime.draft(id.as_bytes()).text.is_empty(),
+            runtime.draft(id.as_bytes()).await.text.is_empty(),
             "a deleted agent's draft is forgotten"
         );
     }
@@ -801,7 +803,7 @@ async fn delete_aborts_first_and_its_children_here_follow() {
         runtime.store().await.agent(&remote).unwrap().is_some(),
         "another host's child is its own host's to follow"
     );
-    assert_eq!(runtime.draft(bystander.as_bytes()).text, "unsent");
+    assert_eq!(runtime.draft(bystander.as_bytes()).await.text, "unsent");
     assert_eq!(
         runtime.agent(bystander).await.unwrap().lifecycle,
         Lifecycle::Live as i32

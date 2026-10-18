@@ -405,8 +405,6 @@ pub struct ProfileRuntime {
     pub(crate) hosts: Mutex<crate::hosts::HostSet>,
     /// The directories this profile's agents were started in.
     recent: Arc<Mutex<crate::repositories::Recent>>,
-    /// This machine's clients' unsent drafts.
-    drafts: Mutex<crate::drafts::Drafts>,
     analytics: analytics::Analytics,
     /// Turns ended since the last check-in.
     turns: crate::telemetry::Turns,
@@ -637,7 +635,6 @@ impl ProfileRuntime {
             replica_blobs: Mutex::new(None),
             hosts: Mutex::new(crate::hosts::HostSet::new()),
             recent: Arc::new(Mutex::new(crate::repositories::Recent::load(&dir))),
-            drafts: Mutex::new(crate::drafts::Drafts::load(&dir)),
             offers: crate::offers::Offers::load(&dir),
             peer_providers: Mutex::new(HashMap::new()),
             dir,
@@ -740,6 +737,7 @@ impl ProfileRuntime {
                     generation: self.generation,
                     agents: self.dir.join(AGENTS),
                     replicas: self.dir.join(crate::install::REPLICAS),
+                    drafts: self.dir.join(crate::drafts::DRAFTS_FILE),
                     budget: self.launch().step_budget,
                 },
             )
@@ -990,20 +988,26 @@ impl ProfileRuntime {
     }
 
     /// An agent's unsent draft, as this machine's clients last saved it.
-    pub fn draft(&self, agent_id: &[u8]) -> wire::ComposerDraft {
-        self.drafts.lock().unwrap().get(agent_id)
-    }
-
-    /// Forgets the draft of an agent gone for good: deleted or removed by
-    /// retention, on this host or on another.
-    pub(crate) fn forget_draft(&self, agent_id: &[u8]) {
-        self.drafts.lock().unwrap().forget(agent_id);
+    pub async fn draft(&self, agent_id: &[u8]) -> wire::ComposerDraft {
+        let request = ClientRequest::GetDraft {
+            agent_id: agent_id.to_vec(),
+        };
+        let mut answers = self.driver().call(Ask::Ready(request), 1).await;
+        match answers.next().await {
+            Some(Delivered::Answer(Response::Draft(draft))) => draft,
+            _ => wire::ComposerDraft::default(),
+        }
     }
 
     /// Keeps an agent's unsent draft for this machine's clients; an empty
     /// one forgets it.
-    pub fn save_draft(&self, agent_id: &[u8], draft: &wire::ComposerDraft) {
-        self.drafts.lock().unwrap().save(agent_id, draft);
+    pub async fn save_draft(&self, agent_id: &[u8], draft: &wire::ComposerDraft) {
+        let request = ClientRequest::SaveDraft {
+            agent_id: agent_id.to_vec(),
+            draft: draft.clone(),
+        };
+        let mut answers = self.driver().call(Ask::Ready(request), 1).await;
+        let _ = answers.next().await;
     }
 
     /// The host a create request is for: the one it names, by id or by name

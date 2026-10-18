@@ -173,6 +173,10 @@ pub enum Input {
     Entropy([u8; 32]),
     /// The settings the profile runs under now.
     Configure(Settings),
+    /// The drafts file as the driver read it at start.
+    Drafts {
+        drafts: Vec<(Vec<u8>, Vec<u8>)>,
+    },
     /// What the profile's shell changed outside a step, for the core's
     /// subscribers. Each kind goes as the write behind it moves into the
     /// core.
@@ -215,6 +219,7 @@ impl Input {
             Input::JobDone { .. } => "JobDone",
             Input::Entropy(_) => "Entropy",
             Input::Configure(_) => "Configure",
+            Input::Drafts { .. } => "Drafts",
             Input::FromShell(_) => "FromShell",
         }
     }
@@ -481,10 +486,8 @@ pub enum ShellWork {
         providers: Vec<wire::ProviderOnHost>,
     },
     /// The replica is gone from the store: its directory and blob files
-    /// go with it, and its draft too when its host no longer lists it.
-    ReplicaDropped { agent: AgentKey, listed: bool },
-    /// The agent is deleted: this machine's clients' draft of it goes.
-    ForgetDraft { agent: AgentId },
+    /// go with it.
+    ReplicaDropped { agent: AgentKey },
 }
 
 /// What a parent's row says to the children that follow it.

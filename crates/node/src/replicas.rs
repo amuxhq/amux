@@ -170,8 +170,8 @@ impl ProfileRuntime {
     }
 
     /// The core dropped the replica from the store: its directory and blob
-    /// files go, and its draft too when its host no longer lists it.
-    pub(crate) fn replica_dropped(&self, agent: &AgentKey, listed: bool) {
+    /// files go.
+    pub(crate) fn replica_dropped(&self, agent: &AgentKey) {
         self.replicas.lock().unwrap().last_used.remove(agent);
         if let (Ok(host), Ok(id)) = (
             Uuid::from_slice(&agent.host),
@@ -191,9 +191,6 @@ impl ProfileRuntime {
             {
                 tracing::warn!(%error, "removing a dropped replica's directory failed");
             }
-        }
-        if listed {
-            self.forget_draft(&agent.agent);
         }
     }
 

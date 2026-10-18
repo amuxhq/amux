@@ -45,9 +45,8 @@ impl ProfileRuntime {
                 launch.tail_rows,
             )?;
             for key in &sweep.removed {
-                self.forget_draft(&key.agent);
                 // Gone for good, as a delete is: the core has its children
-                // here follow.
+                // here follow and forgets its draft.
                 self.removed(key, RemovalReason::Retention);
             }
             sweep

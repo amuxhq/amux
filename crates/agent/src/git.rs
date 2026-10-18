@@ -1,38 +1,21 @@
-//! The repository facts of the agent's folder, read off the event loop at
-//! start and at each turn end and handed to the interpreter as an event.
+//! The repository facts of the agent's folder, read as a job off the
+//! agent's step whenever its core asks: at start and at each turn end.
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::Path;
 
-use tokio::sync::{Notify, mpsc};
-
-/// Reads the facts each time `wanted` is notified, in order, so a slow read
-/// is never overtaken by a later one. Notifications that arrive while a
-/// read runs fold into one more read. `base` is the branch the agent's
-/// worktree was made from, when its host made one.
-pub(crate) fn reader(
-    cwd: PathBuf,
-    base: Option<String>,
-    wanted: Arc<Notify>,
-    facts: mpsc::UnboundedSender<Option<wire::Git>>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            wanted.notified().await;
-            let read = match git_facts::facts(&cwd, base.as_deref()).await {
-                Ok(read) => read.map(to_wire),
-                Err(error) => {
-                    // Without git the row shows no branch; nothing else
-                    // depends on it.
-                    eprintln!("amux agent: reading git facts: {error}");
-                    None
-                }
-            };
-            if facts.send(read).is_err() {
-                return;
-            }
+/// Reads the folder's facts once. `base` is the branch the agent's worktree
+/// was made from, when its host made one. Outside a repository, or without
+/// git, there are none.
+pub(crate) async fn read(cwd: &Path, base: Option<&str>) -> Option<wire::Git> {
+    match git_facts::facts(cwd, base).await {
+        Ok(read) => read.map(to_wire),
+        Err(error) => {
+            // Without git the row shows no branch; nothing else depends on
+            // it.
+            eprintln!("amux agent: reading git facts: {error}");
+            None
         }
-    })
+    }
 }
 
 fn to_wire(facts: git_facts::GitFacts) -> wire::Git {

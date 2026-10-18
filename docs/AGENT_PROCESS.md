@@ -28,7 +28,8 @@ provider children, and how it ends.
 
 | Crate or file | What it holds |
 |---|---|
-| [`crates/agent`](../crates/agent/src/lib.rs) | The process: `run` and `main` in `lib.rs`; the lifecycle, the control connection and the interpreter loop in `host.rs`; provider children in `provider.rs`; typing into terminal Claude in `terminal.rs`; reading terminal Claude's first screen in `ready.rs`; the facts ring in `ring.rs`; raw attach on `pty.sock` in `attach.rs`; the tool server in `tools.rs`; the agent's part of a dump in `dump.rs`; directory helpers in `dir.rs` |
+| [`crates/agent`](../crates/agent/src/lib.rs) | The process: `run` and `main` in `lib.rs`; the driver that runs the agent core over the provider child, the sockets and the journal in `host.rs`; provider children in `provider.rs`; typing into terminal Claude in `terminal.rs`; reading terminal Claude's first screen in `ready.rs`; the facts ring in `crates/core-ring`; raw attach on `pty.sock` in `attach.rs`; the tool server in `tools.rs`; the agent's part of a dump in `dump.rs`; directory helpers in `dir.rs` |
+| [`crates/agent-core`](../crates/agent-core/src/lib.rs) | The lifecycle as a state machine around the interpreter: one step per input (a provider fact, a daemon dialling in or leaving, a control frame, a timer, a failed write, a job's result), asking for journal steps, provider writes, frames, timers, jobs and the exit; how the next incarnation starts from the facts ring |
 | [`crates/agent-dir`](../crates/agent-dir/src/lib.rs) | What the agent and the daemon must agree on: the file and socket names, the directory lock, the frame format on `ctl.sock` and `pty.sock` (`ctl.rs`), local sockets (`local_socket.rs`) and the injectable clock (`clock.rs`) |
 | [`crates/journal`](../crates/journal/src/lib.rs) | The segmented, append-only journal writer and reader |
 | [`crates/pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, output stream, input, resize, signals |
@@ -116,10 +117,15 @@ a prompt.
 
 ## Lifecycle
 
-The host in [`host.rs`](../crates/agent/src/host.rs) is a single loop over
-five sources: provider events, daemon connections, control frames, keys and
-resizes from attached terminals, and the next deadline. The process is in one
-of three modes:
+The lifecycle is decided by the agent core,
+[`agent_core::Agent`](../crates/agent-core/src/lib.rs): one step per input,
+with no I/O of its own. The driver in [`host.rs`](../crates/agent/src/host.rs)
+is a single loop over six sources (provider events, daemon connections,
+control frames, keys and resizes from attached terminals, finished jobs, and
+the next timer the core armed); it steps the core with each, at the clock's
+time, and carries out what the step asks in order. Keys and sizes from an
+attached terminal and raw terminal output never meet the core: they are not
+the agent's state. The process is in one of three modes:
 
 | Mode | Meaning |
 |---|---|
@@ -135,7 +141,7 @@ and carries in its snapshots.
 
 ### One decision, one way out
 
-After every event the host calls `settle`, the only place that decides
+After every input the core's step calls `settle`, the only place that decides
 whether this incarnation ends, and every decision to end goes through one
 action, `exit(cause)`:
 
@@ -256,7 +262,7 @@ first, then the step is appended to the journal, then the daemon is nudged,
 then the effects run (replies are sent, bytes go to the provider). A reply
 therefore never reaches the daemon before the step that explains it is on
 disk. Before each event, when the clock has moved since the last one, the
-host feeds the interpreter a `Tick`, so the interpreter never reads a clock
+core feeds the interpreter a `Tick`, so the interpreter never reads a clock
 itself.
 
 A later connection takes over from an earlier one: a restarted daemon may
@@ -628,7 +634,7 @@ terminal. `amux agent` exits 0 whatever the cause; 1 means it could not start
 | Facts ring size, across its two segments | 4 MiB | `agent.facts_ring_mib`, copied into `facts_ring_bytes` |
 | Journal segment size | 1 MiB | the spec's `journal_segment_bytes` |
 | Terminal log | 4 segments of 256 KiB | constants in `host.rs` |
-| Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `host.rs` |
+| Provider asked to finish, then killed | 10 s | `PROVIDER_STOP_MS` in `agent-core` |
 | Output collected after a child exits | 300 ms | `TRAILING_OUTPUT` in `provider.rs` |
 | Transcript poll | 25 ms | `TRANSCRIPT_POLL` in `provider.rs` |
 | Terminal Claude's first screen: quiet, cap | 100 ms, 500 ms | `FIRST_SCREEN_QUIET`, `FIRST_SCREEN_WAIT` in `provider.rs` |

@@ -8,9 +8,9 @@
 //! Hello and then a Nudge whenever the journal grows, and sends inputs and
 //! stops, each input answered with the interpreter's verdict.
 //!
-//! The lifecycle rules (grace, drain, stop modes, the one-shot exit) are
-//! described in the host module; the clock they run on is injected, so tests
-//! drive every deadline by hand.
+//! The lifecycle rules (grace, drain, stop modes, the one-shot exit) are the
+//! agent core's (the `agent-core` crate); the host module drives it. The
+//! clock it runs on is injected, so tests drive every deadline by hand.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -62,12 +62,6 @@ pub enum AgentError {
     Socket(std::io::Error),
     #[error("writing the journal: {0}")]
     Journal(std::io::Error),
-    /// The provider's own state in private/ could not be written.
-    #[error("writing {}: {source}", path.display())]
-    Private {
-        path: PathBuf,
-        source: std::io::Error,
-    },
 }
 
 /// Runs the agent in `dir` until it exits.

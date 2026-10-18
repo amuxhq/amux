@@ -30,6 +30,7 @@ pub const ATTACHMENT_SIZE_LIMIT: usize = 64 * 1024 * 1024;
 /// at the attachment limit still fits in one message.
 pub const CHANNEL_MESSAGE_SIZE_LIMIT: usize = ATTACHMENT_SIZE_LIMIT + 1024 * 1024;
 
+#[cfg(feature = "grpc")]
 pub fn client_service_client(
     channel: tonic::transport::Channel,
 ) -> client_service_client::ClientServiceClient<tonic::transport::Channel> {
@@ -38,6 +39,7 @@ pub fn client_service_client(
         .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
 }
 
+#[cfg(feature = "grpc")]
 pub fn client_service_server<T>(service: T) -> client_service_server::ClientServiceServer<T>
 where
     T: client_service_server::ClientService,
@@ -47,6 +49,7 @@ where
         .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
 }
 
+#[cfg(feature = "grpc")]
 pub fn peer_service_client(
     channel: tonic::transport::Channel,
 ) -> peer_service_client::PeerServiceClient<tonic::transport::Channel> {
@@ -55,6 +58,7 @@ pub fn peer_service_client(
         .max_encoding_message_size(CHANNEL_MESSAGE_SIZE_LIMIT)
 }
 
+#[cfg(feature = "grpc")]
 pub fn peer_service_server<T>(service: T) -> peer_service_server::PeerServiceServer<T>
 where
     T: peer_service_server::PeerService,

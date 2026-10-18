@@ -1533,6 +1533,7 @@ impl ::prost::Name for SshPairingIdentity {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod pairing_service_client {
     #![allow(
         unused_variables,
@@ -1639,6 +1640,7 @@ pub mod pairing_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod pairing_service_server {
     #![allow(
         unused_variables,
@@ -6752,6 +6754,7 @@ impl Refusal {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod client_service_client {
     #![allow(
         unused_variables,
@@ -7287,6 +7290,7 @@ pub mod client_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod client_service_server {
     #![allow(
         unused_variables,
@@ -8436,6 +8440,7 @@ pub mod client_service_server {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod peer_service_client {
     #![allow(
         unused_variables,
@@ -8895,6 +8900,7 @@ pub mod peer_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod peer_service_server {
     #![allow(
         unused_variables,
@@ -10537,6 +10543,7 @@ impl RelayCarrier {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod profile_service_client {
     #![allow(
         unused_variables,
@@ -11053,6 +11060,7 @@ pub mod profile_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod profile_service_server {
     #![allow(
         unused_variables,
@@ -12184,6 +12192,7 @@ pub mod profile_service_server {
     }
 }
 /// Generated client implementations.
+#[cfg(feature = "grpc")]
 pub mod installation_service_client {
     #![allow(
         unused_variables,
@@ -12311,6 +12320,7 @@ pub mod installation_service_client {
     }
 }
 /// Generated server implementations.
+#[cfg(feature = "grpc")]
 pub mod installation_service_server {
     #![allow(
         unused_variables,

@@ -67,7 +67,7 @@ journal = { path = "crates/journal" }
 model = { path = "crates/model" }
 models = { path = "crates/models" }
 store = { path = "crates/store" }
-wire = { path = "crates/wire" }
+wire = { path = "crates/wire", default-features = false }
 settings = { path = "crates/settings" }
 attachments = { path = "crates/attachments" }
 git-facts = { path = "crates/git-facts" }

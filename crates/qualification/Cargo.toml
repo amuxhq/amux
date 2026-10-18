@@ -50,7 +50,7 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tonic = { workspace = true }
 uuid = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

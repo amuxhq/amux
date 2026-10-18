@@ -41,7 +41,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tui = { workspace = true }
 uuid = { workspace = true }
 vt100 = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
@@ -68,4 +68,4 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }
 version-stamp = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }

@@ -51,7 +51,7 @@ tonic = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 version-stamp = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }
 zstd = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]

@@ -42,7 +42,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tui = { workspace = true }
 unicode-width = "0.2"
 uuid = { workspace = true }
-wire = { workspace = true }
+wire = { workspace = true, features = ["grpc"] }
 
 [dev-dependencies]
 analytics = { workspace = true }

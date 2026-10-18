@@ -317,12 +317,10 @@ child whose parent's host is merely out of reach, or no longer paired, carries
 on, and its report waits for the parent's host (or, once unpaired, is
 dropped). A resumed parent hears nothing extra about stopped children. A
 `spawn` an agent makes once its host sees it as exited is refused ("agent …
-has ended and starts no more agents"). A `spawn` onto another host is also
-refused, as a definite refusal that made no child ("this host has not caught
-up with host …'s agents, so it cannot tell whether the parent has ended;
-spawn again in a moment"), while that host has not caught up with the
-parent's host since they reconnected, or has not yet heard of the parent;
-it is normally a sub-second window after a reconnect. One made just as it
+has ended and starts no more agents"). A `spawn` onto another host that has
+not yet caught up with the parent's host since they reconnected, or has not
+yet heard of the parent, is made: should the parent turn out to have been
+deleted meanwhile, the child finishes its work and exits. One made just as it
 stops is stopped as
 soon as the child's host sees the stop, since the parent check and the child's
 row are written together. [The protocol](PROTOCOL.md#the-family-rule) gives

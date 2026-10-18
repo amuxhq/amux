@@ -56,11 +56,11 @@ tests = [
 id = "family-follows-the-parents-row"
 source = "worked failure"
 section = "Agent messaging"
-claim = "A parent is stopped or deleted while its far child's host is away: the stop or delete acts on the parent and is never refused for the family, the child carries on while its host cannot hear, and once its host is back and has caught up with the parent's host it stops the child (parent exited) or stops and deletes it (parent no longer listed); a child on the parent's own host follows the same rule at once; a host makes no child under another host's parent until it has caught up with that host's listing and holds the parent's row, refusing the spawn in words that say to try again, so no child is judged by a listing that predates it; a parent's host that is only away leaves the child running with its report waiting, and unpairing that host drops the report."
+claim = "A parent is stopped or deleted while its far child's host is away: the stop or delete acts on the parent and is never refused for the family, the child carries on while its host cannot hear, and once its host is back and has caught up with the parent's host it stops the child (parent exited) or stops and deletes it (parent no longer listed); a child on the parent's own host follows the same rule at once; a host makes a child under another host's parent even before it has caught up with that host's listing, and a listing that predates the child stops it when the listing shows the parent exited but never deletes it for a parent the listing does not show; a parent's host that is only away leaves the child running with its report waiting, and unpairing that host drops the report."
 tests = [
   "testnet/spec_families::a_far_child_whose_parent_stopped_while_its_host_was_away_stops_on_return",
   "testnet/spec_families::a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted_on_return",
-  "testnet/spec_families::a_spawn_while_its_host_catches_up_is_refused_until_the_parent_is_heard",
+  "testnet/spec_families::a_spawn_while_its_host_catches_up_is_made_and_reports_once_the_parent_is_heard",
   "testnet/spec_families::unpairing_the_parents_host_leaves_the_child_and_drops_its_owed_report",
   "testnet/spec_families::an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped",
   "testnet/spec_families::stopping_a_parent_stops_every_descendant_on_every_host",

@@ -28,6 +28,7 @@ oauth2 = { workspace = true }
 quinn = { workspace = true }
 rcgen = { workspace = true }
 release = { workspace = true }
+supervisor-core = { workspace = true }
 ring = { workspace = true }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }

@@ -176,7 +176,13 @@ daemon runs.
 
 These timings are `Params::default()` in
 [`crates/node/src/supervisor/mod.rs`](../crates/node/src/supervisor/mod.rs);
-they are compiled in and not read from the config. [Parameters](PARAMETERS.md)
+they are compiled in and not read from the config. The rules above are
+decided by one state machine,
+[`crates/supervisor-core`](../crates/supervisor-core/src/lib.rs), which checks
+after every step that an installed binary able to start always exists and
+that at most one daemon serves, and asks for a dump if either fails;
+`node`'s supervisor module runs the processes, the pipe, the feed and the
+files for it. [Parameters](PARAMETERS.md)
 lists them with the rest.
 
 ## Updates and channels

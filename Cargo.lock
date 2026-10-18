@@ -2589,6 +2589,7 @@ dependencies = [
  "sha2",
  "socket2",
  "store",
+ "supervisor-core",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -4518,6 +4519,8 @@ name = "supervisor-core"
 version = "0.1.0"
 dependencies = [
  "release",
+ "semver",
+ "uuid",
 ]
 
 [[package]]

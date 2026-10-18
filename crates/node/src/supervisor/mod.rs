@@ -1,35 +1,29 @@
 //! `amux supervise`: the daemon's parent.
 //!
 //! It restarts the daemon whenever it exits, so agents survive any daemon
-//! death, and under `updates: auto` it installs releases. Its rules:
+//! death, and under `updates: auto` it installs releases. What to start,
+//! stop, install, activate and roll back is decided by
+//! [`supervisor_core::Supervisor`], whose module documentation states the
+//! rules; this module is its driver: the daemon processes and their
+//! activation pipe, the timers the core asks for, the control socket, the
+//! feed (read within its size limits and verified here) and the files
+//! beside the binary.
 //!
 //! - One pipe joins it to the child: the child writes `prepared` after
 //!   migrating and looking without writing, the supervisor answers `go`,
 //!   and end of file means the supervisor is gone and the daemon exits.
-//! - On each tick it installs the channel's build only if the version is
-//!   newer than the running one, is not the rejected build, and the host is
-//!   inside the rollout percentage.
-//! - The swap: stage beside the binary, verify hash and signature,
-//!   hard-link the current binary to prev, rename the staged binary over
-//!   the path, stop the child, start the new one.
-//! - Activation: on `prepared`, delete prev, fsync the directory, write
-//!   `go`. After `go` a crash is restarted with backoff, never rolled back.
-//! - K starts that never activate while prev exists: write the rejected
-//!   build's version to one file, fsync, then rename prev back and start
-//!   it. Record first, rename second: a crash between the two leaves a
-//!   rejected version equal to the installed binary with prev present,
-//!   which a starting supervisor finishes; the other order could leave
-//!   neither record and reinstall the same build within the hour.
-//! - After `go`, and last, it execs the installed binary in supervise mode,
-//!   keeping pid, child, pipe and lock, so the supervisor is never the
-//!   stale part for long.
-//! - prev is the whole record of an update in progress: a starting
-//!   supervisor that finds it counts failed starts against it, and if it is
-//!   the same file as the binary the swap never happened, so it deletes it.
+//! - The swap stages the release beside the binary, verifies hash and
+//!   signature, hard-links the current binary to prev and renames the
+//!   staged binary over the path; activation deletes prev and fsyncs the
+//!   directory before `go`; a rollback writes the rejected version and
+//!   fsyncs it before renaming prev back.
+//! - After `go`, a supervisor running a binary other than the installed one
+//!   execs the installed binary in supervise mode, keeping pid, child, pipe
+//!   and lock, so the supervisor is never the stale part for long.
 //! - Stopping the child is a signal, a stop deadline, then a kill.
 //!
-//! Counters and timers live in memory. The supervisor holds its own lock;
-//! the installation lock stays the daemon's.
+//! Counters and timers live in the core's memory. The supervisor holds its
+//! own lock; the installation lock stays the daemon's.
 //!
 //! On Windows a running executable cannot be renamed over, so the
 //! supervisor stops the child before the swap and moves the binary aside
@@ -41,6 +35,7 @@ mod files;
 mod keep_awake;
 pub mod login;
 
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ffi::OsString;
 use std::fs::File;
 use std::io;
@@ -57,12 +52,16 @@ pub use files::{FileId, Files, SUPERVISOR_LOCK};
 pub use keep_awake::{KeepAwake, REASON as KEEP_AWAKE_REASON};
 use semver::Version;
 use sha2::{Digest as _, Sha256};
+use supervisor_core::{
+    self as core, AskId, DaemonId, INHERITED_DAEMON, JobId, JobResult, Listed, Output, PrevFound,
+    Start, Supervisor, TimerId,
+};
 use tokio::io::AsyncWriteExt as _;
-use tokio::task::JoinHandle;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::install::{private_dir, sync_dir};
 use crate::profiles::{self, Registry};
-use crate::release::{self, Choice, Manifest, Skip};
+use crate::release::{self, Manifest, Release};
 
 /// The supervisor's timings and thresholds; the defaults are the
 /// parameters table's starting points.
@@ -185,336 +184,335 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     let files = Files::beside(&binary);
     // What this process runs: the binary at the path when it started.
     let mine = FileId::of(&binary).map_err(files_error("reading the installed binary"))?;
-    let mut supervisor = Supervisor {
-        backoff: Backoff::new(&params),
+    files.clear_leftovers();
+    let prev = if !files.prev_exists() {
+        PrevFound::None
+    } else if files.prev_is(&binary) {
+        tracing::info!("the swap never happened: removing prev");
+        PrevFound::SameAsBinary
+    } else {
+        PrevFound::Other
+    };
+    let rejected = files.rejected();
+    if prev == PrevFound::Other && inherited.is_none() {
+        if rejected.as_ref() == Some(&running) {
+            tracing::info!(rejected = %running, "finishing a rollback");
+        } else {
+            tracing::info!(
+                installed = %running,
+                "an update is in progress: counting failed starts against it"
+            );
+        }
+    }
+    let mut daemons = HashMap::new();
+    if let Some(inherited) = inherited {
+        let child = Child::inherit(&inherited).map_err(SuperviseError::Inherit)?;
+        daemons.insert(INHERITED_DAEMON, child);
+    }
+    let mut out = Vec::new();
+    let core = Supervisor::start(
+        Start {
+            params: params.for_core(),
+            target,
+            running,
+            prev,
+            rejected,
+            inherited: inherited.is_some(),
+            now_ms: millis_now(&*clock),
+        },
+        &mut out,
+    );
+    let (jobs, finished) = mpsc::unbounded_channel();
+    let mut driver = Driver {
+        core,
         files,
         binary,
         args,
         data_dir,
-        target,
         updates,
         clock,
-        params,
-        installed: Some(running.clone()),
-        running,
         mine,
-        failed: 0,
         lock,
+        daemons,
+        timers: BTreeMap::new(),
+        asks: HashMap::new(),
+        next_ask: 0,
+        jobs,
+        pending: VecDeque::new(),
     };
-    supervisor.files.clear_leftovers();
-    let child = match inherited {
-        Some(inherited) => Some(
-            Child::inherit(&inherited, supervisor.clock.now_ms())
-                .map_err(SuperviseError::Inherit)?,
-        ),
-        None => {
-            supervisor.recover()?;
-            None
-        }
-    };
-    supervisor.run(child).await
+    if driver.execute(out)?.is_some() {
+        return Ok(());
+    }
+    driver.run(finished).await
 }
 
-struct Supervisor {
+/// The supervisor core's driver: the daemon processes and their pipes, the
+/// timers it asked for, the control socket's waiting callers, the feed and
+/// the files beside the binary.
+struct Driver {
+    core: Supervisor,
     files: Files,
     binary: PathBuf,
     args: Vec<OsString>,
     data_dir: PathBuf,
-    running: Version,
-    target: String,
     updates: UpdatesFn,
     clock: Arc<dyn Clock>,
-    params: Params,
-    /// The version of the binary at the path, when known: the one to
-    /// record as rejected if it never activates.
-    installed: Option<Version>,
     mine: FileId,
-    /// Starts that never activated since prev appeared.
-    failed: u32,
-    backoff: Backoff,
     lock: SupervisorLock,
+    /// The daemons the core started, by its name for them. The core starts
+    /// one only when none lives.
+    daemons: HashMap<DaemonId, Child>,
+    timers: BTreeMap<TimerId, u64>,
+    asks: HashMap<AskId, oneshot::Sender<String>>,
+    next_ask: u64,
+    /// Where the feed's jobs report.
+    jobs: mpsc::UnboundedSender<(JobId, JobResult)>,
+    /// What executing outputs produced, stepped before anything new.
+    pending: VecDeque<core::Input>,
 }
 
-enum Event {
-    Terminate,
-    Exited(child::ExitCode),
-    Prepared,
-    StartDeadline,
-    CheckDue,
-    Checked(Checked),
-    Asked(Asked),
-}
+/// The supervisor is done.
+struct Done;
 
-/// How a check ended.
-enum Checked {
-    /// Verified and staged beside the binary: install it.
-    Staged(Version),
-    /// Nothing to install, and why, for `amux update`.
-    Nothing(String),
-}
-
-/// A check in flight and who is waiting for its answer.
-struct Checking {
-    task: JoinHandle<Checked>,
-    answers: Vec<tokio::sync::oneshot::Sender<String>>,
-}
-
-impl Supervisor {
-    /// A starting supervisor reads the record an update left: prev.
-    fn recover(&mut self) -> Result<(), SuperviseError> {
-        if !self.files.prev_exists() {
-            return Ok(());
+impl Driver {
+    async fn run(
+        mut self,
+        mut finished: mpsc::UnboundedReceiver<(JobId, JobResult)>,
+    ) -> Result<(), SuperviseError> {
+        let mut terminate = std::pin::pin!(terminated());
+        // The signal is heard once; the daemon's stop that follows is
+        // stepped like anything else.
+        let mut signalled = false;
+        let mut asked = control::serve(&self.data_dir);
+        loop {
+            while let Some(input) = self.pending.pop_front() {
+                if self.step(input)?.is_some() {
+                    return Ok(());
+                }
+            }
+            let timer = self
+                .timers
+                .iter()
+                .min_by_key(|(_, at)| **at)
+                .map(|(id, at)| (*id, *at));
+            let sleep = timer.map(|(_, at)| {
+                self.clock
+                    .sleep_until(i64::try_from(at).unwrap_or(i64::MAX))
+            });
+            // The core keeps at most one daemon alive.
+            let watched = self.daemons.iter_mut().next();
+            let input = match watched {
+                Some((&daemon, child)) => {
+                    let exited = child.exited();
+                    tokio::select! {
+                        () = &mut terminate, if !signalled => {
+                            signalled = true;
+                            core::Input::Terminate
+                        }
+                        Some(asked) = asked.recv() => self.asked(asked),
+                        Some((job, result)) = finished.recv() => core::Input::JobDone { job, result },
+                        code = exited => {
+                            self.daemons.remove(&daemon);
+                            core::Input::DaemonExited { daemon, code }
+                        }
+                        () = child.prepared() => core::Input::Prepared { daemon },
+                        () = async { sleep.expect("a timer").await }, if sleep.is_some() => {
+                            let (id, _) = timer.expect("a timer");
+                            self.timers.remove(&id);
+                            core::Input::Timer(id)
+                        }
+                    }
+                }
+                None => tokio::select! {
+                    () = &mut terminate, if !signalled => {
+                            signalled = true;
+                            core::Input::Terminate
+                        }
+                    Some(asked) = asked.recv() => self.asked(asked),
+                    Some((job, result)) = finished.recv() => core::Input::JobDone { job, result },
+                    () = async { sleep.expect("a timer").await }, if sleep.is_some() => {
+                        let (id, _) = timer.expect("a timer");
+                        self.timers.remove(&id);
+                        core::Input::Timer(id)
+                    }
+                },
+            };
+            if self.step(input)?.is_some() {
+                return Ok(());
+            }
         }
-        if self.files.prev_is(&self.binary) {
-            tracing::info!("the swap never happened: removing prev");
-            self.files
-                .remove_prev()
-                .map_err(files_error("removing prev"))?;
-            return Ok(());
-        }
-        if self.files.rejected().as_ref() == Some(&self.running) {
-            tracing::info!(rejected = %self.running, "finishing a rollback");
-            self.put_prev_back()?;
-            return Ok(());
-        }
-        tracing::info!(
-            installed = %self.running,
-            "an update is in progress: counting failed starts against it"
-        );
-        Ok(())
     }
 
-    async fn run(mut self, mut child: Option<Child>) -> Result<(), SuperviseError> {
-        let mut terminate = std::pin::pin!(terminated());
-        let mut asked = control::serve(&self.data_dir);
-        let mut next_check = self.after(self.params.check_interval);
-        let mut restart_at: Option<i64> = None;
-        let mut checking: Option<Checking> = None;
-        // `amux update` callers waiting for a check that ignores the
-        // rejected build.
-        let mut waiting: Vec<tokio::sync::oneshot::Sender<String>> = Vec::new();
-        loop {
-            let Some(running) = child.as_mut() else {
-                if let Some(at) = restart_at {
-                    let stop = tokio::select! {
-                        () = self.clock.sleep_until(at) => {
-                            restart_at = None;
-                            false
-                        }
-                        () = &mut terminate => true,
-                        Some(Asked { request, answer }) = asked.recv() => match request {
-                            Request::Check => {
-                                let _ = answer.send("the daemon is restarting; try again shortly".into());
-                                false
-                            }
-                            Request::Stop => {
-                                let _ = answer.send("stopping".into());
-                                true
-                            }
-                        },
-                    };
-                    if stop {
-                        return Ok(());
-                    }
-                    continue;
-                }
-                match Child::spawn(&self.binary, &self.args, self.clock.now_ms()) {
+    fn asked(&mut self, asked: Asked) -> core::Input {
+        self.next_ask += 1;
+        let ask = AskId(self.next_ask);
+        self.asks.insert(ask, asked.answer);
+        core::Input::Asked {
+            ask,
+            request: match asked.request {
+                Request::Check => core::Request::Check,
+                Request::Stop => core::Request::Stop,
+            },
+        }
+    }
+
+    /// The clock, then one input, through the core; its outputs done.
+    fn step(&mut self, input: core::Input) -> Result<Option<Done>, SuperviseError> {
+        let mut out = Vec::new();
+        let now_ms = millis_now(&*self.clock);
+        self.core.step(core::Input::Tick { now_ms }, &mut out);
+        self.core.step(input, &mut out);
+        self.execute(out)
+    }
+
+    fn execute(&mut self, out: Vec<Output>) -> Result<Option<Done>, SuperviseError> {
+        for output in out {
+            match output {
+                Output::Spawn { daemon } => match Child::spawn(&self.binary, &self.args) {
                     Ok(spawned) => {
                         tracing::info!(pid = spawned.pid, "started the daemon");
-                        child = Some(spawned);
+                        self.daemons.insert(daemon, spawned);
                     }
                     Err(error) => {
                         tracing::warn!(%error, "could not start the daemon");
-                        restart_at = self.failed_start()?;
+                        self.pending.push_back(core::Input::StartFailed {
+                            daemon,
+                            why: error.to_string(),
+                        });
                     }
-                }
-                continue;
-            };
-            let activated = running.activated();
-            let settled = activated && !self.files.prev_exists();
-            if settled && checking.is_none() && !waiting.is_empty() {
-                checking = Some(self.check(true, std::mem::take(&mut waiting)));
-            }
-            let start_deadline = running.started_ms + millis(self.params.start_deadline);
-            let exited = running.exited();
-            let event = tokio::select! {
-                () = &mut terminate => Event::Terminate,
-                code = exited => Event::Exited(code),
-                () = running.prepared(), if !activated => Event::Prepared,
-                () = self.clock.sleep_until(start_deadline), if !activated => Event::StartDeadline,
-                () = self.clock.sleep_until(next_check), if settled && checking.is_none() => Event::CheckDue,
-                checked = async { (&mut checking.as_mut().expect("checking").task).await }, if checking.is_some() => {
-                    Event::Checked(checked.unwrap_or_else(|error| {
-                        Checked::Nothing(format!("the check failed: {error}"))
-                    }))
-                }
-                Some(asked) = asked.recv() => Event::Asked(asked),
-            };
-            match event {
-                Event::Terminate => {
-                    tracing::info!("signalled to stop: stopping the daemon");
-                    if let Some(mut running) = child.take() {
-                        self.stop(&mut running).await;
-                    }
-                    return Ok(());
-                }
-                Event::Asked(Asked {
-                    request: Request::Stop,
-                    answer,
-                }) => {
-                    let _ = answer.send("stopping".into());
-                    tracing::info!("asked to stop: stopping the daemon");
-                    if let Some(mut running) = child.take() {
-                        self.stop(&mut running).await;
-                    }
-                    return Ok(());
-                }
-                Event::Asked(Asked {
-                    request: Request::Check,
-                    answer,
-                }) => {
-                    if self.files.prev_exists() {
-                        let _ = answer
-                            .send("an update is being activated; try again once it is".into());
-                    } else if !activated {
-                        let _ = answer.send("the daemon is starting; try again shortly".into());
-                    } else {
-                        waiting.push(answer);
-                    }
-                }
-                Event::Exited(code) => {
-                    let running = child.take().expect("a child");
-                    match running.activated_ms {
-                        Some(activated) => {
-                            let up = Duration::from_millis(
-                                (self.clock.now_ms() - activated).max(0) as u64,
-                            );
-                            let delay = self.backoff.next(up);
-                            tracing::warn!(code, ?delay, "the daemon exited: restarting it");
-                            restart_at = Some(self.after(delay));
-                        }
-                        None => {
-                            tracing::warn!(code, "the daemon exited before it was prepared");
-                            restart_at = self.failed_start()?;
-                        }
-                    }
-                }
-                Event::Prepared => {
-                    let running = child.as_mut().expect("a child");
-                    self.activate(running)?;
-                    if self.stale() {
-                        let running = child.as_ref().expect("a child");
-                        self.become_installed(running);
-                    }
-                }
-                Event::StartDeadline => {
-                    let mut running = child.take().expect("a child");
-                    tracing::warn!(
-                        deadline = ?self.params.start_deadline,
-                        "the daemon did not prepare in time: stopping it"
-                    );
-                    self.stop(&mut running).await;
-                    restart_at = self.failed_start()?;
-                }
-                Event::CheckDue => {
-                    next_check = self.after(self.params.check_interval);
-                    if (self.updates)().auto {
-                        checking = Some(self.check(false, Vec::new()));
-                    }
-                }
-                Event::Checked(checked) => {
-                    let answers = checking
-                        .take()
-                        .map(|checking| checking.answers)
-                        .unwrap_or_default();
-                    let answer = match &checked {
-                        Checked::Staged(version) => format!("installing {version}"),
-                        Checked::Nothing(why) => why.clone(),
+                },
+                Output::Go { daemon } => {
+                    let Some(child) = self.daemons.get_mut(&daemon) else {
+                        continue;
                     };
-                    for waiting in answers {
-                        let _ = waiting.send(answer.clone());
+                    match child.go() {
+                        Ok(()) => {
+                            tracing::info!(pid = child.pid, "the daemon is prepared: go");
+                            self.pending.push_back(core::Input::Activated { daemon });
+                        }
+                        // It is going away; its exit comes next.
+                        Err(error) => tracing::warn!(%error, "could not tell the daemon go"),
                     }
-                    if let Checked::Staged(version) = checked {
-                        let mut running = child.take().expect("a child");
-                        self.swap(&mut running, version).await?;
-                        restart_at = None;
+                }
+                Output::Stop { daemon } => {
+                    if let Some(child) = self.daemons.get_mut(&daemon) {
+                        tracing::info!(pid = child.pid, "stopping the daemon");
+                        child.ask_to_stop();
                     }
+                }
+                Output::Kill { daemon } => {
+                    if let Some(child) = self.daemons.get_mut(&daemon) {
+                        tracing::warn!(
+                            pid = child.pid,
+                            "the daemon did not stop in time: killing it"
+                        );
+                        child.kill();
+                    }
+                }
+                Output::List { job, auto_only } => self.list(job, auto_only),
+                Output::Fetch { job, release } => self.fetch(job, release),
+                Output::RemovePrev => self
+                    .files
+                    .remove_prev()
+                    .map_err(files_error("removing prev"))?,
+                Output::RetirePrev => self
+                    .files
+                    .retire_prev(&self.mine)
+                    .map_err(files_error("removing prev"))?,
+                Output::WriteRejected { version } => {
+                    tracing::warn!(rejected = %version, "rolling back to prev");
+                    self.files
+                        .write_rejected(&version)
+                        .map_err(files_error("recording the rejected build"))?;
+                    tracing::info!(rejected = %version, "recorded the rejected build");
+                }
+                Output::RestorePrev => {
+                    self.files
+                        .restore_prev(&self.binary, &self.mine)
+                        .map_err(files_error("putting prev back"))?;
+                    tracing::info!("put prev back over the binary");
+                }
+                Output::InstallStaged => {
+                    tracing::info!("installing the staged release");
+                    self.files
+                        .install_staged(&self.binary)
+                        .map_err(files_error("installing the staged binary"))?;
+                }
+                Output::BecomeInstalled { daemon } => {
+                    if let Some(child) = self.daemons.get(&daemon) {
+                        self.become_installed(child);
+                    }
+                }
+                Output::Answer { ask, text } => {
+                    if let Some(answer) = self.asks.remove(&ask) {
+                        let _ = answer.send(text);
+                    }
+                }
+                Output::ArmTimer { id, at_ms } => {
+                    self.timers.insert(id, at_ms);
+                }
+                Output::CancelTimer { id } => {
+                    self.timers.remove(&id);
+                }
+                Output::Exit => return Ok(Some(Done)),
+                Output::Fail { what, why } => {
+                    return Err(SuperviseError::Files {
+                        what,
+                        error: io::Error::other(why),
+                    });
+                }
+                Output::Dump { reason } => {
+                    tracing::error!(?reason, "the supervisor core asked for a dump");
                 }
             }
         }
+        Ok(None)
     }
 
-    fn after(&self, delay: Duration) -> i64 {
-        self.clock.now_ms() + millis(delay)
+    /// Reads the channel's manifest and verifies it, off the loop.
+    fn list(&self, job: JobId, auto_only: bool) {
+        let policy = (self.updates)();
+        let jobs = self.jobs.clone();
+        let data_dir = self.data_dir.clone();
+        tokio::spawn(async move {
+            let listed = if auto_only && !policy.auto {
+                Listed::Off
+            } else {
+                match policy.source {
+                    None => Listed::Nothing(
+                        "this build trusts no release key, so it installs nothing".into(),
+                    ),
+                    Some(source) => match list(&source).await {
+                        Ok(manifest) => Listed::Manifest {
+                            manifest,
+                            host: rollout_host(&data_dir),
+                        },
+                        Err(error) => {
+                            tracing::warn!(%error, "the update check failed");
+                            Listed::Failed(error.to_string())
+                        }
+                    },
+                }
+            };
+            let _ = jobs.send((job, JobResult::Listed(listed)));
+        });
     }
 
-    /// Whether the path holds a different binary than this process runs.
-    fn stale(&self) -> bool {
-        FileId::of(&self.binary).is_ok_and(|id| id != self.mine)
-    }
-
-    /// A start that never activated. While prev exists it counts toward
-    /// the rollback; the K-th rolls back and starts prev at once. Returns
-    /// when to start again.
-    fn failed_start(&mut self) -> Result<Option<i64>, SuperviseError> {
-        if self.files.prev_exists() {
-            self.failed += 1;
-            tracing::warn!(
-                failed = self.failed,
-                of = self.params.rollback_after,
-                "a start that never activated"
-            );
-            if self.failed >= self.params.rollback_after {
-                self.roll_back()?;
-                return Ok(None);
-            }
-        }
-        let delay = self.backoff.next(Duration::ZERO);
-        Ok(Some(self.after(delay)))
-    }
-
-    fn roll_back(&mut self) -> Result<(), SuperviseError> {
-        let rejected = self
-            .installed
-            .clone()
-            .ok_or_else(|| SuperviseError::Files {
-                what: "rolling back",
-                error: io::Error::other("the installed version is not known"),
-            })?;
-        tracing::warn!(%rejected, "rolling back to prev");
-        self.files
-            .write_rejected(&rejected)
-            .map_err(files_error("recording the rejected build"))?;
-        tracing::info!(%rejected, "recorded the rejected build");
-        self.put_prev_back()
-    }
-
-    fn put_prev_back(&mut self) -> Result<(), SuperviseError> {
-        self.files
-            .restore_prev(&self.binary, &self.mine)
-            .map_err(files_error("putting prev back"))?;
-        tracing::info!("put prev back over the binary");
-        self.failed = 0;
-        self.backoff = Backoff::new(&self.params);
-        self.installed = (!self.stale()).then(|| self.running.clone());
-        Ok(())
-    }
-
-    fn activate(&mut self, child: &mut Child) -> Result<(), SuperviseError> {
-        if self.files.prev_exists() {
-            self.files
-                .retire_prev(&self.mine)
-                .map_err(files_error("removing prev"))?;
-        }
-        self.failed = 0;
-        if let Err(error) = child.go() {
-            // It is going away; its exit comes next.
-            tracing::warn!(%error, "could not tell the daemon go");
-            return Ok(());
-        }
-        child.activated_ms = Some(self.clock.now_ms());
-        tracing::info!(pid = child.pid, "the daemon is prepared: go");
-        Ok(())
+    /// Downloads and verifies a release beside the binary, off the loop.
+    fn fetch(&self, job: JobId, release: Release) {
+        let jobs = self.jobs.clone();
+        let staged = self.files.staged.clone();
+        tokio::spawn(async move {
+            let fetched = match fetch(&release, &staged).await {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    tracing::warn!(%error, "the update check failed");
+                    let _ = std::fs::remove_file(&staged);
+                    Err(error.to_string())
+                }
+            };
+            let _ = jobs.send((job, JobResult::Fetched(fetched)));
+        });
     }
 
     /// Replaces this process with the installed binary in supervise mode,
@@ -542,77 +540,27 @@ impl Supervisor {
         }
         child.keep(&self.lock.file);
     }
+}
 
-    /// Stops the child: a signal, the stop deadline, then a kill.
-    async fn stop(&self, child: &mut Child) {
-        child.ask_to_stop();
-        let deadline = self.after(self.params.stop_deadline);
-        tokio::select! {
-            _ = child.exited() => return,
-            () = self.clock.sleep_until(deadline) => {}
+impl Params {
+    fn for_core(&self) -> core::Params {
+        let ms = |duration: Duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
+        core::Params {
+            check_interval_ms: ms(self.check_interval),
+            rollback_after: self.rollback_after,
+            start_deadline_ms: ms(self.start_deadline),
+            stop_deadline_ms: ms(self.stop_deadline),
+            backoff_first_ms: ms(self.backoff_first),
+            backoff_max_ms: ms(self.backoff_max),
+            backoff_reset_ms: ms(self.backoff_reset),
+            // A running executable cannot be renamed over on Windows.
+            replace_while_running: cfg!(unix),
         }
-        tracing::warn!(
-            pid = child.pid,
-            "the daemon did not stop in time: killing it"
-        );
-        child.kill();
-        child.exited().await;
     }
+}
 
-    /// Fetches the manifest and, when it names a build to install, stages
-    /// and verifies it. `amux update` ignores the rejected build.
-    fn check(
-        &self,
-        ignore_rejected: bool,
-        answers: Vec<tokio::sync::oneshot::Sender<String>>,
-    ) -> Checking {
-        let policy = (self.updates)();
-        let target = self.target.clone();
-        let running = self.running.clone();
-        let rejected = (!ignore_rejected).then(|| self.files.rejected()).flatten();
-        let host = rollout_host(&self.data_dir);
-        let staged = self.files.staged.clone();
-        let task = tokio::spawn(async move {
-            let Some(source) = policy.source else {
-                return Checked::Nothing(
-                    "this build trusts no release key, so it installs nothing".into(),
-                );
-            };
-            match fetch(&source, &target, &running, rejected.as_ref(), host, &staged).await {
-                Ok(checked) => checked,
-                Err(error) => {
-                    tracing::warn!(%error, "the update check failed");
-                    let _ = std::fs::remove_file(&staged);
-                    Checked::Nothing(format!("the check failed: {error}"))
-                }
-            }
-        });
-        Checking { task, answers }
-    }
-
-    async fn swap(&mut self, child: &mut Child, version: Version) -> Result<(), SuperviseError> {
-        tracing::info!(%version, "installing");
-        #[cfg(unix)]
-        {
-            self.files
-                .install_staged(&self.binary)
-                .map_err(files_error("installing the staged binary"))?;
-            self.stop(child).await;
-        }
-        // A running executable cannot be renamed over: stop first, and the
-        // current binary moves aside to prev instead of gaining a link.
-        #[cfg(windows)]
-        {
-            self.stop(child).await;
-            self.files
-                .install_staged(&self.binary)
-                .map_err(files_error("installing the staged binary"))?;
-        }
-        self.installed = Some(version);
-        self.failed = 0;
-        self.backoff = Backoff::new(&self.params);
-        Ok(())
-    }
+fn millis_now(clock: &dyn Clock) -> u64 {
+    u64::try_from(clock.now_ms()).unwrap_or(0)
 }
 
 /// The most a channel manifest may be: a few entries of a few hundred
@@ -677,27 +625,25 @@ enum CheckError {
     Verify(#[from] release::VerifyError),
 }
 
-async fn fetch(
-    source: &UpdateSource,
-    target: &str,
-    running: &Version,
-    rejected: Option<&Version>,
-    host: Option<uuid::Uuid>,
-    staged: &Path,
-) -> Result<Checked, CheckError> {
-    let client = reqwest::Client::builder()
+fn client(url: &str) -> Result<reqwest::Client, CheckError> {
+    reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(30))
         .timeout(Duration::from_secs(15 * 60))
         .build()
         .map_err(|error| CheckError::Fetch {
-            url: source.manifest_url.clone(),
+            url: url.to_owned(),
             error,
-        })?;
-    let fetch_error = |url: &str| {
-        let url = url.to_owned();
-        move |error| CheckError::Fetch { url, error }
-    };
-    let response = client
+        })
+}
+
+fn fetch_error(url: &str) -> impl FnOnce(reqwest::Error) -> CheckError {
+    let url = url.to_owned();
+    move |error| CheckError::Fetch { url, error }
+}
+
+/// The channel's manifest, at most its size limit, verified whole.
+async fn list(source: &UpdateSource) -> Result<Manifest, CheckError> {
+    let response = client(&source.manifest_url)?
         .get(&source.manifest_url)
         .send()
         .await
@@ -716,14 +662,12 @@ async fn fetch(
             error,
         })?;
     release::verify_manifest(&manifest, &source.channel, &source.key)?;
-    let (release, version) =
-        match release::choose(&manifest, target, running, rejected, host.as_ref()) {
-            Choice::Install { release, version } => (release, version),
-            Choice::Skip(skip) => {
-                tracing::debug!(?skip, "nothing to install");
-                return Ok(Checked::Nothing(skipped(skip, target, running)));
-            }
-        };
+    Ok(manifest)
+}
+
+/// Stages the release at `staged`, verified against its manifest entry and
+/// executable.
+async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
     if release.size > ARTIFACT_LIMIT {
         return Err(CheckError::TooLarge {
             what: "the artifact",
@@ -731,7 +675,7 @@ async fn fetch(
             limit: ARTIFACT_LIMIT,
         });
     }
-    let mut response = client
+    let mut response = client(&release.url)?
         .get(&release.url)
         .send()
         .await
@@ -758,9 +702,9 @@ async fn fetch(
     }
     file.sync_all().await.map_err(CheckError::Stage)?;
     drop(file);
-    release::verify_artifact(&release, &release::sha256_hex(&hash.finalize()), written)?;
+    release::verify_artifact(release, &release::sha256_hex(&hash.finalize()), written)?;
     files::make_executable(staged).map_err(CheckError::Stage)?;
-    Ok(Checked::Staged(version))
+    Ok(())
 }
 
 /// The host id that places this installation in a rollout: its first
@@ -769,39 +713,6 @@ fn rollout_host(data_dir: &Path) -> Option<uuid::Uuid> {
     let registry = Registry::read(data_dir).ok()?;
     let first = registry.profiles.first()?;
     profiles::host_id(&profiles::profile_dir(data_dir, first.id)).ok()
-}
-
-fn millis(duration: Duration) -> i64 {
-    i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)
-}
-
-/// Restart delays: doubling from the first to the cap, starting over once
-/// a child has stayed up long enough.
-struct Backoff {
-    first: Duration,
-    max: Duration,
-    reset: Duration,
-    next: Duration,
-}
-
-impl Backoff {
-    fn new(params: &Params) -> Self {
-        Self {
-            first: params.backoff_first,
-            max: params.backoff_max,
-            reset: params.backoff_reset,
-            next: params.backoff_first,
-        }
-    }
-
-    fn next(&mut self, up: Duration) -> Duration {
-        if up >= self.reset {
-            self.next = self.first;
-        }
-        let delay = self.next;
-        self.next = (self.next * 2).min(self.max);
-        delay
-    }
 }
 
 /// The supervisor's own lock, `<data_dir>/supervisor.lock`, holding its
@@ -889,25 +800,6 @@ fn sync_parent(path: &Path) -> io::Result<()> {
     match path.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => sync_dir(dir),
         _ => sync_dir(Path::new(".")),
-    }
-}
-
-/// Why nothing was installed, as `amux update` says it.
-fn skipped(skip: Skip, target: &str, running: &Version) -> String {
-    match skip {
-        Skip::NoBuildForTarget => format!("the channel has no build for {target}"),
-        Skip::UnreadableVersion(version) => {
-            format!("the channel names {version:?}, which is not a version")
-        }
-        Skip::NotNewer(version) => {
-            format!("up to date: {running} is running and the channel names {version}")
-        }
-        Skip::Rejected(version) => {
-            format!("{version} was rolled back here; `amux update` tries it again")
-        }
-        Skip::OutsideRollout => {
-            "the channel's release is rolling out and has not reached this host yet".into()
-        }
     }
 }
 

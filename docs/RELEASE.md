@@ -620,8 +620,10 @@ binary; the binaries themselves carry no symbols.
 
 A machine running [`amux supervise`](SUPERVISOR.md) finds new builds in a
 channel manifest and installs them itself. The format and the checks live in
-[`crates/node/src/release.rs`](../crates/node/src/release.rs); the fetch,
-staging and swap in
+[`crates/node/src/release.rs`](../crates/node/src/release.rs); which build
+to install, when, and when to roll back in
+[`crates/supervisor-core`](../crates/supervisor-core/src/lib.rs); the fetch,
+staging and file moves in
 [`crates/node/src/supervisor/mod.rs`](../crates/node/src/supervisor/mod.rs).
 
 ### Channels

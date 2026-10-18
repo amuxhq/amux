@@ -1,10 +1,13 @@
 # supervisor-core
 
 The supervisor's update decisions as one function of its state and an input.
-`Supervisor::step` takes what the release feed listed, what a start did and
-how the daemon exited, and says which release to fetch, which binary to
-start, when to stop or kill the daemon, which binary to set aside, and when
-to go or roll back. Processes, downloads and renames are the driver's.
+`Supervisor::step` takes what the release feed listed, what a fetch staged,
+what a daemon did (prepared, activated, exited, never started), the requests
+on the control socket and its timers, and says which daemon to start, tell
+`go`, stop or kill, which release to fetch, which files beside the binary to
+move, and when to hand over to the installed binary or exit. Processes, the
+activation pipe, downloads and renames are the driver's, in
+`crates/node/src/supervisor`.
 
 What belongs inside: anything whose interleaving with the core's state can
 matter is in the core; anything that only produces a result is a job the

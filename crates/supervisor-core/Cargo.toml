@@ -8,3 +8,5 @@ publish = false
 
 [dependencies]
 release = { workspace = true }
+semver = { workspace = true }
+uuid = { workspace = true }

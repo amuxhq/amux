@@ -159,6 +159,7 @@ impl Daemon {
                 bytes,
             } => self.keep_blob(call, &agent_id, hash, bytes, out),
             ClientRequest::GetBlob(request) => self.get_blob(call, &request, out),
+            ClientRequest::Diff(request) => self.diff(call, request, out),
         };
         self.end_unanswered(call, answered, out);
     }

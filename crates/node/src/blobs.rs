@@ -16,8 +16,12 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use daemon_core::payload::{BlobRefusal, CallError, ClientRequest, PeerReply, Response, Status};
-use git_facts::{Change, Comparison};
+/// The mime type of a patch written by Diff.
+pub use daemon_core::blobs::PATCH_MIME;
+use daemon_core::payload::{
+    BlobRefusal, CallError, ClientRequest, GitRefusal, PeerReply, Response, Status,
+};
+use git_facts::{Change, Comparison, GitError};
 use sha2::{Digest as _, Sha256};
 use store::{AgentRow, StoreError};
 use uuid::Uuid;
@@ -29,9 +33,6 @@ use wire::{
 use crate::driver::{Ask, Delivered};
 use crate::install::{AGENTS, REPLICAS};
 use crate::runtime::ProfileRuntime;
-
-/// The mime type of a patch written by Diff.
-pub const PATCH_MIME: &str = "text/x-diff";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BlobError {
@@ -204,6 +205,15 @@ impl ProfileRuntime {
                                 io::Error::other(words)
                             }),
                             BlobRefusal::Read(words) => BlobError::Read(io::Error::other(words)),
+                            BlobRefusal::NoBase => BlobError::NoBase,
+                            BlobRefusal::Git(refusal) => BlobError::Git(match refusal {
+                                GitRefusal::NotARepository => GitError::NotARepository,
+                                GitRefusal::NoForkPoint(base) => GitError::NoForkPoint(base),
+                                GitRefusal::Failed(words) => GitError::Failed {
+                                    command: "diff".to_owned(),
+                                    stderr: words,
+                                },
+                            }),
                         },
                         CallError::Store(words) => BlobError::Core(words),
                         other => BlobError::Core(format!("{other:?}")),
@@ -215,53 +225,13 @@ impl ProfileRuntime {
     }
 
     pub async fn diff(&self, request: DiffRequest) -> Result<wire::Diff, BlobError> {
-        let row = self.blob_owner(&request.agent_id).await?;
-        if row.agent.host != self.host().as_bytes() {
-            return Err(BlobError::NotOwn);
+        match self.blob_call(ClientRequest::Diff(request)).await? {
+            Some(Response::Peer(reply)) => match *reply {
+                PeerReply::Diff(diff) => Ok(diff),
+                other => Err(answered_with(other)),
+            },
+            other => Err(answered_with(other)),
         }
-        let base = request.base.and_then(|base| base.base);
-        let (comparison, name) = match &base {
-            Some(diff_base::Base::Head(_)) => {
-                (Comparison::Uncommitted, "working-tree.diff".to_owned())
-            }
-            Some(diff_base::Base::Branch(branch)) => (
-                Comparison::OnBranch {
-                    base: branch.clone(),
-                },
-                format!("{branch}.diff"),
-            ),
-            None => return Err(BlobError::NoBase),
-        };
-        let compared =
-            git_facts::compare(Path::new(&row.cwd), &comparison, request.with_patch).await?;
-        let patch = match compared.patch {
-            Some(bytes) => Some(
-                self.put_blob(PutBlobRequest {
-                    agent_id: request.agent_id,
-                    name,
-                    mime: PATCH_MIME.to_owned(),
-                    bytes,
-                })
-                .await?,
-            ),
-            None => None,
-        };
-        Ok(wire::Diff {
-            patch,
-            base: Some(DiffBase { base }),
-            head: compared.head.unwrap_or_default(),
-            merge_base: compared.merge_base,
-            files: compared.files.into_iter().map(diff_file).collect(),
-        })
-    }
-
-    /// The row of the agent a blob call names, own or replica.
-    pub(crate) async fn blob_owner(&self, agent_id: &[u8]) -> Result<AgentRow, BlobError> {
-        self.store
-            .lock()
-            .await
-            .agent_by_id(agent_id)?
-            .ok_or(BlobError::NoAgent)
     }
 
     pub(crate) fn blob_path(&self, row: &AgentRow, hash: &[u8]) -> PathBuf {
@@ -323,5 +293,41 @@ fn diff_file(file: git_facts::FileChange) -> DiffFile {
         removed: file.removed,
         change: change as i32,
         binary: file.binary,
+    }
+}
+
+/// Compares a working tree for the core's diff: the diff without its patch,
+/// and the patch with its hash.
+pub(crate) async fn compare(
+    cwd: &Path,
+    base: diff_base::Base,
+    with_patch: bool,
+) -> daemon_core::payload::JobResult {
+    use daemon_core::payload::{JobResult, Patch};
+    let comparison = match &base {
+        diff_base::Base::Head(_) => Comparison::Uncommitted,
+        diff_base::Base::Branch(branch) => Comparison::OnBranch {
+            base: branch.clone(),
+        },
+    };
+    match git_facts::compare(cwd, &comparison, with_patch).await {
+        Ok(compared) => JobResult::Compared {
+            diff: wire::Diff {
+                patch: None,
+                base: Some(DiffBase { base: Some(base) }),
+                head: compared.head.unwrap_or_default(),
+                merge_base: compared.merge_base,
+                files: compared.files.into_iter().map(diff_file).collect(),
+            },
+            patch: compared.patch.map(|bytes| Patch {
+                hash: Sha256::digest(&bytes).to_vec(),
+                bytes,
+            }),
+        },
+        Err(error) => JobResult::CompareFailed(match error {
+            GitError::NotARepository => GitRefusal::NotARepository,
+            GitError::NoForkPoint(base) => GitRefusal::NoForkPoint(base),
+            other => GitRefusal::Failed(other.to_string()),
+        }),
     }
 }

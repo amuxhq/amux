@@ -1027,6 +1027,11 @@ async fn run_job(
                 }
             }
         }
+        Job::Compare {
+            cwd,
+            base,
+            with_patch,
+        } => crate::blobs::compare(&cwd, base, with_patch).await,
         op @ Job::Upload(_) => JobResult::Failed(format!("this driver does not run {op:?} yet")),
     };
     feed(&inputs, Input::JobDone { job, result }).await;

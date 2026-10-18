@@ -558,6 +558,14 @@ pub enum Job {
     RemoveDir {
         path: PathBuf,
     },
+    /// Compare the working tree at `cwd` with `base`, answered as
+    /// [`JobResult::Compared`] or [`JobResult::CompareFailed`]; the patch
+    /// is built only `with_patch`.
+    Compare {
+        cwd: PathBuf,
+        base: wire::diff_base::Base,
+        with_patch: bool,
+    },
     /// Make a worktree of the repository at `repo` named `name`, answered
     /// as [`JobResult::Worktree`] or [`JobResult::Refused`].
     MakeWorktree {

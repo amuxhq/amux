@@ -198,6 +198,8 @@ pub enum ClientRequest {
         bytes: Vec<u8>,
     },
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
+    /// How one of this host's agents' working tree differs from a base.
+    Diff(#[serde(with = "codec::message")] wire::DiffRequest),
 }
 
 /// A request on a peer's PeerService, decoded: one a paired host makes of
@@ -287,6 +289,13 @@ pub enum PeerFailure {
     Refused(#[serde(with = "codec::message")] wire::Error),
 }
 
+/// A diff's patch, as a blob to write.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Patch {
+    pub hash: Vec<u8>,
+    pub bytes: Vec<u8>,
+}
+
 /// One reply, or one item of a streamed reply, to a call. Stream items are
 /// shared, since the same event goes to every subscriber.
 #[derive(Clone, Debug, PartialEq)]
@@ -346,6 +355,20 @@ pub enum BlobRefusal {
     Write { full: bool, words: String },
     /// Reading it failed.
     Read(String),
+    /// A diff names no base.
+    NoBase,
+    /// Git could not compare the working tree.
+    Git(GitRefusal),
+}
+
+/// Why git could not compare a working tree.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum GitRefusal {
+    NotARepository,
+    /// The branch shares no history with this base.
+    NoForkPoint(String),
+    /// Anything else, in git's words.
+    Failed(String),
 }
 
 impl From<store::StoreError> for CallError {
@@ -366,4 +389,13 @@ pub enum JobResult {
     Worktree { path: String, base_branch: String },
     /// It was refused, as the driver said it to the caller.
     Refused(#[serde(with = "codec::message")] wire::Error),
+    /// A working tree compared: the diff without its patch, and the patch
+    /// with its hash when one was asked for and there is one.
+    Compared {
+        #[serde(with = "codec::message")]
+        diff: wire::Diff,
+        patch: Option<Patch>,
+    },
+    /// Git could not compare the working tree.
+    CompareFailed(GitRefusal),
 }

@@ -477,7 +477,7 @@ impl Daemon {
             JobResult::Refused(error) => {
                 return self.finish(agent, Err(Refusal::Worktree(error)), out);
             }
-            JobResult::Done | JobResult::Failed(_) => {
+            _ => {
                 let error = wire::Error {
                     code: wire::ErrorCode::Internal as i32,
                     message: format!("starting in a new worktree: {result:?}"),

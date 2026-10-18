@@ -16,13 +16,13 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use store::AgentRow;
-use wire::{BlobRef, ErrorCode, GetBlobRequest, PutBlobRequest};
+use wire::{BlobRef, DiffRequest, ErrorCode, GetBlobRequest, PutBlobRequest, diff_base};
 
 use crate::Daemon;
 use crate::ids::{AgentId, CallId, JobId};
 use crate::ingest::agent_dir;
 use crate::io::{Job, Output};
-use crate::payload::{BlobRefusal, CallError, JobResult, PeerReply, Response, Status};
+use crate::payload::{BlobRefusal, CallError, GitRefusal, JobResult, PeerReply, Response, Status};
 use crate::serve::answered;
 
 /// An agent directory's folder of blob files.
@@ -44,7 +44,22 @@ enum Writing {
     },
     /// A replica's blob the origin sent, kept for the next reader.
     Keep { call: CallId },
+    /// A diff's comparison, its patch written under `name` once made.
+    Compare {
+        call: CallId,
+        dir: PathBuf,
+        name: String,
+    },
+    /// A diff's patch, the diff answered with it once written.
+    Patch {
+        call: CallId,
+        #[serde(with = "crate::codec::message")]
+        diff: wire::Diff,
+    },
 }
+
+/// A diff's patch's type.
+pub const PATCH_MIME: &str = "text/x-diff";
 
 /// A blob's name on the drive: its hash in lower-case hex.
 pub fn hex(hash: &[u8]) -> String {
@@ -152,7 +167,45 @@ impl Daemon {
         Ok(())
     }
 
-    /// A blob write finished; returns whether `job` was one.
+    /// How one of this host's agents' working tree differs from a base:
+    /// compared by a job, and its patch, when asked for, written as the
+    /// agent's blob before the diff is answered.
+    pub(crate) fn diff(
+        &mut self,
+        call: CallId,
+        request: DiffRequest,
+        out: &mut Vec<Output>,
+    ) -> Result<(), CallError> {
+        let row = self.blob_owner(&request.agent_id)?;
+        if row.agent.host != self.store.own_host() {
+            return Err(CallError::Blob(BlobRefusal::NotOwn));
+        }
+        let base = request
+            .base
+            .and_then(|base| base.base)
+            .ok_or(CallError::Blob(BlobRefusal::NoBase))?;
+        let name = match &base {
+            diff_base::Base::Head(_) => "working-tree.diff".to_owned(),
+            diff_base::Base::Branch(branch) => format!("{branch}.diff"),
+        };
+        let job = self.pending.mint();
+        let dir = self.files_of(&row).join(BLOBS);
+        self.blobs
+            .writing
+            .insert(job, Writing::Compare { call, dir, name });
+        out.push(Output::Job {
+            id: job,
+            op: Job::Compare {
+                cwd: PathBuf::from(&row.cwd),
+                base,
+                with_patch: request.with_patch,
+            },
+        });
+        Ok(())
+    }
+
+    /// A blob write or a diff's comparison finished; returns whether `job`
+    /// was one.
     pub(crate) fn blob_done(
         &mut self,
         job: JobId,
@@ -163,9 +216,45 @@ impl Daemon {
             return false;
         };
         let call = match &writing {
-            Writing::Put { call, .. } | Writing::Keep { call } => *call,
+            Writing::Put { call, .. }
+            | Writing::Keep { call }
+            | Writing::Compare { call, .. }
+            | Writing::Patch { call, .. } => *call,
         };
         match (writing, result) {
+            (Writing::Compare { dir, name, .. }, JobResult::Compared { diff, patch }) => {
+                match patch {
+                    None => answered(
+                        call,
+                        Response::Peer(Box::new(PeerReply::Diff(diff.clone()))),
+                        out,
+                    ),
+                    Some(patch) => {
+                        let mut diff = diff.clone();
+                        diff.patch = Some(BlobRef {
+                            size: patch.bytes.len() as u64,
+                            hash: patch.hash.clone(),
+                            name,
+                            mime: PATCH_MIME.to_owned(),
+                        });
+                        let (hash, bytes) = (patch.hash.clone(), patch.bytes.clone());
+                        self.write_blob(Writing::Patch { call, diff }, dir, hash, bytes, out);
+                    }
+                }
+            }
+            (Writing::Compare { .. }, failed) => {
+                let refusal = match failed {
+                    JobResult::CompareFailed(refusal) => refusal.clone(),
+                    other => GitRefusal::Failed(format!("{other:?}")),
+                };
+                out.push(Output::EndCall {
+                    call,
+                    status: Status::Failed(CallError::Blob(BlobRefusal::Git(refusal))),
+                });
+            }
+            (Writing::Patch { diff, .. }, JobResult::Done) => {
+                answered(call, Response::Peer(Box::new(PeerReply::Diff(diff))), out)
+            }
             (Writing::Put { blob, .. }, JobResult::Done) => {
                 answered(call, Response::Peer(Box::new(PeerReply::Blob(blob))), out)
             }
@@ -322,5 +411,100 @@ mod tests {
                 hex(&[10; 32])
             ))
         );
+    }
+
+    #[test]
+    fn a_diff_is_compared_by_a_job_and_answered_once_its_patch_is_written() {
+        let mut daemon = daemon();
+        let mut out = Vec::new();
+        let request = DiffRequest {
+            agent_id: vec![3; 16],
+            base: Some(wire::DiffBase {
+                base: Some(diff_base::Base::Branch("main".into())),
+            }),
+            with_patch: true,
+        };
+        daemon.step(
+            Input::ClientCall {
+                call: CallId(3),
+                request: ClientRequest::Diff(request),
+            },
+            &mut out,
+        );
+        let [
+            Output::Job {
+                id,
+                op:
+                    Job::Compare {
+                        cwd,
+                        with_patch: true,
+                        ..
+                    },
+            },
+        ] = out.as_slice()
+        else {
+            panic!("one comparison: {out:?}");
+        };
+        assert_eq!(cwd, &PathBuf::from("/src"));
+        let compared = *id;
+        out.clear();
+        let diff = wire::Diff {
+            head: "abc".into(),
+            ..Default::default()
+        };
+        let patch = crate::payload::Patch {
+            hash: vec![7; 32],
+            bytes: b"--- a\n+++ b\n".to_vec(),
+        };
+        daemon.step(
+            Input::JobDone {
+                job: compared,
+                result: JobResult::Compared {
+                    diff,
+                    patch: Some(patch),
+                },
+            },
+            &mut out,
+        );
+        let [
+            Output::Job {
+                id,
+                op: Job::WriteBlob { hash, .. },
+            },
+        ] = out.as_slice()
+        else {
+            panic!("the patch written before any answer: {out:?}");
+        };
+        assert_eq!(hash, &vec![7; 32]);
+        let written = *id;
+        out.clear();
+        daemon.step(
+            Input::JobDone {
+                job: written,
+                result: JobResult::Done,
+            },
+            &mut out,
+        );
+        let [
+            Output::Answer {
+                response: Response::Peer(reply),
+                ..
+            },
+            Output::EndCall {
+                status: Status::Ok, ..
+            },
+        ] = out.as_slice()
+        else {
+            panic!("the diff and the end: {out:?}");
+        };
+        let PeerReply::Diff(diff) = reply.as_ref() else {
+            panic!("a diff: {reply:?}");
+        };
+        let patch = diff.patch.as_ref().expect("the patch rides on the diff");
+        assert_eq!(
+            (patch.name.as_str(), patch.mime.as_str()),
+            ("main.diff", PATCH_MIME)
+        );
+        assert_eq!(diff.head, "abc");
     }
 }

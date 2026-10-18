@@ -16,6 +16,7 @@ use crate::payload::{
     ChannelError, ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame,
     PairMessage, PeerRequest, PublicKey, Push, Response, Status,
 };
+use crate::presence::{HostView, Route, Tried};
 use crate::{DumpReason, codec};
 
 /// Everything that can happen to the daemon, decoded by the driver.
@@ -65,6 +66,27 @@ pub enum Input {
     ChannelClosed {
         channel: ChannelId,
         reason: ChannelError,
+    },
+    /// The shell's try at an [`Output::Attempt`] concluded.
+    AttemptConcluded {
+        host: HostId,
+        route: Route,
+        tried: Tried,
+    },
+    /// The account's plan changed: what the relay carries changed with it.
+    PlanChanged,
+    /// A call to the host found no channel on its route within its
+    /// patience.
+    CallsFailed {
+        host: HostId,
+    },
+    /// Try the host now: what kept channels to it from opening is gone.
+    TryAgain {
+        host: HostId,
+    },
+    /// The host's trust ended or is being replaced.
+    HostForgotten {
+        host: HostId,
     },
     PeerCall {
         channel: ChannelId,
@@ -134,6 +156,11 @@ impl Input {
             Input::WantChannel { .. } => "WantChannel",
             Input::ChannelOpened { .. } => "ChannelOpened",
             Input::ChannelClosed { .. } => "ChannelClosed",
+            Input::AttemptConcluded { .. } => "AttemptConcluded",
+            Input::PlanChanged => "PlanChanged",
+            Input::CallsFailed { .. } => "CallsFailed",
+            Input::TryAgain { .. } => "TryAgain",
+            Input::HostForgotten { .. } => "HostForgotten",
             Input::PeerCall { .. } => "PeerCall",
             Input::PeerAnswer { .. } => "PeerAnswer",
             Input::PairingMessage { .. } => "PairingMessage",
@@ -239,6 +266,23 @@ pub enum Output {
     },
     CloseChannel {
         channel: ChannelId,
+    },
+    /// Try a calls channel to `host` on `route`, and report how it went as
+    /// [`Input::AttemptConcluded`].
+    Attempt {
+        host: HostId,
+        route: Route,
+    },
+    /// `route` no longer carries `host`'s traffic: forget the channels
+    /// opened on it, so the next call opens a fresh one.
+    DropRoute {
+        host: HostId,
+        route: Route,
+    },
+    /// How `host` reads and is reached, said when it moves.
+    Presence {
+        host: HostId,
+        view: HostView,
     },
     Call {
         channel: ChannelId,
@@ -412,6 +456,23 @@ mod tests {
             Input::LinkDown {
                 link: LinkId(1),
                 reason: LinkCloseReason::UserShutdown,
+            },
+            Input::AttemptConcluded {
+                host: HostId([1; 16]),
+                route: Route::Via(HostId([2; 16])),
+                tried: Tried::Failed(ChannelError::Refused(StreamRefusal::PaymentRequired)),
+            },
+            Input::AttemptConcluded {
+                host: HostId([1; 16]),
+                route: Route::Direct(LinkId(3)),
+                tried: Tried::Abandoned,
+            },
+            Input::Timer {
+                id: TimerId::Retry(HostId([1; 16])),
+            },
+            Input::PlanChanged,
+            Input::CallsFailed {
+                host: HostId([1; 16]),
             },
             Input::ClientCall {
                 call: CallId(2),

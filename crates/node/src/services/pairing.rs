@@ -1391,9 +1391,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::routing::{
-        Capabilities, Host, LinkCloseRequest, LinkId, LinkRole, Route, RoutingCore,
-    };
+    use crate::routing::{Capabilities, Host, LinkCloseRequest, LinkId, LinkRole, RoutingCore};
     use crate::transport::{BoxedGrpcIo, in_process_channel, in_process_transport_pair};
     use crate::trust::{TrustEntry, TrustStore};
 
@@ -2116,8 +2114,8 @@ mod tests {
             )
             .await;
         assert_eq!(
-            service.connections.known_routes(peer.host_id).await,
-            vec![Route::Via(relay)]
+            service.connections.routing().relays_to(peer.host_id).await,
+            vec![relay]
         );
     }
 
@@ -2387,8 +2385,8 @@ mod tests {
             )
             .await;
         assert_eq!(
-            service.connections.known_routes(peer.host_id).await,
-            vec![Route::Via(relay)]
+            service.connections.routing().relays_to(peer.host_id).await,
+            vec![relay]
         );
     }
 

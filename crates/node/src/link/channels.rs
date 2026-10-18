@@ -1,6 +1,6 @@
 //! Tonic channels carried by independent native link streams.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -155,6 +155,42 @@ pub struct ChannelPool {
     security: Option<ChannelSecurity>,
     handshake_timeout: Duration,
     bulk_response_holds: std::sync::Mutex<HashMap<HostId, PendingBulkResponseHold>>,
+    /// Hosts no channel opens to while the link stays up: a fault a test
+    /// network injects.
+    refused: std::sync::Mutex<HashSet<HostId>>,
+}
+
+/// A channel the core said to open, whose outcome the core is told exactly
+/// once. One dropped before it was told, as a caller that gives up waiting
+/// drops its open, is told it was abandoned.
+struct Telling {
+    core: CoreLinks,
+    channel: daemon_core::ChannelId,
+    told: bool,
+}
+
+impl Telling {
+    fn opened(mut self, link: LinkId, key: ChannelKey) -> (CoreLinks, daemon_core::ChannelId) {
+        self.told = true;
+        self.core.opened(self.channel, link, key.peer, key.class);
+        (self.core.clone(), self.channel)
+    }
+
+    fn failed(mut self, reason: daemon_core::payload::ChannelError) {
+        self.told = true;
+        self.core.closed(self.channel, reason);
+    }
+}
+
+impl Drop for Telling {
+    fn drop(&mut self) {
+        if !self.told {
+            self.core.closed(
+                self.channel,
+                daemon_core::payload::ChannelError::Handshake("the open was abandoned".to_owned()),
+            );
+        }
+    }
 }
 
 /// A bulk transfer held after its first data arrives, so a test can show
@@ -219,6 +255,7 @@ impl ChannelPool {
             security: None,
             handshake_timeout: CHANNEL_TLS_HANDSHAKE_TIMEOUT,
             bulk_response_holds: std::sync::Mutex::new(HashMap::new()),
+            refused: std::sync::Mutex::default(),
         }
     }
 
@@ -240,7 +277,30 @@ impl ChannelPool {
             }),
             handshake_timeout: CHANNEL_TLS_HANDSHAKE_TIMEOUT,
             bulk_response_holds: std::sync::Mutex::new(HashMap::new()),
+            refused: std::sync::Mutex::default(),
         }
+    }
+
+    /// From now on every channel to `peer` is refused while `refuse`
+    /// holds, as a far end refusing every stream would refuse it, and no
+    /// cached one is handed out.
+    pub(crate) fn refuse(&self, peer: HostId, refuse: bool) {
+        let mut refused = self
+            .refused
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if refuse {
+            refused.insert(peer);
+        } else {
+            refused.remove(&peer);
+        }
+    }
+
+    fn refuses(&self, peer: HostId) -> bool {
+        self.refused
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(&peer)
     }
 
     /// Holds the next bulk channel opened to `peer` after the first data
@@ -286,7 +346,8 @@ impl ChannelPool {
     }
 
     async fn open_channel(&self, key: ChannelKey) -> Result<Channel, ChannelError> {
-        let cached = if key.class.shared() {
+        let refused = self.refuses(key.peer);
+        let cached = if key.class.shared() && !refused {
             self.by_key
                 .read()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -330,9 +391,16 @@ impl ChannelPool {
         });
         // A profile's channels open at its core's word, with the key it
         // gives; a pool with no core pins from the trust store itself.
-        let (told, pin) = match self.links.core() {
+        let (telling, pin) = match self.links.core() {
             Some(core) => match core.want_channel(link, key.peer, key.class, pinned).await {
-                Ok(opening) => (Some((core, opening.channel)), Some(opening.pin.0)),
+                Ok(opening) => {
+                    let telling = Telling {
+                        core: core.clone(),
+                        channel: opening.channel,
+                        told: false,
+                    };
+                    (Some(telling), Some(opening.pin.0))
+                }
                 Err(refusal) => {
                     return Err(match refusal {
                         daemon_core::payload::ChannelError::Unpinned => unpinned(key.peer),
@@ -344,6 +412,13 @@ impl ChannelPool {
             },
             None => (None, pinned),
         };
+        if refused {
+            let refusal = ChannelError::Refused(pb::StreamRefusal::NoRoute);
+            if let Some(telling) = telling {
+                telling.failed(core_error(&refusal));
+            }
+            return Err(refusal);
+        }
         let ended = Arc::new(Ending::default());
         let secured = async {
             let (stream, handshake) = self
@@ -354,13 +429,13 @@ impl ChannelPool {
                 .map(|channel| (channel, handshake))
         }
         .await;
-        if let Some((core, channel)) = told {
+        if let Some(telling) = telling {
             match &secured {
                 Ok(_) => {
-                    core.opened(channel, link, key.peer, key.class);
-                    ended.arm(core.clone(), channel);
+                    let (core, channel) = telling.opened(link, key);
+                    ended.arm(core, channel);
                 }
-                Err(error) => core.closed(channel, core_error(error)),
+                Err(error) => telling.failed(core_error(error)),
             }
         }
         let (channel, handshake) = secured?;
@@ -396,10 +471,6 @@ impl ChannelPool {
             .open_stream_on(carrier, peer, route, Handshake::Pinned)
             .await?;
         Ok(stream)
-    }
-
-    pub(crate) fn drop_link(&self, link: LinkId) {
-        self.forget_where(|key| route_link(key.route) == Some(link));
     }
 
     pub(crate) fn drop_host(&self, host: HostId) {
@@ -993,13 +1064,6 @@ fn map_open_error(error: OpenError, route: Route) -> ChannelError {
     }
 }
 
-fn route_link(route: Route) -> Option<LinkId> {
-    match route {
-        Route::Direct(link) => Some(link),
-        Route::Via(_) => None,
-    }
-}
-
 pub(crate) fn route_link_peer(route: Route) -> HostId {
     match route {
         Route::Direct(link) => link.peer(),
@@ -1048,7 +1112,7 @@ mod tests {
         opened(&pool, elsewhere);
         assert_eq!(opener_count(&pool), 3);
 
-        pool.drop_link(link);
+        pool.drop_route(host, Route::Direct(link));
         assert_eq!(opener_count(&pool), 2, "the link's lock went with the link");
 
         pool.drop_route(host, Route::Via(relay));

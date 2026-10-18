@@ -5,6 +5,9 @@
 //! say which hosts the peer reaches: its hello and each neighbor coming up
 //! or going down. A channel is opened only at the core's word, with the key
 //! the core gives for its handshake, and the driver reports how it went.
+//!
+//! The routes to a host are read off the links: its own links, newest
+//! first, then each peer whose link claims to reach it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,6 +19,7 @@ use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId};
 use crate::io::Output;
 use crate::payload::{CarrierKind, ChannelClass, ChannelError, LinkFrame, PublicKey};
+use crate::presence::Route;
 
 /// Every link that is up, by id, with its peer and the hosts the peer
 /// claims to reach, and the channels opened over them. The relay keeps one
@@ -33,7 +37,8 @@ pub struct LinkRegistry {
 pub struct Link {
     pub peer: HostId,
     pub kind: CarrierKind,
-    /// The hosts the peer says it reaches, other than this host and itself.
+    /// The hosts the peer says it reaches, other than this host, itself
+    /// and any relay.
     pub claims: BTreeSet<HostId>,
 }
 
@@ -42,6 +47,9 @@ pub struct Link {
 pub struct Channel {
     pub link: LinkId,
     pub peer: HostId,
+    /// The route it opens on: the peer's own link, or a link to a host
+    /// that claims to reach the peer.
+    pub route: Route,
     pub class: ChannelClass,
     /// Whether the driver reported its handshake done.
     pub open: bool,
@@ -67,6 +75,45 @@ impl LinkRegistry {
     pub fn channels(&self) -> impl Iterator<Item = (ChannelId, &Channel)> {
         self.channels.iter().map(|(id, channel)| (*id, channel))
     }
+
+    /// Every route to `host`, the one a fresh call takes first: its own
+    /// links, newest first, since a second link to a peer is a crossed dial
+    /// whose newer link is the one both sides keep; then each peer that
+    /// claims to reach it, in the order their links came up.
+    pub fn routes_to(&self, host: HostId) -> Vec<Route> {
+        let mut routes: Vec<Route> = self
+            .links
+            .iter()
+            .rev()
+            .filter(|(_, link)| link.peer == host)
+            .map(|(id, _)| Route::Direct(*id))
+            .collect();
+        for link in self.links.values() {
+            let via = Route::Via(link.peer);
+            if link.claims.contains(&host) && !routes.contains(&via) {
+                routes.push(via);
+            }
+        }
+        routes
+    }
+
+    /// Whether `host` is a relay this host links to: one whose claims are
+    /// the hosts on the account, and which is never itself tried.
+    pub fn is_relay(&self, host: HostId) -> bool {
+        self.links
+            .values()
+            .any(|link| link.peer == host && link.kind == CarrierKind::Relay)
+    }
+
+    /// The route a channel over `link` to `peer` takes, while the link is up.
+    fn route_over(&self, link: LinkId, peer: HostId) -> Option<Route> {
+        let over = self.links.get(&link)?;
+        Some(if over.peer == peer {
+            Route::Direct(link)
+        } else {
+            Route::Via(over.peer)
+        })
+    }
 }
 
 impl Daemon {
@@ -75,7 +122,14 @@ impl Daemon {
         &self.routing.links
     }
 
-    pub(crate) fn link_up(&mut self, link: LinkId, peer: HostId, kind: CarrierKind) {
+    pub(crate) fn link_up(
+        &mut self,
+        link: LinkId,
+        peer: HostId,
+        kind: CarrierKind,
+        out: &mut Vec<Output>,
+    ) {
+        let before = self.routes_before([peer]);
         self.routing.links.links.insert(
             link,
             Link {
@@ -84,52 +138,68 @@ impl Daemon {
                 claims: BTreeSet::new(),
             },
         );
+        self.routes_moved(before, out);
     }
 
     /// The link is gone, and with it every channel it carried: the driver
     /// ends their streams with the connection.
-    pub(crate) fn link_down(&mut self, link: LinkId) {
+    pub(crate) fn link_down(&mut self, link: LinkId, out: &mut Vec<Output>) {
+        let Some(gone) = self.routing.links.links.get(&link) else {
+            return;
+        };
+        let hosts: Vec<HostId> = std::iter::once(gone.peer)
+            .chain(gone.claims.iter().copied())
+            .collect();
+        let before = self.routes_before(hosts);
         let registry = &mut self.routing.links;
         registry.links.remove(&link);
         registry.channels.retain(|_, channel| channel.link != link);
+        self.routes_moved(before, out);
     }
 
     /// A link control frame from the peer. Its hello carries the hosts it
     /// reaches as the link came up; each neighbor frame after says one
     /// came or went. Anything else on the control stream is the driver's.
-    pub(crate) fn link_control(&mut self, link: LinkId, frame: LinkFrame) {
+    pub(crate) fn link_control(&mut self, link: LinkId, frame: LinkFrame, out: &mut Vec<Output>) {
         let own = HostId::from_slice(self.store.own_host());
-        let Some(entry) = self.routing.links.links.get_mut(&link) else {
+        let Some(entry) = self.routing.links.links.get(&link) else {
             return;
         };
         let peer = entry.peer;
+        let mut claims = entry.claims.clone();
         let other = |host: &HostId| Some(*host) != own && *host != peer;
         match frame.body {
             Some(Body::Hello(hello)) => {
-                entry.claims = hosts(&hello.neighbors).filter(other).collect();
+                claims = hosts(&hello.neighbors).filter(other).collect();
             }
             Some(Body::HelloAck(HelloAck {
                 outcome: Some(hello_ack::Outcome::Accepted(accepted)),
             })) => {
-                entry.claims = hosts(&accepted.neighbors).filter(other).collect();
+                claims = hosts(&accepted.neighbors).filter(other).collect();
             }
             Some(Body::NeighborUp(up)) => {
                 if let Some(host) = up
                     .host
                     .as_ref()
+                    .filter(|host| !is_relay(host))
                     .and_then(|host| HostId::from_slice(&host.host_id))
                     .filter(other)
                 {
-                    entry.claims.insert(host);
+                    claims.insert(host);
                 }
             }
             Some(Body::NeighborDown(down)) => {
                 if let Some(host) = HostId::from_slice(&down.host_id) {
-                    entry.claims.remove(&host);
+                    claims.remove(&host);
                 }
             }
-            Some(Body::HelloAck(_) | Body::Reauth(_) | Body::LinkClose(_)) | None => {}
+            Some(Body::HelloAck(_) | Body::Reauth(_) | Body::LinkClose(_)) | None => return,
         }
+        let before = self.routes_before(entry.claims.union(&claims).copied().collect::<Vec<_>>());
+        if let Some(entry) = self.routing.links.links.get_mut(&link) {
+            entry.claims = claims;
+        }
+        self.routes_moved(before, out);
     }
 
     /// The shell wants a channel: opened over a link that is up, to a peer
@@ -148,15 +218,17 @@ impl Daemon {
             class,
             reason,
         };
-        let registry = &mut self.routing.links;
-        if !registry.links.contains_key(&link) {
+        let Some(route) = self.routing.links.route_over(link, peer) else {
             out.push(refused(ChannelError::NoLink));
             return;
-        }
+        };
         let Some(pin) = pin else {
             out.push(refused(ChannelError::Unpinned));
+            // As a handshake that found no key would: the attempt failed.
+            self.concluded(peer, route, Err(&ChannelError::Unpinned), out);
             return;
         };
+        let registry = &mut self.routing.links;
         registry.next_channel += 1;
         let channel = ChannelId(registry.next_channel);
         registry.channels.insert(
@@ -164,6 +236,7 @@ impl Daemon {
             Channel {
                 link,
                 peer,
+                route,
                 class,
                 open: false,
             },
@@ -178,22 +251,47 @@ impl Daemon {
     }
 
     /// The driver's handshake on a channel the core asked for verified its
-    /// pin. One whose link went meanwhile is already forgotten.
-    pub(crate) fn channel_opened(&mut self, channel: ChannelId) {
-        if let Some(channel) = self.routing.links.channels.get_mut(&channel) {
-            channel.open = true;
-        }
+    /// pin: an attempt on its route that reached the host. One whose link
+    /// went meanwhile is already forgotten.
+    pub(crate) fn channel_opened(&mut self, channel: ChannelId, out: &mut Vec<Output>) {
+        let Some(opened) = self.routing.links.channels.get_mut(&channel) else {
+            return;
+        };
+        opened.open = true;
+        let (peer, route) = (opened.peer, opened.route);
+        self.concluded(peer, route, Ok(()), out);
     }
 
-    pub(crate) fn channel_closed(&mut self, channel: ChannelId) {
-        self.routing.links.channels.remove(&channel);
+    /// A channel closed: one that never opened is an attempt on its route
+    /// that failed, and one that did says nothing of the host by ending.
+    pub(crate) fn channel_closed(
+        &mut self,
+        channel: ChannelId,
+        reason: &ChannelError,
+        out: &mut Vec<Output>,
+    ) {
+        let Some(closed) = self.routing.links.channels.remove(&channel) else {
+            return;
+        };
+        if !closed.open {
+            self.concluded(closed.peer, closed.route, Err(reason), out);
+        }
     }
 }
 
-/// The ids of the hosts a frame lists; one that is not an id names no host.
+/// Whether a host a frame names says it is a relay.
+fn is_relay(host: &wire::Host) -> bool {
+    host.capabilities
+        .as_ref()
+        .is_some_and(|capabilities| capabilities.cloud_relay)
+}
+
+/// The ids of the hosts a frame lists, other than relays; one that is not
+/// an id names no host.
 fn hosts(hosts: &[wire::Host]) -> impl Iterator<Item = HostId> + '_ {
     hosts
         .iter()
+        .filter(|host| !is_relay(host))
         .filter_map(|host| HostId::from_slice(&host.host_id))
 }
 
@@ -247,6 +345,7 @@ mod tests {
         link.claims.iter().copied().collect()
     }
 
+    /// What the core said about the channel asked for.
     fn want(daemon: &mut Daemon, pin: Option<PublicKey>) -> Vec<Output> {
         step(
             daemon,
@@ -257,6 +356,14 @@ mod tests {
                 pin,
             },
         )
+        .into_iter()
+        .filter(|output| {
+            matches!(
+                output,
+                Output::OpenChannel { .. } | Output::ChannelRefused { .. }
+            )
+        })
+        .collect()
     }
 
     #[test]

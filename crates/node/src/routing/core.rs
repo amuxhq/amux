@@ -1,29 +1,30 @@
-//! The routing table: who is adjacent, and who claims adjacency to whom.
+//! The host catalogue: what each host a link or a neighbor's claim makes
+//! present said of itself, and which neighbors claim it.
 //!
-//! Two rules define the model:
+//! Two rules define routing:
 //!
 //! 1. **Advertise only adjacency.** Neighbors tell us only "I have/lost a
 //!    direct link to H" — never anything they learned from someone else.
 //! 2. **Forward only to adjacency.** Frames are forwarded iff we hold a
 //!    direct link to their destination (see `LinkRegistry`).
 //!
-//! From those rules, the table is two maps: our own channel-backed links
-//! (`directs`) and our neighbors' adjacency claims (`claims`). Presence is a
-//! derivation — a host is online iff it is a direct peer or some neighbor
-//! claims adjacency to it — so presence reaches exactly two hops.
+//! The routes those rules make, and what each host reads as, are the
+//! profile's core's (`daemon_core::presence`). This catalogue keeps what
+//! the shell still needs beside them: the hosts' own descriptions, the cap
+//! on how many untrusted hosts are held, the window in which a host's trust
+//! is being replaced, and who said they no longer trust this host.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tokio::sync::{RwLock, mpsc, watch};
+use tokio::sync::{RwLock, watch};
 use tokio::time::Instant;
 
 use crate::HostId;
 use crate::resource_limits::{CLIENT_VISIBLE_ACTIVITY_RECENT_WINDOW, ROUTING_HOST_CAP};
 use crate::routing::Host;
-use crate::routing::events::{EventSource, HostReachabilityEvent, RoutingEvent};
-use crate::routing::types::{LinkId, Route};
+use crate::routing::types::LinkId;
 use crate::trust::SharedTrustStore;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,8 +57,6 @@ struct RoutingState {
     replacing: HashSet<HostId>,
     client_visible_activity: HashMap<HostId, Instant>,
     next_host_sequence: u64,
-    routing_events: EventSource<RoutingEvent>,
-    host_events: EventSource<HostReachabilityEvent>,
 }
 
 impl RoutingState {
@@ -188,35 +187,6 @@ impl RoutingCore {
         }
     }
 
-    /// The route a fresh call to `host_id` would take: a direct link when we
-    /// hold one, otherwise through the first relay that claims adjacency.
-    pub async fn route_to(&self, host_id: HostId) -> Option<Route> {
-        let state = self.state.read().await;
-        if let Some(entry) = state.directs.get(&host_id)
-            && let Some(link) = entry.links.first()
-        {
-            return Some(Route::Direct(*link));
-        }
-        state
-            .claims
-            .get(&host_id)
-            .and_then(|entry| entry.relays.first())
-            .map(|relay| Route::Via(*relay))
-    }
-
-    /// Every route we hold to `host_id` (the direct link first).
-    pub async fn routes_to(&self, host_id: HostId) -> Vec<Route> {
-        let state = self.state.read().await;
-        let mut routes = Vec::new();
-        if let Some(entry) = state.directs.get(&host_id) {
-            routes.extend(entry.links.iter().map(|link| Route::Direct(*link)));
-        }
-        if let Some(entry) = state.claims.get(&host_id) {
-            routes.extend(entry.relays.iter().map(|relay| Route::Via(*relay)));
-        }
-        routes
-    }
-
     /// The relays claiming adjacency to `host_id`, in claim order.
     pub(crate) async fn relays_to(&self, host_id: HostId) -> Vec<HostId> {
         self.state
@@ -251,8 +221,7 @@ impl RoutingCore {
         }
     }
 
-    /// Records a channel-backed direct link to `host`. Emits `NeighborUp`
-    /// (and `Added` presence on first sight).
+    /// Records a channel-backed direct link to `host`.
     pub(crate) async fn apply_direct_up(&self, host: Host, link: LinkId) -> RouteUpdateOutcome {
         self.remember_signed_in(&host);
         let trusted_hosts = self.trusted_host_ids();
@@ -265,7 +234,6 @@ impl RoutingCore {
             return outcome;
         }
 
-        let newly_present = !state.is_present(host_id);
         self.revocations.clear(host_id);
         let entry = state.directs.entry(host_id).or_insert_with(|| DirectEntry {
             host: host.clone(),
@@ -280,20 +248,10 @@ impl RoutingCore {
         // Routing hears about that displacement a moment later, so preferring
         // the older link would send calls down a link nothing can open on.
         entry.links.insert(0, link);
-        state.routing_events.emit(RoutingEvent::NeighborUp {
-            host: host.clone(),
-            link,
-        });
-        if newly_present {
-            state
-                .host_events
-                .emit(HostReachabilityEvent::Added { host });
-        }
         RouteUpdateOutcome::Inserted
     }
 
-    /// Removes one direct link. Emits `NeighborDown`, and `Removed` when the
-    /// host is no longer present at all.
+    /// Removes one direct link.
     pub(crate) async fn apply_direct_down(&self, link: LinkId) {
         let mut state = self.state.write().await;
         let host_id = link.peer();
@@ -304,16 +262,10 @@ impl RoutingCore {
             return;
         };
         entry.links.remove(position);
-        let last_link = entry.links.is_empty();
-        if last_link {
+        if entry.links.is_empty() {
             state.directs.remove(&host_id);
         }
-        state.routing_events.emit(RoutingEvent::NeighborDown {
-            host_id,
-            link,
-            last_link,
-        });
-        emit_removed_if_gone(&mut state, host_id);
+        forget_activity_if_gone(&mut state, host_id);
     }
 
     /// Records a neighbor's adjacency claim: `relay` says it has a direct
@@ -330,7 +282,6 @@ impl RoutingCore {
             return outcome;
         }
 
-        let newly_present = !state.is_present(host_id);
         if !state.claims.contains_key(&host_id) {
             let inserted_sequence = state.next_host_sequence;
             state.next_host_sequence = state.next_host_sequence.saturating_add(1);
@@ -351,15 +302,6 @@ impl RoutingCore {
             return RouteUpdateOutcome::AlreadyKnown;
         }
         entry.relays.push(relay);
-        state.routing_events.emit(RoutingEvent::ClaimUp {
-            relay,
-            host: host.clone(),
-        });
-        if newly_present {
-            state
-                .host_events
-                .emit(HostReachabilityEvent::Added { host });
-        }
         RouteUpdateOutcome::Inserted
     }
 
@@ -367,7 +309,7 @@ impl RoutingCore {
     pub(crate) async fn apply_claim_down(&self, relay: HostId, host_id: HostId) {
         let mut state = self.state.write().await;
         remove_claim(&mut state, relay, host_id);
-        emit_removed_if_gone(&mut state, host_id);
+        forget_activity_if_gone(&mut state, host_id);
     }
 
     /// Withdraws every claim made by `relay` (its last link went down).
@@ -380,7 +322,7 @@ impl RoutingCore {
             .collect::<Vec<_>>();
         for host_id in claimed {
             remove_claim(&mut state, relay, host_id);
-            emit_removed_if_gone(&mut state, host_id);
+            forget_activity_if_gone(&mut state, host_id);
         }
     }
 
@@ -389,26 +331,9 @@ impl RoutingCore {
     pub(crate) async fn remove_host(&self, host_id: HostId) {
         self.revocations.clear(host_id);
         let mut state = self.state.write().await;
-        if let Some(entry) = state.directs.remove(&host_id) {
-            for link in entry.links {
-                state.routing_events.emit(RoutingEvent::NeighborDown {
-                    host_id,
-                    link,
-                    last_link: true,
-                });
-            }
-        }
-        if let Some(entry) = state.claims.remove(&host_id) {
-            for relay in entry.relays {
-                state
-                    .routing_events
-                    .emit(RoutingEvent::ClaimDown { relay, host_id });
-            }
-        }
+        state.directs.remove(&host_id);
+        state.claims.remove(&host_id);
         state.client_visible_activity.remove(&host_id);
-        state
-            .host_events
-            .emit(HostReachabilityEvent::Removed { host_id });
     }
 
     /// Drops our own links to `host_id` but keeps what our neighbors say
@@ -419,19 +344,8 @@ impl RoutingCore {
     /// relay, which is the only route a fresh pairing has.
     pub(crate) async fn remove_direct_links(&self, host_id: HostId) {
         let mut state = self.state.write().await;
-        let removed = state.directs.remove(&host_id);
-        let was_direct = removed.is_some();
-        if let Some(entry) = removed {
-            for link in entry.links {
-                state.routing_events.emit(RoutingEvent::NeighborDown {
-                    host_id,
-                    link,
-                    last_link: true,
-                });
-            }
-        }
-        if was_direct {
-            emit_removed_if_gone(&mut state, host_id);
+        if state.directs.remove(&host_id).is_some() {
+            forget_activity_if_gone(&mut state, host_id);
         }
     }
 
@@ -443,77 +357,6 @@ impl RoutingCore {
 
     pub(crate) async fn finish_replacement(&self, host_id: HostId) {
         self.state.write().await.replacing.remove(&host_id);
-    }
-
-    pub(crate) async fn subscribe_routing_events(&self) -> mpsc::Receiver<RoutingEvent> {
-        self.state.write().await.routing_events.subscribe()
-    }
-
-    /// The current table replayed as events, for seeding a late subscriber.
-    pub async fn routing_events_snapshot(&self) -> Vec<RoutingEvent> {
-        let state = self.state.read().await;
-        let mut events = Vec::new();
-        let mut directs = state.directs.values().collect::<Vec<_>>();
-        directs.sort_unstable_by_key(|entry| entry.host.id);
-        for entry in directs {
-            for link in &entry.links {
-                events.push(RoutingEvent::NeighborUp {
-                    host: entry.host.clone(),
-                    link: *link,
-                });
-            }
-        }
-        let mut claims = state.claims.values().collect::<Vec<_>>();
-        claims.sort_unstable_by_key(|entry| entry.host.id);
-        for entry in claims {
-            for relay in &entry.relays {
-                events.push(RoutingEvent::ClaimUp {
-                    relay: *relay,
-                    host: entry.host.clone(),
-                });
-            }
-        }
-        events
-    }
-
-    #[cfg(test)]
-    #[doc(hidden)]
-    pub async fn subscribe_hosts(&self) -> mpsc::Receiver<HostReachabilityEvent> {
-        self.state.write().await.host_events.subscribe()
-    }
-
-    /// Announces how a host is reached now.
-    ///
-    /// The routing table records where a host could be reached; which of those
-    /// routes is live is the connection manager's own state, and it applies
-    /// routing events on its own schedule. So a route announced from inside
-    /// the table would describe a link that has entered it but is not yet
-    /// carrying anything, and a watcher would be told about a route that is
-    /// being replaced. The manager calls this once its state has settled, and
-    /// only when what a client would be told has actually moved — acting on
-    /// one of these costs the host its inventory subscription.
-    pub(crate) async fn announce_route(&self, host_id: HostId) {
-        let mut state = self.state.write().await;
-        if state.is_present(host_id) {
-            emit_route_change(&mut state, host_id);
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn subscribe_hosts_with_snapshot(
-        &self,
-    ) -> (Vec<Host>, mpsc::Receiver<HostReachabilityEvent>) {
-        let mut state = self.state.write().await;
-        let mut snapshot = state
-            .directs
-            .values()
-            .map(|entry| entry.host.clone())
-            .chain(state.claims.values().map(|entry| entry.host.clone()))
-            .collect::<Vec<_>>();
-        snapshot.sort_unstable_by_key(|host| host.id);
-        snapshot.dedup_by_key(|host| host.id);
-        let rx = state.host_events.subscribe();
-        (snapshot, rx)
     }
 }
 
@@ -591,37 +434,13 @@ fn remove_claim(state: &mut RoutingState, relay: HostId, host_id: HostId) {
     if entry.relays.is_empty() {
         state.claims.remove(&host_id);
     }
-    state
-        .routing_events
-        .emit(RoutingEvent::ClaimDown { relay, host_id });
 }
 
-/// Announces a host that has no routes left at all.
-///
-/// A host that still has one is not announced here: losing a route it was not
-/// being reached over changes nothing anybody is told, and losing the one it
-/// was is announced by whatever was carrying it, once it knows what replaced
-/// it.
-fn emit_removed_if_gone(state: &mut RoutingState, host_id: HostId) {
-    if state.is_present(host_id) {
-        return;
+/// A host nothing makes present any more has no recent activity to keep.
+fn forget_activity_if_gone(state: &mut RoutingState, host_id: HostId) {
+    if !state.is_present(host_id) {
+        state.client_visible_activity.remove(&host_id);
     }
-    state.client_visible_activity.remove(&host_id);
-    state
-        .host_events
-        .emit(HostReachabilityEvent::Removed { host_id });
-}
-
-/// Announces that a host already known to be here is now reached differently.
-///
-/// Presence did not change, so nobody would otherwise be told — and how a
-/// machine is reached is most of what is said about it, so a client holding a
-/// long-lived subscription would go on describing it by the first route it
-/// was ever reached over.
-fn emit_route_change(state: &mut RoutingState, host_id: HostId) {
-    state
-        .host_events
-        .emit(HostReachabilityEvent::RouteChanged { host_id });
 }
 
 /// Enforces [`ROUTING_HOST_CAP`] before a new untrusted host becomes
@@ -637,30 +456,12 @@ fn reserve_presence_capacity(
     {
         return None;
     }
-    let Some(evicted) = evict_host_for_cap(state, trusted_hosts) else {
-        return Some(RouteUpdateOutcome::RejectedByCap);
-    };
-    for relay in evicted.relays {
-        state.routing_events.emit(RoutingEvent::ClaimDown {
-            relay,
-            host_id: evicted.host_id,
-        });
-    }
-    state.host_events.emit(HostReachabilityEvent::Removed {
-        host_id: evicted.host_id,
-    });
-    None
+    evict_host_for_cap(state, trusted_hosts)
+        .is_none()
+        .then_some(RouteUpdateOutcome::RejectedByCap)
 }
 
-struct EvictedHost {
-    host_id: HostId,
-    relays: Vec<HostId>,
-}
-
-fn evict_host_for_cap(
-    state: &mut RoutingState,
-    trusted_hosts: &HashSet<HostId>,
-) -> Option<EvictedHost> {
+fn evict_host_for_cap(state: &mut RoutingState, trusted_hosts: &HashSet<HostId>) -> Option<HostId> {
     let now = Instant::now();
     prune_client_visible_activity(state, now);
     let candidate = state
@@ -671,12 +472,9 @@ fn evict_host_for_cap(
         .filter(|(host_id, _)| !has_recent_client_visible_activity(state, **host_id, now))
         .min_by_key(|(_, entry)| entry.inserted_sequence)
         .map(|(host_id, _)| *host_id)?;
-    let entry = state.claims.remove(&candidate)?;
+    state.claims.remove(&candidate)?;
     state.client_visible_activity.remove(&candidate);
-    Some(EvictedHost {
-        host_id: candidate,
-        relays: entry.relays,
-    })
+    Some(candidate)
 }
 
 fn untrusted_host_count(state: &RoutingState, trusted_hosts: &HashSet<HostId>) -> usize {
@@ -750,109 +548,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn direct_links_and_claims_combine_into_presence_and_routes() {
-        let core = RoutingCore::new();
-        let mut raw_rx = core.subscribe_routing_events().await;
-        let mut host_rx = core.subscribe_hosts().await;
-        let peer = HostId::from_u128(1);
-        let relay = HostId::from_u128(9);
-
-        assert_eq!(
-            core.apply_claim_up(relay, host(1, "claimed-first")).await,
-            RouteUpdateOutcome::Inserted
-        );
-        assert_eq!(
-            core.apply_claim_up(relay, host(1, "claimed-again")).await,
-            RouteUpdateOutcome::AlreadyKnown
-        );
-        assert_eq!(core.route_to(peer).await, Some(Route::Via(relay)));
-
-        let direct = link(1, 100);
-        assert_eq!(
-            core.apply_direct_up(host(1, "direct"), direct).await,
-            RouteUpdateOutcome::Inserted
-        );
-        assert_eq!(core.route_to(peer).await, Some(Route::Direct(direct)));
-
-        assert!(matches!(
-            raw_rx.recv().await,
-            Some(RoutingEvent::ClaimUp { relay: event_relay, .. }) if event_relay == relay
-        ));
-        assert!(matches!(
-            raw_rx.recv().await,
-            Some(RoutingEvent::NeighborUp { link, .. }) if link == direct
-        ));
-        assert!(
-            matches!(host_rx.recv().await, Some(HostReachabilityEvent::Added { host }) if host.id == peer)
-        );
-        // Presence is announced once, and the direct link that arrived beside
-        // the claim is not presence. Which route is being used is settled by
-        // whatever carries it, so the table says nothing about it here.
-        assert!(host_rx.try_recv().is_err(), "presence is emitted once");
-    }
-
-    #[tokio::test]
-    async fn a_host_stays_present_until_its_last_route_disappears() {
-        let core = RoutingCore::new();
-        let mut host_rx = core.subscribe_hosts().await;
-        let peer = HostId::from_u128(2);
-        let relay = HostId::from_u128(9);
-        let direct = link(2, 100);
-
-        core.apply_direct_up(host(2, "remote"), direct).await;
-        core.apply_claim_up(relay, host(2, "remote")).await;
-        assert!(matches!(
-            host_rx.recv().await,
-            Some(HostReachabilityEvent::Added { .. })
-        ));
-
-        core.apply_direct_down(direct).await;
-        assert_eq!(core.route_to(peer).await, Some(Route::Via(relay)));
-        assert!(
-            host_rx.try_recv().is_err(),
-            "still present via the claim, so nothing about presence changed"
-        );
-
-        core.apply_claim_down(relay, peer).await;
-        assert_eq!(core.route_to(peer).await, None);
-        assert!(
-            matches!(host_rx.recv().await, Some(HostReachabilityEvent::Removed { host_id }) if host_id == peer)
-        );
-    }
-
-    #[tokio::test]
-    async fn a_dying_relay_takes_all_its_claims_with_it() {
-        let core = RoutingCore::new();
-        let relay = HostId::from_u128(9);
-        let other_relay = HostId::from_u128(8);
-        core.apply_claim_up(relay, host(1, "one")).await;
-        core.apply_claim_up(relay, host(2, "two")).await;
-        core.apply_claim_up(other_relay, host(2, "two")).await;
-
-        core.remove_relay_claims(relay).await;
-
-        assert_eq!(core.route_to(HostId::from_u128(1)).await, None);
-        assert_eq!(
-            core.route_to(HostId::from_u128(2)).await,
-            Some(Route::Via(other_relay))
-        );
-    }
-
-    #[tokio::test]
-    async fn multiple_links_to_one_peer_survive_a_single_link_loss() {
-        let core = RoutingCore::new();
-        let peer = HostId::from_u128(3);
-        let first = link(3, 1);
-        let second = link(3, 2);
-
-        core.apply_direct_up(host(3, "peer"), first).await;
-        core.apply_direct_up(host(3, "peer"), second).await;
-        core.apply_direct_down(first).await;
-
-        assert_eq!(core.route_to(peer).await, Some(Route::Direct(second)));
-    }
-
-    #[tokio::test]
     async fn replacement_window_suppresses_route_updates() {
         let core = RoutingCore::new();
         let peer = HostId::from_u128(4);
@@ -876,85 +571,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_host_forgets_links_and_claims_and_emits_removed() {
+    async fn remove_host_forgets_links_and_claims() {
         let core = RoutingCore::new();
-        let mut host_rx = core.subscribe_hosts().await;
         let peer = HostId::from_u128(5);
         core.apply_direct_up(host(5, "peer"), link(5, 1)).await;
         core.apply_claim_up(HostId::from_u128(9), host(5, "peer"))
             .await;
-        assert!(matches!(
-            host_rx.recv().await,
-            Some(HostReachabilityEvent::Added { .. })
-        ));
 
         core.remove_host(peer).await;
 
-        assert_eq!(core.route_to(peer).await, None);
-        assert!(
-            matches!(host_rx.recv().await, Some(HostReachabilityEvent::Removed { host_id }) if host_id == peer)
-        );
+        assert!(core.host_entry(peer).await.is_none());
+        assert!(core.relays_to(peer).await.is_empty());
     }
 
     #[tokio::test]
     async fn remove_direct_links_keeps_a_relays_claim_and_the_host_present() {
         let core = RoutingCore::new();
-        let mut host_rx = core.subscribe_hosts().await;
         let peer = HostId::from_u128(5);
         let relay = HostId::from_u128(9);
         core.apply_direct_up(host(5, "peer"), link(5, 1)).await;
         core.apply_claim_up(relay, host(5, "peer")).await;
-        assert!(matches!(
-            host_rx.recv().await,
-            Some(HostReachabilityEvent::Added { .. })
-        ));
 
         core.remove_direct_links(peer).await;
-
-        assert_eq!(core.route_to(peer).await, Some(Route::Via(relay)));
+        assert_eq!(core.relays_to(peer).await, vec![relay]);
         assert!(core.host_entry(peer).await.is_some());
-        assert!(
-            host_rx.try_recv().is_err(),
-            "the host is still here, so presence has nothing to say"
-        );
-    }
 
-    #[tokio::test]
-    async fn a_second_link_to_the_same_peer_becomes_the_route_to_it() {
-        // Two links to one peer means both sides dialled at once. The one that
-        // arrives second is the one they keep; the first stopped carrying
-        // streams the instant it was displaced, and routing is told to drop it
-        // only afterwards. Calls made in between must take the live one.
-        let core = RoutingCore::new();
-        let peer = HostId::from_u128(5);
-        let crossed = link(5, 1);
-        let kept = link(5, 2);
-        core.apply_direct_up(host(5, "peer"), crossed).await;
-
-        core.apply_direct_up(host(5, "peer"), kept).await;
-
-        assert_eq!(core.route_to(peer).await, Some(Route::Direct(kept)));
-        core.apply_direct_down(crossed).await;
-        assert_eq!(core.route_to(peer).await, Some(Route::Direct(kept)));
-    }
-
-    #[tokio::test]
-    async fn remove_direct_links_reports_a_host_gone_when_nothing_else_holds_it() {
-        let core = RoutingCore::new();
-        let mut host_rx = core.subscribe_hosts().await;
-        let peer = HostId::from_u128(5);
-        core.apply_direct_up(host(5, "peer"), link(5, 1)).await;
-        assert!(matches!(
-            host_rx.recv().await,
-            Some(HostReachabilityEvent::Added { .. })
-        ));
-
-        core.remove_direct_links(peer).await;
-
-        assert_eq!(core.route_to(peer).await, None);
-        assert!(
-            matches!(host_rx.recv().await, Some(HostReachabilityEvent::Removed { host_id }) if host_id == peer)
-        );
+        core.apply_claim_down(relay, peer).await;
+        assert!(core.host_entry(peer).await.is_none());
     }
 
     #[tokio::test]
@@ -1008,26 +651,6 @@ mod tests {
 
         assert!(core.host_entry(HostId::from_u128(1)).await.is_none());
         assert!(core.host_entry(HostId::from_u128(1001)).await.is_some());
-    }
-
-    #[tokio::test]
-    async fn subscribe_with_snapshot_registers_before_later_events() {
-        let core = RoutingCore::new();
-        core.apply_direct_up(host(1, "one"), link(1, 1)).await;
-
-        let (snapshot, mut rx) = core.subscribe_hosts_with_snapshot().await;
-        assert_eq!(
-            snapshot
-                .into_iter()
-                .map(|host| host.name)
-                .collect::<Vec<_>>(),
-            ["one"]
-        );
-
-        core.apply_direct_up(host(2, "two"), link(2, 1)).await;
-        assert!(
-            matches!(rx.recv().await, Some(HostReachabilityEvent::Added { host }) if host.name == "two")
-        );
     }
 
     /// A stream begun before a host revoked this one may deliver the

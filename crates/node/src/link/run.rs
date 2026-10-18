@@ -578,20 +578,6 @@ async fn run_established(
         super::CarrierKind::Ssh => RoutingCarrier::Ssh,
         _ => ctx.routing_carrier,
     };
-    // The core hears of the link before anything can ask for a channel
-    // over it, and of the hosts its peer reaches as the peer said them.
-    ctx.report(daemon_core::Input::LinkUp {
-        link: link.core(),
-        peer: core_host(peer_host.id),
-        kind: match (link_role, carrier_tag) {
-            (LinkRole::CloudRelay, _) => daemon_core::payload::CarrierKind::Relay,
-            (LinkRole::Peer, RoutingCarrier::Ssh) => daemon_core::payload::CarrierKind::Ssh,
-            (LinkRole::Peer, RoutingCarrier::Direct) => daemon_core::payload::CarrierKind::Direct,
-        },
-    });
-    if let Some(frame) = peer_frame {
-        ctx.report_frame(link, frame);
-    }
     let (out_tx, mut out_rx) = mpsc::channel(256);
     let registration = ctx
         .links
@@ -620,13 +606,25 @@ async fn run_established(
     }) = registration
     else {
         signal_establishment(ctx.take_established_tx(), Ok(peer_host));
-        ctx.report(daemon_core::Input::LinkDown {
-            link: link.core(),
-            reason: wire::pb::LinkCloseReason::UserShutdown,
-        });
         carrier.close(wire::pb::LinkCloseReason::UserShutdown);
         return Ok(());
     };
+    // The core hears of the link once it is registered, so a route it
+    // lists finds the link's carrier, and of the hosts its peer reaches as
+    // the peer said them. Nothing picks a link to open a channel on but
+    // from the routes the core lists.
+    ctx.report(daemon_core::Input::LinkUp {
+        link: link.core(),
+        peer: core_host(peer_host.id),
+        kind: match (link_role, carrier_tag) {
+            (LinkRole::CloudRelay, _) => daemon_core::payload::CarrierKind::Relay,
+            (LinkRole::Peer, RoutingCarrier::Ssh) => daemon_core::payload::CarrierKind::Ssh,
+            (LinkRole::Peer, RoutingCarrier::Direct) => daemon_core::payload::CarrierKind::Direct,
+        },
+    });
+    if let Some(frame) = peer_frame {
+        ctx.report_frame(link, frame);
+    }
 
     // The peer joins routing before the hosts it claims to reach, and before
     // anything else this link has to do. From the moment it displaced an

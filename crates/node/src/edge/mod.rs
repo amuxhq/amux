@@ -275,6 +275,11 @@ impl Edge {
         ));
         let connections =
             ConnectionManager::new(routing.clone(), channels.clone(), analytics.clone());
+        if let Some(runtime) = runtime.upgrade() {
+            runtime
+                .driver()
+                .attach_connections(Arc::downgrade(&connections));
+        }
         let (incoming_streams_tx, incoming_streams_rx) = mpsc::channel(64);
         let (trusted_tx, trusted_rx) = mpsc::channel(64);
         let (pairing_tx, pairing_rx) = mpsc::channel(64);
@@ -301,7 +306,6 @@ impl Edge {
         .with_link_ctx(link_ctx.clone());
 
         let mut tasks = vec![
-            connections.clone().attach_routing_events().await,
             serve_inbound_streams(Arc::new(dispatcher.clone()), incoming_streams_rx),
             peer::serve(runtime, trusted_rx, shutdown.subscribe()),
             serve_pairing(
@@ -599,7 +603,7 @@ impl Edge {
     /// before it goes out. For a test network.
     #[doc(hidden)]
     pub async fn refuse_calls(&self, host: HostId, refuse: bool) {
-        self.connections.refuse_calls(host, refuse).await;
+        self.connections.refuse_calls(host, refuse);
     }
 
     /// The channel calls to a trusted host ride, for a caller that speaks
@@ -1002,7 +1006,7 @@ fn follow_plan(status: &RuntimeStatus, connections: &Arc<ConnectionManager>) -> 
                 let Some(connections) = connections.upgrade() else {
                     return;
                 };
-                connections.plan_changed().await;
+                connections.plan_changed();
             }
         }
     })

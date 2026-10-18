@@ -158,7 +158,7 @@ make a discovery result online. A trusted host stays in the inventory whatever
 its presence, and only untrusting it removes it.
 
 A trusted host's presence is the outcome of opening a channel to it, decided in
-one place, the daemon's connection manager (`crates/node/src/connection.rs`):
+one place, the daemon core's presence state (`crates/daemon-core/src/presence.rs`):
 
 - **Online:** a channel to the host opened on a route still listed. The route
   it opened on is the one the host entry's `via` names.
@@ -167,9 +167,8 @@ one place, the daemon's connection manager (`crates/node/src/connection.rs`):
   the host; nothing else reads away.
 - **Offline:** everything else. No route is listed, or the channel failed for
   any other reason: no route at the relay, rate limited, shutting down,
-  revoked, a TLS, handshake or identity failure, a timeout, a link gone. A host
-  that said it no longer trusts this one is offline and carries `revoked` on
-  its entry.
+  revoked, a TLS, handshake or identity failure, a timeout. A host that said it
+  no longer trusts this one is offline and carries `revoked` on its entry.
 
 Every route that comes up is tried at once: a direct link's first channel opens
 as the link's event is handled, and a relay's claim for a trusted host is tried
@@ -177,9 +176,12 @@ in the background. Every channel any call opens records its outcome too. A host
 whose route has come up and whose first attempt on it has not concluded keeps
 the presence it had, so a host that connects goes from offline straight to
 online, and one whose link went while the relay still lists it reads online
-until the try on the relay concludes. A failure counts only on the route the
-routing table prefers by then, and only while no other route carries the
-host's traffic.
+until the try on the relay concludes. A failure counts only on the route a
+fresh call would take first by then, and only while no other route carries the
+host's traffic. A channel failing because its link went says nothing: the
+link's end is what decides. A host no channel is open to while a route lists
+it is tried again in the background, one second after the failure and then
+doubling to thirty seconds between tries.
 
 When the account's plan changes, every host the relay carried or refused is
 tried again at once on a fresh channel, so a host away for the plan turns
@@ -212,9 +214,12 @@ is not a separate wire claim. Direct routes win over relayed routes. Route
 changes are make-then-break for later calls; existing channels stay attached
 to their original link until that link or channel ends.
 
-The routing table is `RoutingCore` in `crates/node/src/routing/core.rs`; the
-adjacency discipline on the wire is `LinkRegistry` in
-`crates/node/src/routing/link_registry.rs`.
+The routes are listed by the daemon core from the links it is told of
+(`crates/daemon-core/src/links.rs`): a host's own links newest first, since a
+second link to a peer is a crossed dial whose newer link both sides keep, then
+each neighbor whose link claims the host. The adjacency discipline on the wire
+is `LinkRegistry` in `crates/node/src/routing/link_registry.rs`, and what each
+host said of itself is kept beside it in `crates/node/src/routing/core.rs`.
 
 ## Chapter 5: Carriers, links, streams and channels
 

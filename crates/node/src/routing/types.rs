@@ -56,6 +56,14 @@ impl LinkId {
     pub(crate) fn core(&self) -> daemon_core::LinkId {
         daemon_core::LinkId(self.instance)
     }
+
+    /// The link to `peer` the profile's core names `link`.
+    pub(crate) fn from_core(peer: HostId, link: daemon_core::LinkId) -> Self {
+        Self {
+            peer,
+            instance: link.0,
+        }
+    }
 }
 
 impl std::fmt::Display for LinkId {
@@ -67,6 +75,11 @@ impl std::fmt::Display for LinkId {
 /// A host as the profile's core names it.
 pub(crate) fn core_host(host: HostId) -> daemon_core::HostId {
     daemon_core::HostId(*host.as_bytes())
+}
+
+/// The host the profile's core names `host`.
+pub(crate) fn host_from_core(host: daemon_core::HostId) -> HostId {
+    HostId::from_bytes(host.0)
 }
 
 /// How this daemon reaches a host: over its own link, or through one
@@ -83,6 +96,14 @@ pub enum Route {
 impl Route {
     pub fn is_direct(&self) -> bool {
         matches!(self, Route::Direct(_))
+    }
+
+    /// The route to `host` the profile's core names `route`.
+    pub(crate) fn from_core(host: HostId, route: daemon_core::Route) -> Self {
+        match route {
+            daemon_core::Route::Direct(link) => Route::Direct(LinkId::from_core(host, link)),
+            daemon_core::Route::Via(relay) => Route::Via(host_from_core(relay)),
+        }
     }
 }
 

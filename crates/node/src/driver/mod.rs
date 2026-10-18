@@ -18,7 +18,9 @@
 //! stepped ahead of everything else and without the store: no link input
 //! reads it, so a link never waits behind the shell's writes. A channel is
 //! opened only once the core has said so and given the key its handshake
-//! must find.
+//! must find. What the core decides about each host's presence goes to the
+//! profile's connection manager, which keeps it for the shell's reads and
+//! makes the tries the core asks for.
 //!
 //! Every input the core steps is recorded in the profile's input ring
 //! first, and the ring starts a new segment at each checkpoint the core
@@ -51,6 +53,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
 use wire::{FetchRequest, GetRequest};
 
+use crate::connection::ConnectionManager;
 use crate::install::{CORE_CHECKPOINT, CORE_RING, STORE, write_durably};
 use crate::runtime::ProfileRuntime;
 
@@ -122,6 +125,9 @@ pub(crate) struct Driver {
     shell: Arc<Mutex<Vec<FromShell>>>,
     /// The agents a stream follows, as the core last said.
     watched: Arc<Mutex<HashSet<AgentKey>>>,
+    /// Where what the core decides about hosts goes, once the profile's
+    /// edge is up.
+    connections: Arc<Mutex<Weak<ConnectionManager>>>,
 }
 
 impl Driver {
@@ -138,6 +144,7 @@ impl Driver {
         let reports = Arc::new(Mutex::new(VecDeque::new()));
         let shell = Arc::new(Mutex::new(Vec::new()));
         let watched = Arc::new(Mutex::new(HashSet::new()));
+        let connections = Arc::new(Mutex::new(Weak::new()));
         // The core owns a store of its own between steps; the profile's is
         // lent to it for each one.
         let store = Sqlite::open_in_memory(own_host).expect("an in-memory store opens");
@@ -163,6 +170,7 @@ impl Driver {
             calls: calls.clone(),
             shell: shell.clone(),
             watched: watched.clone(),
+            connections: connections.clone(),
             timers: HashMap::new(),
             waiting: HashMap::new(),
             ticked: None,
@@ -182,7 +190,13 @@ impl Driver {
             calls,
             shell,
             watched,
+            connections,
         }
+    }
+
+    /// From now on what the core decides about hosts goes to `connections`.
+    pub(crate) fn attach_connections(&self, connections: Weak<ConnectionManager>) {
+        *self.connections.lock().unwrap() = connections;
     }
 
     /// Reports what a link or channel did. Never waits, so a stream can
@@ -320,6 +334,7 @@ struct CoreThread {
     calls: Arc<CallTable>,
     shell: Arc<Mutex<Vec<FromShell>>>,
     watched: Arc<Mutex<HashSet<AgentKey>>>,
+    connections: Arc<Mutex<Weak<ConnectionManager>>>,
     timers: HashMap<TimerId, AbortHandle>,
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clock as last told to the core.
@@ -342,8 +357,10 @@ impl CoreThread {
             let Some(runtime) = self.runtime.upgrade() else {
                 return;
             };
-            // Links and channels first, and without the store: none of
+            // The clock first, so a timer the step arms counts from now;
+            // then links and channels, and without the store: none of
             // their inputs reads it.
+            self.tick(&runtime, &mut out);
             let reports = std::mem::take(&mut *self.reports.lock().unwrap());
             for report in reports {
                 self.step(&runtime, report, &mut out);
@@ -385,11 +402,7 @@ impl CoreThread {
                 Fed::Wake | Fed::Stop | Fed::Channel { .. } => None,
             };
             self.daemon.swap_store(&mut store);
-            let now = runtime.clock_now().max(0) as u64;
-            if self.ticked != Some(now) {
-                self.ticked = Some(now);
-                self.step(&runtime, Input::Tick { now_ms: now }, &mut out);
-            }
+            self.tick(&runtime, &mut out);
             let launch = runtime.launch();
             let settings = Settings {
                 notify_delay_ms: launch.notify_delay_ms,
@@ -425,6 +438,15 @@ impl CoreThread {
             self.daemon.swap_store(&mut store);
             drop(store);
             drop(runtime);
+        }
+    }
+
+    /// Tells the core the time, when it moved.
+    fn tick(&mut self, runtime: &Arc<ProfileRuntime>, out: &mut Vec<Output>) {
+        let now = runtime.clock_now().max(0) as u64;
+        if self.ticked != Some(now) {
+            self.ticked = Some(now);
+            self.step(runtime, Input::Tick { now_ms: now }, out);
         }
     }
 
@@ -506,9 +528,21 @@ impl CoreThread {
             Output::ArmTimer { id, at_ms } => {
                 let wait = at_ms.saturating_sub(runtime.clock_now().max(0) as u64);
                 let inputs = self.inputs.clone();
+                // A host's retry reads no store, so it fires as links
+                // report, ahead of the shell's writes.
+                let reports = matches!(id, TimerId::Retry(_)).then(|| self.reports.clone());
                 let task = tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_millis(wait)).await;
-                    feed(&inputs, Input::Timer { id }).await;
+                    let fired = Input::Timer { id };
+                    match reports {
+                        Some(reports) => {
+                            reports.lock().unwrap().push_back(fired);
+                            if let Some(inputs) = inputs.upgrade() {
+                                let _ = inputs.try_send(Fed::Wake);
+                            }
+                        }
+                        None => feed(&inputs, fired).await,
+                    }
                 });
                 if let Some(armed) = self.timers.insert(id, task.abort_handle()) {
                     armed.abort();
@@ -590,6 +624,24 @@ impl CoreThread {
                     let _ = reply.send(Err(reason));
                 }
             }
+            Output::Presence { host, view } => {
+                if let Some(connections) = self.connections() {
+                    connections.told(host, view);
+                }
+            }
+            Output::Attempt { host, route } => match self.connections() {
+                Some(connections) => connections.attempt(host, route),
+                None => self.again.push_back(Input::AttemptConcluded {
+                    host,
+                    route,
+                    tried: daemon_core::Tried::Abandoned,
+                }),
+            },
+            Output::DropRoute { host, route } => {
+                if let Some(connections) = self.connections() {
+                    connections.drop_route(host, route);
+                }
+            }
             output @ (Output::CloseChannel { .. }
             | Output::Call { .. }
             | Output::SendFile { .. }
@@ -603,6 +655,10 @@ impl CoreThread {
                 );
             }
         }
+    }
+
+    fn connections(&self) -> Option<Arc<ConnectionManager>> {
+        self.connections.lock().unwrap().upgrade()
     }
 
     /// Tells whoever waits on the agent's journal what one ingest step did.

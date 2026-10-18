@@ -24,6 +24,8 @@ pub enum TimerId {
     Deliveries,
     /// Something was committed since the last checkpoint: take the next.
     Checkpoint,
+    /// Try the host again: no channel to it is open while a route lists it.
+    Retry(HostId),
 }
 
 /// A job the driver runs off the core thread; its outcome returns as

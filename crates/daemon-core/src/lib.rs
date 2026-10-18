@@ -25,6 +25,7 @@ pub mod ingest;
 mod io;
 pub mod links;
 pub mod payload;
+pub mod presence;
 pub mod serve;
 
 pub use checkpoints::Checkpoints;
@@ -32,6 +33,7 @@ pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, Pair
 pub use ingest::Journals;
 pub use io::{FromShell, IngestEnd, Ingested, Input, Job, Output, Settings, Wake};
 pub use links::LinkRegistry;
+pub use presence::{HostView, Presence, PresenceState, Route, Tried};
 pub use serve::Answers;
 
 /// The checkpoint layout this build writes and restores. A checkpoint under
@@ -123,17 +125,27 @@ impl Daemon {
             } => self.take_checkpoint(out),
             Input::Configure(settings) => self.settings = settings,
             Input::FromShell(change) => self.shell_changed(change, out),
-            Input::LinkUp { link, peer, kind } => self.link_up(link, peer, kind),
-            Input::LinkDown { link, .. } => self.link_down(link),
-            Input::LinkControl { link, frame } => self.link_control(link, frame),
+            Input::LinkUp { link, peer, kind } => self.link_up(link, peer, kind, out),
+            Input::LinkDown { link, .. } => self.link_down(link, out),
+            Input::LinkControl { link, frame } => self.link_control(link, frame, out),
             Input::WantChannel {
                 link,
                 peer,
                 class,
                 pin,
             } => self.want_channel(link, peer, class, pin, out),
-            Input::ChannelOpened { channel, .. } => self.channel_opened(channel),
-            Input::ChannelClosed { channel, .. } => self.channel_closed(channel),
+            Input::ChannelOpened { channel, .. } => self.channel_opened(channel, out),
+            Input::ChannelClosed { channel, reason } => self.channel_closed(channel, &reason, out),
+            Input::Timer {
+                id: TimerId::Retry(host),
+            } => self.retry_fired(host, out),
+            Input::AttemptConcluded { host, route, tried } => {
+                self.attempt_concluded(host, route, tried, out)
+            }
+            Input::PlanChanged => self.plan_changed(out),
+            Input::CallsFailed { host } => self.calls_failed(host, out),
+            Input::TryAgain { host } => self.try_again(host, out),
+            Input::HostForgotten { host } => self.forget_host(host, out),
             Input::PeerCall { .. }
             | Input::PeerAnswer { .. }
             | Input::PairingMessage { .. }
@@ -141,6 +153,7 @@ impl Daemon {
             | Input::ControlClosed { .. }
             | Input::Entropy(_) => {}
         }
+        self.tell_presence(out);
         if let Err(violation) = self.check_step_invariants() {
             tracing::error!(%violation, input = kind, "a daemon core step broke an invariant");
             out.push(Output::Dump {
@@ -168,6 +181,7 @@ impl Daemon {
     /// boundaries the step crossed: each costs constant time per row the
     /// step touched and never scans the block.
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
+        self.check_presence()?;
         for (agent, revision) in &self.touched.answered {
             let committed = self
                 .store
@@ -341,6 +355,8 @@ struct Touched {
     /// The generation an own stream opened under, and the highest one
     /// opened under before it.
     opened_under: Option<(u64, u64)>,
+    /// Each host whose routes, attempts or presence the step moved.
+    hosts: Vec<HostId>,
 }
 
 impl Touched {
@@ -350,17 +366,22 @@ impl Touched {
             None => self.answered.push((agent.clone(), revision)),
         }
     }
+
+    fn host(&mut self, host: HostId) {
+        if !self.hosts.contains(&host) {
+            self.hosts.push(host);
+        }
+    }
 }
 
-/// Links, routes and the attempts in flight on them.
+/// Links, the routes they make, and the attempts the core asked for in
+/// flight on them.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingState {
     links: LinkRegistry,
+    /// Each attempt under way, by host and route, counted.
+    attempts: std::collections::BTreeMap<(HostId, Route), u32>,
 }
-
-/// What each paired host reads as: online, away or offline.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PresenceState {}
 
 /// Each replica this profile holds and the stream that feeds it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -378,6 +399,8 @@ pub struct PairingState {}
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timers {
     now_ms: u64,
+    /// The timers armed that the core keeps count of: each host's retry.
+    armed: std::collections::BTreeSet<TimerId>,
 }
 
 /// Jobs and calls to peers awaiting their result.

@@ -508,9 +508,8 @@ async fn has_direct_route(context: &ReachabilityLinkContext, peer: HostId) -> bo
         .has_direct_peer_link_to(peer)
         .await
         || context
-            .routing
+            .connections
             .routes_to(peer)
-            .await
             .iter()
             .any(|route| matches!(route, Route::Direct(_)))
 }

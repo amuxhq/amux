@@ -10,4 +10,5 @@ pub(crate) use pairing::{
     begin_pair_initiator,
 };
 pub use pairing::{PeerTrustCommitContext, PeerTrustUpdate, commit_peer_trust};
+pub(crate) use reachability::Dialer;
 pub use reachability::ReachabilityLinkConnector;

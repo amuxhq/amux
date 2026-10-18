@@ -4,17 +4,26 @@
 //! would, and answers with what the owner answered. Forwarding goes one hop:
 //! a call that arrived from a peer is answered only for this host's own
 //! agents, never passed on.
+//!
+//! A forwarded call goes through the profile's core, which holds it in its
+//! pending set until the owner's reply comes back; the driver makes the
+//! call itself, here.
 
-use std::future::Future;
 use std::time::Duration;
 
+use daemon_core::payload::{
+    Answer, CallError, PeerFailure, PeerReply, PeerRequest, Response as CoreResponse,
+    Status as CoreStatus,
+};
 use store::{AgentRow, StoreError};
 use tonic::{Code, Response, Status};
 use uuid::Uuid;
 use wire::{AmbiguousHostName, ErrorCode, ErrorDetail, HostEntry, Trust};
 
 use crate::HostId;
+use crate::driver::Delivered;
 use crate::grpc::wire_error;
+use crate::routing::core_host;
 use crate::runtime::ProfileRuntime;
 
 /// How long reaching a host may take: finding its link and opening a
@@ -85,6 +94,74 @@ impl ForwardError {
             }
         }
     }
+}
+
+impl ForwardError {
+    fn of(failure: PeerFailure, host: HostId, name: String) -> Self {
+        match failure {
+            PeerFailure::NotSent => Self::NotSent { host, name },
+            PeerFailure::Lapsed => Self::Lapsed { host, name },
+            PeerFailure::Uncertain => Self::Uncertain { host, name },
+            PeerFailure::Refused(error) => Self::Remote(error),
+        }
+    }
+
+    fn failure(self) -> PeerFailure {
+        match self {
+            Self::NotSent { .. } => PeerFailure::NotSent,
+            Self::Lapsed { .. } => PeerFailure::Lapsed,
+            Self::Uncertain { .. } => PeerFailure::Uncertain,
+            Self::Remote(error) => PeerFailure::Refused(error),
+        }
+    }
+}
+
+/// A PeerService request that can be forwarded, and the reply it gets.
+pub(crate) trait PeerRpc {
+    type Reply;
+    fn request(self) -> PeerRequest;
+    fn reply(reply: PeerReply) -> Option<Self::Reply>;
+}
+
+macro_rules! peer_rpc {
+    ($($request:ty => $variant:ident, $reply:ty => $answered:pat => $value:expr;)*) => {
+        $(
+            impl PeerRpc for $request {
+                type Reply = $reply;
+                fn request(self) -> PeerRequest {
+                    PeerRequest::$variant(self)
+                }
+                fn reply(reply: PeerReply) -> Option<$reply> {
+                    match reply {
+                        $answered => Some($value),
+                        _ => None,
+                    }
+                }
+            }
+        )*
+    };
+}
+
+peer_rpc! {
+    wire::SendInputRequest => SendInput, wire::SendInputResponse
+        => PeerReply::SendInput(reply) => reply;
+    wire::CreateAgentRequest => CreateAgent, wire::Agent => PeerReply::Agent(agent) => agent;
+    wire::RenameAgentRequest => RenameAgent, wire::Agent => PeerReply::Agent(agent) => agent;
+    wire::StopAgentRequest => StopAgent, wire::Empty => PeerReply::Done => wire::Empty {};
+    wire::ResumeAgentRequest => ResumeAgent, wire::Agent => PeerReply::Agent(agent) => agent;
+    wire::DeleteAgentRequest => DeleteAgent, wire::Empty => PeerReply::Done => wire::Empty {};
+    wire::Envelope => SendMessage, wire::SendMessageResponse
+        => PeerReply::SendMessage(reply) => reply;
+    wire::PutBlobRequest => PutBlob, wire::BlobRef => PeerReply::Blob(blob) => blob;
+    wire::GetBlobRequest => GetBlob, wire::GetBlobResponse => PeerReply::GetBlob(blob) => blob;
+    wire::DiffRequest => Diff, wire::Diff => PeerReply::Diff(diff) => diff;
+    wire::GetCatalogueRequest => GetCatalogue, wire::CatalogueBlob
+        => PeerReply::Catalogue(catalogue) => catalogue;
+    wire::ListRepositoriesRequest => ListRepositories, wire::ListRepositoriesResponse
+        => PeerReply::Repositories(repositories) => repositories;
+    wire::DumpRequest => Dump, wire::DumpPart => PeerReply::Dump(part) => part;
+    wire::FetchRequest => Fetch, wire::FetchResponse => PeerReply::Fetched(page) => page;
+    wire::GetRequest => Get, wire::Item => PeerReply::Item(item) => item;
 }
 
 /// A spawn's host name that answers to no trusted host, or to several.
@@ -194,24 +271,57 @@ impl ProfileRuntime {
         }
     }
 
-    /// Makes one call on `host`'s daemon. Reaching the host and waiting for
-    /// its answer have separate limits, so a failure says whether the call
-    /// went out.
-    pub(crate) async fn on_peer<T, F, Fut>(&self, host: HostId, call: F) -> Result<T, ForwardError>
-    where
-        F: FnOnce(crate::PeerClient) -> Fut,
-        Fut: Future<Output = Result<Response<T>, Status>>,
-    {
-        let uncertain = || ForwardError::Uncertain {
-            host,
-            name: self.host_name(host),
+    /// Makes one call on `host`'s daemon through the profile's core, and
+    /// answers with the owner's reply.
+    pub(crate) async fn on_peer<R: PeerRpc>(
+        &self,
+        host: HostId,
+        request: R,
+    ) -> Result<R::Reply, ForwardError> {
+        let mut answers = self
+            .driver()
+            .forward(core_host(host), request.request())
+            .await;
+        let mut reply = None;
+        loop {
+            match answers.next().await {
+                Some(Delivered::Answer(CoreResponse::Peer(answered))) => reply = Some(*answered),
+                Some(Delivered::Answer(_)) => {}
+                Some(Delivered::End(CoreStatus::Ok)) => break,
+                Some(Delivered::End(CoreStatus::Failed(CallError::Peer(failure)))) => {
+                    return Err(ForwardError::of(failure, host, self.host_name(host)));
+                }
+                // The profile stopped, or the core could not make the call:
+                // either way it never left.
+                Some(Delivered::End(CoreStatus::Failed(_))) | None => break,
+            }
+        }
+        reply
+            .and_then(R::reply)
+            .ok_or_else(|| ForwardError::NotSent {
+                host,
+                name: self.host_name(host),
+            })
+    }
+
+    /// Makes a call the profile's core asked for of `host`. Reaching the
+    /// host and waiting for its answer have separate limits, so a failure
+    /// says whether the call went out.
+    pub(crate) async fn call_peer(&self, host: HostId, request: PeerRequest) -> Answer {
+        let client = match self.peer_client(host).await {
+            Ok(client) => client,
+            Err(error) => return Answer::Failed(error.failure()),
         };
-        let client = self.peer_client(host).await?;
-        match tokio::time::timeout(ANSWER_PATIENCE, call(client)).await {
-            Ok(answer) => answer
-                .map(Response::into_inner)
-                .map_err(|status| from_status(uncertain(), &status)),
-            Err(_) => Err(uncertain()),
+        match tokio::time::timeout(ANSWER_PATIENCE, dispatch(client, request)).await {
+            Ok(Ok(reply)) => Answer::Reply(Box::new(reply)),
+            Ok(Err(status)) => {
+                let uncertain = ForwardError::Uncertain {
+                    host,
+                    name: String::new(),
+                };
+                Answer::Failed(from_status(uncertain, &status).failure())
+            }
+            Err(_) => Answer::Failed(PeerFailure::Uncertain),
         }
     }
 
@@ -269,5 +379,58 @@ impl ProfileRuntime {
                 candidates: several.iter().map(|host| (*host).clone()).collect(),
             })),
         }
+    }
+}
+
+/// Makes one PeerService call and reads its whole reply.
+async fn dispatch(
+    mut client: crate::PeerClient,
+    request: PeerRequest,
+) -> Result<PeerReply, Status> {
+    fn unary<T>(
+        answer: Result<Response<T>, Status>,
+        reply: fn(T) -> PeerReply,
+    ) -> Result<PeerReply, Status> {
+        answer.map(|answer| reply(answer.into_inner()))
+    }
+    match request {
+        PeerRequest::Fetch(request) => unary(client.fetch(request).await, PeerReply::Fetched),
+        PeerRequest::Get(request) => unary(client.get(request).await, PeerReply::Item),
+        PeerRequest::SendInput(request) => {
+            unary(client.send_input(request).await, PeerReply::SendInput)
+        }
+        PeerRequest::CreateAgent(request) => {
+            unary(client.create_agent(request).await, PeerReply::Agent)
+        }
+        PeerRequest::RenameAgent(request) => {
+            unary(client.rename_agent(request).await, PeerReply::Agent)
+        }
+        PeerRequest::StopAgent(request) => {
+            unary(client.stop_agent(request).await, |_| PeerReply::Done)
+        }
+        PeerRequest::ResumeAgent(request) => {
+            unary(client.resume_agent(request).await, PeerReply::Agent)
+        }
+        PeerRequest::DeleteAgent(request) => {
+            unary(client.delete_agent(request).await, |_| PeerReply::Done)
+        }
+        PeerRequest::SendMessage(envelope) => {
+            unary(client.send_message(envelope).await, PeerReply::SendMessage)
+        }
+        PeerRequest::PutBlob(request) => unary(client.put_blob(request).await, PeerReply::Blob),
+        PeerRequest::GetBlob(request) => unary(client.get_blob(request).await, PeerReply::GetBlob),
+        PeerRequest::Diff(request) => unary(client.diff(request).await, PeerReply::Diff),
+        PeerRequest::GetCatalogue(request) => {
+            unary(client.get_catalogue(request).await, PeerReply::Catalogue)
+        }
+        PeerRequest::ListRepositories(request) => unary(
+            client.list_repositories(request).await,
+            PeerReply::Repositories,
+        ),
+        PeerRequest::Dump(request) => unary(client.dump(request).await, PeerReply::Dump),
+        // Streams are opened by the replica's source, not forwarded.
+        PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory { .. } => Err(
+            Status::unimplemented("a stream is not made as a forwarded call"),
+        ),
     }
 }

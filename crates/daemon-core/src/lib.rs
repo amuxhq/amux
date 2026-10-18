@@ -25,6 +25,7 @@ pub mod ingest;
 mod io;
 pub mod links;
 pub mod payload;
+mod peers;
 pub mod presence;
 pub mod serve;
 
@@ -105,7 +106,13 @@ impl Daemon {
         self.touched = Touched::default();
         match input {
             Input::Tick { now_ms } => self.timers.now_ms = now_ms,
-            Input::ClientCall { call, who, request } => self.client_call(call, who, request, out),
+            Input::ClientCall { call, request } => self.client_call(call, request, out),
+            Input::PeerCall {
+                from,
+                call,
+                request,
+            } => self.peer_call(from, call, request, out),
+            Input::PeerAnswer { call, answer } => self.peer_answered(call, answer, out),
             Input::CallCancelled { call } => self.cancelled(call, out),
             Input::AnswerLagged { call } => self.lagged(call, out),
             Input::JobDone { job, result } if self.is_checkpoint(job) => {
@@ -146,12 +153,8 @@ impl Daemon {
             Input::CallsFailed { host } => self.calls_failed(host, out),
             Input::TryAgain { host } => self.try_again(host, out),
             Input::HostForgotten { host } => self.forget_host(host, out),
-            Input::PeerCall { .. }
-            | Input::PeerAnswer { .. }
-            | Input::PairingMessage { .. }
-            | Input::Discovered { .. }
-            | Input::ControlClosed { .. }
-            | Input::Entropy(_) => {}
+            Input::Discovered { found } => self.discovered(found, out),
+            Input::PairingMessage { .. } | Input::ControlClosed { .. } | Input::Entropy(_) => {}
         }
         self.tell_presence(out);
         if let Err(violation) = self.check_step_invariants() {
@@ -409,6 +412,8 @@ pub struct Pending {
     /// The last job id minted.
     next_job: u64,
     fetches: std::collections::BTreeMap<JobId, serve::PendingFetch>,
+    /// The calls made of peers.
+    peers: peers::PeerCalls,
 }
 
 /// How long one step may take before it is reported with a dump.

@@ -12,7 +12,7 @@ use crate::ids::{
     AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
 };
 use crate::payload::{
-    Advertisement, AgentSpec, AnalyticsBatch, Answer, BlobHash, Caller, CarrierKind, ChannelClass,
+    Advertisement, AgentSpec, AnalyticsBatch, Answer, BlobHash, CarrierKind, ChannelClass,
     ChannelError, ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame,
     PairMessage, PeerRequest, PublicKey, Push, Response, Status,
 };
@@ -88,11 +88,14 @@ pub enum Input {
     HostForgotten {
         host: HostId,
     },
+    /// A paired host's call, from the host whose pinned key its channel's
+    /// handshake presented.
     PeerCall {
-        channel: ChannelId,
+        from: HostId,
         call: CallId,
         request: PeerRequest,
     },
+    /// What came back of a call the core made with [`Output::Call`].
     PeerAnswer {
         call: CallId,
         answer: Answer,
@@ -102,6 +105,7 @@ pub enum Input {
         #[serde(with = "codec::message")]
         message: PairMessage,
     },
+    /// Hosts the local network browse resolved, as each resolves.
     Discovered {
         found: Vec<Advertisement>,
     },
@@ -117,9 +121,10 @@ pub enum Input {
     ControlClosed {
         agent: AgentId,
     },
+    /// A call by a client of this profile: its socket, an agent's tools
+    /// socket or the in-process call.
     ClientCall {
         call: CallId,
-        who: Caller,
         request: ClientRequest,
     },
     /// A client or peer dropped a call or its stream.
@@ -188,6 +193,9 @@ pub struct Settings {
     /// replay, what the input ring holds, and how long the journal below
     /// the last checkpoint waits to be reclaimed.
     pub checkpoint_interval_ms: u64,
+    /// The newest rows a replica keeps, K: no tail a stream opens with is
+    /// longer.
+    pub tail_rows: u32,
 }
 
 impl Default for Settings {
@@ -195,6 +203,7 @@ impl Default for Settings {
         Self {
             notify_delay_ms: 30_000,
             checkpoint_interval_ms: 60_000,
+            tail_rows: 200,
         }
     }
 }
@@ -279,13 +288,19 @@ pub enum Output {
         host: HostId,
         route: Route,
     },
+    /// Dial `host` at the addresses the local network last gave for it.
+    Dial {
+        host: HostId,
+    },
     /// How `host` reads and is reached, said when it moves.
     Presence {
         host: HostId,
         view: HostView,
     },
+    /// Make `request` of `host` on a calls channel to it, and report what
+    /// came back as [`Input::PeerAnswer`] under `call`.
     Call {
-        channel: ChannelId,
+        host: HostId,
         call: CallId,
         request: PeerRequest,
     },
@@ -414,7 +429,9 @@ pub enum Job {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payload::{Caller, ClientRequest, JobResult, Opening, StreamRefusal};
+    use crate::payload::{
+        Answer, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest, StreamRefusal,
+    };
 
     #[test]
     fn every_kind_of_input_reads_back_as_written() {
@@ -476,21 +493,53 @@ mod tests {
             },
             Input::ClientCall {
                 call: CallId(2),
-                who: Caller::Peer,
                 request: ClientRequest::Subscribe {
                     agent_id: vec![1, 2],
-                    from: Opening::After {
-                        revision: 3,
-                        cap: 4,
-                        generation: 5,
-                    },
-                    tail_rows: 6,
+                    tail: 6,
                     followed: true,
                 },
             },
+            Input::PeerCall {
+                from: HostId([1; 16]),
+                call: CallId(7),
+                request: PeerRequest::Subscribe(wire::PeerSubscribeRequest {
+                    agent_id: vec![1, 2],
+                    from: Some(wire::peer_subscribe_request::From::After(wire::After {
+                        revision: 3,
+                        cap: 4,
+                        generation: 5,
+                    })),
+                }),
+            },
+            Input::ClientCall {
+                call: CallId(8),
+                request: ClientRequest::Forward {
+                    host: HostId([2; 16]),
+                    request: Box::new(PeerRequest::StopAgent(wire::StopAgentRequest {
+                        agent_id: vec![3],
+                    })),
+                },
+            },
+            Input::PeerAnswer {
+                call: CallId(9),
+                answer: Answer::Reply(Box::new(PeerReply::Done)),
+            },
+            Input::PeerAnswer {
+                call: CallId(10),
+                answer: Answer::Failed(PeerFailure::Refused(wire::Error {
+                    code: wire::ErrorCode::NotFound as i32,
+                    message: "gone".into(),
+                    details: Vec::new(),
+                })),
+            },
+            Input::Discovered {
+                found: vec![Advertisement {
+                    host: HostId([4; 16]),
+                    trusted: true,
+                }],
+            },
             Input::ClientCall {
                 call: CallId(3),
-                who: Caller::Local,
                 request: ClientRequest::Fetch(wire::FetchRequest {
                     agent_id: vec![9],
                     limit: 3,
@@ -499,14 +548,12 @@ mod tests {
             },
             Input::ClientCall {
                 call: CallId(4),
-                who: Caller::Local,
                 request: ClientRequest::SubscribeInventory {
                     hosts: vec![wire::HostEntry {
                         host_id: vec![1],
                         generation: 2,
                         ..Default::default()
                     }],
-                    only: None,
                 },
             },
             Input::JobDone {

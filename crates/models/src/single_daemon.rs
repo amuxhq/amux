@@ -30,7 +30,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use daemon_core::generation::{LastRun, at_start};
-use daemon_core::payload::{Caller, ClientRequest, JobResult, Opening, Response};
+use daemon_core::payload::{ClientRequest, JobResult, Response};
 use daemon_core::{
     AgentId, CallId, Checkpoint, Daemon, Input, Job, JobId, Output, StartOptions, StepBudget,
     TimerId,
@@ -486,15 +486,10 @@ impl Machine for SingleDaemon {
                 });
                 let request = ClientRequest::Subscribe {
                     agent_id: AGENT.0.to_vec(),
-                    from: Opening::Tail(TAIL),
-                    tail_rows: TAIL,
+                    tail: TAIL,
                     followed: false,
                 };
-                let input = Input::ClientCall {
-                    call,
-                    who: Caller::Local,
-                    request,
-                };
+                let input = Input::ClientCall { call, request };
                 self.step(&mut next, input, false);
             }
             Action::AnswerLagged => {

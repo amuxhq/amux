@@ -18,7 +18,9 @@ use wire::{HelloAck, hello_ack};
 use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId};
 use crate::io::Output;
-use crate::payload::{CarrierKind, ChannelClass, ChannelError, LinkFrame, PublicKey};
+use crate::payload::{
+    Advertisement, CarrierKind, ChannelClass, ChannelError, LinkFrame, PublicKey,
+};
 use crate::presence::Route;
 
 /// Every link that is up, by id, with its peer and the hosts the peer
@@ -139,6 +141,24 @@ impl Daemon {
             },
         );
         self.routes_moved(before, out);
+    }
+
+    /// Hosts the local network found. A paired host without a link of its
+    /// own is dialed; one already linked directly needs no second link, and
+    /// a host not paired is only a hint until it is.
+    pub(crate) fn discovered(&mut self, found: Vec<Advertisement>, out: &mut Vec<Output>) {
+        let own = HostId::from_slice(self.store.own_host());
+        for advert in found {
+            let linked = self
+                .routing
+                .links
+                .routes_to(advert.host)
+                .iter()
+                .any(|route| matches!(route, Route::Direct(_)));
+            if advert.trusted && Some(advert.host) != own && !linked {
+                out.push(Output::Dial { host: advert.host });
+            }
+        }
     }
 
     /// The link is gone, and with it every channel it carried: the driver

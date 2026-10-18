@@ -17,7 +17,7 @@ use wire::{
 
 use crate::ids::{CallId, JobId};
 use crate::io::{FromShell, Job, Output};
-use crate::payload::{CallError, Caller, ClientRequest, JobResult, Opening, Response, Status};
+use crate::payload::{CallError, ClientRequest, JobResult, Opening, Response, Status};
 use crate::{Daemon, Pending};
 
 /// The most items one Fetch returns, whatever the limit asked for.
@@ -66,6 +66,9 @@ enum OpenCall {
     Inventory { only: Option<Vec<u8>> },
     /// A Fetch waiting on the agent's origin.
     Fetch,
+    /// A call forwarded to the host that owns its agent, waiting on its
+    /// reply.
+    Forward,
 }
 
 /// A Fetch that went below a replica's block: the call it answers and the
@@ -79,6 +82,11 @@ pub(crate) struct PendingFetch {
 impl Answers {
     fn muted(&self, agent: &AgentKey) -> bool {
         !self.muted.is_empty() && self.muted.contains(&Key::from(agent))
+    }
+
+    /// Holds `call` open until the host it was forwarded to replies.
+    pub(crate) fn forwarding(&mut self, call: CallId) {
+        self.open.insert(call, OpenCall::Forward);
     }
 
     fn watched(&self, key: &Key) -> bool {
@@ -118,23 +126,35 @@ impl Daemon {
     pub(crate) fn client_call(
         &mut self,
         call: CallId,
-        _who: Caller,
         request: ClientRequest,
         out: &mut Vec<Output>,
     ) {
         let answered = match request {
             ClientRequest::Subscribe {
                 agent_id,
-                from,
-                tail_rows,
+                tail,
                 followed,
-            } => self.subscribe(call, &agent_id, from, tail_rows, followed, out),
+            } => self.subscribe(call, &agent_id, Opening::Tail(tail), followed, out),
             ClientRequest::Fetch(request) => self.fetch(call, &request, out),
             ClientRequest::Get(request) => self.get(call, &request, out),
-            ClientRequest::SubscribeInventory { hosts, only } => {
-                self.subscribe_inventory(call, hosts, only, out)
+            ClientRequest::SubscribeInventory { hosts } => {
+                self.subscribe_inventory(call, hosts, None, out)
+            }
+            ClientRequest::Forward { host, request } => {
+                self.forward(call, host, request, out);
+                Ok(())
             }
         };
+        self.end_unanswered(call, answered, out);
+    }
+
+    /// Ends a call that could not be answered, saying why.
+    pub(crate) fn end_unanswered(
+        &mut self,
+        call: CallId,
+        answered: Result<(), CallError>,
+        out: &mut Vec<Output>,
+    ) {
         if let Err(error) = answered {
             self.answers.release(call, out);
             out.push(Output::EndCall {
@@ -147,12 +167,11 @@ impl Daemon {
     /// Opens a Subscribe stream: its Opening, a Reset when a peer's cursor
     /// cannot be continued, its Snapshot, the rows the opening asks for,
     /// its marker if one is set, then whatever follows.
-    fn subscribe(
+    pub(crate) fn subscribe(
         &mut self,
         call: CallId,
         agent_id: &[u8],
         from: Opening,
-        tail_rows: u32,
         followed: bool,
         out: &mut Vec<Output>,
     ) -> Result<(), CallError> {
@@ -170,7 +189,7 @@ impl Daemon {
         let (reset, rows, cut) = match from {
             // A client's tail never exceeds what a replica keeps.
             Opening::Tail(tail) => {
-                let mut cut = store.cut(&row.agent, tail.min(tail_rows))?;
+                let mut cut = store.cut(&row.agent, tail.min(self.settings.tail_rows))?;
                 (false, std::mem::take(&mut cut.held), cut)
             }
             Opening::After {
@@ -245,7 +264,7 @@ impl Daemon {
 
     /// Opens a SubscribeInventory stream: the host set and every agent row
     /// the store holds, CaughtUp, then every change.
-    fn subscribe_inventory(
+    pub(crate) fn subscribe_inventory(
         &mut self,
         call: CallId,
         hosts: Vec<wire::HostEntry>,
@@ -275,7 +294,7 @@ impl Daemon {
     /// below a replica's block the history is at the origin, which is asked
     /// and whose answer extends the block where it joins it. An origin that
     /// cannot be asked is an error, never an empty page.
-    fn fetch(
+    pub(crate) fn fetch(
         &mut self,
         call: CallId,
         request: &FetchRequest,
@@ -327,7 +346,7 @@ impl Daemon {
     }
 
     /// One item in full.
-    fn get(
+    pub(crate) fn get(
         &mut self,
         call: CallId,
         request: &GetRequest,
@@ -394,10 +413,15 @@ impl Daemon {
             Some(OpenCall::Inventory { .. }) => {
                 Response::Inventory(Arc::new(inventory(inventory_event::Of::Lagged(Lagged {}))))
             }
-            Some(OpenCall::Fetch) | None => return,
+            Some(OpenCall::Fetch | OpenCall::Forward) | None => return,
         };
         self.answers.release(call, out);
         answered(call, response, out);
+    }
+
+    /// Lets `call` go; whether it was still open.
+    pub(crate) fn release_call(&mut self, call: CallId, out: &mut Vec<Output>) -> bool {
+        self.answers.release(call, out).is_some()
     }
 
     /// The caller dropped the call or its stream.
@@ -537,7 +561,7 @@ impl Pending {
 }
 
 /// One answer and the call's end.
-fn answered(call: CallId, response: Response, out: &mut Vec<Output>) {
+pub(crate) fn answered(call: CallId, response: Response, out: &mut Vec<Output>) {
     out.push(Output::Answer { call, response });
     out.push(Output::EndCall {
         call,
@@ -613,7 +637,6 @@ mod tests {
         daemon.step(
             Input::ClientCall {
                 call: CallId(call),
-                who: Caller::Local,
                 request,
             },
             &mut out,
@@ -630,8 +653,7 @@ mod tests {
     fn subscribe(agent_id: &[u8]) -> ClientRequest {
         ClientRequest::Subscribe {
             agent_id: agent_id.to_vec(),
-            from: Opening::Tail(10),
-            tail_rows: 200,
+            tail: 10,
             followed: false,
         }
     }
@@ -739,12 +761,15 @@ mod tests {
             host_id: id.to_vec(),
             ..wire::HostEntry::default()
         };
-        let out = call(
+        // A paired host's inventory carries this host's entry and agents.
+        let out = step(
             &mut daemon,
-            3,
-            ClientRequest::SubscribeInventory {
-                hosts: vec![host(OWN), host(OTHER)],
-                only: Some(OWN.to_vec()),
+            Input::PeerCall {
+                from: crate::HostId(*OTHER),
+                call: CallId(3),
+                request: crate::payload::PeerRequest::SubscribeInventory {
+                    hosts: vec![host(OWN), host(OTHER)],
+                },
             },
         );
         let inventory_answer = |of| Output::Answer {

@@ -39,6 +39,8 @@ pub struct ConnectionManager {
     views: Mutex<HashMap<HostId, View>>,
     reachability_errors: Mutex<HashMap<HostId, String>>,
     analytics: analytics::Analytics,
+    /// What dials a host the core says to, once the edge dials at all.
+    dialer: std::sync::OnceLock<crate::services::Dialer>,
 }
 
 /// A host as the profile's core last told it: every route listed to it,
@@ -78,6 +80,7 @@ impl ConnectionManager {
             views: Mutex::default(),
             reachability_errors: Mutex::default(),
             analytics,
+            dialer: std::sync::OnceLock::new(),
         })
     }
 
@@ -140,6 +143,27 @@ impl ConnectionManager {
             };
             manager.report(Input::AttemptConcluded { host, route, tried });
         });
+    }
+
+    /// Discovery resolved `host` in this profile's scope.
+    pub(crate) fn discovered(&self, host: HostId, trusted: bool) {
+        self.report(Input::Discovered {
+            found: vec![daemon_core::payload::Advertisement {
+                host: core_host(host),
+                trusted,
+            }],
+        });
+    }
+
+    pub(crate) fn set_dialer(&self, dialer: crate::services::Dialer) {
+        let _ = self.dialer.set(dialer);
+    }
+
+    /// The core says to dial `host`.
+    pub(crate) fn dial(&self, host: daemon_core::HostId) {
+        if let Some(dialer) = self.dialer.get() {
+            dialer.dial(host_from_core(host));
+        }
     }
 
     /// The core says `route` no longer carries `host`'s traffic: the

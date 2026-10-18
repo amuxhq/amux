@@ -230,9 +230,7 @@ impl ProfileRuntime {
             };
             async move {
                 let host = Uuid::from_slice(&host).unwrap_or_default();
-                let answer = self
-                    .on_peer(host, |mut client| async move { client.dump(request).await })
-                    .await;
+                let answer = self.on_peer(host, request).await;
                 (host, ids, answer)
             }
         });

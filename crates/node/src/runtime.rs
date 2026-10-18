@@ -1176,11 +1176,7 @@ impl ProfileRuntime {
         if request.agent_id.is_empty() {
             request.agent_id = Uuid::new_v4().as_bytes().to_vec();
         }
-        Ok(self
-            .on_peer(host, |mut client| async move {
-                client.create_agent(request).await
-            })
-            .await?)
+        Ok(self.on_peer(host, request).await?)
     }
 
     /// Refuses a kind `capabilities` do not list, in words naming `host`.

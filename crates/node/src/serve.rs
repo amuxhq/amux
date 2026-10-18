@@ -3,7 +3,7 @@
 //! answer Subscribe and SubscribeInventory); ResolveAgent reads the fleet
 //! here. None touches an agent process.
 
-use daemon_core::payload::{CallError, Caller, Response, Status};
+use daemon_core::payload::{CallError, PeerRequest, Response, Status};
 pub use daemon_core::serve::MAX_PAGE;
 use prost::{Message as _, Name as _};
 use store::{AgentKey, StoreError};
@@ -12,7 +12,8 @@ use wire::{
     InventoryEvent, Item, SessionEvent, inventory_event, session_event,
 };
 
-use crate::driver::{Ask, Delivered};
+use crate::driver::{Answers, Ask, Delivered};
+use crate::routing::core_host;
 use crate::runtime::{ProfileRuntime, to_wire};
 
 #[derive(Debug, thiserror::Error)]
@@ -53,6 +54,9 @@ impl From<Status> for ServeError {
             Status::Failed(CallError::NoItem(key)) => ServeError::NoItem(key),
             Status::Failed(CallError::OriginUnreachable) => ServeError::OriginUnreachable,
             Status::Failed(CallError::Store(why)) => ServeError::Failed(why),
+            Status::Failed(error @ (CallError::Peer(_) | CallError::NotServed)) => {
+                ServeError::Failed(format!("{error:?}"))
+            }
         }
     }
 }
@@ -97,11 +101,20 @@ impl ProfileRuntime {
     /// and whose answer extends the block where it joins it. An origin that
     /// cannot be asked is an error, never an empty page.
     pub async fn fetch(&self, request: &FetchRequest) -> Result<FetchResponse, ServeError> {
-        let ask = Ask::Fetch(request.clone());
-        match self.unary(ask).await? {
-            Response::Fetched(page) => Ok(page),
-            _ => Err(ServeError::Stopped),
-        }
+        let answers = self.driver().call(Ask::Fetch(request.clone()), 1).await;
+        fetched(answers).await
+    }
+
+    /// A page of older items of one of this host's own agents, for the
+    /// paired host `from`. An agent this host only replicates is not found.
+    pub(crate) async fn peer_fetch(
+        &self,
+        from: crate::HostId,
+        request: FetchRequest,
+    ) -> Result<FetchResponse, ServeError> {
+        let request = PeerRequest::Fetch(request);
+        let answers = self.driver().peer_call(core_host(from), request, 1).await;
+        fetched(answers).await
     }
 
     /// Whether the agent is one of this host's own, not a replica of
@@ -115,20 +128,19 @@ impl ProfileRuntime {
 
     /// One item in full.
     pub async fn get(&self, request: &GetRequest) -> Result<Item, ServeError> {
-        match self.unary(Ask::Get(request.clone())).await? {
-            Response::Item(item) => Ok(item),
-            _ => Err(ServeError::Stopped),
-        }
+        let answers = self.driver().call(Ask::Get(request.clone()), 1).await;
+        item(answers).await
     }
 
-    /// A call the core answers once.
-    async fn unary(&self, ask: Ask) -> Result<Response, ServeError> {
-        let mut answers = self.driver().call(Caller::Local, ask, 1).await;
-        match answers.next().await {
-            Some(Delivered::Answer(response)) => Ok(response),
-            Some(Delivered::End(status)) => Err(status.into()),
-            None => Err(ServeError::Stopped),
-        }
+    /// One item in full of one of this host's own agents, for the paired
+    /// host `from`. An agent this host only replicates is not found.
+    pub(crate) async fn peer_get(
+        &self,
+        from: crate::HostId,
+        request: GetRequest,
+    ) -> Result<Item, ServeError> {
+        let request = PeerRequest::Get(request);
+        item(self.driver().peer_call(core_host(from), request, 1).await).await
     }
 
     /// The one agent a reference names, across the fleet the store knows.
@@ -232,4 +244,27 @@ impl ProfileRuntime {
 /// `amux ls` prints, at most a whole id.
 fn is_short_id(reference: &str) -> bool {
     (8..=32).contains(&reference.len()) && reference.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+async fn fetched(answers: Answers) -> Result<FetchResponse, ServeError> {
+    match unary(answers).await? {
+        Response::Fetched(page) => Ok(page),
+        _ => Err(ServeError::Stopped),
+    }
+}
+
+async fn item(answers: Answers) -> Result<Item, ServeError> {
+    match unary(answers).await? {
+        Response::Item(item) => Ok(item),
+        _ => Err(ServeError::Stopped),
+    }
+}
+
+/// A call the core answers once.
+async fn unary(mut answers: Answers) -> Result<Response, ServeError> {
+    match answers.next().await {
+        Some(Delivered::Answer(response)) => Ok(response),
+        Some(Delivered::End(status)) => Err(status.into()),
+        None => Err(ServeError::Stopped),
+    }
 }

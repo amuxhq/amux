@@ -11,6 +11,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::codec;
+use crate::ids::HostId;
 
 /// A link control frame: the hello, its acknowledgement, a neighbor coming
 /// up or going down.
@@ -41,19 +42,21 @@ macro_rules! payload {
 }
 
 payload! {
-    /// A peer's decoded request on a channel.
-    PeerRequest;
-    /// A peer's decoded reply, or one item of its streamed reply, to a call
-    /// the core made.
-    Answer;
-    /// A host found on the local network.
-    Advertisement;
     /// A blob's content hash.
     BlobHash;
     /// A push notification to send.
     Push;
     /// A batch of analytics events to upload.
     AnalyticsBatch;
+}
+
+/// A host found on the local network: a hint where to dial it, which the
+/// driver keeps. Whether the host is paired rides along until the trust
+/// store moves into the core.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Advertisement {
+    pub host: HostId,
+    pub trusted: bool,
 }
 
 /// How a link reaches its peer.
@@ -102,19 +105,9 @@ pub enum ChannelError {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PublicKey(pub Vec<u8>);
 
-/// Who made a client call.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Caller {
-    /// A client of this profile: its socket, an agent's tools socket or
-    /// the in-process call.
-    Local,
-    /// A paired host, answered only about this host's own agents.
-    Peer,
-}
-
 /// Where a Subscribe stream starts.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Opening {
+pub(crate) enum Opening {
     /// A client's: the newest `tail` rows.
     Tail(u32),
     /// A peer source's: what came after the revision it holds, taken
@@ -129,8 +122,7 @@ pub enum Opening {
 /// A client's decoded request.
 ///
 /// Some answers still read what the profile's shell owns: which replicas a
-/// source follows, the host set it publishes and the replica bound it runs
-/// under. Until those move into the core the driver reads them as it hands
+/// source follows and the host set it publishes. Until those move into the core the driver reads them as it hands
 /// the call over, and they ride on the request.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ClientRequest {
@@ -138,10 +130,8 @@ pub enum ClientRequest {
     /// every change.
     Subscribe {
         agent_id: Vec<u8>,
-        from: Opening,
-        /// The newest rows a replica keeps, K: a client's tail never asks
-        /// for more.
-        tail_rows: u32,
+        /// How many of the newest rows it opens with.
+        tail: u32,
         /// Whether a source follows the agent, when it is a replica: one
         /// nobody follows is served as detached.
         followed: bool,
@@ -156,10 +146,87 @@ pub enum ClientRequest {
         /// The host set as last published.
         #[serde(with = "codec::messages")]
         hosts: Vec<wire::HostEntry>,
-        /// The one host whose entry and agents the stream carries, for a
-        /// paired host's stream; every host's for a client's.
-        only: Option<Vec<u8>>,
     },
+    /// A call on an agent of another host, made on that host's daemon and
+    /// answered with what it answered.
+    Forward {
+        host: HostId,
+        request: Box<PeerRequest>,
+    },
+}
+
+/// A request on a peer's PeerService, decoded: one a paired host makes of
+/// this one, or one this host makes of a paired host.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PeerRequest {
+    /// A stream of one of this host's agents' session events: from what
+    /// came after the revision the peer's replica holds, or a tail.
+    Subscribe(#[serde(with = "codec::message")] wire::PeerSubscribeRequest),
+    /// A stream of this host's entry and its own agents.
+    SubscribeInventory {
+        /// The host set as last published, which holds this host's entry.
+        #[serde(with = "codec::messages")]
+        hosts: Vec<wire::HostEntry>,
+    },
+    Fetch(#[serde(with = "codec::message")] wire::FetchRequest),
+    Get(#[serde(with = "codec::message")] wire::GetRequest),
+    SendInput(#[serde(with = "codec::message")] wire::SendInputRequest),
+    CreateAgent(#[serde(with = "codec::message")] wire::CreateAgentRequest),
+    RenameAgent(#[serde(with = "codec::message")] wire::RenameAgentRequest),
+    StopAgent(#[serde(with = "codec::message")] wire::StopAgentRequest),
+    ResumeAgent(#[serde(with = "codec::message")] wire::ResumeAgentRequest),
+    DeleteAgent(#[serde(with = "codec::message")] wire::DeleteAgentRequest),
+    SendMessage(#[serde(with = "codec::message")] wire::Envelope),
+    PutBlob(#[serde(with = "codec::message")] wire::PutBlobRequest),
+    GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
+    Diff(#[serde(with = "codec::message")] wire::DiffRequest),
+    GetCatalogue(#[serde(with = "codec::message")] wire::GetCatalogueRequest),
+    ListRepositories(#[serde(with = "codec::message")] wire::ListRepositoriesRequest),
+    Dump(#[serde(with = "codec::message")] wire::DumpRequest),
+}
+
+/// A peer's whole reply to one of its unary calls.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PeerReply {
+    Fetched(#[serde(with = "codec::message")] wire::FetchResponse),
+    Item(#[serde(with = "codec::message")] wire::Item),
+    SendInput(#[serde(with = "codec::message")] wire::SendInputResponse),
+    /// CreateAgent, RenameAgent and ResumeAgent answer with the agent.
+    Agent(#[serde(with = "codec::message")] wire::Agent),
+    /// StopAgent and DeleteAgent answer with nothing.
+    Done,
+    SendMessage(#[serde(with = "codec::message")] wire::SendMessageResponse),
+    Blob(#[serde(with = "codec::message")] wire::BlobRef),
+    GetBlob(#[serde(with = "codec::message")] wire::GetBlobResponse),
+    Diff(#[serde(with = "codec::message")] wire::Diff),
+    Catalogue(#[serde(with = "codec::message")] wire::CatalogueBlob),
+    Repositories(#[serde(with = "codec::message")] wire::ListRepositoriesResponse),
+    Dump(#[serde(with = "codec::message")] wire::DumpPart),
+}
+
+/// How a call this host made of a peer came back.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Answer {
+    Reply(Box<PeerReply>),
+    Failed(PeerFailure),
+}
+
+/// Why a call made of a peer has no reply. Whether it went out is what a
+/// caller decides on: one that never left may be tried again or held, one
+/// that left may have been acted on.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum PeerFailure {
+    /// It never left: no link to the peer, the peer is not trusted, or no
+    /// channel to it opened in time.
+    NotSent,
+    /// It never left: the relay carries no calls between hosts on the
+    /// account's lapsed plan.
+    Lapsed,
+    /// It went out and no answer came back in time, or the link failed
+    /// under it.
+    Uncertain,
+    /// The peer refused it, in its own words.
+    Refused(#[serde(with = "codec::message")] wire::Error),
 }
 
 /// One reply, or one item of a streamed reply, to a call. Stream items are
@@ -170,10 +237,12 @@ pub enum Response {
     Inventory(Arc<wire::InventoryEvent>),
     Fetched(wire::FetchResponse),
     Item(wire::Item),
+    /// A forwarded call's reply, from the host it went to.
+    Peer(Box<PeerReply>),
 }
 
 /// How a call ended.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Status {
     /// Answered in full; a stream ends here.
     Ok,
@@ -181,7 +250,7 @@ pub enum Status {
 }
 
 /// Why a call was refused or could not be answered.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CallError {
     /// No agent with that id.
     NoAgent,
@@ -191,6 +260,11 @@ pub enum CallError {
     OriginUnreachable,
     /// The store failed, in its own words.
     Store(String),
+    /// A forwarded call got no reply from the host it went to.
+    Peer(PeerFailure),
+    /// A paired host asked for what this host answers only to its own
+    /// clients.
+    NotServed,
 }
 
 impl From<store::StoreError> for CallError {

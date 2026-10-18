@@ -275,11 +275,7 @@ impl ProfileRuntime {
     /// and the envelope id catches a duplicate.
     async fn deliver_remote(&self, host: &[u8], envelope: Envelope) -> Result<(), RelayError> {
         let host = Uuid::from_slice(host).map_err(|_| RelayError::NoAgent)?;
-        let sent = self
-            .on_peer(host, |mut client| async move {
-                client.send_message(envelope).await
-            })
-            .await;
+        let sent = self.on_peer(host, envelope).await;
         match sent {
             Ok(_) => Ok(()),
             Err(ForwardError::NotSent { .. } | ForwardError::Lapsed { .. }) => {

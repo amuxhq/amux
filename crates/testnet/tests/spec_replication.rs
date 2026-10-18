@@ -1272,8 +1272,17 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
     // The origin itself: the same cursor is a fresh tail under the old
     // generation and a delta under the new.
     let desk = net.runtime("desk").unwrap();
+    let laptop_id = net.host("laptop").unwrap().host_id;
+    let after = |agent: &[u8], revision, generation| wire::PeerSubscribeRequest {
+        agent_id: agent.to_vec(),
+        from: Some(wire::peer_subscribe_request::From::After(wire::After {
+            revision,
+            cap: K,
+            generation,
+        })),
+    };
     let stale = desk
-        .subscribe_after(&key.agent, row.source_cursor, K, generation)
+        .peer_subscribe(laptop_id, after(&key.agent, row.source_cursor, generation))
         .await
         .unwrap();
     let stale = opening_of(stale).await;
@@ -1283,7 +1292,10 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
         "{stale:?}"
     );
     let fresh = desk
-        .subscribe_after(&key.agent, row.source_cursor, K, generation + 1)
+        .peer_subscribe(
+            laptop_id,
+            after(&key.agent, row.source_cursor, generation + 1),
+        )
         .await
         .unwrap();
     let fresh = opening_of(fresh).await;

@@ -163,10 +163,7 @@ impl ClientApi {
                     "a paired host answers only for its own providers",
                 )));
             }
-            return forwarded(&runtime, host, |mut client| async move {
-                client.get_catalogue(request).await
-            })
-            .await;
+            return forwarded(&runtime, host, request).await;
         }
         let provider = crate::Provider::try_from(request.provider)
             .ok()
@@ -220,17 +217,13 @@ impl ClientApi {
 // The verdict for an input to an agent whose host cannot be reached.
 
 /// One call made on another host's daemon, answered with its answer.
-async fn forwarded<T, F, Fut>(
+async fn forwarded<R: crate::forward::PeerRpc>(
     runtime: &ProfileRuntime,
     host: crate::HostId,
-    call: F,
-) -> Result<Response<T>, Status>
-where
-    F: FnOnce(crate::PeerClient) -> Fut,
-    Fut: std::future::Future<Output = Result<Response<T>, Status>>,
-{
+    request: R,
+) -> Result<Response<R::Reply>, Status> {
     runtime
-        .on_peer(host, call)
+        .on_peer(host, request)
         .await
         .map(Response::new)
         .map_err(|error| status(error.to_wire()))
@@ -344,11 +337,7 @@ impl ClientService for ClientApi {
         .await?;
         let shape = request.input.as_ref().and_then(InputShape::of);
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            let forwarded = runtime
-                .on_peer(host, |mut client| async move {
-                    client.send_input(request).await
-                })
-                .await;
+            let forwarded = runtime.on_peer(host, request).await;
             return match forwarded {
                 Ok(verdict) => {
                     let on = analytics::On::PairedHost(host);
@@ -430,10 +419,7 @@ impl ClientService for ClientApi {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            return forwarded(&runtime, host, |mut client| async move {
-                client.rename_agent(request).await
-            })
-            .await;
+            return forwarded(&runtime, host, request).await;
         }
         runtime
             .rename(agent_id(&request.agent_id)?, &request.name)
@@ -455,11 +441,7 @@ impl ClientService for ClientApi {
         )
         .await?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            let stopped = runtime
-                .on_peer(host, |mut client| async move {
-                    client.stop_agent(request).await
-                })
-                .await;
+            let stopped = runtime.on_peer(host, request).await;
             return match stopped {
                 Ok(empty) => Ok(Response::new(empty)),
                 // Never left, and the lapse is why: answered as unreachable
@@ -496,10 +478,7 @@ impl ClientService for ClientApi {
             None => None,
         };
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            let resumed = forwarded(&runtime, host, |mut client| async move {
-                client.resume_agent(request).await
-            })
-            .await?;
+            let resumed = forwarded(&runtime, host, request).await?;
             let on = analytics::On::PairedHost(host);
             self.record_input(&runtime, first, on, Some(false));
             return Ok(resumed);
@@ -520,10 +499,7 @@ impl ClientService for ClientApi {
         let request = request.into_inner();
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            return forwarded(&runtime, host, |mut client| async move {
-                client.delete_agent(request).await
-            })
-            .await;
+            return forwarded(&runtime, host, request).await;
         }
         runtime
             .delete(agent_id(&request.agent_id)?)
@@ -551,10 +527,7 @@ impl ClientService for ClientApi {
         crate::blobs::within_limit(&request).map_err(|error| status(error.to_wire()))?;
         let runtime = self.runtime()?;
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            return forwarded(&runtime, host, |mut client| async move {
-                client.put_blob(request).await
-            })
-            .await;
+            return forwarded(&runtime, host, request).await;
         }
         runtime
             .put_blob(request)
@@ -585,10 +558,7 @@ impl ClientService for ClientApi {
             ));
         };
         let (agent_id, hash) = (request.agent_id.clone(), request.hash.clone());
-        let fetched = forwarded(&runtime, host, |mut client| async move {
-            client.get_blob(request).await
-        })
-        .await?;
+        let fetched = forwarded(&runtime, host, request).await?;
         runtime
             .keep_replica_blob(&agent_id, &hash, &fetched.get_ref().bytes)
             .await
@@ -601,10 +571,7 @@ impl ClientService for ClientApi {
         let runtime = self.runtime()?;
         // The working tree is on the agent's own host, and so is the patch.
         if let Some(host) = self.forward_to(&runtime, &request.agent_id).await? {
-            return forwarded(&runtime, host, |mut client| async move {
-                client.diff(request).await
-            })
-            .await;
+            return forwarded(&runtime, host, request).await;
         }
         runtime
             .diff(request)
@@ -635,10 +602,7 @@ impl ClientService for ClientApi {
                     "a paired host lists only its own repositories",
                 )));
             }
-            return forwarded(&runtime, host, |mut client| async move {
-                client.list_repositories(request).await
-            })
-            .await;
+            return forwarded(&runtime, host, request).await;
         }
         Ok(Response::new(
             runtime

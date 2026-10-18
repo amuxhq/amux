@@ -363,11 +363,7 @@ impl ProfileRuntime {
             }
             From::Peer(_) | From::PeerPerson => return Err(RelayError::OtherHost),
         });
-        Ok(self
-            .on_peer(host, |mut client| async move {
-                client.send_message(envelope).await
-            })
-            .await?)
+        Ok(self.on_peer(host, envelope).await?)
     }
 
     /// Puts the bytes of every file a message carries into the recipient's
@@ -415,13 +411,10 @@ impl ProfileRuntime {
             } else {
                 let host = Uuid::from_slice(&sender.host_id)
                     .map_err(|_| failed("its sender names no host".to_owned()))?;
-                self.on_peer(
-                    host,
-                    |mut client| async move { client.get_blob(request).await },
-                )
-                .await
-                .map_err(|error| failed(error.to_string()))?
-                .bytes
+                self.on_peer(host, request)
+                    .await
+                    .map_err(|error| failed(error.to_string()))?
+                    .bytes
             };
             use sha2::Digest as _;
             if sha2::Sha256::digest(&bytes)[..] != blob.hash[..] {

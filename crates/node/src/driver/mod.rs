@@ -39,7 +39,7 @@ pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::Ring;
 use daemon_core::payload::{
-    Caller, ChannelClass, ChannelError, ClientRequest, JobResult, Opening, PublicKey, Status,
+    Answer, ChannelClass, ChannelError, ClientRequest, JobResult, PeerRequest, PublicKey, Status,
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, FromShell, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
@@ -73,8 +73,22 @@ pub(crate) enum Fed {
     /// it steps it.
     Call {
         call: CallId,
-        who: Caller,
         ask: Ask,
+    },
+    /// A paired host's call. One for the inventory is completed from the
+    /// shell as it is stepped, as a client's is.
+    PeerCall {
+        from: HostId,
+        call: CallId,
+        request: PeerRequest,
+    },
+    /// A client call forwarded to the host that owns its agent. It reads
+    /// nothing of the store, so it is stepped without it: whoever forwards
+    /// may hold the store meanwhile.
+    Forward {
+        call: CallId,
+        host: HostId,
+        request: PeerRequest,
     },
     /// A nudge from someone who waits for the journal to be read to its
     /// end: told the frames committed meanwhile, or why ingest failed.
@@ -101,10 +115,10 @@ pub(crate) enum Fed {
 /// shell is read on the core thread with the store held, at the point the
 /// core answers.
 pub(crate) enum Ask {
-    Subscribe { agent_id: Vec<u8>, from: Opening },
+    Subscribe { agent_id: Vec<u8>, tail: u32 },
     Fetch(FetchRequest),
     Get(GetRequest),
-    SubscribeInventory { only: Option<Vec<u8>> },
+    SubscribeInventory,
 }
 
 /// A channel the core said to open, under the id it gave, handshaking
@@ -234,19 +248,44 @@ impl Driver {
         word.await.unwrap_or(Err(ChannelError::LinkClosed))
     }
 
-    /// Hands a call to the core and returns its answers. `room` is how many
-    /// live answers the call's queue holds for a reader that has not taken
-    /// them.
-    pub(crate) async fn call(&self, who: Caller, ask: Ask, room: usize) -> Answers {
+    /// Hands a client's call to the core and returns its answers. `room` is
+    /// how many live answers the call's queue holds for a reader that has
+    /// not taken them.
+    pub(crate) async fn call(&self, ask: Ask, room: usize) -> Answers {
+        self.open(room, |call| Fed::Call { call, ask }).await
+    }
+
+    /// Hands a paired host's call to the core and returns its answers.
+    pub(crate) async fn peer_call(
+        &self,
+        from: HostId,
+        request: PeerRequest,
+        room: usize,
+    ) -> Answers {
+        self.open(room, |call| Fed::PeerCall {
+            from,
+            call,
+            request,
+        })
+        .await
+    }
+
+    /// Hands the core a client's call on an agent `host` owns, to be made
+    /// of that host, and returns its answer.
+    pub(crate) async fn forward(&self, host: HostId, request: PeerRequest) -> Answers {
+        self.open(1, |call| Fed::Forward {
+            call,
+            host,
+            request,
+        })
+        .await
+    }
+
+    async fn open(&self, room: usize, fed: impl FnOnce(CallId) -> Fed) -> Answers {
         let queue = self.calls.open(room);
         let call = queue.call();
         let answers = Answers::new(queue.clone(), self.calls.clone(), self.inputs.clone());
-        if self
-            .inputs
-            .send(Fed::Call { call, who, ask })
-            .await
-            .is_err()
-        {
+        if self.inputs.send(fed(call)).await.is_err() {
             self.calls.end(call, Status::Ok);
         }
         answers
@@ -305,6 +344,12 @@ impl Drop for Driver {
         self.calls.end_all(Status::Ok);
         let _ = self.inputs.try_send(Fed::Stop);
     }
+}
+
+/// A call as the core thread takes it, before its request is completed.
+enum Arriving {
+    Client(CallId, Ask),
+    Peer(HostId, CallId, Box<PeerRequest>),
 }
 
 /// Someone waiting for an agent's journal to be read to its end.
@@ -372,6 +417,18 @@ impl CoreThread {
                     self.channel_reply = None;
                     continue;
                 }
+                Fed::Forward {
+                    call,
+                    host,
+                    request,
+                } => {
+                    let request = ClientRequest::Forward {
+                        host,
+                        request: Box::new(request),
+                    };
+                    self.step(&runtime, Input::ClientCall { call, request }, &mut out);
+                    continue;
+                }
                 Fed::Wake if self.shell.lock().unwrap().is_empty() => continue,
                 fed => fed,
             };
@@ -379,8 +436,16 @@ impl CoreThread {
             let mut call = None;
             let input = match fed {
                 Fed::Input(input) => Some(input),
-                Fed::Call { call: id, who, ask } => {
-                    call = Some((id, who, ask));
+                Fed::Call { call: id, ask } => {
+                    call = Some(Arriving::Client(id, ask));
+                    None
+                }
+                Fed::PeerCall {
+                    from,
+                    call: id,
+                    request,
+                } => {
+                    call = Some(Arriving::Peer(from, id, Box::new(request)));
                     None
                 }
                 Fed::Ingest { agent, done } => {
@@ -399,7 +464,7 @@ impl CoreThread {
                         }),
                     }
                 }
-                Fed::Wake | Fed::Stop | Fed::Channel { .. } => None,
+                Fed::Wake | Fed::Stop | Fed::Channel { .. } | Fed::Forward { .. } => None,
             };
             self.daemon.swap_store(&mut store);
             self.tick(&runtime, &mut out);
@@ -407,6 +472,7 @@ impl CoreThread {
             let settings = Settings {
                 notify_delay_ms: launch.notify_delay_ms,
                 checkpoint_interval_ms: launch.checkpoint_interval_ms.max(0) as u64,
+                tail_rows: launch.tail_rows,
             };
             if self.settings != Some(settings) {
                 self.settings = Some(settings);
@@ -425,10 +491,14 @@ impl CoreThread {
             // between would reach the core before the call and be in
             // neither.
             let input = match call {
-                Some((call, who, ask)) => Some(Input::ClientCall {
+                Some(Arriving::Client(call, ask)) => Some(Input::ClientCall {
                     call,
-                    who,
                     request: runtime.client_request(self.daemon.store(), ask),
+                }),
+                Some(Arriving::Peer(from, call, request)) => Some(Input::PeerCall {
+                    from,
+                    call,
+                    request: runtime.peer_request(*request),
                 }),
                 None => input,
             };
@@ -642,8 +712,35 @@ impl CoreThread {
                     connections.drop_route(host, route);
                 }
             }
+            Output::Call {
+                host,
+                call,
+                request,
+            } => {
+                let runtime = Arc::downgrade(runtime);
+                let reports = self.reports.clone();
+                let inputs = self.inputs.clone();
+                tokio::spawn(async move {
+                    let Some(answer) = call_peer(runtime, host, request).await else {
+                        return;
+                    };
+                    // Nothing an answer steps reads the store: it waits on
+                    // nobody's writes.
+                    reports
+                        .lock()
+                        .unwrap()
+                        .push_back(Input::PeerAnswer { call, answer });
+                    if let Some(inputs) = inputs.upgrade() {
+                        let _ = inputs.try_send(Fed::Wake);
+                    }
+                });
+            }
+            Output::Dial { host } => {
+                if let Some(connections) = self.connections() {
+                    connections.dial(host);
+                }
+            }
             output @ (Output::CloseChannel { .. }
-            | Output::Call { .. }
             | Output::SendFile { .. }
             | Output::LinkControl { .. }
             | Output::DialAgent { .. }
@@ -721,6 +818,20 @@ async fn run_job(
     feed(&inputs, Input::JobDone { job, result }).await;
 }
 
+/// Makes a call the core asked for of a peer, unless the profile is gone.
+async fn call_peer(
+    runtime: Weak<ProfileRuntime>,
+    host: HostId,
+    request: PeerRequest,
+) -> Option<Answer> {
+    let runtime = runtime.upgrade()?;
+    Some(
+        runtime
+            .call_peer(crate::routing::host_from_core(host), request)
+            .await,
+    )
+}
+
 async fn fetch_from_origin(
     runtime: &ProfileRuntime,
     agent: &AgentKey,
@@ -765,29 +876,52 @@ impl ProfileRuntime {
     /// store held at the point the core answers it.
     fn client_request(&self, store: &Sqlite, ask: Ask) -> ClientRequest {
         match ask {
-            Ask::Subscribe { agent_id, from } => {
+            Ask::Subscribe { agent_id, tail } => {
                 let followed = self.follow_replica(store, &agent_id);
-                let hook = self.join_hook.lock().unwrap().clone();
-                if let Some(hook) = hook {
-                    Handle::current().block_on(hook());
-                }
+                self.run_join_hook();
                 ClientRequest::Subscribe {
                     agent_id,
-                    from,
-                    tail_rows: self.launch().tail_rows,
+                    tail,
                     followed,
                 }
             }
             Ask::Fetch(request) => ClientRequest::Fetch(request),
             Ask::Get(request) => ClientRequest::Get(request),
-            Ask::SubscribeInventory { only } => {
-                let hosts = self.published_hosts();
-                let hook = self.inventory_opening_hook.lock().unwrap().clone();
-                if let Some(hook) = hook {
-                    Handle::current().block_on(hook());
-                }
-                ClientRequest::SubscribeInventory { hosts, only }
-            }
+            Ask::SubscribeInventory => ClientRequest::SubscribeInventory {
+                hosts: self.opening_hosts(),
+            },
         }
+    }
+
+    /// Completes a paired host's call from what the shell owns, as
+    /// [`ProfileRuntime::client_request`] does a client's.
+    fn peer_request(&self, request: PeerRequest) -> PeerRequest {
+        match request {
+            PeerRequest::Subscribe(request) => {
+                self.run_join_hook();
+                PeerRequest::Subscribe(request)
+            }
+            PeerRequest::SubscribeInventory { .. } => PeerRequest::SubscribeInventory {
+                hosts: self.opening_hosts(),
+            },
+            request => request,
+        }
+    }
+
+    fn run_join_hook(&self) {
+        let hook = self.join_hook.lock().unwrap().clone();
+        if let Some(hook) = hook {
+            Handle::current().block_on(hook());
+        }
+    }
+
+    /// The host set an inventory stream opens with.
+    fn opening_hosts(&self) -> Vec<wire::HostEntry> {
+        let hosts = self.published_hosts();
+        let hook = self.inventory_opening_hook.lock().unwrap().clone();
+        if let Some(hook) = hook {
+            Handle::current().block_on(hook());
+        }
+        hosts
     }
 }

@@ -242,7 +242,7 @@ mod tests {
     use wire::{Item, Step};
 
     use super::*;
-    use crate::payload::{Caller, ClientRequest, Opening, Response};
+    use crate::payload::{ClientRequest, Response};
     use crate::{CallId, Input, StartOptions};
 
     const OWN: [u8; 16] = *b"own-host-0000000";
@@ -326,8 +326,7 @@ mod tests {
         }
         let subscribe = ClientRequest::Subscribe {
             agent_id: AGENT.0.to_vec(),
-            from: Opening::Tail(10),
-            tail_rows: 200,
+            tail: 10,
             followed: false,
         };
         let call = CallId(1);
@@ -335,7 +334,6 @@ mod tests {
             &mut rig.daemon,
             Input::ClientCall {
                 call,
-                who: Caller::Local,
                 request: subscribe,
             },
         );
@@ -434,11 +432,9 @@ mod tests {
             &mut rig.daemon,
             Input::ClientCall {
                 call,
-                who: Caller::Local,
                 request: ClientRequest::Subscribe {
                     agent_id: AGENT.0.to_vec(),
-                    from: Opening::Tail(10),
-                    tail_rows: 200,
+                    tail: 10,
                     followed: false,
                 },
             },
@@ -568,11 +564,9 @@ mod tests {
             daemon,
             Input::ClientCall {
                 call,
-                who: Caller::Local,
                 request: ClientRequest::Subscribe {
                     agent_id: AGENT.0.to_vec(),
-                    from: Opening::Tail(10),
-                    tail_rows: 200,
+                    tail: 10,
                     followed: false,
                 },
             },

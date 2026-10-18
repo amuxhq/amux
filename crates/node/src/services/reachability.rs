@@ -46,6 +46,21 @@ pub struct ReachabilityLinkConnector {
     mode: ReachabilityLinkConnectorMode,
 }
 
+/// Dials the hosts the profile's core says to, at the addresses discovery
+/// found for them.
+pub(crate) struct Dialer(std::sync::Weak<ReachabilityLinkConnectorInner>);
+
+impl Dialer {
+    pub(crate) fn dial(&self, peer: HostId) {
+        if let Some(inner) = self.0.upgrade() {
+            ReachabilityLinkConnector {
+                mode: ReachabilityLinkConnectorMode::Enabled(inner),
+            }
+            .dial_found(peer);
+        }
+    }
+}
+
 #[derive(Clone)]
 enum ReachabilityLinkConnectorMode {
     Enabled(Arc<ReachabilityLinkConnectorInner>),
@@ -177,6 +192,9 @@ impl ReachabilityLinkConnector {
 
     /// Records what discovery finds in this profile's scope and, when `dial`
     /// is set, dials the trusted hosts among them.
+    /// Tells the profile's core of every host discovery resolves in this
+    /// profile's scope, and from now on dials those it says to while `dial`
+    /// holds and direct links are on.
     pub fn spawn_dial_on_found(
         &self,
         mut events: broadcast::Receiver<DiscoveryEvent>,
@@ -185,9 +203,12 @@ impl ReachabilityLinkConnector {
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return tokio::spawn(async {});
         };
-        let connector = self.clone();
         let context = inner.context.clone();
-        let enabled = inner.direct_enabled.clone();
+        if dial {
+            context
+                .connections
+                .set_dialer(Dialer(Arc::downgrade(inner)));
+        }
         tokio::spawn(async move {
             loop {
                 match events.recv().await {
@@ -211,15 +232,9 @@ impl ReachabilityLinkConnector {
                         };
                         runtime.found_hosts.apply(event);
                         let Some(advert) = found else { continue };
-                        if !dial
-                            || !enabled.load(Ordering::SeqCst)
-                            || advert.host_id == context.identity.host_id
-                            || has_direct_route(&context, advert.host_id).await
-                            || !is_trusted(&context.trust_store, advert.host_id)
-                        {
-                            continue;
-                        }
-                        connector.dial_found(advert.host_id);
+                        // Whether to dial is the profile core's to decide.
+                        let trusted = is_trusted(&context.trust_store, advert.host_id);
+                        context.connections.discovered(advert.host_id, trusted);
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {
                         if let Some(runtime) = context.runtime.lock().unwrap().clone() {
@@ -248,6 +263,11 @@ impl ReachabilityLinkConnector {
     }
 
     fn dial_found(&self, peer: HostId) {
+        if let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode
+            && !inner.direct_enabled.load(Ordering::SeqCst)
+        {
+            return;
+        }
         let ReachabilityLinkConnectorMode::Enabled(inner) = &self.mode else {
             return;
         };

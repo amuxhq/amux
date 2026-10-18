@@ -816,6 +816,12 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
         .collect();
     write_and_ingest(&runtime, &mut agent, &many).await;
     let cursor = held(&runtime, &agent, &install).await.cursor;
+    assert_eq!(
+        journal::segments(&journal_dir).unwrap()[0],
+        0,
+        "nothing goes before a checkpoint puts the cursor on the drive"
+    );
+    runtime.checkpoint().await.unwrap();
     let remaining = journal::segments(&journal_dir).unwrap();
     assert!(
         remaining[0] > 0,
@@ -851,6 +857,7 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
         .execute_batch(CURSOR_CUT)
         .unwrap();
     assert!(runtime.ingest(agent.id).await.is_err());
+    runtime.checkpoint().await.unwrap();
     let after_failure = journal::segments(&journal_dir).unwrap();
     assert!(
         before.iter().all(|start| after_failure.contains(start)),
@@ -922,9 +929,8 @@ async fn run_to_the_cut(
     let (daemon, runtime) = start(install, "boot-1", quiet_launch()).await;
     let steps = steps();
     let mut offsets = write_and_ingest(&runtime, agent, &steps[..4]).await;
-    // The last checkpoint before the power goes: SQLite's own, as a
-    // clean shutdown or reclaiming a segment would run it.
-    runtime.store().await.flush_to_drive().unwrap();
+    // The last checkpoint before the power goes.
+    runtime.checkpoint().await.unwrap();
     offsets.extend(write_and_ingest(&runtime, agent, &steps[4..]).await);
     let before = held(&runtime, agent, install).await;
     (daemon, runtime, offsets, before)
@@ -1018,9 +1024,10 @@ async fn a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_co
     agent.register_offline(&install);
     let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
     let offsets = write_and_ingest(&runtime, &mut agent, &steps()).await;
-    // The store reaches the drive after the last step; the journal, never
-    // synced, keeps only what the cut leaves of it.
-    runtime.store().await.flush_to_drive().unwrap();
+    // The store reaches the drive after the last step, through the core's
+    // checkpoint; the journal, never synced, keeps only what the cut
+    // leaves of it.
+    runtime.checkpoint().await.unwrap();
     let before = held(&runtime, &agent, &install).await;
     assert_eq!(before.cursor, offsets[7]);
     let checkpointed = checkpointed_store(&runtime, &install).await;
@@ -1829,5 +1836,60 @@ async fn a_backlog_is_committed_in_batches_and_caught_up_once_at_its_end() {
     drain(&mut subscription, &mut seen, Duration::from_millis(100)).await;
     assert_eq!(caught_ups(&seen), 1);
     agent.die().await;
+    crash(daemon, runtime).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint() {
+    let install = Install::new();
+    let mut agent = SyntheticAgent::new(&install, "ring", BIG_SEGMENTS);
+    agent.register_offline(&install);
+    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
+    let ring = install.profile_dir().join(node::CORE_RING);
+    let nudge = daemon_core::Input::Nudge {
+        agent: daemon_core::AgentId(*agent.id.as_bytes()),
+    };
+    let saved = || {
+        core_ring::saved::<daemon_core::Input>(&ring)
+            .unwrap()
+            .unwrap()
+    };
+
+    let nudges = |inputs: &[daemon_core::Input]| inputs.iter().filter(|i| **i == nudge).count();
+    // The start's sweep may have nudged already.
+    let before = nudges(&saved().inputs);
+    write_and_ingest(&runtime, &mut agent, &steps()[..2]).await;
+    assert_eq!(
+        nudges(&saved().inputs),
+        before + 2,
+        "each nudge is recorded"
+    );
+
+    runtime.checkpoint().await.unwrap();
+    let after = saved();
+    assert_eq!(
+        after.checkpoint,
+        std::fs::read(install.profile_dir().join(node::CORE_CHECKPOINT)).unwrap(),
+        "the ring starts again at the checkpoint on the drive"
+    );
+    assert_eq!(
+        nudges(&after.inputs),
+        0,
+        "what the checkpoint holds is not replayed"
+    );
+    assert!(
+        matches!(
+            after.inputs.last(),
+            Some(daemon_core::Input::JobDone {
+                result: daemon_core::payload::JobResult::Done,
+                ..
+            })
+        ),
+        "the checkpoint's own outcome is the first input it does not hold: {:?}",
+        after.inputs
+    );
+
+    write_and_ingest(&runtime, &mut agent, &steps()[2..3]).await;
+    assert_eq!(nudges(&saved().inputs), 1);
     crash(daemon, runtime).await;
 }

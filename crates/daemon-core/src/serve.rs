@@ -507,7 +507,7 @@ fn carries(only: Option<&[u8]>, event: &InventoryEvent) -> bool {
 }
 
 impl Pending {
-    fn mint(&mut self) -> JobId {
+    pub(crate) fn mint(&mut self) -> JobId {
         self.next_job += 1;
         JobId(self.next_job)
     }

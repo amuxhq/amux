@@ -4,10 +4,10 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use store::AgentKey;
 use wire::{InventoryEvent, SessionEvent};
 
-use crate::DumpReason;
 use crate::ids::{
     AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
 };
@@ -16,9 +16,10 @@ use crate::payload::{
     ChannelError, ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame,
     PairMessage, PeerRequest, PublicKey, Push, Response, Status,
 };
+use crate::{DumpReason, codec};
 
 /// Everything that can happen to the daemon, decoded by the driver.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Input {
     /// The clock, as an input: the core reads time from nothing else.
     Tick {
@@ -35,10 +36,12 @@ pub enum Input {
     },
     LinkDown {
         link: LinkId,
+        #[serde(with = "codec::numbered")]
         reason: LinkCloseReason,
     },
     LinkControl {
         link: LinkId,
+        #[serde(with = "codec::message")]
         frame: LinkFrame,
     },
     /// A channel the core asked for is open, after the driver's handshake
@@ -64,6 +67,7 @@ pub enum Input {
     },
     PairingMessage {
         session: PairingId,
+        #[serde(with = "codec::message")]
         message: PairMessage,
     },
     Discovered {
@@ -71,6 +75,7 @@ pub enum Input {
     },
     AgentHello {
         agent: AgentId,
+        #[serde(with = "codec::message")]
         hello: Hello,
     },
     /// An agent's journal grew.
@@ -108,16 +113,21 @@ pub enum Input {
 }
 
 /// The profile's settings the core reads, as last configured.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Settings {
     /// How long a turn's notification waits before it is sent.
     pub notify_delay_ms: i64,
+    /// How long after a commit the core checkpoints: what a crash costs to
+    /// replay, what the input ring holds, and how long the journal below
+    /// the last checkpoint waits to be reclaimed.
+    pub checkpoint_interval_ms: u64,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             notify_delay_ms: 30_000,
+            checkpoint_interval_ms: 60_000,
         }
     }
 }
@@ -126,31 +136,37 @@ impl Default for Settings {
 /// core, handed to the core while the store is still as that commit left
 /// it, so subscribers read it in commit order and an opening never reads
 /// it twice or misses it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FromShell {
     /// One of an agent's session events.
     Session {
+        #[serde(with = "codec::agent_key")]
         agent: AgentKey,
+        #[serde(with = "codec::shared")]
         event: Arc<SessionEvent>,
     },
     /// An agent's row as the inventory carries it.
     Row {
+        #[serde(with = "codec::agent_key")]
         agent: AgentKey,
+        #[serde(with = "codec::shared")]
         event: Arc<InventoryEvent>,
     },
     /// The host set changed.
-    Hosts(Arc<InventoryEvent>),
+    Hosts(#[serde(with = "codec::shared")] Arc<InventoryEvent>),
     /// The agent is gone: its streams end and the inventory says why.
     Removed {
+        #[serde(with = "codec::agent_key")]
         agent: AgentKey,
+        #[serde(with = "codec::shared")]
         event: Arc<InventoryEvent>,
     },
     /// Nothing about the agent, its session or its row, reaches a
     /// subscriber until [`FromShell::Unmute`]; its streams stay open. A
     /// delete mutes the agent it stops, so no subscriber reads the stop as
     /// an exit it could resume from before the removal arrives.
-    Mute(AgentKey),
-    Unmute(AgentKey),
+    Mute(#[serde(with = "codec::agent_key")] AgentKey),
+    Unmute(#[serde(with = "codec::agent_key")] AgentKey),
 }
 
 /// Everything the daemon wants done. The driver encodes, sends, arms,
@@ -268,7 +284,13 @@ pub enum Wake {
 /// returns as [`Input::JobDone`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Job {
-    Fsync(PathBuf),
+    /// Replace the file at `path` with `bytes` so that a crash or power
+    /// cut leaves the old file or the new one, and the new one is on the
+    /// drive before the job is done.
+    Fsync {
+        path: PathBuf,
+        bytes: Vec<u8>,
+    },
     /// Write the serialized core beside the store's passive WAL checkpoint.
     Checkpoint {
         state: Vec<u8>,
@@ -292,4 +314,86 @@ pub enum Job {
         before_order: Option<u64>,
         limit: u32,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::payload::{Caller, ClientRequest, JobResult, Opening};
+
+    #[test]
+    fn every_kind_of_input_reads_back_as_written() {
+        let agent = AgentKey::new(b"host".to_vec(), b"agent".to_vec());
+        let inputs = vec![
+            Input::Tick { now_ms: 7 },
+            Input::Timer {
+                id: TimerId::Checkpoint,
+            },
+            Input::LinkDown {
+                link: LinkId(1),
+                reason: LinkCloseReason::UserShutdown,
+            },
+            Input::ClientCall {
+                call: CallId(2),
+                who: Caller::Peer,
+                request: ClientRequest::Subscribe {
+                    agent_id: vec![1, 2],
+                    from: Opening::After {
+                        revision: 3,
+                        cap: 4,
+                        generation: 5,
+                    },
+                    tail_rows: 6,
+                    followed: true,
+                },
+            },
+            Input::ClientCall {
+                call: CallId(3),
+                who: Caller::Local,
+                request: ClientRequest::Fetch(wire::FetchRequest {
+                    agent_id: vec![9],
+                    limit: 3,
+                    ..Default::default()
+                }),
+            },
+            Input::ClientCall {
+                call: CallId(4),
+                who: Caller::Local,
+                request: ClientRequest::SubscribeInventory {
+                    hosts: vec![wire::HostEntry {
+                        host_id: vec![1],
+                        generation: 2,
+                        ..Default::default()
+                    }],
+                    only: None,
+                },
+            },
+            Input::JobDone {
+                job: JobId(5),
+                result: JobResult::Fetched(Some(wire::FetchResponse::default())),
+            },
+            Input::JobDone {
+                job: JobId(6),
+                result: JobResult::Fetched(None),
+            },
+            Input::FromShell(FromShell::Session {
+                agent: agent.clone(),
+                event: Arc::new(SessionEvent {
+                    of: Some(wire::session_event::Of::Item(wire::Item {
+                        key: "k".into(),
+                        text: "text".into(),
+                        ..Default::default()
+                    })),
+                }),
+            }),
+            Input::FromShell(FromShell::Mute(agent)),
+            Input::Configure(Settings::default()),
+            Input::Entropy([3; 32]),
+        ];
+        for input in inputs {
+            let line = serde_json::to_string(&input).expect("an input writes");
+            let read: Input = serde_json::from_str(&line).expect("an input reads back");
+            assert_eq!(read, input, "{line}");
+        }
+    }
 }

@@ -417,8 +417,9 @@ pub async fn start(
     };
     // Before anything is served: a peer must never see this run's
     // revisions under the previous generation.
-    let (generation, last_run) =
-        Generation::start(&data_dir, &boot_id, crate::version()).map_err(StartError::Generation)?;
+    let (generation, last_run) = Generation::start(&data_dir, &boot_id, crate::version())
+        .await
+        .map_err(StartError::Generation)?;
 
     let installation = Arc::new(Installation {
         data_dir,
@@ -608,7 +609,9 @@ impl Daemon {
                 .flush_to_drive()
                 .map_err(io::Error::other)?;
         }
-        self.generation.mark_clean(&self.installation.data_dir)?;
+        self.generation
+            .mark_clean(&self.installation.data_dir)
+            .await?;
         drop(hosted);
         // Said while the lock is still held: whoever waits for the lock to
         // free reads a log that already ends here.

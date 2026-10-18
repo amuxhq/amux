@@ -8,6 +8,10 @@
 
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
+use crate::codec;
+
 /// A link control frame: the hello, its acknowledgement, a neighbor coming
 /// up or going down.
 pub type LinkFrame = wire::Message;
@@ -30,7 +34,7 @@ macro_rules! payload {
     ($($(#[$doc:meta])* $name:ident;)*) => {
         $(
             $(#[$doc])*
-            #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+            #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
             pub struct $name;
         )*
     };
@@ -61,7 +65,7 @@ payload! {
 }
 
 /// Who made a client call.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Caller {
     /// A client of this profile: its socket, an agent's tools socket or
     /// the in-process call.
@@ -71,7 +75,7 @@ pub enum Caller {
 }
 
 /// Where a Subscribe stream starts.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Opening {
     /// A client's: the newest `tail` rows.
     Tail(u32),
@@ -90,7 +94,7 @@ pub enum Opening {
 /// source follows, the host set it publishes and the replica bound it runs
 /// under. Until those move into the core the driver reads them as it hands
 /// the call over, and they ride on the request.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ClientRequest {
     /// Opens a stream of an agent's session events: the opening cut, then
     /// every change.
@@ -105,13 +109,14 @@ pub enum ClientRequest {
         followed: bool,
     },
     /// A page of older items.
-    Fetch(wire::FetchRequest),
+    Fetch(#[serde(with = "codec::message")] wire::FetchRequest),
     /// One item in full.
-    Get(wire::GetRequest),
+    Get(#[serde(with = "codec::message")] wire::GetRequest),
     /// Opens a stream of the fleet: hosts and agent rows, CaughtUp, then
     /// every change.
     SubscribeInventory {
         /// The host set as last published.
+        #[serde(with = "codec::messages")]
         hosts: Vec<wire::HostEntry>,
         /// The one host whose entry and agents the stream carries, for a
         /// paired host's stream; every host's for a client's.
@@ -157,7 +162,7 @@ impl From<store::StoreError> for CallError {
 }
 
 /// What a job produced.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum JobResult {
     /// It did what it was asked.
     Done,
@@ -165,5 +170,5 @@ pub enum JobResult {
     Failed(String),
     /// The origin's page below a replica's block, or `None` when the origin
     /// could not be asked.
-    Fetched(Option<wire::FetchResponse>),
+    Fetched(#[serde(with = "codec::optional")] Option<wire::FetchResponse>),
 }

@@ -964,13 +964,21 @@ async fn a_delete_dropped_mid_way_leaves_its_agents_changes_published() {
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
 
     {
-        // The first poll takes the delete past its check of the row, which
-        // finds the store free, and mutes the agent. Holding the store then
-        // keeps it from removing the row, whether or not the stop has
-        // finished; then the delete's caller goes away.
+        // Polling takes the delete past its check of the row and mutes the
+        // agent. Holding the store then keeps it from removing the row,
+        // whether or not the stop has finished; then the delete's caller
+        // goes away. The profile's core takes the store for each input it
+        // steps, so the delete may find it taken and queue for it: it is
+        // polled until the store can be had, which it can only once the
+        // delete, queued first, has had it and let it go.
         let mut delete = Box::pin(runtime.delete(parent));
-        assert!(poll_once(&mut delete).await.is_pending());
-        let store = runtime.store().await;
+        let store = loop {
+            assert!(poll_once(&mut delete).await.is_pending());
+            if let Ok(store) = tokio::time::timeout(Duration::ZERO, runtime.store()).await {
+                break store;
+            }
+            tokio::task::yield_now().await;
+        };
         for _ in 0..8 {
             assert!(
                 poll_once(&mut delete).await.is_pending(),

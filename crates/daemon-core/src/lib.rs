@@ -16,12 +16,16 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use store::Sqlite;
 
+pub mod checkpoints;
+mod codec;
+pub mod generation;
 pub mod ids;
 pub mod ingest;
 mod io;
 pub mod payload;
 pub mod serve;
 
+pub use checkpoints::Checkpoints;
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use ingest::Journals;
 pub use io::{FromShell, IngestEnd, Ingested, Input, Job, Output, Settings, Wake};
@@ -42,6 +46,7 @@ pub struct Daemon {
     pairing: PairingState,
     answers: Answers,
     journals: Journals,
+    checkpoints: Checkpoints,
     timers: Timers,
     pending: Pending,
     settings: Settings,
@@ -72,6 +77,7 @@ impl Daemon {
             pairing: PairingState::default(),
             answers: Answers::default(),
             journals: Journals::default(),
+            checkpoints: Checkpoints::default(),
             timers: Timers::default(),
             pending: Pending::default(),
             settings: Settings::default(),
@@ -87,6 +93,9 @@ impl Daemon {
             Input::ClientCall { call, who, request } => self.client_call(call, who, request, out),
             Input::CallCancelled { call } => self.cancelled(call, out),
             Input::AnswerLagged { call } => self.lagged(call, out),
+            Input::JobDone { job, result } if self.is_checkpoint(job) => {
+                self.checkpoint_done(result, out)
+            }
             Input::JobDone { job, result } => self.job_done(job, result, out),
             Input::Nudge { agent } => self.ingest(agent, out),
             Input::AgentHello { agent, .. } => self.hello(agent),
@@ -96,6 +105,9 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Deliveries,
             } => out.push(Output::Wake(Wake::Deliveries)),
+            Input::Timer {
+                id: TimerId::Checkpoint,
+            } => self.take_checkpoint(out),
             Input::Configure(settings) => self.settings = settings,
             Input::FromShell(change) => self.shell_changed(change, out),
             Input::LinkUp { .. }
@@ -140,6 +152,7 @@ impl Daemon {
             &self.pairing,
             &self.answers,
             &self.journals,
+            &self.checkpoints,
             &self.timers,
             &self.pending,
             &self.settings,
@@ -168,6 +181,7 @@ impl Daemon {
             pairing,
             answers,
             journals,
+            checkpoints,
             timers,
             pending,
             settings,
@@ -182,11 +196,17 @@ impl Daemon {
             pairing,
             answers,
             journals,
+            checkpoints,
             timers,
             pending,
             settings,
             ..Daemon::new(store, options)
         })
+    }
+
+    /// What the core remembers about its checkpoints.
+    pub fn checkpoints(&self) -> &Checkpoints {
+        &self.checkpoints
     }
 
     /// The store the core owns, for reading.

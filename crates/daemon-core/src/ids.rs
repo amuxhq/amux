@@ -22,6 +22,8 @@ pub enum TimerId {
     Ingest(AgentId),
     /// A turn ended: deliveries may be due.
     Deliveries,
+    /// Something was committed since the last checkpoint: take the next.
+    Checkpoint,
 }
 
 /// A job the driver runs off the core thread; its outcome returns as

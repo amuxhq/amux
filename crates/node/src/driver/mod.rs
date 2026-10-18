@@ -13,16 +13,22 @@
 //! those changes first each time it takes the lock, so every stream reads
 //! them in commit order: after its opening if they were committed after
 //! it, in its opening if before.
+//!
+//! Every input the core steps is recorded in the profile's input ring
+//! first, and the ring starts a new segment at each checkpoint the core
+//! takes, so the newest checkpoint and the inputs since rebuild the core.
 
 mod calls;
 mod streams;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
+use core_ring::Ring;
 use daemon_core::payload::{Caller, ClientRequest, JobResult, Opening, Status};
 use daemon_core::{
     CallId, Daemon, FromShell, IngestEnd, Ingested, Input, Job, JobId, Output, Settings,
@@ -35,11 +41,15 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
 use wire::{FetchRequest, GetRequest};
 
+use crate::install::{CORE_CHECKPOINT, CORE_RING, STORE, write_durably};
 use crate::runtime::ProfileRuntime;
 
 /// Inputs waiting for the core. A full channel holds its senders back
 /// rather than growing.
 const INPUT_ROOM: usize = 1024;
+/// The bytes the input ring keeps across its segments. A segment that
+/// fills before the checkpoint interval is up asks for a checkpoint early.
+const RING_BYTES: u64 = 8 << 20;
 
 /// What reaches the core thread.
 pub(crate) enum Fed {
@@ -56,6 +66,10 @@ pub(crate) enum Fed {
     Ingest {
         agent: daemon_core::AgentId,
         done: oneshot::Sender<Result<u64, String>>,
+    },
+    /// A checkpoint, for someone who waits for it to be on the drive.
+    Checkpoint {
+        done: oneshot::Sender<Result<(), String>>,
     },
     /// The shell handed changes over.
     Wake,
@@ -90,6 +104,7 @@ impl Driver {
     pub(crate) fn start(
         runtime: Weak<ProfileRuntime>,
         own_host: Vec<u8>,
+        dir: PathBuf,
         options: StartOptions,
     ) -> Self {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
@@ -99,8 +114,19 @@ impl Driver {
         // The core owns a store of its own between steps; the profile's is
         // lent to it for each one.
         let store = Sqlite::open_in_memory(own_host).expect("an in-memory store opens");
+        let daemon = Daemon::new(store, options);
+        let ring = Ring::open(
+            dir.join(CORE_RING),
+            RING_BYTES,
+            &daemon.checkpoint().to_bytes(),
+        )
+        .inspect_err(|error| tracing::warn!(%error, "the core's input ring does not open"))
+        .ok();
         let core = CoreThread {
-            daemon: Daemon::new(store, options),
+            daemon,
+            ring,
+            checkpointing: None,
+            checkpoint_waiting: Vec::new(),
             fed,
             again: VecDeque::new(),
             inputs: inputs.downgrade(),
@@ -161,6 +187,18 @@ impl Driver {
             .unwrap_or_else(|_| Err("the profile is no longer running".to_owned()))
     }
 
+    /// Asks the core for a checkpoint and waits until it is on the drive,
+    /// or says why it is not.
+    pub(crate) async fn checkpoint(&self) -> Result<(), String> {
+        let (done, taken) = oneshot::channel();
+        if self.inputs.send(Fed::Checkpoint { done }).await.is_err() {
+            return Err("the profile is no longer running".to_owned());
+        }
+        taken
+            .await
+            .unwrap_or_else(|_| Err("the profile is no longer running".to_owned()))
+    }
+
     /// Feeds the core an input.
     pub(crate) async fn feed(&self, input: Input) {
         let _ = self.inputs.send(Fed::Input(input)).await;
@@ -198,6 +236,12 @@ struct Waiting {
 
 struct CoreThread {
     daemon: Daemon,
+    /// Every input stepped since the last checkpoint, when the ring opened.
+    ring: Option<Ring<Input>>,
+    /// The checkpoint job in flight.
+    checkpointing: Option<JobId>,
+    /// Whoever waits for the next checkpoint to be on the drive.
+    checkpoint_waiting: Vec<oneshot::Sender<Result<(), String>>>,
     fed: mpsc::Receiver<Fed>,
     /// Inputs the driver raised itself while carrying out a step, stepped
     /// before anything newer.
@@ -242,6 +286,17 @@ impl CoreThread {
                     self.waiting.entry(agent).or_default().push(waiting);
                     Some(Input::Nudge { agent })
                 }
+                Fed::Checkpoint { done } => {
+                    self.checkpoint_waiting.push(done);
+                    // One in flight already covers every commit its waiter
+                    // has seen: commits wait for it.
+                    match self.checkpointing {
+                        Some(_) => None,
+                        None => Some(Input::Timer {
+                            id: TimerId::Checkpoint,
+                        }),
+                    }
+                }
                 Fed::Wake | Fed::Stop => None,
             };
             self.daemon.swap_store(&mut store);
@@ -250,8 +305,10 @@ impl CoreThread {
                 self.ticked = Some(now);
                 self.step(&runtime, Input::Tick { now_ms: now }, &mut out);
             }
+            let launch = runtime.launch();
             let settings = Settings {
-                notify_delay_ms: runtime.launch().notify_delay_ms,
+                notify_delay_ms: launch.notify_delay_ms,
+                checkpoint_interval_ms: launch.checkpoint_interval_ms.max(0) as u64,
             };
             if self.settings != Some(settings) {
                 self.settings = Some(settings);
@@ -281,9 +338,42 @@ impl CoreThread {
             Input::ClientCall { call, .. } | Input::AnswerLagged { call } => Some(*call),
             _ => None,
         };
+        let checkpointed = match &input {
+            Input::JobDone { job, result } if Some(*job) == self.checkpointing => {
+                self.checkpointing = None;
+                Some(match result {
+                    JobResult::Done => Ok(()),
+                    other => Err(format!("{other:?}")),
+                })
+            }
+            _ => None,
+        };
+        self.record(&input);
         self.daemon.step(input, out);
         for output in out.drain(..) {
             self.execute(runtime, output, replying);
+        }
+        if let Some(outcome) = checkpointed {
+            for waiter in self.checkpoint_waiting.drain(..) {
+                let _ = waiter.send(outcome.clone());
+            }
+        }
+    }
+
+    /// Records an input in the ring before the core steps it. A ring that
+    /// fills before the checkpoint interval is up asks for a checkpoint,
+    /// which starts the next segment.
+    fn record(&mut self, input: &Input) {
+        let Some(ring) = self.ring.as_mut() else {
+            return;
+        };
+        if let Err(error) = ring.append(input) {
+            tracing::warn!(%error, "recording an input in the core's ring failed");
+        }
+        if ring.full() && self.checkpointing.is_none() {
+            self.again.push_back(Input::Timer {
+                id: TimerId::Checkpoint,
+            });
         }
     }
 
@@ -329,6 +419,25 @@ impl CoreThread {
                 if let Some(armed) = self.timers.remove(&id) {
                     armed.abort();
                 }
+            }
+            Output::Job {
+                id,
+                op: Job::Checkpoint { state },
+            } => {
+                // The inputs after this step are the ones this checkpoint
+                // does not hold.
+                if let Some(ring) = self.ring.as_mut()
+                    && let Err(error) = ring.rotate(&state)
+                {
+                    tracing::warn!(%error, "rotating the core's input ring failed");
+                }
+                self.checkpointing = Some(id);
+                tokio::spawn(run_job(
+                    Arc::downgrade(runtime),
+                    id,
+                    Job::Checkpoint { state },
+                    self.inputs.clone(),
+                ));
             }
             Output::Job { id, op } => {
                 tokio::spawn(run_job(
@@ -392,12 +501,12 @@ async fn run_job(
     inputs: mpsc::WeakSender<Fed>,
 ) {
     let result = match op {
-        Job::Fsync(path) => blocking(move || std::fs::File::open(path)?.sync_all()).await,
+        Job::Fsync { path, bytes } => fsync(path, bytes).await,
         Job::Checkpoint { state } => {
             let Some(dir) = runtime.upgrade().map(|runtime| runtime.dir().to_path_buf()) else {
                 return;
             };
-            blocking(move || write_durably(&dir.join(CHECKPOINT), &state)).await
+            blocking(move || checkpoint(&dir, &state)).await
         }
         Job::FetchFromOrigin {
             agent,
@@ -430,22 +539,22 @@ async fn fetch_from_origin(
         .ok()
 }
 
-/// Where the profile's core checkpoint is written, in its directory.
-const CHECKPOINT: &str = "core.checkpoint";
+/// The fsync job: replaces the file at `path` with `bytes` so that a crash
+/// or power cut leaves the old file or the new one, and the new one is on
+/// the drive when it is done. The installation runs it too, for the writes
+/// it promises durable outside any profile's core.
+pub(crate) async fn fsync(path: PathBuf, bytes: Vec<u8>) -> JobResult {
+    blocking(move || write_durably(&path, &bytes)).await
+}
 
-/// Writes `bytes` whole at `path`: to a sibling first, flushed, then renamed
-/// over it, so a crash leaves the old file or the new one.
-fn write_durably(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write as _;
-    let partial = path.with_extension("partial");
-    let mut file = std::fs::File::create(&partial)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    std::fs::rename(&partial, path)?;
-    if let Some(dir) = path.parent() {
-        std::fs::File::open(dir)?.sync_all()?;
-    }
-    Ok(())
+/// The checkpoint job: the store's WAL into its main file, synced, and then
+/// the core's state as of the same step beside it. The core held its
+/// commits since that step, so the main file is the store as of it; a
+/// crash between the two leaves the previous checkpoint, which the main
+/// file is at or past.
+fn checkpoint(dir: &Path, state: &[u8]) -> std::io::Result<()> {
+    Sqlite::checkpoint_wal(&dir.join(STORE)).map_err(std::io::Error::other)?;
+    write_durably(&dir.join(CORE_CHECKPOINT), state)
 }
 
 async fn blocking(work: impl FnOnce() -> std::io::Result<()> + Send + 'static) -> JobResult {

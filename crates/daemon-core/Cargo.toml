@@ -17,4 +17,5 @@ wire = { workspace = true }
 
 [dev-dependencies]
 journal = { workspace = true, features = ["synthetic"] }
+serde_json = { workspace = true }
 tempfile = { workspace = true }

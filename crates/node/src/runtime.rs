@@ -151,6 +151,10 @@ pub struct Launch {
     /// How often a copy's provider version is read to see whether it
     /// changed, and how soon a copy that says signed out is asked again.
     pub catalogue_recheck_ms: i64,
+    /// How long after a commit the profile's core checkpoints: what the
+    /// input ring holds, and how long ingested journal waits to be
+    /// reclaimed.
+    pub checkpoint_interval_ms: i64,
 }
 
 impl Default for Launch {
@@ -184,6 +188,7 @@ impl Default for Launch {
             repository_roots: Vec::new(),
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
+            checkpoint_interval_ms: 60_000,
         }
     }
 }
@@ -813,6 +818,7 @@ impl ProfileRuntime {
             crate::driver::Driver::start(
                 self.me.clone(),
                 self.host.as_bytes().to_vec(),
+                self.dir.clone(),
                 daemon_core::StartOptions {
                     generation: self.generation,
                     agents: self.dir.join(AGENTS),
@@ -1879,13 +1885,21 @@ impl ProfileRuntime {
     /// the end, and waits until it has: a batch at a time, each committed
     /// in one transaction and then told to its subscribers. At the end of
     /// the journal, the first time after each Hello, the core tells them
-    /// CaughtUp. Segments that lie wholly below a cursor that has reached
-    /// the drive are deleted, but for the newest few.
+    /// CaughtUp. Segments that lie wholly below the cursor of the core's
+    /// last checkpoint on the drive are deleted, but for the newest few.
     pub async fn ingest(&self, id: AgentId) -> Result<Ingested, RegistryError> {
         match self.driver().ingest(id).await {
             Ok(frames) => Ok(Ingested { frames }),
             Err(why) => Err(RegistryError::Ingest(why)),
         }
+    }
+
+    /// Takes a checkpoint of the profile's core now, beside a passive WAL
+    /// checkpoint of its store, and waits for it to be on the drive: the
+    /// journal below every cursor it holds may then go. Joins a checkpoint
+    /// already being taken.
+    pub async fn checkpoint(&self) -> Result<(), String> {
+        self.driver().checkpoint().await
     }
 
     /// Counts what one ingest step committed.

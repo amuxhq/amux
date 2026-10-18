@@ -1,29 +1,23 @@
-//! `<data_dir>/generation`: the one signal that this host may have lost
-//! revisions it already published.
-//!
-//! Revisions are published to other machines, and the store commits with
-//! no fsync per transaction, so a power cut can roll the store back to
-//! before revisions a peer has already seen; the host would then mint the
-//! same numbers again for different content. Only an unclean reboot loses
-//! the page cache: a daemon crash, an agent crash, an update and a clean
-//! reboot lose nothing. So the file holds the boot id seen at the last
-//! start, whether the last run shut down cleanly, and a counter. At start,
-//! a changed boot id with the flag clear means the machine went down under
-//! a running daemon, and the counter is bumped; the file is then rewritten
-//! with the current boot id and the flag cleared. At clean shutdown the
-//! flag is set last, after every store has been flushed to the drive.
-//! The counter opens every session stream the host serves; a peer resuming
-//! after a cursor of another generation is answered with a fresh tail that
-//! replaces its replica. Both writes are durable (temp, fsync, rename,
-//! fsync of the directory): an unsynced flag or counter could itself be
-//! rolled back.
+//! `<data_dir>/generation`: the installation's record of its generation,
+//! which `daemon_core::generation` explains. The record holds the boot id
+//! seen at the last start, whether the last run shut down cleanly, and the
+//! counter. At start the counter is decided from what the last run left,
+//! and the record is rewritten with the current boot id and the flag
+//! cleared before anything is served; at clean shutdown the flag is set
+//! last, after every store has been flushed to the drive. The counter opens
+//! every session stream the host serves; a peer resuming after a cursor of
+//! another generation is answered with a fresh tail that replaces its
+//! replica. Both writes are fsync jobs, the same the profiles' cores ask
+//! for: the record lands whole and on the drive, or not at all.
 
 use std::io;
 use std::path::Path;
 
+use daemon_core::generation::{LastRun, at_start};
+use daemon_core::payload::JobResult;
 use serde::{Deserialize, Serialize};
 
-use crate::install::{GENERATION, write_durably};
+use crate::install::GENERATION;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Generation {
@@ -54,24 +48,27 @@ impl Generation {
     /// under a daemon that never shut down cleanly, then records this boot
     /// and `version` with the flag cleared. Returns what it wrote and what
     /// was there before; nothing may be served before it returns.
-    pub fn start(
+    pub async fn start(
         data_dir: &Path,
         boot_id: &str,
         version: &str,
     ) -> io::Result<(Self, Option<Self>)> {
         let last = Self::read(data_dir)?;
-        let counter = match &last {
-            None => 1,
-            Some(last) if last.boot_id != boot_id && !last.clean => last.counter + 1,
-            Some(last) => last.counter,
-        };
+        let counter = at_start(
+            last.as_ref().map(|last| LastRun {
+                boot_id: &last.boot_id,
+                clean: last.clean,
+                counter: last.counter,
+            }),
+            boot_id,
+        );
         let now = Self {
             boot_id: boot_id.to_owned(),
             clean: false,
             counter,
             version: version.to_owned(),
         };
-        now.write(data_dir)?;
+        now.write(data_dir).await?;
         Ok((now, last))
     }
 
@@ -82,17 +79,22 @@ impl Generation {
     }
 
     /// The last write of a clean shutdown, after every store is flushed.
-    pub fn mark_clean(&self, data_dir: &Path) -> io::Result<()> {
+    pub async fn mark_clean(&self, data_dir: &Path) -> io::Result<()> {
         Self {
             clean: true,
             ..self.clone()
         }
         .write(data_dir)
+        .await
     }
 
-    fn write(&self, data_dir: &Path) -> io::Result<()> {
+    async fn write(&self, data_dir: &Path) -> io::Result<()> {
         let bytes = serde_json::to_vec(self).map_err(io::Error::other)?;
-        write_durably(&data_dir.join(GENERATION), &bytes)
+        match crate::driver::fsync(data_dir.join(GENERATION), bytes).await {
+            JobResult::Done => Ok(()),
+            JobResult::Failed(why) => Err(io::Error::other(why)),
+            JobResult::Fetched(_) => unreachable!("an fsync job fetches nothing"),
+        }
     }
 }
 

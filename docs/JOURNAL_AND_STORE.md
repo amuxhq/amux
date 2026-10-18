@@ -145,16 +145,17 @@ is always read to its end.
 
 One ingest step:
 
-1. Read the agent's `ingest_cursor` from its row.
-2. Read whole frames from that offset with `journal::Reader::read_up_to`, at
+1. If the core is taking a checkpoint, hold the batch until the checkpoint
+   job is done; it is read then.
+2. Read the agent's `ingest_cursor` from its row.
+3. Read whole frames from that offset with `journal::Reader::read_up_to`, at
    most `INGEST_BATCH` (256) frames.
-3. Commit them in one transaction (`Sqlite::commit`), which also writes the
-   advanced cursor.
-4. Answer each committed record once to every stream open on the agent, and
+4. Commit them in one transaction (`Sqlite::commit`), which also writes the
+   advanced cursor, and arm the checkpoint timer if it is not armed.
+5. Answer each committed record once to every stream open on the agent, and
    the agent's inventory row to every inventory stream if a snapshot was
    committed: it carries the row's phase, `working_on`, since-when and git
    facts.
-5. Reclaim segments that lie wholly below the committed cursor.
 6. At the end of the journal, the first time after each Hello, set the
    agent's CaughtUp marker and answer `CaughtUp`.
 7. If the batch was full, arm a timer for the next one, so every other
@@ -226,15 +227,27 @@ id, and the insert is an upsert, so a turn end committed twice is one row.
 Agent messages are deduplicated by the recipient's daemon against the
 recipient's items by envelope id, using the `items_by_input` index.
 
-### Reclaiming segments
+### Checkpoints and reclaiming segments
 
-A segment is deleted only when it lies entirely below a cursor that has
-reached the drive, so the journal is never the only copy of something the store
-might lose. `ProfileRuntime::reclaim` asks `journal::reclaimable` for segments
-wholly below the committed cursor, keeps the newest `KEPT_SEGMENTS` (2) of
-them for dumps, flushes the store to the drive (`Sqlite::flush_to_drive`), and
-deletes the rest only if that flush succeeded. That costs one full flush per
-segment the agent fills.
+The profile's core checkpoints an interval (`Launch.checkpoint_interval_ms`,
+a minute) after a commit, and when its input ring fills first. At that step
+it reads the cursor of every agent committed since the last checkpoint,
+serializes its own state, and asks for a checkpoint job; the driver runs a
+passive WAL checkpoint of the store on a connection of its own
+(`Sqlite::checkpoint_wal`), which SQLite syncs, then writes the state
+durably to `core.checkpoint` beside the store. The core holds every ingest
+commit until the job is done, so the store's main file is the store as of
+that step. The driver records every input the core steps in `core-ring/`
+before stepping it, and starts a new ring segment at each checkpoint: the
+newest checkpoint and the inputs since rebuild the core.
+
+A segment is deleted only when it lies entirely below an agent's cursor as of
+the last checkpoint that reached the drive, so the journal is never the only
+copy of something the store might lose. When a checkpoint job is done the core
+asks `journal::reclaimable` for the segments wholly below each cursor it
+holds, keeps the newest `KEPT_SEGMENTS` (2) of them for dumps, and deletes the
+rest; a failed checkpoint deletes nothing and the next is tried an interval
+on. Journal therefore waits up to a checkpoint interval to be reclaimed.
 
 ## Durability
 
@@ -242,11 +255,11 @@ segment the agent fills.
 | --- | --- |
 | The agent writes its journal with plain writes and no fsync. | `journal::Writer` |
 | The store runs WAL with `synchronous=NORMAL`: no fsync per commit; SQLite syncs at its checkpoints. | `Sqlite::open` in [`crates/store/src/sqlite.rs`](../crates/store/src/sqlite.rs) |
-| A journal segment is deleted only below a cursor that has reached the drive. | `ProfileRuntime::reclaim` |
+| A journal segment is deleted only below the cursor of the last checkpoint on the drive. | `Daemon::checkpoint_done` in [`crates/daemon-core/src/checkpoints.rs`](../crates/daemon-core/src/checkpoints.rs) |
 | `<data_dir>/generation` holds the boot id seen at the last start, a clean-shutdown flag and a counter. | [`crates/node/src/generation.rs`](../crates/node/src/generation.rs) |
-| At start, before anything is served: if the boot id differs and the flag is clear, bump the counter; then rewrite the file with the current boot id and the flag cleared. | `Generation::start`, called from `node::start` |
+| At start, before anything is served: if the boot id differs and the flag is clear, bump the counter; then rewrite the file with the current boot id and the flag cleared. | `daemon_core::generation::at_start` decides; `Generation::start`, called from `node::start`, writes |
 | At clean shutdown, last: stop links, background work and watchers, flush every store with `fullfsync`, then set the flag. | `Daemon::shutdown` in [`crates/node/src/daemon.rs`](../crates/node/src/daemon.rs) |
-| Both generation writes are temp file, fsync, rename, fsync of the directory. | `write_durably` in [`crates/node/src/install.rs`](../crates/node/src/install.rs) |
+| Both generation writes, and the core's checkpoint, are temp file, fsync, rename, fsync of the directory: the fsync and checkpoint jobs. | `driver::fsync` in [`crates/node/src/driver/mod.rs`](../crates/node/src/driver/mod.rs) |
 
 Why the file exists: revisions are published to other machines, and the store
 commits without syncing. A power cut can roll the store back to before

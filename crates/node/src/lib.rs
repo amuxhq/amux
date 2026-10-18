@@ -70,8 +70,8 @@ pub use front_door::FrontDoor;
 pub use generation::{Generation, boot_id};
 pub use grpc::{ClientApi, status};
 pub use install::{
-    AGENTS, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock, LockError, PROFILES,
-    REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
+    AGENTS, CORE_CHECKPOINT, CORE_RING, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock,
+    LockError, PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
 };
 pub use link::{PeerChannel, PeerClient, TRUST_REVOKED};
 pub use names::{assign_name, word_pairs};

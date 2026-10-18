@@ -739,6 +739,7 @@ impl ProfileRuntime {
                 daemon_core::StartOptions {
                     generation: self.generation,
                     agents: self.dir.join(AGENTS),
+                    replicas: self.dir.join(crate::install::REPLICAS),
                     budget: self.launch().step_budget,
                 },
             )

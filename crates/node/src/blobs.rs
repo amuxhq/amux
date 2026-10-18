@@ -16,6 +16,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use daemon_core::payload::{BlobRefusal, CallError, ClientRequest, PeerReply, Response, Status};
 use git_facts::{Change, Comparison};
 use sha2::{Digest as _, Sha256};
 use store::{AgentRow, StoreError};
@@ -25,6 +26,7 @@ use wire::{
     GetBlobResponse, PutBlobRequest, diff_base,
 };
 
+use crate::driver::{Ask, Delivered};
 use crate::install::{AGENTS, REPLICAS};
 use crate::runtime::ProfileRuntime;
 
@@ -60,6 +62,8 @@ pub enum BlobError {
     Mismatch(String),
     #[error("the store: {0}")]
     Store(#[from] StoreError),
+    #[error("the daemon core: {0}")]
+    Core(String),
 }
 
 impl BlobError {
@@ -70,7 +74,7 @@ impl BlobError {
             Self::BadHash(_) | Self::NoBase => ErrorCode::InvalidArgument,
             Self::TooLarge { .. } => ErrorCode::ResourceExhausted,
             Self::Write(error) if is_full(error) => ErrorCode::ResourceExhausted,
-            Self::Write(_) | Self::Read(_) | Self::Mismatch(_) | Self::Store(_) => {
+            Self::Write(_) | Self::Read(_) | Self::Mismatch(_) | Self::Store(_) | Self::Core(_) => {
                 ErrorCode::Internal
             }
         };
@@ -106,69 +110,40 @@ fn is_full(error: &io::Error) -> bool {
     )
 }
 
+fn answered_with(answer: impl std::fmt::Debug) -> BlobError {
+    BlobError::Core(format!("a blob call was answered with {answer:?}"))
+}
+
 impl ProfileRuntime {
     /// Writes a person's attachment into the named own agent's directory
     /// and returns its reference. The same bytes twice are one file.
     pub async fn put_blob(&self, request: PutBlobRequest) -> Result<BlobRef, BlobError> {
         within_limit(&request)?;
-        let row = self.blob_owner(&request.agent_id).await?;
-        if row.agent.host != self.host().as_bytes() {
-            return Err(BlobError::NotOwn);
-        }
-        let id = Uuid::from_slice(&row.agent.agent).map_err(|_| BlobError::NoAgent)?;
         let hash = Sha256::digest(&request.bytes).to_vec();
-        let dir = self.agent_dir(id).join(agent_dir::BLOBS);
-        let bytes = request.bytes;
-        let size = bytes.len() as u64;
-        let written = hash.clone();
-        tokio::task::spawn_blocking(move || write_blob(&dir, &written, &bytes))
-            .await
-            .map_err(|error| BlobError::Write(io::Error::other(error)))?
-            .map_err(BlobError::Write)?;
-        Ok(BlobRef {
-            size,
-            hash,
-            name: request.name,
-            mime: request.mime,
-        })
-    }
-
-    /// Reads a blob of an own agent or of a replica this runtime holds. A
-    /// replica file not fetched yet is not found here.
-    pub async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, BlobError> {
-        if request.hash.len() != 32 {
-            return Err(BlobError::BadHash(request.hash.len()));
-        }
-        let row = self.blob_owner(&request.agent_id).await?;
-        let path = self.blob_path(&row, &request.hash);
-        if row.agent.host != self.host().as_bytes()
-            && let Some(blobs) = self.replica_blobs.lock().unwrap().as_mut()
+        match self
+            .blob_call(ClientRequest::PutBlob { request, hash })
+            .await?
         {
-            blobs.touch(&path, self.clock_now());
+            Some(Response::Peer(reply)) => match *reply {
+                PeerReply::Blob(blob) => Ok(blob),
+                other => Err(answered_with(other)),
+            },
+            other => Err(answered_with(other)),
         }
-        let missing = |error: io::Error| {
-            if error.kind() == io::ErrorKind::NotFound {
-                BlobError::NoBlob(hex(&request.hash))
-            } else {
-                BlobError::Read(error)
-            }
-        };
-        // Measured before it is read: an agent's attachment is fetched
-        // here, by its recipient's host, and only its sender's word says
-        // how large it is.
-        let size = tokio::fs::metadata(&path).await.map_err(missing)?.len();
-        if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
-            return Err(BlobError::TooLarge {
-                name: hex(&request.hash),
-                size: usize::try_from(size).unwrap_or(usize::MAX),
-            });
-        }
-        let bytes = tokio::fs::read(&path).await.map_err(missing)?;
-        Ok(GetBlobResponse { bytes })
     }
 
-    /// Keeps bytes of a peer's agent, read from its origin, under that
-    /// replica's directory, once they prove to be what `hash` names.
+    pub async fn get_blob(&self, request: GetBlobRequest) -> Result<GetBlobResponse, BlobError> {
+        match self.blob_call(ClientRequest::GetBlob(request)).await? {
+            Some(Response::Peer(reply)) => match *reply {
+                PeerReply::GetBlob(blob) => Ok(blob),
+                other => Err(answered_with(other)),
+            },
+            other => Err(answered_with(other)),
+        }
+    }
+
+    /// Keeps the bytes of a replica's blob its origin sent, once they are
+    /// shown to be the blob.
     pub async fn keep_replica_blob(
         &self,
         agent_id: &[u8],
@@ -178,31 +153,67 @@ impl ProfileRuntime {
         if Sha256::digest(bytes)[..] != *hash {
             return Err(BlobError::Mismatch(hex(hash)));
         }
-        let row = self.blob_owner(agent_id).await?;
-        if row.agent.host == self.host().as_bytes() {
-            return Ok(());
-        }
-        let path = self.blob_path(&row, hash);
-        let dir = path
-            .parent()
-            .expect("a blob path has a directory")
-            .to_owned();
-        let (written, owned) = (hash.to_vec(), bytes.to_vec());
-        tokio::task::spawn_blocking(move || write_blob(&dir, &written, &owned))
-            .await
-            .map_err(|error| BlobError::Write(io::Error::other(error)))?
-            .map_err(BlobError::Write)?;
-        if let Some(blobs) = self.replica_blobs.lock().unwrap().as_mut() {
-            blobs.insert(path, bytes.len() as u64, self.clock_now());
-        }
-        Ok(())
+        let request = ClientRequest::KeepBlob {
+            agent_id: agent_id.to_vec(),
+            hash: hash.to_vec(),
+            bytes: bytes.to_vec(),
+        };
+        self.blob_call(request).await.map(|_| ())
     }
 
-    /// Compares the agent's working directory with `base`: HEAD, or where
-    /// the branch left the named base branch, to the working tree with
-    /// untracked files. Lists the changed files; only `with_patch` builds
-    /// the patch and writes it as the agent's blob. An exited agent's
-    /// folder is compared as it is now.
+    /// A blob file was read: a replica's counts as used now.
+    pub(crate) fn read_blob(&self, path: &Path) {
+        if path.starts_with(self.dir().join(REPLICAS))
+            && let Some(blobs) = self.replica_blobs.lock().unwrap().as_mut()
+        {
+            blobs.touch(path, self.clock_now());
+        }
+    }
+
+    /// A blob file was written: a replica's is indexed for the sweep.
+    pub(crate) fn kept_blob(&self, path: PathBuf, size: u64) {
+        if path.starts_with(self.dir().join(REPLICAS))
+            && let Some(blobs) = self.replica_blobs.lock().unwrap().as_mut()
+        {
+            blobs.insert(path, size, self.clock_now());
+        }
+    }
+
+    /// Hands a blob call to the core and waits for its end.
+    async fn blob_call(&self, request: ClientRequest) -> Result<Option<Response>, BlobError> {
+        let mut answers = self.driver().call(Ask::Ready(request), 1).await;
+        let mut answer = None;
+        loop {
+            match answers.next().await {
+                Some(Delivered::Answer(response)) => answer = Some(response),
+                Some(Delivered::End(Status::Ok)) => return Ok(answer),
+                Some(Delivered::End(Status::Failed(error))) => {
+                    return Err(match error {
+                        CallError::NoAgent => BlobError::NoAgent,
+                        CallError::NoBlob(hash) => BlobError::NoBlob(hash),
+                        CallError::Blob(refusal) => match refusal {
+                            BlobRefusal::NotOwn => BlobError::NotOwn,
+                            BlobRefusal::BadHash(len) => BlobError::BadHash(len),
+                            BlobRefusal::TooLarge { name, size } => BlobError::TooLarge {
+                                name,
+                                size: usize::try_from(size).unwrap_or(usize::MAX),
+                            },
+                            BlobRefusal::Write { full, words } => BlobError::Write(if full {
+                                io::Error::new(io::ErrorKind::StorageFull, words)
+                            } else {
+                                io::Error::other(words)
+                            }),
+                            BlobRefusal::Read(words) => BlobError::Read(io::Error::other(words)),
+                        },
+                        CallError::Store(words) => BlobError::Core(words),
+                        other => BlobError::Core(format!("{other:?}")),
+                    });
+                }
+                None => return Err(BlobError::Core("the profile is no longer running".into())),
+            }
+        }
+    }
+
     pub async fn diff(&self, request: DiffRequest) -> Result<wire::Diff, BlobError> {
         let row = self.blob_owner(&request.agent_id).await?;
         if row.agent.host != self.host().as_bytes() {

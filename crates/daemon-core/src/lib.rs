@@ -17,6 +17,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use store::Sqlite;
 
+pub mod blobs;
 pub mod checkpoints;
 mod codec;
 mod families;
@@ -33,6 +34,7 @@ pub mod presence;
 pub mod serve;
 pub mod sources;
 
+pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
 pub use families::{Create, Ended, FamilyState, Refusal, Resume};
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
@@ -64,6 +66,7 @@ pub struct Daemon {
     journals: Journals,
     checkpoints: Checkpoints,
     notifications: Notifications,
+    blobs: Blobs,
     timers: Timers,
     pending: Pending,
     settings: Settings,
@@ -81,6 +84,9 @@ pub struct StartOptions {
     pub generation: u64,
     /// The directory holding each own agent's directory, named by its id.
     pub agents: PathBuf,
+    /// The directory holding each paired host's replicas' files, by host
+    /// and then by agent.
+    pub replicas: PathBuf,
     /// How long one step may take before it is reported with a dump.
     pub budget: StepBudget,
 }
@@ -100,6 +106,7 @@ impl Daemon {
             journals: Journals::default(),
             checkpoints: Checkpoints::default(),
             notifications: Notifications::default(),
+            blobs: Blobs::default(),
             timers: Timers::default(),
             pending: Pending::default(),
             settings: Settings::default(),
@@ -131,7 +138,7 @@ impl Daemon {
                 self.checkpoint_done(result, out)
             }
             Input::JobDone { job, result } => {
-                if !self.push_done(job, &result, out) {
+                if !self.push_done(job, &result, out) && !self.blob_done(job, &result, out) {
                     self.registry_job(job, result, out);
                 }
             }
@@ -300,6 +307,7 @@ impl Daemon {
             &self.journals,
             &self.checkpoints,
             &self.notifications,
+            &self.blobs,
             &self.timers,
             &self.pending,
             &self.settings,
@@ -330,6 +338,7 @@ impl Daemon {
             journals,
             checkpoints,
             notifications,
+            blobs,
             timers,
             pending,
             settings,
@@ -346,6 +355,7 @@ impl Daemon {
             journals,
             checkpoints,
             notifications,
+            blobs,
             timers,
             pending,
             settings,

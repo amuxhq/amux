@@ -11,9 +11,9 @@ use wire::{InventoryEvent, SessionEvent};
 use crate::families::Ended;
 use crate::ids::{AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 use crate::payload::{
-    Advertisement, AgentSpec, AnalyticsBatch, Answer, BlobHash, CarrierKind, ChannelClass,
-    ChannelError, ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame,
-    PairMessage, PeerRequest, PublicKey, Push, Response, Status,
+    Advertisement, AgentSpec, AnalyticsBatch, Answer, CarrierKind, ChannelClass, ChannelError,
+    ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame, PairMessage,
+    PeerRequest, PublicKey, Push, Response, Status,
 };
 use crate::presence::{HostView, Route, Tried};
 use crate::{DumpReason, codec};
@@ -524,9 +524,12 @@ pub enum Job {
     Checkpoint {
         state: Vec<u8>,
     },
+    /// Write `bytes` into `dir` under their hash, `hash`, unless a file of
+    /// that name is there; answered as [`JobResult::Refused`] when the
+    /// drive is full.
     WriteBlob {
         dir: PathBuf,
-        hash: BlobHash,
+        hash: Vec<u8>,
         bytes: Vec<u8>,
     },
     /// Exchange the account's refresh token for a fresh relay credential
@@ -773,6 +776,26 @@ mod tests {
                 result: JobResult::Worktree {
                     path: "/src/.worktrees/lead".into(),
                     base_branch: "main".into(),
+                },
+            },
+            Input::ClientCall {
+                call: CallId(15),
+                request: ClientRequest::PutBlob {
+                    request: wire::PutBlobRequest {
+                        agent_id: vec![5; 16],
+                        name: "notes.txt".into(),
+                        mime: "text/plain".into(),
+                        bytes: b"notes".to_vec(),
+                    },
+                    hash: vec![9; 32],
+                },
+            },
+            Input::ClientCall {
+                call: CallId(16),
+                request: ClientRequest::KeepBlob {
+                    agent_id: vec![5; 16],
+                    hash: vec![9; 32],
+                    bytes: b"notes".to_vec(),
                 },
             },
             Input::Configure(Settings::default()),

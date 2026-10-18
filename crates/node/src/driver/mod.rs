@@ -40,8 +40,8 @@ pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::Ring;
 use daemon_core::payload::{
-    Answer, ChannelClass, ChannelError, ClientRequest, JobResult, PeerFailure, PeerRequest,
-    PublicKey, Status,
+    Answer, BlobRefusal, CallError, ChannelClass, ChannelError, ClientRequest, JobResult,
+    PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, FromShell, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
@@ -840,9 +840,16 @@ impl CoreThread {
                 runtime.write_control(uuid::Uuid::from_bytes(agent.0), frame)
             }
             Output::ForgetAgent { agent } => runtime.forget_agent(uuid::Uuid::from_bytes(agent.0)),
-            output @ (Output::CloseChannel { .. }
-            | Output::SendFile { .. }
-            | Output::LinkControl { .. }) => {
+            Output::SendFile { call, path, range } => {
+                tokio::spawn(send_file(
+                    Arc::downgrade(runtime),
+                    self.calls.clone(),
+                    call,
+                    path,
+                    range,
+                ));
+            }
+            output @ (Output::CloseChannel { .. } | Output::LinkControl { .. }) => {
                 tracing::error!(
                     ?output,
                     "the daemon core asked for what this driver does not carry out yet"
@@ -995,11 +1002,83 @@ async fn run_job(
                 Err(error) => JobResult::Failed(error.to_string()),
             }
         }
-        op @ (Job::WriteBlob { .. } | Job::Upload(_)) => {
-            JobResult::Failed(format!("this driver does not run {op:?} yet"))
+        Job::WriteBlob { dir, hash, bytes } => {
+            let size = bytes.len() as u64;
+            let path = dir.join(crate::blobs::hex(&hash));
+            let written =
+                tokio::task::spawn_blocking(move || crate::blobs::write_blob(&dir, &hash, &bytes))
+                    .await
+                    .unwrap_or_else(|error| Err(std::io::Error::other(error)));
+            match written {
+                Ok(()) => {
+                    if let Some(runtime) = runtime.upgrade() {
+                        runtime.kept_blob(path, size);
+                    }
+                    JobResult::Done
+                }
+                // The core tells a full drive apart by the code.
+                Err(error) => {
+                    let message = error.to_string();
+                    JobResult::Refused(wire::Error {
+                        code: crate::blobs::BlobError::Write(error).to_wire().code,
+                        message,
+                        details: Vec::new(),
+                    })
+                }
+            }
         }
+        op @ Job::Upload(_) => JobResult::Failed(format!("this driver does not run {op:?} yet")),
     };
     feed(&inputs, Input::JobDone { job, result }).await;
+}
+
+/// Answers a blob read from its file, whole: the bytes never pass through
+/// the core.
+async fn send_file(
+    runtime: Weak<ProfileRuntime>,
+    calls: Arc<CallTable>,
+    call: CallId,
+    path: std::path::PathBuf,
+    range: std::ops::Range<u64>,
+) {
+    let name = || {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    if let Some(runtime) = runtime.upgrade() {
+        runtime.read_blob(&path);
+    }
+    let failed = |error: std::io::Error| {
+        Status::Failed(if error.kind() == std::io::ErrorKind::NotFound {
+            CallError::NoBlob(name())
+        } else {
+            CallError::Blob(BlobRefusal::Read(error.to_string()))
+        })
+    };
+    let size = match tokio::fs::metadata(&path).await {
+        Ok(meta) => meta.len(),
+        Err(error) => return calls.end(call, failed(error)),
+    };
+    let wanted = range.end.min(size).saturating_sub(range.start);
+    if wanted > wire::ATTACHMENT_SIZE_LIMIT as u64 {
+        let too_large = BlobRefusal::TooLarge {
+            name: name(),
+            size: wanted,
+        };
+        return calls.end(call, Status::Failed(CallError::Blob(too_large)));
+    }
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => {
+            let start = usize::try_from(range.start.min(size)).unwrap_or(usize::MAX);
+            let end = usize::try_from(range.end.min(size)).unwrap_or(usize::MAX);
+            let bytes = bytes.get(start..end).unwrap_or_default().to_vec();
+            let reply = PeerReply::GetBlob(wire::GetBlobResponse { bytes });
+            calls.answer(call, Response::Peer(Box::new(reply)));
+            calls.end(call, Status::Ok);
+        }
+        Err(error) => calls.end(call, failed(error)),
+    }
 }
 
 /// Makes a call the core asked for of a peer, unless the profile is gone.

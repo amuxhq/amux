@@ -490,6 +490,7 @@ mod tests {
                 generation: 1,
                 agents: dir.path().to_path_buf(),
                 budget,
+                ..StartOptions::default()
             },
         );
         let mut journal =

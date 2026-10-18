@@ -152,6 +152,13 @@ impl Daemon {
                 self.rename(call, agent, name, out);
                 Ok(())
             }
+            ClientRequest::PutBlob { request, hash } => self.put_blob(call, request, hash, out),
+            ClientRequest::KeepBlob {
+                agent_id,
+                hash,
+                bytes,
+            } => self.keep_blob(call, &agent_id, hash, bytes, out),
+            ClientRequest::GetBlob(request) => self.get_blob(call, &request, out),
         };
         self.end_unanswered(call, answered, out);
     }

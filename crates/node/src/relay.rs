@@ -420,10 +420,14 @@ impl ProfileRuntime {
             if sha2::Sha256::digest(&bytes)[..] != blob.hash[..] {
                 return Err(failed("the bytes that came are not the file".to_owned()));
             }
-            let (dir, hash) = (blobs.clone(), blob.hash.clone());
-            tokio::task::spawn_blocking(move || crate::blobs::write_blob(&dir, &hash, &bytes))
+            let put = wire::PutBlobRequest {
+                agent_id: recipient.as_bytes().to_vec(),
+                name: blob.name.clone(),
+                mime: blob.mime.clone(),
+                bytes,
+            };
+            self.put_blob(put)
                 .await
-                .map_err(|error| failed(error.to_string()))?
                 .map_err(|error| failed(error.to_string()))?;
         }
         Ok(())

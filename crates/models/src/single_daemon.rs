@@ -788,6 +788,7 @@ fn start(next: &mut State) {
                 // The model is a function of its actions alone, so no step
                 // may ask for a dump because the machine ran slowly.
                 budget: StepBudget::UNLIMITED,
+                ..StartOptions::default()
             },
         );
         scratch.put_back(daemon).0

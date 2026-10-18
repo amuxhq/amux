@@ -55,7 +55,11 @@ impl From<Status> for ServeError {
             Status::Failed(CallError::OriginUnreachable) => ServeError::OriginUnreachable,
             Status::Failed(CallError::Store(why)) => ServeError::Failed(why),
             Status::Failed(
-                error @ (CallError::Peer(_) | CallError::NotServed | CallError::Registry(_)),
+                error @ (CallError::Peer(_)
+                | CallError::NotServed
+                | CallError::Registry(_)
+                | CallError::NoBlob(_)
+                | CallError::Blob(_)),
             ) => ServeError::Failed(format!("{error:?}")),
         }
     }

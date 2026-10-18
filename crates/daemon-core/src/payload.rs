@@ -43,8 +43,6 @@ macro_rules! payload {
 }
 
 payload! {
-    /// A blob's content hash.
-    BlobHash;
     /// A batch of analytics events to upload.
     AnalyticsBatch;
 }
@@ -169,14 +167,37 @@ pub enum ClientRequest {
     /// Starts an exited agent's next incarnation; answered as a create is.
     ResumeAgent(Box<Resume>),
     /// Stops the agent's process; answered with its row once it ended.
-    StopAgent { agent: AgentId },
+    StopAgent {
+        agent: AgentId,
+    },
     /// Kills the agent's process at once, as the stop deadline does.
-    KillAgent { agent: AgentId },
+    KillAgent {
+        agent: AgentId,
+    },
     /// Stops the agent and removes its rows and its directory; answered
     /// with nothing.
-    DeleteAgent { agent: AgentId },
+    DeleteAgent {
+        agent: AgentId,
+    },
     /// Renames the agent; answered with its row.
-    RenameAgent { agent: AgentId, name: String },
+    RenameAgent {
+        agent: AgentId,
+        name: String,
+    },
+    /// A client's upload into one of this host's agents, with the hash of
+    /// its bytes.
+    PutBlob {
+        #[serde(with = "codec::message")]
+        request: wire::PutBlobRequest,
+        hash: Vec<u8>,
+    },
+    /// A replica's blob its origin sent, kept for the next reader.
+    KeepBlob {
+        agent_id: Vec<u8>,
+        hash: Vec<u8>,
+        bytes: Vec<u8>,
+    },
+    GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
 }
 
 /// A request on a peer's PeerService, decoded: one a paired host makes of
@@ -306,6 +327,25 @@ pub enum CallError {
     NotServed,
     /// The registry refused the call or could not finish it.
     Registry(Refusal),
+    /// The agent holds no blob with this hash, in hex.
+    NoBlob(String),
+    /// A blob could not be written or read.
+    Blob(BlobRefusal),
+}
+
+/// Why a blob call failed.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BlobRefusal {
+    /// A blob is written only into an agent this host runs.
+    NotOwn,
+    /// A blob hash is 32 bytes, not this many.
+    BadHash(usize),
+    /// The blob is over the attachment limit.
+    TooLarge { name: String, size: u64 },
+    /// Writing it failed; `full` when the drive is.
+    Write { full: bool, words: String },
+    /// Reading it failed.
+    Read(String),
 }
 
 impl From<store::StoreError> for CallError {

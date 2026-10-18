@@ -92,6 +92,13 @@ impl Sqlite {
         &self.conn
     }
 
+    /// Turns SQLite's own WAL checkpoints off, leaving every one to whoever
+    /// owns the store: a commit never moves the WAL into the main file, so
+    /// the main file changes only at a checkpoint its owner asked for.
+    pub fn leave_checkpoints_to_owner(&self) -> Result<(), rusqlite::Error> {
+        self.conn.pragma_update(None, "wal_autocheckpoint", 0)
+    }
+
     /// Moves every committed transaction from the WAL into the database
     /// file and flushes it to the drive itself (fullfsync, which macOS
     /// needs for a flush to pass the drive's cache). Commits are otherwise

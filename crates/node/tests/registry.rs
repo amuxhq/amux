@@ -274,21 +274,29 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
     assert!(report.live.is_empty() && report.unanswered.is_empty());
     assert!(!install.agent_dir(orphan).exists());
 
-    let store = runtime.store().await;
-    let row = store.agent(&key(&runtime, away)).unwrap().unwrap();
+    let (away_key, missing_key) = (key(&runtime, away), key(&runtime, missing));
+    let (row, marker, missing_row) = runtime
+        .read_store(move |store| {
+            (
+                store.agent(&away_key).unwrap().unwrap(),
+                store.cut(&away_key, 10).unwrap().marker,
+                store.agent(&missing_key).unwrap().unwrap(),
+            )
+        })
+        .await
+        .unwrap();
     assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
     assert_eq!(row.exit_cause, ExitCause::EndedWhileAway as i32);
     assert_eq!(row.ingest_cursor, written, "the remainder is ingested");
     assert_eq!(row.phase, Phase::Idle as i32);
     assert_eq!(
-        store.cut(&key(&runtime, away), 10).unwrap().marker,
+        marker,
         Some(Marker::CaughtUp),
         "an agent the sweep finds exited is caught up"
     );
-    let row = store.agent(&key(&runtime, missing)).unwrap().unwrap();
+    let row = missing_row;
     assert_eq!(row.exit_cause, ExitCause::DirectoryFailed as i32);
     assert_eq!(row.exit_detail.as_deref(), Some("it is gone"));
-    drop(store);
     drop(runtime);
     daemon.shutdown().await.unwrap();
 
@@ -376,7 +384,10 @@ async fn an_ingested_cause_survives_a_daemon_that_died_before_marking() {
     let runtime = runtime(&daemon, &install);
     let report = daemon.sweep(install.profile).unwrap().clone();
     assert_eq!(report.exited, vec![id]);
-    let row = runtime.store().await.agent(&key).unwrap().unwrap();
+    let row = runtime
+        .read_store(move |store| store.agent(&key).unwrap().unwrap())
+        .await
+        .unwrap();
     assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
     assert_eq!(row.ingest_cursor, written, "nothing was left to ingest");
     assert_eq!(
@@ -432,13 +443,19 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
     // The journal is ingested as the agent writes it: the prompt runs to
     // the end of its turn and the row follows the snapshot to idle.
     until("the reply to be committed", || async {
-        let store = runtime.store().await;
-        let row = store.agent(&key(&runtime, id)).unwrap().unwrap();
-        let said = store
-            .last_n(&key(&runtime, id), 50)
-            .unwrap()
-            .iter()
-            .any(|item| item.text.contains("hello"));
+        let key = key(&runtime, id);
+        let (row, said) = runtime
+            .read_store(move |store| {
+                let row = store.agent(&key).unwrap().unwrap();
+                let said = store
+                    .last_n(&key, 50)
+                    .unwrap()
+                    .iter()
+                    .any(|item| item.text.contains("hello"));
+                (row, said)
+            })
+            .await
+            .unwrap();
         (row.phase == Phase::Idle as i32 && said)
             .then_some(())
             .ok_or_else(|| format!("phase {}, said hello {said}", row.phase))
@@ -523,13 +540,12 @@ async fn a_stop_and_a_kill_end_the_process_and_record_why() {
             "{mode:?}"
         );
         assert!(!runtime.live().contains(&id), "{mode:?}");
+        let key = key(&runtime, id);
         assert_eq!(
             runtime
-                .store()
+                .read_store(move |store| store.cut(&key, 1).unwrap().marker)
                 .await
-                .cut(&key(&runtime, id), 1)
-                .unwrap()
-                .marker,
+                .unwrap(),
             Some(Marker::CaughtUp),
             "{mode:?}: an exited agent's journal is read to its end"
         );
@@ -581,11 +597,10 @@ async fn a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary
                 .read_to_end()
                 .map_err(|error| error.to_string())?
                 .frames;
+            let key = key(&runtime, id);
             let row = runtime
-                .store()
+                .read_store(move |store| store.agent(&key).unwrap().unwrap())
                 .await
-                .agent(&key(&runtime, id))
-                .unwrap()
                 .unwrap();
             if frames.len() >= 2 && row.ingest_cursor >= reader.cursor() {
                 Ok(frames)
@@ -604,11 +619,10 @@ async fn a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary
         frames[0].1.incarnation_end, None,
         "the repair boundary carries no cause"
     );
+    let id_key = key(&runtime, id);
     let row = runtime
-        .store()
+        .read_store(move |store| store.agent(&id_key).unwrap().unwrap())
         .await
-        .agent(&key(&runtime, id))
-        .unwrap()
         .unwrap();
     assert_eq!(row.lifecycle, Lifecycle::Live as i32);
     assert_eq!(
@@ -751,7 +765,10 @@ async fn delete_aborts_first_and_its_children_here_follow() {
     {
         let mut row = AgentRow::new(remote.clone(), wire::Kind::Codex, "/");
         row.parent = Some(key(&runtime, parent));
-        runtime.store().await.put_agent(&row).unwrap();
+        runtime
+            .write_store_beneath(move |store| store.put_agent(&row).unwrap())
+            .await
+            .unwrap();
     }
     for id in [parent, child] {
         until("the turn to start", || working(&runtime, id))
@@ -800,7 +817,10 @@ async fn delete_aborts_first_and_its_children_here_follow() {
         );
     }
     assert!(
-        runtime.store().await.agent(&remote).unwrap().is_some(),
+        runtime
+            .read_store(move |store| store.agent(&remote).unwrap().is_some())
+            .await
+            .unwrap(),
         "another host's child is its own host's to follow"
     );
     assert_eq!(runtime.draft(bystander.as_bytes()).await.text, "unsent");
@@ -871,7 +891,8 @@ async fn a_spawn_for_an_exited_parent_is_refused() {
 /// outlives the stop: the create checks the parent and writes the child's
 /// row under one hold of the store, so either the parent's exit is already
 /// there and the create is refused, or the child's row is, and the exit
-/// stops it. Holding the store lines both up behind it every run.
+/// stops it. Holding the core thread in a read lines both up behind it
+/// every run.
 #[tokio::test]
 async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
     let install = Install::new();
@@ -891,7 +912,11 @@ async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
         .unwrap();
 
     let (stopped, spawned) = {
-        let store = runtime.store().await;
+        // The read waits on `release`, so the core steps nothing until both
+        // are queued behind it.
+        let (release, gate) = std::sync::mpsc::channel::<()>();
+        let mut hold = std::pin::pin!(runtime.read_store(move |_| gate.recv().is_ok()));
+        assert!(poll_once(&mut hold).await.is_pending());
         let mut stop = std::pin::pin!(runtime.stop(parent));
         let early_stop = poll_once(&mut stop).await;
         let mut spawn = std::pin::pin!(runtime.spawn(
@@ -899,7 +924,8 @@ async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
             Some(parent)
         ));
         let early_spawn = poll_once(&mut spawn).await;
-        drop(store);
+        release.send(()).unwrap();
+        assert!(hold.await.unwrap());
         tokio::join!(
             async move {
                 match early_stop {
@@ -967,19 +993,13 @@ async fn a_delete_whose_caller_goes_away_still_finishes() {
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
 
     {
-        // Polling hands the delete to the profile's core; holding the
-        // store then keeps the core from stepping it, and the delete's
-        // caller goes away before it can. The core takes the store for
-        // each input it steps, so the delete is polled until the store can
-        // be had.
+        // A read waiting on `release` holds the profile's core thread;
+        // polling then hands the delete to the core behind it, and the
+        // delete's caller goes away before the core can step it.
+        let (release, gate) = std::sync::mpsc::channel::<()>();
+        let mut hold = Box::pin(runtime.read_store(move |_| gate.recv().is_ok()));
+        assert!(poll_once(&mut hold).await.is_pending());
         let mut delete = Box::pin(runtime.delete(parent));
-        let store = loop {
-            assert!(poll_once(&mut delete).await.is_pending());
-            if let Ok(store) = tokio::time::timeout(Duration::ZERO, runtime.store()).await {
-                break store;
-            }
-            tokio::task::yield_now().await;
-        };
         for _ in 0..8 {
             assert!(
                 poll_once(&mut delete).await.is_pending(),
@@ -988,7 +1008,8 @@ async fn a_delete_whose_caller_goes_away_still_finishes() {
             tokio::task::yield_now().await;
         }
         drop(delete);
-        drop(store);
+        release.send(()).unwrap();
+        assert!(hold.await.unwrap());
     }
 
     let removed = tokio::time::timeout(PATIENCE, async {
@@ -1096,7 +1117,10 @@ async fn a_create_without_a_kind_is_invalid() {
         wire::ErrorCode::InvalidArgument as i32
     );
     assert!(
-        runtime.store().await.agents().unwrap().is_empty(),
+        runtime
+            .read_store(|store| store.agents().unwrap().is_empty())
+            .await
+            .unwrap(),
         "no agent was made"
     );
     drop(runtime);
@@ -1206,8 +1230,21 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
     assert!(runtime.hello(stays).is_some());
     assert!(runtime.live().contains(&stays));
 
-    let store = runtime.store().await;
-    let row = store.agent(&key(&runtime, leaves)).unwrap().unwrap();
+    let leaves_key = key(&runtime, leaves);
+    let (row, said, marker) = runtime
+        .read_store(move |store| {
+            (
+                store.agent(&leaves_key).unwrap().unwrap(),
+                store
+                    .last_n(&leaves_key, 50)
+                    .unwrap()
+                    .iter()
+                    .any(|item| item.text.contains("done while away")),
+                store.cut(&leaves_key, 1).unwrap().marker,
+            )
+        })
+        .await
+        .unwrap();
     assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
     // Its journal says why it ended, though no daemon saw it go.
     assert_eq!(row.exit_cause, ExitCause::ProviderExited as i32);
@@ -1217,18 +1254,8 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
         journal_end(&leaves_dir),
         "the journal written while the daemon was away is ingested"
     );
-    assert!(
-        store
-            .last_n(&key(&runtime, leaves), 50)
-            .unwrap()
-            .iter()
-            .any(|item| item.text.contains("done while away"))
-    );
-    assert_eq!(
-        store.cut(&key(&runtime, leaves), 1).unwrap().marker,
-        Some(Marker::CaughtUp)
-    );
-    drop(store);
+    assert!(said);
+    assert_eq!(marker, Some(Marker::CaughtUp));
 
     // The adopted agent is the registry's like any other: it stops.
     let stopped = runtime.stop(stays).await.unwrap();
@@ -2094,7 +2121,11 @@ async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
         );
     }
     until("the snapshot to hold the new settings", || async {
-        let cut = runtime.store().await.cut(&key(&runtime, id), 0).unwrap();
+        let key = key(&runtime, id);
+        let cut = runtime
+            .read_store(move |store| store.cut(&key, 0).unwrap())
+            .await
+            .unwrap();
         let body = cut
             .snapshot
             .map(|snapshot| wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap())

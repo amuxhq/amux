@@ -300,7 +300,12 @@ async fn current_catalogue_is_pinned() {
     read(&on_laptop, &agent, &attachment.hash).await;
     assert!(is_file(&pair.kept(&agent, &attachment.hash)));
 
-    let (_, removed) = pair.laptop_runtime.sweep_replica_retention().await.unwrap();
+    let removed = pair
+        .laptop_runtime
+        .sweep_retention()
+        .await
+        .unwrap()
+        .replica_blobs;
     assert!(
         is_file(&pair.kept(&agent, &first.0)),
         "the named catalogue survives a sweep over budget"
@@ -314,7 +319,7 @@ async fn current_catalogue_is_pinned() {
     agent.nudge().await;
     pair.until_named("the second catalogue", &second.0).await;
     read(&on_laptop, &agent, &second.0).await;
-    pair.laptop_runtime.sweep_replica_retention().await.unwrap();
+    pair.laptop_runtime.sweep_retention().await.unwrap();
     assert!(
         is_file(&pair.kept(&agent, &second.0)),
         "the new one is pinned"

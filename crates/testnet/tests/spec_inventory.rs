@@ -290,7 +290,12 @@ async fn a_replica_its_origin_no_longer_lists_is_dropped_and_its_chats_close() {
         || {
             let runtime = net.runtime("laptop").unwrap();
             let key = quiet.key();
-            async move { runtime.store().await.agent(&key).unwrap().is_some() }
+            async move {
+                runtime
+                    .read_store(move |store| store.agent(&key).unwrap().is_some())
+                    .await
+                    .unwrap()
+            }
         },
     )
     .await
@@ -383,11 +388,11 @@ async fn a_generation_change_resets_one_hosts_replicas_and_nothing_else() {
     }
     let other_rows = {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        store
-            .cut(&net.agent("other").unwrap().key(), u32::MAX)
+        let key = net.agent("other").unwrap().key();
+        runtime
+            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+            .await
             .unwrap()
-            .held
     };
     let generation = net.generation("desk").unwrap();
     let late = net.agent("late").unwrap().clone();
@@ -427,25 +432,22 @@ async fn a_generation_change_resets_one_hosts_replicas_and_nothing_else() {
     assert_eq!(
         net.runtime("laptop")
             .unwrap()
-            .store()
+            .read_store(move |store| store.host_generation(desk.as_bytes()).unwrap())
             .await
-            .host_generation(desk.as_bytes())
             .unwrap(),
         Some(generation + 1)
     );
 
-    let runtime = net.runtime("laptop").unwrap();
-    let store = runtime.store().await;
+    let key = net.agent("other").unwrap().key();
     assert_eq!(
-        store
-            .cut(&net.agent("other").unwrap().key(), u32::MAX)
+        net.runtime("laptop")
             .unwrap()
-            .held,
+            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+            .await
+            .unwrap(),
         other_rows,
         "another host's replica is untouched"
     );
-    drop(store);
-    drop(runtime);
     let other = marks(other_chat.events());
     assert!(
         !other
@@ -496,14 +498,13 @@ async fn an_untrusted_host_leaves_the_set_with_its_replicas() {
         )
         .await
         .unwrap();
+    let key = worker.key();
     assert!(
         net.runtime("laptop")
             .unwrap()
-            .store()
+            .read_store(move |store| store.agent(&key).unwrap().is_none())
             .await
-            .agent(&worker.key())
             .unwrap()
-            .is_none()
     );
     net.shutdown().await.unwrap();
 }

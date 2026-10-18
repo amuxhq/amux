@@ -100,6 +100,8 @@ pub enum DumpError {
     Write(#[from] io::Error),
     #[error("the store: {0}")]
     Store(#[from] store::StoreError),
+    #[error(transparent)]
+    Stopped(#[from] crate::runtime::Stopped),
 }
 
 impl DumpError {
@@ -107,6 +109,7 @@ impl DumpError {
         let code = match self {
             Self::NoAgent(_) => wire::ErrorCode::NotFound,
             Self::Write(_) | Self::Store(_) => wire::ErrorCode::Internal,
+            Self::Stopped(_) => wire::ErrorCode::Unavailable,
         };
         wire::Error {
             code: code as i32,
@@ -132,10 +135,8 @@ impl ProfileRuntime {
     /// log, which covers other profiles too, and is not kept here.
     pub async fn dump_for_peer(&self, request: DumpRequest) -> Result<DumpPart, DumpError> {
         let rows = self
-            .store
-            .lock()
-            .await
-            .agents()?
+            .read_rows(|store| store.agents())
+            .await?
             .into_iter()
             .filter(|row| {
                 row.agent.host == self.host().as_bytes()
@@ -250,19 +251,22 @@ impl ProfileRuntime {
 
     /// The rows a dump covers, own and replica.
     async fn dump_rows(&self, ids: &[Vec<u8>]) -> Result<Vec<AgentRow>, DumpError> {
-        let store = self.store.lock().await;
-        if ids.is_empty() {
-            return Ok(store.agents()?);
-        }
-        ids.iter()
-            .map(|id| {
-                store.agent_by_id(id)?.ok_or_else(|| {
-                    DumpError::NoAgent(
-                        Uuid::from_slice(id).map_or_else(|_| hex(id), |id| id.to_string()),
-                    )
+        let ids = ids.to_vec();
+        self.read_store(move |store| {
+            if ids.is_empty() {
+                return Ok(store.agents()?);
+            }
+            ids.iter()
+                .map(|id| {
+                    store.agent_by_id(id)?.ok_or_else(|| {
+                        DumpError::NoAgent(
+                            Uuid::from_slice(id).map_or_else(|_| hex(id), |id| id.to_string()),
+                        )
+                    })
                 })
-            })
-            .collect()
+                .collect()
+        })
+        .await?
     }
 
     /// One agent's directory in the bundle. Returns its manifest entry and
@@ -287,7 +291,10 @@ impl ProfileRuntime {
             out.join("row.pb"),
             redacted(kind, RedactTarget::Agent(to_wire(row).encode_to_vec())),
         )?;
-        let cut = self.store.lock().await.cut(&row.agent, DUMP_ROWS)?;
+        let key = row.agent.clone();
+        let cut = self
+            .read_rows(move |store| store.cut(&key, DUMP_ROWS))
+            .await?;
         let slice = Step {
             items: cut.held,
             snapshot: cut.snapshot,

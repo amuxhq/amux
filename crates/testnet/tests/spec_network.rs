@@ -2128,11 +2128,9 @@ async fn accounts_sign_in_out_pause_and_go_one_profile_at_a_time() {
     let listed = net
         .runtime("desk")
         .unwrap()
-        .store()
+        .read_store(|store| store.agents().unwrap().len())
         .await
-        .agents()
-        .unwrap()
-        .len();
+        .unwrap();
     assert_eq!(listed, 1, "the worker is still the desk's");
     // The signed-out profile keeps its place for the account, across a
     // restart: a login naming no profile lands on it again.
@@ -2885,12 +2883,12 @@ async fn a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once(
     until("the desk to hold w's row", || {
         let (net, key) = (&net, &key);
         async move {
+            let key = key.clone();
             let held = net
                 .runtime("desk")
                 .unwrap()
-                .store()
+                .read_store(move |store| store.agent(&key).unwrap())
                 .await
-                .agent(key)
                 .unwrap();
             held.map(|_| ()).ok_or_else(|| "not yet".to_owned())
         }
@@ -3077,12 +3075,12 @@ async fn a_host_no_call_can_reach_reads_offline_until_one_can() {
         until("the desk to hold w's row", || {
             let (net, key) = (&net, &key);
             async move {
+                let key = key.clone();
                 let held = net
                     .runtime("desk")
                     .unwrap()
-                    .store()
+                    .read_store(move |store| store.agent(&key).unwrap())
                     .await
-                    .agent(key)
                     .unwrap();
                 held.map(|_| ()).ok_or_else(|| "not yet".to_owned())
             }

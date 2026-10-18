@@ -200,7 +200,11 @@ impl SyntheticAgent {
 
     /// Writes the row through a running daemon's store.
     pub async fn register(&self, install: &Install, runtime: &ProfileRuntime) {
-        runtime.store().await.put_agent(&self.row(install)).unwrap();
+        let row = self.row(install);
+        runtime
+            .write_store_beneath(move |store| store.put_agent(&row).unwrap())
+            .await
+            .unwrap();
     }
 
     pub fn append(&mut self, step: &Step) -> u64 {

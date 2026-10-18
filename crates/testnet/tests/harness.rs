@@ -323,8 +323,11 @@ async fn a_fence_holds_a_host_to_what_its_own_cursors_report() {
     net.fence("laptop", "worker", first).await.unwrap();
     let held = {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        store.cut(&key, u32::MAX).unwrap().held
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+            .await
+            .unwrap()
     };
     assert!(held.iter().any(|item| item.text.contains("one")));
     assert_eq!(
@@ -356,8 +359,11 @@ async fn a_fence_holds_a_host_to_what_its_own_cursors_report() {
     net.fence("laptop", "worker", second).await.unwrap();
     let held = {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        store.cut(&key, u32::MAX).unwrap().held
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+            .await
+            .unwrap()
     };
     assert!(held.iter().any(|item| item.text.contains("two")));
     net.shutdown().await.unwrap();
@@ -491,12 +497,12 @@ async fn a_rewound_host_loses_what_the_drive_never_got_under_a_new_generation() 
     // drive.
     testnet::until("the journal read to its end", || async {
         let end = net.journal_end("worker").unwrap();
+        let key = key.clone();
         let cursor = net
             .runtime("desk")
             .unwrap()
-            .store()
+            .read_store(move |store| store.cursor(&key).unwrap())
             .await
-            .cursor(&key)
             .unwrap();
         (cursor == end)
             .then_some(())
@@ -592,8 +598,11 @@ async fn the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_ho
     let key = worker.key();
     let (origin, snapshot) = {
         let runtime = net.runtime("desk").unwrap();
-        let store = runtime.store().await;
-        let cut = store.cut(&key, 50).unwrap();
+        let key = key.clone();
+        let cut = runtime
+            .read_store(move |store| store.cut(&key, 50).unwrap())
+            .await
+            .unwrap();
         (cut.held, cut.snapshot.unwrap_or_default())
     };
     assert!(origin.len() >= 3, "{origin:#?}");
@@ -601,19 +610,23 @@ async fn the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_ho
     holed.remove(1);
     {
         let runtime = net.runtime("attic").unwrap();
-        let mut store = runtime.store().await;
-        store
-            .put_agent(&AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/"))
-            .unwrap();
-        store
-            .absorb(
-                &key,
-                Absorb::Reset {
-                    tail: holed,
-                    snapshot,
-                    generation: 1,
-                },
-            )
+        runtime
+            .write_store_beneath(move |store| {
+                store
+                    .put_agent(&AgentRow::new(key.clone(), wire::Kind::ClaudeSdk, "/"))
+                    .unwrap();
+                store
+                    .absorb(
+                        &key,
+                        Absorb::Reset {
+                            tail: holed,
+                            snapshot,
+                            generation: 1,
+                        },
+                    )
+                    .unwrap();
+            })
+            .await
             .unwrap();
     }
     let broken = net

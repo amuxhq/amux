@@ -1608,22 +1608,13 @@ mod tests {
         child.parent = Some(parent.clone());
         rig.daemon.store.put_agent(&child).unwrap();
 
-        // Told the far parent is gone before its host's listing caught up,
-        // as only a shell handing over another host's removal could.
-        let out = rig.step(Input::FromShell(crate::FromShell::Removed {
-            agent: parent,
-            event: Default::default(),
-        }));
-        let violations: Vec<&str> = out
-            .iter()
-            .filter_map(|output| match output {
-                Output::Dump {
-                    reason: crate::DumpReason::Violation(violation),
-                } => Some(violation.invariant),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(violations, vec![crate::DELETED_UNDER_A_STALE_LISTING]);
+        // Removed for good before its host's listing caught up, as no input
+        // removes another host's agent: the boundary's check names it.
+        rig.daemon.touched = crate::Touched::default();
+        rig.daemon
+            .removed_for_good(&parent, wire::RemovalReason::Retention, &mut Vec::new());
+        let violation = rig.daemon.check_step_invariants().unwrap_err();
+        assert_eq!(violation.invariant, crate::DELETED_UNDER_A_STALE_LISTING);
     }
 
     #[test]

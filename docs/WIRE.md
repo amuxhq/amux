@@ -193,11 +193,10 @@ An agent whose interpreter has not written a snapshot yet opens with a
 `Snapshot` holding only the kind tag and an empty body, which every per-kind
 decoder renders as "starting, nothing known yet".
 
-The runtime holds its store lock from joining the agent's broadcast through
-the cut (`ProfileRuntime::open_subscription` in
-[`crates/node/src/serve.rs`](../crates/node/src/serve.rs)). Commits publish
-while they hold the same lock, so every record is either in the opening or
-arrives live, and the marker describes the same point as the rows beside it.
+The profile's core reads the cut and registers the stream in one step
+(`daemon_core::serve`), and every commit is a step of the same core that
+publishes as it commits, so every record is either in the opening or arrives
+live, and the marker describes the same point as the rows beside it.
 A client still absorbs by key and ignores an equal or older revision, so an
 overlap would be harmless.
 

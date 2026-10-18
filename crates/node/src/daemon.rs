@@ -142,6 +142,15 @@ impl Installation {
             profiles::host_id(&dir).map_err(|error| StartError::Profile { profile, error })?;
         let store = store::Sqlite::open(&dir.join(STORE), host.as_bytes().to_vec())
             .map_err(|error| StartError::Store { profile, error })?;
+        // Every write is the core's, whose checkpoint job holds its commits
+        // while it runs; that job and the clean shutdown's flush are the
+        // only checkpoints.
+        store
+            .leave_checkpoints_to_owner()
+            .map_err(|error| StartError::Store {
+                profile,
+                error: error.into(),
+            })?;
         Ok(ProfileRuntime::open(Profile {
             profile,
             host,
@@ -604,9 +613,9 @@ impl Daemon {
         for hosted in hosted.values() {
             hosted
                 .runtime
-                .store()
+                .read_store(|store| store.flush_to_drive())
                 .await
-                .flush_to_drive()
+                .map_err(io::Error::other)?
                 .map_err(io::Error::other)?;
         }
         self.generation

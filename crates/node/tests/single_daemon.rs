@@ -50,12 +50,18 @@ struct Held {
 }
 
 async fn held(runtime: &ProfileRuntime, agent: &SyntheticAgent, install: &Install) -> Held {
-    let store = runtime.store().await;
     let key = agent.key(install);
-    let row = store.agent(&key).unwrap().expect("the row");
-    let items = store
-        .page(&key, None, 1_000)
-        .unwrap()
+    let (row, page) = runtime
+        .read_store(move |store| {
+            (
+                store.agent(&key).unwrap(),
+                store.page(&key, None, 1_000).unwrap(),
+            )
+        })
+        .await
+        .unwrap();
+    let row = row.expect("the row");
+    let items = page
         .items
         .into_iter()
         .map(|item| (item.key.clone(), (item.order, item.revision, item.text)))
@@ -266,10 +272,9 @@ async fn cut_run(cut: Cut, at: usize) -> Held {
                 _ => CURSOR_CUT,
             };
             runtime
-                .store()
+                .write_store_beneath(move |store| store.connection().execute_batch(trigger))
                 .await
-                .connection()
-                .execute_batch(trigger)
+                .unwrap()
                 .unwrap();
             assert!(
                 runtime.ingest(agent.id).await.is_err(),
@@ -288,10 +293,11 @@ async fn cut_run(cut: Cut, at: usize) -> Held {
                 log(&live)
             );
             runtime
-                .store()
+                .write_store_beneath(|store| {
+                    store.connection().execute_batch("DROP TRIGGER temp.cut;")
+                })
                 .await
-                .connection()
-                .execute_batch("DROP TRIGGER temp.cut;")
+                .unwrap()
                 .unwrap();
             runtime.ingest(agent.id).await.unwrap();
             at + 1
@@ -553,13 +559,11 @@ async fn each_record_is_broadcast_once_after_its_commit_and_caught_up_once_per_h
     // The process dies after its marker: nothing more to announce.
     agent.die().await;
     until("the row says exited", || async {
+        let key = agent.key(&install);
         let lifecycle = runtime
-            .store()
+            .read_store(move |store| store.agent(&key).unwrap().unwrap().lifecycle)
             .await
-            .agent(&agent.key(&install))
-            .unwrap()
-            .unwrap()
-            .lifecycle;
+            .unwrap();
         (lifecycle == Lifecycle::Exited as i32)
             .then_some(())
             .ok_or_else(|| format!("lifecycle {lifecycle}"))
@@ -851,10 +855,9 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
         agent.append(step);
     }
     runtime
-        .store()
+        .write_store_beneath(|store| store.connection().execute_batch(CURSOR_CUT))
         .await
-        .connection()
-        .execute_batch(CURSOR_CUT)
+        .unwrap()
         .unwrap();
     assert!(runtime.ingest(agent.id).await.is_err());
     runtime.checkpoint().await.unwrap();
@@ -864,10 +867,9 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
         "no segment goes below a cursor that was never committed"
     );
     runtime
-        .store()
+        .write_store_beneath(|store| store.connection().execute_batch("DROP TRIGGER temp.cut;"))
         .await
-        .connection()
-        .execute_batch("DROP TRIGGER temp.cut;")
+        .unwrap()
         .unwrap();
     runtime.ingest(agent.id).await.unwrap();
 
@@ -891,9 +893,12 @@ async fn segments_are_deleted_only_below_a_cursor_on_the_drive() {
 /// The store file as the drive holds it: what was checkpointed, without
 /// what the WAL holds beyond that.
 async fn checkpointed_store(runtime: &ProfileRuntime, install: &Install) -> Vec<u8> {
-    // Held so no checkpoint runs while the file is read.
-    let _store = runtime.store().await;
-    std::fs::read(install.profile_dir().join(node::STORE)).unwrap()
+    // Read on the core thread, so no commit lands while the file is read.
+    let path = install.profile_dir().join(node::STORE);
+    runtime
+        .read_store(move |_| std::fs::read(path).unwrap())
+        .await
+        .unwrap()
 }
 
 /// The WAL truncated to its last checkpoint: the store file as it was
@@ -1107,13 +1112,14 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
         agent.append(step);
     }
     runtime
-        .store()
+        .write_store_beneath(|store| {
+            store.connection().execute_batch(
+                "CREATE TEMP TRIGGER cut BEFORE INSERT ON items WHEN NEW.key = 'c' \
+                 BEGIN SELECT RAISE(ABORT, 'cut'); END;",
+            )
+        })
         .await
-        .connection()
-        .execute_batch(
-            "CREATE TEMP TRIGGER cut BEFORE INSERT ON items WHEN NEW.key = 'c' \
-             BEGIN SELECT RAISE(ABORT, 'cut'); END;",
-        )
+        .unwrap()
         .unwrap();
     assert!(runtime.ingest(agent.id).await.is_err());
     assert_eq!(
@@ -1130,10 +1136,9 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
     );
 
     runtime
-        .store()
+        .write_store_beneath(|store| store.connection().execute_batch("DROP TRIGGER temp.cut;"))
         .await
-        .connection()
-        .execute_batch("DROP TRIGGER temp.cut;")
+        .unwrap()
         .unwrap();
     runtime.ingest(agent.id).await.unwrap();
     read_until(&mut subscription, &mut live, "the batch", |seen| {
@@ -1176,9 +1181,8 @@ async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() 
     );
     // The parent has exited too, so the outbox keeps what the sweep wrote.
     let deliveries: Vec<_> = runtime
-        .store()
+        .read_store(|store| store.deliveries().unwrap())
         .await
-        .deliveries()
         .unwrap()
         .into_iter()
         .map(|row| row.end)
@@ -1498,15 +1502,27 @@ impl Named {
 }
 
 async fn table(runtime: &ProfileRuntime, named: &Named) -> Vec<String> {
-    let store = runtime.store().await;
-    let mut rows = store.agents().unwrap();
-    rows.sort_by_key(|row| named.of(&row.agent).to_owned());
+    let (mut rows, pool_bytes) = runtime
+        .read_store(|store| {
+            let rows: Vec<_> = store
+                .agents()
+                .unwrap()
+                .into_iter()
+                .map(|row| {
+                    let held = store.page(&row.agent, None, 10_000).unwrap().items.len();
+                    (row, held)
+                })
+                .collect();
+            (rows, store.pool_bytes(true).unwrap())
+        })
+        .await
+        .unwrap();
+    rows.sort_by_key(|(row, _)| named.of(&row.agent).to_owned());
     let mut lines = vec![format!(
         "  {:<9} {:<8} {:<9} {:>5} {:>9}",
         "agent", "state", "parent", "rows", "activity"
     )];
-    for row in rows {
-        let held = store.page(&row.agent, None, 10_000).unwrap().items.len();
+    for (row, held) in rows {
         let state = if row.lifecycle == Lifecycle::Live as i32 {
             "live"
         } else {
@@ -1526,10 +1542,7 @@ async fn table(runtime: &ProfileRuntime, named: &Named) -> Vec<String> {
             activity
         ));
     }
-    lines.push(format!(
-        "  pool: {} KiB of own rows",
-        store.pool_bytes(true).unwrap() / 1024
-    ));
+    lines.push(format!("  pool: {} KiB of own rows", pool_bytes / 1024));
     lines
 }
 
@@ -1604,7 +1617,10 @@ async fn retention_sweep() {
         .unwrap();
     }
     until("the parent to hear from both", || async {
-        let rows = runtime.store().await.deliveries().unwrap().len();
+        let rows = runtime
+            .read_store(|store| store.deliveries().unwrap().len())
+            .await
+            .unwrap();
         (rows == 0)
             .then_some(())
             .ok_or_else(|| format!("{rows} delivery rows"))
@@ -1717,23 +1733,17 @@ async fn retention_sweep() {
             "a live parent's child stays"
         );
     }
-    let big_row = runtime
-        .store()
+    let big_key = big.key(&install);
+    let (big_row, big_held) = runtime
+        .read_store(move |store| {
+            (
+                store.agent(&big_key).unwrap().unwrap(),
+                store.page(&big_key, None, 1_000).unwrap().items.len(),
+            )
+        })
         .await
-        .agent(&big.key(&install))
-        .unwrap()
         .unwrap();
-    assert_eq!(
-        runtime
-            .store()
-            .await
-            .page(&big.key(&install), None, 1_000)
-            .unwrap()
-            .items
-            .len(),
-        K as usize,
-        "never below the newest K rows"
-    );
+    assert_eq!(big_held, K as usize, "never below the newest K rows");
     assert!(big_row.exhausted && big_row.complete_from_order.is_some());
 
     // The parent continues a kept child: its message resumes it.
@@ -1891,5 +1901,22 @@ async fn every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint() 
 
     write_and_ingest(&runtime, &mut agent, &steps()[2..3]).await;
     assert_eq!(nudges(&saved().inputs), 1);
+    crash(daemon, runtime).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_store_leaves_every_checkpoint_to_the_core() {
+    let install = Install::new();
+    let (daemon, runtime) = start(&install, "boot-1", quiet_launch()).await;
+    let pages: i64 = runtime
+        .read_store(|store| {
+            store
+                .connection()
+                .pragma_query_value(None, "wal_autocheckpoint", |row| row.get(0))
+                .unwrap()
+        })
+        .await
+        .unwrap();
+    assert_eq!(pages, 0, "SQLite checkpoints nothing on its own");
     crash(daemon, runtime).await;
 }

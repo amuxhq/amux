@@ -378,7 +378,7 @@ async fn pristine(
     runtime: &crate::runtime::ProfileRuntime,
     edge: &super::Edge,
 ) -> Result<bool, store::StoreError> {
-    Ok(edge.has_no_peers() && runtime.store().await.agents()?.is_empty())
+    Ok(edge.has_no_peers() && runtime.read_rows(|store| store.agents()).await?.is_empty())
 }
 
 #[cfg(test)]

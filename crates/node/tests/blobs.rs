@@ -148,9 +148,12 @@ async fn get_blob_reads_a_replica_file_and_put_blob_refuses_a_replica() {
     let (peer, agent) = (peer_edge.host_id(), Uuid::new_v4());
     let key = AgentKey::new(peer.as_bytes().to_vec(), agent.as_bytes().to_vec());
     runtime
-        .store()
+        .write_store_beneath(move |store| {
+            store
+                .put_agent(&AgentRow::new(key, KIND, "/elsewhere"))
+                .unwrap()
+        })
         .await
-        .put_agent(&AgentRow::new(key, KIND, "/elsewhere"))
         .unwrap();
 
     let bytes = b"fetched from the peer".to_vec();

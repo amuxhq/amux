@@ -133,10 +133,10 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     let live_key =
         store::AgentKey::new(runtime.host().as_bytes().to_vec(), live.as_bytes().to_vec());
     until("the later input's reflection", || async {
+        let live_key = live_key.clone();
         runtime
-            .store()
+            .read_store(move |store| store.item_by_input(&live_key, b"later").unwrap())
             .await
-            .item_by_input(&live_key, b"later")
             .unwrap()
             .map(|_| ())
             .ok_or("no row carries it")

@@ -2507,15 +2507,21 @@ impl Net {
     pub async fn checkpoint_host(&mut self, host: &str) -> Result<Ack, NetError> {
         self.in_process(host, "a checkpoint of what reached the drive")?;
         let runtime = self.runtime(host)?;
-        let bytes = {
-            // Held so nothing commits between the flush and the read.
-            let store = runtime.store().await;
-            store.flush_to_drive().map_err(|error| NetError::Host {
+        // Read on the core thread, so nothing commits between the flush and
+        // the read.
+        let path = runtime.dir().join(node::STORE);
+        let bytes = runtime
+            .read_store(move |store| {
+                store.flush_to_drive().map_err(|error| error.to_string())?;
+                std::fs::read(path).map_err(|error| error.to_string())
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .flatten()
+            .map_err(|error| NetError::Host {
                 host: host.to_owned(),
-                error: error.to_string(),
+                error,
             })?;
-            std::fs::read(runtime.dir().join(node::STORE))?
-        };
         drop(runtime);
         self.hosts.get_mut(host).expect("the host").checkpoint = Some(bytes);
         Ok(self.ack(format!("{host} checkpointed")))
@@ -2786,22 +2792,20 @@ impl Net {
         )?;
         let agent = self.agent(agent)?.clone();
         let key = agent.key();
-        let replica = {
-            let runtime = self.runtime(host)?;
-            let store = runtime.store().await;
-            invariant::block(&store, &key).map_err(|error| NetError::Host {
-                host: host.to_owned(),
-                error,
-            })?
+        let block = |host: String| {
+            let key = key.clone();
+            async move {
+                let runtime = self.runtime(&host)?;
+                runtime
+                    .read_store(move |store| invariant::block(store, &key))
+                    .await
+                    .map_err(|error| error.to_string())
+                    .flatten()
+                    .map_err(|error| NetError::Host { host, error })
+            }
         };
-        let origin = {
-            let runtime = self.runtime(&agent.host)?;
-            let store = runtime.store().await;
-            invariant::block(&store, &key).map_err(|error| NetError::Host {
-                host: agent.host.clone(),
-                error,
-            })?
-        };
+        let replica = block(host.to_owned()).await?;
+        let origin = block(agent.host.clone()).await?;
         invariant::check(&replica, &origin)?;
         Ok(())
     }
@@ -2821,8 +2825,12 @@ impl Net {
         host: &str,
         what: &str,
         patience: Duration,
-        mut probe: impl FnMut(&store::Sqlite) -> Result<T, String>,
-    ) -> Result<T, NetError> {
+        probe: impl Fn(&store::Sqlite) -> Result<T, String> + Send + Sync + 'static,
+    ) -> Result<T, NetError>
+    where
+        T: Send + 'static,
+    {
+        let probe = std::sync::Arc::new(probe);
         let runtime = self.runtime(host)?;
         let mut writes = runtime.committed();
         let deadline = tokio::time::Instant::now() + patience;
@@ -2830,11 +2838,18 @@ impl Net {
             // Marked seen before the read, so a write landing between the
             // read and the wait is a change the wait returns on.
             writes.borrow_and_update();
-            let seen = match tokio::time::timeout_at(deadline, runtime.store()).await {
-                Ok(store) => match probe(&store) {
-                    Ok(found) => return Ok(found),
-                    Err(seen) => seen,
-                },
+            let probe = probe.clone();
+            let read = runtime.read_store(move |store| probe(store));
+            let seen = match tokio::time::timeout_at(deadline, read).await {
+                Ok(Ok(Ok(found))) => return Ok(found),
+                Ok(Ok(Err(seen))) => seen,
+                Ok(Err(stopped)) => {
+                    return Err(Stuck::Closed {
+                        what: what.to_owned(),
+                        seen: stopped.to_string(),
+                    }
+                    .into());
+                }
                 Err(_) => {
                     return Err(Stuck::Hung {
                         what: what.to_owned(),
@@ -2992,7 +3007,7 @@ impl Net {
                 })
                 .await;
         }
-        self.on_write(host, &what, patience, |store| {
+        self.on_write(host, &what, patience, move |store| {
             let newest = store
                 .last_n(&key, 1)
                 .map_err(|error| error.to_string())?
@@ -3031,7 +3046,7 @@ impl Net {
                 })
                 .await;
         }
-        self.on_write(&at.host, &what, patience, |store| {
+        self.on_write(&at.host, &what, patience, move |store| {
             let mut ends: Vec<u64> = store
                 .cut(&key, u32::MAX)
                 .map_err(|error| error.to_string())?
@@ -3083,9 +3098,10 @@ impl Net {
                 })
                 .await;
         }
-        self.on_write(&at.host, &what, patience, |store| {
+        let input_id = input_id.to_vec();
+        self.on_write(&at.host, &what, patience, move |store| {
             store
-                .item_by_input(&key, input_id)
+                .item_by_input(&key, &input_id)
                 .map_err(|error| error.to_string())?
                 .map(|item| item.order)
                 .ok_or_else(|| "no row carries it".to_owned())
@@ -3104,25 +3120,32 @@ impl Net {
         observe::until(&what, || async {
             let newest = {
                 let runtime = self.runtime(&at.host).map_err(|error| error.to_string())?;
-                let store = runtime.store().await;
-                store
-                    .agent(&key)
+                let key = key.clone();
+                runtime
+                    .read_store(move |store| store.agent(&key))
+                    .await
+                    .map_err(|error| error.to_string())?
                     .map_err(|error| error.to_string())?
                     .map(|row| row.next_revision - 1)
                     .ok_or_else(|| "no origin row".to_owned())?
             };
             let (cursor, marker) = {
                 let runtime = self.runtime(host).map_err(|error| error.to_string())?;
-                let store = runtime.store().await;
-                let row = store
-                    .agent(&key)
-                    .map_err(|error| error.to_string())?
-                    .ok_or_else(|| format!("no replica row; origin newest {newest}"))?;
-                let marker = store
-                    .cut(&key, 0)
-                    .map_err(|error| error.to_string())?
-                    .marker;
-                (row.source_cursor, marker)
+                let key = key.clone();
+                runtime
+                    .read_store(move |store| {
+                        let row = store
+                            .agent(&key)
+                            .map_err(|error| error.to_string())?
+                            .ok_or_else(|| format!("no replica row; origin newest {newest}"))?;
+                        let marker = store
+                            .cut(&key, 0)
+                            .map_err(|error| error.to_string())?
+                            .marker;
+                        Ok::<_, String>((row.source_cursor, marker))
+                    })
+                    .await
+                    .map_err(|error| error.to_string())??
             };
             if cursor != newest || marker != Some(Marker::CaughtUp) {
                 return Err(format!(

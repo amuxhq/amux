@@ -80,9 +80,8 @@ impl Rig {
 
     async fn rows(&self) -> Vec<(u64, i64)> {
         self.runtime
-            .store()
+            .read_store(|store| store.notifications().unwrap())
             .await
-            .notifications()
             .unwrap()
             .into_iter()
             .map(|row| (row.revision, row.due_at_ms - T0))
@@ -94,14 +93,12 @@ impl Rig {
         agent.nudge().await;
         let revision = agent.journal().offset();
         until("the snapshot to commit", || async {
+            let key = agent.key(&self.install);
             let cursor = self
                 .runtime
-                .store()
+                .read_store(move |store| store.agent(&key).unwrap().unwrap().ingest_cursor)
                 .await
-                .agent(&agent.key(&self.install))
-                .unwrap()
-                .unwrap()
-                .ingest_cursor;
+                .unwrap();
             (cursor == revision)
                 .then_some(())
                 .ok_or_else(|| format!("ingest cursor {cursor} of {revision}"))

@@ -218,8 +218,8 @@ same transaction as the rows it produced.
 
 **The subscription handle** (`Subscription` in
 [`serve.rs`](../crates/node/src/serve.rs)) exists for every open Subscribe
-stream. It holds the opening read, taken under the store lock, and a
-receiver on the agent's broadcast channel. Fan-out keeps one bounded
+stream. It holds the opening read, taken by the core in the step that
+registered the stream, and a receiver on the agent's broadcast channel. Fan-out keeps one bounded
 channel per agent with a subscriber, plus one for the inventory; publishing
 never waits, and a subscriber that falls more than the channel's capacity
 behind is told it lagged and closed, and reads the store again at once: a

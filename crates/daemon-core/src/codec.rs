@@ -157,3 +157,37 @@ pub(crate) mod agent_key {
         ))
     }
 }
+
+/// When clients last used each replica, by agent, in key order so the same
+/// map always reads back as the same line.
+pub(crate) mod last_used {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    pub(crate) fn serialize<S: Serializer>(
+        used: &HashMap<AgentKey, i64>,
+        to: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut rows: Vec<(String, String, i64)> = used
+            .iter()
+            .map(|(key, at)| (hex(&key.host), hex(&key.agent), *at))
+            .collect();
+        rows.sort();
+        rows.serialize(to)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        from: D,
+    ) -> Result<HashMap<AgentKey, i64>, D::Error> {
+        <Vec<(String, String, i64)>>::deserialize(from)?
+            .into_iter()
+            .map(|(host, agent, at)| {
+                Ok((
+                    AgentKey::new(unhex::<D::Error>(&host)?, unhex::<D::Error>(&agent)?),
+                    at,
+                ))
+            })
+            .collect()
+    }
+}

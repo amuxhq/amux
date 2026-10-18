@@ -146,7 +146,11 @@ impl ProfileRuntime {
     /// An own agent's id from request bytes: not found, or on another host.
     async fn own_agent(&self, agent_id: &[u8]) -> Result<AgentId, RelayError> {
         let id = Uuid::from_slice(agent_id).map_err(|_| RelayError::NoAgent)?;
-        match self.store.lock().await.agent_by_id(agent_id)? {
+        let by_id = agent_id.to_vec();
+        match self
+            .read_rows(move |store| store.agent_by_id(&by_id))
+            .await?
+        {
             Some(row) if row.agent.host == self.host().as_bytes() => Ok(id),
             Some(_) => Err(RelayError::OtherHost),
             None => Err(RelayError::NoAgent),
@@ -162,11 +166,10 @@ impl ProfileRuntime {
     ) -> Result<SendInputResponse, RelayError> {
         let input = request.input.clone().ok_or(RelayError::NoInput)?;
         let id = self.own_agent(&request.agent_id).await?;
+        let key = self.key(id);
         let row = self
-            .store
-            .lock()
-            .await
-            .agent(&self.key(id))?
+            .read_rows(move |store| store.agent(&key))
+            .await?
             .ok_or(RelayError::NoAgent)?;
         if row.lifecycle == Lifecycle::Exited as i32 {
             return Ok(rejected(Refusal::Exited));
@@ -337,7 +340,8 @@ impl ProfileRuntime {
             },
             MessageFrom::Agent(caller) => {
                 let caller = Uuid::from_bytes(caller.0);
-                let row = self.store.lock().await.agent(&self.key(caller))?;
+                let key = self.key(caller);
+                let row = self.read_rows(move |store| store.agent(&key)).await?;
                 self.agent_sender(caller, row.as_ref())
             }
             MessageFrom::Peer(_) | MessageFrom::PeerPerson => return Err(RelayError::OtherHost),

@@ -34,6 +34,7 @@ mod notifications;
 pub mod payload;
 mod peers;
 pub mod presence;
+pub mod retention;
 pub mod serve;
 pub mod sources;
 
@@ -52,6 +53,7 @@ pub use io::{
 pub use links::LinkRegistry;
 pub use notifications::Notifications;
 pub use presence::{HostView, Presence, PresenceState, Route, Tried};
+pub use retention::{Retain, Retained};
 pub use serve::Answers;
 pub use sources::{Sources, Standing, from_wire};
 
@@ -169,6 +171,7 @@ impl Daemon {
             Input::ControlClosed { agent, ended } => self.control_closed(agent, ended, out),
             Input::Adopted { agent } => self.adopted(agent, out),
             Input::Exiting { agent } => self.exiting(agent),
+            Input::Retain(retain) => self.retain(retain, out),
             Input::Swept => {
                 self.swept(out);
                 self.lanes_swept(out);
@@ -489,12 +492,11 @@ impl Daemon {
         self.options.agents = agents;
     }
 
-    /// Exchanges the store the core reads and writes with `store`. While
-    /// the profile's shell still writes the store under a lock of its own,
-    /// its driver lends that store to the core for each step and takes it
-    /// back after.
-    pub fn swap_store(&mut self, store: &mut Sqlite) {
-        std::mem::swap(&mut self.store, store);
+    /// The store, for a write beneath the core's own: only a test setting
+    /// up what no input produces writes through it.
+    #[doc(hidden)]
+    pub fn store_beneath(&mut self) -> &mut Sqlite {
+        &mut self.store
     }
 
     /// How long one step may take before it is reported.

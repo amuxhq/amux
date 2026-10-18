@@ -7,9 +7,9 @@
 //! untrusting it removes it, so no reconnect can make a client forget an
 //! agent because its host went quiet. Candidates come and go with
 //! discovery. The set is recomputed on the replication manager's tick and
-//! published as HostEntry and HostRemoved deltas while the store is held,
-//! the lock SubscribeInventory reads the published set under, so an
-//! opening and the deltas after it describe one sequence.
+//! published as HostEntry and HostRemoved deltas on the core thread, where
+//! SubscribeInventory reads the published set, so an opening and the
+//! deltas after it describe one sequence.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -163,7 +163,19 @@ impl ProfileRuntime {
                 return;
             }
         }
-        let store = self.store.lock().await;
+        // On the core thread, between its steps, so the generations read
+        // and the deltas published are one point in its order.
+        let Some(me) = self.me.upgrade() else {
+            return;
+        };
+        let _ = self
+            .read_store(move |store| me.publish_host_set(store, fresh, &own_host))
+            .await;
+    }
+
+    /// Publishes `fresh` as the host set, each trusted host with the
+    /// generation `store` records for it, as deltas from the one published.
+    fn publish_host_set(&self, store: &store::Sqlite, mut fresh: HostSet, own_host: &[u8]) {
         for (host, entry) in fresh.iter_mut() {
             if entry.trust == Trust::Trusted as i32 && *host != own_host {
                 entry.generation = store
@@ -201,8 +213,8 @@ impl ProfileRuntime {
     }
 
     /// Records whether a trusted host's inventory is current on its
-    /// published entry, and publishes it. Called with the store held, by
-    /// the catch-up that made it current or the loss that made it stale,
+    /// published entry, and publishes it. Called on the core thread, by
+    /// the step whose catch-up made it current or whose loss made it stale,
     /// so a client reads the change in the same sequence as the agents it
     /// wrote.
     pub(crate) fn host_current_changed(&self, host: &[u8], current: bool) {
@@ -216,8 +228,8 @@ impl ProfileRuntime {
     }
 
     /// Records a trusted host's new generation on its published entry, and
-    /// publishes it. Called with the store held, by the transaction that
-    /// wrote the generation.
+    /// publishes it. Called on the core thread, by the step that wrote the
+    /// generation.
     pub(crate) fn host_generation_changed(&self, host: &[u8], generation: u64) {
         let mut published = self.hosts.lock().unwrap();
         if let Some(entry) = published.get_mut(host)

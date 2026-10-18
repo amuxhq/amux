@@ -153,16 +153,18 @@ fn heard(agent: &SyntheticAgent, n: usize) -> Result<(), String> {
 }
 
 async fn deliveries(runtime: &ProfileRuntime) -> usize {
-    runtime.store().await.deliveries().unwrap().len()
+    runtime
+        .read_store(|store| store.deliveries().unwrap().len())
+        .await
+        .unwrap()
 }
 
 async fn items_with_input(runtime: &ProfileRuntime, key: &AgentKey) -> Vec<wire::Item> {
+    let key = key.clone();
     runtime
-        .store()
+        .read_store(move |store| store.page(&key, None, 1_000).unwrap().items)
         .await
-        .page(key, None, 1_000)
         .unwrap()
-        .items
         .into_iter()
         .filter(|item| !item.input_id.is_empty())
         .collect()
@@ -277,10 +279,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .await
         .unwrap();
     assert_eq!(sent.envelope_id, b"envelope-1");
+    let key = recipient.key(&install);
     let accepted = runtime
-        .store()
+        .read_store(move |store| store.item_by_input(&key, b"envelope-1").unwrap())
         .await
-        .item_by_input(&recipient.key(&install), b"envelope-1")
         .unwrap();
     assert!(
         accepted.is_some(),
@@ -562,13 +564,12 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
         }
         other => panic!("the parent's message, not {other:?}"),
     }
+    let key = child.key(&install);
     assert!(
         runtime
-            .store()
+            .read_store(move |store| store.item_by_input(&key, b"wrap-up").unwrap().is_some())
             .await
-            .item_by_input(&child.key(&install), b"wrap-up")
-            .unwrap()
-            .is_some(),
+            .unwrap(),
         "the new incarnation accepted it"
     );
     kill_all(&runtime).await;
@@ -666,12 +667,15 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
     .expect("the drain waits for the parent's lane");
 
     // While it waits, the parent becomes its second incarnation.
-    {
-        let mut store = runtime.store().await;
-        let mut row = store.agent(&parent.key(&install)).unwrap().unwrap();
-        row.incarnation = 2;
-        store.put_agent(&row).unwrap();
-    }
+    let key = parent.key(&install);
+    runtime
+        .write_store_beneath(move |store| {
+            let mut row = store.agent(&key).unwrap().unwrap();
+            row.incarnation = 2;
+            store.put_agent(&row).unwrap();
+        })
+        .await
+        .unwrap();
     parent.nudge().await;
     held.await.unwrap().unwrap();
     let report = drained.await.unwrap();
@@ -775,7 +779,10 @@ async fn a_resumed_parent_receives_nothing() {
     let (daemon, runtime) = start(&install, "boot-1").await;
     assert_eq!(runtime.drain_deliveries().await.kept, 1);
     assert_eq!(
-        runtime.store().await.deliveries().unwrap()[0].parent_incarnation,
+        runtime
+            .read_store(|store| store.deliveries().unwrap()[0].parent_incarnation)
+            .await
+            .unwrap(),
         1
     );
     crash(daemon, runtime).await;
@@ -809,7 +816,10 @@ async fn a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_k
     let (daemon, runtime) = start(&install, "boot-1").await;
     let report = runtime.drain_deliveries().await;
     assert_eq!(report.kept, 1, "never dropped and never sent");
-    let row = runtime.store().await.deliveries().unwrap().remove(0);
+    let row = runtime
+        .read_store(|store| store.deliveries().unwrap().remove(0))
+        .await
+        .unwrap();
     assert_eq!(
         row.parent_incarnation, 0,
         "the incarnation is unknown, not guessed"
@@ -1084,11 +1094,14 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
     );
     assert!(
         runtime
-            .store()
+            .read_store(move |store| {
+                store
+                    .item_by_input(&child_key, b"follow-up")
+                    .unwrap()
+                    .is_some()
+            })
             .await
-            .item_by_input(&child_key, b"follow-up")
-            .unwrap()
-            .is_some(),
+            .unwrap(),
         "accepted once the child's item for the message committed"
     );
     until("the child's second finished message", || finished(2))

@@ -160,6 +160,8 @@ pub enum Input {
     },
     /// The start's sweep has reported every agent it found.
     Swept,
+    /// Keep the store under its budgets now: the retention sweeps.
+    Retain(crate::retention::Retain),
     /// A call by a client of this profile: its socket, an agent's tools
     /// socket or the in-process call.
     ClientCall {
@@ -223,6 +225,7 @@ impl Input {
             Input::Exiting { .. } => "Exiting",
             Input::Verdict { .. } => "Verdict",
             Input::Swept => "Swept",
+            Input::Retain(_) => "Retain",
             Input::ClientCall { .. } => "ClientCall",
             Input::CallCancelled { .. } => "CallCancelled",
             Input::AnswerLagged { .. } => "AnswerLagged",
@@ -304,13 +307,6 @@ pub enum FromShell {
     },
     /// The host set changed.
     Hosts(#[serde(with = "codec::shared")] Arc<InventoryEvent>),
-    /// The agent is gone: its streams end and the inventory says why.
-    Removed {
-        #[serde(with = "codec::agent_key")]
-        agent: AgentKey,
-        #[serde(with = "codec::shared")]
-        event: Arc<InventoryEvent>,
-    },
     /// Nothing about the agent, its session or its row, reaches a
     /// subscriber until [`FromShell::Unmute`]; its streams stay open. A
     /// delete mutes the agent it stops, so no subscriber reads the stop as
@@ -407,6 +403,8 @@ pub enum Output {
         pass: u64,
         report: crate::DrainReport,
     },
+    /// What a retention pass did.
+    Retained(Box<crate::retention::Retained>),
     /// Work the profile's shell still does for the core.
     Shell(ShellWork),
     /// Blob bytes go from the file to the call's stream without passing

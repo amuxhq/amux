@@ -507,14 +507,6 @@ impl Daemon {
                 }
             }
             FromShell::Hosts(event) => self.publish_inventory(event, out),
-            FromShell::Removed { agent, event } => {
-                self.agent_removed(&agent, event, out);
-                self.forget_draft(&agent.agent, out);
-                // Gone for good, as a delete is: its children here follow.
-                if let Err(error) = self.parent_changed(&agent, crate::ParentSays::Deleted, out) {
-                    tracing::warn!(%error, "following a removed parent failed");
-                }
-            }
             FromShell::Mute(agent) => {
                 self.answers.muted.insert(Key::from(&agent));
             }
@@ -855,17 +847,10 @@ mod tests {
             ]
         );
 
-        let removed = Arc::new(inventory(inventory_event::Of::AgentRemoved(
-            wire::AgentRemoved::default(),
-        )));
+        let mut removed = Vec::new();
+        daemon.removed_for_good(&agent, wire::RemovalReason::Retention, &mut removed);
         assert_eq!(
-            step(
-                &mut daemon,
-                Input::FromShell(FromShell::Removed {
-                    agent: agent.clone(),
-                    event: removed,
-                })
-            ),
+            removed,
             vec![
                 Output::EndCall {
                     call: CallId(1),

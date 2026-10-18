@@ -320,6 +320,9 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("stored data does not decode: {0}")]
     Corrupt(String),
+    /// Whoever owned the store let it go: nothing reads or writes it now.
+    #[error("the store is closed")]
+    Closed,
 }
 
 /// What one held row costs against a retention budget: its envelope's

@@ -1,21 +1,18 @@
-//! Own retention: keeps the profile's own rows under their budget.
+//! Own and replica retention: keeps the profile's rows under their budgets.
 //!
-//! The store decides what goes (exited agents whole, least recently active
-//! first, never an exited child whose parent is live; then the largest live
-//! agent trimmed a chunk at a time, never below its newest rows) and says
-//! which agents it removed. The daemon then does what the store cannot:
-//! ends their streams, tells the fleet they are gone and deletes their
-//! directories, which takes their blobs with them. The sweep runs when the
-//! background work starts and then on its interval, on the runtime's clock.
+//! The sweeps are the core's (see `daemon_core::retention`): it removes
+//! what the store says goes, ends the removed agents' streams and tells the
+//! fleet. What is left here is the interval the sweeps run on, on the
+//! runtime's clock, the removed agents' directories, which take their blobs
+//! with them, and the replica blob files, swept to their budget least
+//! recently read first, never a catalogue a remaining replica's snapshot
+//! names.
 
-use std::collections::HashSet;
-use std::io;
 use std::path::PathBuf;
 
+use daemon_core::Retain;
 use store::{BlobLru, Sweep};
 use tokio::task::JoinHandle;
-use uuid::Uuid;
-use wire::RemovalReason;
 
 use crate::install::REPLICAS;
 use crate::runtime::{ProfileRuntime, RegistryError};
@@ -34,87 +31,70 @@ pub struct Retention {
 }
 
 impl ProfileRuntime {
-    /// Runs one own retention sweep under the current budget.
-    pub async fn sweep_retention(&self) -> Result<Sweep, RegistryError> {
+    /// Runs one retention pass under the current budgets: own rows, then
+    /// replica rows, then replica blob files. Returns what it did.
+    pub async fn sweep_retention(&self) -> Result<Retention, RegistryError> {
         let launch = self.launch();
-        let sweep = {
-            let mut store = self.store.lock().await;
-            let sweep = store.sweep_own(
-                launch.own_budget_bytes,
-                launch.retention_chunk_bytes,
-                launch.tail_rows,
-            )?;
-            for key in &sweep.removed {
-                // Gone for good, as a delete is: the core has its children
-                // here follow and forgets its draft.
-                self.removed(key, RemovalReason::Retention);
-            }
-            sweep
+        let last_used = self.replicas_last_used();
+        let retain = Retain {
+            own_budget_bytes: launch.own_budget_bytes,
+            chunk_bytes: launch.retention_chunk_bytes,
+            replica_budget_bytes: launch.replica_budget_bytes,
+            last_used,
         };
-        for key in &sweep.removed {
-            let Ok(id) = Uuid::from_slice(&key.agent) else {
-                continue;
-            };
-            // Only if its row did not come back in the meantime: a running
-            // process keeps its directory. A resume finds the row gone and
-            // starts nothing. A directory left behind by a crash here has
-            // no row, and the next start removes it.
-            if self.store.lock().await.agent(key)?.is_some() {
-                continue;
-            }
-            match std::fs::remove_dir_all(self.agent_dir(id)) {
+        let retained = self
+            .driver()
+            .retain(retain)
+            .await
+            .ok_or(crate::runtime::Stopped)?;
+        for dir in &retained.removed_dirs {
+            match std::fs::remove_dir_all(dir) {
                 Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error.into()),
             }
         }
+        let own = retained.own.map_err(RegistryError::Core);
+        let replicas = retained.replicas.map_err(RegistryError::Core);
+        let blobs = match &replicas {
+            Ok(_) => Some(self.sweep_replica_blobs(&retained.pinned)),
+            Err(_) => None,
+        };
+        let mut done = Retention::default();
         self.retention.send_modify(|retention| {
-            retention.runs += 1;
-            retention.last = Some(sweep.clone());
+            if let Ok(sweep) = &own {
+                retention.runs += 1;
+                retention.last = Some(sweep.clone());
+            }
+            if let (Ok(sweep), Some(Ok(blobs))) = (&replicas, &blobs) {
+                retention.replicas = Some(sweep.clone());
+                retention.replica_blobs = blobs.clone();
+            }
+            done = retention.clone();
         });
-        Ok(sweep)
+        own?;
+        replicas?;
+        blobs.transpose()?;
+        Ok(done)
     }
 
-    /// Runs one replica retention sweep: rows to their budget, evicting
-    /// agents with no source least recently used first and trimming the
-    /// rest to K with their block kept whole, then replica blob files to
-    /// theirs, least recently read first. The catalogue a remaining
-    /// replica's current snapshot names is never evicted: without it the
-    /// agent's picker would lose its offers while the origin is away.
-    pub async fn sweep_replica_retention(&self) -> Result<(Sweep, Vec<PathBuf>), RegistryError> {
+    /// Sweeps replica blob files to their budget, least recently read
+    /// first, keeping `pinned`.
+    fn sweep_replica_blobs(
+        &self,
+        pinned: &std::collections::HashSet<PathBuf>,
+    ) -> Result<Vec<PathBuf>, RegistryError> {
         let launch = self.launch();
-        let (sourced, last_used): (HashSet<_>, _) = self.sources_in_use();
-        let (sweep, pinned) = {
-            let mut store = self.store.lock().await;
-            let sweep = store.sweep_replicas(
-                launch.replica_budget_bytes,
-                launch.tail_rows,
-                &sourced,
-                &last_used,
-            )?;
-            let pinned = store
-                .agents()?
-                .into_iter()
-                .filter(|row| row.agent.host != self.host().as_bytes())
-                .filter_map(|row| {
-                    let hash = row.snapshot.as_ref()?.catalogue.as_ref()?;
-                    Some(self.blob_path(&row, hash))
-                })
-                .collect::<HashSet<_>>();
-            (sweep, pinned)
-        };
         let root = self.dir().join(REPLICAS);
         let now = self.clock_now();
         let mut blobs = self.replica_blobs.lock().unwrap();
         if blobs.is_none() {
             *blobs = Some(BlobLru::scan(&root, now)?);
         }
-        let removed = blobs
+        Ok(blobs
             .as_mut()
             .expect("scanned above")
-            .sweep(launch.replica_blob_budget_bytes, &pinned)?;
-        drop(blobs);
-        Ok((sweep, removed))
+            .sweep(launch.replica_blob_budget_bytes, pinned)?)
     }
 
     /// The sweeps run so far, and each one as it finishes.
@@ -129,13 +109,6 @@ impl ProfileRuntime {
                 let Some(me) = runtime.upgrade() else { return };
                 if let Err(error) = me.sweep_retention().await {
                     tracing::warn!(%error, "the retention sweep failed");
-                }
-                match me.sweep_replica_retention().await {
-                    Ok((sweep, blobs)) => me.retention.send_modify(|retention| {
-                        retention.replicas = Some(sweep);
-                        retention.replica_blobs = blobs;
-                    }),
-                    Err(error) => tracing::warn!(%error, "the replica retention sweep failed"),
                 }
                 let clock = me.clock().clone();
                 let next = clock.now_ms() + me.launch().retention_interval_ms;

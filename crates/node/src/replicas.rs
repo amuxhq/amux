@@ -121,11 +121,10 @@ impl ProfileRuntime {
         self.replicas.lock().unwrap().inventory_hook = hook;
     }
 
-    /// The agents with a source open, and when clients last used each
-    /// replica: what the replica retention sweep keeps and orders by.
-    pub(crate) fn sources_in_use(&self) -> (HashSet<AgentKey>, HashMap<AgentKey, i64>) {
-        let replicas = self.replicas.lock().unwrap();
-        (replicas.open.clone(), replicas.last_used.clone())
+    /// When clients last used each replica: what the replica retention
+    /// sweep evicts by.
+    pub(crate) fn replicas_last_used(&self) -> HashMap<AgentKey, i64> {
+        self.replicas.lock().unwrap().last_used.clone()
     }
 
     /// Records a client's use of the agent `agent_id` names, when it is a
@@ -248,8 +247,6 @@ impl ProfileRuntime {
         if let Some(watcher) = self.replicas.lock().unwrap().take_watcher() {
             watcher.abort();
         }
-        if let Some(driver) = self.started_driver() {
-            driver.hang_up_all();
-        }
+        self.driver().hang_up_all();
     }
 }

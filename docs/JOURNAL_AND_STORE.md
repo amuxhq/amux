@@ -240,7 +240,10 @@ passive WAL checkpoint of the store on a connection of its own
 (`Sqlite::checkpoint_wal`), which SQLite syncs, then writes the state
 durably to `core.checkpoint` beside the store. The core holds every ingest
 commit until the job is done, so the store's main file is the store as of
-that step. The driver records every input the core steps in `core-ring/`
+that step. Every write to the store is the core's, and SQLite's own
+automatic checkpoints are off (`wal_autocheckpoint=0`): this job and the
+clean shutdown's flush are the only times the WAL reaches the main file. The
+driver records every input the core steps in `core-ring/`
 before stepping it, and starts a new ring segment at each checkpoint: the
 newest checkpoint and the inputs since rebuild the core.
 

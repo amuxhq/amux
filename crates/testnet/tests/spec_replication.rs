@@ -74,8 +74,11 @@ fn desk_and_laptop() -> Topology {
 async fn origin_rows(net: &Net, agent: &str) -> Vec<Item> {
     let agent = net.agent(agent).unwrap().clone();
     let runtime = net.runtime(&agent.host).unwrap();
-    let store = runtime.store().await;
-    let mut rows = store.cut(&agent.key(), u32::MAX).unwrap().held;
+    let key = agent.key();
+    let mut rows = runtime
+        .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+        .await
+        .unwrap();
     rows.sort_by_key(|item| item.order);
     rows
 }
@@ -84,7 +87,11 @@ async fn origin_rows(net: &Net, agent: &str) -> Vec<Item> {
 async fn origin_revision(net: &Net, agent: &str) -> u64 {
     let agent = net.agent(agent).unwrap().clone();
     let runtime = net.runtime(&agent.host).unwrap();
-    let row = runtime.store().await.agent(&agent.key()).unwrap().unwrap();
+    let key = agent.key();
+    let row = runtime
+        .read_store(move |store| store.agent(&key).unwrap().unwrap())
+        .await
+        .unwrap();
     row.next_revision - 1
 }
 
@@ -92,9 +99,13 @@ async fn origin_revision(net: &Net, agent: &str) -> u64 {
 async fn replica_state(net: &Net, host: &str, agent: &str) -> Option<(u64, Option<Marker>)> {
     let key = net.agent(agent).unwrap().key();
     let runtime = net.runtime(host).unwrap();
-    let store = runtime.store().await;
-    let row = store.agent(&key).unwrap()?;
-    Some((row.source_cursor, store.cut(&key, 0).unwrap().marker))
+    runtime
+        .read_store(move |store| {
+            let row = store.agent(&key).unwrap()?;
+            Some((row.source_cursor, store.cut(&key, 0).unwrap().marker))
+        })
+        .await
+        .unwrap()
 }
 
 /// `work`, failing with `what` if it has not finished within twice the
@@ -447,27 +458,33 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
     let oldest = origin_rows(&net, "worker").await[0].clone();
     {
         let runtime = net.runtime("desk").unwrap();
-        let mut store = runtime.store().await;
-        let at = store.cursor(&key).unwrap();
         let revised = Item {
             text: format!("{} (revised)", oldest.text),
             ..oldest.clone()
         };
-        store
-            .commit(
-                &key,
-                &[(
-                    at,
-                    wire::Step {
-                        items: vec![revised],
-                        ..wire::Step::default()
-                    },
-                )],
-                CommitClock {
-                    now_ms: net.now_ms(),
-                    notify_delay_ms: 0,
-                },
-            )
+        let clock = CommitClock {
+            now_ms: net.now_ms(),
+            notify_delay_ms: 0,
+        };
+        let key = key.clone();
+        runtime
+            .write_store_beneath(move |store| {
+                let at = store.cursor(&key).unwrap();
+                store
+                    .commit(
+                        &key,
+                        &[(
+                            at,
+                            wire::Step {
+                                items: vec![revised],
+                                ..wire::Step::default()
+                            },
+                        )],
+                        clock,
+                    )
+                    .unwrap();
+            })
+            .await
             .unwrap();
     }
     let revised = origin_rows(&net, "worker").await[0].clone();
@@ -491,7 +508,11 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
     // which answers with the revised row; it joins the block and is kept.
     let floor = {
         let runtime = net.runtime("laptop").unwrap();
-        let row = runtime.store().await.agent(&key).unwrap().unwrap();
+        let key = key.clone();
+        let row = runtime
+            .read_store(move |store| store.agent(&key).unwrap().unwrap())
+            .await
+            .unwrap();
         row.complete_from_order.unwrap()
     };
     let page = fetch(&net, "laptop", "worker", Some(floor), 100)
@@ -507,24 +528,24 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
     );
     {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        let held = store.get(&key, &revised.key).unwrap().unwrap();
+        let (key, item) = (key.clone(), revised.key.clone());
+        let (held, at, rows) = runtime
+            .read_store(move |store| {
+                (
+                    store.get(&key, &item).unwrap().unwrap(),
+                    store.cursor(&key).unwrap(),
+                    store.cut(&key, u32::MAX).unwrap().held,
+                )
+            })
+            .await
+            .unwrap();
         assert_eq!(
             held.revision, revised.revision,
             "the page's revision is kept"
         );
-        assert_eq!(
-            store.cursor(&key).unwrap(),
-            cursor,
-            "a page never moves the cursor"
-        );
+        assert_eq!(at, cursor, "a page never moves the cursor");
         assert!(
-            !store
-                .cut(&key, u32::MAX)
-                .unwrap()
-                .held
-                .iter()
-                .any(|item| item.text.contains("second-0")),
+            !rows.iter().any(|item| item.text.contains("second-0")),
             "the new turn is still missing"
         );
     }
@@ -555,8 +576,11 @@ async fn a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page
     );
     let laptop_rows = {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        store.cut(&key, u32::MAX).unwrap().held
+        let key = key.clone();
+        runtime
+            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+            .await
+            .unwrap()
     };
     assert_eq!(
         laptop_rows.len(),
@@ -783,9 +807,10 @@ async fn fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_wh
     assert!(all.exhausted);
     {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        let page = store
-            .page(&net.agent("worker").unwrap().key(), None, 100)
+        let key = net.agent("worker").unwrap().key();
+        let page = runtime
+            .read_store(move |store| store.page(&key, None, 100).unwrap())
+            .await
             .unwrap();
         assert_eq!(page.items.len(), origin.len());
         assert_eq!(
@@ -860,12 +885,17 @@ async fn trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_
     net.current("laptop", "worker").await.unwrap();
     let (floor, stored) = {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        let row = store.agent(&key).unwrap().unwrap();
-        (
-            row.complete_from_order.unwrap(),
-            store.get(&key, &all.items.last().unwrap().key).unwrap(),
-        )
+        let (key, item) = (key.clone(), all.items.last().unwrap().key.clone());
+        runtime
+            .read_store(move |store| {
+                let row = store.agent(&key).unwrap().unwrap();
+                (
+                    row.complete_from_order.unwrap(),
+                    store.get(&key, &item).unwrap(),
+                )
+            })
+            .await
+            .unwrap()
     };
     assert!(
         stored.is_some(),
@@ -873,39 +903,41 @@ async fn trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_
     );
     assert!(stored.unwrap().order < floor);
 
-    let (sweep, _) = net
+    let sweep = net
         .runtime("laptop")
         .unwrap()
-        .sweep_replica_retention()
+        .sweep_retention()
         .await
+        .unwrap()
+        .replicas
         .unwrap();
     assert!(!sweep.steps.is_empty(), "{sweep:?}");
     {
         let runtime = net.runtime("laptop").unwrap();
-        let store = runtime.store().await;
-        let mut orders = Vec::new();
-        let mut before = None;
-        loop {
-            let page = store.page(&key, before, 2).unwrap();
-            orders.extend(page.items.iter().map(|item| item.order));
-            before = page.items.last().map(|item| item.order);
-            if page.end != PageEnd::More {
-                assert_eq!(page.end, PageEnd::Boundary);
-                break;
-            }
-        }
+        let (key, item) = (key.clone(), all.items.last().unwrap().key.clone());
+        let (orders, end, stale) = runtime
+            .read_store(move |store| {
+                let mut orders = Vec::new();
+                let mut before = None;
+                let end = loop {
+                    let page = store.page(&key, before, 2).unwrap();
+                    orders.extend(page.items.iter().map(|item| item.order));
+                    before = page.items.last().map(|item| item.order);
+                    if page.end != PageEnd::More {
+                        break page.end;
+                    }
+                };
+                (orders, end, store.get(&key, &item).unwrap())
+            })
+            .await
+            .unwrap();
+        assert_eq!(end, PageEnd::Boundary);
         assert_eq!(orders.len(), K as usize, "{orders:?}");
         assert!(
             orders.windows(2).all(|pair| pair[0] == pair[1] + 1),
             "paging down yields no gap: {orders:?}"
         );
-        assert!(
-            store
-                .get(&key, &all.items.last().unwrap().key)
-                .unwrap()
-                .is_none(),
-            "the stale rows went first"
-        );
+        assert!(stale.is_none(), "the stale rows went first");
     }
     net.assert_block_invariant("laptop", "worker")
         .await
@@ -1040,7 +1072,13 @@ async fn on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close
     .await
     .unwrap();
     net.current("laptop", "quiet").await.unwrap();
-    let row = laptop.store().await.agent(&quiet).unwrap().unwrap();
+    let row = {
+        let quiet = quiet.clone();
+        laptop
+            .read_store(move |store| store.agent(&quiet).unwrap().unwrap())
+            .await
+            .unwrap()
+    };
     assert_eq!(row.lifecycle, wire::Lifecycle::Exited as i32);
     assert_eq!(laptop.open_sources(), vec![named]);
 
@@ -1056,7 +1094,13 @@ async fn on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close
     .unwrap();
     wait_origin_says(&net, "quiet", "t0-0").await;
     net.current("laptop", "quiet").await.unwrap();
-    let row = laptop.store().await.agent(&quiet).unwrap().unwrap();
+    let row = {
+        let quiet = quiet.clone();
+        laptop
+            .read_store(move |store| store.agent(&quiet).unwrap().unwrap())
+            .await
+            .unwrap()
+    };
     assert_eq!(
         (row.lifecycle, row.incarnation),
         (wire::Lifecycle::Live as i32, 2)
@@ -1154,12 +1198,12 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
     net.current("laptop", "worker").await.unwrap();
     until("the journal read to its end", || async {
         let end = net.journal_end("worker").unwrap();
+        let key = key.clone();
         let cursor = net
             .runtime("desk")
             .unwrap()
-            .store()
+            .read_store(move |store| store.cursor(&key).unwrap())
             .await
-            .cursor(&key)
             .unwrap();
         (cursor == end)
             .then_some(())
@@ -1177,14 +1221,14 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
         .await
         .unwrap();
     let generation = net.generation("desk").unwrap();
-    let before = net
-        .runtime("laptop")
-        .unwrap()
-        .store()
-        .await
-        .agent(&key)
-        .unwrap()
-        .unwrap();
+    let before = {
+        let key = key.clone();
+        net.runtime("laptop")
+            .unwrap()
+            .read_store(move |store| store.agent(&key).unwrap().unwrap())
+            .await
+            .unwrap()
+    };
     assert_eq!(before.source_generation, generation);
 
     // The laptop loses desk before desk comes back rewound.
@@ -1253,14 +1297,18 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
     net.current("laptop", "worker").await.unwrap();
     let laptop = net.runtime("laptop").unwrap();
     let (held, row, recorded) = {
-        let store = laptop.store().await;
-        (
-            store.cut(&key, u32::MAX).unwrap().held,
-            store.agent(&key).unwrap().unwrap(),
-            store
-                .host_generation(net.host("desk").unwrap().host_id.as_bytes())
-                .unwrap(),
-        )
+        let key = key.clone();
+        let desk_id = net.host("desk").unwrap().host_id;
+        laptop
+            .read_store(move |store| {
+                (
+                    store.cut(&key, u32::MAX).unwrap().held,
+                    store.agent(&key).unwrap().unwrap(),
+                    store.host_generation(desk_id.as_bytes()).unwrap(),
+                )
+            })
+            .await
+            .unwrap()
     };
     assert!(
         !held.iter().any(|item| item.text.contains("t1-0")),
@@ -1354,7 +1402,11 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
     net.runtime("desk").unwrap().stop(brief.id).await.unwrap();
     let laptop = net.runtime("laptop").unwrap();
     until("the laptop to settle brief exited", || async {
-        let row = laptop.store().await.agent(&key).unwrap();
+        let key = key.clone();
+        let row = laptop
+            .read_store(move |store| store.agent(&key).unwrap())
+            .await
+            .unwrap();
         let exited = row.is_some_and(|row| row.lifecycle == wire::Lifecycle::Exited as i32);
         let open = laptop.open_sources();
         (exited && open.is_empty())
@@ -1377,13 +1429,15 @@ async fn a_rewound_origin_resets_a_settled_replica_too() {
     .unwrap();
     restore(&mut net).await;
     net.current("laptop", "brief").await.unwrap();
-    let (held, row) = {
-        let store = laptop.store().await;
-        (
-            store.cut(&key, u32::MAX).unwrap().held,
-            store.agent(&key).unwrap().unwrap(),
-        )
-    };
+    let (held, row) = laptop
+        .read_store(move |store| {
+            (
+                store.cut(&key, u32::MAX).unwrap().held,
+                store.agent(&key).unwrap().unwrap(),
+            )
+        })
+        .await
+        .unwrap();
     assert!(
         !held.iter().any(|item| item.text.contains("t1-0")),
         "a row the origin lost never returns: {held:#?}"
@@ -1456,12 +1510,11 @@ async fn an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit() 
         "the laptop to list brief exited while holding an exit record",
         || async {
             let holding = holding.load(Ordering::SeqCst);
+            let key = key.clone();
             let lifecycle = laptop
-                .store()
+                .read_store(move |store| store.agent(&key).unwrap().map(|row| row.lifecycle))
                 .await
-                .agent(&key)
-                .unwrap()
-                .map(|row| row.lifecycle);
+                .unwrap();
             (holding && lifecycle == Some(wire::Lifecycle::Exited as i32))
                 .then_some(())
                 .ok_or_else(|| format!("holding {holding}, lifecycle {lifecycle:?}"))
@@ -1478,7 +1531,13 @@ async fn an_exited_agent_settles_only_once_its_own_stream_has_passed_the_exit() 
 
     net.current("laptop", "brief").await.unwrap();
     let origin = origin_rows(&net, "brief").await;
-    let mut replica = laptop.store().await.cut(&key, u32::MAX).unwrap().held;
+    let mut replica = {
+        let key = key.clone();
+        laptop
+            .read_store(move |store| store.cut(&key, u32::MAX).unwrap().held)
+            .await
+            .unwrap()
+    };
     replica.sort_by_key(|item| item.order);
     assert_eq!(
         replica.last().map(|item| (&item.key, item.revision)),
@@ -1753,7 +1812,11 @@ async fn a_dump_gathers_the_host_side_of_a_peers_agents() {
 async fn held_ask(net: &Net, host: &str, agent: &str) -> (Option<String>, Option<wire::Phase>) {
     let key = net.agent(agent).unwrap().key();
     let runtime = net.runtime(host).unwrap();
-    let Some(snapshot) = runtime.store().await.cut(&key, 0).unwrap().snapshot else {
+    let snapshot = runtime
+        .read_store(move |store| store.cut(&key, 0).unwrap().snapshot)
+        .await
+        .unwrap();
+    let Some(snapshot) = snapshot else {
         return (None, None);
     };
     let body = wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap();

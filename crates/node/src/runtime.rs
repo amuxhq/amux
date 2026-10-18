@@ -36,8 +36,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
-    Agent, AgentHello, AgentRef, AgentRemoved, AgentSpec, Bootstrap, CreateAgentRequest, CtlFrame,
-    DumpPart, ErrorCode, Kind, RemovalReason, SendInputResponse, ctl_frame, inventory_event,
+    Agent, AgentHello, AgentRef, AgentSpec, Bootstrap, CreateAgentRequest, CtlFrame, DumpPart,
+    ErrorCode, Kind, SendInputResponse, ctl_frame,
 };
 
 use crate::driver::{Ask, Delivered};
@@ -46,7 +46,6 @@ use crate::install::{AGENTS, private_dir};
 use crate::outbox::PushSender;
 use crate::profiles::ProfileId;
 use crate::retention::Retention;
-use crate::serve::inventory;
 use crate::{HostId, spec};
 
 pub type AgentId = Uuid;
@@ -183,6 +182,17 @@ impl Default for Launch {
             checkpoint_interval_ms: 60_000,
             step_budget: daemon_core::StepBudget::DAEMON,
         }
+    }
+}
+
+/// The profile's core has stopped, and its store with it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("the profile is no longer running")]
+pub struct Stopped;
+
+impl From<Stopped> for RegistryError {
+    fn from(stopped: Stopped) -> Self {
+        RegistryError::Core(stopped.to_string())
     }
 }
 
@@ -372,17 +382,13 @@ pub struct ProfileRuntime {
     dir: PathBuf,
     clock: Arc<dyn Clock>,
     launch: Mutex<Launch>,
-    /// Every write hands its change to the core while it still holds this
-    /// lock, so subscribers see changes in commit order and a subscribe,
-    /// answered with it held, reads one point in that order.
-    pub(crate) store: tokio::sync::Mutex<Sqlite>,
-    /// The profile's core thread, started by the first call it answers.
-    driver: std::sync::OnceLock<crate::driver::Driver>,
-    /// For tests: awaited by a subscribe before the core reads its cut,
-    /// with the store held.
+    /// The profile's core thread, which owns the store.
+    driver: crate::driver::Driver,
+    /// For tests: awaited by a subscribe on the core thread before the
+    /// core reads its cut.
     pub(crate) join_hook: Mutex<Option<JoinHook>>,
-    /// For tests: awaited by an inventory subscribe between reading the
-    /// host set and the core answering it, with the store held.
+    /// For tests: awaited by an inventory subscribe on the core thread
+    /// between reading the host set and the core answering it.
     pub(crate) inventory_opening_hook: Mutex<Option<JoinHook>>,
     /// Counts the store's writes, own commits and absorbed replica rows
     /// alike, so a waiter wakes on the write it is waiting for instead of
@@ -597,7 +603,8 @@ pub struct Profile {
 }
 
 impl ProfileRuntime {
-    /// A runtime over an opened profile. Writes nothing.
+    /// A runtime over an opened profile, its core thread started over the
+    /// profile's store.
     pub fn open(profile: Profile) -> Arc<Self> {
         let Profile {
             profile,
@@ -613,12 +620,25 @@ impl ProfileRuntime {
             analytics,
             worktrees,
         } = profile;
-        Arc::new_cyclic(|me| Self {
+        let options = daemon_core::StartOptions {
+            generation,
+            agents: dir.join(AGENTS),
+            replicas: dir.join(crate::install::REPLICAS),
+            drafts: dir.join(crate::drafts::DRAFTS_FILE),
+            budget: launch.step_budget,
+        };
+        let mut core = None;
+        let runtime = Arc::new_cyclic(|me| Self {
             profile,
             host,
             generation,
             clock,
-            driver: std::sync::OnceLock::new(),
+            driver: {
+                let (driver, thread) =
+                    crate::driver::Driver::new(me.clone(), store, dir.clone(), options);
+                core = Some(thread);
+                driver
+            },
             join_hook: Mutex::new(None),
             inventory_opening_hook: Mutex::new(None),
             commits: watch::Sender::new(0),
@@ -626,7 +646,6 @@ impl ProfileRuntime {
             push,
             background: Mutex::new(Vec::new()),
             launch: Mutex::new(launch),
-            store: tokio::sync::Mutex::new(store),
             agents: Mutex::new(HashMap::new()),
             retention: watch::Sender::new(Retention::default()),
             reports,
@@ -643,7 +662,9 @@ impl ProfileRuntime {
             dir,
             analytics,
             turns: crate::telemetry::Turns::default(),
-        })
+        });
+        core.expect("built with the runtime").start(&runtime.driver);
+        runtime
     }
 
     /// Starts the profile's network edge: its identity and trust, and the
@@ -723,33 +744,39 @@ impl ProfileRuntime {
         self.ingested_frames.load(Ordering::Relaxed)
     }
 
-    /// The profile's core, from the shell's side, if its thread started.
-    pub(crate) fn started_driver(&self) -> Option<&crate::driver::Driver> {
-        self.driver.get()
-    }
-
-    /// The profile's core, from the shell's side; its thread starts here
-    /// on first use.
+    /// The profile's core, from the shell's side.
     pub(crate) fn driver(&self) -> &crate::driver::Driver {
-        self.driver.get_or_init(|| {
-            crate::driver::Driver::start(
-                self.me.clone(),
-                self.host.as_bytes().to_vec(),
-                self.dir.clone(),
-                daemon_core::StartOptions {
-                    generation: self.generation,
-                    agents: self.dir.join(AGENTS),
-                    replicas: self.dir.join(crate::install::REPLICAS),
-                    drafts: self.dir.join(crate::drafts::DRAFTS_FILE),
-                    budget: self.launch().step_budget,
-                },
-            )
-        })
+        &self.driver
     }
 
-    /// The store, held exclusively while the guard lives.
-    pub async fn store(&self) -> tokio::sync::MutexGuard<'_, Sqlite> {
-        self.store.lock().await
+    /// Reads the store on the core thread, between steps: one point in the
+    /// order of the core's writes.
+    pub async fn read_store<T: Send + 'static>(
+        &self,
+        read: impl FnOnce(&Sqlite) -> T + Send + 'static,
+    ) -> Result<T, Stopped> {
+        self.driver.read(read).await.ok_or(Stopped)
+    }
+
+    /// Reads rows on the core thread, as [`ProfileRuntime::read_store`]
+    /// does; once the core has stopped the store reads as closed.
+    pub(crate) async fn read_rows<T: Send + 'static>(
+        &self,
+        read: impl FnOnce(&Sqlite) -> Result<T, StoreError> + Send + 'static,
+    ) -> Result<T, StoreError> {
+        self.read_store(read)
+            .await
+            .unwrap_or(Err(StoreError::Closed))
+    }
+
+    /// For tests: writes the store beneath the core's own steps, between
+    /// them, to set up what no input produces.
+    #[doc(hidden)]
+    pub async fn write_store_beneath<T: Send + 'static>(
+        &self,
+        write: impl FnOnce(&mut Sqlite) -> T + Send + 'static,
+    ) -> Result<T, Stopped> {
+        self.driver.beneath(write).await.ok_or(Stopped)
     }
 
     /// For tests: runs `hook` inside every subscribe between joining the
@@ -808,11 +835,10 @@ impl ProfileRuntime {
 
     /// The inventory row for an agent.
     pub async fn agent(&self, id: AgentId) -> Result<Agent, RegistryError> {
+        let key = self.key(id);
         let row = self
-            .store
-            .lock()
-            .await
-            .agent(&self.key(id))?
+            .read_rows(move |store| store.agent(&key))
+            .await?
             .ok_or(RegistryError::NotFound(id))?;
         Ok(to_wire(&row))
     }
@@ -1089,8 +1115,12 @@ impl ProfileRuntime {
         bootstrap: Option<Bootstrap>,
     ) -> Result<Agent, RegistryError> {
         // An agent the store does not hold is the core's to refuse.
-        let snapshot =
-            (self.store.lock().await.cut(&self.key(id), 0).ok()).and_then(|cut| cut.snapshot);
+        let key = self.key(id);
+        let snapshot = self
+            .read_rows(move |store| store.cut(&key, 0))
+            .await
+            .ok()
+            .and_then(|cut| cut.snapshot);
         let spec = self.next_spec(id, bootstrap, snapshot.as_ref().map(|s| s.body.as_slice()))?;
         let resume = daemon_core::Resume {
             agent: core_agent(id),
@@ -1375,10 +1405,8 @@ impl ProfileRuntime {
     /// directory, dial the live ones and read their Hello. Writes nothing.
     pub async fn look(&self) -> Result<Looked, RegistryError> {
         let rows: HashMap<AgentId, AgentRow> = self
-            .store
-            .lock()
-            .await
-            .agents()?
+            .read_rows(|store| store.agents())
+            .await?
             .into_iter()
             .filter(|row| row.agent.host == self.host.as_bytes())
             .filter_map(|row| Some((Uuid::from_slice(&row.agent.agent).ok()?, row)))
@@ -1612,24 +1640,9 @@ impl ProfileRuntime {
         }
     }
 
-    /// Hands the core a change committed under the store, which the caller
-    /// still holds.
+    /// Hands the core a change to the host set.
     pub(crate) fn hand_over(&self, change: FromShell) {
         self.driver().hand_over(change);
-    }
-
-    /// The agent is gone from the store the caller still holds: its
-    /// streams end and the inventory says why.
-    pub(crate) fn removed(&self, agent: &AgentKey, reason: RemovalReason) {
-        let removed = AgentRemoved {
-            host_id: agent.host.clone(),
-            agent_id: agent.agent.clone(),
-            reason: reason as i32,
-        };
-        self.hand_over(FromShell::Removed {
-            agent: agent.clone(),
-            event: Arc::new(inventory(inventory_event::Of::AgentRemoved(removed))),
-        });
     }
 
     // --- the watcher ---------------------------------------------------------

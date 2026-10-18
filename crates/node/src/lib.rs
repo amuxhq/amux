@@ -96,7 +96,7 @@ pub use retention::Retention;
 pub use routing::local_kinds;
 pub use runtime::{
     AGENT_LOG, AgentId, FANOUT_CAPACITY, INGEST_BATCH, JoinHook, KEPT_SEGMENTS, Launch, Profile,
-    ProfileRuntime, RegistryError, SweepReport, TAIL_ROWS, locked, to_wire,
+    ProfileRuntime, RegistryError, Stopped, SweepReport, TAIL_ROWS, locked, to_wire,
 };
 pub use serve::{MAX_PAGE, ServeError};
 pub use telemetry::Telemetry;

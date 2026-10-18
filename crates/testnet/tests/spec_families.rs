@@ -108,9 +108,8 @@ async fn row(net: &Net, host: &str, agent: &str) -> Option<AgentRow> {
     let key = net.agent(agent).unwrap().key();
     net.runtime(host)
         .unwrap()
-        .store()
+        .read_store(move |store| store.agent(&key).unwrap())
         .await
-        .agent(&key)
         .unwrap()
 }
 
@@ -127,13 +126,12 @@ async fn received(net: &Net, agent: &str) -> Vec<wire::Item> {
 /// Everything `agent`'s own host holds for it, oldest first.
 async fn items(net: &Net, agent: &str) -> Vec<wire::Item> {
     let at = net.agent(agent).unwrap().clone();
+    let key = at.key();
     net.runtime(&at.host)
         .unwrap()
-        .store()
+        .read_store(move |store| store.page(&key, None, 1_000).unwrap().items)
         .await
-        .page(&at.key(), None, 1_000)
         .unwrap()
-        .items
 }
 
 async fn with_input(net: &Net, agent: &str, input_id: &[u8]) -> usize {
@@ -204,11 +202,9 @@ async fn taken(net: &Net, agent: &str, text: &str) -> usize {
 async fn outbox(net: &Net, host: &str) -> usize {
     net.runtime(host)
         .unwrap()
-        .store()
+        .read_store(|store| store.deliveries().unwrap().len())
         .await
-        .deliveries()
         .unwrap()
-        .len()
 }
 
 async fn lifecycle(net: &Net, host: &str, agent: &str) -> Option<Lifecycle> {
@@ -221,12 +217,12 @@ async fn lifecycle(net: &Net, host: &str, agent: &str) -> Option<Lifecycle> {
 /// snapshot its own host holds.
 async fn open_ask(net: &Net, agent: &str) -> String {
     let at = net.agent(agent).unwrap().clone();
+    let key = at.key();
     let cut = net
         .runtime(&at.host)
         .unwrap()
-        .store()
+        .read_store(move |store| store.cut(&key, 0).unwrap())
         .await
-        .cut(&at.key(), 0)
         .unwrap();
     let snapshot = cut.snapshot.expect("a snapshot");
     let body = wire::ClaudeSdkSnapshot::decode(snapshot.body.as_slice()).unwrap();
@@ -602,12 +598,12 @@ async fn a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted
     until("notes to follow lead on desk", || {
         let (net, notes) = (&net, &notes);
         async move {
+            let notes = notes.clone();
             let held = net
                 .runtime("desk")
                 .unwrap()
-                .store()
+                .read_store(move |store| store.agent(&notes).unwrap())
                 .await
-                .agent(notes)
                 .unwrap();
             held.is_none()
                 .then_some(())
@@ -627,12 +623,12 @@ async fn a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted
     until("laptop to delete scout", || {
         let (net, scout) = (&net, &scout);
         async move {
+            let scout = scout.clone();
             let held = net
                 .runtime("laptop")
                 .unwrap()
-                .store()
+                .read_store(move |store| store.agent(&scout).unwrap())
                 .await
-                .agent(scout)
                 .unwrap();
             held.is_none()
                 .then_some(())
@@ -709,9 +705,8 @@ async fn a_spawn_while_its_host_catches_up_is_refused_until_the_parent_is_heard(
     let named_scout = net
         .runtime("laptop")
         .unwrap()
-        .store()
+        .read_store(|store| store.agents().unwrap())
         .await
-        .agents()
         .unwrap()
         .into_iter()
         .filter(|row| row.name == "scout")
@@ -1069,9 +1064,12 @@ async fn a_row_for_a_parent_resumed_out_of_sight_is_refused_where_the_parent_liv
                 let end = net
                     .journal_end("helper")
                     .map_err(|error| error.to_string())?;
-                let store = net.runtime("server").unwrap();
-                let store = store.store().await;
-                let row = store.agent(&helper).unwrap().unwrap();
+                let row = net
+                    .runtime("server")
+                    .unwrap()
+                    .read_store(move |store| store.agent(&helper).unwrap().unwrap())
+                    .await
+                    .unwrap();
                 (row.lifecycle == Lifecycle::Exited as i32 && row.ingest_cursor >= end)
                     .then_some(())
                     .ok_or_else(|| {
@@ -1377,12 +1375,12 @@ async fn cross_host_family_journey() {
     until("server to delete helper", || {
         let (net, helper) = (&net, &helper);
         async move {
+            let key = helper.key();
             let held = net
                 .runtime("server")
                 .unwrap()
-                .store()
+                .read_store(move |store| store.agent(&key).unwrap())
                 .await
-                .agent(&helper.key())
                 .unwrap();
             held.is_none()
                 .then_some(())
@@ -1929,13 +1927,12 @@ async fn the_agent_row_counts_live_descendants_and_background_jobs() {
     until("lead's background job to be listed", || {
         let net = &net;
         async move {
-            let at = net.agent("lead").unwrap().clone();
+            let key = net.agent("lead").unwrap().key();
             let cut = net
                 .runtime("desk")
                 .unwrap()
-                .store()
+                .read_store(move |store| store.cut(&key, 0).unwrap())
                 .await
-                .cut(&at.key(), 0)
                 .unwrap();
             let jobs = cut
                 .snapshot

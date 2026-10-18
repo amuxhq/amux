@@ -202,8 +202,10 @@ impl ProfileRuntime {
             ..CheckIn::default()
         };
         {
-            let store = self.store().await;
-            let rows = store.agents().unwrap_or_default();
+            let rows = self
+                .read_rows(|store| store.agents())
+                .await
+                .unwrap_or_default();
             let own = self.host().as_bytes().to_vec();
             for row in rows.iter().filter(|row| row.agent.host == own) {
                 let Some(kind) = kind_coded(row.kind) else {

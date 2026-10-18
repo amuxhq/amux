@@ -45,6 +45,12 @@ pub enum ServeError {
     Stopped,
 }
 
+impl From<crate::runtime::Stopped> for ServeError {
+    fn from(_: crate::runtime::Stopped) -> Self {
+        ServeError::Stopped
+    }
+}
+
 impl From<Status> for ServeError {
     /// How a call the core ended without answering failed.
     fn from(status: Status) -> Self {
@@ -121,9 +127,10 @@ impl ProfileRuntime {
     /// Whether the agent is one of this host's own, not a replica of
     /// another host's.
     pub(crate) async fn is_own(&self, agent_id: &[u8]) -> Result<bool, ServeError> {
-        let store = self.store.lock().await;
-        Ok(store
-            .agent(&AgentKey::new(store.own_host(), agent_id))?
+        let agent_id = agent_id.to_vec();
+        Ok(self
+            .read_rows(move |store| store.agent(&AgentKey::new(store.own_host(), agent_id)))
+            .await?
             .is_some())
     }
 
@@ -150,37 +157,45 @@ impl ProfileRuntime {
     /// the id at least that long), its name, or `name@host` where names on
     /// two hosts meet. Names are unique on a host, so `name@host` picks one.
     pub async fn resolve_agent(&self, reference: &str) -> Result<Agent, ServeError> {
-        let rows = {
-            let store = self.store.lock().await;
-            if let Ok(id) = uuid::Uuid::parse_str(reference) {
-                return store
-                    .agent_by_id(id.as_bytes())?
-                    .map(|row| to_wire(&row))
-                    .ok_or_else(|| ServeError::NoAgentNamed(reference.to_owned()));
-            }
-            let (name, host) = match reference.rsplit_once('@') {
-                Some((name, host)) => (name, Some(host)),
-                None => (reference, None),
-            };
-            let mut rows = store.agent_by_name(name)?;
-            if let Some(host) = host {
-                let host = self
-                    .resolve_host(host)
-                    .map_err(|_| ServeError::NoAgentNamed(reference.to_owned()))?;
-                rows.retain(|row| row.agent.host == host.as_bytes());
-            } else if rows.is_empty() && is_short_id(reference) {
-                let prefix = reference.to_ascii_lowercase();
-                rows = store
-                    .agents()?
-                    .into_iter()
-                    .filter(|row| {
-                        uuid::Uuid::from_slice(&row.agent.agent)
-                            .is_ok_and(|id| id.simple().to_string().starts_with(&prefix))
-                    })
-                    .collect();
-            }
-            rows
+        if let Ok(id) = uuid::Uuid::parse_str(reference) {
+            return self
+                .read_rows(move |store| store.agent_by_id(id.as_bytes()))
+                .await?
+                .map(|row| to_wire(&row))
+                .ok_or_else(|| ServeError::NoAgentNamed(reference.to_owned()));
+        }
+        let (name, host) = match reference.rsplit_once('@') {
+            Some((name, host)) => (name, Some(host)),
+            None => (reference, None),
         };
+        let host = match host {
+            Some(host) => Some(
+                self.resolve_host(host)
+                    .map_err(|_| ServeError::NoAgentNamed(reference.to_owned()))?,
+            ),
+            None => None,
+        };
+        let short =
+            (host.is_none() && is_short_id(reference)).then(|| reference.to_ascii_lowercase());
+        let name = name.to_owned();
+        let rows = self
+            .read_rows(move |store| {
+                let mut rows = store.agent_by_name(&name)?;
+                if let Some(host) = host {
+                    rows.retain(|row| row.agent.host == host.as_bytes());
+                } else if let Some(prefix) = short.filter(|_| rows.is_empty()) {
+                    rows = store
+                        .agents()?
+                        .into_iter()
+                        .filter(|row| {
+                            uuid::Uuid::from_slice(&row.agent.agent)
+                                .is_ok_and(|id| id.simple().to_string().starts_with(&prefix))
+                        })
+                        .collect();
+                }
+                Ok(rows)
+            })
+            .await?;
         // One agent may be held twice (its own row and a copy); it is one
         // agent all the same.
         let mut matches: Vec<Agent> = Vec::new();

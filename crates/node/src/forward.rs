@@ -234,7 +234,9 @@ impl ProfileRuntime {
 
     /// The row an agent id names, own or replica.
     pub(crate) async fn row_by_id(&self, agent_id: &[u8]) -> Result<Option<AgentRow>, StoreError> {
-        self.store.lock().await.agent_by_id(agent_id)
+        let agent_id = agent_id.to_vec();
+        self.read_rows(move |store| store.agent_by_id(&agent_id))
+            .await
     }
 
     /// A client for `host`, or why no call to it can leave.

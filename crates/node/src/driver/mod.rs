@@ -6,17 +6,17 @@
 //! into the call table, timers and jobs on tokio, whose outcomes come back
 //! as inputs.
 //!
-//! The profile's shell still writes the store under its own lock for what
-//! has not moved into the core, and the core thread holds that lock across
-//! each step, lending the store to the core. What the shell commits it
-//! hands over before letting go of the lock, and the core thread steps
-//! those changes first each time it takes the lock, so every stream reads
-//! them in commit order: after its opening if they were committed after
-//! it, in its opening if before.
+//! The core owns the profile's store: every write to it is a step's. What
+//! the shell reads of it, it reads on the core thread between steps, so a
+//! read sees the store as of one point in the order of steps. The host set
+//! is the one thing the shell still publishes; what it changes it hands
+//! over, and the core thread steps those changes before the next input, so
+//! an inventory stream reads them in order: after its opening if handed
+//! over after it, in its opening if before.
 //!
 //! Links and channels report to the core through a queue of their own,
-//! stepped ahead of everything else and without the store: no link input
-//! reads it, so a link never waits behind the shell's writes. A channel is
+//! stepped ahead of everything else, so a link's word never waits behind
+//! the calls and journals queued before it. A channel is
 //! opened only once the core has said so and given the key its handshake
 //! must find. What the core decides about each host's presence goes to the
 //! profile's connection manager, which keeps it for the shell's reads and
@@ -45,7 +45,7 @@ use daemon_core::payload::{
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, DrainReport, FromShell, HostId, IngestEnd, Ingested, Input, Job,
-    JobId, LinkId, Output, Settings, ShellWork, StartOptions, TimerId,
+    JobId, LinkId, Output, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use links::{CoreLinks, core_error};
 use store::Sqlite;
@@ -88,9 +88,8 @@ pub(crate) enum Fed {
         call: CallId,
         request: PeerRequest,
     },
-    /// A client call forwarded to the host that owns its agent. It reads
-    /// nothing of the store, so it is stepped without it: whoever forwards
-    /// may hold the store meanwhile.
+    /// A client call forwarded to the host that owns its agent, complete
+    /// as it arrives.
     Forward {
         call: CallId,
         host: HostId,
@@ -111,6 +110,15 @@ pub(crate) enum Fed {
     Drain {
         done: oneshot::Sender<DrainReport>,
     },
+    /// A retention pass, for someone who waits for what it did.
+    Retain {
+        retain: Retain,
+        done: oneshot::Sender<Retained>,
+    },
+    /// A read of the store, between steps.
+    Read(Box<dyn FnOnce(&Sqlite) + Send>),
+    /// For tests: a write beneath the core's own, between steps.
+    Beneath(Box<dyn FnOnce(&mut Sqlite) + Send>),
     /// The shell wants a channel, and waits for the core's word on it.
     Channel {
         want: Input,
@@ -123,8 +131,7 @@ pub(crate) enum Fed {
 }
 
 /// A client call as it arrives. What the request also carries from the
-/// shell is read on the core thread with the store held, at the point the
-/// core answers.
+/// shell is read on the core thread, at the point the core answers.
 pub(crate) enum Ask {
     Subscribe {
         agent_id: Vec<u8>,
@@ -150,37 +157,37 @@ pub(crate) struct Driver {
     /// What links and channels reported, in the order they did.
     reports: Arc<Mutex<VecDeque<Input>>>,
     calls: Arc<CallTable>,
-    /// What the shell committed, waiting for the core thread to take the
-    /// store next.
+    /// What the shell handed over, waiting for the core thread's next
+    /// input.
     shell: Arc<Mutex<Vec<FromShell>>>,
     /// Where what the core decides about hosts goes, once the profile's
     /// edge is up.
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
     /// The calls the core made of peers that are still out.
     outgoing: Outgoing,
+    /// The core thread, once started: the store closes when it ends.
+    thread: std::sync::OnceLock<std::thread::JoinHandle<()>>,
 }
 
 /// The tasks carrying the calls the core made of peers, by call.
 type Outgoing = Arc<Mutex<HashMap<CallId, AbortHandle>>>;
 
 impl Driver {
-    /// Starts the core thread for `runtime`'s profile. It ends when the
-    /// driver is dropped, or the runtime is.
-    pub(crate) fn start(
+    /// The driver for `runtime`'s profile and the core thread it feeds,
+    /// owning its `store`, to be started once the runtime is built. The
+    /// thread ends when the driver is dropped, or the runtime is.
+    pub(crate) fn new(
         runtime: Weak<ProfileRuntime>,
-        own_host: Vec<u8>,
+        store: Sqlite,
         dir: PathBuf,
         options: StartOptions,
-    ) -> Self {
+    ) -> (Self, CoreThread) {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
         let calls = Arc::new(CallTable::default());
         let reports = Arc::new(Mutex::new(VecDeque::new()));
         let shell = Arc::new(Mutex::new(Vec::new()));
         let connections = Arc::new(Mutex::new(Weak::new()));
         let outgoing = Outgoing::default();
-        // The core owns a store of its own between steps; the profile's is
-        // lent to it for each one.
-        let store = Sqlite::open_in_memory(own_host).expect("an in-memory store opens");
         let daemon = Daemon::new(store, options);
         let ring = Ring::open(
             dir.join(CORE_RING),
@@ -195,6 +202,7 @@ impl Driver {
             checkpointing: None,
             checkpoint_waiting: Vec::new(),
             drain_waiting: Vec::new(),
+            retain_reply: None,
             fed,
             reports: reports.clone(),
             channel_reply: None,
@@ -209,28 +217,21 @@ impl Driver {
             shell: shell.clone(),
             connections: connections.clone(),
             outgoing: outgoing.clone(),
-            lent: false,
             timers: HashMap::new(),
             waiting: HashMap::new(),
             ticked: None,
             settings: None,
         };
-        let handle = Handle::current();
-        std::thread::Builder::new()
-            .name("amux-core".to_owned())
-            .spawn(move || {
-                let _entered = handle.enter();
-                core.run();
-            })
-            .expect("the core thread starts");
-        Self {
+        let driver = Self {
             inputs,
             reports,
             calls,
             shell,
             connections,
             outgoing,
-        }
+            thread: std::sync::OnceLock::new(),
+        };
+        (driver, core)
     }
 
     /// From now on what the core decides about hosts goes to `connections`.
@@ -352,6 +353,39 @@ impl Driver {
         drained.await.unwrap_or_default()
     }
 
+    /// Asks the core for a retention pass and waits for what it did.
+    pub(crate) async fn retain(&self, retain: Retain) -> Option<Retained> {
+        let (done, retained) = oneshot::channel();
+        self.inputs.send(Fed::Retain { retain, done }).await.ok()?;
+        retained.await.ok()
+    }
+
+    /// Reads the store on the core thread, between steps.
+    pub(crate) async fn read<T: Send + 'static>(
+        &self,
+        read: impl FnOnce(&Sqlite) -> T + Send + 'static,
+    ) -> Option<T> {
+        let (done, value) = oneshot::channel();
+        let read = Box::new(move |store: &Sqlite| {
+            let _ = done.send(read(store));
+        });
+        self.inputs.send(Fed::Read(read)).await.ok()?;
+        value.await.ok()
+    }
+
+    /// For tests: writes the store beneath the core, between steps.
+    pub(crate) async fn beneath<T: Send + 'static>(
+        &self,
+        write: impl FnOnce(&mut Sqlite) -> T + Send + 'static,
+    ) -> Option<T> {
+        let (done, value) = oneshot::channel();
+        let write = Box::new(move |store: &mut Sqlite| {
+            let _ = done.send(write(store));
+        });
+        self.inputs.send(Fed::Beneath(write)).await.ok()?;
+        value.await.ok()
+    }
+
     /// Feeds the core an input.
     pub(crate) async fn feed(&self, input: Input) {
         let _ = self.inputs.send(Fed::Input(input)).await;
@@ -376,9 +410,9 @@ impl Driver {
         }
     }
 
-    /// Hands the core a change the shell committed. Called with the store
-    /// still held, so the core steps it before anything that reads the
-    /// store after it.
+    /// Hands the core a change to the host set, stepped before the next
+    /// input, or at once when made while the core thread carries out a
+    /// step.
     pub(crate) fn hand_over(&self, change: FromShell) {
         self.shell.lock().unwrap().push(change);
         // A full channel wakes the core anyway.
@@ -393,6 +427,15 @@ impl Drop for Driver {
         self.calls.end_all(Status::Ok);
         self.hang_up_all();
         let _ = self.inputs.try_send(Fed::Stop);
+        // The profile is gone only once its store is closed: a store closed
+        // later would checkpoint its WAL into a file someone may already
+        // be replacing. The thread itself, letting go of the profile in a
+        // read, ends on its own.
+        if let Some(thread) = self.thread.take()
+            && thread.thread().id() != std::thread::current().id()
+        {
+            let _ = thread.join();
+        }
     }
 }
 
@@ -408,7 +451,8 @@ struct Waiting {
     done: oneshot::Sender<Result<u64, String>>,
 }
 
-struct CoreThread {
+/// A profile's core and what its thread keeps.
+pub(crate) struct CoreThread {
     daemon: Daemon,
     /// Every input stepped since the last checkpoint, when the ring opened.
     ring: Option<Ring<Input>>,
@@ -419,6 +463,8 @@ struct CoreThread {
     /// Whoever waits for a drain pass, with the first pass whose report
     /// answers them.
     drain_waiting: Vec<(u64, oneshot::Sender<DrainReport>)>,
+    /// Whoever waits for the retention pass under way.
+    retain_reply: Option<oneshot::Sender<Retained>>,
     fed: mpsc::Receiver<Fed>,
     reports: Arc<Mutex<VecDeque<Input>>>,
     /// Whoever waits for the core's word on the channel the step under way
@@ -433,8 +479,6 @@ struct CoreThread {
     shell: Arc<Mutex<Vec<FromShell>>>,
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
     outgoing: Outgoing,
-    /// Whether the shell's store is lent to the core now.
-    lent: bool,
     timers: HashMap<TimerId, AbortHandle>,
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clock as last told to the core.
@@ -444,6 +488,19 @@ struct CoreThread {
 }
 
 impl CoreThread {
+    /// Starts the thread for `driver`, on the runtime it is called from.
+    pub(crate) fn start(self, driver: &Driver) {
+        let handle = Handle::current();
+        let thread = std::thread::Builder::new()
+            .name("amux-core".to_owned())
+            .spawn(move || {
+                let _entered = handle.enter();
+                self.run();
+            })
+            .expect("the core thread starts");
+        let _ = driver.thread.set(thread);
+    }
+
     fn run(mut self) {
         let mut out = Vec::new();
         loop {
@@ -451,6 +508,14 @@ impl CoreThread {
                 Some(input) => Fed::Input(input),
                 None => match self.fed.blocking_recv() {
                     Some(Fed::Stop) | None => return,
+                    Some(Fed::Read(read)) => {
+                        read(self.daemon.store());
+                        continue;
+                    }
+                    Some(Fed::Beneath(write)) => {
+                        write(self.daemon.store_beneath());
+                        continue;
+                    }
                     Some(fed) => fed,
                 },
             };
@@ -458,8 +523,7 @@ impl CoreThread {
                 return;
             };
             // The clock first, so a timer the step arms counts from now;
-            // then links and channels, and without the store: none of
-            // their inputs reads it.
+            // then links and channels.
             self.tick(&runtime, &mut out);
             let reports = std::mem::take(&mut *self.reports.lock().unwrap());
             for report in reports {
@@ -487,7 +551,6 @@ impl CoreThread {
                 Fed::Wake if self.shell.lock().unwrap().is_empty() => continue,
                 fed => fed,
             };
-            let mut store = runtime.store.blocking_lock();
             let mut call = None;
             let input = match fed {
                 Fed::Input(input) => Some(input),
@@ -527,11 +590,17 @@ impl CoreThread {
                         id: TimerId::Deliveries,
                     })
                 }
-                Fed::Wake | Fed::Stop | Fed::Channel { .. } | Fed::Forward { .. } => None,
+                Fed::Retain { retain, done } => {
+                    self.retain_reply = Some(done);
+                    Some(Input::Retain(retain))
+                }
+                Fed::Wake
+                | Fed::Stop
+                | Fed::Channel { .. }
+                | Fed::Forward { .. }
+                | Fed::Read(_)
+                | Fed::Beneath(_) => None,
             };
-            self.daemon.swap_store(&mut store);
-            self.lent = true;
-            self.tick(&runtime, &mut out);
             let launch = runtime.launch();
             let settings = Settings {
                 notify_delay_ms: launch.notify_delay_ms,
@@ -549,8 +618,8 @@ impl CoreThread {
                 self.settings = Some(settings);
                 self.step(&runtime, Input::Configure(settings), &mut out);
             }
-            // Committed before this thread took the store: told before
-            // anything this step reads.
+            // Handed over before this input arrived: told before anything
+            // it reads.
             let changes = std::mem::take(&mut *self.shell.lock().unwrap());
             for change in changes {
                 self.step(&runtime, Input::FromShell(change), &mut out);
@@ -576,9 +645,6 @@ impl CoreThread {
             if let Some(input) = input {
                 self.step(&runtime, input, &mut out);
             }
-            self.lent = false;
-            self.daemon.swap_store(&mut store);
-            drop(store);
             drop(runtime);
         }
     }
@@ -592,8 +658,7 @@ impl CoreThread {
         }
     }
 
-    /// Steps one input and carries out what it asked for, with the store
-    /// still held.
+    /// Steps one input and carries out what it asked for.
     fn step(&mut self, runtime: &Arc<ProfileRuntime>, input: Input, out: &mut Vec<Output>) {
         // A call's own answers, to its opening or its lag, are always
         // taken; every other answer is a live one, held to the call's room.
@@ -666,6 +731,11 @@ impl CoreThread {
             Output::Ingested { agent, report } => {
                 runtime.ingested(&report);
                 self.ingested(agent, report);
+            }
+            Output::Retained(retained) => {
+                if let Some(done) = self.retain_reply.take() {
+                    let _ = done.send(*retained);
+                }
             }
             Output::Drained { pass, report } => {
                 let (answered, waiting) = std::mem::take(&mut self.drain_waiting)
@@ -767,7 +837,7 @@ impl CoreThread {
             }
             Output::Dump { reason } => {
                 // The core logged why. The bundle is written off this
-                // thread, once the step lets go of the store it reads.
+                // thread, reading the store between later steps.
                 let runtime = Arc::downgrade(runtime);
                 tokio::spawn(async move {
                     let Some(runtime) = runtime.upgrade() else {
@@ -941,12 +1011,9 @@ impl CoreThread {
     }
 
     /// Steps at once what the shell handed over while carrying out a step's
-    /// outputs, with the store still lent, so subscribers read it in the
-    /// order of the outputs around it.
+    /// outputs, so subscribers read it in the order of the outputs around
+    /// it.
     fn step_handed_over(&mut self, runtime: &Arc<ProfileRuntime>) {
-        if !self.lent {
-            return;
-        }
         let changes = std::mem::take(&mut *self.shell.lock().unwrap());
         for change in changes {
             self.step(runtime, Input::FromShell(change), &mut Vec::new());
@@ -1191,8 +1258,8 @@ async fn blocking(work: impl FnOnce() -> std::io::Result<()> + Send + 'static) -
 }
 
 impl ProfileRuntime {
-    /// Completes a client call's request from what the shell owns, with the
-    /// store held at the point the core answers it.
+    /// Completes a client call's request from what the shell owns, at the
+    /// point the core answers it.
     fn client_request(&self, store: &Sqlite, ask: Ask) -> ClientRequest {
         match ask {
             Ask::Subscribe { agent_id, tail } => {

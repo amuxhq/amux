@@ -23,7 +23,7 @@ use daemon_core::payload::{
 };
 use git_facts::{Change, Comparison, GitError};
 use sha2::{Digest as _, Sha256};
-use store::{AgentRow, StoreError};
+use store::StoreError;
 use uuid::Uuid;
 use wire::{
     BlobRef, DiffBase, DiffFile, DiffFileChange, DiffRequest, ErrorCode, GetBlobRequest,
@@ -31,7 +31,7 @@ use wire::{
 };
 
 use crate::driver::{Ask, Delivered};
-use crate::install::{AGENTS, REPLICAS};
+use crate::install::REPLICAS;
 use crate::runtime::ProfileRuntime;
 
 #[derive(Debug, thiserror::Error)]
@@ -231,26 +231,6 @@ impl ProfileRuntime {
                 other => Err(answered_with(other)),
             },
             other => Err(answered_with(other)),
-        }
-    }
-
-    pub(crate) fn blob_path(&self, row: &AgentRow, hash: &[u8]) -> PathBuf {
-        self.files_of(row).join(agent_dir::BLOBS).join(hex(hash))
-    }
-
-    /// Where an agent's files are on this host: its own directory, or the
-    /// replica's.
-    pub(crate) fn files_of(&self, row: &AgentRow) -> PathBuf {
-        let agent = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
-        if row.agent.host == self.host().as_bytes() {
-            self.agent_dir(agent)
-        } else {
-            let host = Uuid::from_slice(&row.agent.host).unwrap_or_default();
-            self.dir()
-                .join(REPLICAS)
-                .join(host.to_string())
-                .join(AGENTS)
-                .join(agent.to_string())
         }
     }
 }

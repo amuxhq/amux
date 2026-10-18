@@ -217,7 +217,10 @@ async fn a_folder_outside_a_repository_or_a_taken_branch_fails_the_create() {
     println!("taken branch: {}", wire.message);
 
     assert!(
-        runtime.store().await.agents().unwrap().is_empty(),
+        runtime
+            .read_store(|store| store.agents().unwrap().is_empty())
+            .await
+            .unwrap(),
         "no agent is made"
     );
     assert!(

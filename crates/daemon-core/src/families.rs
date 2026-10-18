@@ -189,11 +189,6 @@ pub enum Refusal {
     NameTaken(String),
     /// The parent has ended and starts no more agents.
     ParentEnded(AgentId),
-    /// The parent lives on another host whose listing this host has not
-    /// caught up with since it last connected, or whose row for the parent
-    /// has not reached this host yet, so whether the parent has ended is
-    /// not known; the same create succeeds once it is.
-    ParentHostNotCaughtUp(crate::HostId),
     StartTimeout,
     StopTimeout,
     /// The previous process still holds the agent's directory.
@@ -534,22 +529,11 @@ impl Daemon {
             return Ok(());
         };
         let parent = AgentKey::new(parent.host_id.clone(), parent.agent_id.clone());
-        // A child made under another host's parent before that host's
-        // listing caught up would be judged by neither: the listing judges
-        // only agents that predate it, and the live stream after it says
-        // nothing of a parent that had already ended. A parent missing from
-        // a caught-up host is deleted, or made so lately its row is still on
-        // the way; a retry tells them apart.
-        if parent.host != self.store.own_host() {
-            let host = crate::HostId::from_slice(&parent.host);
-            if !host.is_some_and(|host| self.sources.ready(host))
-                || self.store.agent(&parent)?.is_none()
-            {
-                return Err(Refusal::ParentHostNotCaughtUp(
-                    host.unwrap_or(crate::HostId([0; 16])),
-                ));
-            }
-        }
+        // A parent on another host is judged only from a caught-up row. A
+        // child made before this host caught up with the parent's host, or
+        // before the parent's row arrived, is made: an exited parent's
+        // listing stops it, and one that outlives a deleted parent finishes
+        // its work and exits, left for the clean-up of leftover agents.
         if self.parent_ended(&parent)?.is_some() {
             let id = AgentId::from_slice(&parent.agent).unwrap_or(AgentId([0; 16]));
             return Err(Refusal::ParentEnded(id));

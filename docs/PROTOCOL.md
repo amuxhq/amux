@@ -663,13 +663,16 @@ agent exits or is deleted or removed by retention; a replica row arrives
 saying the agent has just exited, or is removed), and when this host finishes
 catching up with a peer after a (re)connect, which settles every own agent
 whose parent lives there against that complete listing: whatever happened
-while the hosts were apart is acted on then. Only agents that existed before
-that listing was asked for are judged by it; a child made since may belong to
-a parent the listing predates, and the live stream speaks for that parent
-(`inventory_caught_up` in `crates/daemon-core/src/sources.rs`). That is safe
-because no child under another host's parent is made before this host has
-caught up with that host and holds the parent's row (see the create below),
-so every such child was judged by a listing or by the stream after one.
+while the hosts were apart is acted on then. A parent the listing shows
+exited stops every own child of it, however lately the child was made, since
+an exited row is definitive. A parent missing from the listing deletes only
+the agents that existed before that listing was asked for; a child made since
+may belong to a parent made so lately the listing predates it, and the live
+stream speaks for that parent (`inventory_caught_up` in
+`crates/daemon-core/src/sources.rs`). A child made under a parent on another
+host before this host caught up with it may so outlive a parent deleted
+meanwhile: orphans are acceptable. Such a child finishes its work and exits,
+and a later clean-up of leftover agents collects what remains.
 
 A create names its parent (the caller, or for a create forwarded from another
 host, the parent that host stamped). If this host already sees that parent as
@@ -678,11 +681,8 @@ exited, or as deleted (its own agent with no row), the create is refused as
 one hold of the store, so a parent that ends after the check finds the child
 and stops it. A parent on another host is checked only against a caught-up
 row: while this host has not caught up with that host's listing since they
-last connected, or holds no row for the parent yet (deleted, or made so
-lately its row is still on the way), the create is refused, also as
-`FAILED_PRECONDITION`, in words that say to spawn again in a moment. The
-refusal is definite (no child was made), unlike an unreachable host's
-uncertain answer.
+last connected, or holds no row for the parent yet, the create is made, and
+the family rule above settles the child once the parent's row speaks.
 
 A stop's or delete's answer covers the named agent only; it never confirms the
 children, which may be on hosts that are away.

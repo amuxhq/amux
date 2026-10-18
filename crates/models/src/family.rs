@@ -188,6 +188,10 @@ struct Seen {
     parent_deleted: bool,
     /// The child's row was written on its host.
     child_created: bool,
+    /// The child was made while its host had not caught up with the
+    /// parent's host since they last connected, or held no row for the
+    /// parent yet.
+    child_made_unready: bool,
     /// The child's row went from its host.
     child_deleted: bool,
     /// The child's row went while its parent's was still held.
@@ -533,12 +537,15 @@ impl Machine for FamilyDeliveries {
             Property::eventually(
                 "every descendant of a stopped parent eventually stops on every reachable host: once \
                  the world rests with the parent exited or deleted, a child on a paired, linked host \
-                 is not running",
+                 is not running, unless it was made while its host had not caught up with its \
+                 parent's host or held no row for the parent, and its parent's row there says \
+                 nothing definitive: an orphan left to the later clean-up of leftover agents",
                 |model: &Self, s: &State| {
                     model.at_rest(s)
                         && (s.cut_short()
                             || !s.reachable()
                             || !s.parent_ended()
+                            || s.orphaned()
                             || !s.child.running && !s.child_live())
                 },
             ),
@@ -582,6 +589,22 @@ impl State {
     /// The parent exited or is deleted, as its own host holds it.
     fn parent_ended(&self) -> bool {
         self.seen.parent_deleted || !self.parent.running
+    }
+
+    /// The child was made before its host caught up with the parent's or
+    /// held the parent's row, and its host holds no row saying the parent
+    /// exited: nothing definitive reached it, and the child is an orphan
+    /// the later clean-up collects.
+    fn orphaned(&self) -> bool {
+        self.seen.child_made_unready
+            && !with_scratch(|scratch| {
+                scratch.slots[CHILDS].read(&self.hosts[CHILDS].held.store, |store| {
+                    store
+                        .agent(&parent_key())
+                        .unwrap()
+                        .is_some_and(|row| row.lifecycle == Lifecycle::Exited as i32)
+                })
+            })
     }
 
     /// The child's row on its host says live.
@@ -691,7 +714,16 @@ impl<'a> Transition<'a> {
             return;
         }
         let held = store.agent(&child_key()).unwrap().is_some();
+        let parent_held = store.agent(&parent_key()).unwrap().is_some();
+        let ready = self
+            .next
+            .following
+            .as_ref()
+            .is_some_and(|following| following.caught_up);
         let seen = &mut self.next.seen;
+        if held && !seen.child_created {
+            seen.child_made_unready = !ready || !parent_held;
+        }
         if held {
             seen.child_created = true;
         } else if seen.child_created && !seen.child_deleted {

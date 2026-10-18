@@ -238,15 +238,6 @@ pub enum RegistryError {
     /// the child would only be stopped again by the family rule.
     #[error("agent {0} has ended and starts no more agents")]
     ParentEnded(AgentId),
-    /// A create whose parent lives on a host this host has not caught up
-    /// with, or whose row it has not heard yet: whether the parent has
-    /// ended is not known. Definite, unlike an unreachable host: no child
-    /// was made.
-    #[error(
-        "this host has not caught up with host {0}'s agents, so it cannot tell whether \
-         the parent has ended; spawn again in a moment"
-    )]
-    ParentHostNotCaughtUp(Uuid),
     #[error("agent {0} did not start within the start deadline")]
     StartTimeout(AgentId),
     #[error("agent {0} did not stop within the stop deadline")]
@@ -316,9 +307,7 @@ impl RegistryError {
             | Self::NoFarCwd(_)
             | Self::BadName(_) => ErrorCode::InvalidArgument,
             Self::OtherHost => ErrorCode::Unimplemented,
-            Self::KindNotRun { .. } | Self::ParentEnded(_) | Self::ParentHostNotCaughtUp(_) => {
-                ErrorCode::FailedPrecondition
-            }
+            Self::KindNotRun { .. } | Self::ParentEnded(_) => ErrorCode::FailedPrecondition,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
                 git_facts::WorktreeError::BranchExists(_)
@@ -1956,9 +1945,6 @@ fn registry_error(id: AgentId, error: CallError) -> RegistryError {
         Refusal::Live => RegistryError::Live(id),
         Refusal::NameTaken(name) => RegistryError::NameTaken(name),
         Refusal::ParentEnded(parent) => RegistryError::ParentEnded(Uuid::from_bytes(parent.0)),
-        Refusal::ParentHostNotCaughtUp(host) => {
-            RegistryError::ParentHostNotCaughtUp(Uuid::from_bytes(host.0))
-        }
         Refusal::StartTimeout => RegistryError::StartTimeout(id),
         Refusal::StopTimeout => RegistryError::StopTimeout(id),
         Refusal::StillLocked => RegistryError::StillLocked(id),

@@ -762,13 +762,13 @@ impl Daemon {
     /// The listing is the host's whole fleet, so it also settles the family
     /// rule for this host's own agents whose parent lives there, whatever
     /// happened while the hosts were apart: a parent listed as exited stops
-    /// its children here, and one no longer listed deletes them. Only
+    /// every live child here, however lately it was made, since an exited
+    /// row is definitive. A parent missing from the listing deletes only
     /// `children`, the agents that existed before the listing was asked
-    /// for, are judged by it: a child made since may belong to a parent the
-    /// listing predates, and the live stream speaks for that parent. No
-    /// child is left unjudged so: a create under a parent on another host
-    /// is refused until this host has caught up with it and holds the
-    /// parent's row.
+    /// for: a child made since may belong to a parent made so lately the
+    /// listing predates it, and the live stream speaks for that parent. A
+    /// child made under a deleted parent before this host caught up is left
+    /// to finish its work and exit.
     fn inventory_caught_up(
         &mut self,
         host: HostId,
@@ -824,19 +824,17 @@ impl Daemon {
             let Some(id) = AgentId::from_slice(&child.agent) else {
                 continue;
             };
-            let says = match listed.iter().find(|agent| agent.agent_id == parent.agent) {
-                None if !unlisted.contains(parent) => Some(ParentSays::Deleted),
-                Some(parent)
-                    if parent.lifecycle == wire::Lifecycle::Exited as i32
-                        && row.lifecycle == wire::Lifecycle::Live as i32 =>
-                {
-                    Some(ParentSays::Exited)
-                }
-                None | Some(_) => None,
-            };
-            if let Some(says) = says {
-                self.follow(id, says, out);
+            if parent.host == host.0
+                && !unlisted.contains(parent)
+                && !listed.iter().any(|agent| agent.agent_id == parent.agent)
+            {
+                self.follow(id, ParentSays::Deleted, out);
             }
+        }
+        let exited = wire::Lifecycle::Exited as i32;
+        for agent in listed.iter().filter(|agent| agent.lifecycle == exited) {
+            let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
+            self.parent_changed(&key, ParentSays::Exited, out)?;
         }
         self.sources.following.remove(&host);
         self.sources.ready.insert(host, session);
@@ -1850,124 +1848,15 @@ mod tests {
         (inventory, source)
     }
 
-    /// A child under another host's parent is made only once this host has
-    /// caught up with that host's listing, so the parent is judged from a
-    /// caught-up row and the live stream after it speaks for the child.
-    #[test]
-    fn a_create_under_a_host_not_caught_up_is_refused_until_its_listing_is_in() {
-        const CHILD: crate::AgentId = crate::AgentId(*b"child-0000000000");
-        let create = || {
-            ClientRequest::CreateAgent(Box::new(crate::Create {
-                agent: CHILD,
-                cwd: "/src".into(),
-                given: Some("child".into()),
-                branches: BTreeSet::new(),
-                new_worktree: false,
-                spec: wire::AgentSpec {
-                    agent_id: CHILD.0.to_vec(),
-                    kind: wire::Kind::Codex as i32,
-                    parent: Some(wire::AgentRef {
-                        host_id: PEER.to_vec(),
-                        agent_id: THEIRS.to_vec(),
-                    }),
-                    ..wire::AgentSpec::default()
-                },
-            }))
-        };
-        let mut daemon = daemon();
-        step(&mut daemon, Input::Swept);
-        let inventory = following(&mut daemon);
-
-        let early = step(
-            &mut daemon,
-            Input::ClientCall {
-                call: CallId(1),
-                request: create(),
-            },
-        );
-        assert!(
-            early.iter().any(|output| matches!(
-                output,
-                Output::EndCall {
-                    call: CallId(1),
-                    status: crate::payload::Status::Failed(crate::payload::CallError::Registry(
-                        crate::Refusal::ParentHostNotCaughtUp(HostId(PEER))
-                    )),
-                }
-            )),
-            "{early:?}"
-        );
-        let child = AgentKey::new(OWN, CHILD.0);
-        assert!(daemon.store.agent(&child).unwrap().is_none());
-
-        step(
-            &mut daemon,
-            inventory_event(
-                inventory,
-                inventory_event::Of::Agent(listed(wire::Lifecycle::Live)),
-            ),
-        );
-        step(
-            &mut daemon,
-            inventory_event(
-                inventory,
-                inventory_event::Of::CaughtUp(CaughtUp::default()),
-            ),
-        );
-        let made = step(
-            &mut daemon,
-            Input::ClientCall {
-                call: CallId(2),
-                request: create(),
-            },
-        );
-        assert!(
-            made.contains(&Output::DialAgent { agent: CHILD }),
-            "{made:?}"
-        );
-        step(
-            &mut daemon,
-            Input::AgentHello {
-                agent: CHILD,
-                hello: Default::default(),
-            },
-        );
-
-        let exited = step(
-            &mut daemon,
-            inventory_event(
-                inventory,
-                inventory_event::Of::Agent(listed(wire::Lifecycle::Exited)),
-            ),
-        );
-        assert!(
-            exited.iter().any(|output| matches!(
-                output,
-                Output::WriteControl {
-                    agent: CHILD,
-                    frame: wire::CtlFrame {
-                        of: Some(wire::ctl_frame::Of::Stop(_)),
-                    },
-                }
-            )),
-            "the live stream stops the child its parent's exit leaves: {exited:?}"
-        );
-    }
-
-    /// A create in a new worktree writes its row only when the worktree is
-    /// made; the far parent is judged again then, so a host that fell
-    /// behind, or a parent whose row went, meanwhile refuses it.
-    #[test]
-    fn a_worktree_create_under_a_far_parent_is_judged_again_when_its_row_is_written() {
-        const CHILD: crate::AgentId = crate::AgentId(*b"child-0000000000");
-        let create = ClientRequest::CreateAgent(Box::new(crate::Create {
-            agent: CHILD,
+    fn far_child(new_worktree: bool) -> ClientRequest {
+        ClientRequest::CreateAgent(Box::new(crate::Create {
+            agent: FAR_CHILD,
             cwd: "/src".into(),
             given: Some("child".into()),
             branches: BTreeSet::new(),
-            new_worktree: true,
+            new_worktree,
             spec: wire::AgentSpec {
-                agent_id: CHILD.0.to_vec(),
+                agent_id: FAR_CHILD.0.to_vec(),
                 kind: wire::Kind::Codex as i32,
                 parent: Some(wire::AgentRef {
                     host_id: PEER.to_vec(),
@@ -1975,89 +1864,186 @@ mod tests {
                 }),
                 ..wire::AgentSpec::default()
             },
-        }));
-        let refused = |out: &[Output]| {
-            out.iter().find_map(|output| match output {
-                Output::EndCall {
-                    call: CallId(1),
-                    status:
-                        crate::payload::Status::Failed(crate::payload::CallError::Registry(refusal)),
-                } => Some(refusal.clone()),
-                _ => None,
-            })
-        };
-        let removed = |inventory| {
+        }))
+    }
+
+    const FAR_CHILD: crate::AgentId = crate::AgentId(*b"child-0000000000");
+
+    fn stops_far_child(out: &[Output]) -> bool {
+        out.iter().any(|output| {
+            matches!(
+                output,
+                Output::WriteControl {
+                    agent: FAR_CHILD,
+                    frame: wire::CtlFrame {
+                        of: Some(wire::ctl_frame::Of::Stop(_)),
+                    },
+                }
+            )
+        })
+    }
+
+    /// A child under another host's parent is made before this host has
+    /// caught up with that host's listing; the listing then shows the
+    /// parent exited, which is definitive, so the child it never judged as
+    /// one that predates it is stopped all the same.
+    #[test]
+    fn a_child_made_before_its_parents_host_caught_up_stops_when_the_listing_says_exited() {
+        let mut daemon = daemon();
+        step(&mut daemon, Input::Swept);
+        let inventory = following(&mut daemon);
+
+        let made = step(
+            &mut daemon,
+            Input::ClientCall {
+                call: CallId(1),
+                request: far_child(false),
+            },
+        );
+        assert!(
+            made.contains(&Output::DialAgent { agent: FAR_CHILD }),
+            "the create is made, not refused: {made:?}"
+        );
+        step(
+            &mut daemon,
+            Input::AgentHello {
+                agent: FAR_CHILD,
+                hello: Default::default(),
+            },
+        );
+
+        step(
+            &mut daemon,
             inventory_event(
                 inventory,
-                inventory_event::Of::AgentRemoved(wire::AgentRemoved {
-                    host_id: PEER.to_vec(),
-                    agent_id: THEIRS.to_vec(),
-                    reason: wire::RemovalReason::Deleted as i32,
-                }),
-            )
-        };
-        let fell_behind = |inventory| Input::PeerAnswer {
-            call: inventory,
-            answer: Answer::Ended,
-        };
-        for (meanwhile, why) in [
-            (
-                &fell_behind as &dyn Fn(CallId) -> Input,
-                "the parent's host stopped being ready",
+                inventory_event::Of::Agent(listed(wire::Lifecycle::Exited)),
             ),
-            (&removed, "the parent's row went"),
-        ] {
-            let mut daemon = daemon();
-            step(&mut daemon, Input::Swept);
-            let (inventory, _) = sourced(&mut daemon);
-            let asked = step(
-                &mut daemon,
-                Input::ClientCall {
-                    call: CallId(1),
-                    request: create.clone(),
+        );
+        let caught_up = step(
+            &mut daemon,
+            inventory_event(
+                inventory,
+                inventory_event::Of::CaughtUp(CaughtUp::default()),
+            ),
+        );
+        assert!(
+            stops_far_child(&caught_up),
+            "the listing's exited parent stops the child: {caught_up:?}"
+        );
+    }
+
+    /// A child made before its parent's host caught up, under a parent the
+    /// listing does not show, is not deleted by it: the parent may be made
+    /// so lately the listing predates it. An orphan of a deleted parent
+    /// finishes its work and exits.
+    #[test]
+    fn a_child_made_before_its_parents_host_caught_up_outlives_a_parent_the_listing_misses() {
+        let mut daemon = daemon();
+        step(&mut daemon, Input::Swept);
+        let inventory = following(&mut daemon);
+        step(
+            &mut daemon,
+            Input::ClientCall {
+                call: CallId(1),
+                request: far_child(false),
+            },
+        );
+        step(
+            &mut daemon,
+            Input::AgentHello {
+                agent: FAR_CHILD,
+                hello: Default::default(),
+            },
+        );
+        let caught_up = step(
+            &mut daemon,
+            inventory_event(
+                inventory,
+                inventory_event::Of::CaughtUp(CaughtUp::default()),
+            ),
+        );
+        assert!(
+            !caught_up.iter().any(|output| matches!(
+                output,
+                Output::WriteControl {
+                    agent: FAR_CHILD,
+                    ..
+                }
+            )),
+            "{caught_up:?}"
+        );
+        assert!(
+            daemon
+                .store
+                .agent(&AgentKey::new(OWN, FAR_CHILD.0))
+                .unwrap()
+                .is_some(),
+            "the child is kept"
+        );
+    }
+
+    /// A create in a new worktree writes its row only when the worktree is
+    /// made; the far parent is judged again then, so a parent whose row
+    /// said it exited meanwhile refuses it.
+    #[test]
+    fn a_worktree_create_under_a_far_parent_is_judged_again_when_its_row_is_written() {
+        let mut daemon = daemon();
+        step(&mut daemon, Input::Swept);
+        let (inventory, _) = sourced(&mut daemon);
+        let asked = step(
+            &mut daemon,
+            Input::ClientCall {
+                call: CallId(1),
+                request: far_child(true),
+            },
+        );
+        let job = asked
+            .iter()
+            .find_map(|output| match output {
+                Output::Job {
+                    id,
+                    op: crate::Job::MakeWorktree { .. },
+                } => Some(*id),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("the worktree is asked for first: {asked:?}"));
+        step(
+            &mut daemon,
+            inventory_event(
+                inventory,
+                inventory_event::Of::Agent(listed(wire::Lifecycle::Exited)),
+            ),
+        );
+        let made = step(
+            &mut daemon,
+            Input::JobDone {
+                job,
+                result: crate::payload::JobResult::Worktree {
+                    path: "/src/.worktrees/child".into(),
+                    base_branch: "main".into(),
                 },
-            );
-            let job = asked
-                .iter()
-                .find_map(|output| match output {
-                    Output::Job {
-                        id,
-                        op: crate::Job::MakeWorktree { .. },
-                    } => Some(*id),
-                    _ => None,
-                })
-                .unwrap_or_else(|| panic!("the worktree is asked for first: {asked:?}"));
-            step(&mut daemon, meanwhile(inventory));
-            let made = step(
-                &mut daemon,
-                Input::JobDone {
-                    job,
-                    result: crate::payload::JobResult::Worktree {
-                        path: "/src/.worktrees/child".into(),
-                        base_branch: "main".into(),
-                    },
-                },
-            );
-            assert_eq!(
-                refused(&made),
-                Some(crate::Refusal::ParentHostNotCaughtUp(HostId(PEER))),
-                "{why}: {made:?}"
-            );
-            assert!(
-                !made
-                    .iter()
-                    .any(|output| matches!(output, Output::SpawnAgent { .. })),
-                "{why}: {made:?}"
-            );
-            assert!(
-                daemon
-                    .store
-                    .agent(&AgentKey::new(OWN, CHILD.0))
-                    .unwrap()
-                    .is_none(),
-                "{why}: no row is written"
-            );
-        }
+            },
+        );
+        let refused = made.iter().find_map(|output| match output {
+            Output::EndCall {
+                call: CallId(1),
+                status: crate::payload::Status::Failed(crate::payload::CallError::Registry(refusal)),
+            } => Some(refusal.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            refused,
+            Some(crate::Refusal::ParentEnded(crate::AgentId(THEIRS))),
+            "{made:?}"
+        );
+        assert!(
+            daemon
+                .store
+                .agent(&AgentKey::new(OWN, FAR_CHILD.0))
+                .unwrap()
+                .is_none(),
+            "no row is written"
+        );
     }
 
     #[test]

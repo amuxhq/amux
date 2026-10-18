@@ -112,6 +112,35 @@ pub enum Input {
     FromShell(FromShell),
 }
 
+impl Input {
+    /// The input's kind, for logs.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Input::Tick { .. } => "Tick",
+            Input::Timer { .. } => "Timer",
+            Input::LinkUp { .. } => "LinkUp",
+            Input::LinkDown { .. } => "LinkDown",
+            Input::LinkControl { .. } => "LinkControl",
+            Input::ChannelOpened { .. } => "ChannelOpened",
+            Input::ChannelClosed { .. } => "ChannelClosed",
+            Input::PeerCall { .. } => "PeerCall",
+            Input::PeerAnswer { .. } => "PeerAnswer",
+            Input::PairingMessage { .. } => "PairingMessage",
+            Input::Discovered { .. } => "Discovered",
+            Input::AgentHello { .. } => "AgentHello",
+            Input::Nudge { .. } => "Nudge",
+            Input::ControlClosed { .. } => "ControlClosed",
+            Input::ClientCall { .. } => "ClientCall",
+            Input::CallCancelled { .. } => "CallCancelled",
+            Input::AnswerLagged { .. } => "AnswerLagged",
+            Input::JobDone { .. } => "JobDone",
+            Input::Entropy(_) => "Entropy",
+            Input::Configure(_) => "Configure",
+            Input::FromShell(_) => "FromShell",
+        }
+    }
+}
+
 /// The profile's settings the core reads, as last configured.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Settings {

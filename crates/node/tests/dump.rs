@@ -374,3 +374,40 @@ async fn a_peers_dump_answer_carries_no_daemon_log() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dump_the_daemon_core_asks_for_is_written_with_its_reason() {
+    let install = Install::new();
+    install.expect_core_dumps();
+    // Every step that takes any time at all runs over this.
+    let launch = node::Launch {
+        step_budget: daemon_core::StepBudget { micros: 0 },
+        ..support::synthetic::quiet_launch()
+    };
+    let daemon = install.start("boot-1", launch).await;
+    let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
+    let mut agent = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
+    agent.register(&install, &runtime).await;
+    agent.append(&support::synthetic::item("a", "hello"));
+    runtime.ingest(agent.id).await.unwrap();
+
+    let reasons = until("a bundle the core asked for", || {
+        let dumps = install.core_dumps();
+        async move {
+            match dumps.is_empty() {
+                true => Err("no bundle yet"),
+                false => Ok(dumps),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    for reason in &reasons {
+        assert!(
+            reason.starts_with(node::CORE_DUMP) && reason.contains("over its budget of 0 µs"),
+            "{reason}"
+        );
+    }
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

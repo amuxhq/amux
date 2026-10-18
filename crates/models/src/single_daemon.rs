@@ -32,7 +32,8 @@ use std::path::PathBuf;
 use daemon_core::generation::{LastRun, at_start};
 use daemon_core::payload::{Caller, ClientRequest, JobResult, Opening, Response};
 use daemon_core::{
-    AgentId, CallId, Checkpoint, Daemon, Input, Job, JobId, Output, StartOptions, TimerId,
+    AgentId, CallId, Checkpoint, Daemon, Input, Job, JobId, Output, StartOptions, StepBudget,
+    TimerId,
 };
 use store::{AgentKey, AgentRow, Dump, Sqlite};
 use wire::{Item, Step, session_event};
@@ -790,6 +791,9 @@ fn start(next: &mut State) {
             StartOptions {
                 generation,
                 agents: PathBuf::from(AGENTS),
+                // The model is a function of its actions alone, so no step
+                // may ask for a dump because the machine ran slowly.
+                budget: StepBudget::UNLIMITED,
             },
         );
         scratch.put_back(daemon).0

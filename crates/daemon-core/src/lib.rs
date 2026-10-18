@@ -12,6 +12,7 @@
 
 use std::fmt;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use store::Sqlite;
@@ -51,7 +52,9 @@ pub struct Daemon {
     pending: Pending,
     settings: Settings,
     options: StartOptions,
-    budget: StepBudget,
+    /// What the step under way touched, for the cheap invariants at its
+    /// end. Not part of the core's state: every step starts it empty.
+    touched: Touched,
 }
 
 /// What a daemon runs under, fixed for the run.
@@ -62,6 +65,8 @@ pub struct StartOptions {
     pub generation: u64,
     /// The directory holding each own agent's directory, named by its id.
     pub agents: PathBuf,
+    /// How long one step may take before it is reported with a dump.
+    pub budget: StepBudget,
 }
 
 impl Daemon {
@@ -81,13 +86,19 @@ impl Daemon {
             timers: Timers::default(),
             pending: Pending::default(),
             settings: Settings::default(),
-            budget: StepBudget::DAEMON,
+            touched: Touched::default(),
         }
     }
 
     /// One input in, outputs appended. Ends by checking the cheap
-    /// invariants; a violation appends [`Output::Dump`].
+    /// invariants; a violation appends [`Output::Dump`], and so does a step
+    /// that took longer than its budget.
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
+        // The step's own duration is the one reading of the world a core
+        // makes: it decides nothing but whether to ask for a dump.
+        let started = Instant::now();
+        let kind = input.kind();
+        self.touched = Touched::default();
         match input {
             Input::Tick { now_ms } => self.timers.now_ms = now_ms,
             Input::ClientCall { call, who, request } => self.client_call(call, who, request, out),
@@ -123,15 +134,71 @@ impl Daemon {
             | Input::Entropy(_) => {}
         }
         if let Err(violation) = self.check_step_invariants() {
+            tracing::error!(%violation, input = kind, "a daemon core step broke an invariant");
             out.push(Output::Dump {
                 reason: DumpReason::Violation(violation),
             });
         }
+        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+        if micros > self.options.budget.micros {
+            tracing::warn!(
+                micros,
+                budget = self.options.budget.micros,
+                input = kind,
+                "a daemon core step ran over its budget"
+            );
+            out.push(Output::Dump {
+                reason: DumpReason::OverBudget {
+                    micros,
+                    budget: self.options.budget,
+                },
+            });
+        }
     }
 
-    /// The cheap predicates production checks after every step: each costs
-    /// constant time per row the step touched and never scans the block.
+    /// The cheap predicates production checks after every step, at the
+    /// boundaries the step crossed: each costs constant time per row the
+    /// step touched and never scans the block.
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
+        for (agent, revision) in &self.touched.answered {
+            let committed = self
+                .store
+                .agent(agent)
+                .ok()
+                .flatten()
+                .map_or(0, |row| row.next_revision.saturating_sub(1));
+            if *revision > committed {
+                return Err(Violation {
+                    invariant: ANSWERED_UNCOMMITTED,
+                    detail: format!(
+                        "an answer about {agent:?} carried revision {revision}; the store has \
+                         committed through {committed}"
+                    ),
+                });
+            }
+        }
+        for (agent, below) in &self.touched.reclaimed {
+            let durable = self.checkpoints.durable_cursor(*agent);
+            if durable.is_none_or(|durable| *below > durable) {
+                return Err(Violation {
+                    invariant: RECLAIMED_ABOVE_CHECKPOINT,
+                    detail: format!(
+                        "{agent:?}'s journal was reclaimed below {below}; the newest checkpoint on \
+                         the drive holds its cursor at {durable:?}"
+                    ),
+                });
+            }
+        }
+        if let Some((opened, before)) = self.touched.opened_under
+            && opened < before
+        {
+            return Err(Violation {
+                invariant: GENERATION_FELL,
+                detail: format!(
+                    "a stream opened under generation {opened} after one under {before}"
+                ),
+            });
+        }
         Ok(())
     }
 
@@ -236,7 +303,37 @@ impl Daemon {
 
     /// How long one step may take before it is reported.
     pub fn budget(&self) -> StepBudget {
-        self.budget
+        self.options.budget
+    }
+}
+
+/// The single daemon's cheap invariants, as the sentences a violation
+/// names.
+pub const ANSWERED_UNCOMMITTED: &str =
+    "no answer carries a revision of this host's agent that the store has not committed";
+pub const RECLAIMED_ABOVE_CHECKPOINT: &str =
+    "an agent's journal is reclaimed only below the cursor of the newest checkpoint on the drive";
+pub const GENERATION_FELL: &str = "the generation this host's streams open under only ever rises";
+
+/// What the step under way touched, as the cheap invariants judge it.
+#[derive(Debug, Default)]
+struct Touched {
+    /// Each own agent answered about, with the newest revision an answer
+    /// carried.
+    answered: Vec<(store::AgentKey, u64)>,
+    /// Each agent whose journal was reclaimed, and the cursor below which.
+    reclaimed: Vec<(AgentId, u64)>,
+    /// The generation an own stream opened under, and the highest one
+    /// opened under before it.
+    opened_under: Option<(u64, u64)>,
+}
+
+impl Touched {
+    fn answered(&mut self, agent: &store::AgentKey, revision: u64) {
+        match self.answered.iter_mut().find(|(seen, _)| seen == agent) {
+            Some((_, newest)) => *newest = (*newest).max(revision),
+            None => self.answered.push((agent.clone(), revision)),
+        }
     }
 }
 
@@ -281,14 +378,26 @@ pub struct Pending {
 }
 
 /// How long one step may take before it is reported with a dump.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StepBudget {
     pub micros: u64,
 }
 
 impl StepBudget {
-    /// The daemon's: one step delays every other input for its duration.
-    pub const DAEMON: StepBudget = StepBudget { micros: 10_000 };
+    /// The daemon's: one step delays every other input for its duration,
+    /// and a tenth of a second is a stall a person notices. A full ingest
+    /// batch at the performance budget's ceiling of 100 µs a frame takes
+    /// about 26 ms, so a step past this is doing something no step should.
+    pub const DAEMON: StepBudget = StepBudget { micros: 100_000 };
+    /// A budget no step runs over, for a run that must be a function of
+    /// its inputs alone: a checker, a simulator, a replay.
+    pub const UNLIMITED: StepBudget = StepBudget { micros: u64::MAX };
+}
+
+impl Default for StepBudget {
+    fn default() -> Self {
+        Self::DAEMON
+    }
 }
 
 /// A cheap invariant that failed: which one, and what it saw.
@@ -303,6 +412,19 @@ pub struct Violation {
 impl fmt::Display for Violation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.invariant, self.detail)
+    }
+}
+
+impl fmt::Display for DumpReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DumpReason::Violation(violation) => write!(f, "an invariant failed: {violation}"),
+            DumpReason::OverBudget { micros, budget } => write!(
+                f,
+                "a step took {micros} µs, over its budget of {} µs",
+                budget.micros
+            ),
+        }
     }
 }
 

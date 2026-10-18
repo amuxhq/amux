@@ -170,7 +170,8 @@ impl Daemon {
     /// Deletes the agent's journal segments that lie wholly below `below`,
     /// a cursor on the drive, keeping the newest [`KEPT_SEGMENTS`] of them
     /// for dumps.
-    fn reclaim(&self, agent: AgentId, below: u64) {
+    fn reclaim(&mut self, agent: AgentId, below: u64) {
+        self.touched.reclaimed.push((agent, below));
         let dir = self.journal_dir(agent);
         let starts = match journal::reclaimable(&dir, below, KEPT_SEGMENTS) {
             Ok(starts) => starts,

@@ -31,6 +31,9 @@ pub const MAX_CAP: u32 = 10_000;
 pub struct Answers {
     open: BTreeMap<CallId, OpenCall>,
     muted: BTreeSet<Key>,
+    /// The highest generation a stream on this host's agents has opened
+    /// under.
+    opened_under: u64,
 }
 
 /// An agent by its host and id, as the checkpoint keeps it.
@@ -201,6 +204,10 @@ impl Daemon {
             })
         };
         answer(session_event::Of::Opening(wire::Opening { generation }));
+        if own {
+            self.touched.opened_under = Some((generation, self.answers.opened_under));
+            self.answers.opened_under = self.answers.opened_under.max(generation);
+        }
         if reset {
             answer(session_event::Of::Reset(wire::Reset {}));
         }
@@ -401,13 +408,18 @@ impl Daemon {
     /// Tells every stream on `agent` of one committed event, unless the
     /// agent is muted.
     pub(crate) fn publish_session(
-        &self,
+        &mut self,
         agent: &AgentKey,
         event: Arc<SessionEvent>,
         out: &mut Vec<Output>,
     ) {
         if self.answers.muted(agent) {
             return;
+        }
+        if agent.host == self.store.own_host()
+            && let Some(revision) = revision(&event)
+        {
+            self.touched.answered(agent, revision);
         }
         let key = Key::from(agent);
         for (call, open) in &self.answers.open {
@@ -488,6 +500,17 @@ impl Daemon {
                 self.answers.muted.remove(&Key::from(&agent));
             }
         }
+    }
+}
+
+/// The revision of the agent's history an event carries, if it carries one.
+fn revision(event: &SessionEvent) -> Option<u64> {
+    match event.of.as_ref()? {
+        session_event::Of::Item(item) => Some(item.revision),
+        session_event::Of::Append(append) => Some(append.revision),
+        session_event::Of::Snapshot(snapshot) => Some(snapshot.revision),
+        session_event::Of::CaughtUp(caught_up) => Some(caught_up.revision),
+        _ => None,
     }
 }
 
@@ -844,6 +867,7 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(daemon.answers, Answers::default());
+        assert_eq!(daemon.answers.open, BTreeMap::new(), "no stream is left");
+        assert_eq!(daemon.answers.muted, BTreeSet::new(), "and no mute");
     }
 }

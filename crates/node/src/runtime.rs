@@ -155,6 +155,9 @@ pub struct Launch {
     /// input ring holds, and how long ingested journal waits to be
     /// reclaimed.
     pub checkpoint_interval_ms: i64,
+    /// How long one step of the profile's core may take before it is
+    /// reported with a dump.
+    pub step_budget: daemon_core::StepBudget,
 }
 
 impl Default for Launch {
@@ -189,6 +192,7 @@ impl Default for Launch {
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
             checkpoint_interval_ms: 60_000,
+            step_budget: daemon_core::StepBudget::DAEMON,
         }
     }
 }
@@ -822,6 +826,7 @@ impl ProfileRuntime {
                 daemon_core::StartOptions {
                     generation: self.generation,
                     agents: self.dir.join(AGENTS),
+                    budget: self.launch().step_budget,
                 },
             )
         })

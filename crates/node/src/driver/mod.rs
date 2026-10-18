@@ -44,6 +44,8 @@ use wire::{FetchRequest, GetRequest};
 use crate::install::{CORE_CHECKPOINT, CORE_RING, STORE, write_durably};
 use crate::runtime::ProfileRuntime;
 
+/// How the reason of a dump the core asked for begins.
+pub const CORE_DUMP: &str = "the daemon core: ";
 /// Inputs waiting for the core. A full channel holds its senders back
 /// rather than growing.
 const INPUT_ROOM: usize = 1024;
@@ -448,7 +450,28 @@ impl CoreThread {
                 ));
             }
             Output::Dump { reason } => {
-                tracing::error!(?reason, "the daemon core asked for a dump");
+                // The core logged why. The bundle is written off this
+                // thread, once the step lets go of the store it reads.
+                let runtime = Arc::downgrade(runtime);
+                tokio::spawn(async move {
+                    let Some(runtime) = runtime.upgrade() else {
+                        return;
+                    };
+                    let request = wire::DumpRequest {
+                        agent_ids: Vec::new(),
+                        reason: format!("{CORE_DUMP}{reason}"),
+                        automatic: true,
+                    };
+                    match runtime.dump(request).await {
+                        Ok(bundle) => tracing::warn!(
+                            bundle = %bundle.display(),
+                            "dumped for the daemon core"
+                        ),
+                        Err(error) => {
+                            tracing::error!(%error, "dumping for the daemon core failed")
+                        }
+                    }
+                });
             }
             output @ (Output::OpenChannel { .. }
             | Output::CloseChannel { .. }

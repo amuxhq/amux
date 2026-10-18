@@ -268,6 +268,7 @@ mod tests {
             StartOptions {
                 generation: 1,
                 agents: dir.path().to_path_buf(),
+                ..StartOptions::default()
             },
         );
         let journal =
@@ -462,6 +463,93 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// The dumps a step asked for.
+    fn dumps_in(out: &[Output]) -> Vec<&crate::DumpReason> {
+        out.iter()
+            .filter_map(|output| match output {
+                Output::Dump { reason } => Some(reason),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_step_over_its_budget_asks_for_one_dump_saying_how_long_it_took() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
+        let row = AgentRow::new(AgentKey::new(OWN, AGENT.0), wire::Kind::Codex, "/src");
+        store.put_agent(&row).expect("the store takes its agent");
+        let budget = crate::StepBudget { micros: 0 };
+        let mut daemon = Daemon::new(
+            store,
+            StartOptions {
+                generation: 1,
+                agents: dir.path().to_path_buf(),
+                budget,
+            },
+        );
+        let mut journal =
+            journal::synthetic::SyntheticWriter::open(daemon.journal_dir(AGENT), 1 << 30)
+                .expect("the journal opens");
+        journal.append(&item(0)).expect("the journal takes a step");
+
+        let out = step(&mut daemon, Input::Nudge { agent: AGENT });
+        let dumps = dumps_in(&out);
+        let [crate::DumpReason::OverBudget { micros, budget: of }] = dumps[..] else {
+            panic!("one dump for the step that ran over: {dumps:?}");
+        };
+        println!("dump: {}", dumps[0]);
+        assert!(*micros > 0);
+        assert_eq!(*of, budget);
+        assert!(
+            matches!(out.last(), Some(Output::Dump { .. })),
+            "after everything the step asked for"
+        );
+    }
+
+    #[test]
+    fn an_answer_ahead_of_the_store_breaks_an_invariant_and_asks_for_a_dump_naming_it() {
+        let mut rig = rig();
+        let call = CallId(1);
+        subscribed(&mut rig.daemon, call);
+        let ahead = wire::SessionEvent {
+            of: Some(session_event::Of::Item(Item {
+                key: "k000".into(),
+                revision: 7,
+                ..Item::default()
+            })),
+        };
+        // The shell hands over an event of this host's agent that its
+        // store never committed.
+        let out = step(
+            &mut rig.daemon,
+            Input::FromShell(crate::FromShell::Session {
+                agent: AgentKey::new(OWN, AGENT.0),
+                event: Arc::new(ahead),
+            }),
+        );
+        let dumps = dumps_in(&out);
+        let [crate::DumpReason::Violation(violation)] = dumps[..] else {
+            panic!("one dump for the violation: {dumps:?}");
+        };
+        println!("dump: {}", dumps[0]);
+        assert_eq!(violation.invariant, crate::ANSWERED_UNCOMMITTED);
+        assert!(
+            violation.detail.contains("revision 7") && violation.detail.contains("through 0"),
+            "{violation}"
+        );
+
+        // Committed, the same revisions break nothing.
+        for n in 0..7 {
+            rig.journal
+                .append(&item(n))
+                .expect("the journal takes a step");
+        }
+        let out = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        assert_eq!(answered(&out, call).len(), 7);
+        assert_eq!(dumps_in(&out), Vec::<&crate::DumpReason>::new());
     }
 
     /// The checkpoint job a step asked for.

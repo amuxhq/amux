@@ -56,6 +56,8 @@ pub struct Install {
     pub data_dir: PathBuf,
     pub work: PathBuf,
     pub profile: ProfileId,
+    /// The test makes the daemon core ask for dumps on purpose.
+    core_dumps_expected: std::sync::atomic::AtomicBool,
 }
 
 impl Install {
@@ -70,6 +72,7 @@ impl Install {
             data_dir,
             work,
             profile,
+            core_dumps_expected: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -145,6 +148,51 @@ impl Install {
 impl Default for Install {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Install {
+    /// Says this test makes the daemon core ask for dumps on purpose, so
+    /// the installation may be left with them.
+    pub fn expect_core_dumps(&self) {
+        self.core_dumps_expected
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The reason of every dump in the installation's reports that the
+    /// daemon core asked for: an invariant it broke, or a step over its
+    /// budget.
+    pub fn core_dumps(&self) -> Vec<String> {
+        let Ok(bundles) = std::fs::read_dir(self.data_dir.join(node::REPORTS)) else {
+            return Vec::new();
+        };
+        bundles
+            .filter_map(|bundle| {
+                let manifest = std::fs::read(bundle.ok()?.path().join(node::MANIFEST)).ok()?;
+                let manifest: serde_json::Value = serde_json::from_slice(&manifest).ok()?;
+                let reason = manifest["reason"].as_str()?;
+                reason
+                    .starts_with(node::CORE_DUMP)
+                    .then(|| reason.to_owned())
+            })
+            .collect()
+    }
+}
+
+impl Drop for Install {
+    /// No test leaves a dump the daemon core asked for: production asserts
+    /// the core's cheap invariants and its step budget, so a dump here is a
+    /// broken invariant or a step that ran long. A test that makes the
+    /// core ask for one on purpose says so first.
+    fn drop(&mut self) {
+        if std::thread::panicking() || *self.core_dumps_expected.get_mut() {
+            return;
+        }
+        let dumps = self.core_dumps();
+        assert!(
+            dumps.is_empty(),
+            "the daemon core asked for dumps: {dumps:#?}"
+        );
     }
 }
 

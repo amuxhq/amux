@@ -121,6 +121,17 @@ struct Retry {
 }
 
 impl PresenceState {
+    /// Presence without the length of any host's next wait.
+    pub(crate) fn canonical(&self) -> PresenceState {
+        let mut presence = self.clone();
+        for host in presence.hosts.values_mut() {
+            if let Some(retry) = host.retry.as_mut() {
+                retry.pause_ms = 0;
+            }
+        }
+        presence
+    }
+
     /// What the core last told about `host`.
     pub fn view(&self, host: HostId) -> HostView {
         self.hosts

@@ -30,6 +30,21 @@ pub struct Notifications {
 }
 
 impl Notifications {
+    pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
+        out.extend(self.sending.keys().copied());
+    }
+
+    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Notifications {
+        Notifications {
+            sending: self
+                .sending
+                .iter()
+                .map(|(job, row)| (ids.jobs.get(*job), row.clone()))
+                .collect(),
+            armed_at: self.armed_at,
+        }
+    }
+
     fn is_sending(&self, row: &Notification) -> bool {
         self.sending
             .values()

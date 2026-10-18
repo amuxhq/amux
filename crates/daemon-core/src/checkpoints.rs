@@ -47,6 +47,18 @@ struct Taking {
 }
 
 impl Checkpoints {
+    pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
+        out.extend(self.taking.as_ref().map(|taking| taking.job));
+    }
+
+    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Checkpoints {
+        let mut checkpoints = self.clone();
+        if let Some(taking) = checkpoints.taking.as_mut() {
+            taking.job = ids.jobs.get(taking.job);
+        }
+        checkpoints
+    }
+
     /// The cursor below which the agent's journal may be reclaimed: its
     /// cursor at the newest checkpoint on the drive.
     pub fn durable_cursor(&self, agent: AgentId) -> Option<u64> {

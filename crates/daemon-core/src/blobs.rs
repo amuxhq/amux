@@ -34,6 +34,22 @@ pub struct Blobs {
     writing: BTreeMap<JobId, Writing>,
 }
 
+impl Blobs {
+    pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
+        out.extend(self.writing.keys().copied());
+    }
+
+    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Blobs {
+        Blobs {
+            writing: self
+                .writing
+                .iter()
+                .map(|(job, writing)| (ids.jobs.get(*job), writing.clone()))
+                .collect(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 enum Writing {
     /// A client's upload, answered with its reference once written.

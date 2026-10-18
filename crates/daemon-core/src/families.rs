@@ -57,6 +57,35 @@ pub struct FamilyState {
 }
 
 impl FamilyState {
+    /// The jobs the operations under way wait on.
+    pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
+        out.extend(
+            self.lanes
+                .values()
+                .filter_map(|lane| lane.current.as_ref()?.doing.job()),
+        );
+    }
+
+    /// The registry with the jobs it waits on under canonical ids.
+    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> FamilyState {
+        let mut families = self.clone();
+        for lane in families.lanes.values_mut() {
+            if let Some(operation) = lane.current.as_mut() {
+                match &mut operation.doing {
+                    Doing::Worktree { job, .. }
+                    | Doing::AwaitUnlock { job, .. }
+                    | Doing::Removing { job }
+                    | Doing::Ending {
+                        phase: Phase::Killing { job: Some(job) },
+                        ..
+                    } => *job = ids.jobs.get(*job),
+                    Doing::Starting | Doing::AwaitExit { .. } | Doing::Ending { .. } => {}
+                }
+            }
+        }
+        families
+    }
+
     /// The agents with a process this run knows of.
     pub fn processes(&self) -> impl Iterator<Item = AgentId> + '_ {
         self.processes.keys().copied()
@@ -232,6 +261,22 @@ enum Doing {
     Ending { phase: Phase, then: Then },
     /// A delete removed the rows; the directory goes.
     Removing { job: JobId },
+}
+
+impl Doing {
+    /// The job the operation waits on, if it waits on one.
+    fn job(&self) -> Option<JobId> {
+        match self {
+            Doing::Worktree { job, .. }
+            | Doing::AwaitUnlock { job, .. }
+            | Doing::Removing { job }
+            | Doing::Ending {
+                phase: Phase::Killing { job: Some(job) },
+                ..
+            } => Some(*job),
+            Doing::Starting | Doing::AwaitExit { .. } | Doing::Ending { .. } => None,
+        }
+    }
 }
 
 /// How far ending a process has gone.
@@ -1558,6 +1603,47 @@ mod tests {
             })
             .collect();
         assert_eq!(violations, vec![crate::DELETED_UNDER_A_STALE_LISTING]);
+    }
+
+    #[test]
+    fn a_stop_and_the_delete_queued_behind_it_ending_in_one_step_ask_for_no_dump() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        let mut journal = journal::Writer::open(rig.daemon.journal_dir(PARENT), 1 << 20)
+            .expect("the journal opens");
+        journal
+            .append(&wire::Step {
+                items: vec![wire::Item {
+                    key: "said".into(),
+                    text: "hello".into(),
+                    ..wire::Item::default()
+                }],
+                ..wire::Step::default()
+            })
+            .expect("a frame is written");
+        rig.step(Input::Nudge { agent: PARENT });
+        // A daemon that started again adopts the process, whose Hello makes
+        // the next read to the journal's end announce its CaughtUp.
+        rig.step(Input::AgentHello {
+            agent: PARENT,
+            hello: Default::default(),
+        });
+        rig.call(ClientRequest::StopAgent { agent: PARENT });
+        rig.call(ClientRequest::DeleteAgent { agent: PARENT });
+
+        // The exit announces the CaughtUp, answers the stop, and the delete
+        // behind it removes the row, all in one step.
+        let gone = rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        assert!(rig.row(PARENT).is_none(), "the delete went ahead: {gone:?}");
+        assert!(
+            !gone
+                .iter()
+                .any(|output| matches!(output, Output::Dump { .. })),
+            "an answer about an agent the step went on to delete was committed: {gone:?}"
+        );
     }
 
     #[test]

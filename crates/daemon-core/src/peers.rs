@@ -73,8 +73,38 @@ pub(crate) struct Page {
 impl PeerCalls {
     pub(crate) fn mint(&mut self) -> CallId {
         self.last += 1;
-        CallId(MINTED | self.last)
+        minted(self.last)
     }
+
+    /// The inventory sessions the calls waiting name.
+    pub(crate) fn sessions(&self, out: &mut Vec<u64>) {
+        out.extend(self.waiting.values().filter_map(|waiting| match waiting {
+            Waiting::Page(page) => Some(page.session),
+            _ => None,
+        }));
+    }
+
+    /// The calls waiting under their canonical ids, with no count of the
+    /// ones minted before.
+    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> PeerCalls {
+        let waiting = self
+            .waiting
+            .iter()
+            .map(|(call, waiting)| {
+                let mut waiting = waiting.clone();
+                if let Waiting::Page(page) = &mut waiting {
+                    page.session = ids.sessions.get(page.session);
+                }
+                (ids.calls.get(*call), waiting)
+            })
+            .collect();
+        PeerCalls { last: 0, waiting }
+    }
+}
+
+/// The `n`th call id the core mints.
+pub(crate) fn minted(n: u64) -> CallId {
+    CallId(MINTED | n)
 }
 
 impl Pending {

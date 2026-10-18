@@ -202,6 +202,49 @@ impl Sources {
         self.policy
     }
 
+    /// Every inventory session the sources name.
+    pub(crate) fn sessions(&self, out: &mut Vec<u64>) {
+        out.extend(self.ready.values().chain(self.following.values()).copied());
+        out.extend(self.open.values().map(|source| source.session));
+        out.extend(
+            self.followers
+                .values()
+                .filter_map(|follower| match &follower.state {
+                    Following::Streaming(inventory) => Some(inventory.session),
+                    _ => None,
+                }),
+        );
+    }
+
+    /// The sources with their calls and sessions under canonical ids, and
+    /// no backoff or count of sessions begun.
+    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Sources {
+        let mut sources = self.clone();
+        sources.last_session = 0;
+        for session in sources
+            .ready
+            .values_mut()
+            .chain(sources.following.values_mut())
+        {
+            *session = ids.sessions.get(*session);
+        }
+        for source in sources.open.values_mut() {
+            source.session = ids.sessions.get(source.session);
+            source.backoff = None;
+            if let Feeding::Streaming { call, .. } = &mut source.feeding {
+                *call = ids.calls.get(*call);
+            }
+        }
+        for follower in sources.followers.values_mut() {
+            follower.backoff = None;
+            if let Following::Streaming(inventory) = &mut follower.state {
+                inventory.call = ids.calls.get(inventory.call);
+                inventory.session = ids.sessions.get(inventory.session);
+            }
+        }
+        sources
+    }
+
     /// How the replica agent's source stands now, without the call it
     /// streams on or the length of its backoff.
     pub fn standing(&self, agent: &AgentKey) -> Standing {

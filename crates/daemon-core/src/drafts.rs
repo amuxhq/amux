@@ -49,6 +49,17 @@ pub fn decode(bytes: &[u8]) -> DraftList {
 }
 
 impl Drafts {
+    pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
+        out.extend(self.writing);
+    }
+
+    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Drafts {
+        Drafts {
+            writing: self.writing.map(|job| ids.jobs.get(job)),
+            ..self.clone()
+        }
+    }
+
     /// Whether a draft of the agent is kept.
     pub fn holds(&self, agent_id: &[u8]) -> bool {
         self.by_agent.contains_key(agent_id)

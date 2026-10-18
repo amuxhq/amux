@@ -23,6 +23,7 @@ mod codec;
 pub mod deliveries;
 pub mod drafts;
 mod families;
+pub mod fingerprint;
 pub mod generation;
 pub mod ids;
 pub mod ingest;
@@ -41,6 +42,7 @@ pub use checkpoints::Checkpoints;
 pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
 pub use drafts::Drafts;
 pub use families::{Create, Ended, FamilyState, Refusal, Resume};
+pub use fingerprint::Fingerprint;
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use ingest::Journals;
 pub use io::{
@@ -340,12 +342,13 @@ impl Daemon {
             }
         }
         for (agent, revision) in &self.touched.answered {
-            let committed = self
-                .store
-                .agent(agent)
-                .ok()
-                .flatten()
-                .map_or(0, |row| row.next_revision.saturating_sub(1));
+            let committed = match self.store.agent(agent) {
+                Ok(Some(row)) => row.next_revision.saturating_sub(1),
+                // Deleted later in the step, which ended its streams: what
+                // they were answered was committed then.
+                Ok(None) => continue,
+                Err(_) => 0,
+            };
             if *revision > committed {
                 return Err(Violation {
                     invariant: ANSWERED_UNCOMMITTED,

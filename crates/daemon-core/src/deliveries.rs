@@ -67,6 +67,35 @@ pub struct Deliveries {
 }
 
 impl Deliveries {
+    /// The jobs the lanes wait on.
+    pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
+        out.extend(
+            self.lanes
+                .values()
+                .filter_map(|lane| match lane.current.as_ref()?.stage {
+                    Stage::Resuming { job } => job,
+                    _ => None,
+                }),
+        );
+    }
+
+    /// The drain and lanes with the jobs they wait on under canonical ids,
+    /// and no count of passes run.
+    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Deliveries {
+        let mut deliveries = self.clone();
+        deliveries.passes = 0;
+        for lane in deliveries.lanes.values_mut() {
+            if let Some(InLane {
+                stage: Stage::Resuming { job: Some(job) },
+                ..
+            }) = lane.current.as_mut()
+            {
+                *job = ids.jobs.get(*job);
+            }
+        }
+        deliveries
+    }
+
     /// The pass whose report answers someone asking now: the one under
     /// way, else the next to begin.
     pub fn answering_pass(&self) -> u64 {

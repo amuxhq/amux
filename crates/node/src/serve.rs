@@ -9,7 +9,7 @@ use prost::{Message as _, Name as _};
 use store::{AgentKey, StoreError};
 use wire::{
     Agent, AmbiguousAgentName, ErrorCode, ErrorDetail, FetchRequest, FetchResponse, GetRequest,
-    InventoryEvent, Item, SessionEvent, inventory_event, session_event,
+    InventoryEvent, Item, inventory_event,
 };
 
 use crate::driver::{Answers, Ask, Delivered};
@@ -54,9 +54,9 @@ impl From<Status> for ServeError {
             Status::Failed(CallError::NoItem(key)) => ServeError::NoItem(key),
             Status::Failed(CallError::OriginUnreachable) => ServeError::OriginUnreachable,
             Status::Failed(CallError::Store(why)) => ServeError::Failed(why),
-            Status::Failed(error @ (CallError::Peer(_) | CallError::NotServed)) => {
-                ServeError::Failed(format!("{error:?}"))
-            }
+            Status::Failed(
+                error @ (CallError::Peer(_) | CallError::NotServed | CallError::Registry(_)),
+            ) => ServeError::Failed(format!("{error:?}")),
         }
     }
 }
@@ -85,10 +85,6 @@ impl ServeError {
             details,
         }
     }
-}
-
-pub(crate) fn event(of: session_event::Of) -> SessionEvent {
-    SessionEvent { of: Some(of) }
 }
 
 pub(crate) fn inventory(of: inventory_event::Of) -> InventoryEvent {

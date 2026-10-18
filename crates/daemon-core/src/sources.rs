@@ -714,7 +714,7 @@ impl Daemon {
                 None | Some(_) => None,
             };
             if let Some(says) = says {
-                out.push(Output::Shell(ShellWork::FollowParent { child: id, says }));
+                self.follow(id, says, out);
             }
         }
         self.sources.following.remove(&host);
@@ -795,63 +795,6 @@ impl Daemon {
         let removed = inventory(inventory_event::Of::AgentRemoved(removed));
         self.agent_removed(key, Arc::new(removed), out);
         self.recount_from(parent, out)
-    }
-
-    /// Each of this host's own agents under `parent`, whose row now says
-    /// `says`, follows it: exited stops each live child, deleted deletes
-    /// each child. A parent that is merely out of reach says neither, so
-    /// its children carry on and their reports wait in the outbox.
-    fn parent_changed(
-        &mut self,
-        parent: &AgentKey,
-        says: ParentSays,
-        out: &mut Vec<Output>,
-    ) -> Result<(), StoreError> {
-        for child in self.store.agents_of_parent(parent)? {
-            if !self.is_own_host(&child.agent.host)
-                || (says == ParentSays::Exited && child.lifecycle != wire::Lifecycle::Live as i32)
-            {
-                continue;
-            }
-            if let Some(child) = AgentId::from_slice(&child.agent.agent) {
-                out.push(Output::Shell(ShellWork::FollowParent { child, says }));
-            }
-        }
-        Ok(())
-    }
-
-    /// Counts the live descendants of `parent` again, and of each own
-    /// ancestor above it, writing and answering every count that changed;
-    /// a count that did not change leaves those above it unchanged too. A
-    /// replica ancestor's count is its origin's. A running own `parent`
-    /// also hears which of its children are live, when that changed.
-    fn recount_from(
-        &mut self,
-        mut parent: Option<AgentKey>,
-        out: &mut Vec<Output>,
-    ) -> Result<(), StoreError> {
-        if let Some(key) = &parent
-            && self.is_own_host(&key.host)
-            && let Some(agent) = AgentId::from_slice(&key.agent)
-        {
-            out.push(Output::Shell(ShellWork::TellChildren { agent }));
-        }
-        while let Some(key) = parent {
-            if !self.is_own_host(&key.host) {
-                break;
-            }
-            let Some(row) = self.store.agent(&key)? else {
-                break;
-            };
-            let count = self.store.live_descendants(&key)?;
-            if count == row.descendants {
-                break;
-            }
-            self.store.set_descendants(&key, count)?;
-            self.publish_row(&key, out)?;
-            parent = row.parent;
-        }
-        Ok(())
     }
 
     // --- the sweep ---------------------------------------------------------------

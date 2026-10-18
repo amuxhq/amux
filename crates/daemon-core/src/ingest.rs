@@ -100,6 +100,9 @@ impl Daemon {
                 id: TimerId::Ingest(agent),
             });
         }
+        if report.end != IngestEnd::More {
+            self.journal_read(agent, out);
+        }
         out.push(Output::Ingested { agent, report });
     }
 
@@ -201,7 +204,7 @@ impl Daemon {
 
     /// Sets the agent's CaughtUp marker and answers it to the agent's
     /// streams: a stream opened since reads it with its cut.
-    fn announce_caught_up(
+    pub(crate) fn announce_caught_up(
         &mut self,
         key: &AgentKey,
         out: &mut Vec<Output>,
@@ -223,9 +226,14 @@ impl Daemon {
     }
 }
 
-/// An agent's journal under `agents`: in the agent's directory, which is
-/// named by its id in the hyphenated form.
+/// An agent's journal under `agents`: in the agent's directory.
 pub fn journal_dir(agents: &Path, agent: AgentId) -> PathBuf {
+    agent_dir(agents, agent).join(JOURNAL)
+}
+
+/// An agent's directory under `agents`, named by its id in the hyphenated
+/// form.
+pub fn agent_dir(agents: &Path, agent: AgentId) -> PathBuf {
     let mut name = String::with_capacity(36);
     for (at, byte) in agent.0.iter().enumerate() {
         if matches!(at, 4 | 6 | 8 | 10) {
@@ -233,7 +241,7 @@ pub fn journal_dir(agents: &Path, agent: AgentId) -> PathBuf {
         }
         name.push_str(&format!("{byte:02x}"));
     }
-    agents.join(name).join(JOURNAL)
+    agents.join(name)
 }
 
 #[cfg(test)]

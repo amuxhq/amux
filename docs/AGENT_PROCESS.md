@@ -35,8 +35,12 @@ provider children, and how it ends.
 | [`crates/interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters the process runs |
 | [`crates/amux/src/main.rs`](../crates/amux/src/main.rs) | The hidden subcommands a harness runs from the install path: `amux agent <dir>`, `amux mcp <dir>` (the tool server) and `amux hooks claude` (terminal Claude's hook command) |
 
-The daemon's side of the relationship (spawning, dialling, ingesting,
-stopping) is the agent registry in
+The daemon's side of the relationship is the agent registry: what to
+start, stop, kill, delete, resume or rename, and when, is decided in the
+daemon core's
+[`crates/daemon-core/src/families.rs`](../crates/daemon-core/src/families.rs),
+and the processes themselves (spawning, dialling, the control connection,
+the startup sweep) are kept by
 [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs).
 
 ## The agent directory

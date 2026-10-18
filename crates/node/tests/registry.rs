@@ -940,12 +940,13 @@ async fn a_child_asked_for_while_its_parent_stops_never_outlives_it() {
     daemon.shutdown().await.unwrap();
 }
 
-/// A delete dropped mid-way (its caller went away) leaves the agent's row
-/// published again. The delete mutes the agent's changes until its removal
-/// is published, and unmuted it only after its await: dropped there, it
-/// kept every later change of the agent from every client until restart.
+/// A delete whose caller goes away mid-way still finishes: the agent is
+/// stopped and removed, and its removal reaches every subscriber. The
+/// delete mutes the agent's changes until its removal is published, so a
+/// delete that stopped where its caller left would keep every later change
+/// of the agent from every client.
 #[tokio::test]
-async fn a_delete_dropped_mid_way_leaves_its_agents_changes_published() {
+async fn a_delete_whose_caller_goes_away_still_finishes() {
     let install = Install::new();
     let never = install.path("never");
     let daemon = install
@@ -964,13 +965,11 @@ async fn a_delete_dropped_mid_way_leaves_its_agents_changes_published() {
     let mut inventory = runtime.subscribe_inventory().await.unwrap();
 
     {
-        // Polling takes the delete past its check of the row and mutes the
-        // agent. Holding the store then keeps it from removing the row,
-        // whether or not the stop has finished; then the delete's caller
-        // goes away. The profile's core takes the store for each input it
-        // steps, so the delete may find it taken and queue for it: it is
-        // polled until the store can be had, which it can only once the
-        // delete, queued first, has had it and let it go.
+        // Polling hands the delete to the profile's core; holding the
+        // store then keeps the core from stepping it, and the delete's
+        // caller goes away before it can. The core takes the store for
+        // each input it steps, so the delete is polled until the store can
+        // be had.
         let mut delete = Box::pin(runtime.delete(parent));
         let store = loop {
             assert!(poll_once(&mut delete).await.is_pending());
@@ -982,7 +981,7 @@ async fn a_delete_dropped_mid_way_leaves_its_agents_changes_published() {
         for _ in 0..8 {
             assert!(
                 poll_once(&mut delete).await.is_pending(),
-                "the delete waits for the store"
+                "the delete waits for the core"
             );
             tokio::task::yield_now().await;
         }
@@ -990,12 +989,10 @@ async fn a_delete_dropped_mid_way_leaves_its_agents_changes_published() {
         drop(store);
     }
 
-    runtime.rename(parent, "renamed-parent").await.unwrap();
-    let renamed = tokio::time::timeout(PATIENCE, async {
+    let removed = tokio::time::timeout(PATIENCE, async {
         while let Some(event) = inventory.next().await {
-            if let Some(wire::inventory_event::Of::Agent(agent)) = &event.of
-                && agent.agent_id == parent.as_bytes()
-                && agent.name == "renamed-parent"
+            if let Some(wire::inventory_event::Of::AgentRemoved(removed)) = &event.of
+                && removed.agent_id == parent.as_bytes()
             {
                 return true;
             }
@@ -1004,9 +1001,23 @@ async fn a_delete_dropped_mid_way_leaves_its_agents_changes_published() {
     })
     .await;
     assert!(
-        matches!(renamed, Ok(true)),
-        "the parent's rename never reached a subscriber after its delete was dropped"
+        matches!(removed, Ok(true)),
+        "the parent's removal never reached a subscriber after its delete's caller went away"
     );
+    assert!(matches!(
+        runtime.agent(parent).await,
+        Err(RegistryError::NotFound(_))
+    ));
+    until("the directory to go", || {
+        let dir = install.agent_dir(parent);
+        async move {
+            (!dir.exists())
+                .then_some(())
+                .ok_or_else(|| "the directory is there".to_owned())
+        }
+    })
+    .await
+    .unwrap();
 
     kill_all(&runtime).await;
     drop(runtime);

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use store::AgentKey;
 use wire::{InventoryEvent, SessionEvent};
 
+use crate::families::Ended;
 use crate::ids::{AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 use crate::payload::{
     Advertisement, AgentSpec, AnalyticsBatch, Answer, BlobHash, CarrierKind, ChannelClass,
@@ -124,6 +125,7 @@ pub enum Input {
     Discovered {
         found: Vec<Advertisement>,
     },
+    /// A connection to the agent's process said Hello.
     AgentHello {
         agent: AgentId,
         #[serde(with = "codec::message")]
@@ -133,9 +135,22 @@ pub enum Input {
     Nudge {
         agent: AgentId,
     },
+    /// The agent's process is gone, and how the driver knows.
     ControlClosed {
         agent: AgentId,
+        ended: Ended,
     },
+    /// The start's sweep found a process holding the agent's directory
+    /// that has not answered yet; the driver holds it for dialing.
+    Adopted {
+        agent: AgentId,
+    },
+    /// The agent refused an input as exiting: it is on its way out.
+    Exiting {
+        agent: AgentId,
+    },
+    /// The start's sweep has reported every agent it found.
+    Swept,
     /// A call by a client of this profile: its socket, an agent's tools
     /// socket or the in-process call.
     ClientCall {
@@ -191,6 +206,9 @@ impl Input {
             Input::AgentHello { .. } => "AgentHello",
             Input::Nudge { .. } => "Nudge",
             Input::ControlClosed { .. } => "ControlClosed",
+            Input::Adopted { .. } => "Adopted",
+            Input::Exiting { .. } => "Exiting",
+            Input::Swept => "Swept",
             Input::ClientCall { .. } => "ClientCall",
             Input::CallCancelled { .. } => "CallCancelled",
             Input::AnswerLagged { .. } => "AnswerLagged",
@@ -219,6 +237,11 @@ pub struct Settings {
     /// starting afresh once a stream has caught up.
     pub source_backoff_ms: u64,
     pub source_backoff_max_ms: u64,
+    /// How long a new process has to say Hello.
+    pub start_deadline_ms: u64,
+    /// How long a stop may take before the process is killed, and how long
+    /// a resume waits for a process on its way out.
+    pub stop_deadline_ms: u64,
 }
 
 impl Default for Settings {
@@ -229,6 +252,8 @@ impl Default for Settings {
             tail_rows: 200,
             source_backoff_ms: 1_000,
             source_backoff_max_ms: 30_000,
+            start_deadline_ms: 20_000,
+            stop_deadline_ms: 30_000,
         }
     }
 }
@@ -368,16 +393,29 @@ pub enum Output {
         link: LinkId,
         frame: LinkFrame,
     },
+    /// Dial the agent's process until a connection says Hello, reported
+    /// as [`Input::AgentHello`], and report each Nudge on it; once the
+    /// process is gone, report [`Input::ControlClosed`].
     DialAgent {
         agent: AgentId,
     },
+    /// Write `frame` on the agent's control connection, in order with the
+    /// frames before it; dropped if no connection is open.
     WriteControl {
         agent: AgentId,
         frame: ControlFrame,
     },
+    /// Write `spec` into the agent's directory `dir` and start its process
+    /// from it; a process that cannot be started is gone, reported as
+    /// [`Input::ControlClosed`].
     SpawnAgent {
         dir: PathBuf,
         spec: Box<AgentSpec>,
+    },
+    /// The agent's exit is recorded: let go of its process, close its
+    /// tools socket and tell whoever waits on it.
+    ForgetAgent {
+        agent: AgentId,
     },
     Job {
         id: JobId,
@@ -444,12 +482,8 @@ pub enum ShellWork {
     /// The replica is gone from the store: its directory and blob files
     /// go with it, and its draft too when its host no longer lists it.
     ReplicaDropped { agent: AgentKey, listed: bool },
-    /// One of this host's agents follows its parent, whose row says
-    /// `says`: it stops, or is deleted.
-    FollowParent { child: AgentId, says: ParentSays },
-    /// The live children of one of this host's running agents may have
-    /// changed: it hears which they are, if it has not.
-    TellChildren { agent: AgentId },
+    /// The agent is deleted: this machine's clients' draft of it goes.
+    ForgetDraft { agent: AgentId },
 }
 
 /// What a parent's row says to the children that follow it.
@@ -502,6 +536,29 @@ pub enum Job {
     },
     SendPush(Push),
     Upload(AnalyticsBatch),
+    /// Kill the agent's process group from outside: the process this
+    /// daemon started, or the one on the other end of its control socket.
+    /// Fails when there is none it can kill.
+    KillAgent {
+        agent: AgentId,
+    },
+    /// Wait until no process holds the agent's directory's lock, at most
+    /// `patience_ms` on the profile's clock.
+    AwaitUnlocked {
+        agent: AgentId,
+        patience_ms: u64,
+    },
+    /// Remove the directory and everything in it; one already gone is
+    /// removed.
+    RemoveDir {
+        path: PathBuf,
+    },
+    /// Make a worktree of the repository at `repo` named `name`, answered
+    /// as [`JobResult::Worktree`] or [`JobResult::Refused`].
+    MakeWorktree {
+        repo: PathBuf,
+        name: String,
+    },
 }
 
 #[cfg(test)]
@@ -680,6 +737,42 @@ mod tests {
                 }),
             }),
             Input::FromShell(FromShell::Mute(agent)),
+            Input::ClientCall {
+                call: CallId(13),
+                request: ClientRequest::CreateAgent(Box::new(crate::Create {
+                    agent: AgentId([5; 16]),
+                    cwd: "/src".into(),
+                    given: None,
+                    branches: ["main".to_owned()].into(),
+                    new_worktree: true,
+                    spec: wire::AgentSpec {
+                        name: "lead".into(),
+                        ..Default::default()
+                    },
+                })),
+            },
+            Input::ClientCall {
+                call: CallId(14),
+                request: ClientRequest::ResumeAgent(Box::new(crate::Resume {
+                    agent: AgentId([5; 16]),
+                    spec: None,
+                })),
+            },
+            Input::ControlClosed {
+                agent: AgentId([5; 16]),
+                ended: Ended::CouldNotStart("no such file".into()),
+            },
+            Input::Adopted {
+                agent: AgentId([5; 16]),
+            },
+            Input::Swept,
+            Input::JobDone {
+                job: JobId(6),
+                result: JobResult::Worktree {
+                    path: "/src/.worktrees/lead".into(),
+                    base_branch: "main".into(),
+                },
+            },
             Input::Configure(Settings::default()),
             Input::Entropy([3; 32]),
         ];

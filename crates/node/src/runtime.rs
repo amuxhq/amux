@@ -1,18 +1,22 @@
 //! One profile runtime: a complete amux with its own host id, store and
-//! agents. This module is its agent registry: spawn, resume, stop, delete
-//! and rename, and the startup sweep that rebuilds the registry from disk.
+//! agents. This module is its agent registry's shell: spawn, resume, stop,
+//! delete and rename read what they need of the world here and are decided
+//! by the profile's core, and the agents' processes are kept here for the
+//! driver, as is the startup sweep that finds them on disk.
 //!
-//! The registry keeps one [`AgentHandle`] per agent whose process is live
+//! The runtime keeps one [`AgentHandle`] per agent whose process is live
 //! (or whose directory is locked by one): the directory, the control
 //! connection, and the tools socket the agent's MCP server dials. Nothing
-//! here is persisted; after a restart the sweep rebuilds it from the agent
-//! directories and the store's rows.
+//! here is persisted; after a restart the sweep finds them again from the
+//! agent directories and the store's rows, and reports what it found to
+//! the core.
 //!
 //! Each handle has one watcher task. It dials `ctl.sock`, reads the Hello,
 //! ingests on every Nudge, and when the connection ends works out whether
 //! the process is gone (its lock is free) or the connection merely
-//! dropped (it redials). A process that is gone has its journal remainder
-//! ingested, its row marked exited and its tools socket removed.
+//! dropped (it redials). A process that is gone is reported to the core,
+//! which ingests its journal's remainder and records its exit, and then
+//! lets the handle go.
 
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -23,25 +27,26 @@ use std::time::Duration;
 
 use agent_dir::Clock;
 use agent_dir::local_socket::{self, LocalListener, LocalStream};
-use daemon_core::FromShell;
 pub use daemon_core::ingest::{INGEST_BATCH, KEPT_SEGMENTS};
-use store::{AgentKey, AgentRow, Delivery, Marker, Sqlite, StoreError};
+use daemon_core::payload::{CallError, ClientRequest, Response, Status};
+use daemon_core::{FromShell, Refusal};
+use store::{AgentKey, AgentRow, Sqlite, StoreError};
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::sync::{Notify, oneshot, watch};
+use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
-    Agent, AgentHello, AgentRef, AgentRemoved, Bootstrap, CaughtUp, CreateAgentRequest, CtlFrame,
-    DumpPart, ErrorCode, ExitCause, Kind, Lifecycle, RemovalReason, Rename, SendInputResponse,
-    Stop, ctl_frame, inventory_event, session_event,
+    Agent, AgentHello, AgentRef, AgentRemoved, AgentSpec, Bootstrap, CreateAgentRequest, CtlFrame,
+    DumpPart, ErrorCode, Kind, RemovalReason, SendInputResponse, ctl_frame, inventory_event,
 };
 
+use crate::driver::{Ask, Delivered};
 use crate::grpc::ClientApi;
 use crate::install::{AGENTS, private_dir};
 use crate::outbox::PushSender;
 use crate::profiles::ProfileId;
 use crate::retention::Retention;
-use crate::serve::{event, inventory};
+use crate::serve::inventory;
 use crate::{HostId, spec};
 
 pub type AgentId = Uuid;
@@ -59,12 +64,6 @@ const PROBE_INTERVAL: Duration = Duration::from_millis(20);
 const LOOK_PATIENCE: Duration = Duration::from_secs(2);
 /// How long a connected agent has to send its Hello.
 const HELLO_PATIENCE: Duration = Duration::from_secs(5);
-/// How long a stop waits after killing the process group before it gives
-/// up on seeing the lock released.
-const KILL_PATIENCE: Duration = Duration::from_secs(5);
-/// How long an agent past its stop deadline has to act on a kill stop sent
-/// over its control socket before its process is killed from outside.
-const KILL_ASK_PATIENCE: Duration = Duration::from_secs(2);
 /// Live events a subscriber's queue holds unread. A batch's records are
 /// answered in one burst at memory speed by the step that commits it, so a
 /// reader's slack is counted in batches: a subscriber that has read
@@ -78,16 +77,6 @@ pub const FANOUT_CAPACITY: usize = 4 * INGEST_BATCH;
 /// rows own retention never trims. About an hour of a busy agent and
 /// several screens of scroll-back.
 pub const TAIL_ROWS: u32 = 200;
-
-/// An exit cause the daemon records itself, where the agent's journal does
-/// not say why: the process could not be spawned, its directory is gone,
-/// the daemon killed it, or it ended without writing its incarnation's end.
-fn daemon_cause(cause: ExitCause, detail: Option<String>) -> wire::IncarnationEnd {
-    wire::IncarnationEnd {
-        cause: cause as i32,
-        detail,
-    }
-}
 
 /// What the daemon starts agents with; read at every spawn and resume, so
 /// a change affects the next incarnation and never a running agent.
@@ -253,6 +242,12 @@ pub enum RegistryError {
     Io(#[from] io::Error),
     #[error("ingesting the journal: {0}")]
     Ingest(String),
+    /// Refused as the driver said it, such as a worktree that could not be
+    /// made.
+    #[error("{}", .0.message)]
+    Refused(wire::Error),
+    #[error("the profile's core: {0}")]
+    Core(String),
 }
 
 /// What [`ProfileRuntime::ingest`] committed.
@@ -260,33 +255,6 @@ pub enum RegistryError {
 pub struct Ingested {
     /// Journal frames committed while it waited.
     pub frames: u64,
-}
-
-/// The names this host's own agents hold, exited ones included.
-fn own_names(store: &Sqlite, host: &[u8]) -> Result<HashSet<String>, StoreError> {
-    Ok(store
-        .agents()?
-        .into_iter()
-        .filter(|row| row.agent.host == host)
-        .map(|row| row.name)
-        .collect())
-}
-
-/// What a `Children` frame tells `parent`: the live agents directly below
-/// it on any host with their incarnations, in agent id order so two frames
-/// compare equal when nothing changed.
-fn children_frame(store: &Sqlite, parent: &AgentKey) -> Result<wire::Children, StoreError> {
-    let mut children: Vec<wire::LiveChild> = store
-        .agents_of_parent(parent)?
-        .into_iter()
-        .filter(|row| row.lifecycle == Lifecycle::Live as i32)
-        .map(|row| wire::LiveChild {
-            agent_id: row.agent.agent,
-            incarnation: row.incarnation,
-        })
-        .collect();
-    children.sort_by(|a, b| a.agent_id.cmp(&b.agent_id));
-    Ok(wire::Children { children })
 }
 
 /// Why a host will not start an agent of a kind, as a sentence.
@@ -339,7 +307,8 @@ impl RegistryError {
                 | git_facts::WorktreeError::BadBranchName(_) => ErrorCode::FailedPrecondition,
                 git_facts::WorktreeError::Git(_) => ErrorCode::Internal,
             },
-            Self::Store(_) | Self::Io(_) | Self::Ingest(_) => ErrorCode::Internal,
+            Self::Store(_) | Self::Io(_) | Self::Ingest(_) | Self::Core(_) => ErrorCode::Internal,
+            Self::Refused(error) => return error.clone(),
             Self::HostName(error) => return error.to_wire(),
             Self::Forwarded(error) => return error.to_wire(),
         };
@@ -422,9 +391,6 @@ pub struct ProfileRuntime {
     /// The outbox drains and the retention sweep.
     pub(crate) background: Mutex<Vec<JoinHandle<()>>>,
     agents: Mutex<HashMap<AgentId, Arc<AgentHandle>>>,
-    /// One operation at a time per agent: spawn, resume, stop and delete
-    /// each finish before the next starts.
-    operations: Mutex<HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>>,
     pub(crate) retention: watch::Sender<Retention>,
     pub(crate) reports: PathBuf,
     pub(crate) daemon_log: Option<PathBuf>,
@@ -452,64 +418,12 @@ pub struct ProfileRuntime {
     pub(crate) peer_providers: Mutex<HashMap<Vec<u8>, Vec<wire::ProviderOnHost>>>,
 }
 
-/// How the daemon is ending an agent's process.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Stopping {
-    /// The turn cancelled the provider's own way, then the agent exits.
-    Stop,
-    /// The process group ended at once; nothing more is written.
-    Kill,
-}
-
-/// What a parent's row, as this host holds it, says its children here must
-/// do. See [`ProfileRuntime::parent_changed`].
-pub(crate) use daemon_core::ParentSays;
-
-/// An agent whose changes are not published while a delete removes it,
-/// until this is dropped. A delete dropped before it settled (its caller
-/// went away) unmutes too and publishes the row as it then stands, since
-/// what the delete changed meanwhile reached no subscriber.
-struct Muted<'a> {
-    runtime: &'a ProfileRuntime,
-    key: AgentKey,
-    settled: bool,
-}
-
-impl<'a> Muted<'a> {
-    fn new(runtime: &'a ProfileRuntime, key: AgentKey) -> Self {
-        runtime.hand_over(FromShell::Mute(key.clone()));
-        Self {
-            runtime,
-            key,
-            settled: false,
-        }
-    }
-}
-
-impl Drop for Muted<'_> {
-    fn drop(&mut self) {
-        self.runtime.hand_over(FromShell::Unmute(self.key.clone()));
-        if self.settled {
-            return;
-        }
-        let (Some(me), Ok(handle)) = (
-            self.runtime.me.upgrade(),
-            tokio::runtime::Handle::try_current(),
-        ) else {
-            return;
-        };
-        let key = self.key.clone();
-        handle.spawn(async move {
-            let store = me.store.lock().await;
-            let _ = me.publish_row(&store, &key);
-        });
-    }
-}
-
 pub(crate) struct AgentHandle {
     dir: PathBuf,
     /// The write half of the control connection, while one is open.
     pub(crate) ctl: tokio::sync::Mutex<Option<WriteHalf<LocalStream>>>,
+    /// The frames the core asked to write, in its order.
+    writes: mpsc::UnboundedSender<CtlFrame>,
     /// Inputs waiting for their verdict on the current connection, by
     /// input id; dropped when the connection ends.
     replies: Mutex<HashMap<Vec<u8>, oneshot::Sender<SendInputResponse>>>,
@@ -519,62 +433,60 @@ pub(crate) struct AgentHandle {
     /// connection ends.
     dumps: Mutex<HashMap<Vec<u8>, oneshot::Sender<DumpPart>>>,
     hello: watch::Sender<Option<AgentHello>>,
-    /// The stop the daemon asked for: a kill names the exit's cause, since
-    /// a killed process writes nothing more.
-    stopping: Mutex<Option<Stopping>>,
-    /// The agent refused an input as exiting: it is on its way out.
-    exiting: AtomicBool,
-    /// The process id, when this daemon started the process.
-    pid: Option<u32>,
+    /// The process id, once this daemon started the process.
+    pid: Mutex<Option<u32>>,
     /// The process id on the other end of the control socket, as the
     /// operating system names it: known for an agent an earlier daemon
     /// started too.
     peer: Mutex<Option<u32>>,
-    /// Whether the process this daemon started is still running. A new
-    /// process has not taken its lock yet, so a free lock says nothing
-    /// about it until it has exited.
+    /// Whether the process this daemon starts is still starting or
+    /// running. A new process has not taken its lock yet, so a free lock
+    /// says nothing about it until it has exited.
     running: watch::Sender<bool>,
+    /// Why the process could not be started, when it could not.
+    failure: Mutex<Option<String>>,
+    /// Whether a watcher dials the process.
+    watching: AtomicBool,
+    /// Set once the core recorded the process's exit.
     pub(crate) exited: watch::Sender<bool>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
-    /// The agent's live direct children, as last listed: what the next
-    /// `Children` frame says.
-    children: Mutex<wire::Children>,
 }
 
 impl AgentHandle {
-    fn new(dir: PathBuf, pid: Option<u32>) -> Arc<Self> {
-        Arc::new(Self {
+    /// A handle on `dir`'s process, writing the core's frames in order, at
+    /// most `patience` each. `starting` when this daemon is starting the
+    /// process.
+    fn new(dir: PathBuf, starting: bool, patience: Duration) -> Arc<Self> {
+        let (writes, mut frames) = mpsc::unbounded_channel::<CtlFrame>();
+        let handle = Arc::new(Self {
             dir,
             ctl: tokio::sync::Mutex::new(None),
+            writes,
             replies: Mutex::new(HashMap::new()),
             dumps: Mutex::new(HashMap::new()),
             hello: watch::Sender::new(None),
-            stopping: Mutex::new(None),
-            exiting: AtomicBool::new(false),
             handed: std::sync::atomic::AtomicUsize::new(0),
-            pid,
+            pid: Mutex::new(None),
             peer: Mutex::new(None),
-            running: watch::Sender::new(pid.is_some()),
+            running: watch::Sender::new(starting),
+            failure: Mutex::new(None),
+            watching: AtomicBool::new(false),
             exited: watch::Sender::new(false),
             tasks: Mutex::new(Vec::new()),
-            children: Mutex::new(wire::Children::default()),
-        })
-    }
-
-    /// Tells the agent which agents directly below it are live: the list
-    /// as it stands when the connection is free, so writes racing each
-    /// other still end on the newest list.
-    pub(crate) async fn send_children(&self, patience: Duration) {
-        let _ = tokio::time::timeout(patience, async {
-            if let Some(ctl) = self.ctl.lock().await.as_mut() {
-                let children = self.children.lock().unwrap().clone();
-                let frame = CtlFrame {
-                    of: Some(ctl_frame::Of::Children(children)),
+        });
+        let writer = Arc::downgrade(&handle);
+        let task = tokio::spawn(async move {
+            while let Some(frame) = frames.recv().await {
+                let Some(handle) = writer.upgrade() else {
+                    return;
                 };
-                let _ = agent_dir::write_frame(ctl, &frame).await;
+                // A frame that cannot be written is dropped: the core's
+                // deadlines cover what it waited for.
+                let _ = handle.write_ctl(&frame, patience).await;
             }
-        })
-        .await;
+        });
+        handle.tasks.lock().unwrap().push(task);
+        handle
     }
 
     fn abort(&self) {
@@ -717,7 +629,6 @@ impl ProfileRuntime {
             launch: Mutex::new(launch),
             store: tokio::sync::Mutex::new(store),
             agents: Mutex::new(HashMap::new()),
-            operations: Mutex::new(HashMap::new()),
             retention: watch::Sender::new(Retention::default()),
             reports,
             daemon_log,
@@ -920,18 +831,49 @@ impl ProfileRuntime {
     /// Marks a live agent as leaving: it refused an input as exiting, so a
     /// resume waits for its lock instead of refusing it as live.
     pub fn mark_exiting(&self, id: AgentId) {
-        if let Some(handle) = self.agents.lock().unwrap().get(&id) {
-            handle.exiting.store(true, Ordering::SeqCst);
-        }
+        self.driver().post(daemon_core::Input::Exiting {
+            agent: core_agent(id),
+        });
     }
 
-    pub(crate) fn operation(&self, id: AgentId) -> Arc<tokio::sync::Mutex<()>> {
-        self.operations
-            .lock()
-            .unwrap()
-            .entry(id)
-            .or_default()
-            .clone()
+    /// Hands a registry call to the core and waits for its answer: the
+    /// agent's row, or nothing, as a delete answers.
+    async fn registry(
+        &self,
+        id: AgentId,
+        request: ClientRequest,
+    ) -> Result<Option<Agent>, RegistryError> {
+        let mut answers = self.driver().call(Ask::Ready(request), 1).await;
+        let answered = match answers.next().await {
+            Some(Delivered::Answer(Response::Agent(agent))) => Some(*agent),
+            Some(Delivered::Answer(other)) => {
+                return Err(RegistryError::Core(format!(
+                    "a registry call was answered with {other:?}"
+                )));
+            }
+            Some(Delivered::End(Status::Ok)) => return Ok(None),
+            Some(Delivered::End(Status::Failed(error))) => return Err(registry_error(id, error)),
+            None => {
+                return Err(RegistryError::Core(
+                    "the profile is no longer running".into(),
+                ));
+            }
+        };
+        // Its end follows its answer at once; taken, so letting the call go
+        // tells the core nothing.
+        let _ = answers.next().await;
+        Ok(answered)
+    }
+
+    /// A registry call answered with the agent's row.
+    async fn registry_row(
+        &self,
+        id: AgentId,
+        request: ClientRequest,
+    ) -> Result<Agent, RegistryError> {
+        self.registry(id, request)
+            .await?
+            .ok_or_else(|| RegistryError::Core("a registry call was answered with no row".into()))
     }
 
     // --- spawn and resume ------------------------------------------------
@@ -994,83 +936,7 @@ impl ProfileRuntime {
             None => crate::names::branch_names(Path::new(&request.cwd)).await,
         };
 
-        let operation = self.operation(id);
-        let _operation = operation.lock().await;
-        let key = self.key(id);
-        let now = self.clock.now_ms();
-        let row_for = |name: &str, cwd: &str| {
-            let mut row = AgentRow::new(key.clone(), kind, cwd);
-            row.name = name.to_owned();
-            row.parent = parent
-                .as_ref()
-                .map(|parent| AgentKey::new(parent.host_id.clone(), parent.agent_id.clone()));
-            row.created_at_ms = now;
-            row.incarnation = 1;
-            row
-        };
-        let name = {
-            let mut store = self.store.lock().await;
-            if store.agent(&key)?.is_some() {
-                return Err(RegistryError::AlreadyExists(id));
-            }
-            // Checked under the same lock as the row is written: a parent
-            // that ends after this sees the child and stops it, so none
-            // slips between the check and the family rule.
-            if let Some(parent) = &parent
-                && self.parent_ended(&store, parent)?.is_some()
-            {
-                return Err(RegistryError::ParentEnded(
-                    Uuid::from_slice(&parent.agent_id).unwrap_or_default(),
-                ));
-            }
-            // Chosen under the store lock, so two creates at once cannot
-            // both take the same free name. Names are unique on this host,
-            // counting exited agents, which stay addressable by name: a
-            // given name already taken gets the next free suffix, and the
-            // caller learns the name from the agent it gets back.
-            let names = own_names(&store, &key.host)?;
-            let name = match given {
-                Some(name) => {
-                    crate::names::free_suffix(&name, &|candidate| names.contains(candidate))
-                }
-                None => crate::names::assign_name(&|candidate| {
-                    names.contains(candidate) || branches.contains(candidate)
-                }),
-            };
-            // The row comes first: a crash after it leaves a row the sweep
-            // marks exited, never a directory nothing lists.
-            if !request.new_worktree {
-                self.put_row(&mut store, &row_for(&name, &request.cwd))?;
-            }
-            name
-        };
-        // A worktree is made before the row, outside the store's lock: a
-        // folder it cannot be made in fails the create with no agent made.
-        // Two unnamed creates at once in one repository could pick the same
-        // pair; the second then finds the branch taken and fails.
-        let chosen = request.cwd.clone();
-        let base_branch = if request.new_worktree {
-            let made = self.worktrees.make(Path::new(&chosen), &name).await?;
-            request.cwd = made.path.to_string_lossy().into_owned();
-            let mut store = self.store.lock().await;
-            let row = row_for(&name, &request.cwd);
-            self.put_row(&mut store, &row)?;
-            // The worktree took a while; a parent that ended meanwhile is
-            // followed now rather than leave the worktree behind.
-            if let Some(parent) = &parent
-                && let Some(says) = self.parent_ended(&store, parent)?
-            {
-                self.follow(id, says);
-            }
-            Some(made.base_branch)
-        } else {
-            None
-        };
-
-        let dir = self.agent_dir(id);
-        private_dir(&dir)?;
         let launch = self.launch();
-        let offered = self.offered_to(kind, &request.cwd).await;
         let spec = spec::build(
             &launch,
             spec::Incarnation {
@@ -1078,22 +944,33 @@ impl ProfileRuntime {
                 profile_id: self.profile.as_bytes(),
                 kind,
                 cwd: &request.cwd,
-                name: &name,
+                name: "",
                 parent,
                 resolved: &resolved,
-                created_at_ms: now,
+                created_at_ms: 0,
                 incarnation: 1,
                 bootstrap,
-                offered,
-                base_branch,
+                offered: None,
+                base_branch: None,
             },
         );
-        spec::write(&dir, &spec)?;
-        let started = self.start_process(id, &dir, &launch).await;
-        if started.is_ok() {
-            self.recent.lock().unwrap().record(Path::new(&chosen), now);
-        }
-        started
+        let chosen = request.cwd.clone();
+        let create = daemon_core::Create {
+            agent: core_agent(id),
+            cwd: request.cwd,
+            given,
+            branches: branches.into_iter().collect(),
+            new_worktree: request.new_worktree,
+            spec,
+        };
+        let created = self
+            .registry_row(id, ClientRequest::CreateAgent(Box::new(create)))
+            .await?;
+        self.recent
+            .lock()
+            .unwrap()
+            .record(Path::new(&chosen), self.clock.now_ms());
+        Ok(created)
     }
 
     /// Where this host offers to start an agent: see
@@ -1196,80 +1073,50 @@ impl ProfileRuntime {
         })
     }
 
-    /// Starts the agent's next incarnation: waits for a dying process to
-    /// release the directory, writes `spec.<n+1>` from the current
-    /// configuration with `prompt` as its first input, and spawns it.
     /// Starts an exited agent's next incarnation, its queue seeded by
-    /// `bootstrap` when one is given.
+    /// `bootstrap` when one is given: the core waits for a dying process to
+    /// release the directory, and `spec.<n+1>` is written from the current
+    /// configuration and the settings the agent last ran with.
     pub async fn resume(
         &self,
         id: AgentId,
         bootstrap: Option<Bootstrap>,
     ) -> Result<Agent, RegistryError> {
-        let operation = self.operation(id);
-        let _operation = operation.lock().await;
-        let key = self.key(id);
-        let mut row = self
-            .store
-            .lock()
-            .await
-            .agent(&key)?
-            .ok_or(RegistryError::NotFound(id))?;
-        let launch = self.launch();
-        let handle = self.agents.lock().unwrap().get(&id).cloned();
-        if let Some(handle) = handle {
-            let leaving =
-                handle.exiting.load(Ordering::SeqCst) || handle.stopping.lock().unwrap().is_some();
-            if !leaving {
-                return Err(RegistryError::Live(id));
+        let previous = match spec::newest(&self.agent_dir(id)) {
+            Ok(previous) => previous,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        let spec = match previous {
+            None => None,
+            Some(previous) => {
+                let latest = self.last_settings(&self.key(id), previous.kind()).await?;
+                let resolved = spec::carry(&previous, latest);
+                Some(spec::build(
+                    &self.launch(),
+                    spec::Incarnation {
+                        agent_id: id.as_bytes(),
+                        profile_id: self.profile.as_bytes(),
+                        kind: previous.kind(),
+                        cwd: &previous.cwd,
+                        name: "",
+                        parent: previous.parent.clone(),
+                        resolved: &resolved,
+                        created_at_ms: 0,
+                        incarnation: previous.incarnation + 1,
+                        bootstrap,
+                        offered: None,
+                        base_branch: previous.base_branch.clone(),
+                    },
+                ))
             }
-            self.wait_exit(&handle, launch.stop_deadline_ms)
-                .await
-                .map_err(|_| RegistryError::StillLocked(id))?;
-        }
-        let dir = self.agent_dir(id);
-        // The process may be gone from the registry and still dying: the
-        // new one cannot take a lock the old one holds.
-        self.wait_unlocked(&dir, launch.stop_deadline_ms)
+        };
+        let resume = daemon_core::Resume {
+            agent: core_agent(id),
+            spec,
+        };
+        self.registry_row(id, ClientRequest::ResumeAgent(Box::new(resume)))
             .await
-            .map_err(|_| RegistryError::StillLocked(id))?;
-
-        let previous = spec::newest(&dir)?.ok_or(RegistryError::NoSpec(id))?;
-        let next = previous.incarnation + 1;
-        let latest = self.last_settings(&key, previous.kind()).await?;
-        let resolved = spec::carry(&previous, latest);
-        let offered = self.offered_to(previous.kind(), &previous.cwd).await;
-        let spec = spec::build(
-            &launch,
-            spec::Incarnation {
-                agent_id: id.as_bytes(),
-                profile_id: self.profile.as_bytes(),
-                kind: previous.kind(),
-                cwd: &previous.cwd,
-                // The name it has now: a rename while it was not running
-                // reaches its Codex thread this way.
-                name: &row.name,
-                parent: previous.parent.clone(),
-                resolved: &resolved,
-                created_at_ms: self.clock.now_ms(),
-                incarnation: next,
-                bootstrap,
-                offered,
-                base_branch: previous.base_branch.clone(),
-            },
-        );
-        spec::write(&dir, &spec)?;
-        {
-            let mut store = self.store.lock().await;
-            row.lifecycle = Lifecycle::Live as i32;
-            row.exit_cause = ExitCause::Unspecified as i32;
-            row.exit_detail = None;
-            row.incarnation = next;
-            self.put_row(&mut store, &row)?;
-            // The next CaughtUp comes from this incarnation's journal.
-            store.set_marker(&key, None);
-        }
-        self.start_process(id, &dir, &launch).await
     }
 
     /// The model, permission, mode and effort the agent last ran with, as
@@ -1328,52 +1175,105 @@ impl ProfileRuntime {
             .map(|offered| offered.catalogue)
     }
 
-    /// Binds the tools socket, spawns `amux agent <dir>`, and waits for its
-    /// Hello or its exit.
+    /// Starts the process the core asked for: the handle at once, so the
+    /// core's next outputs find it, and the spec, tools socket and process
+    /// on a task of their own. A process that cannot be started leaves its
+    /// handle unlocked and not running, which its watcher reports as gone.
+    pub(crate) fn spawn_process(&self, dir: PathBuf, spec: AgentSpec) {
+        let Ok(id) = Uuid::from_slice(&spec.agent_id) else {
+            return;
+        };
+        let handle = AgentHandle::new(dir.clone(), true, ms(self.launch().ctl_write_ms));
+        if let Some(previous) = self.agents.lock().unwrap().insert(id, handle.clone()) {
+            previous.abort();
+        }
+        let runtime = self.me.clone();
+        let starting = handle.clone();
+        let task = tokio::spawn(async move {
+            let Some(me) = runtime.upgrade() else {
+                return;
+            };
+            if let Err(error) = me.start_process(id, &dir, spec, &starting).await {
+                *starting.failure.lock().unwrap() = Some(error.to_string());
+                starting.running.send_replace(false);
+            }
+        });
+        handle.tasks.lock().unwrap().push(task);
+    }
+
+    /// Writes the spec, binds the tools socket and spawns `amux agent
+    /// <dir>`. A terminal Claude spec takes what the host's Claude offers
+    /// in the folder the agent works in.
     async fn start_process(
         &self,
         id: AgentId,
         dir: &Path,
-        launch: &Launch,
-    ) -> Result<Agent, RegistryError> {
+        mut spec: AgentSpec,
+        handle: &Arc<AgentHandle>,
+    ) -> io::Result<()> {
+        if spec.offered.is_none() {
+            spec.offered = self.offered_to(spec.kind(), &spec.cwd).await;
+        }
+        private_dir(dir)?;
+        spec::write(dir, &spec)?;
         let tools = self.bind_tools(id, dir)?;
-        let child = match spawn_agent(&launch.install_path, dir) {
-            Ok(child) => child,
-            Err(error) => {
-                drop(tools);
-                let cause = daemon_cause(
-                    ExitCause::CouldNotStart,
-                    Some(format!("the agent process: {error}")),
-                );
-                self.mark_exited(id, cause).await?;
-                return Err(error.into());
-            }
-        };
-        let pid = child.id();
-        let handle = AgentHandle::new(dir.to_owned(), pid);
         handle.tasks.lock().unwrap().push(tools);
+        let child = spawn_agent(&self.launch().install_path, dir)?;
+        *handle.pid.lock().unwrap() = child.id();
         let running = handle.running.clone();
         handle.tasks.lock().unwrap().push(tokio::spawn(async move {
             reap(child).await;
             running.send_replace(false);
         }));
-        self.agents.lock().unwrap().insert(id, handle.clone());
-        self.watch(id, handle.clone(), None);
+        Ok(())
+    }
 
-        let mut hello = handle.hello.subscribe();
-        let mut exited = handle.exited.subscribe();
-        let deadline = self
-            .clock
-            .sleep_until(self.clock.now_ms() + launch.start_deadline_ms);
-        tokio::select! {
-            _ = hello.wait_for(Option::is_some) => {}
-            _ = exited.wait_for(|exited| *exited) => {}
-            () = deadline => {
-                self.kill(&handle);
-                return Err(RegistryError::StartTimeout(id));
-            }
+    /// Dials the agent's process, if no watcher does already.
+    pub(crate) fn dial_agent(&self, id: AgentId) {
+        let Some(handle) = self.handle(id) else {
+            return;
+        };
+        self.watch(id, handle, None);
+    }
+
+    /// Writes a frame the core asked for on the agent's control connection,
+    /// in order with the ones before it.
+    pub(crate) fn write_control(&self, id: AgentId, frame: CtlFrame) {
+        if let Some(handle) = self.handle(id) {
+            let _ = handle.writes.send(frame);
         }
-        self.agent(id).await
+    }
+
+    /// The core recorded the agent's exit: its handle goes, and with it the
+    /// tools socket, and whoever waits on it is told.
+    pub(crate) fn forget_agent(&self, id: AgentId) {
+        let Some(handle) = self.agents.lock().unwrap().remove(&id) else {
+            return;
+        };
+        handle.abort();
+        let _ = std::fs::remove_file(handle.dir.join(agent_dir::TOOLS_SOCK));
+        handle.exited.send_replace(true);
+    }
+
+    /// Makes the worktree a create asked for, as the core's job.
+    pub(crate) async fn make_worktree(
+        &self,
+        repo: &Path,
+        name: &str,
+    ) -> daemon_core::payload::JobResult {
+        use daemon_core::payload::JobResult;
+        match self.worktrees.make(repo, name).await {
+            Ok(made) => JobResult::Worktree {
+                path: made.path.to_string_lossy().into_owned(),
+                base_branch: made.base_branch,
+            },
+            Err(error) => JobResult::Refused(RegistryError::Worktree(error).to_wire()),
+        }
+    }
+
+    /// Kills the agent's process group, as the core's job.
+    pub(crate) fn kill_process(&self, id: AgentId) -> bool {
+        self.handle(id).is_some_and(|handle| self.kill(&handle))
     }
 
     /// The handle for an agent an earlier daemon started, serving its
@@ -1383,7 +1283,7 @@ impl ProfileRuntime {
     /// tools, as it did before, and says so in the log.
     fn adopted_handle(&self, id: AgentId) -> Arc<AgentHandle> {
         let dir = self.agent_dir(id);
-        let handle = AgentHandle::new(dir.clone(), None);
+        let handle = AgentHandle::new(dir.clone(), false, ms(self.launch().ctl_write_ms));
         match self.bind_tools(id, &dir) {
             Ok(tools) => handle.tasks.lock().unwrap().push(tools),
             Err(error) => {
@@ -1411,236 +1311,45 @@ impl ProfileRuntime {
     /// overruns the stop deadline kills. An exited agent is left as it is.
     ///
     /// The stop acts on this agent alone. Its children, on this host or
-    /// another, follow by the family rule once their host sees it exited
-    /// (see [`Self::parent_changed`]).
+    /// another, follow by the family rule once their host sees it exited.
     pub async fn stop(&self, id: AgentId) -> Result<Agent, RegistryError> {
-        let operation = self.operation(id);
-        let _operation = operation.lock().await;
-        self.stop_locked(id).await
+        let agent = core_agent(id);
+        self.registry_row(id, ClientRequest::StopAgent { agent })
+            .await
     }
 
     /// Kills a live agent's process group at once, writing nothing more,
     /// as the stop deadline does. For tearing a runtime down: no client
     /// call reaches it.
     pub async fn kill_agent(&self, id: AgentId) -> Result<Agent, RegistryError> {
-        let operation = self.operation(id);
-        let _operation = operation.lock().await;
-        let Some(handle) = self.agents.lock().unwrap().get(&id).cloned() else {
-            return self.agent(id).await;
-        };
-        self.kill_locked(id, &handle).await?;
-        self.agent(id).await
-    }
-
-    async fn stop_locked(&self, id: AgentId) -> Result<Agent, RegistryError> {
-        let Some(handle) = self.agents.lock().unwrap().get(&id).cloned() else {
-            return self.agent(id).await;
-        };
-        *handle.stopping.lock().unwrap() = Some(Stopping::Stop);
-        let frame = CtlFrame {
-            of: Some(ctl_frame::Of::Stop(Stop { kill: false })),
-        };
-        let launch = self.launch();
-        // A failed write means the connection is already going; the
-        // deadline below still applies.
-        let _ = handle.write_ctl(&frame, ms(launch.ctl_write_ms)).await;
-        if self
-            .wait_exit(&handle, launch.stop_deadline_ms)
+        let agent = core_agent(id);
+        self.registry_row(id, ClientRequest::KillAgent { agent })
             .await
-            .is_err()
-        {
-            // Past the deadline the stop becomes a kill.
-            self.kill_locked(id, &handle).await?;
-        }
-        self.agent(id).await
-    }
-
-    /// Kills the agent: asked of the agent first, which kills its
-    /// provider's group and exits, and only if it does not, done to its
-    /// process from outside, as the process on the other end of its
-    /// control socket.
-    async fn kill_locked(
-        &self,
-        id: AgentId,
-        handle: &Arc<AgentHandle>,
-    ) -> Result<(), RegistryError> {
-        *handle.stopping.lock().unwrap() = Some(Stopping::Kill);
-        let kill = CtlFrame {
-            of: Some(ctl_frame::Of::Stop(Stop { kill: true })),
-        };
-        let _ = handle
-            .write_ctl(&kill, ms(self.launch().ctl_write_ms))
-            .await;
-        if self
-            .wait_exit(handle, KILL_ASK_PATIENCE.as_millis() as i64)
-            .await
-            .is_err()
-        {
-            if !self.kill(handle) {
-                return Err(RegistryError::StopTimeout(id));
-            }
-            self.wait_exit(handle, KILL_PATIENCE.as_millis() as i64)
-                .await
-                .map_err(|_| RegistryError::StopTimeout(id))?;
-        }
-        Ok(())
     }
 
     /// Deletes an agent: stops its process if live, then removes its rows
     /// and its directory. Its children, on this host or another, follow by
-    /// the family rule once their host sees it gone (see
-    /// [`Self::parent_changed`]).
+    /// the family rule once their host sees it gone. A delete whose caller
+    /// goes away still finishes.
     pub async fn delete(&self, id: AgentId) -> Result<(), RegistryError> {
-        let operation = self.operation(id);
-        let _operation = operation.lock().await;
-        let key = self.key(id);
-        if self.store.lock().await.agent(&key)?.is_none() {
-            return Err(RegistryError::NotFound(id));
-        }
-        // The stop is part of the delete: a subscriber that read its exit
-        // would offer to resume an agent about to be removed. Nothing about
-        // the agent is published until its removal is; a delete that fails
-        // publishes the row as it then stands.
-        let mut muted = Muted::new(self, key.clone());
-        let deleted = self.delete_muted(id, key.clone()).await;
-        muted.settled = true;
-        drop(muted);
-        if deleted.is_err() {
-            let store = self.store.lock().await;
-            let _ = self.publish_row(&store, &key);
-        }
-        deleted
-    }
-
-    async fn delete_muted(&self, id: AgentId, key: AgentKey) -> Result<(), RegistryError> {
-        self.stop_locked(id).await?;
-        // Rows first: a crash between the two leaves a directory with no
-        // row, which the next sweep removes.
-        {
-            let mut store = self.store.lock().await;
-            let parent = store.agent(&key)?.and_then(|row| row.parent);
-            store.delete_agent(&key)?;
-            self.removed(&key, RemovalReason::Deleted);
-            self.recount_from(&mut store, parent)?;
-            self.parent_changed(&store, &key, ParentSays::Deleted)?;
-        }
-        match std::fs::remove_dir_all(self.agent_dir(id)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-        self.operations.lock().unwrap().remove(&id);
-        self.forget_draft(id.as_bytes());
-        Ok(())
-    }
-
-    // --- the family rule -------------------------------------------------
-
-    /// Applies the family rule to this host's own children of `parent`,
-    /// whose row has just changed as `says`. A host enforces the rule only
-    /// for its own agents and only on what the parent's row says: exited
-    /// stops each live child, deleted deletes each child (stopping it
-    /// first). A parent that is merely out of reach says neither, so its
-    /// children carry on and their reports wait in the outbox. Each act
-    /// runs on a task of its own, once the caller lets go of the store.
-    pub(crate) fn parent_changed(
-        &self,
-        store: &Sqlite,
-        parent: &AgentKey,
-        says: ParentSays,
-    ) -> Result<(), StoreError> {
-        for child in store.agents_of_parent(parent)? {
-            if child.agent.host != self.host.as_bytes()
-                || (says == ParentSays::Exited && child.lifecycle != Lifecycle::Live as i32)
-            {
-                continue;
-            }
-            if let Ok(id) = Uuid::from_slice(&child.agent.agent) {
-                self.follow(id, says);
-            }
-        }
-        Ok(())
-    }
-
-    /// Whether `parent` has already ended as this host sees it: exited by
-    /// its row, or deleted. Another host's row counts only once that host's
-    /// listing has caught up, since a row kept from before may be stale;
-    /// and a missing row means deleted only for this host's own agents,
-    /// since another host's row may simply not have arrived yet.
-    fn parent_ended(
-        &self,
-        store: &Sqlite,
-        parent: &AgentRef,
-    ) -> Result<Option<ParentSays>, StoreError> {
-        let key = AgentKey::new(parent.host_id.clone(), parent.agent_id.clone());
-        let own = key.host == self.host.as_bytes();
-        if !own && !Uuid::from_slice(&key.host).is_ok_and(|host| self.host_ready(host)) {
-            return Ok(None);
-        }
-        Ok(match store.agent(&key)? {
-            Some(row) if row.lifecycle == Lifecycle::Exited as i32 => Some(ParentSays::Exited),
-            None if own => Some(ParentSays::Deleted),
-            _ => None,
-        })
-    }
-
-    /// Stops or deletes one of this host's own agents because its parent's
-    /// row said so.
-    pub(crate) fn follow(&self, child: AgentId, says: ParentSays) {
-        let me = self.me.clone();
-        let mut read = self.journals_read.subscribe();
-        tokio::spawn(async move {
-            // Not before the start's sweep has adopted every running agent:
-            // a stop then would find no process to end.
-            let _ = read.wait_for(|read| *read).await;
-            let Some(runtime) = me.upgrade() else { return };
-            let done = match says {
-                ParentSays::Exited => runtime.stop(child).await.map(drop),
-                ParentSays::Deleted => runtime.delete(child).await,
-            };
-            match done {
-                Ok(()) | Err(RegistryError::NotFound(_)) => {}
-                Err(error) => {
-                    tracing::warn!(%child, %error, ?says, "following its parent failed");
-                }
-            }
-        });
+        let agent = core_agent(id);
+        self.registry(id, ClientRequest::DeleteAgent { agent })
+            .await
+            .map(drop)
     }
 
     /// Renames an agent. The row takes the name now and the next
     /// incarnation's spec when it is resumed; a spec already written keeps
     /// the name it was spawned with. A live Codex agent is told, so its
-    /// thread takes the name; a missed word is made good at the next
-    /// resume.
+    /// thread takes the name.
     pub async fn rename(&self, id: AgentId, name: &str) -> Result<Agent, RegistryError> {
         if let Some(problem) = wire::agent_name_problem(name) {
             return Err(RegistryError::BadName(problem));
         }
-        let key = self.key(id);
-        let row = {
-            let mut store = self.store.lock().await;
-            let mut row = store.agent(&key)?.ok_or(RegistryError::NotFound(id))?;
-            if row.name != name && own_names(&store, &key.host)?.contains(name) {
-                return Err(RegistryError::NameTaken(name.to_owned()));
-            }
-            row.name = name.to_owned();
-            self.put_row(&mut store, &row)?;
-            row
-        };
-        let handle = self.agents.lock().unwrap().get(&id).cloned();
-        if let Some(handle) = handle
-            && row.kind == Kind::Codex as i32
-        {
-            let frame = CtlFrame {
-                of: Some(ctl_frame::Of::Rename(Rename {
-                    name: row.name.clone(),
-                })),
-            };
-            let _ = handle
-                .write_ctl(&frame, ms(self.launch().ctl_write_ms))
-                .await;
-        }
-        Ok(to_wire(&row))
+        let agent = core_agent(id);
+        let name = name.to_owned();
+        self.registry_row(id, ClientRequest::RenameAgent { agent, name })
+            .await
     }
 
     // --- the sweep ---------------------------------------------------------
@@ -1699,12 +1408,13 @@ impl ProfileRuntime {
     }
 
     /// The writing half of the sweep, after activation: adopts the live
-    /// agents and ingests from their stored cursors, marks the rest
-    /// exited once their journal remainder is ingested and sets their
+    /// agents and ingests from their stored cursors, has the core mark the
+    /// rest exited once their journal remainder is ingested and set their
     /// CaughtUp flag, and removes directories no row lists.
     pub async fn finish_sweep(&self, looked: Looked) -> Result<SweepReport, RegistryError> {
         let mut report = SweepReport::default();
         for (id, look) in looked.agents {
+            let agent = core_agent(id);
             match look {
                 Look::Live(connected) => {
                     let handle = self.adopted_handle(id);
@@ -1719,21 +1429,31 @@ impl ProfileRuntime {
                     // deliveries run.
                     self.ingest(id).await?;
                     let handle = self.adopted_handle(id);
-                    self.agents.lock().unwrap().insert(id, handle.clone());
-                    self.watch(id, handle, None);
+                    self.agents.lock().unwrap().insert(id, handle);
+                    self.driver()
+                        .feed(daemon_core::Input::Adopted { agent })
+                        .await;
                     report.unanswered.push(id);
                 }
                 Look::Exited => {
-                    self.ingest(id).await?;
                     // Unless its journal said why, it ended while no daemon
-                    // was there to see.
-                    let cause = daemon_cause(ExitCause::EndedWhileAway, None);
-                    self.mark_exited_if_live(id, cause).await?;
+                    // was there to see. The core marks it once its journal
+                    // is read to the end, which the ingest waits for.
+                    let ended = daemon_core::Ended::Away;
+                    self.driver()
+                        .feed(daemon_core::Input::ControlClosed { agent, ended })
+                        .await;
+                    self.ingest(id).await?;
                     report.exited.push(id);
                 }
                 Look::NoDirectory => {
-                    let cause = daemon_cause(ExitCause::DirectoryFailed, Some("it is gone".into()));
-                    self.mark_exited_if_live(id, cause).await?;
+                    let ended = daemon_core::Ended::NoDirectory;
+                    self.driver()
+                        .feed(daemon_core::Input::ControlClosed { agent, ended })
+                        .await;
+                    // There is no journal to read; the ingest waits for the
+                    // core to have marked it.
+                    let _ = self.ingest(id).await;
                     report.exited.push(id);
                 }
             }
@@ -1753,6 +1473,7 @@ impl ProfileRuntime {
         ] {
             list.sort();
         }
+        self.driver().feed(daemon_core::Input::Swept).await;
         self.journals_read.send_replace(true);
         Ok(report)
     }
@@ -1945,15 +1666,6 @@ impl ProfileRuntime {
         self.driver().hand_over(change);
     }
 
-    /// Tells the agent's subscribers of one event, committed under the
-    /// store the caller still holds.
-    pub(crate) fn publish(&self, agent: &AgentKey, of: session_event::Of) {
-        self.hand_over(FromShell::Session {
-            agent: agent.clone(),
-            event: Arc::new(event(of)),
-        });
-    }
-
     /// The agent is gone from the store the caller still holds: its
     /// streams end and the inventory says why.
     pub(crate) fn removed(&self, agent: &AgentKey, reason: RemovalReason) {
@@ -1971,8 +1683,9 @@ impl ProfileRuntime {
     // --- the watcher ---------------------------------------------------------
 
     /// Takes a connection as the agent's current one: records its Hello,
-    /// keeps its write half for stops and inputs, and ingests what the
-    /// journal holds beyond the stored cursor. Returns the read half.
+    /// keeps its write half for the core's frames and inputs, tells the
+    /// core, and ingests what the journal holds beyond the stored cursor.
+    /// Returns the read half.
     async fn adopt(
         &self,
         id: AgentId,
@@ -1990,26 +1703,23 @@ impl ProfileRuntime {
         handle.hello.send_replace(Some(hello.clone()));
         self.driver()
             .feed(daemon_core::Input::AgentHello {
-                agent: daemon_core::AgentId(*id.as_bytes()),
+                agent: core_agent(id),
                 hello,
             })
             .await;
-        let key = self.key(id);
-        let children = children_frame(&*self.store.lock().await, &key).unwrap_or_default();
-        let any = !children.children.is_empty();
-        *handle.children.lock().unwrap() = children;
-        if any {
-            handle.send_children(ms(self.launch().ctl_write_ms)).await;
-        }
         if let Err(error) = self.ingest(id).await {
             tracing::warn!(agent = %id, %error, "ingest failed");
         }
         reader
     }
 
-    /// Runs the agent's watcher: from `reader` if a connection is already
-    /// adopted, else from the first successful dial.
+    /// Runs the agent's watcher, unless one runs already: from `reader` if
+    /// a connection is already adopted, else from the first successful
+    /// dial. Once the process is gone, the core hears of it.
     fn watch(&self, id: AgentId, handle: Arc<AgentHandle>, reader: Option<ReadHalf<LocalStream>>) {
+        if handle.watching.swap(true, Ordering::SeqCst) {
+            return;
+        }
         let runtime = self.me.clone();
         let watched = handle.clone();
         let task = tokio::spawn(async move {
@@ -2063,241 +1773,27 @@ impl ProfileRuntime {
                     let _ = ctl.shutdown().await;
                 }
             }
+            let ended = match watched.failure.lock().unwrap().take() {
+                Some(words) => daemon_core::Ended::CouldNotStart(words),
+                None => daemon_core::Ended::Exited,
+            };
             if let Some(me) = runtime.upgrade() {
-                me.exited(id, &watched).await;
+                me.driver()
+                    .feed(daemon_core::Input::ControlClosed {
+                        agent: core_agent(id),
+                        ended,
+                    })
+                    .await;
             }
         });
         handle.tasks.lock().unwrap().push(task);
     }
 
-    /// The process is gone: ingest what it left, record the exit, close its
-    /// tools socket and let whoever waits on it go.
-    async fn exited(&self, id: AgentId, handle: &Arc<AgentHandle>) {
-        if let Err(error) = self.ingest(id).await {
-            tracing::warn!(agent = %id, %error, "ingesting an exited agent's journal failed");
-        }
-        // Unless the journal, now read to its end, said why: a kill the
-        // daemon made, else the process ended without saying.
-        let cause = match *handle.stopping.lock().unwrap() {
-            Some(Stopping::Kill) => ExitCause::Killed,
-            _ => ExitCause::EndedUnexpectedly,
-        };
-        let cause = daemon_cause(cause, None);
-        if let Err(error) = self.mark_exited(id, cause).await {
-            tracing::warn!(agent = %id, %error, "marking an agent exited failed");
-        }
-        {
-            let mut agents = self.agents.lock().unwrap();
-            if agents
-                .get(&id)
-                .is_some_and(|current| Arc::ptr_eq(current, handle))
-            {
-                agents.remove(&id);
-            }
-        }
-        // Every task but this watcher: the tools listener's socket goes with
-        // it, and the reaper has nothing left to wait for.
-        let tasks: Vec<_> = handle.tasks.lock().unwrap().drain(..).collect();
-        let current = tokio::task::try_id();
-        for task in tasks {
-            if Some(task.id()) != current {
-                task.abort();
-                let _ = task.await;
-            }
-        }
-        let _ = std::fs::remove_file(handle.dir.join(agent_dir::TOOLS_SOCK));
-        handle.exited.send_replace(true);
-    }
-
-    async fn mark_exited(
-        &self,
-        id: AgentId,
-        fallback: wire::IncarnationEnd,
-    ) -> Result<(), StoreError> {
-        let key = self.key(id);
-        let mut store = self.store.lock().await;
-        let Some(row) = store.agent(&key)? else {
-            return Ok(());
-        };
-        self.record_exit(&mut store, row, fallback)?;
-        // Everything the process wrote is committed: nothing more comes.
-        self.caught_up(&mut store, &key)
-    }
-
-    async fn mark_exited_if_live(
-        &self,
-        id: AgentId,
-        fallback: wire::IncarnationEnd,
-    ) -> Result<(), StoreError> {
-        let key = self.key(id);
-        let mut store = self.store.lock().await;
-        let Some(row) = store.agent(&key)? else {
-            return Ok(());
-        };
-        if row.lifecycle != Lifecycle::Exited as i32 {
-            self.record_exit(&mut store, row, fallback)?;
-        }
-        self.caught_up(&mut store, &key)
-    }
-
-    /// Writes a row's registry fields and tells inventory subscribers,
-    /// with the store still held so they see changes in store order.
-    fn put_row(&self, store: &mut Sqlite, row: &AgentRow) -> Result<(), StoreError> {
-        store.put_agent(row)?;
-        // A lifecycle or incarnation change can make a waiting delivery
-        // deliverable, or stale.
-        self.deliveries_due.notify_one();
-        self.publish_row(store, &row.agent)?;
-        self.recount_from(store, row.parent.clone())
-    }
-
-    /// Counts the live descendants of `parent` again, and of each own
-    /// ancestor above it, writing and publishing every count that changed;
-    /// a count that did not change leaves those above it unchanged too. A
-    /// replica ancestor's count is its origin's, which hears of the change
-    /// from this host's inventory. A running `parent` also hears which of
-    /// its children are live, when that changed.
-    pub(crate) fn recount_from(
-        &self,
-        store: &mut Sqlite,
-        mut parent: Option<AgentKey>,
-    ) -> Result<(), StoreError> {
-        if let Some(key) = &parent
-            && key.host == self.host.as_bytes()
-        {
-            self.tell_children(store, key)?;
-        }
-        while let Some(key) = parent {
-            if key.host != self.host.as_bytes() {
-                break;
-            }
-            let Some(row) = store.agent(&key)? else {
-                break;
-            };
-            let count = store.live_descendants(&key)?;
-            if count == row.descendants {
-                break;
-            }
-            store.set_descendants(&key, count)?;
-            self.publish_row(store, &key)?;
-            parent = row.parent;
-        }
-        Ok(())
-    }
-
-    /// Tells a running agent which agents directly below it are now live,
-    /// when that changed: a one-shot agent waits for the last report of
-    /// every child incarnation it was told of.
-    pub(crate) fn tell_children(&self, store: &Sqlite, key: &AgentKey) -> Result<(), StoreError> {
-        let Ok(id) = AgentId::from_slice(&key.agent) else {
-            return Ok(());
-        };
-        let Some(handle) = self.agents.lock().unwrap().get(&id).cloned() else {
-            return Ok(());
-        };
-        let children = children_frame(store, key)?;
-        {
-            let mut told = handle.children.lock().unwrap();
-            if *told == children {
-                return Ok(());
-            }
-            *told = children;
-        }
-        let patience = ms(self.launch().ctl_write_ms);
-        tokio::spawn(async move { handle.send_children(patience).await });
-        Ok(())
-    }
-
-    /// Marks the row exited, then settles what the process leaves: its
-    /// unsent notifications go, since no push may name an agent that is
-    /// gone, and a child whose incarnation ended without sending its last
-    /// report tells its parent it failed: its turn was open, or it ended
-    /// idle, as a sub-agent stopped while it waits for its own child does.
-    /// A turn end marked last already told it.
-    ///
-    /// The row keeps the cause its journal's last step put there at commit;
-    /// `fallback` is the daemon's own, for an incarnation whose journal
-    /// stops without saying why.
-    fn record_exit(
-        &self,
-        store: &mut Sqlite,
-        mut row: AgentRow,
-        fallback: wire::IncarnationEnd,
-    ) -> Result<(), StoreError> {
-        row.lifecycle = Lifecycle::Exited as i32;
-        if row.exit_cause == ExitCause::Unspecified as i32 {
-            row.exit_cause = fallback.cause;
-            row.exit_detail = fallback.detail;
-        }
-        let cause = wire::IncarnationEnd {
-            cause: row.exit_cause,
-            detail: row.exit_detail.clone(),
-        };
-        self.put_row(store, &row)?;
-        self.parent_changed(store, &row.agent, ParentSays::Exited)?;
-        store.remove_notifications(&row.agent.agent)?;
-        let Some(parent) = &row.parent else {
-            return Ok(());
-        };
-        // As committed: the phase at exit says nothing here, since a
-        // provider's exit leaves it starting whether or not the turn ended.
-        let held = store.agent(&row.agent)?.unwrap_or(row.clone());
-        if !held.owes_report {
-            return Ok(());
-        }
-        // Zero when the parent's row is not held: stamped by the drain.
-        let parent_incarnation = store.agent(parent)?.map_or(0, |parent| parent.incarnation);
-        store.put_delivery(&Delivery {
-            child_id: row.agent.agent.clone(),
-            incarnation: row.incarnation,
-            turn_id: 0,
-            parent: parent.clone(),
-            parent_incarnation,
-            end: wire::child_report::End::Exited(wire::Exited { ended: Some(cause) }),
-        })?;
-        self.deliveries_due.notify_one();
-        Ok(())
-    }
-
-    /// Tells inventory subscribers what the row now says.
-    pub(crate) fn publish_row(&self, store: &Sqlite, key: &AgentKey) -> Result<(), StoreError> {
-        if let Some(row) = store.agent(key)? {
-            self.hand_over(FromShell::Row {
-                agent: key.clone(),
-                event: Arc::new(inventory(inventory_event::Of::Agent(to_wire(&row)))),
-            });
-        }
-        Ok(())
-    }
-
-    /// Sets the agent's CaughtUp flag and tells subscribers the marker,
-    /// unless the flag is already set: a subscriber that joined since read
-    /// it at its cut, and one that joined before was told then.
-    fn caught_up(&self, store: &mut Sqlite, key: &AgentKey) -> Result<(), StoreError> {
-        if store.markers().get(key) == Some(&Marker::CaughtUp) {
-            return Ok(());
-        }
-        let Some(row) = store.agent(key)? else {
-            return Ok(());
-        };
-        store.set_marker(key, Some(Marker::CaughtUp));
-        let revision = row.next_revision.saturating_sub(1);
-        self.publish(key, session_event::Of::CaughtUp(CaughtUp { revision }));
-        Ok(())
-    }
-
     // --- waiting on processes ----------------------------------------------
 
-    async fn wait_exit(&self, handle: &AgentHandle, deadline_ms: i64) -> Result<(), ()> {
-        let mut exited = handle.exited.subscribe();
-        let deadline = self.clock.sleep_until(self.clock.now_ms() + deadline_ms);
-        tokio::select! {
-            _ = exited.wait_for(|exited| *exited) => Ok(()),
-            () = deadline => Err(()),
-        }
-    }
-
-    async fn wait_unlocked(&self, dir: &Path, deadline_ms: i64) -> Result<(), ()> {
+    /// Waits until no process holds the directory's lock, at most
+    /// `deadline_ms` on the profile's clock.
+    pub(crate) async fn wait_unlocked(&self, dir: &Path, deadline_ms: i64) -> Result<(), ()> {
         let deadline = self.clock.sleep_until(self.clock.now_ms() + deadline_ms);
         tokio::pin!(deadline);
         loop {
@@ -2315,7 +1811,8 @@ impl ProfileRuntime {
     /// or the one on the other end of its control socket. Returns whether
     /// it could.
     fn kill(&self, handle: &AgentHandle) -> bool {
-        let Some(pid) = handle.pid.or(*handle.peer.lock().unwrap()) else {
+        let pid = *handle.pid.lock().unwrap();
+        let Some(pid) = pid.or(*handle.peer.lock().unwrap()) else {
             return false;
         };
         // An agent served from inside this process has no process of its
@@ -2453,6 +1950,34 @@ pub(crate) fn kill_group(pid: u32) -> bool {
 
 /// The inventory row for an agents row.
 pub use daemon_core::serve::to_wire;
+
+/// The core's name for one of this host's agents.
+pub(crate) fn core_agent(id: AgentId) -> daemon_core::AgentId {
+    daemon_core::AgentId(*id.as_bytes())
+}
+
+/// Why the core refused a registry call on `id`, as the registry says it.
+fn registry_error(id: AgentId, error: CallError) -> RegistryError {
+    let CallError::Registry(refusal) = error else {
+        return RegistryError::Core(format!("{error:?}"));
+    };
+    match refusal {
+        Refusal::NotFound => RegistryError::NotFound(id),
+        Refusal::AlreadyExists => RegistryError::AlreadyExists(id),
+        Refusal::Live => RegistryError::Live(id),
+        Refusal::NameTaken(name) => RegistryError::NameTaken(name),
+        Refusal::ParentEnded(parent) => RegistryError::ParentEnded(Uuid::from_bytes(parent.0)),
+        Refusal::StartTimeout => RegistryError::StartTimeout(id),
+        Refusal::StopTimeout => RegistryError::StopTimeout(id),
+        Refusal::StillLocked => RegistryError::StillLocked(id),
+        Refusal::NoSpec => RegistryError::NoSpec(id),
+        Refusal::CouldNotStart(words) | Refusal::Directory(words) => {
+            RegistryError::Io(io::Error::other(words))
+        }
+        Refusal::Worktree(error) => RegistryError::Refused(error),
+        Refusal::Store(words) => RegistryError::Core(words),
+    }
+}
 
 pub(crate) fn ms(ms: i64) -> Duration {
     Duration::from_millis(ms.max(0) as u64)

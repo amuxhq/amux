@@ -11,7 +11,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::codec;
-use crate::ids::HostId;
+use crate::families::{Create, Refusal, Resume};
+use crate::ids::{AgentId, HostId};
 
 /// A link control frame: the hello, its acknowledgement, a neighbor coming
 /// up or going down.
@@ -150,6 +151,20 @@ pub enum ClientRequest {
         host: HostId,
         request: Box<PeerRequest>,
     },
+    /// Creates one of this host's agents and starts its process; answered
+    /// with its row once the process said Hello, or ended.
+    CreateAgent(Box<Create>),
+    /// Starts an exited agent's next incarnation; answered as a create is.
+    ResumeAgent(Box<Resume>),
+    /// Stops the agent's process; answered with its row once it ended.
+    StopAgent { agent: AgentId },
+    /// Kills the agent's process at once, as the stop deadline does.
+    KillAgent { agent: AgentId },
+    /// Stops the agent and removes its rows and its directory; answered
+    /// with nothing.
+    DeleteAgent { agent: AgentId },
+    /// Renames the agent; answered with its row.
+    RenameAgent { agent: AgentId, name: String },
 }
 
 /// A request on a peer's PeerService, decoded: one a paired host makes of
@@ -249,6 +264,8 @@ pub enum Response {
     Item(wire::Item),
     /// A forwarded call's reply, from the host it went to.
     Peer(Box<PeerReply>),
+    /// One of this host's agents' rows, as a registry call left it.
+    Agent(Box<wire::Agent>),
 }
 
 /// How a call ended.
@@ -275,6 +292,8 @@ pub enum CallError {
     /// A paired host asked for what this host answers only to its own
     /// clients.
     NotServed,
+    /// The registry refused the call or could not finish it.
+    Registry(Refusal),
 }
 
 impl From<store::StoreError> for CallError {
@@ -290,4 +309,9 @@ pub enum JobResult {
     Done,
     /// It could not, in the driver's words.
     Failed(String),
+    /// The worktree a create asked for is made at `path`, branched from
+    /// `base_branch`.
+    Worktree { path: String, base_branch: String },
+    /// It was refused, as the driver said it to the caller.
+    Refused(#[serde(with = "codec::message")] wire::Error),
 }

@@ -75,6 +75,16 @@ impl Answers {
         !self.muted.is_empty() && self.muted.contains(&Key::from(agent))
     }
 
+    /// Nothing about the agent reaches a subscriber until it is unmuted;
+    /// its streams stay open.
+    pub(crate) fn mute(&mut self, agent: &AgentKey) {
+        self.muted.insert(Key::from(agent));
+    }
+
+    pub(crate) fn unmute(&mut self, agent: &AgentKey) {
+        self.muted.remove(&Key::from(agent));
+    }
+
     /// Holds `call` open until the host it was forwarded to replies.
     pub(crate) fn forwarding(&mut self, call: CallId) {
         self.open.insert(call, OpenCall::Forward);
@@ -115,6 +125,31 @@ impl Daemon {
             }
             ClientRequest::Forward { host, request } => {
                 self.forward(call, host, request, out);
+                Ok(())
+            }
+            // The registry answers its calls itself, once each is over.
+            ClientRequest::CreateAgent(create) => {
+                self.create(call, create, out);
+                Ok(())
+            }
+            ClientRequest::ResumeAgent(resume) => {
+                self.resume(call, resume, out);
+                Ok(())
+            }
+            ClientRequest::StopAgent { agent } => {
+                self.stop(call, agent, out);
+                Ok(())
+            }
+            ClientRequest::KillAgent { agent } => {
+                self.kill(call, agent, out);
+                Ok(())
+            }
+            ClientRequest::DeleteAgent { agent } => {
+                self.delete(call, agent, out);
+                Ok(())
+            }
+            ClientRequest::RenameAgent { agent, name } => {
+                self.rename(call, agent, name, out);
                 Ok(())
             }
         };
@@ -453,7 +488,13 @@ impl Daemon {
                 }
             }
             FromShell::Hosts(event) => self.publish_inventory(event, out),
-            FromShell::Removed { agent, event } => self.agent_removed(&agent, event, out),
+            FromShell::Removed { agent, event } => {
+                self.agent_removed(&agent, event, out);
+                // Gone for good, as a delete is: its children here follow.
+                if let Err(error) = self.parent_changed(&agent, crate::ParentSays::Deleted, out) {
+                    tracing::warn!(%error, "following a removed parent failed");
+                }
+            }
             FromShell::Mute(agent) => {
                 self.answers.muted.insert(Key::from(&agent));
             }

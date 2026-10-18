@@ -93,6 +93,7 @@ impl Generation {
         match crate::driver::fsync(data_dir.join(GENERATION), bytes).await {
             JobResult::Done => Ok(()),
             JobResult::Failed(why) => Err(io::Error::other(why)),
+            other => Err(io::Error::other(format!("{other:?}"))),
         }
     }
 }

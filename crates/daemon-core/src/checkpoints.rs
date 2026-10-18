@@ -120,7 +120,7 @@ impl Daemon {
                     self.reclaim(agent, cursor);
                 }
             }
-            JobResult::Failed(_) => {
+            JobResult::Failed(_) | JobResult::Worktree { .. } | JobResult::Refused(_) => {
                 tracing::warn!(?result, "a checkpoint failed; the next is an interval on");
                 self.checkpoints.committed.extend(cursors.into_keys());
                 self.arm_checkpoint(out);

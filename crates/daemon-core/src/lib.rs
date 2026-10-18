@@ -19,11 +19,13 @@ use store::Sqlite;
 
 pub mod checkpoints;
 mod codec;
+mod families;
 pub mod generation;
 pub mod ids;
 pub mod ingest;
 mod io;
 pub mod links;
+pub mod names;
 pub mod payload;
 mod peers;
 pub mod presence;
@@ -31,6 +33,7 @@ pub mod serve;
 pub mod sources;
 
 pub use checkpoints::Checkpoints;
+pub use families::{Create, Ended, FamilyState, Refusal, Resume};
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use ingest::Journals;
 pub use io::{
@@ -123,10 +126,21 @@ impl Daemon {
             Input::JobDone { job, result } if self.is_checkpoint(job) => {
                 self.checkpoint_done(result, out)
             }
-            // Nothing waits on any other job's result.
-            Input::JobDone { .. } => {}
+            Input::JobDone { job, result } => {
+                self.registry_job(job, result, out);
+            }
             Input::Nudge { agent } => self.ingest(agent, out),
-            Input::AgentHello { agent, .. } => self.hello(agent),
+            Input::AgentHello { agent, .. } => {
+                self.hello(agent);
+                self.process_hello(agent, out);
+            }
+            Input::ControlClosed { agent, ended } => self.control_closed(agent, ended, out),
+            Input::Adopted { agent } => self.adopted(agent, out),
+            Input::Exiting { agent } => self.exiting(agent),
+            Input::Swept => self.swept(out),
+            Input::Timer {
+                id: id @ (TimerId::Start(_) | TimerId::Exit(_)),
+            } => self.registry_timer(id, out),
             Input::Timer {
                 id: TimerId::Ingest(agent),
             } => self.ingest_again(agent, out),
@@ -179,7 +193,7 @@ impl Daemon {
             Input::Policy(policy) => self.set_policy(policy, out),
             Input::HostForgotten { host } => self.forget_host(host, out),
             Input::Discovered { found } => self.discovered(found, out),
-            Input::PairingMessage { .. } | Input::ControlClosed { .. } | Input::Entropy(_) => {}
+            Input::PairingMessage { .. } | Input::Entropy(_) => {}
         }
         self.tell_presence(out);
         self.follow_touched(out);
@@ -411,10 +425,6 @@ pub struct RoutingState {
     /// Each attempt under way, by host and route, counted.
     attempts: std::collections::BTreeMap<(HostId, Route), u32>,
 }
-
-/// Parents, children and the deliveries owed between them.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FamilyState {}
 
 /// The pairing conversations in progress.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

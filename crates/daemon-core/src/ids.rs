@@ -34,6 +34,11 @@ pub enum TimerId {
     /// Open the replica agent's source again once its backoff is waited
     /// out.
     Source(HostId, AgentId),
+    /// The agent's new process has had its start deadline to say Hello.
+    Start(AgentId),
+    /// What the agent's process was given to end in is up: its stop
+    /// deadline, or a kill's patience.
+    Exit(AgentId),
 }
 
 /// A job the driver runs off the core thread; its outcome returns as

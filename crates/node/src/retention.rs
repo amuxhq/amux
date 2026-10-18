@@ -18,7 +18,7 @@ use uuid::Uuid;
 use wire::RemovalReason;
 
 use crate::install::REPLICAS;
-use crate::runtime::{ParentSays, ProfileRuntime, RegistryError};
+use crate::runtime::{ProfileRuntime, RegistryError};
 
 /// The retention sweeps run so far.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -46,9 +46,9 @@ impl ProfileRuntime {
             )?;
             for key in &sweep.removed {
                 self.forget_draft(&key.agent);
+                // Gone for good, as a delete is: the core has its children
+                // here follow.
                 self.removed(key, RemovalReason::Retention);
-                // Gone for good, as a delete is: its children here follow.
-                self.parent_changed(&store, key, ParentSays::Deleted)?;
             }
             sweep
         };
@@ -56,12 +56,10 @@ impl ProfileRuntime {
             let Ok(id) = Uuid::from_slice(&key.agent) else {
                 continue;
             };
-            // Under the agent's operation lock, and only if no resume put
-            // its row back in the meantime: a running process keeps its
-            // directory. A directory left behind by a crash here has no
-            // row, and the next start removes it.
-            let operation = self.operation(id);
-            let _operation = operation.lock().await;
+            // Only if its row did not come back in the meantime: a running
+            // process keeps its directory. A resume finds the row gone and
+            // starts nothing. A directory left behind by a crash here has
+            // no row, and the next start removes it.
             if self.store.lock().await.agent(key)?.is_some() {
                 continue;
             }

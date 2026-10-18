@@ -57,6 +57,7 @@ mod worktree;
 pub use activation::{ActivationError, ActivationPipe, GO, InheritedPipe, PIPE_ENV, PREPARED};
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, StartError, StartOptions, start};
+pub use daemon_core::names::word_pairs;
 pub use driver::{CORE_DUMP, InventorySubscription, Subscription};
 pub use dump::{DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS, DUMP_SEGMENTS, DumpError, MANIFEST, pack};
 pub use edge::{
@@ -74,7 +75,6 @@ pub use install::{
     LockError, PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
 };
 pub use link::{PeerChannel, PeerClient, TRUST_REVOKED};
-pub use names::{assign_name, word_pairs};
 pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};
 pub use pairing::PairingAdmin;

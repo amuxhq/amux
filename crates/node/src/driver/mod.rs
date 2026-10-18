@@ -121,10 +121,15 @@ pub(crate) enum Fed {
 /// shell is read on the core thread with the store held, at the point the
 /// core answers.
 pub(crate) enum Ask {
-    Subscribe { agent_id: Vec<u8>, tail: u32 },
+    Subscribe {
+        agent_id: Vec<u8>,
+        tail: u32,
+    },
     Fetch(FetchRequest),
     Get(GetRequest),
     SubscribeInventory,
+    /// A request the shell already completed.
+    Ready(ClientRequest),
 }
 
 /// A channel the core said to open, under the id it gave, handshaking
@@ -503,6 +508,8 @@ impl CoreThread {
                 tail_rows: launch.tail_rows,
                 source_backoff_ms: launch.source_backoff_ms.max(0) as u64,
                 source_backoff_max_ms: launch.source_backoff_max_ms.max(0) as u64,
+                start_deadline_ms: launch.start_deadline_ms.max(0) as u64,
+                stop_deadline_ms: launch.stop_deadline_ms.max(0) as u64,
             };
             if self.settings != Some(settings) {
                 self.settings = Some(settings);
@@ -633,6 +640,8 @@ impl CoreThread {
                 // one its backoff is reckoned on; one due now is stepped
                 // next, with the store.
                 let sourcing = matches!(id, TimerId::Follow(_) | TimerId::Source(..));
+                // An agent's start and stop deadlines keep to it too.
+                let registry = matches!(id, TimerId::Start(_) | TimerId::Exit(_));
                 if sourcing && at_ms <= now {
                     if let Some(armed) = self.timers.remove(&id) {
                         armed.abort();
@@ -648,11 +657,12 @@ impl CoreThread {
                     .then(|| self.reports.clone());
                 // A credential's refresh keeps to the profile's clock, the
                 // one the relay judges the credential's expiry by.
-                let refresh = (sourcing || matches!(id, TimerId::Refresh(_))).then(|| {
-                    runtime
-                        .clock()
-                        .sleep_until(at_ms.min(i64::MAX as u64) as i64)
-                });
+                let refresh =
+                    (sourcing || registry || matches!(id, TimerId::Refresh(_))).then(|| {
+                        runtime
+                            .clock()
+                            .sleep_until(at_ms.min(i64::MAX as u64) as i64)
+                    });
                 let task = tokio::spawn(async move {
                     match refresh {
                         Some(due) => due.await,
@@ -819,12 +829,15 @@ impl CoreThread {
                     connections.dial(host);
                 }
             }
+            Output::SpawnAgent { dir, spec } => runtime.spawn_process(dir, *spec),
+            Output::DialAgent { agent } => runtime.dial_agent(uuid::Uuid::from_bytes(agent.0)),
+            Output::WriteControl { agent, frame } => {
+                runtime.write_control(uuid::Uuid::from_bytes(agent.0), frame)
+            }
+            Output::ForgetAgent { agent } => runtime.forget_agent(uuid::Uuid::from_bytes(agent.0)),
             output @ (Output::CloseChannel { .. }
             | Output::SendFile { .. }
-            | Output::LinkControl { .. }
-            | Output::DialAgent { .. }
-            | Output::WriteControl { .. }
-            | Output::SpawnAgent { .. }) => {
+            | Output::LinkControl { .. }) => {
                 tracing::error!(
                     ?output,
                     "the daemon core asked for what this driver does not carry out yet"
@@ -861,15 +874,7 @@ impl CoreThread {
                 }
             }
             ShellWork::ReplicaDropped { agent, listed } => runtime.replica_dropped(&agent, listed),
-            ShellWork::FollowParent { child, says } => {
-                runtime.follow(uuid::Uuid::from_bytes(child.0), says)
-            }
-            ShellWork::TellChildren { agent } => {
-                let key = runtime.key(uuid::Uuid::from_bytes(agent.0));
-                if let Err(error) = runtime.tell_children(self.daemon.store(), &key) {
-                    tracing::warn!(%error, "telling an agent of its children failed");
-                }
-            }
+            ShellWork::ForgetDraft { agent } => runtime.forget_draft(&agent.0),
         }
     }
 
@@ -942,6 +947,40 @@ async fn run_job(
                 }
             }
         }
+        Job::KillAgent { agent } => {
+            let Some(runtime) = runtime.upgrade() else {
+                return;
+            };
+            if runtime.kill_process(uuid::Uuid::from_bytes(agent.0)) {
+                JobResult::Done
+            } else {
+                JobResult::Failed("no process this daemon can kill".to_owned())
+            }
+        }
+        Job::AwaitUnlocked { agent, patience_ms } => {
+            let Some(runtime) = runtime.upgrade() else {
+                return;
+            };
+            let dir = runtime.agent_dir(uuid::Uuid::from_bytes(agent.0));
+            let patience = i64::try_from(patience_ms).unwrap_or(i64::MAX);
+            match runtime.wait_unlocked(&dir, patience).await {
+                Ok(()) => JobResult::Done,
+                Err(()) => JobResult::Failed("the directory is still locked".to_owned()),
+            }
+        }
+        Job::RemoveDir { path } => {
+            blocking(move || match std::fs::remove_dir_all(&path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                removed => removed,
+            })
+            .await
+        }
+        Job::MakeWorktree { repo, name } => {
+            let Some(runtime) = runtime.upgrade() else {
+                return;
+            };
+            runtime.make_worktree(&repo, &name).await
+        }
         op @ (Job::WriteBlob { .. } | Job::SendPush(_) | Job::Upload(_)) => {
             JobResult::Failed(format!("this driver does not run {op:?} yet"))
         }
@@ -1007,6 +1046,7 @@ impl ProfileRuntime {
             Ask::SubscribeInventory => ClientRequest::SubscribeInventory {
                 hosts: self.opening_hosts(),
             },
+            Ask::Ready(request) => request,
         }
     }
 

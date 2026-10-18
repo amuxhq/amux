@@ -1940,6 +1940,112 @@ mod tests {
         );
     }
 
+    /// A create in a new worktree writes its row only when the worktree is
+    /// made; the far parent is judged again then, so a host that fell
+    /// behind, or a parent whose row went, meanwhile refuses it.
+    #[test]
+    fn a_worktree_create_under_a_far_parent_is_judged_again_when_its_row_is_written() {
+        const CHILD: crate::AgentId = crate::AgentId(*b"child-0000000000");
+        let create = ClientRequest::CreateAgent(Box::new(crate::Create {
+            agent: CHILD,
+            cwd: "/src".into(),
+            given: Some("child".into()),
+            branches: BTreeSet::new(),
+            new_worktree: true,
+            spec: wire::AgentSpec {
+                agent_id: CHILD.0.to_vec(),
+                kind: wire::Kind::Codex as i32,
+                parent: Some(wire::AgentRef {
+                    host_id: PEER.to_vec(),
+                    agent_id: THEIRS.to_vec(),
+                }),
+                ..wire::AgentSpec::default()
+            },
+        }));
+        let refused = |out: &[Output]| {
+            out.iter().find_map(|output| match output {
+                Output::EndCall {
+                    call: CallId(1),
+                    status:
+                        crate::payload::Status::Failed(crate::payload::CallError::Registry(refusal)),
+                } => Some(refusal.clone()),
+                _ => None,
+            })
+        };
+        let removed = |inventory| {
+            inventory_event(
+                inventory,
+                inventory_event::Of::AgentRemoved(wire::AgentRemoved {
+                    host_id: PEER.to_vec(),
+                    agent_id: THEIRS.to_vec(),
+                    reason: wire::RemovalReason::Deleted as i32,
+                }),
+            )
+        };
+        let fell_behind = |inventory| Input::PeerAnswer {
+            call: inventory,
+            answer: Answer::Ended,
+        };
+        for (meanwhile, why) in [
+            (
+                &fell_behind as &dyn Fn(CallId) -> Input,
+                "the parent's host stopped being ready",
+            ),
+            (&removed, "the parent's row went"),
+        ] {
+            let mut daemon = daemon();
+            step(&mut daemon, Input::Swept);
+            let (inventory, _) = sourced(&mut daemon);
+            let asked = step(
+                &mut daemon,
+                Input::ClientCall {
+                    call: CallId(1),
+                    request: create.clone(),
+                },
+            );
+            let job = asked
+                .iter()
+                .find_map(|output| match output {
+                    Output::Job {
+                        id,
+                        op: crate::Job::MakeWorktree { .. },
+                    } => Some(*id),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("the worktree is asked for first: {asked:?}"));
+            step(&mut daemon, meanwhile(inventory));
+            let made = step(
+                &mut daemon,
+                Input::JobDone {
+                    job,
+                    result: crate::payload::JobResult::Worktree {
+                        path: "/src/.worktrees/child".into(),
+                        base_branch: "main".into(),
+                    },
+                },
+            );
+            assert_eq!(
+                refused(&made),
+                Some(crate::Refusal::ParentHostNotCaughtUp(HostId(PEER))),
+                "{why}: {made:?}"
+            );
+            assert!(
+                !made
+                    .iter()
+                    .any(|output| matches!(output, Output::SpawnAgent { .. })),
+                "{why}: {made:?}"
+            );
+            assert!(
+                daemon
+                    .store
+                    .agent(&AgentKey::new(OWN, CHILD.0))
+                    .unwrap()
+                    .is_none(),
+                "{why}: no row is written"
+            );
+        }
+    }
+
     #[test]
     fn a_trusted_host_a_route_reaches_is_followed_and_its_listing_opens_a_source_per_agent() {
         let mut daemon = daemon();

@@ -482,29 +482,7 @@ impl Daemon {
         if self.store.agent(&key)?.is_some() {
             return Err(Refusal::AlreadyExists);
         }
-        if let Some(parent) = create.spec.parent.as_ref() {
-            let parent = AgentKey::new(parent.host_id.clone(), parent.agent_id.clone());
-            // A child made under another host's parent before that host's
-            // listing caught up would be judged by neither: the listing
-            // judges only agents that predate it, and the live stream after
-            // it says nothing of a parent that had already ended. A parent
-            // missing from a caught-up host is deleted, or made so lately
-            // its row is still on the way; a retry tells them apart.
-            if parent.host != self.store.own_host() {
-                let host = crate::HostId::from_slice(&parent.host);
-                if !host.is_some_and(|host| self.sources.ready(host))
-                    || self.store.agent(&parent)?.is_none()
-                {
-                    return Err(Refusal::ParentHostNotCaughtUp(
-                        host.unwrap_or(crate::HostId([0; 16])),
-                    ));
-                }
-            }
-            if self.parent_ended(&parent)?.is_some() {
-                let id = AgentId::from_slice(&parent.agent).unwrap_or(AgentId([0; 16]));
-                return Err(Refusal::ParentEnded(id));
-            }
-        }
+        self.parent_gate(&create)?;
         // Names are unique on this host, counting exited agents, which stay
         // addressable by name: a given name already taken gets the next
         // free suffix, and the caller learns the name from the agent it
@@ -543,6 +521,37 @@ impl Daemon {
         ))
     }
 
+    /// Whether a child may be written under the create's parent now: run
+    /// as the row is written, so the parent's host and its row are judged
+    /// in the step that makes the child.
+    fn parent_gate(&self, create: &Create) -> Result<(), Refusal> {
+        let Some(parent) = create.spec.parent.as_ref() else {
+            return Ok(());
+        };
+        let parent = AgentKey::new(parent.host_id.clone(), parent.agent_id.clone());
+        // A child made under another host's parent before that host's
+        // listing caught up would be judged by neither: the listing judges
+        // only agents that predate it, and the live stream after it says
+        // nothing of a parent that had already ended. A parent missing from
+        // a caught-up host is deleted, or made so lately its row is still on
+        // the way; a retry tells them apart.
+        if parent.host != self.store.own_host() {
+            let host = crate::HostId::from_slice(&parent.host);
+            if !host.is_some_and(|host| self.sources.ready(host))
+                || self.store.agent(&parent)?.is_none()
+            {
+                return Err(Refusal::ParentHostNotCaughtUp(
+                    host.unwrap_or(crate::HostId([0; 16])),
+                ));
+            }
+        }
+        if self.parent_ended(&parent)?.is_some() {
+            let id = AgentId::from_slice(&parent.agent).unwrap_or(AgentId([0; 16]));
+            return Err(Refusal::ParentEnded(id));
+        }
+        Ok(())
+    }
+
     fn new_row(&self, create: &Create, name: &str, cwd: &str) -> AgentRow {
         let mut row = AgentRow::new(self.own_key(create.agent), create.spec.kind(), cwd);
         row.name = name.to_owned();
@@ -579,17 +588,15 @@ impl Daemon {
                 return self.finish(agent, Err(Refusal::Worktree(error)), out);
             }
         };
+        // The worktree took a while: the parent is judged again as the row
+        // is written, since its host may have fallen behind or the parent
+        // ended meanwhile. A refusal leaves the worktree for the caller.
+        if let Err(refusal) = self.parent_gate(&create) {
+            return self.finish(agent, Err(refusal), out);
+        }
         let row = self.new_row(&create, &name, &path);
         if let Err(error) = self.put_own_row(&row, out) {
             return self.finish(agent, Err(error.into()), out);
-        }
-        // The worktree took a while; a parent that ended meanwhile is
-        // followed now, after this start, rather than leave the worktree
-        // behind.
-        if let Some(parent) = row.parent.as_ref()
-            && let Ok(Some(says)) = self.parent_ended(parent)
-        {
-            self.follow(agent, says, out);
         }
         let doing = self.start_incarnation(create, name, path, Some(base_branch), out);
         if let Some(lane) = self.families.lanes.get_mut(&agent)

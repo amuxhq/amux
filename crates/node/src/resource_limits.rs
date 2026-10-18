@@ -15,55 +15,6 @@ pub(crate) const EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY: usize = 128;
 /// connection, which answers every packet, a Retry included, with another
 /// close.
 pub(crate) const QUIC_RETRY_REPEAT_INTERVAL: Duration = Duration::from_millis(500);
-pub(crate) const CLOUD_INBOUND_TUNNEL_RATE_LIMIT: usize = 30;
-pub(crate) const CLOUD_INBOUND_TUNNEL_RATE_WINDOW: Duration = Duration::from_secs(60);
-
-#[derive(Debug)]
-pub(crate) struct SlidingWindowRateLimiter<K> {
-    limit: usize,
-    window: Duration,
-    entries: HashMap<K, VecDeque<Instant>>,
-}
-
-impl<K> SlidingWindowRateLimiter<K>
-where
-    K: Eq + Hash,
-{
-    pub(crate) fn new(limit: usize, window: Duration) -> Self {
-        Self {
-            limit,
-            window,
-            entries: HashMap::new(),
-        }
-    }
-
-    pub(crate) fn allow(&mut self, key: K) -> bool {
-        self.allow_at(key, Instant::now())
-    }
-
-    fn allow_at(&mut self, key: K, now: Instant) -> bool {
-        self.prune(now);
-        let timestamps = self.entries.entry(key).or_default();
-        if timestamps.len() >= self.limit {
-            return false;
-        }
-        timestamps.push_back(now);
-        true
-    }
-
-    fn prune(&mut self, now: Instant) {
-        let window = self.window;
-        self.entries.retain(|_, timestamps| {
-            while timestamps
-                .front()
-                .is_some_and(|timestamp| *timestamp + window <= now)
-            {
-                timestamps.pop_front();
-            }
-            !timestamps.is_empty()
-        });
-    }
-}
 
 /// Which unvalidated QUIC Initials a listener answers with a Retry. Each
 /// source may start `limit` connection attempts per window. An attempt is
@@ -188,26 +139,5 @@ mod tests {
         // The budget still has room for a new attempt.
         assert_eq!(retries.admit_at("peer", 2, resent), Admission::Retry);
         assert_eq!(retries.admit_at("peer", 3, resent), Admission::Refused);
-    }
-
-    #[test]
-    fn sliding_window_limiter_caps_then_recovers_after_window() {
-        let start = Instant::now();
-        let mut limiter = SlidingWindowRateLimiter::new(2, Duration::from_secs(60));
-
-        assert!(limiter.allow_at("peer", start));
-        assert!(limiter.allow_at("peer", start + Duration::from_secs(1)));
-        assert!(!limiter.allow_at("peer", start + Duration::from_secs(2)));
-        assert!(limiter.allow_at("peer", start + Duration::from_secs(60)));
-    }
-
-    #[test]
-    fn sliding_window_limiter_is_keyed_independently() {
-        let start = Instant::now();
-        let mut limiter = SlidingWindowRateLimiter::new(1, Duration::from_secs(60));
-
-        assert!(limiter.allow_at("one", start));
-        assert!(!limiter.allow_at("one", start));
-        assert!(limiter.allow_at("two", start));
     }
 }

@@ -53,7 +53,7 @@ impl RelayHost {
         let ctx = LinkCtx::new_live(
             LiveLocalHost::new(host),
             Arc::new(RoutingCore::new()),
-            Arc::new(LinkRegistry::default()),
+            Arc::new(LinkRegistry::new(id)),
         )
         .with_incoming_streams(inbound_tx);
         let carrier = Arc::new(MuxCarrier::new(

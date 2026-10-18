@@ -398,7 +398,10 @@ authenticated by a short-lived token from the account service. The relay
 routes streams only between hosts of the same account and forwards bytes it
 cannot read. A link whose account has no subscription carries presence and
 control messages only: the relay refuses every application stream to or
-from it ([`link/piper.rs`](../crates/node/src/link/piper.rs)). Every daemon
+from it. Which streams it carries is the relay core's decision
+([`relay-core`](../crates/relay-core/src/lib.rs)), one state machine for
+every account; its driver
+([`link/piper.rs`](../crates/node/src/link/piper.rs)) copies the bytes. Every daemon
 can forward the same way for its own paired hosts, and a link admitted by a
 pinned key has no tier to check. The account service is a separate
 deployment; [the phone and amux.sh](CLOUD.md) describes what the app asks of

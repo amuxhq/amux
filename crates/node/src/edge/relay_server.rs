@@ -17,6 +17,7 @@ use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 
 use crate::auth::jwt::JwtValidator;
+use crate::link::piper::Relaying;
 use crate::link::{CarrierKind, ChannelPool, MuxCarrier, MuxRole, QuicCarrier, run_link};
 use crate::resource_limits::{
     Admission, EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY, EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT,
@@ -100,6 +101,9 @@ struct CloudLinkServerInner {
     identity: RelayIdentity,
     local_host: LiveLocalHost,
     users: RwLock<HashMap<Uuid, RelayUser>>,
+    /// The one core every account's streams are admitted by: accounts are
+    /// kept apart by its adjacency, not by a core each.
+    relaying: Arc<Relaying>,
 }
 
 /// One account's side of the relay: the links its hosts hold here and the
@@ -108,8 +112,6 @@ struct RelayUser {
     routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     incoming_streams_tx: mpsc::Sender<crate::link::InboundStream>,
-    /// The pipes between this account's links, whichever link opened them.
-    pipes: crate::link::piper::Pipes,
     drain: JoinHandle<()>,
 }
 
@@ -120,8 +122,11 @@ impl Drop for RelayUser {
 }
 
 impl RelayUser {
-    fn new() -> Self {
-        let links = Arc::new(LinkRegistry::default());
+    fn new(relaying: Arc<Relaying>, user_id: Uuid) -> Self {
+        let links = Arc::new(LinkRegistry::relayed(
+            relaying,
+            relay_core::UserId(user_id.into_bytes()),
+        ));
         let (incoming_streams_tx, mut incoming) = mpsc::channel(64);
         // A stream addressed to the relay itself has nothing to reach: the
         // relay serves no calls of its own.
@@ -130,7 +135,6 @@ impl RelayUser {
             routing: Arc::new(RoutingCore::new()),
             channels: Arc::new(ChannelPool::new(links)),
             incoming_streams_tx,
-            pipes: Default::default(),
             drain,
         }
     }
@@ -142,7 +146,6 @@ impl RelayUser {
             self.channels.link_registry(),
         )
         .with_incoming_streams(self.incoming_streams_tx.clone())
-        .with_shared_pipes(self.pipes.clone())
         .with_clock(clock.clone())
     }
 }
@@ -160,6 +163,7 @@ impl CloudLinkServer {
         ));
         Self {
             inner: Arc::new(CloudLinkServerInner {
+                relaying: Relaying::new(identity.host_id),
                 identity,
                 local_host,
                 users: RwLock::new(HashMap::new()),
@@ -299,7 +303,7 @@ impl CloudLinkServer {
         let mut users = inner.users.write().await;
         users
             .entry(user_id)
-            .or_insert_with(RelayUser::new)
+            .or_insert_with(|| RelayUser::new(inner.relaying.clone(), user_id))
             .link_ctx(&inner.local_host, &inner.identity.clock)
     }
 
@@ -307,7 +311,7 @@ impl CloudLinkServer {
         LinkCtx::new_live(
             self.inner.local_host.clone(),
             Arc::new(RoutingCore::new()),
-            Arc::new(LinkRegistry::default()),
+            Arc::new(LinkRegistry::new(self.inner.identity.host_id)),
         )
         .with_token_authenticator(self.inner.identity.authenticator.clone())
         .with_authenticated_context_provider(Arc::new(self.clone()))

@@ -2574,6 +2574,7 @@ dependencies = [
  "provider-fakes",
  "quinn",
  "rcgen",
+ "relay-core",
  "release",
  "reqwest",
  "ring",

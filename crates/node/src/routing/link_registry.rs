@@ -18,6 +18,7 @@ use wire::pb;
 
 use crate::driver::CoreLinks;
 use crate::link::LinkCarrier as NativeLinkCarrier;
+use crate::link::piper::Relaying;
 use crate::routing::types::LinkId;
 use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
 use crate::routing::{ConnectRole, Host, RuntimeInstance};
@@ -26,12 +27,51 @@ use crate::{HostId, Tier, audit};
 pub(crate) type LinkOutputTx = mpsc::Sender<pb::Message>;
 
 impl LinkRegistry {
+    /// The registry of a host whose own id is `own`: a daemon's links are
+    /// all one account's, and it forwards between them on its own.
+    pub(crate) fn new(own: HostId) -> Self {
+        Self::relayed(Relaying::new(own), relay_core::UserId::default())
+    }
+
     /// A profile's registry, whose links its core hears of.
-    pub(crate) fn for_core(core: CoreLinks) -> Self {
+    pub(crate) fn for_core(own: HostId, core: CoreLinks) -> Self {
         Self {
             core: Some(core),
-            ..Self::default()
+            ..Self::new(own)
         }
+    }
+
+    /// One account's registry on a relay: its links are reported to the
+    /// relay's core, which every account shares, under `user`.
+    pub(crate) fn relayed(relaying: Arc<Relaying>, user: relay_core::UserId) -> Self {
+        Self {
+            state: RwLock::default(),
+            core: None,
+            relaying,
+            user,
+        }
+    }
+
+    /// The core that decides which streams these links carry.
+    pub(crate) fn relaying(&self) -> &Arc<Relaying> {
+        &self.relaying
+    }
+
+    fn report_up(&self, link: &LinkId, host: HostId, admission: LinkAdmission) {
+        self.relaying.step([relay_core::Input::LinkUp {
+            link: link.core(),
+            user: self.user,
+            host: daemon_core::HostId(host.into_bytes()),
+            tier: match admission {
+                LinkAdmission::PinnedKey => None,
+                LinkAdmission::CloudToken { tier } => Some(relay_tier(tier)),
+            },
+        }]);
+    }
+
+    fn report_down(&self, link: &LinkId) {
+        self.relaying
+            .step([relay_core::Input::LinkDown { link: link.core() }]);
     }
 
     /// The profile's core, when this is a profile's registry.
@@ -40,12 +80,23 @@ impl LinkRegistry {
     }
 }
 
-#[derive(Default)]
 pub struct LinkRegistry {
     state: RwLock<LinkRegistryState>,
     /// The profile's core, told of every link registered here and asked
     /// for every channel opened over one. A relay's registry has none.
     core: Option<CoreLinks>,
+    /// The forwarding core, told of every link registered here and asked
+    /// for every stream a link opens toward another host.
+    relaying: Arc<Relaying>,
+    /// The account these links are on, as the forwarding core knows it.
+    user: relay_core::UserId,
+}
+
+pub(crate) fn relay_tier(tier: Tier) -> relay_core::Tier {
+    match tier {
+        Tier::Free => relay_core::Tier::Free,
+        Tier::Pro => relay_core::Tier::Pro,
+    }
 }
 
 #[derive(Default)]
@@ -333,6 +384,12 @@ impl LinkRegistry {
                 native_carrier,
             },
         );
+        // Told under the lock, so the forwarding core hears of links in the
+        // order the registry holds them.
+        for (id, _) in &displaced {
+            self.report_down(id);
+        }
+        self.report_up(&link, host.id, admission);
         drop(state);
         let displaced_ids = displaced.iter().map(|(id, _)| *id).collect();
         for (id, writer) in displaced {
@@ -358,6 +415,7 @@ impl LinkRegistry {
         let Some(writer) = state.writers.remove(link) else {
             return;
         };
+        self.report_down(link);
         let peer = writer.host.id;
         let last_link_to_peer = !state.writers.values().any(|other| other.host.id == peer);
         if last_link_to_peer {
@@ -453,6 +511,7 @@ impl LinkRegistry {
         closing.into_iter().map(|(link, _)| link).collect()
     }
 
+    #[cfg(test)]
     pub(crate) async fn admission(&self, link: &LinkId) -> Option<LinkAdmission> {
         self.state
             .read()
@@ -501,24 +560,19 @@ impl LinkRegistry {
             })
     }
 
-    pub(crate) async fn native_route_to_peer(
+    /// The carrier of the link the forwarding core names `link`, while it
+    /// is registered.
+    pub(crate) async fn native_carrier_of(
         &self,
-        peer: HostId,
-    ) -> Option<(LinkId, Arc<dyn NativeLinkCarrier>, LinkAdmission)> {
+        link: daemon_core::LinkId,
+    ) -> Option<Arc<dyn NativeLinkCarrier>> {
         self.state
             .read()
             .await
             .writers
             .iter()
-            .find_map(|(link, writer)| {
-                if writer.host.id != peer {
-                    return None;
-                }
-                writer
-                    .native_carrier
-                    .clone()
-                    .map(|carrier| (*link, carrier, writer.admission))
-            })
+            .find(|(id, _)| id.core() == link)
+            .and_then(|(_, writer)| writer.native_carrier.clone())
     }
 
     pub(crate) async fn update_cloud_tier(&self, link: &LinkId, tier: Tier) {
@@ -528,6 +582,10 @@ impl LinkRegistry {
         };
         if matches!(writer.admission, LinkAdmission::CloudToken { .. }) {
             writer.admission = LinkAdmission::CloudToken { tier };
+            self.relaying.step([relay_core::Input::TierChanged {
+                link: link.core(),
+                tier: relay_tier(tier),
+            }]);
         }
     }
 
@@ -695,7 +753,7 @@ mod tests {
 
     #[tokio::test]
     async fn registering_a_link_announces_the_new_neighbor_to_existing_links() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (first_tx, mut first_rx) = mpsc::channel(8);
         registry
             .register(link(1, 1), host(1), first_tx, LinkRole::Peer, &[])
@@ -715,7 +773,7 @@ mod tests {
 
     #[tokio::test]
     async fn registering_a_link_reconciles_its_handshake_snapshot() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (existing_tx, _existing_rx) = mpsc::channel(8);
         registry
             .register(link(1, 1), host(1), existing_tx, LinkRole::Peer, &[])
@@ -747,7 +805,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_the_last_link_to_a_peer_announces_neighbor_down() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (observer_tx, mut observer_rx) = mpsc::channel(8);
         registry
             .register(link(9, 1), host(9), observer_tx, LinkRole::Peer, &[])
@@ -786,7 +844,7 @@ mod tests {
 
     #[tokio::test]
     async fn crossed_direct_dials_converge_on_the_same_physical_link() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let peer = host(2);
         let fallback = link(2, 1);
         let preferred = link(2, 2);
@@ -881,7 +939,7 @@ mod tests {
             (Preferred, Fallback),
             (Preferred, Preferred),
         ] {
-            let registry = LinkRegistry::default();
+            let registry = LinkRegistry::new(HostId::nil());
             let peer = host(2);
             let dead = link(2, 1);
             let (dead_tx, _) = mpsc::channel(8);
@@ -918,7 +976,7 @@ mod tests {
     #[tokio::test]
     async fn one_runtime_instance_keeps_its_first_link_in_each_direction() {
         for order in [DirectLinkOrder::Fallback, DirectLinkOrder::Preferred] {
-            let registry = LinkRegistry::default();
+            let registry = LinkRegistry::new(HostId::nil());
             let peer = host(2);
             let life = RuntimeInstance::random();
             let (first_tx, _) = mpsc::channel(8);
@@ -955,7 +1013,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_neighbor_is_never_told_about_itself() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (peer_tx, mut peer_rx) = mpsc::channel(8);
         registry
             .register(link(2, 1), host(2), peer_tx, LinkRole::Peer, &[])
@@ -979,7 +1037,7 @@ mod tests {
 
     #[tokio::test]
     async fn snapshot_lists_each_neighbor_once() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (first_tx, _first_rx) = mpsc::channel(8);
         let (second_tx, _second_rx) = mpsc::channel(8);
         let (other_tx, _other_rx) = mpsc::channel(8);
@@ -1002,7 +1060,7 @@ mod tests {
 
     #[tokio::test]
     async fn full_outgoing_queue_requests_link_close() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (full_tx, _full_rx) = mpsc::channel(1);
         full_tx.try_send(pb::Message { body: None }).unwrap();
         let mut close_rx = registry
@@ -1022,7 +1080,7 @@ mod tests {
 
     #[tokio::test]
     async fn link_close_notification_is_best_effort_for_full_link_queues() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (tx, _rx) = mpsc::channel(1);
         tx.try_send(pb::Message { body: None }).unwrap();
         registry
@@ -1039,7 +1097,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_link_close_to_all_sends_typed_reason() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (tx, mut rx) = mpsc::channel(8);
         registry
             .register(link(99, 1), host(99), tx, LinkRole::Peer, &[])
@@ -1061,7 +1119,7 @@ mod tests {
 
     #[tokio::test]
     async fn cloud_admission_tier_updates_without_changing_pinned_links() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let cloud = link(1, 1);
         let pinned = link(2, 1);
         let (cloud_tx, _cloud_rx) = mpsc::channel(8);
@@ -1095,7 +1153,7 @@ mod tests {
 
     #[tokio::test]
     async fn cloud_relay_role_is_tracked_per_link() {
-        let registry = LinkRegistry::default();
+        let registry = LinkRegistry::new(HostId::nil());
         let (cloud_tx, _cloud_rx) = mpsc::channel(1);
         let (peer_tx, _peer_rx) = mpsc::channel(1);
         registry

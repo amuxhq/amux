@@ -17,6 +17,7 @@ chrono = { workspace = true }
 core-ring = { workspace = true }
 curve25519-dalek = { workspace = true }
 daemon-core = { workspace = true }
+relay-core = { workspace = true }
 futures-util = { workspace = true }
 gethostname = { workspace = true }
 http-body-util = { workspace = true }

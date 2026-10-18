@@ -269,7 +269,10 @@ impl Edge {
             trust.clone(),
             crate::routing::TrustChanges::to_core(runtime.clone()),
         ));
-        let links = Arc::new(LinkRegistry::for_core(CoreLinks::new(runtime.clone())));
+        let links = Arc::new(LinkRegistry::for_core(
+            local_host.id(),
+            CoreLinks::new(runtime.clone()),
+        ));
         let channels = Arc::new(ChannelPool::with_device_tls(
             links,
             identity.clone(),

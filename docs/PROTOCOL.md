@@ -408,10 +408,15 @@ table sizes are on [Parameters](PARAMETERS.md).
 
 ## Chapter 6: Relay forwarding and entitlement
 
-A relay receives a non-control stream, validates its preface, looks up a direct
-link to `dst`, opens a stream there with the same `dst` and `plain` cleared,
-waits for its acceptance so a refusal keeps its reason, and copies bytes in
-both directions until each side ends (`crates/node/src/link/piper.rs`). It does
+A relay receives a non-control stream and asks its core
+(`crates/relay-core`) whether to carry it: the core judges the preface, the
+plan on both ends, the opener's rate and the account's adjacency, and answers
+with a refusal, which is reset before a byte is copied, or the link to splice
+it onto. The driver opens a stream there with the same `dst` and `plain`
+cleared, waits for its acceptance so a refusal keeps its reason, and copies
+bytes in both directions until each side ends
+(`crates/node/src/link/piper.rs`). A link lapsing to the free plan has the
+core cut every stream through it, including one still opening. It does
 not parse channel bytes or keep protocol-level stream ids, sources, payload
 buffers or close state. Either end may open, so a host reached through a relay
 can call back on the same link, and one relay can pipe between QUIC and TCP

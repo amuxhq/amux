@@ -220,7 +220,6 @@ pub struct LinkCtx {
     routing: Arc<RoutingCore>,
     links: Arc<LinkRegistry>,
     incoming_streams_tx: Option<mpsc::Sender<super::InboundStream>>,
-    piper: super::Piper,
     expected_peer: Option<HostId>,
     authenticated_peer: Option<HostId>,
     link_role: LinkRole,
@@ -251,13 +250,11 @@ impl LinkCtx {
         routing: Arc<RoutingCore>,
         links: Arc<LinkRegistry>,
     ) -> Self {
-        let piper = super::Piper::new(local_host.id(), links.clone());
         Self {
             local_host,
             routing,
             links,
             incoming_streams_tx: None,
-            piper,
             expected_peer: None,
             authenticated_peer: None,
             link_role: LinkRole::Peer,
@@ -314,13 +311,6 @@ impl LinkCtx {
         sender: mpsc::Sender<super::InboundStream>,
     ) -> Self {
         self.incoming_streams_tx = Some(sender);
-        self
-    }
-
-    /// Keeps the pipes this link forwards with those of the links that share
-    /// `pipes`, so a lapse on any of them ends the pipes through it.
-    pub(crate) fn with_shared_pipes(mut self, pipes: super::piper::Pipes) -> Self {
-        self.piper = self.piper.sharing(pipes);
         self
     }
 
@@ -856,7 +846,9 @@ fn spawn_inbound_dispatch(
                 let _ = stream.reset(wire::pb::StreamRefusal::ShuttingDown).await;
             }
         } else {
-            let _ = ctx.piper.pipe(link, preface, stream).await;
+            let _ = super::Piper::new(ctx.links.clone())
+                .pipe(link, preface, stream)
+                .await;
         }
     });
 }
@@ -918,10 +910,9 @@ async fn handle_control_body(
             {
                 Ok(user) => match auth.apply_reauth(user) {
                     Ok(()) => {
+                        // A lapse to free stops the streams through the link
+                        // too: the forwarding core cuts them as it hears.
                         ctx.links.update_cloud_tier(&link, auth.tier()).await;
-                        if auth.tier() == crate::Tier::Free {
-                            ctx.piper.close_link(&link);
-                        }
                         ControlAction::Continue
                     }
                     Err(error) => {
@@ -1419,7 +1410,7 @@ mod tests {
         let local = host(1);
         let peer = host(2);
         let routing = Arc::new(RoutingCore::new());
-        let links = Arc::new(LinkRegistry::default());
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let user = authenticated_user(
             Uuid::new_v4(),
             SystemTime::now() + Duration::from_secs(60),
@@ -1471,7 +1462,7 @@ mod tests {
         );
         let session = LinkAuthSession::new(initial, FixedAuthenticator(other_user));
         let routing = Arc::new(RoutingCore::new());
-        let links = Arc::new(LinkRegistry::default());
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = mux_pair();
         let mut ctx = LinkCtx::new(local, routing, links).with_authenticated_peer(peer.id);
         ctx.acceptor_session = Some(session.clone());
@@ -1510,7 +1501,7 @@ mod tests {
         let local = host(1);
         let peer = host(2);
         let routing = Arc::new(RoutingCore::new());
-        let links = Arc::new(LinkRegistry::default());
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = mux_pair();
         let ctx = LinkCtx::new(local, routing, links.clone()).with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
@@ -1555,7 +1546,7 @@ mod tests {
         let local = host(1);
         let peer = host(2);
         let routing = Arc::new(RoutingCore::new());
-        let links = Arc::new(LinkRegistry::default());
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = mux_pair();
         let ctx = LinkCtx::new(local, routing, links.clone()).with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
@@ -1584,7 +1575,7 @@ mod tests {
         let destination = host(3);
         let announced = host(4);
         let routing = Arc::new(RoutingCore::new());
-        let links = Arc::new(LinkRegistry::default());
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let destination_carrier = Arc::new(BlockingOpenCarrier::new());
         let destination_link = LinkId::new(destination.id);
         let (destination_messages, _destination_rx) = mpsc::channel(8);

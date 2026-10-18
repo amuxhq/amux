@@ -1087,7 +1087,7 @@ mod tests {
 
     #[test]
     fn dropping_a_link_a_route_or_a_host_forgets_their_opener_locks() {
-        let pool = ChannelPool::new(Arc::new(LinkRegistry::default()));
+        let pool = ChannelPool::new(Arc::new(LinkRegistry::new(crate::HostId::nil())));
         let host = Uuid::new_v4();
         let relay = Uuid::new_v4();
         let other = Uuid::new_v4();

@@ -610,7 +610,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_call_on_a_link_superseded_while_opening_retries_on_its_replacement() {
-        let links = Arc::new(LinkRegistry::default());
+        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let manager = ConnectionManager::new(
             Arc::new(RoutingCore::new()),
             Arc::new(ChannelPool::new(links.clone())),

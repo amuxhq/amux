@@ -55,6 +55,8 @@ jobs:
         run: just codegen-check
       - name: Enforce dependency boundaries
         run: just dependency-policy
+      - name: Check the state-machine cores carry no runtime, lock or await
+        run: just cores-check
       - name: Check provider messages go through the protocol crates
         run: just typed-provider-check
       - name: Check the test suite catalogue

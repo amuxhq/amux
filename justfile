@@ -190,6 +190,11 @@ tui-set NAME *ARGS:
     *) exec target/debug/tui-set "$@" ;;
     esac
 
+# Fail when any state-machine core's dependency graph contains tokio, or any
+# core source contains a lock, a spawned task, an async fn or an await.
+cores-check:
+    {{bounded}} 120 scripts/py scripts/cores-check.py
+
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
     {{bounded}} 60 scripts/py scripts/check-dependency-policy.py
@@ -236,7 +241,7 @@ no-update-flags:
     scripts/no-update-flags.sh
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags check lint fmt-check codegen-check dependency-policy typed-provider-check deletion-ledger-check docs-check tests-check test contracts-check doctest release-check embedded-check embedded-test mobile-check
+ci: no-update-flags check lint fmt-check codegen-check dependency-policy cores-check typed-provider-check deletion-ledger-check docs-check tests-check test contracts-check doctest release-check embedded-check embedded-test mobile-check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

@@ -135,6 +135,14 @@ impl Daemon {
             Input::LinkUp { link, peer, kind } => self.link_up(link, peer, kind, out),
             Input::LinkDown { link, .. } => self.link_down(link, out),
             Input::LinkControl { link, frame } => self.link_control(link, frame, out),
+            Input::Credential {
+                link,
+                expires_at_ms,
+                free_every_ms,
+            } => self.credential(link, expires_at_ms, free_every_ms, out),
+            Input::Timer {
+                id: TimerId::Refresh(link),
+            } => self.refresh_due(link, out),
             Input::WantChannel {
                 link,
                 peer,

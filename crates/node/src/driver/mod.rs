@@ -598,11 +598,22 @@ impl CoreThread {
             Output::ArmTimer { id, at_ms } => {
                 let wait = at_ms.saturating_sub(runtime.clock_now().max(0) as u64);
                 let inputs = self.inputs.clone();
-                // A host's retry reads no store, so it fires as links
-                // report, ahead of the shell's writes.
-                let reports = matches!(id, TimerId::Retry(_)).then(|| self.reports.clone());
+                // A host's retry and a link's refresh read no store, so
+                // they fire as links report, ahead of the shell's writes.
+                let reports = matches!(id, TimerId::Retry(_) | TimerId::Refresh(_))
+                    .then(|| self.reports.clone());
+                // A credential's refresh keeps to the profile's clock, the
+                // one the relay judges the credential's expiry by.
+                let refresh = matches!(id, TimerId::Refresh(_)).then(|| {
+                    runtime
+                        .clock()
+                        .sleep_until(at_ms.min(i64::MAX as u64) as i64)
+                });
                 let task = tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_millis(wait)).await;
+                    match refresh {
+                        Some(due) => due.await,
+                        None => tokio::time::sleep(Duration::from_millis(wait)).await,
+                    }
                     let fired = Input::Timer { id };
                     match reports {
                         Some(reports) => {
@@ -810,10 +821,23 @@ async fn run_job(
             };
             JobResult::Fetched(fetch_from_origin(&runtime, &agent, before_order, limit).await)
         }
-        op @ (Job::WriteBlob { .. }
-        | Job::RefreshToken { .. }
-        | Job::SendPush(_)
-        | Job::Upload(_)) => JobResult::Failed(format!("this driver does not run {op:?} yet")),
+        Job::RefreshToken { link } => {
+            let Some(edge) = runtime.upgrade().and_then(|runtime| runtime.edge()) else {
+                return;
+            };
+            // The profile has one relay link; the one the core named is it
+            // unless it went, which the core hears of as the link's end.
+            match edge.refresh_entitlement().await {
+                Ok(_) => JobResult::Done,
+                Err(error) => {
+                    tracing::debug!(?link, %error, "refreshing the relay credential failed");
+                    JobResult::Failed(error)
+                }
+            }
+        }
+        op @ (Job::WriteBlob { .. } | Job::SendPush(_) | Job::Upload(_)) => {
+            JobResult::Failed(format!("this driver does not run {op:?} yet"))
+        }
     };
     feed(&inputs, Input::JobDone { job, result }).await;
 }

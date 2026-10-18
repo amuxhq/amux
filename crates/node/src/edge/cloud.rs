@@ -54,7 +54,6 @@ pub struct CloudTransport {
     tcp_override: Option<std::net::SocketAddr>,
     quic_override: Option<super::RelayQuic>,
     free_refresh_interval: Option<Duration>,
-    clock: Arc<dyn Clock>,
 }
 
 impl CloudTransport {
@@ -64,7 +63,6 @@ impl CloudTransport {
         tcp_override: Option<std::net::SocketAddr>,
         quic_override: Option<super::RelayQuic>,
         free_refresh_interval: Option<Duration>,
-        clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             quic_endpoint,
@@ -72,7 +70,6 @@ impl CloudTransport {
             tcp_override,
             quic_override,
             free_refresh_interval,
-            clock,
         }
     }
 }
@@ -554,7 +551,6 @@ async fn run_cloud_connection_with_details(
                 .unwrap_or(FREE_TIER_REFRESH_INTERVAL),
         ),
     )
-    .with_clock(ctx.transport.clock.clone())
     .with_refresh_observer(move |tier| {
         refresh_status.report(Observed::Connected {
             tier,

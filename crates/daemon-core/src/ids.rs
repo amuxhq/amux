@@ -26,6 +26,8 @@ pub enum TimerId {
     Checkpoint,
     /// Try the host again: no channel to it is open while a route lists it.
     Retry(HostId),
+    /// Refresh the credential the relay link presents.
+    Refresh(LinkId),
 }
 
 /// A job the driver runs off the core thread; its outcome returns as

@@ -768,7 +768,6 @@ impl Edge {
                 self.cloud_options.relay_tcp,
                 self.cloud_options.relay_quic.clone(),
                 self.cloud_options.free_refresh_interval,
-                self.clock.clone(),
             ),
         ));
     }

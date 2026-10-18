@@ -16,12 +16,15 @@ use wire::message::Body;
 use wire::{HelloAck, hello_ack};
 
 use crate::Daemon;
-use crate::ids::{ChannelId, HostId, LinkId};
-use crate::io::Output;
+use crate::ids::{ChannelId, HostId, LinkId, TimerId};
+use crate::io::{Job, Output};
 use crate::payload::{
     Advertisement, CarrierKind, ChannelClass, ChannelError, LinkFrame, PublicKey,
 };
 use crate::presence::Route;
+
+/// How long before the relay credential expires its refresh comes.
+pub const REFRESH_BEFORE_EXPIRY_MS: u64 = 5 * 60 * 1000;
 
 /// Every link that is up, by id, with its peer and the hosts the peer
 /// claims to reach, and the channels opened over them. The relay keeps one
@@ -161,9 +164,39 @@ impl Daemon {
         }
     }
 
+    /// The relay link presented a fresh credential: its refresh is armed.
+    /// On the free plan it comes on an interval, so a purchase reaches the
+    /// link promptly; otherwise shortly before the credential expires.
+    pub(crate) fn credential(
+        &mut self,
+        link: LinkId,
+        expires_at_ms: u64,
+        free_every_ms: Option<u64>,
+        out: &mut Vec<Output>,
+    ) {
+        let at_ms = match free_every_ms {
+            Some(every) => self.timers.now_ms.saturating_add(every),
+            None => expires_at_ms.saturating_sub(REFRESH_BEFORE_EXPIRY_MS),
+        };
+        self.arm(TimerId::Refresh(link), at_ms, out);
+    }
+
+    /// The relay link's credential is due for refresh.
+    pub(crate) fn refresh_due(&mut self, link: LinkId, out: &mut Vec<Output>) {
+        self.timers.armed.remove(&TimerId::Refresh(link));
+        if self.routing.links.links.contains_key(&link) {
+            let id = self.pending.mint();
+            out.push(Output::Job {
+                id,
+                op: Job::RefreshToken { link },
+            });
+        }
+    }
+
     /// The link is gone, and with it every channel it carried: the driver
     /// ends their streams with the connection.
     pub(crate) fn link_down(&mut self, link: LinkId, out: &mut Vec<Output>) {
+        self.cancel(TimerId::Refresh(link), out);
         let Some(gone) = self.routing.links.links.get(&link) else {
             return;
         };
@@ -499,5 +532,60 @@ mod tests {
         );
         assert!(daemon.links().link(LINK).is_none());
         assert_eq!(daemon.links().channels().count(), 0);
+    }
+
+    #[test]
+    fn the_relay_credential_is_refreshed_on_the_free_interval_or_before_it_expires() {
+        let mut daemon = daemon();
+        up(&mut daemon);
+        step(&mut daemon, Input::Tick { now_ms: 1_000 });
+        let credential = |free_every_ms| Input::Credential {
+            link: LINK,
+            expires_at_ms: 3_600_000,
+            free_every_ms,
+        };
+        let refresh = TimerId::Refresh(LINK);
+        assert_eq!(
+            step(&mut daemon, credential(Some(60_000))),
+            vec![Output::ArmTimer {
+                id: refresh,
+                at_ms: 61_000
+            }],
+            "the free plan's interval, from now"
+        );
+        assert_eq!(
+            step(&mut daemon, credential(None)),
+            vec![Output::ArmTimer {
+                id: refresh,
+                at_ms: 3_600_000 - REFRESH_BEFORE_EXPIRY_MS
+            }],
+            "a fresh credential moves the refresh to before it expires"
+        );
+        let out = step(&mut daemon, Input::Timer { id: refresh });
+        assert!(
+            matches!(
+                out.as_slice(),
+                [Output::Job {
+                    op: Job::RefreshToken { link: LINK },
+                    ..
+                }]
+            ),
+            "{out:?}"
+        );
+
+        // A link that went takes its refresh with it.
+        step(&mut daemon, credential(None));
+        let out = step(
+            &mut daemon,
+            Input::LinkDown {
+                link: LINK,
+                reason: LinkCloseReason::UserShutdown,
+            },
+        );
+        assert!(
+            out.contains(&Output::CancelTimer { id: refresh }),
+            "{out:?}"
+        );
+        assert_eq!(step(&mut daemon, Input::Timer { id: refresh }), Vec::new());
     }
 }

@@ -8,9 +8,7 @@ use serde::{Deserialize, Serialize};
 use store::AgentKey;
 use wire::{InventoryEvent, SessionEvent};
 
-use crate::ids::{
-    AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
-};
+use crate::ids::{AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 use crate::payload::{
     Advertisement, AgentSpec, AnalyticsBatch, Answer, BlobHash, CarrierKind, ChannelClass,
     ChannelError, ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame,
@@ -44,6 +42,16 @@ pub enum Input {
         link: LinkId,
         #[serde(with = "codec::message")]
         frame: LinkFrame,
+    },
+    /// The relay link presented a fresh credential, as it came up or after
+    /// a refresh.
+    Credential {
+        link: LinkId,
+        /// When the relay stops honouring it, on the core's clock.
+        expires_at_ms: u64,
+        /// The free plan's refresh interval, when the account is on it and
+        /// one is set: a purchase then reaches the link within it.
+        free_every_ms: Option<u64>,
     },
     /// The profile's shell wants a channel to `peer` over `link`. Until
     /// the machines that open channels move into the core, the shell asks,
@@ -158,6 +166,7 @@ impl Input {
             Input::LinkUp { .. } => "LinkUp",
             Input::LinkDown { .. } => "LinkDown",
             Input::LinkControl { .. } => "LinkControl",
+            Input::Credential { .. } => "Credential",
             Input::WantChannel { .. } => "WantChannel",
             Input::ChannelOpened { .. } => "ChannelOpened",
             Input::ChannelClosed { .. } => "ChannelClosed",
@@ -410,8 +419,11 @@ pub enum Job {
         hash: BlobHash,
         bytes: Vec<u8>,
     },
+    /// Exchange the account's refresh token for a fresh relay credential
+    /// and present it on `link`, which reports it as [`Input::Credential`];
+    /// a refresh that fails ends the link.
     RefreshToken {
-        account: AccountId,
+        link: LinkId,
     },
     SendPush(Push),
     Upload(AnalyticsBatch),
@@ -486,6 +498,11 @@ mod tests {
             },
             Input::Timer {
                 id: TimerId::Retry(HostId([1; 16])),
+            },
+            Input::Credential {
+                link: LinkId(1),
+                expires_at_ms: 900_000,
+                free_every_ms: Some(60_000),
             },
             Input::PlanChanged,
             Input::CallsFailed {

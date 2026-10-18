@@ -478,12 +478,12 @@ impl Daemon {
     }
 
     /// Arms `id` to fire at `at_ms`, moving it if it is armed.
-    fn arm(&mut self, id: TimerId, at_ms: u64, out: &mut Vec<Output>) {
+    pub(crate) fn arm(&mut self, id: TimerId, at_ms: u64, out: &mut Vec<Output>) {
         self.timers.armed.insert(id);
         out.push(Output::ArmTimer { id, at_ms });
     }
 
-    fn cancel(&mut self, id: TimerId, out: &mut Vec<Output>) {
+    pub(crate) fn cancel(&mut self, id: TimerId, out: &mut Vec<Output>) {
         if self.timers.armed.remove(&id) {
             out.push(Output::CancelTimer { id });
         }

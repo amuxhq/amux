@@ -28,7 +28,6 @@ use crate::routing::{
 };
 use crate::{Clock, HostId, audit};
 
-const LINK_AUTH_REFRESH_BEFORE_EXPIRY: Duration = Duration::from_secs(300);
 const LINK_CONNECT_HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, thiserror::Error)]
@@ -140,14 +139,14 @@ pub trait LinkConnectorTokenRefresher: Send + Sync + 'static {
     async fn refresh_routing_token(&self) -> Result<LinkConnectorToken, tonic::Status>;
 }
 
+/// The credential a connector presents to the relay, and what refreshes it.
+/// When it is refreshed is the profile core's to decide: the link reports
+/// each credential it presents, and refreshes when the core asks.
 #[derive(Clone)]
 pub struct LinkConnectorAuth {
     token: LinkConnectorToken,
     refresher: Arc<dyn LinkConnectorTokenRefresher>,
     free_refresh_interval: Option<Duration>,
-    /// On the policy clock, in milliseconds since the epoch.
-    next_refresh_at_ms: i64,
-    clock: Arc<dyn Clock>,
     on_refreshed: Option<Arc<dyn Fn(crate::Tier) + Send + Sync>>,
 }
 
@@ -157,26 +156,12 @@ impl LinkConnectorAuth {
         refresher: Arc<dyn LinkConnectorTokenRefresher>,
         free_refresh_interval: Option<Duration>,
     ) -> Self {
-        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-        let next_refresh_at_ms = refresh_deadline(&token, free_refresh_interval, clock.as_ref());
         Self {
             token,
             refresher,
             free_refresh_interval,
-            next_refresh_at_ms,
-            clock,
             on_refreshed: None,
         }
-    }
-
-    /// Rebinds product policy to the runtime's clock before the connector is
-    /// started. Recomputing the deadline prevents construction time on the
-    /// wall clock from leaking into a driven specification.
-    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
-        self.next_refresh_at_ms =
-            refresh_deadline(&self.token, self.free_refresh_interval, clock.as_ref());
-        self.clock = clock;
-        self
     }
 
     pub(crate) fn with_refresh_observer(
@@ -187,8 +172,17 @@ impl LinkConnectorAuth {
         self
     }
 
-    fn refresh_sleep(&self) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-        self.clock.sleep_until(self.next_refresh_at_ms)
+    /// The credential presented on `link`, as the profile's core hears it.
+    fn credential(&self, link: LinkId) -> daemon_core::Input {
+        let free_every = match self.token.tier {
+            crate::Tier::Free => self.free_refresh_interval,
+            _ => None,
+        };
+        daemon_core::Input::Credential {
+            link: link.core(),
+            expires_at_ms: system_time_ms(self.token.expires_at).max(0) as u64,
+            free_every_ms: free_every.map(|every| every.as_millis() as u64),
+        }
     }
 
     async fn refresh(&mut self) -> Result<(wire::pb::Message, crate::Tier), tonic::Status> {
@@ -200,29 +194,17 @@ impl LinkConnectorAuth {
         };
         let tier = token.tier;
         self.token = token;
-        self.next_refresh_at_ms =
-            refresh_deadline(&self.token, self.free_refresh_interval, self.clock.as_ref());
-        if let Some(observer) = &self.on_refreshed {
-            observer(tier);
-        }
         Ok((message, tier))
     }
-}
 
-/// When a connector refreshes its credential, on the policy clock: a free
-/// account on a fixed interval, so a purchase reaches the link promptly;
-/// otherwise shortly before the credential expires.
-fn refresh_deadline(
-    token: &LinkConnectorToken,
-    free_refresh_interval: Option<Duration>,
-    clock: &dyn Clock,
-) -> i64 {
-    if token.tier == crate::Tier::Free
-        && let Some(interval) = free_refresh_interval
-    {
-        clock.now_ms() + interval.as_millis() as i64
-    } else {
-        system_time_ms(token.expires_at) - LINK_AUTH_REFRESH_BEFORE_EXPIRY.as_millis() as i64
+    /// The fresh credential is on its way to the relay: only now is the
+    /// plan it carries the link's, so a call made on hearing of it finds
+    /// the relay already judging by it.
+    fn presented(&self, link: LinkId, ctx: &LinkCtx) {
+        if let Some(observer) = &self.on_refreshed {
+            observer(self.token.tier);
+        }
+        ctx.report(self.credential(link));
     }
 }
 
@@ -625,6 +607,9 @@ async fn run_established(
     if let Some(frame) = peer_frame {
         ctx.report_frame(link, frame);
     }
+    if let Some(auth) = &ctx.connector_auth {
+        ctx.report(auth.credential(link));
+    }
 
     // The peer joins routing before the hosts it claims to reach, and before
     // anything else this link has to do. From the moment it displaced an
@@ -671,9 +656,6 @@ async fn run_established(
             ctx.clock
                 .sleep_until(system_time_ms(auth.user().expires_at))
         });
-        let refresh_sleep = connector_auth
-            .as_ref()
-            .map(LinkConnectorAuth::refresh_sleep);
         tokio::select! {
             inbound = read_message(&mut source) => {
                 let message = match inbound {
@@ -738,24 +720,6 @@ async fn run_established(
                 close_reason = wire::pb::LinkCloseReason::AuthExpired;
                 break;
             }
-            _ = maybe_policy_sleep(refresh_sleep), if connector_auth.is_some() => {
-                let Some(auth) = connector_auth.as_mut() else { continue };
-                match auth.refresh().await {
-                    Ok((message, _)) => {
-                        if let Err(error) = write_message(&mut sink, &message).await {
-                            close_status = Some(tonic::Status::unavailable(error.to_string()));
-                            break;
-                        }
-                    }
-                    Err(status) => {
-                        if should_audit_auth_refresh_failure(&status) {
-                            audit::auth_jwt_failure(&status);
-                        }
-                        close_status = Some(status);
-                        break;
-                    }
-                }
-            }
             request = receive_refresh_request(ctx.refresh_rx.as_ref()), if connector_auth.is_some() => {
                 let Some(request) = request else { continue };
                 let Some(auth) = connector_auth.as_mut() else { continue };
@@ -763,6 +727,7 @@ async fn run_established(
                     Ok((message, tier)) => {
                         let failed = match write_message(&mut sink, &message).await {
                             Ok(()) => {
+                                auth.presented(link, &ctx);
                                 let _ = request.response.send(Ok(tier));
                                 false
                             }
@@ -774,6 +739,9 @@ async fn run_established(
                         if failed { break; }
                     }
                     Err(status) => {
+                        if should_audit_auth_refresh_failure(&status) {
+                            audit::auth_jwt_failure(&status);
+                        }
                         let _ = request.response.send(Err(clone_status(&status)));
                         close_status = Some(status);
                         break;

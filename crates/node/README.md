@@ -2,8 +2,9 @@
 
 The daemon around the state-machine cores. Each profile's protocol
 decisions are its daemon core's (`crates/daemon-core`): the store, the
-registry, replication, families and deliveries, presence and routes, pairing
-and trust, the host catalogue and the host set the inventory carries. Which
+registry, replication, families and deliveries, presence and routes (what a
+host reads as, which route a call takes and tries next after its link went,
+and what a call finding no channel says of the host), pairing and trust, the host catalogue and the host set the inventory carries. Which
 streams a relay carries, and the adjacency every link follows, are the
 forwarding core's (`crates/relay-core`). node is their driver: it turns
 sockets, files, processes and the clock into decoded inputs, carries out the
@@ -35,7 +36,8 @@ client is told. Each module below owns one such policy.
 
 Deadlines are the driver's too, by the same rule: how long an attempt the
 core asked for may take to open its channel (`connection.rs`), how long a
-page asked of a peer may take (`driver/mod.rs`), how long a message waits for
+call waits to reach a host before the core is told it found no channel
+(`forward.rs`), how long a page asked of a peer may take (`driver/mod.rs`), how long a message waits for
 its verdict on the agent's connection (`runtime.rs`). So are the largest blob
 the driver will send and the replica blob files' least-recently-used eviction
 against their budget (`retention.rs`): the core decides which rows are kept,
@@ -56,7 +58,7 @@ task here.
 | `driver/mod.rs` | Serving a `GetBlob` from its file | The bytes never pass through the core. |
 | `driver/mod.rs`, `driver/calls.rs` | Waiting for room on a full core input channel (`post`, a dropped call's cancel) | The caller is synchronous and the input must not be lost. |
 | `driver/pairing.rs` | Reading a pairing conversation's stream into the core | Awaits the stream's next message. |
-| `connection.rs` | One per attempt the core asks for | Opening a channel awaits a handshake. |
+| `connection.rs` | One per attempt the core asks for; one per closing of a host's links the core asks for | Opening a channel awaits a handshake; closing a link awaits the link registry. |
 | `runtime.rs` | Per agent: the control writer, the watcher reading its control connection, the reaper awaiting its exit, starting its process, awaiting a message's verdict | Each awaits the agent's socket or process. |
 | `runtime.rs` | The repositories scan; the daily check-in | Blocking directory walk; a sleep until the check-in is due. |
 | `retention.rs` | The retention sweep loop | Sleeps between sweeps and removes files. |
@@ -86,7 +88,6 @@ slots shared between the tasks above.
 | --- | --- | --- |
 | `trust.rs` (`SharedTrustStore`), held by `driver`, `edge`, `dispatcher.rs`, `identity.rs`, `link/channels.rs`, `services/reachability.rs` | One `RwLock` per profile over the trust store as the core last published it | The core thread writes it on `ShellWork::Trust`; handshakes and certificate verifiers on tokio's workers read it at once. |
 | `runtime.rs` | `hosts` | The host set the core last published (`ShellWork::Hosts`), read by the gRPC handlers. |
-| `connection.rs` | `views`, `reachability_errors` | What the core last told of each host, for the channel openers; the last dial error, kept so the core is told only when it moves. |
 | `driver/mod.rs` | `reports`, `outgoing`, `connections` | Links, channels, timers and peer calls queue reports the core thread drains; the core thread registers peer calls it may hang up and the shell aborts them all at shutdown; the edge attaches its connection manager once. |
 | `driver/calls.rs` | The call table and each call's answer queue | The core thread answers and ends calls; gRPC handlers open them and their stream tasks take the answers. |
 | `driver/pairing.rs` | The pairing streams carried | gRPC pairing handlers add them; the core thread's pairing outputs write to and close them. |

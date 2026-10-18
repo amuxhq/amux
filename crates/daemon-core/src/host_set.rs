@@ -79,11 +79,19 @@ impl Daemon {
     }
 
     pub(crate) fn dial_error(&mut self, host: HostId, error: Option<String>) {
-        match error {
-            Some(error) => self.host_set.dial_errors.insert(host, error),
+        let before = match &error {
+            Some(error) => self.host_set.dial_errors.insert(host, error.clone()),
             None => self.host_set.dial_errors.remove(&host),
         };
-        self.touched.host_set = true;
+        if before != error {
+            self.touched.host_set = true;
+        }
+    }
+
+    /// Why the last dial to `host` failed, until a route to it comes up or
+    /// a channel to it opens.
+    pub fn last_dial_error(&self, host: HostId) -> Option<&str> {
+        self.host_set.dial_errors.get(&host).map(String::as_str)
     }
 
     /// What a trusted host's own entry said its providers offer.
@@ -218,11 +226,10 @@ impl Daemon {
         fresh
     }
 
-    /// How `host` reads, and the kind of route its calls take while it is
-    /// not offline.
-    fn reads(&self, host: HostId) -> (WirePresence, RouteKind) {
-        let view = self.presence.view(host);
-        let via = match view.route() {
+    /// The kind of route calls to `host` take now, however it reads:
+    /// unspecified while none lists it.
+    pub fn route_kind(&self, host: HostId) -> RouteKind {
+        match self.presence.view(host).route() {
             Some(Route::Via(_)) => RouteKind::Relay,
             Some(Route::Direct(link)) => match self.routing.links.link(link).map(|up| up.kind) {
                 Some(CarrierKind::Direct) => RouteKind::Direct,
@@ -231,8 +238,14 @@ impl Daemon {
                 None => RouteKind::Unspecified,
             },
             None => RouteKind::Unspecified,
-        };
-        match (via, view.presence) {
+        }
+    }
+
+    /// How `host` reads, and the kind of route its calls take while it is
+    /// not offline: what every client is told of it.
+    pub fn reads(&self, host: HostId) -> (WirePresence, RouteKind) {
+        let via = self.route_kind(host);
+        match (via, self.presence.view(host).presence) {
             (RouteKind::Unspecified, _) | (_, Presence::Offline) => {
                 (WirePresence::Offline, RouteKind::Unspecified)
             }

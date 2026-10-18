@@ -15,7 +15,7 @@ use crate::payload::{
     ClientRequest, ControlFrame, Hello, JobResult, LinkCloseReason, LinkFrame, PairMessage,
     PeerRequest, PublicKey, Push, Response, Status,
 };
-use crate::presence::{HostView, Route, Tried};
+use crate::presence::{Route, Tried};
 use crate::{DumpReason, codec};
 
 /// Everything that can happen to the daemon, decoded by the driver.
@@ -84,10 +84,19 @@ pub enum Input {
     },
     /// The account's plan changed: what the relay carries changed with it.
     PlanChanged,
-    /// A call to the host found no channel on its route within its
-    /// patience.
+    /// A call to the host found no channel within its patience, or the
+    /// channel it opened failed: `error` says why, as the driver saw it.
     CallsFailed {
         host: HostId,
+        error: ChannelError,
+    },
+    /// A channel a call opened on `route` failed before it carried
+    /// anything; the core answers with [`Output::NextRoute`], the route the
+    /// call tries next.
+    RouteFailed {
+        host: HostId,
+        route: Route,
+        error: ChannelError,
     },
     /// Try the host now: what kept channels to it from opening is gone.
     TryAgain {
@@ -249,6 +258,7 @@ impl Input {
             Input::AttemptConcluded { .. } => "AttemptConcluded",
             Input::PlanChanged => "PlanChanged",
             Input::CallsFailed { .. } => "CallsFailed",
+            Input::RouteFailed { .. } => "RouteFailed",
             Input::TryAgain { .. } => "TryAgain",
             Input::HostForgotten { .. } => "HostForgotten",
             Input::TrustRead { .. } => "TrustRead",
@@ -407,10 +417,16 @@ pub enum Output {
     Dial {
         host: HostId,
     },
-    /// How `host` reads and is reached, said when it moves.
-    Presence {
+    /// The route the call that reported [`Input::RouteFailed`] tries
+    /// next, if any.
+    NextRoute {
         host: HostId,
-        view: HostView,
+        route: Option<Route>,
+    },
+    /// Close `host`'s own links, as their idle timeout would, only sooner:
+    /// calls over them find no channel. Redialling brings them back.
+    CloseLinks {
+        host: HostId,
     },
     /// Make `request` of `host` on a channel to it, and report what came
     /// back as [`Input::PeerAnswer`] under `call`: one answer for a unary
@@ -732,6 +748,12 @@ mod tests {
             Input::PlanChanged,
             Input::CallsFailed {
                 host: HostId([1; 16]),
+                error: ChannelError::Handshake("no channel opened in time".to_owned()),
+            },
+            Input::RouteFailed {
+                host: HostId([1; 16]),
+                route: Route::Direct(LinkId(2)),
+                error: ChannelError::LinkClosed,
             },
             Input::ClientCall {
                 call: CallId(2),

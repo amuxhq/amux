@@ -121,6 +121,14 @@ pub(crate) enum Fed {
         want: Input,
         reply: oneshot::Sender<Result<Opened, ChannelError>>,
     },
+    /// A channel a call opened failed, and the call waits for the core to
+    /// name the route it tries next.
+    Route {
+        failed: Input,
+        reply: oneshot::Sender<Option<daemon_core::Route>>,
+    },
+    /// A look at what the core decided, between steps.
+    Look(Box<dyn FnOnce(&Daemon) + Send>),
     /// Reports are queued.
     Wake,
     /// The profile is gone.
@@ -213,6 +221,7 @@ impl Driver {
             fed,
             reports: reports.clone(),
             channel_reply: None,
+            route_reply: None,
             // The drafts and the trust the profile's files hold, and fresh
             // randomness, are the first things the core is told.
             again: [
@@ -390,6 +399,33 @@ impl Driver {
         value.await.ok()
     }
 
+    /// Looks at what the core decided, on its thread between steps.
+    pub(crate) async fn look<T: Send + 'static>(
+        &self,
+        look: impl FnOnce(&Daemon) -> T + Send + 'static,
+    ) -> Option<T> {
+        let (done, value) = oneshot::channel();
+        let look = Box::new(move |daemon: &Daemon| {
+            let _ = done.send(look(daemon));
+        });
+        self.inputs.send(Fed::Look(look)).await.ok()?;
+        value.await.ok()
+    }
+
+    /// A channel a call opened to `host` on `route` failed with `error`:
+    /// the route the core names for the call to try next, if any.
+    pub(crate) async fn route_failed(
+        &self,
+        host: HostId,
+        route: daemon_core::Route,
+        error: ChannelError,
+    ) -> Option<daemon_core::Route> {
+        let (reply, word) = oneshot::channel();
+        let failed = Input::RouteFailed { host, route, error };
+        self.inputs.send(Fed::Route { failed, reply }).await.ok()?;
+        word.await.ok().flatten()
+    }
+
     /// For tests: writes the store beneath the core, between steps.
     pub(crate) async fn beneath<T: Send + 'static>(
         &self,
@@ -479,6 +515,8 @@ pub(crate) struct CoreThread {
     /// Whoever waits for the core's word on the channel the step under way
     /// was asked for.
     channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
+    /// Whoever waits for the core to name the route a call tries next.
+    route_reply: Option<oneshot::Sender<Option<daemon_core::Route>>>,
     /// Inputs the driver raised itself while carrying out a step, stepped
     /// before anything newer.
     again: VecDeque<Input>,
@@ -533,6 +571,10 @@ impl CoreThread {
                         read(self.daemon.store());
                         continue;
                     }
+                    Some(Fed::Look(look)) => {
+                        look(&self.daemon);
+                        continue;
+                    }
                     Some(Fed::Beneath(write)) => {
                         write(self.daemon.store_beneath());
                         continue;
@@ -555,6 +597,12 @@ impl CoreThread {
                     self.channel_reply = Some(reply);
                     self.step(&runtime, want, &mut out);
                     self.channel_reply = None;
+                    continue;
+                }
+                Fed::Route { failed, reply } => {
+                    self.route_reply = Some(reply);
+                    self.step(&runtime, failed, &mut out);
+                    self.route_reply = None;
                     continue;
                 }
                 Fed::Forward {
@@ -618,7 +666,9 @@ impl CoreThread {
                 Fed::Wake
                 | Fed::Stop
                 | Fed::Channel { .. }
+                | Fed::Route { .. }
                 | Fed::Forward { .. }
+                | Fed::Look(_)
                 | Fed::Read(_)
                 | Fed::Beneath(_) => None,
             };
@@ -894,9 +944,14 @@ impl CoreThread {
                     let _ = reply.send(Err(reason));
                 }
             }
-            Output::Presence { host, view } => {
+            Output::NextRoute { route, .. } => {
+                if let Some(reply) = self.route_reply.take() {
+                    let _ = reply.send(route);
+                }
+            }
+            Output::CloseLinks { host } => {
                 if let Some(connections) = self.connections() {
-                    connections.told(host, view);
+                    connections.close_links(host);
                 }
             }
             Output::Attempt { host, route } => match self.connections() {

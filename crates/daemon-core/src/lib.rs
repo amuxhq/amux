@@ -252,7 +252,10 @@ impl Daemon {
                 self.attempt_concluded(host, route, tried, out)
             }
             Input::PlanChanged => self.plan_changed(out),
-            Input::CallsFailed { host } => self.calls_failed(host, out),
+            Input::CallsFailed { host, error } => self.calls_failed(host, &error, out),
+            Input::RouteFailed { host, route, error } => {
+                self.route_failed(host, route, &error, out)
+            }
             Input::TryAgain { host } => {
                 self.try_again(host, out);
                 self.sources_try_again(host, out);
@@ -281,7 +284,7 @@ impl Daemon {
             Input::DialError { host, error } => self.dial_error(host, error),
         }
         self.settle_deliveries(out);
-        self.tell_presence(out);
+        self.tell_presence();
         self.publish_host_set(out);
         self.follow_touched(out);
         self.arm_on_commit(out);

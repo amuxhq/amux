@@ -81,8 +81,12 @@ whose links to the account's relay and to one peer are already up. The
 host's own links come up and go, the peer and the relay start and stop
 claiming to reach it, each attempt the core asks for opens a channel, is
 refused, times out, is refused by the relay for the account's plan or
-fails because its route went, the plan is bought and lapses, the retry
-timer fires, and at any point the world may stop changing. The relay
+fails because its route went, a call opens a channel of its own on the
+first route (its direct link may go under it, and the call then tries the
+route the core names next), a call finds no channel within its patience
+(the core may close the host's own links for it), the plan is bought and
+lapses, the retry timer fires, and at any point the world may stop
+changing. The relay
 refuses for the plan for as long as the plan lapses; the model bounds how
 many such refusals come in a row so that a path retrying only the relay
 ends and its liveness is judged. The properties are in `src/presence.rs`.

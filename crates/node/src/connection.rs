@@ -3,23 +3,23 @@
 //! to the host went.
 //!
 //! The core lists the routes to each host, picks the one carrying its
-//! traffic, decides how it reads and retries it in the background; this
-//! manager keeps what the core last told about each host, opens the
+//! traffic, decides how it reads, which route a failed call tries next and
+//! what a call finding no channel does, and retries each host in the
+//! background; this manager reads what the core decided, opens the
 //! channels calls ask for on the route it names, and tries what the core
-//! asks it to try.
+//! asks it to try. It keeps nothing of its own about a host.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use daemon_core::{HostView, Input, Tried};
+use daemon_core::{Input, Tried};
 use tonic::transport::Channel;
 use wire::Presence;
 
 use crate::HostId;
-use crate::driver::core_error;
+use crate::driver::{CoreLinks, core_error};
 use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
-use crate::routing::{LinkCarrier, LinkCloseRequest, LiveRoute, Route, core_host, host_from_core};
+use crate::routing::{LinkCloseRequest, LiveRoute, Route, core_host, host_from_core};
 use crate::transport::{TrustedPeerConnections, pairing_channel_from_io};
 
 /// How long one try the core asks for may take to open its channel before
@@ -31,36 +31,9 @@ pub struct ConnectionManager {
     me: Weak<ConnectionManager>,
     channels: Arc<ChannelPool>,
     trusted_connections: TrustedPeerConnections,
-    /// What the profile's core last told about each host it has something
-    /// to say about.
-    views: Mutex<HashMap<HostId, View>>,
-    reachability_errors: Mutex<HashMap<HostId, String>>,
     analytics: analytics::Analytics,
     /// What dials a host the core says to, once the edge dials at all.
     dialer: std::sync::OnceLock<crate::services::Dialer>,
-}
-
-/// A host as the profile's core last told it: every route listed to it,
-/// the one carrying its traffic, and how it reads.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct View {
-    routes: Vec<Route>,
-    active: Option<Route>,
-    presence: daemon_core::Presence,
-}
-
-impl View {
-    fn from_core(host: HostId, view: HostView) -> Self {
-        Self {
-            routes: view
-                .routes
-                .into_iter()
-                .map(|route| Route::from_core(host, route))
-                .collect(),
-            active: view.active.map(|route| Route::from_core(host, route)),
-            presence: view.presence,
-        }
-    }
 }
 
 impl ConnectionManager {
@@ -69,39 +42,31 @@ impl ConnectionManager {
             me: me.clone(),
             channels,
             trusted_connections: TrustedPeerConnections::default(),
-            views: Mutex::default(),
-            reachability_errors: Mutex::default(),
             analytics,
             dialer: std::sync::OnceLock::new(),
         })
     }
 
+    /// The profile's core, when the links are a profile's.
+    fn core(&self) -> Option<CoreLinks> {
+        self.channels.link_registry().core().cloned()
+    }
+
     /// Tells the profile's core what happened, when the links are a
     /// profile's.
     fn report(&self, input: Input) {
-        if let Some(core) = self.channels.link_registry().core() {
+        if let Some(core) = self.core() {
             core.report(input);
         }
     }
 
-    /// The core told how `host` reads and is reached now.
-    pub(crate) fn told(&self, host: daemon_core::HostId, view: HostView) {
-        let host = host_from_core(host);
-        let view = View::from_core(host, view);
-        let before = self
-            .views
-            .lock()
-            .unwrap()
-            .insert(host, view.clone())
-            .unwrap_or_default();
-        // A route coming up says the last dial error is out of date.
-        if view
-            .routes
-            .iter()
-            .any(|route| !before.routes.contains(route))
-        {
-            self.dial_error(host, None);
-        }
+    /// Looks at what the profile's core decided; with no profile, or once
+    /// it is gone, nothing is decided.
+    async fn look<T: Send + 'static>(
+        &self,
+        look: impl FnOnce(&daemon_core::Daemon) -> T + Send + 'static,
+    ) -> Option<T> {
+        self.core()?.look(look).await
     }
 
     /// The core asks for a calls channel to `host` on `route`, and to be
@@ -179,34 +144,25 @@ impl ConnectionManager {
         self.channel_to_class(peer, ChannelClass::Calls).await
     }
 
-    /// A call to `peer` found no channel on the route that lists it within
-    /// its patience, or one failed to open for a reason other than the
-    /// account's plan: the host reads offline until a channel opens again.
-    ///
-    /// The host's own direct or SSH link is closed, as its idle timeout
-    /// would close it, only sooner; redialling brings it back as it does
-    /// any lost link, and the new link's first channel says whether calls
-    /// get through. Any other route, the relay's tunnel or a link through
-    /// another host, cannot be closed for this host alone: the channel
-    /// cached on it is dropped, so the next try opens a fresh stream, and
-    /// one is tried in the background until it opens.
-    pub(crate) async fn calls_failed(&self, peer: HostId) {
-        let Some(route) = self.route_for(peer).await else {
-            return;
-        };
-        tracing::warn!(%peer, ?route, "no call channel opened on a listed route; the host reads offline");
+    /// A call to `peer` found no channel within its patience, or the one
+    /// it opened failed: the core decides what that says of the host.
+    pub(crate) fn calls_failed(&self, peer: HostId, error: daemon_core::payload::ChannelError) {
+        tracing::debug!(%peer, ?error, "a call to the host found no channel");
         self.report(Input::CallsFailed {
             host: core_host(peer),
+            error,
         });
-        match route {
-            Route::Direct(link) if link.peer() == peer => {
-                self.channels
-                    .link_registry()
-                    .close_host(peer, LinkCloseRequest::CallsFailed)
-                    .await;
-            }
-            route => self.channels.drop_route(peer, route),
-        }
+    }
+
+    /// The core says calls over `host`'s own links find no channel: they
+    /// close, as their idle timeout would close them, only sooner.
+    pub(crate) fn close_links(&self, host: daemon_core::HostId) {
+        let peer = host_from_core(host);
+        tracing::warn!(%peer, "no call channel opened on the host's own link; closing it");
+        let links = self.channels.link_registry().clone();
+        tokio::spawn(async move {
+            links.close_host(peer, LinkCloseRequest::CallsFailed).await;
+        });
     }
 
     /// The account's plan changed, so what the relay carries changed with
@@ -230,6 +186,7 @@ impl ConnectionManager {
     ) -> Result<Channel, ChannelError> {
         let route = self
             .routes_to(peer)
+            .await
             .first()
             .copied()
             .ok_or(ChannelError::NoRoute { host_id: peer })?;
@@ -243,13 +200,9 @@ impl ConnectionManager {
         opened
     }
 
-    /// Opens a channel to `peer` on `route`. A direct link can close under
-    /// a call that just chose it: the preferred of two crossed dials
-    /// supersedes the other, or the peer ends the link, and the core may
-    /// still list the closed link for a moment. The call tries the next
-    /// route listed, once: the link that replaced it, or the relay, which
-    /// lets a host that revoked this one say so. The link going under it
-    /// says nothing of the host to the core; the link's end does.
+    /// Opens a channel to `peer` on `route`. A link can close under a call
+    /// that just chose it while the core still lists it: the core is told,
+    /// and the call tries the route it names next, if any.
     async fn open_route(
         &self,
         peer: HostId,
@@ -257,10 +210,19 @@ impl ConnectionManager {
         class: ChannelClass,
     ) -> Result<Channel, ChannelError> {
         match self.activate_route(peer, route, class).await {
-            Err(error @ ChannelError::LinkUnavailable { .. }) if route.is_direct() => {
-                let next = self.routes_to(peer).into_iter().find(|next| *next != route);
+            Err(error @ ChannelError::LinkUnavailable { .. }) => {
+                let next = match self.core() {
+                    Some(core) => {
+                        core.route_failed(peer, route.core(), core_error(&error))
+                            .await
+                    }
+                    None => None,
+                };
                 match next {
-                    Some(next) => self.activate_route(peer, next, class).await,
+                    Some(next) => {
+                        self.activate_route(peer, Route::from_core(peer, next), class)
+                            .await
+                    }
                     None => Err(error),
                 }
             }
@@ -290,8 +252,13 @@ impl ConnectionManager {
         self.cloud_relay_for(peer).await.is_ok()
     }
 
+    /// Why the last dial to `peer` failed, until a route to it comes up or
+    /// a channel to it opens.
     pub(crate) async fn stored_reachability_error(&self, peer: HostId) -> Option<String> {
-        self.reachability_errors.lock().unwrap().get(&peer).cloned()
+        let host = core_host(peer);
+        self.look(move |core| core.last_dial_error(host).map(str::to_owned))
+            .await
+            .flatten()
     }
 
     pub(crate) async fn record_reachability_error(&self, peer: HostId, error: impl Into<String>) {
@@ -302,23 +269,13 @@ impl ConnectionManager {
         self.dial_error(peer, None);
     }
 
-    /// Keeps why the last dial to `peer` failed, and tells the core when
-    /// that moved: the host's entry carries it.
+    /// Tells the core why the last dial to `peer` failed, or that it
+    /// succeeded: the host's entry carries it.
     fn dial_error(&self, peer: HostId, error: Option<String>) {
-        let moved = {
-            let mut errors = self.reachability_errors.lock().unwrap();
-            let before = match &error {
-                Some(error) => errors.insert(peer, error.clone()),
-                None => errors.remove(&peer),
-            };
-            before != error
-        };
-        if moved {
-            self.report(Input::DialError {
-                host: core_host(peer),
-                error,
-            });
-        }
+        self.report(Input::DialError {
+            host: core_host(peer),
+            error,
+        });
     }
 
     /// Keeps the address a trusted peer answered at as the only direct
@@ -347,53 +304,33 @@ impl ConnectionManager {
 
     /// Every route the core lists to `peer`, the one a fresh call takes
     /// first.
-    pub(crate) fn routes_to(&self, peer: HostId) -> Vec<Route> {
-        self.views
-            .lock()
-            .unwrap()
-            .get(&peer)
-            .map(|view| view.routes.clone())
+    pub(crate) async fn routes_to(&self, peer: HostId) -> Vec<Route> {
+        let host = core_host(peer);
+        self.look(move |core| core.links().routes_to(host))
+            .await
             .unwrap_or_default()
+            .into_iter()
+            .map(|route| Route::from_core(peer, route))
+            .collect()
     }
 
-    /// The route calls to `peer` take now: the one carrying traffic, or
-    /// the one a fresh call would take.
-    pub(crate) async fn route_for(&self, peer: HostId) -> Option<Route> {
-        let views = self.views.lock().unwrap();
-        let view = views.get(&peer)?;
-        view.active.or_else(|| view.routes.first().copied())
-    }
-
+    /// The kind of route calls to `peer` take now, however it reads.
     pub(crate) async fn via_for(&self, peer: HostId) -> LiveRoute {
-        match self.route_for(peer).await {
-            Some(Route::Via(_)) => LiveRoute::Relay,
-            Some(Route::Direct(link)) => match self.channels.link_registry().carrier(&link).await {
-                Some(LinkCarrier::Ssh) => LiveRoute::Ssh,
-                Some(LinkCarrier::Direct) => LiveRoute::Direct,
-                None => LiveRoute::Offline,
-            },
-            None => LiveRoute::Offline,
-        }
+        let host = core_host(peer);
+        self.look(move |core| core.route_kind(host))
+            .await
+            .map_or(LiveRoute::Offline, LiveRoute::from_wire)
     }
 
-    /// How `peer` reads, and the route that carries its calls: online once
-    /// a channel to it has opened on a route still listed, away while the
-    /// relay refuses channels to it for the account's plan, offline
-    /// otherwise, with no route then.
+    /// How `peer` reads, and the route that carries its calls, as every
+    /// client is told: online once a channel to it has opened on a route
+    /// still listed, away while the relay refuses channels to it for the
+    /// account's plan, offline otherwise, with no route then.
     pub(crate) async fn presence_for(&self, peer: HostId) -> (Presence, LiveRoute) {
-        let via = self.via_for(peer).await;
-        let reads = self
-            .views
-            .lock()
-            .unwrap()
-            .get(&peer)
-            .map_or(daemon_core::Presence::Offline, |view| view.presence);
-        match (via, reads) {
-            (LiveRoute::Offline, _) | (_, daemon_core::Presence::Offline) => {
-                (Presence::Offline, LiveRoute::Offline)
-            }
-            (via, daemon_core::Presence::Online) => (Presence::Online, via),
-            (via, daemon_core::Presence::Away) => (Presence::Away, via),
+        let host = core_host(peer);
+        match self.look(move |core| core.reads(host)).await {
+            Some((presence, via)) => (presence, LiveRoute::from_wire(via)),
+            None => (Presence::Offline, LiveRoute::Offline),
         }
     }
 
@@ -445,11 +382,10 @@ impl ConnectionManager {
             .channels
             .channel(ChannelKey { peer, route, class })
             .await?;
-        if !self.routes_to(peer).contains(&route) {
+        if !self.routes_to(peer).await.contains(&route) {
             self.channels.drop_host(peer);
             return Err(ChannelError::NoRoute { host_id: peer });
         }
-        self.clear_reachability_error(peer).await;
         Ok(channel)
     }
 
@@ -466,6 +402,7 @@ impl ConnectionManager {
         let registry = self.channels.link_registry();
         let relays = self
             .routes_to(peer)
+            .await
             .into_iter()
             .filter_map(|route| match route {
                 Route::Via(relay) => Some(relay),
@@ -477,179 +414,5 @@ impl ConnectionManager {
             }
         }
         Err(ChannelError::CloudPairingUnavailable)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    use futures_util::future::{self, BoxFuture};
-    use tokio::sync::mpsc;
-    use uuid::Uuid;
-
-    use super::*;
-    use crate::link::{ByteStream, CarrierKind, ControlSink, ControlSource, OpenError};
-    use crate::routing::{
-        Capabilities, Host, LinkAdmission, LinkCarrier as RoutingCarrier, LinkId, LinkProperties,
-        LinkRegistry, LinkRole,
-    };
-
-    /// Tells `manager` the core lists `link` alone to the peer.
-    fn listed(manager: &ConnectionManager, link: LinkId) {
-        manager.told(
-            core_host(peer().id),
-            HostView {
-                routes: vec![daemon_core::Route::Direct(link.core())],
-                ..HostView::default()
-            },
-        );
-    }
-
-    fn peer() -> Host {
-        Host {
-            platform: None,
-            id: Uuid::from_u128(2),
-            name: "peer".to_string(),
-            version: "test".to_string(),
-            capabilities: Capabilities {
-                cloud_relay: false,
-                kinds: Vec::new(),
-            },
-            signed_in: Some(true),
-        }
-    }
-
-    /// A link that is superseded while a stream is being opened on it: the
-    /// core lists the replacement in its place, and the open fails the way
-    /// a closed QUIC connection fails it.
-    struct SupersededDuringOpen {
-        manager: std::sync::OnceLock<Weak<ConnectionManager>>,
-        replacement: LinkId,
-    }
-
-    /// A link that answers every open with a refusal, recording that it was
-    /// asked.
-    #[derive(Default)]
-    struct Refusing {
-        asked: AtomicBool,
-    }
-
-    impl crate::link::LinkCarrier for SupersededDuringOpen {
-        fn kind(&self) -> CarrierKind {
-            CarrierKind::Quic
-        }
-
-        fn control(&self) -> (ControlSink, ControlSource) {
-            panic!("the test drives no control loop")
-        }
-
-        fn open_stream(
-            &self,
-            _preface: wire::pb::StreamPreface,
-        ) -> BoxFuture<'_, Result<ByteStream, OpenError>> {
-            Box::pin(async move {
-                let manager = self.manager.get().and_then(Weak::upgrade);
-                listed(&manager.expect("the manager is set"), self.replacement);
-                Err(OpenError::LinkClosed)
-            })
-        }
-
-        fn accept_stream(&self) -> BoxFuture<'_, Option<(wire::pb::StreamPreface, ByteStream)>> {
-            Box::pin(future::pending())
-        }
-
-        fn close(&self, _reason: wire::pb::LinkCloseReason) {}
-
-        fn closed(&self) -> BoxFuture<'_, wire::pb::LinkCloseReason> {
-            Box::pin(future::pending())
-        }
-    }
-
-    impl crate::link::LinkCarrier for Refusing {
-        fn kind(&self) -> CarrierKind {
-            CarrierKind::Quic
-        }
-
-        fn control(&self) -> (ControlSink, ControlSource) {
-            panic!("the test drives no control loop")
-        }
-
-        fn open_stream(
-            &self,
-            _preface: wire::pb::StreamPreface,
-        ) -> BoxFuture<'_, Result<ByteStream, OpenError>> {
-            self.asked.store(true, Ordering::SeqCst);
-            Box::pin(async { Err(OpenError::Refused(wire::pb::StreamRefusal::ShuttingDown)) })
-        }
-
-        fn accept_stream(&self) -> BoxFuture<'_, Option<(wire::pb::StreamPreface, ByteStream)>> {
-            Box::pin(future::pending())
-        }
-
-        fn close(&self, _reason: wire::pb::LinkCloseReason) {}
-
-        fn closed(&self) -> BoxFuture<'_, wire::pb::LinkCloseReason> {
-            Box::pin(future::pending())
-        }
-    }
-
-    async fn register(
-        links: &LinkRegistry,
-        link: LinkId,
-        carrier: Arc<dyn crate::link::LinkCarrier>,
-    ) -> mpsc::Receiver<crate::routing::LinkCloseRequest> {
-        let (tx, _rx) = mpsc::channel(8);
-        links
-            .register_with_details(
-                link,
-                peer(),
-                tx,
-                LinkProperties {
-                    role: LinkRole::Peer,
-                    admission: LinkAdmission::PinnedKey,
-                    carrier: RoutingCarrier::Direct,
-                    runtime_instance: crate::routing::RuntimeInstance::random(),
-                    direct_order: None,
-                },
-                &[],
-                Some(carrier),
-            )
-            .await
-            .expect("a lone link registers")
-    }
-
-    #[tokio::test]
-    async fn a_call_on_a_link_superseded_while_opening_retries_on_its_replacement() {
-        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
-        let manager = ConnectionManager::new(
-            Arc::new(ChannelPool::new(links.clone())),
-            analytics::Analytics::off(),
-        );
-        let superseded = LinkId::new(peer().id);
-        let replacement = LinkId::new(peer().id);
-        let refusing = Arc::new(Refusing::default());
-        let superseding = Arc::new(SupersededDuringOpen {
-            manager: std::sync::OnceLock::new(),
-            replacement,
-        });
-        let _ = superseding.manager.set(Arc::downgrade(&manager));
-        let _superseded_close = register(&links, superseded, superseding).await;
-        let _replacement_close = register(&links, replacement, refusing.clone()).await;
-        listed(&manager, superseded);
-
-        let error = manager.channel_to(peer().id).await.unwrap_err();
-
-        assert!(
-            refusing.asked.load(Ordering::SeqCst),
-            "the replacement link was never tried"
-        );
-        assert!(
-            matches!(
-                error,
-                ChannelError::Refused(wire::pb::StreamRefusal::ShuttingDown)
-            ),
-            "the call ended on the superseded link: {error}"
-        );
     }
 }

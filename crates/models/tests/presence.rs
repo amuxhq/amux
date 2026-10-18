@@ -4,8 +4,8 @@
 use models::{Bounds, PresenceRouting, check, walk};
 
 /// How long the exhaustive run may take under `just test`. It takes about
-/// two seconds on the enrolled Mac's cores and twelve on one; a run past
-/// the budget says the bounds have outgrown their place.
+/// twenty-five seconds on the enrolled Mac's cores; a run past the budget
+/// says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 60.0;
 
 fn threads() -> usize {

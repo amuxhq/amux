@@ -94,15 +94,31 @@ pub enum Route {
 }
 
 impl Route {
-    pub fn is_direct(&self) -> bool {
-        matches!(self, Route::Direct(_))
-    }
-
     /// The route to `host` the profile's core names `route`.
     pub(crate) fn from_core(host: HostId, route: daemon_core::Route) -> Self {
         match route {
             daemon_core::Route::Direct(link) => Route::Direct(LinkId::from_core(host, link)),
             daemon_core::Route::Via(relay) => Route::Via(host_from_core(relay)),
+        }
+    }
+
+    /// The route as the profile's core names it.
+    pub(crate) fn core(self) -> daemon_core::Route {
+        match self {
+            Route::Direct(link) => daemon_core::Route::Direct(link.core()),
+            Route::Via(relay) => daemon_core::Route::Via(core_host(relay)),
+        }
+    }
+}
+
+impl LiveRoute {
+    /// The live route the kind the profile's core reads names.
+    pub(crate) fn from_wire(kind: pb::RouteKind) -> Self {
+        match kind {
+            pb::RouteKind::Direct => Self::Direct,
+            pb::RouteKind::Relay => Self::Relay,
+            pb::RouteKind::Ssh => Self::Ssh,
+            pb::RouteKind::Unspecified => Self::Offline,
         }
     }
 }
@@ -178,11 +194,5 @@ mod tests {
 
         assert_eq!(first.peer(), peer);
         assert_ne!(first, second);
-    }
-
-    #[test]
-    fn direct_routes_are_direct_and_via_routes_are_not() {
-        assert!(Route::Direct(LinkId::new(HostId::from_u128(1))).is_direct());
-        assert!(!Route::Via(HostId::from_u128(2)).is_direct());
     }
 }

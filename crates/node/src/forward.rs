@@ -259,17 +259,21 @@ impl ProfileRuntime {
                 host,
                 name: self.host_name(host),
             }),
-            Ok(Err(_)) | Err(_) => {
-                // A host listed as reachable that takes no call is not
-                // reachable: it reads offline until a channel to it opens
-                // again, which is what releases sends held for the host. A
-                // host that revoked this one already reads offline.
-                let revoked = self
-                    .host_entry_of(host)
-                    .is_some_and(|entry| entry.revoked == Some(true));
-                if !revoked && edge.via(host).await != crate::routing::LiveRoute::Offline {
-                    edge.calls_failed(host).await;
-                }
+            // The core decides what a call finding no channel says of the
+            // host: one listed as reachable that takes no call reads
+            // offline until a channel to it opens again, which is what
+            // releases sends held for the host.
+            Ok(Err(error)) => {
+                edge.calls_failed(host, crate::driver::core_error(&error));
+                Err(not_sent())
+            }
+            Err(_) => {
+                edge.calls_failed(
+                    host,
+                    daemon_core::payload::ChannelError::Handshake(
+                        "no channel opened within a call's patience".to_owned(),
+                    ),
+                );
                 Err(not_sent())
             }
         }

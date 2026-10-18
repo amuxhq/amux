@@ -175,6 +175,8 @@ impl Daemon {
                 self.route_gone(host, *gone, out);
             }
             for up in now.iter().filter(|route| !was.contains(route)) {
+                // A route coming up says the last dial error is out of date.
+                self.dial_error(host, None);
                 self.route_up(host, *up, out);
             }
         }
@@ -257,6 +259,8 @@ impl Daemon {
                 };
                 let now_active = known.active;
                 self.cancel(TimerId::Retry(host), out);
+                // A channel opening says the last dial error is out of date.
+                self.dial_error(host, None);
                 if let Some(old) = old
                     && now_active != Some(old)
                 {
@@ -448,25 +452,74 @@ impl Daemon {
         }
     }
 
-    /// A call to `host` found no channel on the route that lists it within
-    /// its patience: the host reads offline until a channel opens again,
-    /// and one is tried in the background.
-    pub(crate) fn calls_failed(&mut self, host: HostId, out: &mut Vec<Output>) {
+    /// A call to `host` found no channel within its patience, or the
+    /// channel it opened failed. A host that reads as reached on a route
+    /// reads offline until a channel opens again, and one is tried in the
+    /// background. The relay refusing for the account's plan already left
+    /// the host reading away; a host this one does not trust, or one that
+    /// said it no longer trusts this one, already reads offline.
+    ///
+    /// The host's own link is closed, as its idle timeout would close it,
+    /// only sooner: redialling brings it back as it does any lost link,
+    /// and the new link's first channel says whether calls get through.
+    /// Any other route, the relay's tunnel or a link through another
+    /// host, cannot be closed for this host alone: the channels cached on
+    /// it go, so the next call opens a fresh stream.
+    pub(crate) fn calls_failed(
+        &mut self,
+        host: HostId,
+        error: &ChannelError,
+        out: &mut Vec<Output>,
+    ) {
         self.touched.host(host);
-        let first = self.routing.links.routes_to(host).first().copied();
-        let Some(known) = self.presence.hosts.get_mut(&host) else {
-            if first.is_some() {
-                self.retry(host, false, out);
-            }
-            return;
-        };
-        if known.active.or(first).is_none() {
+        if *error == ChannelError::Refused(StreamRefusal::PaymentRequired)
+            || self.attempt_barred(host, false)
+        {
             return;
         }
+        let first = self.routing.links.routes_to(host).first().copied();
+        let known = self.presence.hosts.entry(host).or_default();
+        let Some(route) = known.active.or(first) else {
+            return;
+        };
         known.active = None;
         known.reached = None;
         known.refused_for_plan = false;
         self.retry(host, false, out);
+        out.push(match route {
+            Route::Direct(_) => Output::CloseLinks { host },
+            Route::Via(_) => Output::DropRoute { host, route },
+        });
+    }
+
+    /// A channel a call opened to `host` on `route` failed before it
+    /// carried anything. It concludes as an attempt on the route would,
+    /// and the call is told the route to try next: when a direct link
+    /// went under it (the preferred of two crossed dials superseding the
+    /// other, or the peer ending the link, while the link was still
+    /// listed), the next route listed, once: the link that replaced it, or
+    /// a host or relay that reaches the host, which lets a host that
+    /// revoked this one say so. The link going says nothing of the host by
+    /// itself; the link's end does.
+    pub(crate) fn route_failed(
+        &mut self,
+        host: HostId,
+        route: Route,
+        error: &ChannelError,
+        out: &mut Vec<Output>,
+    ) {
+        self.concluded(host, route, Err(error), out);
+        let went = matches!(error, ChannelError::LinkClosed | ChannelError::NoLink);
+        let next = (went && route.is_direct())
+            .then(|| {
+                self.routing
+                    .links
+                    .routes_to(host)
+                    .into_iter()
+                    .find(|next| *next != route)
+            })
+            .flatten();
+        out.push(Output::NextRoute { host, route: next });
     }
 
     /// Someone asked for `host` to be tried now.
@@ -487,8 +540,8 @@ impl Daemon {
         self.cancel(TimerId::Retry(host), out);
     }
 
-    /// Tells the shell each host the step touched whose view moved.
-    pub(crate) fn tell_presence(&mut self, out: &mut Vec<Output>) {
+    /// Settles the view of each host the step touched.
+    pub(crate) fn tell_presence(&mut self) {
         for host in self.touched.hosts.clone() {
             let routes = self.routing.links.routes_to(host);
             let known = self.presence.hosts.entry(host).or_default();
@@ -506,8 +559,7 @@ impl Daemon {
             }
             if view != known.told {
                 self.touched.host_set = true;
-                known.told = view.clone();
-                out.push(Output::Presence { host, view });
+                known.told = view;
             }
             if *known == HostPresence::default() {
                 self.presence.hosts.remove(&host);
@@ -680,6 +732,22 @@ mod tests {
 
     fn view(daemon: &Daemon, host: HostId) -> HostView {
         daemon.presence().view(host)
+    }
+
+    fn calls_failed(host: HostId) -> Input {
+        Input::CallsFailed {
+            host,
+            error: ChannelError::Handshake("no channel opened in time".to_owned()),
+        }
+    }
+
+    fn next_route(out: &[Output]) -> Option<Route> {
+        out.iter()
+            .find_map(|output| match output {
+                Output::NextRoute { route, .. } => Some(*route),
+                _ => None,
+            })
+            .expect("the core names the next route")
     }
 
     fn attempts(out: &[Output]) -> Vec<(HostId, Route)> {
@@ -1098,9 +1166,13 @@ mod tests {
         let mut daemon = daemon();
         up(&mut daemon, 1, DESK, CarrierKind::Direct);
         concluded(&mut daemon, DESK, Route::Direct(LinkId(1)), Tried::Opened);
-        let out = step(&mut daemon, Input::CallsFailed { host: DESK });
+        let out = step(&mut daemon, calls_failed(DESK));
         assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
         assert!(retry_at(&out, DESK).is_some());
+        assert!(
+            out.contains(&Output::CloseLinks { host: DESK }),
+            "the host's own link is closed: {out:?}"
+        );
 
         let out = step(&mut daemon, Input::HostForgotten { host: DESK });
         assert!(out.contains(&Output::CancelTimer {
@@ -1151,6 +1223,152 @@ mod tests {
             },
         );
         assert_eq!(view(&daemon, DESK).presence, Presence::Online);
+    }
+
+    #[test]
+    fn a_call_failing_through_another_host_drops_that_route_and_closes_no_link() {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
+        claims(&mut daemon, 1, &[DESK]);
+        concluded(&mut daemon, DESK, Route::Via(LAPTOP), Tried::Opened);
+
+        let out = step(&mut daemon, calls_failed(DESK));
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        assert!(out.contains(&Output::DropRoute {
+            host: DESK,
+            route: Route::Via(LAPTOP),
+        }));
+        assert!(
+            !out.iter()
+                .any(|output| matches!(output, Output::CloseLinks { .. })),
+            "a link through another host is not closed for one host: {out:?}"
+        );
+    }
+
+    #[test]
+    fn a_call_failing_says_nothing_of_a_host_with_no_route_refused_for_the_plan_or_revoked() {
+        let mut daemon = daemon();
+        assert_eq!(step(&mut daemon, calls_failed(DESK)), Vec::new());
+
+        up(&mut daemon, 9, RELAY, CarrierKind::Relay);
+        claims(&mut daemon, 9, &[DESK]);
+        concluded(
+            &mut daemon,
+            DESK,
+            Route::Via(RELAY),
+            refused(StreamRefusal::PaymentRequired),
+        );
+        let out = step(
+            &mut daemon,
+            Input::CallsFailed {
+                host: DESK,
+                error: ChannelError::Refused(StreamRefusal::PaymentRequired),
+            },
+        );
+        assert_eq!(out, Vec::new(), "the host already reads away");
+        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
+
+        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
+        concluded(&mut daemon, LAPTOP, Route::Direct(LinkId(1)), Tried::Opened);
+        step(&mut daemon, Input::PeerRevoked { host: LAPTOP });
+        let out = step(&mut daemon, calls_failed(LAPTOP));
+        assert!(
+            !out.iter().any(|output| matches!(
+                output,
+                Output::CloseLinks { .. } | Output::DropRoute { .. }
+            )),
+            "a host that revoked this one is not chased: {out:?}"
+        );
+    }
+
+    #[test]
+    fn a_direct_link_going_under_a_call_names_the_next_route_once() {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, DESK, CarrierKind::Direct);
+        up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        concluded(&mut daemon, DESK, Route::Direct(LinkId(2)), Tried::Opened);
+
+        // The newer of two crossed dials closed under the call while the
+        // core still listed it: the call tries the link that remains.
+        let out = step(
+            &mut daemon,
+            Input::RouteFailed {
+                host: DESK,
+                route: Route::Direct(LinkId(2)),
+                error: ChannelError::LinkClosed,
+            },
+        );
+        assert_eq!(next_route(&out), Some(Route::Direct(LinkId(1))));
+        assert_eq!(
+            view(&daemon, DESK).presence,
+            Presence::Online,
+            "the link going says nothing of the host"
+        );
+
+        // Any other failure is the host's answer: nothing more is tried.
+        let out = step(
+            &mut daemon,
+            Input::RouteFailed {
+                host: DESK,
+                route: Route::Direct(LinkId(1)),
+                error: ChannelError::Handshake("the handshake timed out".to_owned()),
+            },
+        );
+        assert_eq!(next_route(&out), None);
+    }
+
+    #[test]
+    fn a_route_through_another_host_failing_under_a_call_names_no_other() {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
+        up(&mut daemon, 9, RELAY, CarrierKind::Relay);
+        claims(&mut daemon, 1, &[DESK]);
+        claims(&mut daemon, 9, &[DESK]);
+        let out = step(
+            &mut daemon,
+            Input::RouteFailed {
+                host: DESK,
+                route: Route::Via(LAPTOP),
+                error: ChannelError::LinkClosed,
+            },
+        );
+        assert_eq!(next_route(&out), None);
+    }
+
+    #[test]
+    fn a_route_coming_up_or_a_channel_opening_clears_the_last_dial_error() {
+        let mut daemon = daemon();
+        let failed = |host| Input::DialError {
+            host,
+            error: Some("connection refused".to_owned()),
+        };
+        step(&mut daemon, failed(DESK));
+        assert_eq!(daemon.last_dial_error(DESK), Some("connection refused"));
+        up(&mut daemon, 1, DESK, CarrierKind::Direct);
+        assert_eq!(daemon.last_dial_error(DESK), None);
+
+        step(&mut daemon, failed(DESK));
+        concluded(&mut daemon, DESK, Route::Direct(LinkId(1)), Tried::Opened);
+        assert_eq!(daemon.last_dial_error(DESK), None);
+    }
+
+    #[test]
+    fn a_host_reads_with_the_carrier_of_the_link_its_calls_take() {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, DESK, CarrierKind::Ssh);
+        assert_eq!(daemon.route_kind(DESK), wire::RouteKind::Ssh);
+        assert_eq!(
+            daemon.reads(DESK),
+            (wire::Presence::Offline, wire::RouteKind::Unspecified),
+            "no channel has opened yet"
+        );
+        concluded(&mut daemon, DESK, Route::Direct(LinkId(1)), Tried::Opened);
+        assert_eq!(
+            daemon.reads(DESK),
+            (wire::Presence::Online, wire::RouteKind::Ssh)
+        );
+        down(&mut daemon, 1);
+        assert_eq!(daemon.route_kind(DESK), wire::RouteKind::Unspecified);
     }
 
     #[test]

@@ -458,15 +458,6 @@ impl LinkRegistry {
             .map(|writer| writer.admission)
     }
 
-    pub(crate) async fn carrier(&self, link: &LinkId) -> Option<LinkCarrier> {
-        self.state
-            .read()
-            .await
-            .writers
-            .get(link)
-            .map(|writer| writer.carrier)
-    }
-
     pub(crate) async fn native_carrier(&self, link: &LinkId) -> Option<Arc<dyn NativeLinkCarrier>> {
         self.state
             .read()

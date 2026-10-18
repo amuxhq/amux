@@ -52,6 +52,31 @@ impl CoreLinks {
             .await
     }
 
+    /// Looks at what the core decided, between its steps; nothing while the
+    /// profile is gone.
+    pub(crate) async fn look<T: Send + 'static>(
+        &self,
+        look: impl FnOnce(&daemon_core::Daemon) -> T + Send + 'static,
+    ) -> Option<T> {
+        let runtime = self.0.upgrade()?;
+        runtime.driver().look(look).await
+    }
+
+    /// A channel a call opened to `peer` on `route` failed with `error`:
+    /// the route the core names for the call to try next, if any.
+    pub(crate) async fn route_failed(
+        &self,
+        peer: HostId,
+        route: daemon_core::Route,
+        error: payload::ChannelError,
+    ) -> Option<daemon_core::Route> {
+        let runtime = self.0.upgrade()?;
+        runtime
+            .driver()
+            .route_failed(core_host(peer), route, error)
+            .await
+    }
+
     /// The channel's handshake verified the key the core gave.
     pub(crate) fn opened(
         &self,

@@ -11,20 +11,24 @@
 //! links coming up and going, an adjacent peer and the account's relay
 //! starting and ceasing to claim it, the shell making each attempt the core
 //! asks for and reporting how it went, the account's plan changing, and the
-//! retry timer the core arms firing. The relay carries a channel only while
-//! the plan pays for connections between hosts and refuses it for the plan
-//! otherwise; the peer and the target's own links carry one unless a fault
-//! says the attempt was refused or timed out. A route gone before its
-//! attempt concluded fails as its link closing.
+//! retry timer the core arms firing. Calls open channels of their own on
+//! the routes the core lists, which conclude as attempts do, and a call may
+//! find no channel within its patience; when the core says to close the
+//! target's own links for it, they close. The relay carries a channel only
+//! while the plan pays for connections between hosts and refuses it for
+//! the plan otherwise; the peer and the target's own links carry one unless
+//! a fault says the attempt was refused or timed out. A route gone before
+//! its attempt concluded fails as its link closing, and a call whose
+//! channel's link closed under it tries the route the core names next.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::fmt;
 
-use daemon_core::payload::{CarrierKind, ChannelError, StreamRefusal};
+use daemon_core::payload::{CarrierKind, ChannelClass, ChannelError, PublicKey, StreamRefusal};
 use daemon_core::{
-    Checkpoint, Daemon, HostId, HostView, Input, LinkId, Output, Presence, Route, StartOptions,
-    StepBudget, TimerId, Tried,
+    ChannelId, Checkpoint, Daemon, HostId, HostView, Input, LinkId, Output, Presence, Route,
+    StartOptions, StepBudget, TimerId, Tried,
 };
 use store::Sqlite;
 use wire::message::Body;
@@ -54,9 +58,12 @@ pub struct PresenceRouting {
     pub ups: u8,
     /// Links of the target's own and claims of it that go, all told.
     pub downs: u8,
-    /// Attempts on a route still listed that are refused other than for
-    /// the plan, or time out, all told.
+    /// Attempts and channels on a route still listed that are refused
+    /// other than for the plan, or time out, and calls that find no
+    /// channel within their patience, all told.
     pub faults: u8,
+    /// Calls that open a channel of their own, all told.
+    pub calls: u8,
     /// Times the account's plan changes, all told.
     pub plans: u8,
     /// Refusals for the plan in a row, with nothing else happening between
@@ -69,12 +76,14 @@ pub struct PresenceRouting {
 impl PresenceRouting {
     /// The bounds `just test` explores exhaustively: three links or claims
     /// up and two down, so a route can carry traffic while another comes
-    /// and goes; two failed attempts; the plan bought and lapsed again.
+    /// and goes; two failed attempts or calls; one call opening a channel;
+    /// the plan bought and lapsed again.
     pub const fn ci() -> Self {
         Self {
             ups: 3,
             downs: 2,
             faults: 2,
+            calls: 1,
             plans: 2,
             payments: 2,
         }
@@ -86,6 +95,7 @@ impl PresenceRouting {
             ups: 5,
             downs: 4,
             faults: 3,
+            calls: 2,
             ..Self::ci()
         }
     }
@@ -136,6 +146,15 @@ pub enum Action {
     ClaimDown(Via),
     /// The shell's attempt on a route the core asked it to try concluded.
     AttemptConcluded(Route, Concluded),
+    /// A call opens a channel of its own on the route a fresh call takes
+    /// first, and it concludes. One whose direct link goes under it asks
+    /// the core for the route to try next and tries it, concluding as that
+    /// route allows. A channel concludes through the core as an attempt
+    /// does, so the attempts carry the interleavings of the world with a
+    /// try in flight and a call's channel concludes at once.
+    Call(Concluded),
+    /// A call to the target found no channel within its patience.
+    CallsFailed,
     /// The account's plan changed: bought, or lapsed.
     PlanChanged,
     /// The target's retry timer fired.
@@ -155,6 +174,7 @@ struct Used {
     direct_ups: u8,
     downs: u8,
     faults: u8,
+    calls: u8,
     plans: u8,
     /// Refusals for the plan since the world last did anything but fire
     /// the retry timer.
@@ -197,6 +217,16 @@ pub struct State {
 }
 
 impl State {
+    /// Counts what a concluded attempt or channel used of the bounds.
+    fn count(&mut self, concluded: Concluded) {
+        match concluded {
+            Concluded::Ok => self.refused_for_plan = false,
+            Concluded::Payment => self.refused_for_plan = true,
+            Concluded::Refused | Concluded::Timeout => self.used.faults += 1,
+            Concluded::Gone => {}
+        }
+    }
+
     /// Whether `route` to the target would carry a channel now.
     fn works(&self, route: Route) -> bool {
         match route {
@@ -285,21 +315,27 @@ impl Machine for PresenceRouting {
             out.extend(s.claims.iter().map(|via| Action::ClaimDown(*via)));
         }
         for route in &s.attempts {
-            if !s.view.routes.contains(route) {
-                out.push(Action::AttemptConcluded(*route, Concluded::Gone));
-                continue;
+            for concluded in self.conclusions(s, *route) {
+                out.push(Action::AttemptConcluded(*route, concluded));
             }
-            if s.works(*route) {
-                out.push(Action::AttemptConcluded(*route, Concluded::Ok));
-            } else if *route == Route::Via(RELAY) && s.used.payments < self.payments {
-                // The relay refuses for the plan for as long as it lapses:
-                // that is the plan, not a fault.
-                out.push(Action::AttemptConcluded(*route, Concluded::Payment));
+        }
+        if world
+            && s.used.calls < self.calls
+            && let Some(first) = s.view.routes.first()
+        {
+            // The core tells a refusal from a timeout only by the relay's
+            // refusal for the plan, so a call's channel fails one way.
+            for concluded in self.conclusions(s, *first) {
+                if concluded != Concluded::Refused {
+                    out.push(Action::Call(concluded));
+                }
             }
-            if world && s.used.faults < self.faults {
-                out.push(Action::AttemptConcluded(*route, Concluded::Refused));
-                out.push(Action::AttemptConcluded(*route, Concluded::Timeout));
+            if first.is_direct() && s.used.downs < self.downs {
+                out.push(Action::Call(Concluded::Gone));
             }
+        }
+        if world && s.used.faults < self.faults && s.view.route().is_some() {
+            out.push(Action::CallsFailed);
         }
         if world && s.used.plans < self.plans {
             out.push(Action::PlanChanged);
@@ -367,29 +403,81 @@ impl Machine for PresenceRouting {
             }
             Action::AttemptConcluded(route, concluded) => {
                 next.attempts.remove(&route);
-                let tried = match concluded {
-                    Concluded::Ok => Tried::Opened,
-                    Concluded::Refused => {
-                        Tried::Failed(ChannelError::Refused(StreamRefusal::NoRoute))
-                    }
-                    Concluded::Payment => {
-                        Tried::Failed(ChannelError::Refused(StreamRefusal::PaymentRequired))
-                    }
-                    Concluded::Timeout => {
-                        Tried::Failed(ChannelError::Handshake("the handshake timed out".into()))
-                    }
-                    Concluded::Gone => Tried::Failed(ChannelError::LinkClosed),
+                next.count(concluded);
+                let tried = match failure(concluded) {
+                    None => Tried::Opened,
+                    Some(error) => Tried::Failed(error),
                 };
-                match concluded {
-                    Concluded::Ok => next.refused_for_plan = false,
-                    Concluded::Payment => next.refused_for_plan = true,
-                    Concluded::Refused | Concluded::Timeout => next.used.faults += 1,
-                    Concluded::Gone => {}
-                }
                 Input::AttemptConcluded {
                     host: TARGET,
                     route,
                     tried,
+                }
+            }
+            Action::Call(concluded) => {
+                next.used.calls += 1;
+                let route = *s.view.routes.first().expect("a call takes a listed route");
+                let channel = self.want(&mut next, route);
+                if concluded == Concluded::Gone {
+                    // The link goes under the call, and the driver reports
+                    // it before the call's failure.
+                    let Route::Direct(link) = route else {
+                        unreachable!("only a direct link goes under a call")
+                    };
+                    next.used.downs += 1;
+                    next.direct.remove(&link);
+                    let reason = wire::LinkCloseReason::UserShutdown;
+                    self.step(&mut next, Input::LinkDown { link, reason });
+                    let mut out = self.step(
+                        &mut next,
+                        Input::RouteFailed {
+                            host: TARGET,
+                            route,
+                            error: ChannelError::LinkClosed,
+                        },
+                    );
+                    let named = out.drain(..).find_map(|output| match output {
+                        Output::NextRoute { route, .. } => Some(route),
+                        _ => None,
+                    });
+                    match named {
+                        Some(Some(again)) => {
+                            let concluded = if next.works(again) {
+                                Concluded::Ok
+                            } else if again == Route::Via(RELAY)
+                                && next.claims.contains(&Via::Relay)
+                            {
+                                Concluded::Payment
+                            } else {
+                                Concluded::Timeout
+                            };
+                            match concluded {
+                                Concluded::Ok => next.refused_for_plan = false,
+                                Concluded::Payment => next.refused_for_plan = true,
+                                _ => {}
+                            }
+                            let channel = self.want(&mut next, again);
+                            self.conclude(&mut next, channel, again, concluded);
+                        }
+                        Some(None) => {}
+                        None => {
+                            next.dumped.get_or_insert_with(|| {
+                                "the core named no route after a failed one".to_owned()
+                            });
+                        }
+                    }
+                } else {
+                    next.count(concluded);
+                    self.conclude(&mut next, channel, route, concluded);
+                }
+                self.judge(s, &mut next, action);
+                return Some(next);
+            }
+            Action::CallsFailed => {
+                next.used.faults += 1;
+                Input::CallsFailed {
+                    host: TARGET,
+                    error: ChannelError::Handshake("no channel opened in time".into()),
                 }
             }
             Action::PlanChanged => {
@@ -417,8 +505,9 @@ impl Machine for PresenceRouting {
         vec![
             Property::always(
                 "presence changes only on a concluded attempt on the preferred route: a host's \
-                 presence moves only when an attempt concludes on the route carrying its traffic, \
-                 or else the first listed, as the attempt leaves them, or when no route lists it",
+                 presence moves only when an attempt or a call's channel concludes on the route \
+                 carrying its traffic, or else the first listed, as the attempt leaves them, when \
+                 a call finds no channel on the route calls take, or when no route lists it",
                 |_, s: &State| s.unprompted.is_none(),
             ),
             Property::always(
@@ -469,15 +558,108 @@ impl Machine for PresenceRouting {
     }
 }
 
+/// Why an attempt or channel that concluded `concluded` failed, if it did.
+fn failure(concluded: Concluded) -> Option<ChannelError> {
+    match concluded {
+        Concluded::Ok => None,
+        Concluded::Refused => Some(ChannelError::Refused(StreamRefusal::NoRoute)),
+        Concluded::Payment => Some(ChannelError::Refused(StreamRefusal::PaymentRequired)),
+        Concluded::Timeout => Some(ChannelError::Handshake("the handshake timed out".into())),
+        Concluded::Gone => Some(ChannelError::LinkClosed),
+    }
+}
+
+/// The link a channel on `route` rides.
+fn link_of(route: Route) -> LinkId {
+    match route {
+        Route::Direct(link) => link,
+        Route::Via(via) if via == RELAY => RELAY_LINK,
+        Route::Via(_) => PEER_LINK,
+    }
+}
+
 impl PresenceRouting {
+    /// How an attempt or channel on `route` may conclude now.
+    fn conclusions(&self, s: &State, route: Route) -> Vec<Concluded> {
+        if !s.view.routes.contains(&route) {
+            return vec![Concluded::Gone];
+        }
+        let mut can = Vec::new();
+        if s.works(route) {
+            can.push(Concluded::Ok);
+        } else if route == Route::Via(RELAY) && s.used.payments < self.payments {
+            // The relay refuses for the plan for as long as it lapses:
+            // that is the plan, not a fault.
+            can.push(Concluded::Payment);
+        }
+        if !s.rested && s.used.faults < self.faults {
+            can.push(Concluded::Refused);
+            can.push(Concluded::Timeout);
+        }
+        can
+    }
+
+    /// A call asks the core for a channel on `route`, with the target's
+    /// key pinned: the channel it opens, or none when it refuses.
+    fn want(&self, next: &mut State, route: Route) -> Option<ChannelId> {
+        let input = Input::WantChannel {
+            link: link_of(route),
+            peer: TARGET,
+            class: ChannelClass::Calls,
+            pin: Some(PublicKey(vec![7; 32])),
+        };
+        self.step(next, input)
+            .into_iter()
+            .find_map(|output| match output {
+                Output::OpenChannel { channel, .. } => Some(channel),
+                _ => None,
+            })
+    }
+
+    /// The channel a call opened on `route` concludes.
+    fn conclude(
+        &self,
+        next: &mut State,
+        channel: Option<ChannelId>,
+        route: Route,
+        concluded: Concluded,
+    ) {
+        let Some(channel) = channel else {
+            return;
+        };
+        let input = match failure(concluded) {
+            None => Input::ChannelOpened {
+                channel,
+                link: link_of(route),
+                peer: TARGET,
+                class: ChannelClass::Calls,
+            },
+            Some(reason) => Input::ChannelClosed { channel, reason },
+        };
+        self.step(next, input);
+    }
+
     /// Steps the core with one input, as the driver does, and carries out
-    /// what it asked for of the shell and the timers.
-    fn step(&self, next: &mut State, input: Input) {
+    /// what it asked for of the shell and the timers; what is left is the
+    /// caller's.
+    fn step(&self, next: &mut State, input: Input) -> Vec<Output> {
         let mut daemon = restore(&next.core);
         let mut out = Vec::new();
         daemon.step(input, &mut out);
+        // The target's own links close when the core says so, and go as
+        // any link does.
+        let closing = out
+            .iter()
+            .any(|output| *output == Output::CloseLinks { host: TARGET });
+        if closing {
+            for link in std::mem::take(&mut next.direct) {
+                let reason = wire::LinkCloseReason::UserShutdown;
+                daemon.step(Input::LinkDown { link, reason }, &mut out);
+            }
+        }
         next.view = daemon.presence().view(TARGET);
         next.core = put_back(daemon);
+        let mut left = Vec::new();
         for output in out {
             match output {
                 Output::Attempt { host, route } if host == TARGET => {
@@ -498,9 +680,10 @@ impl PresenceRouting {
                 Output::Dump { reason } => {
                     next.dumped.get_or_insert_with(|| format!("{reason:?}"));
                 }
-                _ => {}
+                output => left.push(output),
             }
         }
+        left
     }
 
     /// Records the first change of presence the properties forbid.
@@ -514,9 +697,16 @@ impl PresenceRouting {
             Action::AttemptConcluded(route, concluded) if *concluded != Concluded::Gone => {
                 Some(*route)
             }
+            Action::Call(Concluded::Gone) => now.routes.first().copied(),
+            Action::Call(_) => was.routes.first().copied(),
+            // A call finding no channel concludes on the route calls took.
+            Action::CallsFailed => was.route(),
             _ => None,
         };
-        let on_preferred = concluded.is_some_and(|route| now.route() == Some(route));
+        let on_preferred = match action {
+            Action::CallsFailed => true,
+            _ => concluded.is_some_and(|route| now.route() == Some(route)),
+        };
         if !on_preferred && !now.routes.is_empty() && next.unprompted.is_none() {
             next.unprompted = Some(change.clone());
         }
@@ -567,6 +757,7 @@ impl fmt::Debug for State {
             .field("routes", &self.view.routes)
             .field("active", &self.view.active)
             .field("attempts", &self.attempts)
+            .field("direct", &self.direct)
             .field("timer", &self.timer)
             .field("paid", &self.paid)
             .field("rested", &self.rested)

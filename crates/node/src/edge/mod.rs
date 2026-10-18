@@ -534,10 +534,11 @@ impl Edge {
         Ok(crate::link::peer_client(self.channel(host).await?))
     }
 
-    /// A call to `host` could not open a channel on the route that lists
-    /// it: the host reads offline until a channel to it opens again.
-    pub(crate) async fn calls_failed(&self, host: HostId) {
-        self.connections.calls_failed(host).await;
+    /// A call to `host` found no channel within its patience, or the one it
+    /// opened failed, for `error`: the core decides what that says of the
+    /// host.
+    pub(crate) fn calls_failed(&self, host: HostId, error: daemon_core::payload::ChannelError) {
+        self.connections.calls_failed(host, error);
     }
 
     /// How `host` reads now, and the route its calls take while it is not

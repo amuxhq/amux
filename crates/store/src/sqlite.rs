@@ -121,19 +121,20 @@ impl Sqlite {
         }
     }
 
-    /// Moves every transaction committed to the WAL of the store at `path`
-    /// into its main file, through a connection of its own, without
-    /// waiting for the store's writer: the passive checkpoint. Under
-    /// synchronous=NORMAL the main file is synced once the checkpoint
-    /// completes, so on success it holds at least every transaction
-    /// committed before the call. An existing store is required; none is
-    /// created.
-    pub fn checkpoint_wal(path: &Path) -> Result<(), rusqlite::Error> {
-        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        let (log, checkpointed) = conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
-            Ok((row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
-        })?;
-        if log < 0 || checkpointed < log {
+    /// Moves every transaction committed to the WAL into the main file on
+    /// this store's own connection, without waiting for a writer: the
+    /// passive checkpoint. Under synchronous=NORMAL the main file is synced
+    /// once the checkpoint completes, so on success it holds exactly what
+    /// was committed before the call; with SQLite's own checkpoints left to
+    /// the owner, it changes again only at the owner's next one. A store
+    /// in memory has no WAL and nothing to move.
+    pub fn checkpoint_wal(&self) -> Result<(), rusqlite::Error> {
+        let (log, checkpointed) =
+            self.conn
+                .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
+                    Ok((row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+                })?;
+        if checkpointed < log {
             return Err(rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
                 Some(format!(
@@ -142,6 +143,12 @@ impl Sqlite {
             ));
         }
         Ok(())
+    }
+
+    /// How many rows this store's writes have changed since it opened: a
+    /// count that moves whenever a write was made.
+    pub fn changes(&self) -> u64 {
+        self.conn.total_changes()
     }
 }
 

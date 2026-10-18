@@ -84,6 +84,10 @@ pub struct Daemon {
     /// What the step under way touched, for the cheap invariants at its
     /// end. Not part of the core's state: every step starts it empty.
     touched: Touched,
+    /// The store's count of changed rows as of the last step's end, so a
+    /// step that wrote anything is told apart. Not part of the core's
+    /// state: a core over another connection counts from its own.
+    changes: u64,
 }
 
 /// What a daemon runs under, fixed for the run.
@@ -107,6 +111,7 @@ impl Daemon {
     /// A daemon over `store` with nothing linked, open or armed.
     pub fn new(store: Sqlite, options: StartOptions) -> Self {
         Self {
+            changes: store.changes(),
             store,
             options,
             routing: RoutingState::default(),
@@ -249,6 +254,7 @@ impl Daemon {
         self.settle_deliveries(out);
         self.tell_presence(out);
         self.follow_touched(out);
+        self.arm_on_commit(out);
         if let Err(violation) = self.check_step_invariants() {
             tracing::error!(%violation, input = kind, "a daemon core step broke an invariant");
             out.push(Output::Dump {

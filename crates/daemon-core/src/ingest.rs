@@ -75,12 +75,7 @@ impl Daemon {
     /// commits it in one transaction, then answers each record to the
     /// agent's streams. A journal holding more than a batch arms a timer
     /// for the next, so other inputs are stepped between batches.
-    /// While a checkpoint is taken the batch waits for it, and is read
-    /// once it is done.
     pub(crate) fn ingest(&mut self, agent: AgentId, out: &mut Vec<Output>) {
-        if self.hold_ingest(agent) {
-            return;
-        }
         let report = self
             .ingest_batch(agent, out)
             .unwrap_or_else(|error| Ingested {
@@ -163,7 +158,7 @@ impl Daemon {
                 notify_delay_ms: self.settings.notify_delay_ms,
             };
             let committed = self.store.commit(&key, &batch.frames, clock)?;
-            self.committed(agent, out);
+            self.committed(agent);
             report.turn_ends = batch
                 .frames
                 .iter()
@@ -465,16 +460,21 @@ mod tests {
             .expect("the trigger installs");
         let out = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
         assert!(answered(&out, call).is_empty());
-        assert!(matches!(
-            out.last(),
-            Some(Output::Ingested {
-                report: Ingested {
-                    end: IngestEnd::Failed(_),
+        // The rolled-back statements still count as writes, so the step
+        // may also make a checkpoint due.
+        assert!(
+            out.iter().any(|output| matches!(
+                output,
+                Output::Ingested {
+                    report: Ingested {
+                        end: IngestEnd::Failed(_),
+                        ..
+                    },
                     ..
-                },
-                ..
-            })
-        ));
+                }
+            )),
+            "{out:?}"
+        );
     }
 
     /// The dumps a step asked for.
@@ -590,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn commits_wait_while_a_checkpoint_is_taken_and_go_ahead_once_it_is_done() {
+    fn commits_go_ahead_while_a_checkpoint_is_taken_and_make_the_next_one_due() {
         let mut rig = rig();
         let call = CallId(1);
         subscribed(&mut rig.daemon, call);
@@ -599,10 +599,11 @@ mod tests {
             .expect("the journal takes a step");
         let first = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
         assert_eq!(answered(&first, call), vec!["k000"]);
+        let interval = crate::Settings::default().checkpoint_interval_ms;
         assert!(
             first.contains(&Output::ArmTimer {
                 id: TimerId::Checkpoint,
-                at_ms: crate::Settings::default().checkpoint_interval_ms,
+                at_ms: interval,
             }),
             "a commit makes the next checkpoint due an interval on"
         );
@@ -616,52 +617,42 @@ mod tests {
         let job = checkpoint_job(&taken).expect("the timer takes a checkpoint");
         assert!(rig.daemon.checkpoints().taking());
 
+        // The main file already holds the store as of the step that took
+        // the checkpoint, so what is committed now waits in the WAL.
         rig.journal
             .append(&item(1))
             .expect("the journal takes a step");
-        let held = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
-        assert_eq!(
-            held,
-            Vec::new(),
-            "nothing is committed, answered or reported"
+        let during = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        assert_eq!(answered(&during, call), vec!["k001"]);
+        assert!(
+            during.contains(&Output::ArmTimer {
+                id: TimerId::Checkpoint,
+                at_ms: interval,
+            }),
+            "the commit makes the next checkpoint due: {during:?}"
         );
-        let key = AgentKey::new(OWN, AGENT.0);
-        assert!(rig.daemon.store.get(&key, "k001").unwrap().is_none());
-        assert_eq!(
-            step(
-                &mut rig.daemon,
-                Input::Timer {
-                    id: TimerId::Checkpoint,
-                },
-            ),
-            Vec::new(),
-            "one checkpoint at a time"
+        let again = step(
+            &mut rig.daemon,
+            Input::Timer {
+                id: TimerId::Checkpoint,
+            },
+        );
+        assert_eq!(checkpoint_job(&again), None, "one checkpoint at a time");
+        assert!(
+            again.contains(&Output::ArmTimer {
+                id: TimerId::Checkpoint,
+                at_ms: interval,
+            }),
+            "the next waits an interval on: {again:?}"
         );
 
-        let done = step(
+        step(
             &mut rig.daemon,
             Input::JobDone {
                 job,
                 result: crate::payload::JobResult::Done,
             },
         );
-        assert_eq!(
-            answered(&done, call),
-            vec!["k001"],
-            "the held commit goes ahead"
-        );
-        assert!(rig.daemon.store.get(&key, "k001").unwrap().is_some());
-        assert!(done.iter().any(|output| matches!(
-            output,
-            Output::Ingested {
-                report: Ingested {
-                    frames: 1,
-                    end: IngestEnd::Read,
-                    ..
-                },
-                ..
-            }
-        )));
         assert!(!rig.daemon.checkpoints().taking());
     }
 

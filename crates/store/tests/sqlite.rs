@@ -319,10 +319,11 @@ fn rows_survive_a_reopen() {
 }
 
 #[test]
-fn a_passive_checkpoint_puts_every_commit_in_the_main_file_and_creates_no_store() {
+fn a_passive_checkpoint_puts_every_commit_before_it_in_the_main_file_and_none_after() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("store.sqlite");
     let mut store = open(&dir);
+    store.leave_checkpoints_to_owner().unwrap();
     let key = AgentKey::new(OWN, *b"agent-0000000000");
     store
         .put_agent(&AgentRow::new(key.clone(), wire::Kind::Codex, "/src"))
@@ -330,17 +331,22 @@ fn a_passive_checkpoint_puts_every_commit_in_the_main_file_and_creates_no_store(
     store
         .commit(&key, &[(10, step(&["a", "b"]))], CLOCK)
         .unwrap();
+    let changes = store.changes();
 
-    Sqlite::checkpoint_wal(&path).unwrap();
+    store.checkpoint_wal().unwrap();
+    store.commit(&key, &[(20, step(&["c"]))], CLOCK).unwrap();
+    assert!(store.changes() > changes, "a commit moves the count");
 
     // The main file alone, as a power cut would leave it with the WAL gone.
     let copy = dir.path().join("copy.sqlite");
     std::fs::copy(&path, &copy).unwrap();
     let copied = Sqlite::open(&copy, OWN).unwrap();
     assert!(copied.get(&key, "b").unwrap().is_some());
+    assert!(copied.get(&key, "c").unwrap().is_none());
     assert_eq!(copied.cursor(&key).unwrap(), 10);
 
-    let missing = dir.path().join("missing.sqlite");
-    assert!(Sqlite::checkpoint_wal(&missing).is_err());
-    assert!(!missing.exists(), "no store is created where none was");
+    let memory = Sqlite::open_in_memory(OWN).unwrap();
+    memory
+        .checkpoint_wal()
+        .expect("a store in memory has nothing to move");
 }

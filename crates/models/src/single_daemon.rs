@@ -13,8 +13,8 @@
 //!
 //! What the drive holds is tracked apart from what the running process
 //! sees. Store commits are not synced one by one, so the drive has the
-//! store as of its last passive WAL checkpoint, which the checkpoint job
-//! runs, or of its last clean shutdown. The agent's journal is written with
+//! store as of its last passive WAL checkpoint, which the step taking a
+//! checkpoint runs, or of its last clean shutdown. The agent's journal is written with
 //! plain writes, so the drive has it as of the page cache's last writeback.
 //! A power loss takes both back to what the drive has; a crash loses
 //! neither. The generation record is written durably at each start and
@@ -122,7 +122,7 @@ struct Record {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct CheckpointJob {
     id: JobId,
-    /// The store's WAL and the core's state are on the drive.
+    /// The core's state is on the drive beside the store's main file.
     written: bool,
 }
 
@@ -292,8 +292,8 @@ pub enum Action {
     IngestAgain,
     /// The checkpoint timer fires, or someone asks for a checkpoint.
     Checkpoint,
-    /// The driver's checkpoint job puts the store's WAL into its main file
-    /// and the core's state beside it, on the drive.
+    /// The driver's checkpoint job puts the core's state on the drive,
+    /// beside the store's main file the step that took it synced.
     CheckpointWritten,
     /// The checkpoint job reports it is done, and the core lets go of the
     /// journal below it.
@@ -448,8 +448,6 @@ impl Machine for SingleDaemon {
                     .as_mut()
                     .expect("a job runs only while the daemon does");
                 run.job.as_mut().expect("a job to write").written = true;
-                next.durable = next.store.clone();
-                next.durable_cursor = next.cursor;
             }
             Action::Reclaim | Action::CheckpointFails => {
                 let run = next
@@ -714,6 +712,10 @@ impl SingleDaemon {
                     op: Job::Checkpoint { state },
                 } => {
                     run.job = Some(CheckpointJob { id, written: false });
+                    // The step ran the passive WAL checkpoint: the main file
+                    // on the drive is the store as of it.
+                    next.durable = next.store.clone();
+                    next.durable_cursor = next.cursor;
                     // The driver's ring starts again at this checkpoint.
                     next.ring = Ring {
                         base: Some((state, next.store.clone(), next.journal.clone())),

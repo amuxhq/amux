@@ -1654,7 +1654,7 @@ impl ProfileRuntime {
         }
     }
 
-    /// Takes a checkpoint of the profile's core now, beside a passive WAL
+    /// Takes a checkpoint of the profile's core now, at a passive WAL
     /// checkpoint of its store, and waits for it to be on the drive: the
     /// journal below every cursor it holds may then go. Joins a checkpoint
     /// already being taken.

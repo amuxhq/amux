@@ -56,7 +56,7 @@ use tokio::task::AbortHandle;
 use wire::{FetchRequest, GetRequest};
 
 use crate::connection::ConnectionManager;
-use crate::install::{CORE_CHECKPOINT, CORE_RING, STORE, write_durably};
+use crate::install::{CORE_CHECKPOINT, CORE_RING, write_durably};
 use crate::runtime::ProfileRuntime;
 
 /// How the reason of a dump the core asked for begins.
@@ -1239,13 +1239,11 @@ pub(crate) async fn fsync(path: PathBuf, bytes: Vec<u8>) -> JobResult {
     blocking(move || write_durably(&path, &bytes)).await
 }
 
-/// The checkpoint job: the store's WAL into its main file, synced, and then
-/// the core's state as of the same step beside it. The core held its
-/// commits since that step, so the main file is the store as of it; a
-/// crash between the two leaves the previous checkpoint, which the main
-/// file is at or past.
+/// The checkpoint job: the core's state as of the step that took it,
+/// beside the store's main file, which that step brought up to it. A crash
+/// before the write leaves the previous checkpoint, which the main file is
+/// past.
 fn checkpoint(dir: &Path, state: &[u8]) -> std::io::Result<()> {
-    Sqlite::checkpoint_wal(&dir.join(STORE)).map_err(std::io::Error::other)?;
     write_durably(&dir.join(CORE_CHECKPOINT), state)
 }
 

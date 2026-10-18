@@ -233,16 +233,17 @@ once per incarnation.
 ### Checkpoints and reclaiming segments
 
 The profile's core checkpoints an interval (`Launch.checkpoint_interval_ms`,
-a minute) after a commit, and when its input ring fills first. At that step
-it reads the cursor of every agent committed since the last checkpoint,
-serializes its own state, and asks for a checkpoint job; the driver runs a
-passive WAL checkpoint of the store on a connection of its own
-(`Sqlite::checkpoint_wal`), which SQLite syncs, then writes the state
-durably to `core.checkpoint` beside the store. The core holds every ingest
-commit until the job is done, so the store's main file is the store as of
-that step. Every write to the store is the core's, and SQLite's own
-automatic checkpoints are off (`wal_autocheckpoint=0`): this job and the
-clean shutdown's flush are the only times the WAL reaches the main file. The
+a minute) after any commit to the store, and when its input ring fills
+first. At that step it runs a passive WAL checkpoint on its own connection
+(`Sqlite::checkpoint_wal`), which SQLite syncs, reads the cursor of every
+agent committed since the last checkpoint, serializes its own state, and
+asks for a checkpoint job, which writes the state durably to
+`core.checkpoint` beside the store. Every write to the store is the core's,
+and SQLite's own automatic checkpoints are off (`wal_autocheckpoint=0`): the
+checkpoint's step and the clean shutdown's flush are the only times the WAL
+reaches the main file. So whatever the core commits while the job runs stays
+in the WAL, and the main file and the state are the daemon as of that step.
+The
 driver records every input the core steps in `core-ring/`
 before stepping it, and starts a new ring segment at each checkpoint: the
 newest checkpoint and the inputs since rebuild the core.

@@ -121,7 +121,7 @@ under `just test`.
 | Model | CI bounds | States | Seconds | states_per_second | Budget | Nightly bounds |
 | --- | --- | --- | --- | --- | --- | --- |
 | Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 207,443 | 37 | 5,700 | 120 s | revisions up to 5, 3 in flight |
-| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 179,245 | 34 (125 on one thread) | 5,300 (1,430 on one thread) | 120 s | 2 crashes, power losses or reboots: 910,364 states in 148 s |
+| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 254,451 | 61 | 4,180 | 120 s | 2 crashes, power losses or reboots: 1,200,828 states in 252 s |
 | Family and deliveries | 1 turn end, 1 spontaneous exit, 1 link down, 1 crash, 1 wait | 425,230 | 42 | 10,200 | 120 s | 2 links down, 2 waits |
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts, 2 plan changes, 2 refusals for the plan in a row | 118,374 | 2 (12 on one thread) | 62,000 (9,900 on one thread) | 60 s | 5 up, 4 down, 3 failed attempts: 4,367,842 states in 91 s |
 

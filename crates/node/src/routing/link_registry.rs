@@ -1,16 +1,17 @@
 //! The link registry: this daemon's live links and the wire-side adjacency
 //! discipline.
 //!
-//! The registry is the single source of truth for *wire* adjacency. Every
-//! `NeighborUp`/`NeighborDown` a peer ever receives from us is emitted here,
-//! under one lock, in registration order — so "advertise only adjacency" is
-//! structural: there is no API for broadcasting anything else. The handshake
-//! snapshot is reconciled here too: registering a link diffs the neighbor
-//! set the handshake advertised against the current one and sends the
-//! difference down the new link, atomically with registration, which closes
-//! the window between composing the snapshot and the link going live.
+//! The registry holds each live link's writer. Which links stay and what
+//! each is told of its neighbors are the forwarding core's decisions
+//! (`relay_core`): every link coming up or going is stepped through it
+//! under the registry's one lock, and the `NeighborUp`/`NeighborDown`
+//! messages it names are sent from here, in the order it named them, so
+//! the core's view and the writers held never disagree. A new link is told
+//! the difference between its handshake's neighbor snapshot and the
+//! neighbors there are in the same step that registers it, which closes the
+//! window between composing the snapshot and the link going live.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::{Notify, RwLock, mpsc};
@@ -19,7 +20,7 @@ use wire::pb;
 use crate::driver::CoreLinks;
 use crate::link::LinkCarrier as NativeLinkCarrier;
 use crate::link::piper::Relaying;
-use crate::routing::types::LinkId;
+use crate::routing::types::{LinkId, core_host, host_from_core};
 use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
 use crate::routing::{ConnectRole, Host, RuntimeInstance};
 use crate::{HostId, Tier, audit};
@@ -57,21 +58,11 @@ impl LinkRegistry {
         &self.relaying
     }
 
-    fn report_up(&self, link: &LinkId, host: HostId, admission: LinkAdmission) {
-        self.relaying.step([relay_core::Input::LinkUp {
-            link: link.core(),
-            user: self.user,
-            host: daemon_core::HostId(host.into_bytes()),
-            tier: match admission {
-                LinkAdmission::PinnedKey => None,
-                LinkAdmission::CloudToken { tier } => Some(relay_tier(tier)),
-            },
-        }]);
-    }
-
-    fn report_down(&self, link: &LinkId) {
-        self.relaying
+    fn report_down(&self, state: &LinkRegistryState, link: &LinkId) {
+        let out = self
+            .relaying
             .step([relay_core::Input::LinkDown { link: link.core() }]);
+        tell_neighbors(state, out, None);
     }
 
     /// The profile's core, when this is a profile's registry.
@@ -138,24 +129,18 @@ pub(crate) struct LinkProperties {
     pub(crate) direct_order: Option<DirectLinkOrder>,
 }
 
-/// Stable ordering for crossed direct dials. A fallback remains valid when it
-/// is the only connection; when both directions connect, both peers retain the
-/// same preferred physical link.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum DirectLinkOrder {
-    Preferred,
-    Fallback,
-}
+/// Which of a crossed dial's two links both peers keep: the forwarding
+/// core's to decide.
+pub(crate) type DirectLinkOrder = relay_core::DialOrder;
 
-impl DirectLinkOrder {
-    pub(crate) fn for_hosts(local: HostId, peer: HostId, role: ConnectRole) -> Self {
-        let local_opens_preferred = local < peer;
-        if local_opens_preferred == (role == ConnectRole::Connector) {
-            Self::Preferred
-        } else {
-            Self::Fallback
-        }
-    }
+/// The order of a direct link `local` holds to `peer`, in the role it
+/// played opening it.
+pub(crate) fn direct_order(local: HostId, peer: HostId, role: ConnectRole) -> DirectLinkOrder {
+    relay_core::DialOrder::for_hosts(
+        core_host(local),
+        core_host(peer),
+        role == ConnectRole::Connector,
+    )
 }
 
 #[derive(Clone)]
@@ -167,8 +152,6 @@ struct LinkWriter {
     role: LinkRole,
     admission: LinkAdmission,
     carrier: LinkCarrier,
-    runtime_instance: RuntimeInstance,
-    direct_order: Option<DirectLinkOrder>,
     native_carrier: Option<Arc<dyn NativeLinkCarrier>>,
 }
 
@@ -305,69 +288,49 @@ impl LinkRegistry {
         let (close_tx, close_rx) = mpsc::channel(1);
         let closed = Arc::new(Notify::new());
         let mut state = self.state.write().await;
-        let first_link_to_peer = !state
-            .writers
-            .values()
-            .any(|writer| writer.host.id == host.id);
-
-        let mut displaced = Vec::new();
-        if role == LinkRole::Peer
-            && carrier == LinkCarrier::Direct
-            && let Some(order) = direct_order
+        // The forwarding core settles which of two direct links to one peer
+        // stays and what every link is told of its neighbors; it is asked
+        // under the lock, so what it says and the writers held agree.
+        let direct = match (role, carrier, direct_order) {
+            (LinkRole::Peer, LinkCarrier::Direct, Some(order)) => Some(relay_core::Direct {
+                order,
+                instance: runtime_instance.bytes(),
+            }),
+            _ => None,
+        };
+        let out = self.relaying.step([relay_core::Input::LinkUp {
+            link: link.core(),
+            user: self.user,
+            host: core_host(host.id),
+            tier: match admission {
+                LinkAdmission::PinnedKey => None,
+                LinkAdmission::CloudToken { tier } => Some(relay_tier(tier)),
+            },
+            direct,
+            advertised: advertised_snapshot.iter().copied().map(core_host).collect(),
+        }]);
+        if out
+            .iter()
+            .any(|output| matches!(output, relay_core::Output::RefuseLink { .. }))
         {
-            let duplicates = state
-                .writers
-                .iter()
-                .filter(|(_, writer)| {
-                    writer.host.id == host.id
-                        && writer.role == LinkRole::Peer
-                        && writer.carrier == LinkCarrier::Direct
-                        && writer.direct_order.is_some()
-                })
-                .map(|(id, writer)| (*id, writer.direct_order.unwrap(), writer.runtime_instance))
-                .collect::<Vec<_>>();
-            // A duplicate from the same runtime instance is the same live process:
-            // a crossed dial, settled by keeping the preferred link. One from
-            // another runtime instance belongs to a process that has since died, so
-            // it is replaced whichever direction either link was dialled in.
-            if duplicates.iter().any(|(_, existing, from)| {
-                *from == runtime_instance
-                    && (*existing == DirectLinkOrder::Preferred || *existing == order)
-            }) {
-                return None;
-            }
-            for (id, _, _) in duplicates {
-                if let Some(writer) = state.writers.remove(&id) {
-                    displaced.push((id, writer));
-                }
+            return None;
+        }
+        let mut displaced = Vec::new();
+        for output in &out {
+            if let relay_core::Output::Displace { link: gone } = output
+                && let Some(id) = state.writers.keys().find(|id| id.core() == *gone).copied()
+                && let Some(writer) = state.writers.remove(&id)
+            {
+                displaced.push((id, writer));
             }
         }
-        // Reconcile the new link's view: the handshake snapshot plus this
-        // diff equals the registry's neighbor set at this instant.
-        let advertised: HashSet<HostId> = advertised_snapshot.iter().copied().collect();
-        let mut current: HashMap<HostId, Host> = HashMap::new();
-        for writer in state.writers.values() {
-            current.entry(writer.host.id).or_insert(writer.host.clone());
-        }
-        for (peer, peer_host) in &current {
-            if *peer != host.id && !advertised.contains(peer) {
-                try_send_or_request_close(&outgoing_tx, &close_tx, neighbor_up_message(peer_host));
-            }
-        }
-        for advertised_peer in advertised {
-            if advertised_peer != host.id && !current.contains_key(&advertised_peer) {
-                try_send_or_request_close(
-                    &outgoing_tx,
-                    &close_tx,
-                    neighbor_down_message(advertised_peer),
-                );
-            }
-        }
-
-        if first_link_to_peer {
-            let message = neighbor_up_message(&host);
-            fanout(&state, message, host.id);
-        }
+        let new = NewLink {
+            link: link.core(),
+            host: &host,
+            tx: &outgoing_tx,
+            close_tx: &close_tx,
+        };
+        tell_neighbors(&state, out, Some(new));
 
         let old = state.writers.insert(
             link,
@@ -379,17 +342,9 @@ impl LinkRegistry {
                 role,
                 admission,
                 carrier,
-                runtime_instance,
-                direct_order,
                 native_carrier,
             },
         );
-        // Told under the lock, so the forwarding core hears of links in the
-        // order the registry holds them.
-        for (id, _) in &displaced {
-            self.report_down(id);
-        }
-        self.report_up(&link, host.id, admission);
         drop(state);
         let displaced_ids = displaced.iter().map(|(id, _)| *id).collect();
         for (id, writer) in displaced {
@@ -415,13 +370,8 @@ impl LinkRegistry {
         let Some(writer) = state.writers.remove(link) else {
             return;
         };
-        self.report_down(link);
+        self.report_down(&state, link);
         let peer = writer.host.id;
-        let last_link_to_peer = !state.writers.values().any(|other| other.host.id == peer);
-        if last_link_to_peer {
-            let message = neighbor_down_message(peer);
-            fanout(&state, message, peer);
-        }
         drop(state);
         writer.closed.notify_waiters();
         audit::link_down(peer, link, "removed");
@@ -430,15 +380,11 @@ impl LinkRegistry {
     /// The current neighbor set, as a handshake snapshot.
     pub(crate) async fn neighbor_snapshot(&self) -> Vec<Host> {
         let state = self.state.read().await;
-        let mut seen = HashSet::new();
-        let mut snapshot = Vec::new();
-        for writer in state.writers.values() {
-            if seen.insert(writer.host.id) {
-                snapshot.push(writer.host.clone());
-            }
-        }
-        snapshot.sort_unstable_by_key(|host| host.id);
-        snapshot
+        self.relaying
+            .neighbors(self.user)
+            .into_iter()
+            .filter_map(|host| state.host(host).cloned())
+            .collect()
     }
 
     /// Every peer this registry holds a link to, and how many links each one
@@ -652,15 +598,60 @@ impl LinkRegistry {
     }
 }
 
-/// Enqueues `message` to every writer except links to `skip_peer` (a host is
-/// never told about itself). A full queue requests the link's closure; the
-/// connect task then removes it through the normal path.
-fn fanout(state: &LinkRegistryState, message: pb::Message, skip_peer: HostId) {
-    for writer in state.writers.values() {
-        if writer.host.id == skip_peer {
+/// A link the core has been told of that is not among the writers yet.
+struct NewLink<'a> {
+    link: daemon_core::LinkId,
+    host: &'a Host,
+    tx: &'a LinkOutputTx,
+    close_tx: &'a mpsc::Sender<LinkCloseRequest>,
+}
+
+/// Sends each neighbor the core told of down the link it named. A full
+/// queue requests the link's closure; the connect task then removes it
+/// through the normal path.
+fn tell_neighbors(
+    state: &LinkRegistryState,
+    out: Vec<relay_core::Output>,
+    new: Option<NewLink<'_>>,
+) {
+    for output in out {
+        let relay_core::Output::Neighbor { to, host, up } = output else {
             continue;
+        };
+        let host = host_from_core(host);
+        let message = if up {
+            let described = match &new {
+                Some(new) if new.host.id == host => Some(new.host),
+                _ => state.host(core_host(host)),
+            };
+            let Some(described) = described else {
+                continue;
+            };
+            neighbor_up_message(described)
+        } else {
+            neighbor_down_message(host)
+        };
+        match &new {
+            Some(new) if new.link == to => {
+                try_send_or_request_close(new.tx, new.close_tx, message);
+            }
+            _ => {
+                if let Some(writer) = state.writers.iter().find(|(id, _)| id.core() == to) {
+                    try_send_or_request_close(&writer.1.tx, &writer.1.close_tx, message);
+                }
+            }
         }
-        try_send_or_request_close(&writer.tx, &writer.close_tx, message.clone());
+    }
+}
+
+impl LinkRegistryState {
+    /// What `host` said of itself on a link held to it.
+    fn host(&self, host: daemon_core::HostId) -> Option<&Host> {
+        let host = host_from_core(host);
+        self.writers
+            .values()
+            .find(|writer| writer.host.id == host)
+            .map(|writer| &writer.host)
     }
 }
 
@@ -723,10 +714,12 @@ mod tests {
         }
     }
 
+    /// The link `instance` to `peer`. Instances are unique within the
+    /// process, as the cores name links by them alone.
     fn link(peer: u128, instance: u128) -> LinkId {
         LinkId {
             peer: Uuid::from_u128(peer),
-            instance: u64::try_from(instance).expect("a test link's instance fits"),
+            instance: u64::try_from(peer * 1_000 + instance).expect("a test link's instance fits"),
         }
     }
 
@@ -932,7 +925,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_link_from_a_new_runtime_instance_replaces_the_old_one_in_either_direction() {
-        use DirectLinkOrder::{Fallback, Preferred};
+        use relay_core::DialOrder::{Fallback, Preferred};
         for (held, arriving) in [
             (Fallback, Fallback),
             (Fallback, Preferred),

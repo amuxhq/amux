@@ -97,9 +97,17 @@ impl Relaying {
                 tracing::error!(reason = %format_args!("{RELAY_CORE_DUMP}{reason}"), "the relay core asked for a dump");
                 false
             }
-            Output::Refuse { .. } => true,
+            Output::Refuse { .. }
+            | Output::RefuseLink { .. }
+            | Output::Displace { .. }
+            | Output::Neighbor { .. } => true,
         });
         out
+    }
+
+    /// The hosts on `user`'s account holding a link here.
+    pub(crate) fn neighbors(&self, user: relay_core::UserId) -> Vec<daemon_core::HostId> {
+        self.inner().relay.neighbors(user)
     }
 
     /// The driver is done with `stream`.

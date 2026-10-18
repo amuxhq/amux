@@ -217,9 +217,11 @@ to their original link until that link or channel ends.
 The routes are listed by the daemon core from the links it is told of
 (`crates/daemon-core/src/links.rs`): a host's own links newest first, since a
 second link to a peer is a crossed dial whose newer link both sides keep, then
-each neighbor whose link claims the host. The adjacency discipline on the wire
-is `LinkRegistry` in `crates/node/src/routing/link_registry.rs`, and what each
-host said of itself is kept beside it in `crates/node/src/routing/core.rs`.
+each neighbor whose link claims the host. The adjacency discipline on the wire,
+which link of a crossed dial stays and what each link is told of its
+neighbors, is the forwarding core's (`crates/relay-core`), which every host's
+link registry steps; what each host said of itself is kept beside it in
+`crates/node/src/routing/core.rs`.
 
 ## Chapter 5: Carriers, links, streams and channels
 

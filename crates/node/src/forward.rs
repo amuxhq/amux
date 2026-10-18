@@ -153,7 +153,7 @@ peer_rpc! {
     wire::Envelope => SendMessage, wire::SendMessageResponse
         => PeerReply::SendMessage(reply) => reply;
     wire::PutBlobRequest => PutBlob, wire::BlobRef => PeerReply::Blob(blob) => blob;
-    wire::GetBlobRequest => GetBlob, wire::GetBlobResponse => PeerReply::GetBlob(blob) => blob;
+    wire::GetBlobRequest => GetBlob, wire::GetBlobResponse => PeerReply::GetBlob(reply) => reply;
     wire::DiffRequest => Diff, wire::Diff => PeerReply::Diff(diff) => diff;
     wire::GetCatalogueRequest => GetCatalogue, wire::CatalogueBlob
         => PeerReply::Catalogue(catalogue) => catalogue;

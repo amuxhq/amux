@@ -23,6 +23,10 @@ impl RuntimeInstance {
         Self(Uuid::new_v4())
     }
 
+    pub(crate) fn bytes(self) -> [u8; 16] {
+        self.0.into_bytes()
+    }
+
     pub(crate) fn to_wire(self) -> Vec<u8> {
         self.0.as_bytes().to_vec()
     }

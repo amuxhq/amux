@@ -19,12 +19,11 @@ use wire::{self, PROTOCOL_VERSION};
 use super::{LinkCarrier as Carrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
-    ConnectHandshake, ConnectHandshakeEvent, DirectLinkOrder, Host, LinkAdmission,
-    LinkCarrier as RoutingCarrier, LinkCloseRequest, LinkId, LinkProperties, LinkRegistry,
-    LinkRole, LiveLocalHost, Registration, RouteUpdateOutcome, RoutingCore, RuntimeInstance,
-    core_host, host_from_wire, host_to_wire, inbound_host_from_wire, neighbor_down_from_wire,
-    neighbor_up_from_wire, protocol_error_hello_ack, protocol_error_link_close,
-    validate_remote_host,
+    ConnectHandshake, ConnectHandshakeEvent, Host, LinkAdmission, LinkCarrier as RoutingCarrier,
+    LinkCloseRequest, LinkId, LinkProperties, LinkRegistry, LinkRole, LiveLocalHost, Registration,
+    RouteUpdateOutcome, RoutingCore, RuntimeInstance, core_host, host_from_wire, host_to_wire,
+    inbound_host_from_wire, neighbor_down_from_wire, neighbor_up_from_wire,
+    protocol_error_hello_ack, protocol_error_link_close, validate_remote_host,
 };
 use crate::{Clock, HostId, audit};
 
@@ -565,7 +564,11 @@ async fn run_established(
                 direct_order: (link_role == LinkRole::Peer
                     && carrier_tag == RoutingCarrier::Direct)
                     .then(|| {
-                        DirectLinkOrder::for_hosts(ctx.local_host.id(), peer_host.id, connect_role)
+                        crate::routing::direct_order(
+                            ctx.local_host.id(),
+                            peer_host.id,
+                            connect_role,
+                        )
                     }),
             },
             &sent_snapshot,

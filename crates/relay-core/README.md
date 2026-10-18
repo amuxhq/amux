@@ -6,7 +6,9 @@ stream a host opens, judges the account's claims, tier and adjacency, and
 answers with a refusal or a splice; the driver checks token signatures
 before admission and copies a spliced stream's bytes on tokio's workers. A
 daemon forwarding between its own links runs one too, as a relay with one
-account. Its step budget is tighter than the daemon's because admission must
+account. It also keeps the adjacency discipline every host's links follow:
+which of a crossed dial's two links stays, and what each link is told of its
+neighbors. Its step budget is tighter than the daemon's because admission must
 never queue.
 
 What belongs inside: anything whose interleaving with the core's state can

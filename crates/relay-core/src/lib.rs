@@ -10,6 +10,15 @@
 //!
 //! A daemon forwarding a stream between two of its links is a relay with
 //! one account, so its driver asks this core too.
+//!
+//! The core also keeps the adjacency discipline every host's links follow:
+//! it says which of two links between the same pair of processes both
+//! sides keep, and it is the only source of what a link is told of its
+//! neighbors. A link is told when another host of its account gains its
+//! first link here or loses its last, and a new link is told the
+//! difference between the neighbors its handshake listed and the ones
+//! there are, so a link's picture of its neighbors is never anything but
+//! this host's own links.
 
 #![forbid(unsafe_code)]
 
@@ -43,16 +52,52 @@ pub const RATE_LIMIT: usize = 30;
 /// The sliding window [`RATE_LIMIT`] counts over.
 pub const RATE_WINDOW_MS: u64 = 60_000;
 
+/// Which of the two links a crossed dial makes both sides keep: each pair
+/// of hosts agrees on it from their ids alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DialOrder {
+    /// The link both sides keep when both directions connect.
+    Preferred,
+    /// The link kept only while it is the one there is.
+    Fallback,
+}
+
+impl DialOrder {
+    /// The order of a link `local` holds to `peer`, dialled by `local`
+    /// when `dialled` and by `peer` otherwise: the host with the lower id
+    /// dials the preferred link.
+    pub fn for_hosts(local: HostId, peer: HostId, dialled: bool) -> Self {
+        if (local < peer) == dialled {
+            Self::Preferred
+        } else {
+            Self::Fallback
+        }
+    }
+}
+
+/// What a direct link between two hosts' processes says of how it was
+/// made, for settling which link of the pair stays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Direct {
+    pub order: DialOrder,
+    /// The life of the peer's process the link was opened by.
+    pub instance: [u8; 16],
+}
+
 /// Everything that can happen to the relay, decoded by the driver.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Input {
     /// A link authenticated: by a token naming its account and plan, or by
-    /// a pinned key, which no plan governs (`tier: None`).
+    /// a pinned key, which no plan governs (`tier: None`). `direct` is set
+    /// for a host's own network link to a peer device, and `advertised` is
+    /// the neighbors its handshake listed to the peer.
     LinkUp {
         link: LinkId,
         user: UserId,
         host: HostId,
         tier: Option<Tier>,
+        direct: Option<Direct>,
+        advertised: Vec<HostId>,
     },
     /// The link is gone. The streams spliced through it end with its
     /// transport; the core forgets them at once.
@@ -90,6 +135,15 @@ pub enum Output {
         stream: StreamId,
         reason: StreamRefusal,
     },
+    /// Do not keep the link that just came up: the same process of its
+    /// peer holds a link that wins against it. The core never held it.
+    RefuseLink { link: LinkId },
+    /// Close the link as superseded: a link that came up replaces it. The
+    /// core has forgotten it and the streams through it, and tells no
+    /// neighbor, since its host is still here.
+    Displace { link: LinkId },
+    /// Tell `to` that `host` now holds a link here (`up`) or holds none.
+    Neighbor { to: LinkId, host: HostId, up: bool },
     /// Take a dump: the core saw something it must not carry on from.
     Dump { reason: DumpReason },
 }
@@ -100,6 +154,8 @@ pub const SPLICED_BETWEEN_LIVE_LINKS: &str =
     "a stream is spliced only between two links that are up";
 pub const SPLICED_ONCE: &str = "no stream is spliced twice";
 pub const REFUSED_NEVER_SPLICED: &str = "a stream is never both refused and spliced";
+pub const TOLD_ONLY_OF_ITS_NEIGHBORS: &str =
+    "a link that is up is told only of other hosts on its own account";
 
 /// One link that is up.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,6 +163,7 @@ struct RelayLink {
     user: UserId,
     host: HostId,
     tier: Option<Tier>,
+    direct: Option<Direct>,
     /// When each stream it opened within the rate window was opened.
     opened_ms: VecDeque<u64>,
 }
@@ -155,6 +212,48 @@ impl Adjacency {
     fn route(&self, user: UserId, host: HostId) -> Option<LinkId> {
         self.hosts.get(&user)?.get(&host)?.last().copied()
     }
+
+    fn holds(&self, user: UserId, host: HostId) -> bool {
+        self.hosts
+            .get(&user)
+            .is_some_and(|hosts| hosts.contains_key(&host))
+    }
+
+    fn links_of(&self, user: UserId, host: HostId) -> Vec<LinkId> {
+        self.hosts
+            .get(&user)
+            .and_then(|hosts| hosts.get(&host))
+            .map(|links| links.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Every link on `user`'s account but `host`'s, with its host.
+    fn others(&self, user: UserId, host: HostId) -> Vec<(LinkId, HostId)> {
+        self.hosts
+            .get(&user)
+            .into_iter()
+            .flatten()
+            .filter(|(other, _)| **other != host)
+            .flat_map(|(other, links)| links.iter().map(|link| (*link, *other)))
+            .collect()
+    }
+
+    /// The hosts on `user`'s account holding a link here.
+    fn neighbors(&self, user: UserId) -> Vec<HostId> {
+        self.hosts
+            .get(&user)
+            .map(|hosts| hosts.keys().copied().collect())
+            .unwrap_or_default()
+    }
+}
+
+/// What a link coming up says of itself.
+#[derive(Clone, Copy, Debug)]
+struct Arrival {
+    user: UserId,
+    host: HostId,
+    tier: Option<Tier>,
+    direct: Option<Direct>,
 }
 
 /// What one step decided about a stream, against what the core held of
@@ -172,6 +271,16 @@ struct Touched {
     streams: Vec<StreamId>,
     links: Vec<LinkId>,
     decided: Vec<Decided>,
+    /// Each neighbor told this step: the link told, and the host it was
+    /// told of with that host's account.
+    told: Vec<Told>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Told {
+    to: LinkId,
+    user: UserId,
+    host: HostId,
 }
 
 /// The relay's whole state: the links up, which hosts of one account may
@@ -226,8 +335,20 @@ impl Relay {
                 user,
                 host,
                 tier,
-            } => self.link_up(link, user, host, tier),
-            Input::LinkDown { link } => self.link_down(link),
+                direct,
+                advertised,
+            } => self.link_up(
+                link,
+                Arrival {
+                    user,
+                    host,
+                    tier,
+                    direct,
+                },
+                &advertised,
+                out,
+            ),
+            Input::LinkDown { link } => self.link_down(link, out),
             Input::StreamOpened {
                 stream,
                 link,
@@ -253,8 +374,61 @@ impl Relay {
         }
     }
 
-    fn link_up(&mut self, link: LinkId, user: UserId, host: HostId, tier: Option<Tier>) {
-        self.link_down(link);
+    /// A link came up. Of two direct links between the same two processes
+    /// the preferred one stays, whichever came first; a link from a later
+    /// life of the peer's process replaces the earlier life's links, which
+    /// are dead whether or not they have closed yet.
+    fn link_up(
+        &mut self,
+        link: LinkId,
+        arrival: Arrival,
+        advertised: &[HostId],
+        out: &mut Vec<Output>,
+    ) {
+        let Arrival {
+            user,
+            host,
+            tier,
+            direct,
+        } = arrival;
+        let first = !self.adjacency.holds(user, host);
+        self.forget_link(link);
+        if let Some(direct) = direct {
+            let duplicates: Vec<(LinkId, Direct)> = self
+                .adjacency
+                .links_of(user, host)
+                .into_iter()
+                .filter_map(|other| Some((other, self.links.get(&other)?.direct?)))
+                .collect();
+            if duplicates.iter().any(|(_, held)| {
+                held.instance == direct.instance
+                    && (held.order == DialOrder::Preferred || held.order == direct.order)
+            }) {
+                out.push(Output::RefuseLink { link });
+                return;
+            }
+            for (displaced, _) in duplicates {
+                self.forget_link(displaced);
+                out.push(Output::Displace { link: displaced });
+            }
+        }
+        let advertised: BTreeSet<HostId> = advertised.iter().copied().collect();
+        let current = self.adjacency.neighbors(user);
+        for neighbor in &current {
+            if *neighbor != host && !advertised.contains(neighbor) {
+                self.tell(link, user, *neighbor, true, out);
+            }
+        }
+        for gone in &advertised {
+            if *gone != host && !current.contains(gone) {
+                self.tell(link, user, *gone, false, out);
+            }
+        }
+        if first {
+            for (other, _) in self.adjacency.others(user, host) {
+                self.tell(other, user, host, true, out);
+            }
+        }
         self.touched.links.push(link);
         self.links.insert(
             link,
@@ -262,21 +436,46 @@ impl Relay {
                 user,
                 host,
                 tier,
+                direct,
                 opened_ms: VecDeque::new(),
             },
         );
         self.adjacency.add(user, host, link);
     }
 
-    fn link_down(&mut self, link: LinkId) {
-        let Some(gone) = self.links.remove(&link) else {
+    /// A link went down: when it was its host's last, every other link on
+    /// the account is told the host is gone.
+    fn link_down(&mut self, link: LinkId, out: &mut Vec<Output>) {
+        let Some(gone) = self.forget_link(link) else {
             return;
         };
+        if !self.adjacency.holds(gone.user, gone.host) {
+            for (other, _) in self.adjacency.others(gone.user, gone.host) {
+                self.tell(other, gone.user, gone.host, false, out);
+            }
+        }
+    }
+
+    /// Drops a link and the streams through it, telling nobody.
+    fn forget_link(&mut self, link: LinkId) -> Option<RelayLink> {
+        let gone = self.links.remove(&link)?;
         self.touched.links.push(link);
         self.adjacency.remove(gone.user, gone.host, link);
         for stream in self.through.remove(&link).unwrap_or_default() {
             self.forget(stream);
         }
+        Some(gone)
+    }
+
+    fn tell(&mut self, to: LinkId, user: UserId, host: HostId, up: bool, out: &mut Vec<Output>) {
+        self.touched.told.push(Told { to, user, host });
+        out.push(Output::Neighbor { to, host, up });
+    }
+
+    /// The hosts on `user`'s account holding a link here: what a handshake
+    /// lists as this host's neighbors.
+    pub fn neighbors(&self, user: UserId) -> Vec<HostId> {
+        self.adjacency.neighbors(user)
     }
 
     /// Admission, in the order the cheapest refusal is found: a preface
@@ -434,6 +633,21 @@ impl Relay {
                 }
             }
         }
+        for told in &self.touched.told {
+            let fits = self
+                .links
+                .get(&told.to)
+                .is_some_and(|to| to.host != told.host && to.user == told.user);
+            if !fits {
+                return Err(Violation {
+                    invariant: TOLD_ONLY_OF_ITS_NEIGHBORS,
+                    detail: format!(
+                        "link {} was told of a host that is itself, on another account, or while it is down",
+                        told.to.0
+                    ),
+                });
+            }
+        }
         for link in &self.touched.links {
             if !self.links.contains_key(link)
                 && let Some(stream) = self.through.get(link).and_then(|s| s.first())
@@ -476,18 +690,179 @@ mod tests {
         out
     }
 
+    /// Brings a link up whose handshake listed every neighbor there is, so
+    /// it is told of none.
     fn up(relay: &mut Relay, link: u64, user: UserId, host: HostId, tier: Option<Tier>) {
+        let advertised = relay.neighbors(user);
+        let out = step(
+            relay,
+            Input::LinkUp {
+                link: LinkId(link),
+                user,
+                host,
+                tier,
+                direct: None,
+                advertised,
+            },
+        );
+        assert!(
+            out.iter()
+                .all(|output| matches!(output, Output::Neighbor { up: true, .. })),
+            "{out:?}"
+        );
+    }
+
+    fn direct_up(
+        relay: &mut Relay,
+        link: u64,
+        host: HostId,
+        order: DialOrder,
+        instance: u8,
+        advertised: &[HostId],
+    ) -> Vec<Output> {
+        step(
+            relay,
+            Input::LinkUp {
+                link: LinkId(link),
+                user: ALICE,
+                host,
+                tier: None,
+                direct: Some(Direct {
+                    order,
+                    instance: [instance; 16],
+                }),
+                advertised: advertised.to_vec(),
+            },
+        )
+    }
+
+    fn told(to: u64, host: HostId, up: bool) -> Output {
+        Output::Neighbor {
+            to: LinkId(to),
+            host,
+            up,
+        }
+    }
+
+    const PHONE: HostId = HostId([0x9f; 16]);
+
+    #[test]
+    fn a_hosts_first_link_is_announced_to_its_accounts_other_links_and_its_last_link_going_is_too()
+    {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, None);
+        up(&mut relay, 9, BOB, PHONE, None);
+        let out = step(
+            &mut relay,
+            Input::LinkUp {
+                link: LinkId(2),
+                user: ALICE,
+                host: LAPTOP,
+                tier: None,
+                direct: None,
+                advertised: vec![DESK],
+            },
+        );
+        assert_eq!(out, vec![told(1, LAPTOP, true)]);
+        let second = step(
+            &mut relay,
+            Input::LinkUp {
+                link: LinkId(3),
+                user: ALICE,
+                host: LAPTOP,
+                tier: None,
+                direct: None,
+                advertised: vec![DESK],
+            },
+        );
+        assert_eq!(second, Vec::new(), "a second link to a host is not news");
         assert_eq!(
-            step(
-                relay,
-                Input::LinkUp {
-                    link: LinkId(link),
-                    user,
-                    host,
-                    tier,
-                },
-            ),
+            step(&mut relay, Input::LinkDown { link: LinkId(2) }),
             Vec::new()
+        );
+        assert_eq!(
+            step(&mut relay, Input::LinkDown { link: LinkId(3) }),
+            vec![told(1, LAPTOP, false)]
+        );
+    }
+
+    #[test]
+    fn a_new_link_is_told_the_difference_between_its_handshake_and_the_neighbors_there_are() {
+        let mut relay = relay();
+        up(&mut relay, 1, ALICE, DESK, None);
+        let out = step(
+            &mut relay,
+            Input::LinkUp {
+                link: LinkId(2),
+                user: ALICE,
+                host: LAPTOP,
+                tier: None,
+                direct: None,
+                advertised: vec![PHONE, LAPTOP],
+            },
+        );
+        assert_eq!(
+            out,
+            vec![
+                told(2, DESK, true),
+                told(2, PHONE, false),
+                told(1, LAPTOP, true)
+            ]
+        );
+    }
+
+    #[test]
+    fn of_a_crossed_dial_between_two_processes_both_keep_the_preferred_link() {
+        let mut relay = relay();
+        assert_eq!(
+            direct_up(&mut relay, 1, DESK, DialOrder::Fallback, 7, &[]),
+            Vec::new()
+        );
+        assert_eq!(
+            direct_up(&mut relay, 2, DESK, DialOrder::Preferred, 7, &[]),
+            vec![Output::Displace { link: LinkId(1) }]
+        );
+        assert_eq!(
+            direct_up(&mut relay, 3, DESK, DialOrder::Fallback, 7, &[]),
+            vec![Output::RefuseLink { link: LinkId(3) }]
+        );
+        assert_eq!(
+            direct_up(&mut relay, 4, DESK, DialOrder::Preferred, 7, &[]),
+            vec![Output::RefuseLink { link: LinkId(4) }]
+        );
+        assert_eq!(relay.adjacency.route(ALICE, DESK), Some(LinkId(2)));
+    }
+
+    #[test]
+    fn a_link_from_a_later_life_of_the_peer_replaces_the_earlier_lifes_links() {
+        let mut relay = relay();
+        up(&mut relay, 9, ALICE, LAPTOP, None);
+        direct_up(&mut relay, 1, DESK, DialOrder::Preferred, 7, &[LAPTOP]);
+        assert_eq!(
+            direct_up(&mut relay, 2, DESK, DialOrder::Fallback, 8, &[LAPTOP]),
+            vec![Output::Displace { link: LinkId(1) }],
+            "the host stays a neighbor throughout, so nobody is told"
+        );
+        assert_eq!(relay.adjacency.links_of(ALICE, DESK), vec![LinkId(2)]);
+    }
+
+    #[test]
+    fn the_host_with_the_lower_id_dials_the_preferred_link() {
+        assert_eq!(
+            DialOrder::for_hosts(DESK, LAPTOP, false),
+            DialOrder::Preferred
+        );
+        assert_eq!(
+            DialOrder::for_hosts(LAPTOP, DESK, true),
+            DialOrder::Preferred
+        );
+        assert_eq!(
+            DialOrder::for_hosts(LAPTOP, DESK, false),
+            DialOrder::Fallback
+        );
+        assert_eq!(
+            DialOrder::for_hosts(DESK, LAPTOP, true),
+            DialOrder::Fallback
         );
     }
 
@@ -693,7 +1068,7 @@ mod tests {
         assert_eq!(open(&mut relay, 1, 1, LAPTOP), spliced(1, 2));
         assert_eq!(
             step(&mut relay, Input::LinkDown { link: LinkId(2) }),
-            Vec::new()
+            vec![told(1, LAPTOP, false)]
         );
         assert_eq!(
             open(&mut relay, 2, 1, LAPTOP),

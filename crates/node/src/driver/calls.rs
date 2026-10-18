@@ -3,11 +3,12 @@
 //!
 //! The core cannot hold a response stream, so the driver holds it and names
 //! it with a [`CallId`]. The core's `Answer` and `EndCall` outputs land in
-//! the call's queue, and the caller reads the queue. What the shell still
-//! publishes live is carried into the same queue behind the opening, up to
-//! the queue's room: a stream that falls further behind than that is
-//! reported to the core as lagged, and a caller that drops its stream is
-//! reported as cancelled, so the core releases what it held for the call.
+//! the call's queue, and the caller reads the queue. A call's own answers
+//! (its opening, the answer to its lag) are always taken; the live answers
+//! behind them are held to the queue's room: a stream that falls further
+//! behind than that is reported to the core as lagged, and a caller that
+//! drops its stream is reported as cancelled, so the core releases what it
+//! held for the call.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -16,7 +17,6 @@ use std::sync::{Arc, Mutex};
 use daemon_core::payload::{Response, Status};
 use daemon_core::{CallId, Input};
 use tokio::sync::{Notify, mpsc};
-use tokio_util::sync::CancellationToken;
 
 use super::Fed;
 
@@ -59,6 +59,14 @@ impl CallTable {
         }
     }
 
+    /// Ends every open call: the profile is gone.
+    pub(crate) fn end_all(&self, status: Status) {
+        let open: Vec<_> = self.open.lock().unwrap().drain().collect();
+        for (_, queue) in open {
+            queue.end(status.clone());
+        }
+    }
+
     fn forget(&self, call: CallId) {
         self.open.lock().unwrap().remove(&call);
     }
@@ -70,8 +78,6 @@ pub(crate) struct AnswerQueue {
     room: usize,
     state: Mutex<QueueState>,
     ready: Notify,
-    /// Cancelled when the caller lets go: whatever feeds the queue stops.
-    released: CancellationToken,
 }
 
 #[derive(Default)]
@@ -113,7 +119,6 @@ impl AnswerQueue {
             room: room.max(1),
             state: Mutex::new(QueueState::default()),
             ready: Notify::new(),
-            released: CancellationToken::new(),
         }
     }
 
@@ -121,9 +126,9 @@ impl AnswerQueue {
         self.call
     }
 
-    /// An answer the core gave. The core's answers are always taken: an
-    /// opening is bounded by what it reads, and the answer after a lag is
-    /// what tells the reader it lagged.
+    /// One of the call's own answers. Always taken: an opening is bounded
+    /// by what it reads, and the answer after a lag is what tells the
+    /// reader it lagged.
     fn answer(&self, response: Response) {
         let mut state = self.state.lock().unwrap();
         if state.end.is_some() {
@@ -134,7 +139,7 @@ impl AnswerQueue {
         self.ready.notify_one();
     }
 
-    /// An answer carried live, behind the core's.
+    /// A live answer, behind the call's own.
     pub(crate) fn carry(&self, response: Response) -> Carried {
         let mut state = self.state.lock().unwrap();
         if state.lagged || state.end.is_some() {
@@ -163,11 +168,6 @@ impl AnswerQueue {
         }
         drop(state);
         self.ready.notify_one();
-    }
-
-    /// Resolves once the caller has let the call go.
-    pub(crate) async fn released(&self) {
-        self.released.cancelled().await
     }
 
     /// The next answer, then the end, then nothing.
@@ -245,7 +245,6 @@ impl Answers {
 
 impl Drop for Answers {
     fn drop(&mut self) {
-        self.queue.released.cancel();
         if self.queue.finished() {
             return;
         }
@@ -330,9 +329,6 @@ mod tests {
             Ok(Fed::Input(Input::CallCancelled { call: cancelled })) if cancelled == call
         ));
         assert!(calls.get(call).is_none());
-        tokio::time::timeout(std::time::Duration::from_secs(1), queue.released())
-            .await
-            .expect("whatever fed the call is told to stop");
 
         // A call read to its end is not cancelled when dropped.
         let queue = calls.open(2);

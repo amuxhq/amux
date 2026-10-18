@@ -14,9 +14,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct CallId(pub u64);
 
-/// A timer the core asked the driver to arm.
+/// A timer the core asked the driver to arm. Each names what firing it
+/// does, so arming one already armed moves it rather than adding another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct TimerId(pub u64);
+pub enum TimerId {
+    /// The agent's journal holds more than one batch: read the next.
+    Ingest(AgentId),
+    /// A turn ended: deliveries may be due.
+    Deliveries,
+}
 
 /// A job the driver runs off the core thread; its outcome returns as
 /// [`Input::JobDone`](crate::Input::JobDone) under this id.

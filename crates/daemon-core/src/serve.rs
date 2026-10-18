@@ -1,20 +1,22 @@
 //! Answering client calls: Subscribe, Fetch and Get read an agent's rows;
-//! SubscribeInventory reads the fleet. Each is store reads in one step, so
-//! nothing commits between a stream's opening and the point it follows
-//! from.
+//! SubscribeInventory reads the fleet. Each opening is store reads in one
+//! step, and every change after it is answered by the step that committed
+//! it, so a stream reads one cut and then each commit once, in commit
+//! order.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
-use store::{AgentRow, Marker, PageEnd};
+use store::{AgentKey, AgentRow, Marker, PageEnd};
 use wire::{
     Agent, AgentRef, CaughtUp, FetchRequest, FetchResponse, GetRequest, InventoryEvent, Item,
     Lagged, SessionEvent, Snapshot, inventory_event, session_event,
 };
 
 use crate::ids::{CallId, JobId};
-use crate::io::{Job, Output};
+use crate::io::{FromShell, Job, Output};
 use crate::payload::{CallError, Caller, ClientRequest, JobResult, Opening, Response, Status};
 use crate::{Daemon, Pending};
 
@@ -23,18 +25,42 @@ pub const MAX_PAGE: u32 = 500;
 /// The most rows a peer's catch-up may ask for.
 pub const MAX_CAP: u32 = 10_000;
 
-/// Open calls, by id: what each streams, or that it awaits a job.
+/// Open calls, by id: what each streams, or that it awaits a job; and the
+/// agents nothing is told about for now.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Answers {
-    open: std::collections::BTreeMap<CallId, OpenCall>,
+    open: BTreeMap<CallId, OpenCall>,
+    muted: BTreeSet<Key>,
+}
+
+/// An agent by its host and id, as the checkpoint keeps it.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+struct Key {
+    host: Vec<u8>,
+    agent: Vec<u8>,
+}
+
+impl From<&AgentKey> for Key {
+    fn from(key: &AgentKey) -> Self {
+        Key {
+            host: key.host.clone(),
+            agent: key.agent.clone(),
+        }
+    }
+}
+
+impl Key {
+    fn agent_key(&self) -> AgentKey {
+        AgentKey::new(self.host.clone(), self.agent.clone())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum OpenCall {
     /// A Subscribe stream on one agent.
-    Session { host: Vec<u8>, agent: Vec<u8> },
-    /// A SubscribeInventory stream.
-    Inventory,
+    Session(Key),
+    /// A SubscribeInventory stream, `only` one host's when it names one.
+    Inventory { only: Option<Vec<u8>> },
     /// A Fetch waiting on the agent's origin.
     Fetch,
 }
@@ -45,6 +71,44 @@ enum OpenCall {
 pub(crate) struct PendingFetch {
     call: CallId,
     held: Vec<Vec<u8>>,
+}
+
+impl Answers {
+    fn muted(&self, agent: &AgentKey) -> bool {
+        !self.muted.is_empty() && self.muted.contains(&Key::from(agent))
+    }
+
+    fn watched(&self, key: &Key) -> bool {
+        self.open
+            .values()
+            .any(|open| matches!(open, OpenCall::Session(watching) if watching == key))
+    }
+
+    /// Opens `call` as a stream on `agent`, saying so when it is the first.
+    fn watch(&mut self, call: CallId, agent: &AgentKey, out: &mut Vec<Output>) {
+        let key = Key::from(agent);
+        if !self.watched(&key) {
+            out.push(Output::Watching {
+                agent: agent.clone(),
+                watched: true,
+            });
+        }
+        self.open.insert(call, OpenCall::Session(key));
+    }
+
+    /// Lets `call` go, saying so when it was the last stream on its agent.
+    fn release(&mut self, call: CallId, out: &mut Vec<Output>) -> Option<OpenCall> {
+        let released = self.open.remove(&call)?;
+        if let OpenCall::Session(key) = &released
+            && !self.watched(key)
+        {
+            out.push(Output::Watching {
+                agent: key.agent_key(),
+                watched: false,
+            });
+        }
+        Some(released)
+    }
 }
 
 impl Daemon {
@@ -69,7 +133,7 @@ impl Daemon {
             }
         };
         if let Err(error) = answered {
-            self.answers.open.remove(&call);
+            self.answers.release(call, out);
             out.push(Output::EndCall {
                 call,
                 status: Status::Failed(error),
@@ -168,17 +232,7 @@ impl Daemon {
             Some(Marker::Detached) => answer(session_event::Of::Detached(wire::Detached {})),
             None => {}
         }
-        self.answers.open.insert(
-            call,
-            OpenCall::Session {
-                host: row.agent.host.clone(),
-                agent: row.agent.agent.clone(),
-            },
-        );
-        out.push(Output::Follow {
-            call,
-            agent: row.agent,
-        });
+        self.answers.watch(call, &row.agent, out);
         Ok(())
     }
 
@@ -206,8 +260,7 @@ impl Daemon {
             answer(inventory_event::Of::Agent(to_wire(row)));
         }
         answer(inventory_event::Of::CaughtUp(CaughtUp::default()));
-        self.answers.open.insert(call, OpenCall::Inventory);
-        out.push(Output::FollowInventory { call, only });
+        self.answers.open.insert(call, OpenCall::Inventory { only });
         Ok(())
     }
 
@@ -291,7 +344,7 @@ impl Daemon {
             return;
         };
         // A call cancelled while its origin was asked wants no answer.
-        if self.answers.open.remove(&call).is_none() {
+        if self.answers.release(call, out).is_none() {
             return;
         }
         let mut items: Vec<Item> = held
@@ -328,21 +381,128 @@ impl Daemon {
     /// is in the store.
     pub(crate) fn lagged(&mut self, call: CallId, out: &mut Vec<Output>) {
         let response = match self.answers.open.get(&call) {
-            Some(OpenCall::Session { .. }) => {
+            Some(OpenCall::Session(_)) => {
                 Response::Session(Arc::new(event(session_event::Of::Lagged(Lagged {}))))
             }
-            Some(OpenCall::Inventory) => {
+            Some(OpenCall::Inventory { .. }) => {
                 Response::Inventory(Arc::new(inventory(inventory_event::Of::Lagged(Lagged {}))))
             }
             Some(OpenCall::Fetch) | None => return,
         };
-        self.answers.open.remove(&call);
+        self.answers.release(call, out);
         answered(call, response, out);
     }
 
     /// The caller dropped the call or its stream.
-    pub(crate) fn cancelled(&mut self, call: CallId) {
-        self.answers.open.remove(&call);
+    pub(crate) fn cancelled(&mut self, call: CallId, out: &mut Vec<Output>) {
+        self.answers.release(call, out);
+    }
+
+    /// Tells every stream on `agent` of one committed event, unless the
+    /// agent is muted.
+    pub(crate) fn publish_session(
+        &self,
+        agent: &AgentKey,
+        event: Arc<SessionEvent>,
+        out: &mut Vec<Output>,
+    ) {
+        if self.answers.muted(agent) {
+            return;
+        }
+        let key = Key::from(agent);
+        for (call, open) in &self.answers.open {
+            if matches!(open, OpenCall::Session(watching) if *watching == key) {
+                out.push(Output::Answer {
+                    call: *call,
+                    response: Response::Session(event.clone()),
+                });
+            }
+        }
+    }
+
+    /// Tells every inventory stream that carries it of one change.
+    pub(crate) fn publish_inventory(&self, event: Arc<InventoryEvent>, out: &mut Vec<Output>) {
+        for (call, open) in &self.answers.open {
+            if let OpenCall::Inventory { only } = open
+                && carries(only.as_deref(), &event)
+            {
+                out.push(Output::Answer {
+                    call: *call,
+                    response: Response::Inventory(event.clone()),
+                });
+            }
+        }
+    }
+
+    /// Tells inventory streams what the agent's row now says, unless the
+    /// agent is muted.
+    pub(crate) fn publish_row(
+        &self,
+        agent: &AgentKey,
+        out: &mut Vec<Output>,
+    ) -> Result<(), store::StoreError> {
+        if self.answers.muted(agent) {
+            return Ok(());
+        }
+        if let Some(row) = self.store.agent(agent)? {
+            let event = inventory(inventory_event::Of::Agent(to_wire(&row)));
+            self.publish_inventory(Arc::new(event), out);
+        }
+        Ok(())
+    }
+
+    /// What the shell changed outside a step.
+    pub(crate) fn shell_changed(&mut self, change: FromShell, out: &mut Vec<Output>) {
+        match change {
+            FromShell::Session { agent, event } => self.publish_session(&agent, event, out),
+            FromShell::Row { agent, event } => {
+                if !self.answers.muted(&agent) {
+                    self.publish_inventory(event, out);
+                }
+            }
+            FromShell::Hosts(event) => self.publish_inventory(event, out),
+            FromShell::Removed { agent, event } => {
+                let key = Key::from(&agent);
+                let streams: Vec<CallId> = self
+                    .answers
+                    .open
+                    .iter()
+                    .filter(
+                        |(_, open)| matches!(open, OpenCall::Session(watching) if *watching == key),
+                    )
+                    .map(|(call, _)| *call)
+                    .collect();
+                for call in streams {
+                    self.answers.release(call, out);
+                    out.push(Output::EndCall {
+                        call,
+                        status: Status::Ok,
+                    });
+                }
+                self.publish_inventory(event, out);
+            }
+            FromShell::Mute(agent) => {
+                self.answers.muted.insert(Key::from(&agent));
+            }
+            FromShell::Unmute(agent) => {
+                self.answers.muted.remove(&Key::from(&agent));
+            }
+        }
+    }
+}
+
+/// Whether an inventory stream that carries `only` one host's changes, or
+/// every host's, carries `event`.
+fn carries(only: Option<&[u8]>, event: &InventoryEvent) -> bool {
+    let Some(only) = only else {
+        return true;
+    };
+    match &event.of {
+        Some(inventory_event::Of::Host(host)) => host.host_id == only,
+        Some(inventory_event::Of::HostRemoved(removed)) => removed.host_id == only,
+        Some(inventory_event::Of::Agent(agent)) => agent.host_id == only,
+        Some(inventory_event::Of::AgentRemoved(removed)) => removed.host_id == only,
+        Some(inventory_event::Of::CaughtUp(_) | inventory_event::Of::Lagged(_)) | None => true,
     }
 }
 
@@ -362,7 +522,7 @@ fn answered(call: CallId, response: Response, out: &mut Vec<Output>) {
     });
 }
 
-fn event(of: session_event::Of) -> SessionEvent {
+pub(crate) fn event(of: session_event::Of) -> SessionEvent {
     SessionEvent { of: Some(of) }
 }
 
@@ -416,7 +576,13 @@ mod tests {
             "/src",
         );
         store.put_agent(&row).expect("the store takes its agent");
-        Daemon::new(store, StartOptions { generation: 7 })
+        Daemon::new(
+            store,
+            StartOptions {
+                generation: 7,
+                ..StartOptions::default()
+            },
+        )
     }
 
     fn call(daemon: &mut Daemon, call: u64, request: ClientRequest) -> Vec<Output> {
@@ -511,9 +677,9 @@ mod tests {
                     call: CallId(1),
                     response: session(session_event::Of::Snapshot(snapshot)),
                 },
-                Output::Follow {
-                    call: CallId(1),
+                Output::Watching {
                     agent: AgentKey::new(*OWN, *b"agent-0000000000"),
+                    watched: true,
                 },
             ]
         );
@@ -522,6 +688,10 @@ mod tests {
         assert_eq!(
             lagged,
             vec![
+                Output::Watching {
+                    agent: AgentKey::new(*OWN, *b"agent-0000000000"),
+                    watched: false,
+                },
                 Output::Answer {
                     call: CallId(1),
                     response: session(session_event::Of::Lagged(Lagged {})),
@@ -569,11 +739,27 @@ mod tests {
                 inventory_answer(inventory_event::Of::Host(host(OWN))),
                 inventory_answer(inventory_event::Of::Agent(to_wire(&row))),
                 inventory_answer(inventory_event::Of::CaughtUp(CaughtUp::default())),
-                Output::FollowInventory {
-                    call: CallId(3),
-                    only: Some(OWN.to_vec()),
-                },
             ]
+        );
+        let elsewhere = Arc::new(inventory(inventory_event::Of::Host(host(OTHER))));
+        let here = Arc::new(inventory(inventory_event::Of::Host(host(OWN))));
+        assert_eq!(
+            step(
+                &mut daemon,
+                Input::FromShell(FromShell::Hosts(elsewhere.clone()))
+            ),
+            Vec::new(),
+            "another host's change is not carried"
+        );
+        assert_eq!(
+            step(
+                &mut daemon,
+                Input::FromShell(FromShell::Hosts(here.clone()))
+            ),
+            vec![Output::Answer {
+                call: CallId(3),
+                response: Response::Inventory(here),
+            }]
         );
         assert_eq!(
             step(&mut daemon, Input::CallCancelled { call: CallId(3) }),
@@ -583,6 +769,80 @@ mod tests {
             step(&mut daemon, Input::AnswerLagged { call: CallId(3) }),
             Vec::new(),
             "a cancelled stream is answered no more"
+        );
+        assert_eq!(daemon.answers, Answers::default());
+    }
+
+    #[test]
+    fn a_muted_agent_is_told_nothing_until_unmuted_and_its_removal_ends_its_streams() {
+        let mut daemon = daemon();
+        let agent = AgentKey::new(*OWN, *b"agent-0000000000");
+        call(&mut daemon, 1, subscribe(b"agent-0000000000"));
+        call(&mut daemon, 2, subscribe(b"agent-0000000000"));
+        let detached = Arc::new(event(session_event::Of::Detached(wire::Detached {})));
+        step(
+            &mut daemon,
+            Input::FromShell(FromShell::Mute(agent.clone())),
+        );
+        assert_eq!(
+            step(
+                &mut daemon,
+                Input::FromShell(FromShell::Session {
+                    agent: agent.clone(),
+                    event: detached.clone(),
+                })
+            ),
+            Vec::new()
+        );
+        step(
+            &mut daemon,
+            Input::FromShell(FromShell::Unmute(agent.clone())),
+        );
+        assert_eq!(
+            step(
+                &mut daemon,
+                Input::FromShell(FromShell::Session {
+                    agent: agent.clone(),
+                    event: detached.clone(),
+                })
+            ),
+            vec![
+                Output::Answer {
+                    call: CallId(1),
+                    response: Response::Session(detached.clone()),
+                },
+                Output::Answer {
+                    call: CallId(2),
+                    response: Response::Session(detached),
+                },
+            ]
+        );
+
+        let removed = Arc::new(inventory(inventory_event::Of::AgentRemoved(
+            wire::AgentRemoved::default(),
+        )));
+        assert_eq!(
+            step(
+                &mut daemon,
+                Input::FromShell(FromShell::Removed {
+                    agent: agent.clone(),
+                    event: removed,
+                })
+            ),
+            vec![
+                Output::EndCall {
+                    call: CallId(1),
+                    status: Status::Ok,
+                },
+                Output::Watching {
+                    agent,
+                    watched: false,
+                },
+                Output::EndCall {
+                    call: CallId(2),
+                    status: Status::Ok,
+                },
+            ]
         );
         assert_eq!(daemon.answers, Answers::default());
     }

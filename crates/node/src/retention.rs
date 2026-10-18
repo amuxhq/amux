@@ -15,11 +15,10 @@ use std::path::PathBuf;
 use store::{BlobLru, Sweep};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use wire::{AgentRemoved, RemovalReason, inventory_event};
+use wire::RemovalReason;
 
 use crate::install::REPLICAS;
 use crate::runtime::{ParentSays, ProfileRuntime, RegistryError};
-use crate::serve::inventory;
 
 /// The retention sweeps run so far.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -47,15 +46,7 @@ impl ProfileRuntime {
             )?;
             for key in &sweep.removed {
                 self.forget_draft(&key.agent);
-                self.fanout.close(key);
-                self.fanout
-                    .publish_inventory(inventory(inventory_event::Of::AgentRemoved(
-                        AgentRemoved {
-                            host_id: key.host.clone(),
-                            agent_id: key.agent.clone(),
-                            reason: RemovalReason::Retention as i32,
-                        },
-                    )));
+                self.removed(key, RemovalReason::Retention);
                 // Gone for good, as a delete is: its children here follow.
                 self.parent_changed(&store, key, ParentSays::Deleted)?;
             }

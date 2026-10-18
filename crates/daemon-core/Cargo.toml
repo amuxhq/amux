@@ -8,7 +8,13 @@ publish = false
 
 [dependencies]
 postcard = { workspace = true }
+journal = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 store = { workspace = true }
+tracing = { workspace = true }
 wire = { workspace = true }
+
+[dev-dependencies]
+journal = { workspace = true, features = ["synthetic"] }
+tempfile = { workspace = true }

@@ -43,7 +43,7 @@ use store::{Absorb, AgentKey, AgentRow, Marker, Record, SourceEvent, StoreError}
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
-    Agent, AgentRemoved, Detached, Empty, FetchRequest, FetchResponse, InventoryEvent, Item,
+    Agent, Detached, Empty, FetchRequest, FetchResponse, InventoryEvent, Item,
     PeerSubscribeRequest, RemovalReason, SessionEvent, inventory_event, peer_subscribe_request,
     session_event,
 };
@@ -51,7 +51,6 @@ use wire::{
 use crate::HostId;
 use crate::routing::LiveRoute;
 use crate::runtime::{ParentSays, ProfileRuntime};
-use crate::serve::{event, inventory};
 
 /// How often a follower looks at whether its host has a route, and at
 /// the trust store for hosts to follow. A route's arrival is not a policy
@@ -400,8 +399,7 @@ impl ProfileRuntime {
             return;
         }
         store.set_marker(key, Some(Marker::Detached));
-        self.fanout
-            .publish(key, event(session_event::Of::Detached(Detached {})));
+        self.publish(key, session_event::Of::Detached(Detached {}));
     }
 
     /// Begins a host's inventory session: the number its sources are keyed
@@ -623,13 +621,7 @@ impl ProfileRuntime {
         if reason == RemovalReason::NoLongerListed {
             self.forget_draft(&key.agent);
         }
-        self.fanout.close(key);
-        self.fanout
-            .publish_inventory(inventory(inventory_event::Of::AgentRemoved(AgentRemoved {
-                host_id: key.host.clone(),
-                agent_id: key.agent.clone(),
-                reason: reason as i32,
-            })));
+        self.removed(key, reason);
         self.recount_from(store, parent)
     }
 
@@ -664,7 +656,7 @@ impl ProfileRuntime {
                 let idle: Vec<AgentKey> = sources
                     .open
                     .keys()
-                    .filter(|key| !sources.settling.contains(*key) && !self.fanout.watched(key))
+                    .filter(|key| !sources.settling.contains(*key) && !self.watched(key))
                     .cloned()
                     .collect();
                 for key in idle {
@@ -684,7 +676,7 @@ impl ProfileRuntime {
                     }
                     continue;
                 }
-                let wanted = sources.policy == SourcePolicy::Listed || self.fanout.watched(key);
+                let wanted = sources.policy == SourcePolicy::Listed || self.watched(key);
                 if wanted && !sources.settled.contains(key) {
                     self.open_source(&mut sources, key);
                 }
@@ -814,21 +806,18 @@ impl ProfileRuntime {
             };
             // Forget the transcript; the fresh tail follows, as the store
             // now holds it.
-            self.fanout
-                .publish(key, event(session_event::Of::Reset(wire::Reset {})));
+            self.publish(key, session_event::Of::Reset(wire::Reset {}));
             let held = store.agent(key)?.unwrap_or(row);
             if let Some(snapshot) = held.snapshot {
-                self.fanout
-                    .publish(key, event(session_event::Of::Snapshot(snapshot)));
+                self.publish(key, session_event::Of::Snapshot(snapshot));
             }
             for item in tail {
                 if let Some(stored) = store.get(key, &item.key)? {
-                    self.fanout
-                        .publish(key, event(session_event::Of::Item(stored)));
+                    self.publish(key, session_event::Of::Item(stored));
                 }
             }
             for record in absorbed_rest {
-                self.fanout.publish(key, record_event(record));
+                self.publish(key, record_of(record));
             }
         } else if !catch_up.events.is_empty() {
             let absorbed = store.absorb(
@@ -840,14 +829,14 @@ impl ProfileRuntime {
             )?;
             self.wrote();
             for record in absorbed.stored {
-                self.fanout.publish(key, record_event(record));
+                self.publish(key, record_of(record));
             }
         }
         store.absorb(key, Absorb::CaughtUp(revision))?;
         self.wrote();
-        self.fanout.publish(
+        self.publish(
             key,
-            event(session_event::Of::CaughtUp(wire::CaughtUp { revision })),
+            session_event::Of::CaughtUp(wire::CaughtUp { revision }),
         );
         let row = store.agent(key)?;
         self.publish_row(&store, key)?;
@@ -875,7 +864,7 @@ impl ProfileRuntime {
         )?;
         self.wrote();
         for record in absorbed.stored {
-            self.fanout.publish(key, record_event(record));
+            self.publish(key, record_of(record));
         }
         if envelope {
             self.publish_row(&store, key)?;
@@ -1437,12 +1426,12 @@ fn fold_tail(
     (tail, snapshot, rest)
 }
 
-fn record_event(record: Record) -> SessionEvent {
-    event(match record {
+fn record_of(record: Record) -> session_event::Of {
+    match record {
         Record::Item(item) => session_event::Of::Item(item),
         Record::Append(append) => session_event::Of::Append(append),
         Record::Snapshot(snapshot) => session_event::Of::Snapshot(snapshot),
-    })
+    }
 }
 
 /// The replica row an inventory row describes.

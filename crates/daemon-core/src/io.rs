@@ -2,8 +2,10 @@
 
 use std::ops::Range;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use store::AgentKey;
+use wire::{InventoryEvent, SessionEvent};
 
 use crate::DumpReason;
 use crate::ids::{
@@ -97,6 +99,58 @@ pub enum Input {
     },
     /// Randomness, as an input: every id the core mints comes from here.
     Entropy([u8; 32]),
+    /// The settings the profile runs under now.
+    Configure(Settings),
+    /// What the profile's shell changed outside a step, for the core's
+    /// subscribers. Each kind goes as the write behind it moves into the
+    /// core.
+    FromShell(FromShell),
+}
+
+/// The profile's settings the core reads, as last configured.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct Settings {
+    /// How long a turn's notification waits before it is sent.
+    pub notify_delay_ms: i64,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            notify_delay_ms: 30_000,
+        }
+    }
+}
+
+/// A change the profile's shell committed under the store it lends the
+/// core, handed to the core while the store is still as that commit left
+/// it, so subscribers read it in commit order and an opening never reads
+/// it twice or misses it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FromShell {
+    /// One of an agent's session events.
+    Session {
+        agent: AgentKey,
+        event: Arc<SessionEvent>,
+    },
+    /// An agent's row as the inventory carries it.
+    Row {
+        agent: AgentKey,
+        event: Arc<InventoryEvent>,
+    },
+    /// The host set changed.
+    Hosts(Arc<InventoryEvent>),
+    /// The agent is gone: its streams end and the inventory says why.
+    Removed {
+        agent: AgentKey,
+        event: Arc<InventoryEvent>,
+    },
+    /// Nothing about the agent, its session or its row, reaches a
+    /// subscriber until [`FromShell::Unmute`]; its streams stay open. A
+    /// delete mutes the agent it stops, so no subscriber reads the stop as
+    /// an exit it could resume from before the removal arrives.
+    Mute(AgentKey),
+    Unmute(AgentKey),
 }
 
 /// Everything the daemon wants done. The driver encodes, sends, arms,
@@ -132,21 +186,20 @@ pub enum Output {
         call: CallId,
         status: Status,
     },
-    /// Carry what the profile's shell publishes about `agent` on to the
-    /// stream `call` opened, after the opening the core answered. Joined
-    /// before the store is next written, so the opening and what follows
-    /// it meet at one point; the shell's publishing moves into the core
-    /// with ingest.
-    Follow {
-        call: CallId,
+    /// Whether any stream follows `agent` now: the shell keeps a replica
+    /// current while one does. Said when it changes.
+    Watching {
         agent: AgentKey,
+        watched: bool,
     },
-    /// Carry what the shell publishes about the fleet on to the inventory
-    /// stream `call` opened, `only` one host's when it names one.
-    FollowInventory {
-        call: CallId,
-        only: Option<Vec<u8>>,
+    /// What one ingest step did: for the shell's counters, and for whoever
+    /// waits for the journal to be read to its end.
+    Ingested {
+        agent: AgentId,
+        report: Ingested,
     },
+    /// Wake the shell's own loop for `Wake`, until it moves into the core.
+    Wake(Wake),
     /// Blob bytes go from the file to the call's stream without passing
     /// through the core.
     SendFile {
@@ -177,6 +230,38 @@ pub enum Output {
     Dump {
         reason: DumpReason,
     },
+}
+
+/// One ingest step's outcome.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ingested {
+    /// Journal frames committed.
+    pub frames: u32,
+    /// Of those, the turns they ended.
+    pub turn_ends: u32,
+    /// The agent's kind, as the wire numbers it.
+    pub kind: i32,
+    pub end: IngestEnd,
+}
+
+/// Where an ingest step left the journal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IngestEnd {
+    /// More frames wait; the next batch is read when its timer fires.
+    More,
+    /// Everything whole has been read.
+    Read,
+    /// Nothing was committed, in the step's words.
+    Failed(String),
+}
+
+/// A loop the shell still runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Wake {
+    /// The outbox drain: a turn ended, so a delivery may be due.
+    Deliveries,
+    /// The notification sender: an envelope changed.
+    Notifications,
 }
 
 /// A result-only mechanism the driver runs off the core thread; its outcome

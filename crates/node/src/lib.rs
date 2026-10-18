@@ -22,7 +22,6 @@ mod drafts;
 mod driver;
 mod dump;
 mod edge;
-mod fanout;
 mod forward;
 mod front_door;
 mod generation;
@@ -58,6 +57,7 @@ mod worktree;
 pub use activation::{ActivationError, ActivationPipe, GO, InheritedPipe, PIPE_ENV, PREPARED};
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, StartError, StartOptions, start};
+pub use driver::{InventorySubscription, Subscription};
 pub use dump::{DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS, DUMP_SEGMENTS, DumpError, MANIFEST, pack};
 pub use edge::{
     ACCOUNT_FILE, CloudLinkServer, CloudOptions, DiscoveryFactory, Edge, EdgeError, EdgeOptions,
@@ -97,7 +97,7 @@ pub use runtime::{
     AGENT_LOG, AgentId, FANOUT_CAPACITY, INGEST_BATCH, JoinHook, KEPT_SEGMENTS, Launch, Profile,
     ProfileRuntime, RegistryError, SweepReport, TAIL_ROWS, locked, to_wire,
 };
-pub use serve::{InventorySubscription, MAX_PAGE, ServeError, Subscription};
+pub use serve::{MAX_PAGE, ServeError};
 pub use sources::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
 pub use telemetry::Telemetry;
 pub use worktree::{GitWorktrees, MakeWorktree, WORKTREES};

@@ -23,9 +23,9 @@ use std::time::Duration;
 
 use agent_dir::Clock;
 use agent_dir::local_socket::{self, LocalListener, LocalStream};
-use store::{
-    AgentKey, AgentRow, CommitClock, Committed, Delivery, Marker, Record, Sqlite, StoreError,
-};
+use daemon_core::FromShell;
+pub use daemon_core::ingest::{INGEST_BATCH, KEPT_SEGMENTS};
+use store::{AgentKey, AgentRow, Delivery, Marker, Sqlite, StoreError};
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::{Notify, oneshot, watch};
 use tokio::task::JoinHandle;
@@ -36,7 +36,6 @@ use wire::{
     Stop, ctl_frame, inventory_event, session_event,
 };
 
-use crate::fanout::Fanout;
 use crate::grpc::ClientApi;
 use crate::install::{AGENTS, private_dir};
 use crate::outbox::PushSender;
@@ -66,24 +65,13 @@ const KILL_PATIENCE: Duration = Duration::from_secs(5);
 /// How long an agent past its stop deadline has to act on a kill stop sent
 /// over its control socket before its process is killed from outside.
 const KILL_ASK_PATIENCE: Duration = Duration::from_secs(2);
-/// Fully ingested journal segments kept below the cursor, for dumps.
-pub const KEPT_SEGMENTS: usize = 2;
-/// The most journal frames one ingest transaction commits. This is a bound
-/// on how long a backlog drain holds the store lock: at the measured ingest
-/// cost of about 23 µs a frame, a full batch holds it for about 6 ms, which
-/// is the most a subscribe, an input or a spawn waits behind a draining
-/// agent. Larger batches commit a backlog slightly faster per frame and
-/// hold everything else off for longer; smaller ones pay a transaction per
-/// fewer frames. The size is not derived from any ring or reader: the
-/// fan-out ring is sized from it, not the other way round.
-pub const INGEST_BATCH: usize = 256;
-/// Events the per-agent fan-out ring holds. A batch's records are
-/// published in one burst at memory speed while the store lock is still
-/// held, so a reader's slack is counted in batches: a subscriber that has
-/// read everything when a batch lands is closed with Lagged only after
-/// four whole batches (a second or so of a busy agent) arrive without it
+/// Live events a subscriber's queue holds unread. A batch's records are
+/// answered in one burst at memory speed by the step that commits it, so a
+/// reader's slack is counted in batches: a subscriber that has read
+/// everything when a batch lands is closed with Lagged only after four
+/// whole batches (a second or so of a busy agent) arrive without it
 /// reading any, which absorbs a late wakeup by design rather than by luck.
-/// A ring of one batch would close a caught-up reader whenever a short
+/// A queue of one batch would close a caught-up reader whenever a short
 /// batch followed a full one before its task was scheduled.
 pub const FANOUT_CAPACITY: usize = 4 * INGEST_BATCH;
 /// The tail size K: the rows a replica keeps and asks for, and the newest
@@ -254,6 +242,15 @@ pub enum RegistryError {
     Store(#[from] StoreError),
     #[error("the agent directory: {0}")]
     Io(#[from] io::Error),
+    #[error("ingesting the journal: {0}")]
+    Ingest(String),
+}
+
+/// What [`ProfileRuntime::ingest`] committed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Ingested {
+    /// Journal frames committed while it waited.
+    pub frames: u64,
 }
 
 /// The names this host's own agents hold, exited ones included.
@@ -333,7 +330,7 @@ impl RegistryError {
                 | git_facts::WorktreeError::BadBranchName(_) => ErrorCode::FailedPrecondition,
                 git_facts::WorktreeError::Git(_) => ErrorCode::Internal,
             },
-            Self::Store(_) | Self::Io(_) => ErrorCode::Internal,
+            Self::Store(_) | Self::Io(_) | Self::Ingest(_) => ErrorCode::Internal,
             Self::HostName(error) => return error.to_wire(),
             Self::Forwarded(error) => return error.to_wire(),
         };
@@ -386,15 +383,14 @@ pub struct ProfileRuntime {
     dir: PathBuf,
     clock: Arc<dyn Clock>,
     launch: Mutex<Launch>,
-    /// Every write publishes to `fanout` while it still holds this lock, so
-    /// subscribers see changes in commit order and a subscribe that holds
-    /// it reads one point in that order.
+    /// Every write hands its change to the core while it still holds this
+    /// lock, so subscribers see changes in commit order and a subscribe,
+    /// answered with it held, reads one point in that order.
     pub(crate) store: tokio::sync::Mutex<Sqlite>,
-    pub(crate) fanout: Fanout,
     /// The profile's core thread, started by the first call it answers.
     driver: std::sync::OnceLock<crate::driver::Driver>,
-    /// For tests: awaited by a subscribe between joining the channel and
-    /// reading the cut, with the store held.
+    /// For tests: awaited by a subscribe before the core reads its cut,
+    /// with the store held.
     pub(crate) join_hook: Mutex<Option<JoinHook>>,
     /// Each own agent's message lane: one agent message at a time.
     pub(crate) lanes: Mutex<HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>>,
@@ -476,7 +472,7 @@ struct Muted<'a> {
 
 impl<'a> Muted<'a> {
     fn new(runtime: &'a ProfileRuntime, key: AgentKey) -> Self {
-        runtime.fanout.mute(&key);
+        runtime.hand_over(FromShell::Mute(key.clone()));
         Self {
             runtime,
             key,
@@ -487,7 +483,7 @@ impl<'a> Muted<'a> {
 
 impl Drop for Muted<'_> {
     fn drop(&mut self) {
-        self.runtime.fanout.unmute(&self.key);
+        self.runtime.hand_over(FromShell::Unmute(self.key.clone()));
         if self.settled {
             return;
         }
@@ -529,9 +525,6 @@ pub(crate) struct AgentHandle {
     /// operating system names it: known for an agent an earlier daemon
     /// started too.
     peer: Mutex<Option<u32>>,
-    /// Set at each Hello and cleared when ingest next reaches the end of
-    /// the journal, which is when CaughtUp is broadcast: once per Hello.
-    caught_up_due: AtomicBool,
     /// Whether the process this daemon started is still running. A new
     /// process has not taken its lock yet, so a free lock says nothing
     /// about it until it has exited.
@@ -553,7 +546,6 @@ impl AgentHandle {
             hello: watch::Sender::new(None),
             stopping: Mutex::new(None),
             exiting: AtomicBool::new(false),
-            caught_up_due: AtomicBool::new(false),
             handed: std::sync::atomic::AtomicUsize::new(0),
             pid,
             peer: Mutex::new(None),
@@ -704,7 +696,6 @@ impl ProfileRuntime {
             host,
             generation,
             clock,
-            fanout: Fanout::new(launch.fanout_capacity, launch.inventory_capacity),
             driver: std::sync::OnceLock::new(),
             join_hook: Mutex::new(None),
             lanes: Mutex::new(HashMap::new()),
@@ -824,6 +815,7 @@ impl ProfileRuntime {
                 self.host.as_bytes().to_vec(),
                 daemon_core::StartOptions {
                     generation: self.generation,
+                    agents: self.dir.join(AGENTS),
                 },
             )
         })
@@ -1509,13 +1501,7 @@ impl ProfileRuntime {
             let mut store = self.store.lock().await;
             let parent = store.agent(&key)?.and_then(|row| row.parent);
             store.delete_agent(&key)?;
-            self.fanout.close(&key);
-            self.fanout
-                .publish_inventory(inventory(inventory_event::Of::AgentRemoved(AgentRemoved {
-                    host_id: key.host.clone(),
-                    agent_id: key.agent.clone(),
-                    reason: RemovalReason::Deleted as i32,
-                })));
+            self.removed(&key, RemovalReason::Deleted);
             self.recount_from(&mut store, parent)?;
             self.parent_changed(&store, &key, ParentSays::Deleted)?;
         }
@@ -1889,146 +1875,75 @@ impl ProfileRuntime {
 
     // --- ingest --------------------------------------------------------------
 
-    /// Reads the agent's journal from its row's cursor to the end, commits
-    /// what it finds in one transaction, then broadcasts each record once.
-    /// At the end of the journal, the first time after each Hello, it
-    /// broadcasts CaughtUp. Segments that lie wholly below a cursor that
-    /// has reached the drive are deleted, but for the newest few.
-    ///
-    /// A backlog is committed [`INGEST_BATCH`] frames at a time, with the
-    /// store released between batches, so a journal that ran ahead of the
-    /// daemon never holds every other reader and writer off for the whole
-    /// of its catch-up.
-    pub async fn ingest(&self, id: AgentId) -> Result<Committed, RegistryError> {
-        loop {
-            let (committed, more) = self.ingest_batch(id).await?;
-            if !more {
-                return Ok(committed);
-            }
-            tokio::task::yield_now().await;
+    /// Asks the core to read the agent's journal from its row's cursor to
+    /// the end, and waits until it has: a batch at a time, each committed
+    /// in one transaction and then told to its subscribers. At the end of
+    /// the journal, the first time after each Hello, the core tells them
+    /// CaughtUp. Segments that lie wholly below a cursor that has reached
+    /// the drive are deleted, but for the newest few.
+    pub async fn ingest(&self, id: AgentId) -> Result<Ingested, RegistryError> {
+        match self.driver().ingest(id).await {
+            Ok(frames) => Ok(Ingested { frames }),
+            Err(why) => Err(RegistryError::Ingest(why)),
         }
     }
 
-    async fn ingest_batch(&self, id: AgentId) -> Result<(Committed, bool), RegistryError> {
-        let key = self.key(id);
-        let journal_dir = self.agent_dir(id).join(agent_dir::JOURNAL);
-        // Held through the broadcast: commit order is broadcast order, and
-        // a subscribe waiting on the lock reads a cut either wholly before
-        // this batch or wholly after it.
-        let mut store = self.store.lock().await;
-        let mut cursor = store.cursor(&key)?;
-        let mut reader = journal::Reader::new(&journal_dir, cursor);
-        let mut batch = reader.read_up_to(INGEST_BATCH)?;
-        if batch.frames.is_empty() {
-            // Nothing past the cursor may mean the cursor is past the
-            // journal: the store reached the drive after committing frames
-            // the unsynced journal then lost to a power cut. The agent
-            // re-derives from the last whole frame, so that is where the
-            // cursor goes; revisions keep counting up, so what it writes
-            // again is new to every subscriber.
-            let end = journal::end(&journal_dir)?;
-            if end < cursor {
-                tracing::warn!(agent = %id, cursor, end, "the journal ends below the cursor; rewinding");
-                store.rewind_cursor(&key, end)?;
-                cursor = end;
-                reader.seek(end);
-                batch = reader.read_up_to(INGEST_BATCH)?;
-            }
-        }
-        // A torn frame in the newest segment is a write still under way:
-        // the journal has not ended yet, and its Nudge will come.
-        let at_end =
-            !batch.more && !matches!(batch.torn, Some(journal::Torn { skipped: false, .. }));
-        let committed = if batch.frames.is_empty() {
-            Committed {
-                cursor,
-                ..Committed::default()
-            }
-        } else {
-            let clock = CommitClock {
-                now_ms: self.clock.now_ms(),
-                notify_delay_ms: self.launch.lock().unwrap().notify_delay_ms,
-            };
-            let committed = store.commit(&key, &batch.frames, clock)?;
-            self.wrote();
-            self.ingested_frames
-                .fetch_add(batch.frames.len() as u64, Ordering::Relaxed);
-            let turns = batch
-                .frames
-                .iter()
-                .filter(|(_, step)| step.turn_end.is_some())
-                .count();
-            if turns > 0 {
-                self.deliveries_due.notify_one();
-                if self.analytics.is_on()
-                    && let Some(kind) = store
-                        .agent(&key)?
-                        .and_then(|row| crate::telemetry::kind_coded(row.kind))
-                {
-                    self.turns.add(kind, turns as u32);
-                }
-            }
-            // Only now, with the transaction committed: a subscriber never
-            // sees a revision the store could not serve it.
-            let mut envelope = false;
-            for record in &committed.records {
-                let of = match record {
-                    Record::Item(item) => session_event::Of::Item(item.clone()),
-                    Record::Append(append) => session_event::Of::Append(append.clone()),
-                    Record::Snapshot(snapshot) => {
-                        envelope = true;
-                        session_event::Of::Snapshot(snapshot.clone())
-                    }
-                };
-                self.fanout.publish(&key, event(of));
-            }
-            if envelope {
-                // Phase, working_on, since-when and git ride the inventory row.
-                self.publish_row(&store, &key)?;
-                self.notifications_due.notify_one();
-            }
-            self.reclaim(&store, &journal_dir, committed.cursor);
-            committed
-        };
-        let due = self
-            .agents
-            .lock()
-            .unwrap()
-            .get(&id)
-            .is_some_and(|handle| handle.caught_up_due.load(Ordering::SeqCst));
-        if at_end && due {
-            self.announce_caught_up(&mut store, &key)?;
-            if let Some(handle) = self.agents.lock().unwrap().get(&id) {
-                handle.caught_up_due.store(false, Ordering::SeqCst);
-            }
-        }
-        Ok((committed, batch.more))
-    }
-
-    /// Deletes the segments that lie wholly below `cursor`, keeping the
-    /// newest [`KEPT_SEGMENTS`] of them. The cursor was committed without a
-    /// sync, and a power cut could take the store back to before it while
-    /// the deleted frames were its only copy, so the store is flushed to the
-    /// drive first and nothing is deleted if the flush fails. That costs one
-    /// flush per segment the agent fills.
-    fn reclaim(&self, store: &Sqlite, journal_dir: &Path, cursor: u64) {
-        let starts = match journal::reclaimable(journal_dir, cursor, KEPT_SEGMENTS) {
-            Ok(starts) if !starts.is_empty() => starts,
-            Ok(_) => return,
-            Err(error) => {
-                tracing::warn!(%error, "listing journal segments failed");
-                return;
-            }
-        };
-        if let Err(error) = store.flush_to_drive() {
-            tracing::warn!(%error, "flushing the store before reclaiming segments failed");
+    /// Counts what one ingest step committed.
+    pub(crate) fn ingested(&self, report: &daemon_core::Ingested) {
+        if report.frames == 0 {
             return;
         }
-        for start in starts {
-            if let Err(error) = std::fs::remove_file(journal::segment_path(journal_dir, start)) {
-                tracing::warn!(%error, start, "deleting an ingested journal segment failed");
-            }
+        self.wrote();
+        self.ingested_frames
+            .fetch_add(u64::from(report.frames), Ordering::Relaxed);
+        if report.turn_ends > 0
+            && self.analytics.is_on()
+            && let Some(kind) = crate::telemetry::kind_coded(report.kind)
+        {
+            self.turns.add(kind, report.turn_ends);
         }
+    }
+
+    /// Wakes a loop the shell still runs, at the core's word.
+    pub(crate) fn wake(&self, wake: daemon_core::Wake) {
+        match wake {
+            daemon_core::Wake::Deliveries => self.deliveries_due.notify_one(),
+            daemon_core::Wake::Notifications => self.notifications_due.notify_one(),
+        }
+    }
+
+    /// Hands the core a change committed under the store, which the caller
+    /// still holds.
+    pub(crate) fn hand_over(&self, change: FromShell) {
+        self.driver().hand_over(change);
+    }
+
+    /// Tells the agent's subscribers of one event, committed under the
+    /// store the caller still holds.
+    pub(crate) fn publish(&self, agent: &AgentKey, of: session_event::Of) {
+        self.hand_over(FromShell::Session {
+            agent: agent.clone(),
+            event: Arc::new(event(of)),
+        });
+    }
+
+    /// The agent is gone from the store the caller still holds: its
+    /// streams end and the inventory says why.
+    pub(crate) fn removed(&self, agent: &AgentKey, reason: RemovalReason) {
+        let removed = AgentRemoved {
+            host_id: agent.host.clone(),
+            agent_id: agent.agent.clone(),
+            reason: reason as i32,
+        };
+        self.hand_over(FromShell::Removed {
+            agent: agent.clone(),
+            event: Arc::new(inventory(inventory_event::Of::AgentRemoved(removed))),
+        });
+    }
+
+    /// Whether any stream follows the agent now.
+    pub(crate) fn watched(&self, agent: &AgentKey) -> bool {
+        self.driver().watched(agent)
     }
 
     // --- the watcher ---------------------------------------------------------
@@ -2050,8 +1965,13 @@ impl ProfileRuntime {
         } = connected;
         *handle.peer.lock().unwrap() = peer;
         *handle.ctl.lock().await = Some(writer);
-        handle.hello.send_replace(Some(hello));
-        handle.caught_up_due.store(true, Ordering::SeqCst);
+        handle.hello.send_replace(Some(hello.clone()));
+        self.driver()
+            .feed(daemon_core::Input::AgentHello {
+                agent: daemon_core::AgentId(*id.as_bytes()),
+                hello,
+            })
+            .await;
         let key = self.key(id);
         let children = children_frame(&*self.store.lock().await, &key).unwrap_or_default();
         let any = !children.children.is_empty();
@@ -2319,37 +2239,28 @@ impl ProfileRuntime {
 
     /// Tells inventory subscribers what the row now says.
     pub(crate) fn publish_row(&self, store: &Sqlite, key: &AgentKey) -> Result<(), StoreError> {
-        if self.fanout.muted(key) {
-            return Ok(());
-        }
         if let Some(row) = store.agent(key)? {
-            self.fanout
-                .publish_inventory(inventory(inventory_event::Of::Agent(to_wire(&row))));
+            self.hand_over(FromShell::Row {
+                agent: key.clone(),
+                event: Arc::new(inventory(inventory_event::Of::Agent(to_wire(&row)))),
+            });
         }
         Ok(())
     }
 
-    /// Sets the agent's CaughtUp flag and broadcasts the marker, unless the
-    /// flag is already set: a subscriber that joined since read it at its
-    /// cut, and one that joined before got the broadcast then.
+    /// Sets the agent's CaughtUp flag and tells subscribers the marker,
+    /// unless the flag is already set: a subscriber that joined since read
+    /// it at its cut, and one that joined before was told then.
     fn caught_up(&self, store: &mut Sqlite, key: &AgentKey) -> Result<(), StoreError> {
         if store.markers().get(key) == Some(&Marker::CaughtUp) {
             return Ok(());
         }
-        self.announce_caught_up(store, key)
-    }
-
-    fn announce_caught_up(&self, store: &mut Sqlite, key: &AgentKey) -> Result<(), StoreError> {
         let Some(row) = store.agent(key)? else {
             return Ok(());
         };
         store.set_marker(key, Some(Marker::CaughtUp));
-        self.fanout.publish(
-            key,
-            event(session_event::Of::CaughtUp(CaughtUp {
-                revision: row.next_revision.saturating_sub(1),
-            })),
-        );
+        let revision = row.next_revision.saturating_sub(1);
+        self.publish(key, session_event::Of::CaughtUp(CaughtUp { revision }));
         Ok(())
     }
 

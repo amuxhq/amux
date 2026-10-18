@@ -23,6 +23,12 @@ use crate::serve::inventory;
 pub(crate) type HostSet = BTreeMap<Vec<u8>, HostEntry>;
 
 impl ProfileRuntime {
+    /// Tells inventory subscribers of a change to the host set.
+    fn publish_hosts(&self, of: inventory_event::Of) {
+        let event = std::sync::Arc::new(inventory(of));
+        self.hand_over(daemon_core::FromShell::Hosts(event));
+    }
+
     /// This host's entry: always trusted and online to itself, and signed
     /// in or out of its account as it is now, so a client can say a host
     /// only the relay reaches is offline because this machine signed out. The
@@ -161,16 +167,14 @@ impl ProfileRuntime {
         let mut published = self.hosts.lock().unwrap();
         for (host, entry) in &fresh {
             if published.get(host) != Some(entry) {
-                self.fanout
-                    .publish_inventory(inventory(inventory_event::Of::Host(entry.clone())));
+                self.publish_hosts(inventory_event::Of::Host(entry.clone()));
             }
         }
         for host in published.keys() {
             if !fresh.contains_key(host) {
-                self.fanout
-                    .publish_inventory(inventory(inventory_event::Of::HostRemoved(HostRemoved {
-                        host_id: host.clone(),
-                    })));
+                self.publish_hosts(inventory_event::Of::HostRemoved(HostRemoved {
+                    host_id: host.clone(),
+                }));
             }
         }
         *published = fresh;
@@ -198,8 +202,7 @@ impl ProfileRuntime {
             && entry.current != Some(current)
         {
             entry.current = Some(current);
-            self.fanout
-                .publish_inventory(inventory(inventory_event::Of::Host(entry.clone())));
+            self.publish_hosts(inventory_event::Of::Host(entry.clone()));
         }
     }
 
@@ -212,8 +215,7 @@ impl ProfileRuntime {
             && entry.generation != generation
         {
             entry.generation = generation;
-            self.fanout
-                .publish_inventory(inventory(inventory_event::Of::Host(entry.clone())));
+            self.publish_hosts(inventory_event::Of::Host(entry.clone()));
         }
     }
 }

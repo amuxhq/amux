@@ -15,7 +15,8 @@ This page covers the three crates on that path:
 | --- | --- |
 | [`journal`](../crates/journal/src/lib.rs) | Segment files, frames, the `Writer` the agent appends with and the `Reader` ingest reads with |
 | [`store`](../crates/store/src/lib.rs) | The schema, the `Sqlite` store the runtime calls, commit for own rows, absorb for replica rows, retention |
-| [`node`](../crates/node/src/runtime.rs) | Ingest (`ProfileRuntime::ingest`), the generation file, fan-out, the retention sweeps, peer sources |
+| [`daemon-core`](../crates/daemon-core/src/ingest.rs) | Ingest and fan-out, as steps of the daemon's core |
+| [`node`](../crates/node/src/runtime.rs) | The watcher that nudges ingest (`ProfileRuntime::ingest`), the generation file, the retention sweeps, peer sources |
 
 How the agent process produces steps is in [the agent process](AGENT_PROCESS.md)
 and [interpreters](INTERPRETERS.md). How the daemon is laid out as a whole is in
@@ -129,42 +130,49 @@ and exits with the write failure as its cause (`Host::write_failed`).
 
 ## Ingest
 
-Ingest lives in [`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs).
-Each live agent has one watcher task. It dials `ctl.sock`, reads the agent's
-`AgentHello`, and calls `ProfileRuntime::ingest` on every `Nudge`. It also
-ingests when it first adopts a connection, when the startup sweep finds an
-agent, and once more when the process is gone, so a journal that ran ahead of
-the daemon is always read to its end.
+Ingest is a step of the profile's core, in
+[`crates/daemon-core/src/ingest.rs`](../crates/daemon-core/src/ingest.rs).
+Each live agent has one watcher task in
+[`crates/node/src/runtime.rs`](../crates/node/src/runtime.rs). It dials
+`ctl.sock`, hands the agent's `AgentHello` to the core, and calls
+`ProfileRuntime::ingest` on every `Nudge`, which feeds the core a `Nudge`
+input and waits until the journal has been read to its end. It also ingests
+when it first adopts a connection, when the startup sweep finds an agent, and
+once more when the process is gone, so a journal that ran ahead of the daemon
+is always read to its end.
 
 ![Revisions are assigned at commit, monotonically per agent. Journal order is item order. The agent never learns its revisions and never needs to.](figures/item-path.svg)
 
-One ingest pass:
+One ingest step:
 
-1. Lock the store and read the agent's `ingest_cursor` from its row.
+1. Read the agent's `ingest_cursor` from its row.
 2. Read whole frames from that offset with `journal::Reader::read_up_to`, at
    most `INGEST_BATCH` (256) frames.
 3. Commit them in one transaction (`Sqlite::commit`), which also writes the
    advanced cursor.
-4. Still holding the store, broadcast each committed record once on the
-   agent's fan-out channel, and publish the agent's inventory row if a
-   snapshot was committed: it carries the row's phase, `working_on`,
-   since-when and git facts.
+4. Answer each committed record once to every stream open on the agent, and
+   the agent's inventory row to every inventory stream if a snapshot was
+   committed: it carries the row's phase, `working_on`, since-when and git
+   facts.
 5. Reclaim segments that lie wholly below the committed cursor.
 6. At the end of the journal, the first time after each Hello, set the
-   agent's CaughtUp marker and broadcast `CaughtUp`.
-7. If the batch was full, release the store and go again.
+   agent's CaughtUp marker and answer `CaughtUp`.
+7. If the batch was full, arm a timer for the next one, so every other
+   input is stepped between batches.
 
-Holding the store lock through the broadcast makes commit order the broadcast
-order, and lets a subscriber that opens under the same lock read a cut that is
-wholly before or wholly after a batch. Batching bounds how long a backlog holds
-every other reader and writer off: at the measured cost of tens of
-microseconds a frame, 256 frames hold the store for several milliseconds.
-The agent's fan-out ring holds four batches: a batch's records go out in
-one burst while the lock is held, so a reader's slack is counted in
-batches, and a subscriber that has read everything when a batch lands is
-closed with `Lagged` only after four whole batches arrive without it
-reading any. The ring is sized from the batch; the batch is sized from the
-lock hold alone.
+Answering in the step that commits makes commit order the answer order, and a
+stream's opening, answered in a step of its own, reads a cut that is wholly
+before or wholly after a batch. What the profile's shell still commits itself
+(replica rows, the registry, the host set) it hands to the core before
+letting go of the store, and the core steps those changes before anything
+that reads the store after them. Batching bounds how long a backlog holds
+every other input off: at the measured cost of tens of microseconds a frame,
+256 frames take several milliseconds. Each stream's queue holds four batches
+of live answers: a batch's records go out in one burst, so a reader's slack
+is counted in batches, and a subscriber that has read everything when a batch
+lands is closed with `Lagged` only after four whole batches arrive without it
+reading any. The queue is sized from the batch; the batch is sized from the
+step's length alone.
 
 A torn frame in the newest segment means a write is still under way, so that
 pass is not at the end of the journal and does not announce `CaughtUp`; the

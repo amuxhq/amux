@@ -1,31 +1,39 @@
 //! The driver around a profile's daemon core.
 //!
 //! One thread per profile owns the core and steps it, one input at a time,
-//! from a bounded channel. The driver decides nothing: it turns calls into
-//! inputs, and carries out what each step asks for, answers into the call
-//! table, timers and jobs on tokio, whose outcomes come back as inputs.
+//! from a bounded channel. The driver decides nothing: it turns calls and
+//! nudges into inputs, and carries out what each step asks for, answers
+//! into the call table, timers and jobs on tokio, whose outcomes come back
+//! as inputs.
 //!
-//! The profile's shell still writes the store under its own lock and
-//! publishes live changes itself. Until those move into the core, the core
-//! thread holds that lock across each step and the outputs that must meet
-//! it, lending the store to the core for the step, so nothing commits
-//! between a stream's opening and the point its live changes are joined.
+//! The profile's shell still writes the store under its own lock for what
+//! has not moved into the core, and the core thread holds that lock across
+//! each step, lending the store to the core. What the shell commits it
+//! hands over before letting go of the lock, and the core thread steps
+//! those changes first each time it takes the lock, so every stream reads
+//! them in commit order: after its opening if they were committed after
+//! it, in its opening if before.
 
 mod calls;
+mod streams;
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Weak};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use calls::{AnswerQueue, CallTable, Carried};
 pub(crate) use calls::{Answers, Delivered};
-use daemon_core::payload::{Caller, ClientRequest, JobResult, Opening, Response, Status};
-use daemon_core::{Daemon, Input, Job, JobId, Output, StartOptions, TimerId};
+use calls::{CallTable, Carried};
+use daemon_core::payload::{Caller, ClientRequest, JobResult, Opening, Status};
+use daemon_core::{
+    CallId, Daemon, FromShell, IngestEnd, Ingested, Input, Job, JobId, Output, Settings,
+    StartOptions, TimerId,
+};
 use store::{AgentKey, Sqlite};
+pub use streams::{InventorySubscription, Subscription};
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
-use wire::{FetchRequest, GetRequest, InventoryEvent, SessionEvent, inventory_event};
+use wire::{FetchRequest, GetRequest};
 
 use crate::runtime::ProfileRuntime;
 
@@ -33,15 +41,26 @@ use crate::runtime::ProfileRuntime;
 /// rather than growing.
 const INPUT_ROOM: usize = 1024;
 
-/// What reaches the core thread: an input, or a call whose request the
-/// thread completes from the shell as it steps it.
+/// What reaches the core thread.
 pub(crate) enum Fed {
     Input(Input),
+    /// A client call, whose request the thread completes from the shell as
+    /// it steps it.
     Call {
-        call: daemon_core::CallId,
+        call: CallId,
         who: Caller,
         ask: Ask,
     },
+    /// A nudge from someone who waits for the journal to be read to its
+    /// end: told the frames committed meanwhile, or why ingest failed.
+    Ingest {
+        agent: daemon_core::AgentId,
+        done: oneshot::Sender<Result<u64, String>>,
+    },
+    /// The shell handed changes over.
+    Wake,
+    /// The profile is gone.
+    Stop,
 }
 
 /// A client call as it arrives. What the request also carries from the
@@ -58,6 +77,11 @@ pub(crate) enum Ask {
 pub(crate) struct Driver {
     inputs: mpsc::Sender<Fed>,
     calls: Arc<CallTable>,
+    /// What the shell committed, waiting for the core thread to take the
+    /// store next.
+    shell: Arc<Mutex<Vec<FromShell>>>,
+    /// The agents a stream follows, as the core last said.
+    watched: Arc<Mutex<HashSet<AgentKey>>>,
 }
 
 impl Driver {
@@ -70,6 +94,8 @@ impl Driver {
     ) -> Self {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
         let calls = Arc::new(CallTable::default());
+        let shell = Arc::new(Mutex::new(Vec::new()));
+        let watched = Arc::new(Mutex::new(HashSet::new()));
         // The core owns a store of its own between steps; the profile's is
         // lent to it for each one.
         let store = Sqlite::open_in_memory(own_host).expect("an in-memory store opens");
@@ -80,8 +106,12 @@ impl Driver {
             inputs: inputs.downgrade(),
             runtime,
             calls: calls.clone(),
+            shell: shell.clone(),
+            watched: watched.clone(),
             timers: HashMap::new(),
+            waiting: HashMap::new(),
             ticked: None,
+            settings: None,
         };
         let handle = Handle::current();
         std::thread::Builder::new()
@@ -91,7 +121,12 @@ impl Driver {
                 core.run();
             })
             .expect("the core thread starts");
-        Self { inputs, calls }
+        Self {
+            inputs,
+            calls,
+            shell,
+            watched,
+        }
     }
 
     /// Hands a call to the core and returns its answers. `room` is how many
@@ -111,6 +146,54 @@ impl Driver {
         }
         answers
     }
+
+    /// Nudges the core to ingest the agent's journal and waits until it has
+    /// been read to its end: the frames committed meanwhile, or why ingest
+    /// failed.
+    pub(crate) async fn ingest(&self, agent: uuid::Uuid) -> Result<u64, String> {
+        let (done, ingested) = oneshot::channel();
+        let agent = daemon_core::AgentId(*agent.as_bytes());
+        if self.inputs.send(Fed::Ingest { agent, done }).await.is_err() {
+            return Err("the profile is no longer running".to_owned());
+        }
+        ingested
+            .await
+            .unwrap_or_else(|_| Err("the profile is no longer running".to_owned()))
+    }
+
+    /// Feeds the core an input.
+    pub(crate) async fn feed(&self, input: Input) {
+        let _ = self.inputs.send(Fed::Input(input)).await;
+    }
+
+    /// Hands the core a change the shell committed. Called with the store
+    /// still held, so the core steps it before anything that reads the
+    /// store after it.
+    pub(crate) fn hand_over(&self, change: FromShell) {
+        self.shell.lock().unwrap().push(change);
+        // A full channel wakes the core anyway.
+        let _ = self.inputs.try_send(Fed::Wake);
+    }
+
+    /// Whether any stream follows the agent now.
+    pub(crate) fn watched(&self, agent: &AgentKey) -> bool {
+        self.watched.lock().unwrap().contains(agent)
+    }
+}
+
+impl Drop for Driver {
+    fn drop(&mut self) {
+        // Every stream ends with the profile; the thread sees the stop or,
+        // if the channel is full, the runtime gone.
+        self.calls.end_all(Status::Ok);
+        let _ = self.inputs.try_send(Fed::Stop);
+    }
+}
+
+/// Someone waiting for an agent's journal to be read to its end.
+struct Waiting {
+    frames: u64,
+    done: oneshot::Sender<Result<u64, String>>,
 }
 
 struct CoreThread {
@@ -122,9 +205,14 @@ struct CoreThread {
     inputs: mpsc::WeakSender<Fed>,
     runtime: Weak<ProfileRuntime>,
     calls: Arc<CallTable>,
+    shell: Arc<Mutex<Vec<FromShell>>>,
+    watched: Arc<Mutex<HashSet<AgentKey>>>,
     timers: HashMap<TimerId, AbortHandle>,
+    waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clock as last told to the core.
     ticked: Option<u64>,
+    /// The settings as last told to the core.
+    settings: Option<Settings>,
 }
 
 impl CoreThread {
@@ -134,8 +222,8 @@ impl CoreThread {
             let fed = match self.again.pop_front() {
                 Some(input) => Fed::Input(input),
                 None => match self.fed.blocking_recv() {
+                    Some(Fed::Stop) | None => return,
                     Some(fed) => fed,
-                    None => return,
                 },
             };
             let Some(runtime) = self.runtime.upgrade() else {
@@ -143,46 +231,89 @@ impl CoreThread {
             };
             let mut store = runtime.store.blocking_lock();
             let input = match fed {
-                Fed::Input(input) => input,
-                Fed::Call { call, who, ask } => Input::ClientCall {
+                Fed::Input(input) => Some(input),
+                Fed::Call { call, who, ask } => Some(Input::ClientCall {
                     call,
                     who,
                     request: runtime.client_request(&store, ask),
-                },
+                }),
+                Fed::Ingest { agent, done } => {
+                    let waiting = Waiting { frames: 0, done };
+                    self.waiting.entry(agent).or_default().push(waiting);
+                    Some(Input::Nudge { agent })
+                }
+                Fed::Wake | Fed::Stop => None,
             };
             self.daemon.swap_store(&mut store);
             let now = runtime.clock_now().max(0) as u64;
             if self.ticked != Some(now) {
                 self.ticked = Some(now);
-                self.daemon.step(Input::Tick { now_ms: now }, &mut out);
+                self.step(&runtime, Input::Tick { now_ms: now }, &mut out);
             }
-            self.daemon.step(input, &mut out);
+            let settings = Settings {
+                notify_delay_ms: runtime.launch().notify_delay_ms,
+            };
+            if self.settings != Some(settings) {
+                self.settings = Some(settings);
+                self.step(&runtime, Input::Configure(settings), &mut out);
+            }
+            // Committed before this thread took the store: told before
+            // anything this step reads.
+            let changes = std::mem::take(&mut *self.shell.lock().unwrap());
+            for change in changes {
+                self.step(&runtime, Input::FromShell(change), &mut out);
+            }
+            if let Some(input) = input {
+                self.step(&runtime, input, &mut out);
+            }
             self.daemon.swap_store(&mut store);
-            for output in out.drain(..) {
-                self.execute(&runtime, output);
-            }
             drop(store);
             drop(runtime);
         }
     }
 
-    /// Carries out one output, with the store still held.
-    fn execute(&mut self, runtime: &Arc<ProfileRuntime>, output: Output) {
+    /// Steps one input and carries out what it asked for, with the store
+    /// still held.
+    fn step(&mut self, runtime: &Arc<ProfileRuntime>, input: Input, out: &mut Vec<Output>) {
+        // A call's own answers, to its opening or its lag, are always
+        // taken; every other answer is a live one, held to the call's room.
+        let replying = match &input {
+            Input::ClientCall { call, .. } | Input::AnswerLagged { call } => Some(*call),
+            _ => None,
+        };
+        self.daemon.step(input, out);
+        for output in out.drain(..) {
+            self.execute(runtime, output, replying);
+        }
+    }
+
+    /// Carries out one output.
+    fn execute(&mut self, runtime: &Arc<ProfileRuntime>, output: Output, replying: Option<CallId>) {
         match output {
-            Output::Answer { call, response } => self.calls.answer(call, response),
+            Output::Answer { call, response } if replying == Some(call) => {
+                self.calls.answer(call, response)
+            }
+            Output::Answer { call, response } => {
+                if let Some(queue) = self.calls.get(call)
+                    && queue.carry(response) == Carried::Overflowed
+                {
+                    self.again.push_back(Input::AnswerLagged { call });
+                }
+            }
             Output::EndCall { call, status } => self.calls.end(call, status),
-            Output::Follow { call, agent } => {
-                if let Some(queue) = self.calls.get(call) {
-                    let live = runtime.fanout.join(&agent);
-                    tokio::spawn(carry_session(queue, live, self.inputs.clone()));
+            Output::Watching { agent, watched } => {
+                let mut watching = self.watched.lock().unwrap();
+                if watched {
+                    watching.insert(agent);
+                } else {
+                    watching.remove(&agent);
                 }
             }
-            Output::FollowInventory { call, only } => {
-                if let Some(queue) = self.calls.get(call) {
-                    let live = runtime.fanout.join_inventory();
-                    tokio::spawn(carry_inventory(queue, live, only, self.inputs.clone()));
-                }
+            Output::Ingested { agent, report } => {
+                runtime.ingested(&report);
+                self.ingested(agent, report);
             }
+            Output::Wake(wake) => runtime.wake(wake),
             Output::ArmTimer { id, at_ms } => {
                 let wait = at_ms.saturating_sub(runtime.clock_now().max(0) as u64);
                 let inputs = self.inputs.clone();
@@ -225,6 +356,24 @@ impl CoreThread {
             }
         }
     }
+
+    /// Tells whoever waits on the agent's journal what one ingest step did.
+    fn ingested(&mut self, agent: daemon_core::AgentId, report: Ingested) {
+        let Some(waiting) = self.waiting.get_mut(&agent) else {
+            return;
+        };
+        for waiter in waiting.iter_mut() {
+            waiter.frames += u64::from(report.frames);
+        }
+        let outcome = match report.end {
+            IngestEnd::More => return,
+            IngestEnd::Read => Ok(()),
+            IngestEnd::Failed(why) => Err(why),
+        };
+        for waiter in self.waiting.remove(&agent).unwrap_or_default() {
+            let _ = waiter.done.send(outcome.clone().map(|()| waiter.frames));
+        }
+    }
 }
 
 /// Feeds the core an input from off its thread, unless the core has
@@ -232,86 +381,6 @@ impl CoreThread {
 async fn feed(inputs: &mpsc::WeakSender<Fed>, input: Input) {
     if let Some(inputs) = inputs.upgrade() {
         let _ = inputs.send(Fed::Input(input)).await;
-    }
-}
-
-/// Carries an agent's live events on to a Subscribe stream.
-async fn carry_session(
-    queue: Arc<AnswerQueue>,
-    mut live: broadcast::Receiver<Arc<SessionEvent>>,
-    inputs: mpsc::WeakSender<Fed>,
-) {
-    loop {
-        let carried = tokio::select! {
-            () = queue.released() => return,
-            event = live.recv() => match event {
-                Ok(event) => queue.carry(Response::Session(event)),
-                Err(broadcast::error::RecvError::Lagged(_)) => Carried::Overflowed,
-                Err(broadcast::error::RecvError::Closed) => return closed(&queue, &inputs).await,
-            },
-        };
-        if lagged(&queue, carried, &inputs).await {
-            return;
-        }
-    }
-}
-
-/// Carries the fleet's live changes on to a SubscribeInventory stream,
-/// `only` one host's when it names one.
-async fn carry_inventory(
-    queue: Arc<AnswerQueue>,
-    mut live: broadcast::Receiver<Arc<InventoryEvent>>,
-    only: Option<Vec<u8>>,
-    inputs: mpsc::WeakSender<Fed>,
-) {
-    loop {
-        let carried = tokio::select! {
-            () = queue.released() => return,
-            event = live.recv() => match event {
-                Ok(event) if carries(only.as_deref(), &event) => {
-                    queue.carry(Response::Inventory(event))
-                }
-                Ok(_) => Carried::Queued,
-                Err(broadcast::error::RecvError::Lagged(_)) => Carried::Overflowed,
-                Err(broadcast::error::RecvError::Closed) => return closed(&queue, &inputs).await,
-            },
-        };
-        if lagged(&queue, carried, &inputs).await {
-            return;
-        }
-    }
-}
-
-/// Reports an overflow to the core, which answers the stream's lag; true
-/// when nothing more is to be carried.
-async fn lagged(queue: &AnswerQueue, carried: Carried, inputs: &mpsc::WeakSender<Fed>) -> bool {
-    match carried {
-        Carried::Queued => false,
-        Carried::Overflowed => {
-            feed(inputs, Input::AnswerLagged { call: queue.call() }).await;
-            true
-        }
-        Carried::Refused => true,
-    }
-}
-
-/// What the stream followed is gone (the agent was deleted, or the profile
-/// is shutting down): the stream ends, and the core lets the call go.
-async fn closed(queue: &AnswerQueue, inputs: &mpsc::WeakSender<Fed>) {
-    queue.end(Status::Ok);
-    feed(inputs, Input::CallCancelled { call: queue.call() }).await;
-}
-
-fn carries(only: Option<&[u8]>, event: &InventoryEvent) -> bool {
-    let Some(only) = only else {
-        return true;
-    };
-    match &event.of {
-        Some(inventory_event::Of::Host(host)) => host.host_id == only,
-        Some(inventory_event::Of::HostRemoved(removed)) => removed.host_id == only,
-        Some(inventory_event::Of::Agent(agent)) => agent.host_id == only,
-        Some(inventory_event::Of::AgentRemoved(removed)) => removed.host_id == only,
-        Some(inventory_event::Of::CaughtUp(_) | inventory_event::Of::Lagged(_)) | None => true,
     }
 }
 

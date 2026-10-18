@@ -11,17 +11,20 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use store::Sqlite;
 
 pub mod ids;
+pub mod ingest;
 mod io;
 pub mod payload;
 pub mod serve;
 
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
-pub use io::{Input, Job, Output};
+pub use ingest::Journals;
+pub use io::{FromShell, IngestEnd, Ingested, Input, Job, Output, Settings, Wake};
 pub use serve::Answers;
 
 /// The checkpoint layout this build writes and restores. A checkpoint under
@@ -38,18 +41,22 @@ pub struct Daemon {
     families: FamilyState,
     pairing: PairingState,
     answers: Answers,
+    journals: Journals,
     timers: Timers,
     pending: Pending,
+    settings: Settings,
     options: StartOptions,
     budget: StepBudget,
 }
 
 /// What a daemon runs under, fixed for the run.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartOptions {
     /// The installation's generation as of this run: the one this host's
     /// own rows are served under.
     pub generation: u64,
+    /// The directory holding each own agent's directory, named by its id.
+    pub agents: PathBuf,
 }
 
 impl Daemon {
@@ -64,8 +71,10 @@ impl Daemon {
             families: FamilyState::default(),
             pairing: PairingState::default(),
             answers: Answers::default(),
+            journals: Journals::default(),
             timers: Timers::default(),
             pending: Pending::default(),
+            settings: Settings::default(),
             budget: StepBudget::DAEMON,
         }
     }
@@ -76,11 +85,20 @@ impl Daemon {
         match input {
             Input::Tick { now_ms } => self.timers.now_ms = now_ms,
             Input::ClientCall { call, who, request } => self.client_call(call, who, request, out),
-            Input::CallCancelled { call } => self.cancelled(call),
+            Input::CallCancelled { call } => self.cancelled(call, out),
             Input::AnswerLagged { call } => self.lagged(call, out),
             Input::JobDone { job, result } => self.job_done(job, result, out),
-            Input::Timer { .. }
-            | Input::LinkUp { .. }
+            Input::Nudge { agent } => self.ingest(agent, out),
+            Input::AgentHello { agent, .. } => self.hello(agent),
+            Input::Timer {
+                id: TimerId::Ingest(agent),
+            } => self.ingest_again(agent, out),
+            Input::Timer {
+                id: TimerId::Deliveries,
+            } => out.push(Output::Wake(Wake::Deliveries)),
+            Input::Configure(settings) => self.settings = settings,
+            Input::FromShell(change) => self.shell_changed(change, out),
+            Input::LinkUp { .. }
             | Input::LinkDown { .. }
             | Input::LinkControl { .. }
             | Input::ChannelOpened { .. }
@@ -89,8 +107,6 @@ impl Daemon {
             | Input::PeerAnswer { .. }
             | Input::PairingMessage { .. }
             | Input::Discovered { .. }
-            | Input::AgentHello { .. }
-            | Input::Nudge { .. }
             | Input::ControlClosed { .. }
             | Input::Entropy(_) => {}
         }
@@ -123,8 +139,10 @@ impl Daemon {
             &self.families,
             &self.pairing,
             &self.answers,
+            &self.journals,
             &self.timers,
             &self.pending,
+            &self.settings,
             &self.options,
         );
         Checkpoint {
@@ -142,9 +160,20 @@ impl Daemon {
                 expected: CHECKPOINT_SCHEMA,
             });
         }
-        let (routing, presence, sources, families, pairing, answers, timers, pending, options) =
-            postcard::from_bytes(&checkpoint.state)
-                .map_err(|error| RestoreError::Corrupt(error.to_string()))?;
+        let (
+            routing,
+            presence,
+            sources,
+            families,
+            pairing,
+            answers,
+            journals,
+            timers,
+            pending,
+            settings,
+            options,
+        ) = postcard::from_bytes(&checkpoint.state)
+            .map_err(|error| RestoreError::Corrupt(error.to_string()))?;
         Ok(Daemon {
             routing,
             presence,
@@ -152,8 +181,10 @@ impl Daemon {
             families,
             pairing,
             answers,
+            journals,
             timers,
             pending,
+            settings,
             ..Daemon::new(store, options)
         })
     }
@@ -304,7 +335,10 @@ mod tests {
     fn daemon() -> Daemon {
         Daemon::new(
             Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens"),
-            StartOptions { generation: 1 },
+            StartOptions {
+                generation: 1,
+                ..StartOptions::default()
+            },
         )
     }
 

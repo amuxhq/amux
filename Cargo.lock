@@ -1068,10 +1068,13 @@ dependencies = [
 name = "daemon-core"
 version = "0.1.0"
 dependencies = [
+ "journal",
  "postcard",
  "prost",
  "serde",
  "store",
+ "tempfile",
+ "tracing",
  "wire",
 ]
 

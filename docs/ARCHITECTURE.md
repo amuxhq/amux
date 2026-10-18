@@ -193,8 +193,9 @@ runtime is a complete amux with three groups of work:
   relay, discovery, pairing and the account binding.
 - **Agent hosting**: the agent registry (spawn, stop, resume, delete,
   rename), one handle per agent, and journal ingest into the store.
-- **Serving** ([`node::serve`](../crates/node/src/serve.rs),
-  [`node::fanout`](../crates/node/src/fanout.rs)): subscriptions, history
+- **Serving** ([`node::serve`](../crates/node/src/serve.rs), and the
+  profile's core in [`daemon-core`](../crates/daemon-core/src/serve.rs)
+  through its [driver](../crates/node/src/driver/mod.rs)): subscriptions, history
   pages, the inventory, messaging between agents, blob reads, and the two
   outboxes (deliveries to parents, and pushes).
 

@@ -1217,7 +1217,7 @@ async fn a_daemon_crash_under_the_same_boot_id_bumps_nothing() {
     assert_eq!(host_generation(&runtime).await.0, 1);
     assert_eq!(held(&runtime, &agent, &install).await, before);
     assert!(
-        runtime.ingest(agent.id).await.unwrap().records.is_empty(),
+        runtime.ingest(agent.id).await.unwrap().frames == 0,
         "nothing is re-ingested"
     );
     crash(daemon, runtime).await;
@@ -1239,7 +1239,7 @@ async fn a_clean_reboot_bumps_nothing() {
     );
     assert_eq!(host_generation(&runtime).await.0, 1);
     assert_eq!(held(&runtime, &agent, &install).await, before);
-    assert!(runtime.ingest(agent.id).await.unwrap().records.is_empty());
+    assert!(runtime.ingest(agent.id).await.unwrap().frames == 0);
     crash(daemon, runtime).await;
 }
 

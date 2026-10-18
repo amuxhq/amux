@@ -739,6 +739,7 @@ impl Daemon {
             // under it is closed.
             let host = queued.change.host();
             self.trust.store.replacement_pending.insert(host);
+            self.begin_replacement(HostId(*host.as_bytes()));
             self.trust_published(None, out);
             out.push(Output::Job {
                 id: job,
@@ -849,6 +850,13 @@ impl Daemon {
             (Stage::Writing, JobResult::Done) => {
                 self.trust.store = staged;
                 self.trust_published(Some((host, changed.clone())), out);
+                let id = HostId(*host.as_bytes());
+                if let TrustChanged::Paired(_) | TrustChanged::Removed(_) = &changed {
+                    self.trust_committed(id, out);
+                }
+                if changed == TrustChanged::Paired(PairingUpdate::ReplacedPubkey) {
+                    self.finish_replacement(id);
+                }
                 self.trust_change_ended(queued.waiter, Ok(changed), out);
             }
             (Stage::Writing, result) => {
@@ -871,6 +879,7 @@ impl Daemon {
     /// again, and the host's connections may open under it.
     fn end_replacement(&mut self, host: Uuid, out: &mut Vec<Output>) {
         self.trust.store.replacement_pending.remove(&host);
+        self.finish_replacement(HostId(*host.as_bytes()));
         self.trust_published(Some((host, TrustChanged::Unchanged)), out);
         out.push(Output::Shell(ShellWork::ReplacementEnded {
             host: HostId(*host.as_bytes()),
@@ -880,6 +889,7 @@ impl Daemon {
     /// The shell's handshakes read trust from the store as published, and
     /// the replicas follow the paired hosts.
     fn trust_published(&mut self, changed: Option<(Uuid, TrustChanged)>, out: &mut Vec<Output>) {
+        self.touched.host_set = true;
         out.push(Output::Shell(ShellWork::Trust {
             store: Box::new(self.trust.store.clone()),
             changed: changed.map(|(host, changed)| (HostId(*host.as_bytes()), changed)),

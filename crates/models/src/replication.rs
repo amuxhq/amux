@@ -350,7 +350,7 @@ impl Machine for Replication {
             let Some((inventory, request)) = follow.iter().find_map(|output| match output {
                 Output::Call {
                     call,
-                    request: request @ PeerRequest::SubscribeInventory { .. },
+                    request: request @ PeerRequest::SubscribeInventory,
                     ..
                 } => Some((*call, request.clone())),
                 _ => None,

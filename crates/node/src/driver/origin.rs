@@ -34,7 +34,7 @@ pub(super) async fn stream(
             })
             .await
         }
-        PeerRequest::SubscribeInventory { .. } => {
+        PeerRequest::SubscribeInventory => {
             inventory(&runtime, host, |event| answer(Answer::Inventory(event))).await
         }
         other => {

@@ -48,7 +48,7 @@ use crate::identity::{DeviceIdentity, IdentityError};
 use crate::link::{CarrierKind, ChannelPool, MuxCarrier, MuxRole, run_link, serve_inbound_streams};
 use crate::routing::{
     Capabilities, ConnectRole, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute,
-    RoutingCore, local_host,
+    local_host,
 };
 use crate::runtime::ProfileRuntime;
 use crate::services::{LocalPairingIdentity, PairingService, ReachabilityLinkConnector};
@@ -213,7 +213,6 @@ pub struct Edge {
     trust: SharedTrustStore,
     runtime: Weak<ProfileRuntime>,
     local_host: LiveLocalHost,
-    routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     connections: Arc<ConnectionManager>,
     incoming_streams_tx: mpsc::Sender<crate::link::InboundStream>,
@@ -255,6 +254,12 @@ impl Edge {
             None => (Arc::new(std::sync::RwLock::new(read)), Arc::default()),
         };
         let account = Account::open(dir).map_err(EdgeError::Account)?;
+        let own = runtime.clone();
+        account.on_change(Box::new(move || {
+            if let Some(runtime) = own.upgrade() {
+                runtime.tell_own_host();
+            }
+        }));
         let signed_in = options.cloud.credentials.is_some() || account.wants_cloud();
         let local_host = LiveLocalHost::new(local_host(
             identity.host_id,
@@ -265,10 +270,6 @@ impl Edge {
             },
             signed_in,
         ));
-        let routing = Arc::new(RoutingCore::with_trust_changes(
-            trust.clone(),
-            crate::routing::TrustChanges::to_core(runtime.clone()),
-        ));
         let links = Arc::new(LinkRegistry::for_core(
             local_host.id(),
             CoreLinks::new(runtime.clone()),
@@ -277,10 +278,8 @@ impl Edge {
             links,
             identity.clone(),
             trust.clone(),
-            routing.revocations().clone(),
         ));
-        let connections =
-            ConnectionManager::new(routing.clone(), channels.clone(), analytics.clone());
+        let connections = ConnectionManager::new(channels.clone(), analytics.clone());
         if let Some(runtime) = runtime.upgrade() {
             runtime
                 .driver()
@@ -291,13 +290,9 @@ impl Edge {
         let (pairing_tx, pairing_rx) = mpsc::channel(64);
         let (shutdown, _) = watch::channel(false);
 
-        let link_ctx = LinkCtx::new_live(
-            local_host.clone(),
-            routing.clone(),
-            channels.link_registry(),
-        )
-        .with_incoming_streams(incoming_streams_tx.clone())
-        .with_clock(clock.clone());
+        let link_ctx = LinkCtx::new_live(local_host.clone(), channels.link_registry())
+            .with_incoming_streams(incoming_streams_tx.clone())
+            .with_clock(clock.clone());
         let dispatcher = TunnelDispatcher::new(
             &identity,
             trust.clone(),
@@ -361,7 +356,6 @@ impl Edge {
             identity.clone(),
             trust.clone(),
             local_host.clone(),
-            routing.clone(),
             channels.clone(),
             connections.clone(),
             incoming_streams_tx.clone(),
@@ -405,7 +399,6 @@ impl Edge {
             trust,
             runtime: runtime.clone(),
             local_host,
-            routing,
             channels,
             connections,
             incoming_streams_tx,
@@ -519,32 +512,6 @@ impl Edge {
     /// How new calls to a host go now.
     pub async fn via(&self, host: HostId) -> LiveRoute {
         self.connections.via_for(host).await
-    }
-
-    /// Whether `host` was signed in to an account when it last said, kept
-    /// with its trust entry so a host that is away still reads as it was.
-    pub fn signed_in(&self, host: HostId) -> Option<bool> {
-        self.routing.signed_in_for(host)
-    }
-
-    /// What kind of machine `host` last announced itself as.
-    pub fn platform(&self, host: HostId) -> Option<String> {
-        self.routing.platform_for(host)
-    }
-
-    /// `host`'s version and capabilities as its handshake gave them, while
-    /// a link or a relay's claim makes it present.
-    pub async fn described(&self, host: HostId) -> Option<(String, wire::Capabilities)> {
-        self.routing
-            .host_entry(host)
-            .await
-            .map(|host| (host.version, host.capabilities))
-    }
-
-    /// Whether `host` last said it no longer trusts this host, by closing
-    /// a link or refusing a stream, and has not taken it back since.
-    pub fn revoked(&self, host: HostId) -> bool {
-        self.routing.revocations().contains(host)
     }
 
     /// Waits until calls to `host` have a route, or the timeout passes.
@@ -731,13 +698,10 @@ impl Edge {
         }
         self.local_host.set_signed_in(true);
         self.status.report(Observed::Connecting);
-        let connector: LinkConnectorCtx = LinkConnectorCtx::new_live(
-            self.local_host.clone(),
-            self.routing.clone(),
-            self.channels.link_registry(),
-        )
-        .with_incoming_streams(self.incoming_streams_tx.clone())
-        .with_clock(self.clock.clone());
+        let connector: LinkConnectorCtx =
+            LinkConnectorCtx::new_live(self.local_host.clone(), self.channels.link_registry())
+                .with_incoming_streams(self.incoming_streams_tx.clone())
+                .with_clock(self.clock.clone());
         *cloud = Some(establish_cloud_link(
             cloud_url,
             credentials,
@@ -826,14 +790,10 @@ impl Edge {
     }
 
     fn link_ctx(&self) -> LinkCtx {
-        LinkCtx::new_live(
-            self.local_host.clone(),
-            self.routing.clone(),
-            self.channels.link_registry(),
-        )
-        .with_incoming_streams(self.incoming_streams_tx.clone())
-        .with_shutdown(self.shutdown.subscribe())
-        .with_clock(self.clock.clone())
+        LinkCtx::new_live(self.local_host.clone(), self.channels.link_registry())
+            .with_incoming_streams(self.incoming_streams_tx.clone())
+            .with_shutdown(self.shutdown.subscribe())
+            .with_clock(self.clock.clone())
     }
 
     /// Dials a trusted peer's LAN listener directly.

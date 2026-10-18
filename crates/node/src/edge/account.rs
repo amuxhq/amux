@@ -56,6 +56,9 @@ pub(crate) struct Account {
     /// saved its rotated token over a sign-out or a pause made meanwhile
     /// would undo it.
     changes: tokio::sync::Mutex<()>,
+    /// Called after each change to the record: this host's own entry says
+    /// whether it is signed in.
+    changed: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl Account {
@@ -74,6 +77,7 @@ impl Account {
             record: Mutex::new(record),
             access: Mutex::new(None),
             changes: tokio::sync::Mutex::new(()),
+            changed: std::sync::OnceLock::new(),
         }))
     }
 
@@ -116,7 +120,15 @@ impl Account {
             },
         }
         *self.record.lock().unwrap() = record;
+        if let Some(changed) = self.changed.get() {
+            changed();
+        }
         Ok(())
+    }
+
+    /// Calls `changed` after each change to the record from now on.
+    pub(crate) fn on_change(&self, changed: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.changed.set(changed);
     }
 
     /// Binds the profile to an account, or signs a bound profile in again.

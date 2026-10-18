@@ -216,7 +216,7 @@ mod tests {
             &mut daemon,
             Input::ClientCall {
                 call: CallId(2),
-                request: ClientRequest::SubscribeInventory { hosts: Vec::new() },
+                request: ClientRequest::SubscribeInventory,
             },
         );
 

@@ -90,7 +90,7 @@ impl Daemon {
             &self.sources.canonical(&ids),
             &self.families.canonical(&ids),
             (&self.pairing, &self.trust.canonical(&ids)),
-            &self.answers,
+            (&self.answers, &self.host_set),
             &self.journals,
             &self.checkpoints.canonical(&ids),
             &self.notifications.canonical(&ids),
@@ -158,7 +158,7 @@ mod tests {
             .find_map(|output| match output {
                 Output::Call {
                     call,
-                    request: PeerRequest::SubscribeInventory { .. },
+                    request: PeerRequest::SubscribeInventory,
                     ..
                 } => Some(*call),
                 _ => None,

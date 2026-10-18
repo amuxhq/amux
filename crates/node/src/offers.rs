@@ -252,7 +252,7 @@ impl ProfileRuntime {
                 version_read_at_ms: now,
             },
         );
-        self.sync_hosts().await;
+        self.tell_own_host();
         Ok(answer)
     }
 

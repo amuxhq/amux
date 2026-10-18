@@ -264,8 +264,10 @@ impl ProfileRuntime {
                 // reachable: it reads offline until a channel to it opens
                 // again, which is what releases sends held for the host. A
                 // host that revoked this one already reads offline.
-                if !edge.revoked(host) && edge.via(host).await != crate::routing::LiveRoute::Offline
-                {
+                let revoked = self
+                    .host_entry_of(host)
+                    .is_some_and(|entry| entry.revoked == Some(true));
+                if !revoked && edge.via(host).await != crate::routing::LiveRoute::Offline {
                     edge.calls_failed(host).await;
                 }
                 Err(not_sent())
@@ -431,8 +433,8 @@ async fn dispatch(
         ),
         PeerRequest::Dump(request) => unary(client.dump(request).await, PeerReply::Dump),
         // Streams are opened by the replica's source, not forwarded.
-        PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory { .. } => Err(
-            Status::unimplemented("a stream is not made as a forwarded call"),
-        ),
+        PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory => Err(Status::unimplemented(
+            "a stream is not made as a forwarded call",
+        )),
     }
 }

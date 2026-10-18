@@ -73,9 +73,6 @@ pub enum Tried {
     /// A channel is open on the route.
     Opened,
     Failed(ChannelError),
-    /// The shell did not try: the host is not one this host trusts, or it
-    /// said it no longer trusts this one.
-    Abandoned,
 }
 
 /// Every host the core has something to say about.
@@ -359,9 +356,25 @@ impl Daemon {
     }
 
     /// Asks the shell to try `host` on `route`, unless an attempt the core
-    /// asked for is already under way there.
+    /// asked for is already under way there. A host this profile does not
+    /// trust, or one that said it no longer trusts this one, is not tried
+    /// and not retried: pairing again opens one of its own. One a channel
+    /// on another route answers for is tried: what it said is out of date,
+    /// and its answer on the new channel clears it.
     fn start_attempt(&mut self, host: HostId, route: Route, out: &mut Vec<Output>) {
         self.touched.host(host);
+        let answering = self
+            .presence
+            .hosts
+            .get(&host)
+            .is_some_and(|known| known.active.is_some());
+        if self.attempt_barred(host, answering) {
+            if let Some(known) = self.presence.hosts.get_mut(&host) {
+                known.retry = None;
+            }
+            self.cancel(TimerId::Retry(host), out);
+            return;
+        }
         let flying = self.routing.attempts.entry((host, route)).or_default();
         if *flying == 0 {
             *flying += 1;
@@ -387,12 +400,6 @@ impl Daemon {
         match &tried {
             Tried::Opened => self.concluded(host, route, Ok(()), out),
             Tried::Failed(error) => self.concluded(host, route, Err(error), out),
-            Tried::Abandoned => {
-                if let Some(known) = self.presence.hosts.get_mut(&host) {
-                    known.retry = None;
-                }
-                self.cancel(TimerId::Retry(host), out);
-            }
         }
         let at = self.timers.now_ms;
         let Some(retry) = self
@@ -498,6 +505,7 @@ impl Daemon {
                 };
             }
             if view != known.told {
+                self.touched.host_set = true;
                 known.told = view.clone();
                 out.push(Output::Presence { host, view });
             }
@@ -852,18 +860,24 @@ mod tests {
     }
 
     #[test]
-    fn a_direct_route_abandoned_while_a_hop_carries_the_host_is_tried_once_it_is_trusted() {
+    fn a_direct_route_not_tried_while_untrusted_is_tried_once_it_is_trusted() {
         let mut daemon = daemon();
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![LAPTOP]),
+            },
+        );
         up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
         claims(&mut daemon, 1, &[DESK]);
         let via = Route::Via(LAPTOP);
         concluded(&mut daemon, DESK, via, Tried::Opened);
-        let out = up(&mut daemon, 2, DESK, CarrierKind::Direct);
         let direct = Route::Direct(LinkId(2));
-        assert_eq!(attempts(&out), vec![(DESK, direct)]);
 
-        // The shell gives the try up: the host's trust has not landed.
-        concluded(&mut daemon, DESK, direct, Tried::Abandoned);
+        // Not tried: the host's trust has not landed.
+        let out = up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        assert_eq!(attempts(&out), Vec::new());
+        assert!(!daemon.presence().retrying(DESK));
         assert_eq!(view(&daemon, DESK).active, Some(via));
 
         // Once it is trusted the direct route is tried again, although the
@@ -957,17 +971,22 @@ mod tests {
     }
 
     #[test]
-    fn an_abandoned_try_and_a_host_with_no_route_end_the_retry() {
+    fn an_untrusted_host_and_a_host_with_no_route_end_the_retry() {
         let mut daemon = daemon();
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![LAPTOP]),
+            },
+        );
         up(&mut daemon, 1, RELAY, CarrierKind::Relay);
         // A host the relay claims is tried in the background, at once.
         let out = claims(&mut daemon, 1, &[DESK]);
         assert_eq!(attempts(&out), Vec::new());
         assert_eq!(retry_at(&out, DESK), Some(0));
+        // But not a host this profile does not trust: its retry ends.
         let out = fire(&mut daemon, DESK);
-        assert_eq!(attempts(&out), vec![(DESK, Route::Via(RELAY))]);
-        // The shell does not try a host it does not trust.
-        concluded(&mut daemon, DESK, Route::Via(RELAY), Tried::Abandoned);
+        assert_eq!(attempts(&out), Vec::new());
         assert!(!daemon.presence().retrying(DESK));
 
         // A retry whose host lost every route stops when it fires.

@@ -16,7 +16,7 @@ use crate::identity::DeviceIdentity;
 use crate::link::{
     CarrierKind, ChannelPool, LinkCarrier as NativeLinkCarrier, MuxCarrier, MuxRole, QuicCarrier,
 };
-use crate::routing::{Host, LinkCarrier, LinkConnectorCtx, LiveLocalHost, Route, RoutingCore};
+use crate::routing::{Host, LinkCarrier, LinkConnectorCtx, LiveLocalHost, Route};
 use crate::transport::spawn_ssh_relay;
 use crate::trust::{Reachability, SharedTrustStore};
 
@@ -81,7 +81,6 @@ struct ReachabilityLinkContext {
     identity: DeviceIdentity,
     trust_store: SharedTrustStore,
     local_host: LiveLocalHost,
-    routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     connections: Arc<ConnectionManager>,
     incoming_streams_tx: tokio::sync::mpsc::Sender<crate::link::InboundStream>,
@@ -112,7 +111,6 @@ impl ReachabilityLinkConnector {
         identity: DeviceIdentity,
         trust_store: SharedTrustStore,
         local_host: LiveLocalHost,
-        routing: Arc<RoutingCore>,
         channels: Arc<ChannelPool>,
         connections: Arc<ConnectionManager>,
         incoming_streams_tx: tokio::sync::mpsc::Sender<crate::link::InboundStream>,
@@ -124,7 +122,6 @@ impl ReachabilityLinkConnector {
                         identity,
                         trust_store,
                         local_host,
-                        routing,
                         channels,
                         connections,
                         incoming_streams_tx,
@@ -227,6 +224,9 @@ impl ReachabilityLinkConnector {
                             DiscoveryEvent::Lost { .. } => None,
                         };
                         runtime.found_hosts.apply(event);
+                        context
+                            .connections
+                            .candidates(runtime.found_hosts.candidates());
                         let Some(advert) = found else { continue };
                         // Whether to dial is the profile core's to decide.
                         let trusted = is_trusted(&context.trust_store, advert.host_id);
@@ -324,6 +324,10 @@ impl ReachabilityLinkConnector {
         };
         if let Some(runtime) = inner.context.runtime.lock().unwrap().as_ref() {
             runtime.found_hosts.hand_over(found);
+            inner
+                .context
+                .connections
+                .candidates(runtime.found_hosts.candidates());
         }
     }
 
@@ -663,14 +667,11 @@ async fn establish_carrier(
     carrier: LinkCarrier,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(Host, JoinHandle<Result<(), tonic::Status>>, AbortTaskOnDrop), String> {
-    let connector_ctx = LinkConnectorCtx::new_live(
-        context.local_host.clone(),
-        context.routing.clone(),
-        context.channels.link_registry(),
-    )
-    .with_expected_peer(peer)
-    .with_carrier(carrier)
-    .with_incoming_streams(context.incoming_streams_tx.clone());
+    let connector_ctx =
+        LinkConnectorCtx::new_live(context.local_host.clone(), context.channels.link_registry())
+            .with_expected_peer(peer)
+            .with_carrier(carrier)
+            .with_incoming_streams(context.incoming_streams_tx.clone());
     let (connector_task, established_rx) =
         crate::routing::spawn_connector_with_establishment_and_shutdown(
             connector_ctx,
@@ -692,7 +693,7 @@ fn persist_working_addr(
     peer: HostId,
     addr: std::net::SocketAddr,
 ) {
-    context.routing.remember_direct_addr(peer, addr);
+    context.connections.remember_direct_addr(peer, addr);
 }
 
 async fn await_connector(

@@ -25,7 +25,7 @@ use crate::resource_limits::{
 };
 use crate::routing::{
     AuthenticatedLinkContextProvider, AuthenticatedLinkUser, Capabilities, LinkCtx, LinkRegistry,
-    LinkTokenAuthenticator, LiveLocalHost, RoutingCore, local_host,
+    LinkTokenAuthenticator, LiveLocalHost, local_host,
 };
 use crate::transport::tcp_incoming;
 use crate::{Clock, HostId};
@@ -109,7 +109,6 @@ struct CloudLinkServerInner {
 /// One account's side of the relay: the links its hosts hold here and the
 /// adjacency they advertise to each other. Accounts never see each other.
 struct RelayUser {
-    routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     incoming_streams_tx: mpsc::Sender<crate::link::InboundStream>,
     drain: JoinHandle<()>,
@@ -132,7 +131,6 @@ impl RelayUser {
         // relay serves no calls of its own.
         let drain = tokio::spawn(async move { while incoming.recv().await.is_some() {} });
         Self {
-            routing: Arc::new(RoutingCore::new()),
             channels: Arc::new(ChannelPool::new(links)),
             incoming_streams_tx,
             drain,
@@ -140,13 +138,9 @@ impl RelayUser {
     }
 
     fn link_ctx(&self, local_host: &LiveLocalHost, clock: &Arc<dyn Clock>) -> LinkCtx {
-        LinkCtx::new_live(
-            local_host.clone(),
-            self.routing.clone(),
-            self.channels.link_registry(),
-        )
-        .with_incoming_streams(self.incoming_streams_tx.clone())
-        .with_clock(clock.clone())
+        LinkCtx::new_live(local_host.clone(), self.channels.link_registry())
+            .with_incoming_streams(self.incoming_streams_tx.clone())
+            .with_clock(clock.clone())
     }
 }
 
@@ -310,7 +304,6 @@ impl CloudLinkServer {
     async fn accepting_link_ctx(&self) -> LinkCtx {
         LinkCtx::new_live(
             self.inner.local_host.clone(),
-            Arc::new(RoutingCore::new()),
             Arc::new(LinkRegistry::new(self.inner.identity.host_id)),
         )
         .with_token_authenticator(self.inner.identity.authenticator.clone())

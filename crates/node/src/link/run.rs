@@ -21,9 +21,9 @@ use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
     ConnectHandshake, ConnectHandshakeEvent, Host, LinkAdmission, LinkCarrier as RoutingCarrier,
     LinkCloseRequest, LinkId, LinkProperties, LinkRegistry, LinkRole, LiveLocalHost, Registration,
-    RouteUpdateOutcome, RoutingCore, RuntimeInstance, core_host, host_from_wire, host_to_wire,
-    inbound_host_from_wire, neighbor_down_from_wire, neighbor_up_from_wire,
-    protocol_error_hello_ack, protocol_error_link_close, validate_remote_host,
+    RuntimeInstance, core_host, host_from_wire, host_to_wire, inbound_host_from_wire,
+    neighbor_down_from_wire, neighbor_up_from_wire, protocol_error_hello_ack,
+    protocol_error_link_close, validate_remote_host,
 };
 use crate::{Clock, HostId, audit};
 
@@ -216,7 +216,6 @@ pub(crate) fn system_time_ms(time: SystemTime) -> i64 {
 #[derive(Clone)]
 pub struct LinkCtx {
     local_host: LiveLocalHost,
-    routing: Arc<RoutingCore>,
     links: Arc<LinkRegistry>,
     incoming_streams_tx: Option<mpsc::Sender<super::InboundStream>>,
     expected_peer: Option<HostId>,
@@ -240,18 +239,13 @@ pub(crate) type EstablishmentReceiver = oneshot::Receiver<Result<Host, tonic::St
 
 impl LinkCtx {
     #[cfg(test)]
-    pub fn new(local_host: Host, routing: Arc<RoutingCore>, links: Arc<LinkRegistry>) -> Self {
-        Self::new_live(LiveLocalHost::new(local_host), routing, links)
+    pub fn new(local_host: Host, links: Arc<LinkRegistry>) -> Self {
+        Self::new_live(LiveLocalHost::new(local_host), links)
     }
 
-    pub(crate) fn new_live(
-        local_host: LiveLocalHost,
-        routing: Arc<RoutingCore>,
-        links: Arc<LinkRegistry>,
-    ) -> Self {
+    pub(crate) fn new_live(local_host: LiveLocalHost, links: Arc<LinkRegistry>) -> Self {
         Self {
             local_host,
-            routing,
             links,
             incoming_streams_tx: None,
             expected_peer: None,
@@ -521,7 +515,7 @@ async fn run_established(
     sent_snapshot: Vec<HostId>,
 ) -> Result<(), LinkError> {
     debug_assert!(handshake.is_established());
-    let (peer_host, peer_instance, peer_neighbors, connect_role, peer_frame) = peer;
+    let (peer_host, peer_instance, _neighbors, connect_role, peer_frame) = peer;
     if ctx
         .shutdown_rx
         .as_ref()
@@ -577,7 +571,7 @@ async fn run_established(
         .await;
     let Some(Registration {
         close_rx: mut link_close_rx,
-        displaced,
+        ..
     }) = registration
     else {
         signal_establishment(ctx.take_established_tx(), Ok(peer_host));
@@ -604,38 +598,6 @@ async fn run_established(
         ctx.report(auth.credential(link));
     }
 
-    // The peer joins routing before the hosts it claims to reach, and before
-    // anything else this link has to do. From the moment it displaced an
-    // earlier link, that earlier link carries nothing; every instant until
-    // this one lands is an instant when a call to this peer has nowhere to go.
-    if ctx.acceptor_session.is_none() {
-        match ctx.routing.apply_direct_up(peer_host.clone(), link).await {
-            RouteUpdateOutcome::Inserted | RouteUpdateOutcome::AlreadyKnown => {}
-            RouteUpdateOutcome::Replacing => {
-                tracing::debug!(peer = %peer_host.id, %link, "link established during trust replacement");
-            }
-            RouteUpdateOutcome::RejectedByCap => {
-                let status = tonic::Status::invalid_argument("routing host cap reached");
-                signal_establishment(ctx.take_established_tx(), Err(clone_status(&status)));
-                let _ = out_tx
-                    .send(protocol_error_link_close(status.to_string()))
-                    .await;
-                cleanup_link(&ctx, link, wire::pb::LinkCloseReason::ProtocolError).await;
-                return Err(status.into());
-            }
-        }
-    }
-    // The links this one superseded leave routing now, after this link has
-    // joined it, so the peer never looks absent. Their tasks remove them again
-    // when they finish closing, which by then is a no-op.
-    for superseded in displaced {
-        ctx.routing.apply_direct_down(superseded).await;
-    }
-    for neighbor in peer_neighbors {
-        if neighbor.id != ctx.local_host.id() && neighbor.id != peer_host.id {
-            ctx.routing.apply_claim_up(peer_host.id, neighbor).await;
-        }
-    }
     signal_establishment(ctx.take_established_tx(), Ok(peer_host.clone()));
 
     let mut acceptor_auth = ctx.acceptor_session.clone();
@@ -780,7 +742,9 @@ async fn run_established(
     // first, or the control stream simply ended with it. This side has not
     // closed the carrier yet, so any reason it gives is the peer's.
     if carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) {
-        ctx.routing.revocations().note(peer_host.id);
+        ctx.report(daemon_core::Input::PeerRevoked {
+            host: core_host(peer_host.id),
+        });
     }
     // Drain control messages already queued before closing, most importantly
     // the protocol close emitted for an invalid inbound frame.
@@ -872,11 +836,8 @@ async fn handle_control_body(
 ) -> ControlAction {
     match body {
         wire::pb::message::Body::NeighborUp(event) => match neighbor_up_from_wire(event.clone()) {
-            Ok(host) => {
+            Ok(_) => {
                 ctx.report_frame(link, wire::pb::message::Body::NeighborUp(event));
-                if host.id != ctx.local_host.id() && host.id != link.peer() {
-                    ctx.routing.apply_claim_up(link.peer(), host).await;
-                }
                 ControlAction::Continue
             }
             Err(error) => ControlAction::ReplyAndClose(
@@ -886,9 +847,8 @@ async fn handle_control_body(
         },
         wire::pb::message::Body::NeighborDown(event) => {
             match neighbor_down_from_wire(event.clone()) {
-                Ok(host_id) => {
+                Ok(_) => {
                     ctx.report_frame(link, wire::pb::message::Body::NeighborDown(event));
-                    ctx.routing.apply_claim_down(link.peer(), host_id).await;
                     ControlAction::Continue
                 }
                 Err(error) => ControlAction::ReplyAndClose(
@@ -944,7 +904,9 @@ async fn handle_control_body(
             let reason = wire::pb::LinkCloseReason::try_from(close.reason)
                 .unwrap_or(wire::pb::LinkCloseReason::Unspecified);
             if reason == wire::pb::LinkCloseReason::UserRevoked {
-                ctx.routing.revocations().note(link.peer());
+                ctx.report(daemon_core::Input::PeerRevoked {
+                    host: core_host(link.peer()),
+                });
             }
             ControlAction::Close(reason, link_close_status(&close))
         }
@@ -1136,12 +1098,7 @@ async fn cleanup_link(ctx: &LinkCtx, link: LinkId, reason: wire::pb::LinkCloseRe
         link: link.core(),
         reason,
     });
-    let peer = link.peer();
     ctx.links.remove(&link).await;
-    ctx.routing.apply_direct_down(link).await;
-    if ctx.links.link_to_peer(peer).await.is_none() {
-        ctx.routing.remove_relay_claims(peer).await;
-    }
 }
 
 async fn receive_refresh_request(
@@ -1412,7 +1369,6 @@ mod tests {
     async fn authenticated_link_expires_without_reauthentication() {
         let local = host(1);
         let peer = host(2);
-        let routing = Arc::new(RoutingCore::new());
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let user = authenticated_user(
             Uuid::new_v4(),
@@ -1420,7 +1376,7 @@ mod tests {
             crate::Tier::Free,
         );
         let (connector_carrier, acceptor_carrier) = mux_pair();
-        let ctx = LinkCtx::new(local, routing, links.clone())
+        let ctx = LinkCtx::new(local, links.clone())
             .with_authenticated_peer(peer.id)
             .with_token_authenticator(Arc::new(FixedAuthenticator(user)));
         let task = tokio::spawn(run_link(
@@ -1464,10 +1420,9 @@ mod tests {
             crate::Tier::Pro,
         );
         let session = LinkAuthSession::new(initial, FixedAuthenticator(other_user));
-        let routing = Arc::new(RoutingCore::new());
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = mux_pair();
-        let mut ctx = LinkCtx::new(local, routing, links).with_authenticated_peer(peer.id);
+        let mut ctx = LinkCtx::new(local, links).with_authenticated_peer(peer.id);
         ctx.acceptor_session = Some(session.clone());
         let task = tokio::spawn(run_link(
             ctx,
@@ -1503,10 +1458,9 @@ mod tests {
     async fn a_peer_sharing_no_protocol_version_is_refused_as_needing_an_update() {
         let local = host(1);
         let peer = host(2);
-        let routing = Arc::new(RoutingCore::new());
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = mux_pair();
-        let ctx = LinkCtx::new(local, routing, links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             acceptor_carrier.clone(),
@@ -1548,10 +1502,9 @@ mod tests {
     async fn acceptor_without_hello_times_out_without_registering_a_link() {
         let local = host(1);
         let peer = host(2);
-        let routing = Arc::new(RoutingCore::new());
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let (connector_carrier, acceptor_carrier) = mux_pair();
-        let ctx = LinkCtx::new(local, routing, links.clone()).with_authenticated_peer(peer.id);
+        let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
             acceptor_carrier.clone(),
@@ -1576,8 +1529,6 @@ mod tests {
         let local = host(1);
         let origin = host(2);
         let destination = host(3);
-        let announced = host(4);
-        let routing = Arc::new(RoutingCore::new());
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let destination_carrier = Arc::new(BlockingOpenCarrier::new());
         let destination_link = LinkId::new(destination.id);
@@ -1610,8 +1561,7 @@ mod tests {
             MuxRole::Acceptor,
             CarrierKind::RelayTcp,
         ));
-        let ctx =
-            LinkCtx::new(local.clone(), routing.clone(), links).with_authenticated_peer(origin.id);
+        let ctx = LinkCtx::new(local.clone(), links).with_authenticated_peer(origin.id);
         let link_task = tokio::spawn(run_link(
             ctx,
             local_carrier,
@@ -1658,28 +1608,19 @@ mod tests {
         .await
         .expect("origin stream did not reach the blocked destination");
 
+        // The control loop reads the origin's close, and the link ends,
+        // while the stream to the destination is still blocked opening.
         write_message(
             &mut sink,
-            &wire::pb::Message {
-                body: Some(wire::pb::message::Body::NeighborUp(wire::pb::NeighborUp {
-                    host: Some(host_to_wire(&announced)),
-                })),
-            },
+            &link_close(wire::pb::LinkCloseReason::UserShutdown),
         )
         .await
         .unwrap();
-        tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                if routing.host_entry(announced.id).await.is_some() {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("blocked stream dispatch stalled the origin control loop");
+        let _ = tokio::time::timeout(Duration::from_secs(1), link_task)
+            .await
+            .expect("blocked stream dispatch stalled the origin control loop")
+            .unwrap();
 
         stream_open.abort();
-        link_task.abort();
     }
 }

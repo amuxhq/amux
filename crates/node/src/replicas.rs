@@ -1,30 +1,21 @@
 //! The shell's side of replication. The profile's daemon core keeps the
 //! replicas current: it follows each trusted host's inventory, opens every
 //! replica agent's source and absorbs what they bring (see
-//! `daemon_core::sources`). What is left here is what the core cannot see
-//! yet: which hosts the trust store trusts, which ones have taken back a
-//! revocation, the published host set, a dropped replica's files, and the
-//! reads the shell makes of what the core decided.
+//! `daemon_core::sources`). What is left here is a dropped replica's files,
+//! the test hooks on the streams, and the reads the shell makes of what the
+//! core decided.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
 
+use daemon_core::Input;
 pub use daemon_core::SourcePolicy;
-use daemon_core::{HostId as CoreHost, Input};
 use store::AgentKey;
-use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{InventoryEvent, SessionEvent};
 
 use crate::HostId;
-use crate::routing::core_host;
 use crate::runtime::ProfileRuntime;
-
-/// How often the shell looks at the trust store for hosts trusted or
-/// untrusted, and at the hosts that took back a revocation, and recomputes
-/// the published host set.
-const TRUST_POLL: Duration = Duration::from_millis(25);
 
 /// For tests: what a source or an inventory follower does with an event it
 /// has just received.
@@ -55,22 +46,11 @@ pub(crate) struct Replicas {
     policy: SourcePolicy,
     /// The replica agents with a source open, as the core last said.
     open: HashSet<AgentKey>,
-    /// Hosts whose inventory has caught up on a live stream, as the core
-    /// last said.
-    ready: HashSet<Vec<u8>>,
     /// When a client last subscribed to or paged a replica, on the policy
     /// clock: the replica retention sweep's least-recently-used order.
     last_used: HashMap<AgentKey, i64>,
-    /// Tells the core of trust changes and revocations taken back.
-    watcher: Option<JoinHandle<()>>,
     pub(crate) hook: Option<SourceHook>,
     pub(crate) inventory_hook: Option<InventoryHook>,
-}
-
-impl Replicas {
-    pub(crate) fn take_watcher(&mut self) -> Option<JoinHandle<()>> {
-        self.watcher.take()
-    }
 }
 
 impl ProfileRuntime {
@@ -101,11 +81,8 @@ impl ProfileRuntime {
     /// Whether `host`'s inventory has caught up on a live stream, so its
     /// agents may have sources.
     pub fn host_ready(&self, host: HostId) -> bool {
-        self.replicas
-            .lock()
-            .unwrap()
-            .ready
-            .contains(host.as_bytes().as_slice())
+        self.host_entry_of(host)
+            .is_some_and(|entry| entry.current == Some(true))
     }
 
     /// For tests: consulted by every source for every event it receives.
@@ -154,20 +131,6 @@ impl ProfileRuntime {
         }
     }
 
-    /// The core found `host`'s rows current, or no longer: its published
-    /// entry says so.
-    pub(crate) fn host_current(&self, host: CoreHost, current: bool) {
-        {
-            let mut replicas = self.replicas.lock().unwrap();
-            if current {
-                replicas.ready.insert(host.0.to_vec());
-            } else {
-                replicas.ready.remove(host.0.as_slice());
-            }
-        }
-        self.host_current_changed(&host.0, current);
-    }
-
     /// The core dropped the replica from the store: its directory and blob
     /// files go.
     pub(crate) fn replica_dropped(&self, agent: &AgentKey) {
@@ -193,49 +156,8 @@ impl ProfileRuntime {
         }
     }
 
-    /// Starts telling the core which paired hosts took back a revocation,
-    /// and keeping the published host set current.
-    pub(crate) fn start_replication(&self) {
-        let runtime = self.me.clone();
-        let watcher = tokio::spawn(async move {
-            let mut revoked: HashSet<HostId> = HashSet::new();
-            loop {
-                {
-                    let Some(me) = runtime.upgrade() else { return };
-                    if let Some(edge) = me.edge() {
-                        // A host that takes back its revocation, or is
-                        // paired again, takes this host's calls again: its
-                        // streams open at once rather than after a backoff
-                        // grown on refusals.
-                        let now: HashSet<HostId> = edge
-                            .trusted()
-                            .into_iter()
-                            .map(|(host, ..)| host)
-                            .filter(|host| edge.revoked(*host))
-                            .collect();
-                        for host in revoked.difference(&now) {
-                            me.driver().report(Input::TryAgain {
-                                host: core_host(*host),
-                            });
-                        }
-                        revoked = now;
-                    }
-                    me.sync_hosts().await;
-                }
-                tokio::time::sleep(TRUST_POLL).await;
-            }
-        });
-        if let Some(old) = self.replicas.lock().unwrap().watcher.replace(watcher) {
-            old.abort();
-        }
-    }
-
-    /// Stops telling the core of trust, and lets go of every stream the
-    /// core opened of a peer, without waiting.
+    /// Lets go of every stream the core opened of a peer, without waiting.
     pub(crate) fn stop_replication(&self) {
-        if let Some(watcher) = self.replicas.lock().unwrap().take_watcher() {
-            watcher.abort();
-        }
         self.driver().hang_up_all();
     }
 }

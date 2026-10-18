@@ -9,7 +9,7 @@ use prost::{Message as _, Name as _};
 use store::{AgentKey, StoreError};
 use wire::{
     Agent, AmbiguousAgentName, ErrorCode, ErrorDetail, FetchRequest, FetchResponse, GetRequest,
-    InventoryEvent, Item, inventory_event,
+    Item,
 };
 
 use crate::driver::{Answers, Ask, Delivered};
@@ -99,10 +99,6 @@ impl ServeError {
             details,
         }
     }
-}
-
-pub(crate) fn inventory(of: inventory_event::Of) -> InventoryEvent {
-    InventoryEvent { of: Some(of) }
 }
 
 impl ProfileRuntime {

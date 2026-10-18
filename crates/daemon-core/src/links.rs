@@ -58,6 +58,8 @@ pub struct Channel {
     pub class: ChannelClass,
     /// Whether the driver reported its handshake done.
     pub open: bool,
+    /// Where the catalogue's revocation notes stood as it was asked for.
+    pub begun: u64,
 }
 
 impl LinkRegistry {
@@ -210,9 +212,11 @@ impl Daemon {
             .chain(gone.claims.iter().copied())
             .collect();
         let before = self.routes_before(hosts);
+        let peer = gone.peer;
         let registry = &mut self.routing.links;
         registry.links.remove(&link);
         registry.channels.retain(|_, channel| channel.link != link);
+        self.catalogue_link_down(link, peer);
         self.routes_moved(before, out);
     }
 
@@ -225,6 +229,12 @@ impl Daemon {
             return;
         };
         let peer = entry.peer;
+        if let Some(body) = &frame.body {
+            self.catalogue_frame(link, peer, body, out);
+        }
+        let Some(entry) = self.routing.links.links.get(&link) else {
+            return;
+        };
         let mut claims = entry.claims.clone();
         let other = |host: &HostId| Some(*host) != own && *host != peer;
         match frame.body {
@@ -287,6 +297,7 @@ impl Daemon {
             self.concluded(peer, route, Err(&ChannelError::Unpinned), out);
             return;
         };
+        let begun = self.routing.catalogue.mark();
         let registry = &mut self.routing.links;
         registry.next_channel += 1;
         let channel = ChannelId(registry.next_channel);
@@ -298,6 +309,7 @@ impl Daemon {
                 route,
                 class,
                 open: false,
+                begun,
             },
         );
         out.push(Output::OpenChannel {

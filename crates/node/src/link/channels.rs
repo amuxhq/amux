@@ -26,7 +26,7 @@ use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
 use crate::driver::{CoreLinks, core_error};
 use crate::identity::{DeviceIdentity, IdentityError};
-use crate::routing::{LinkId, LinkRegistry, RevocationMark, Revocations, Route};
+use crate::routing::{LinkId, LinkRegistry, Route, core_host};
 use crate::transport::{Compressed, channel_from_single_io, configure_tonic_endpoint_keepalive};
 use crate::trust::SharedTrustStore;
 
@@ -94,7 +94,6 @@ enum Handshake {
 struct ChannelSecurity {
     identity: DeviceIdentity,
     trust_store: SharedTrustStore,
-    revocations: Revocations,
 }
 
 /// A calls channel kept for reuse, and whether the one connection under it
@@ -140,6 +139,24 @@ impl Ending {
     fn tell_ended(&self) {
         if let Some((core, channel)) = self.tell.get() {
             core.closed(*channel, daemon_core::payload::ChannelError::Ended);
+        }
+    }
+
+    /// Tells the core the far host took this host's certificate on the
+    /// channel.
+    fn tell_answered(&self) {
+        if let Some((core, channel)) = self.tell.get() {
+            core.report(daemon_core::Input::ChannelAnswered { channel: *channel });
+        }
+    }
+
+    /// Tells the core the far host refused this host's certificate as no
+    /// longer trusted.
+    fn tell_revoked(&self, peer: HostId) {
+        if let Some((core, _)) = self.tell.get() {
+            core.report(daemon_core::Input::PeerRevoked {
+                host: core_host(peer),
+            });
         }
     }
 }
@@ -263,7 +280,6 @@ impl ChannelPool {
         links: Arc<LinkRegistry>,
         identity: DeviceIdentity,
         trust_store: SharedTrustStore,
-        revocations: Revocations,
     ) -> Self {
         Self {
             by_key: RwLock::new(HashMap::new()),
@@ -273,7 +289,6 @@ impl ChannelPool {
             security: Some(ChannelSecurity {
                 identity,
                 trust_store,
-                revocations,
             }),
             handshake_timeout: CHANNEL_TLS_HANDSHAKE_TIMEOUT,
             bulk_response_holds: std::sync::Mutex::new(HashMap::new()),
@@ -424,9 +439,15 @@ impl ChannelPool {
             let (stream, handshake) = self
                 .open_stream_on(carrier, key.peer, key.route, Handshake::Any)
                 .await?;
-            self.secure_channel(key, Watched::new(stream, ended.clone()), handshake, pin)
-                .await
-                .map(|channel| (channel, handshake))
+            self.secure_channel(
+                key,
+                Watched::new(stream, ended.clone()),
+                &ended,
+                handshake,
+                pin,
+            )
+            .await
+            .map(|channel| (channel, handshake))
         }
         .await;
         if let Some(telling) = telling {
@@ -558,6 +579,7 @@ impl ChannelPool {
         &self,
         key: ChannelKey,
         stream: Watched<ByteStream>,
+        ended: &Arc<Ending>,
         handshake: Handshake,
         pin: Option<Vec<u8>>,
     ) -> Result<Channel, ChannelError> {
@@ -565,7 +587,6 @@ impl ChannelPool {
             .security
             .as_ref()
             .ok_or_else(|| ChannelError::Handshake("device identity is unavailable".to_string()))?;
-        let begun = security.revocations.mark();
         let lifetime = Arc::new(CancellationToken::new());
         {
             let mut lifetimes = self
@@ -606,12 +627,7 @@ impl ChannelPool {
         // Compressed above the handshake, so the relay copies it as it
         // copies any ciphertext; the acceptor wraps its end the same way
         // (`TunnelDispatcher`).
-        let tls = Compressed::new(TrustAnswer::new(
-            io,
-            key.peer,
-            security.revocations.clone(),
-            begun,
-        ));
+        let tls = Compressed::new(TrustAnswer::new(io, key.peer, ended.clone()));
         let endpoint = configure_tonic_endpoint_keepalive(Endpoint::from_static("https://peer"));
         let hold = (key.class == ChannelClass::Bulk).then(|| {
             self.bulk_response_holds
@@ -731,25 +747,22 @@ pub const TRUST_REVOKED: &str = "the host no longer trusts this machine";
 /// TLS stream. In TLS 1.3 the client's handshake finishes before the server
 /// has judged the client's certificate, so the answer comes with the first
 /// read: application data means it was taken, and a certificate_revoked
-/// alert means the host no longer trusts this one. Either is kept in
-/// `revocations` (data only against a refusal older than this channel),
-/// and the refusal fails the read with an error [`PeerChannel`] names to
-/// the caller.
+/// alert means the host no longer trusts this one. Either is told to the
+/// profile's core, once the channel is reported open, and the refusal fails
+/// the read with an error [`PeerChannel`] names to the caller.
 struct TrustAnswer<T> {
     inner: T,
     peer: HostId,
-    revocations: Revocations,
-    begun: RevocationMark,
+    channel: Arc<Ending>,
     answered: bool,
 }
 
 impl<T> TrustAnswer<T> {
-    fn new(inner: T, peer: HostId, revocations: Revocations, begun: RevocationMark) -> Self {
+    fn new(inner: T, peer: HostId, channel: Arc<Ending>) -> Self {
         Self {
             inner,
             peer,
-            revocations,
-            begun,
+            channel,
             answered: false,
         }
     }
@@ -777,13 +790,13 @@ impl<T: AsyncRead + Unpin> AsyncRead for TrustAnswer<T> {
             Ok(()) => {
                 if !self.answered && buf.filled().len() > before {
                     self.answered = true;
-                    self.revocations.clear_answered(self.peer, self.begun);
+                    self.channel.tell_answered();
                 }
                 Poll::Ready(Ok(()))
             }
             Err(error) if !self.answered && revoked_certificate(&error) => {
                 self.answered = true;
-                self.revocations.note(self.peer);
+                self.channel.tell_revoked(self.peer);
                 Poll::Ready(Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     TRUST_REVOKED,

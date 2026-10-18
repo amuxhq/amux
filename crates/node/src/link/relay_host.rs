@@ -16,7 +16,7 @@ use super::run::spawn_connector_with_auth_establishment_and_shutdown;
 use super::{ByteStream, CarrierKind, InboundStream, LinkCarrier, LinkCtx, MuxCarrier, MuxRole};
 use crate::routing::{
     Capabilities, LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher, LinkRegistry,
-    LiveLocalHost, RoutingCore, local_host,
+    LiveLocalHost, local_host,
 };
 use crate::{HostId, Tier};
 
@@ -50,12 +50,8 @@ impl RelayHost {
             },
             true,
         );
-        let ctx = LinkCtx::new_live(
-            LiveLocalHost::new(host),
-            Arc::new(RoutingCore::new()),
-            Arc::new(LinkRegistry::new(id)),
-        )
-        .with_incoming_streams(inbound_tx);
+        let ctx = LinkCtx::new_live(LiveLocalHost::new(host), Arc::new(LinkRegistry::new(id)))
+            .with_incoming_streams(inbound_tx);
         let carrier = Arc::new(MuxCarrier::new(
             io,
             MuxRole::Connector,

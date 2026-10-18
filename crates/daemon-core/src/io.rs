@@ -140,6 +140,30 @@ pub enum Input {
     Discovered {
         found: Vec<Advertisement>,
     },
+    /// The host said it no longer trusts this one: it closed a link saying
+    /// so, or refused this host's certificate as revoked on a channel.
+    PeerRevoked {
+        host: HostId,
+    },
+    /// The far host took this host's certificate on a channel the core
+    /// asked for: its first answer was data.
+    ChannelAnswered {
+        channel: ChannelId,
+    },
+    /// This host's own entry as the driver describes it now: its name,
+    /// sign-in, version, capabilities, platform and providers.
+    OwnHost(#[serde(with = "codec::message")] Box<wire::HostEntry>),
+    /// Every machine discovery holds in this profile's scope now, newest
+    /// first.
+    Candidates {
+        found: Vec<crate::host_set::Candidate>,
+    },
+    /// Why the last dial to the host failed, or none once a route to it
+    /// came up.
+    DialError {
+        host: HostId,
+        error: Option<String>,
+    },
     /// A connection to the agent's process said Hello.
     AgentHello {
         agent: AgentId,
@@ -236,6 +260,11 @@ impl Input {
             Input::PairingMessage { .. } => "PairingMessage",
             Input::PairingClosed { .. } => "PairingClosed",
             Input::Discovered { .. } => "Discovered",
+            Input::PeerRevoked { .. } => "PeerRevoked",
+            Input::ChannelAnswered { .. } => "ChannelAnswered",
+            Input::OwnHost(_) => "OwnHost",
+            Input::Candidates { .. } => "Candidates",
+            Input::DialError { .. } => "DialError",
             Input::AgentHello { .. } => "AgentHello",
             Input::Nudge { .. } => "Nudge",
             Input::ControlClosed { .. } => "ControlClosed",
@@ -323,8 +352,6 @@ pub enum FromShell {
         #[serde(with = "codec::shared")]
         event: Arc<InventoryEvent>,
     },
-    /// The host set changed.
-    Hosts(#[serde(with = "codec::shared")] Arc<InventoryEvent>),
     /// Nothing about the agent, its session or its row, reaches a
     /// subscriber until [`FromShell::Unmute`]; its streams stay open. A
     /// delete mutes the agent it stops, so no subscriber reads the stop as
@@ -519,18 +546,8 @@ pub enum ShellWork {
     Wrote,
     /// A source opened for the replica agent, or closed.
     Sourcing { agent: AgentKey, open: bool },
-    /// `host`'s inventory caught up on a live stream, so its rows are
-    /// current, or that stream ended and they may be stale: its published
-    /// entry says so.
-    HostCurrent { host: HostId, current: bool },
-    /// `host` runs under a new generation, which its published entry
-    /// carries.
-    HostGeneration { host: HostId, generation: u64 },
-    /// What `host`'s providers offer, as its entry said.
-    Providers {
-        host: HostId,
-        providers: Vec<wire::ProviderOnHost>,
-    },
+    /// The host set as the core published it now, for the shell's reads.
+    Hosts { entries: Vec<wire::HostEntry> },
     /// The replica is gone from the store: its directory and blob files
     /// go with it.
     ReplicaDropped { agent: AgentKey },
@@ -704,11 +721,6 @@ mod tests {
                 route: Route::Via(HostId([2; 16])),
                 tried: Tried::Failed(ChannelError::Refused(StreamRefusal::PaymentRequired)),
             },
-            Input::AttemptConcluded {
-                host: HostId([1; 16]),
-                route: Route::Direct(LinkId(3)),
-                tried: Tried::Abandoned,
-            },
             Input::Timer {
                 id: TimerId::Retry(HostId([1; 16])),
             },
@@ -777,13 +789,30 @@ mod tests {
             },
             Input::ClientCall {
                 call: CallId(4),
-                request: ClientRequest::SubscribeInventory {
-                    hosts: vec![wire::HostEntry {
-                        host_id: vec![1],
-                        generation: 2,
-                        ..Default::default()
-                    }],
-                },
+                request: ClientRequest::SubscribeInventory,
+            },
+            Input::PeerRevoked {
+                host: HostId([1; 16]),
+            },
+            Input::ChannelAnswered {
+                channel: ChannelId(4),
+            },
+            Input::OwnHost(Box::new(wire::HostEntry {
+                host_id: vec![1],
+                name: "desk".into(),
+                account_signed_in: Some(true),
+                ..Default::default()
+            })),
+            Input::Candidates {
+                found: vec![crate::host_set::Candidate {
+                    host: HostId([4; 16]),
+                    name: "box".into(),
+                    addrs: vec!["10.0.0.4:7000".into()],
+                }],
+            },
+            Input::DialError {
+                host: HostId([1; 16]),
+                error: Some("refused".into()),
             },
             Input::JobDone {
                 job: JobId(5),

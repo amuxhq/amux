@@ -556,7 +556,7 @@ impl Daemon {
         out.push(Output::Call {
             host,
             call,
-            request: PeerRequest::SubscribeInventory { hosts: Vec::new() },
+            request: PeerRequest::SubscribeInventory,
             absorbed: true,
         });
         let follower = self.sources.followers.entry(host).or_default();
@@ -619,10 +619,7 @@ impl Daemon {
                 if !caught_up {
                     inventory.generation = Some(entry.generation);
                 }
-                out.push(Output::Shell(ShellWork::Providers {
-                    host,
-                    providers: entry.providers,
-                }));
+                self.providers_said(host, entry.providers);
                 return;
             }
             Some(inventory_event::Of::Agent(agent)) if !caught_up => {
@@ -738,10 +735,8 @@ impl Daemon {
         for key in keys {
             self.close_source(&key, out);
         }
-        out.push(Output::Shell(ShellWork::HostCurrent {
-            host,
-            current: false,
-        }));
+        // The host's entry says whether its rows are current.
+        self.touched.host_set = true;
         let Ok(rows) = self.store.agents() else {
             return;
         };
@@ -807,10 +802,7 @@ impl Daemon {
             self.store.record_host_generation(&host.0, generation)?;
             self.sources.settled.retain(|key| key.host != host.0);
             self.sources.settling.retain(|key| key.host != host.0);
-            out.push(Output::Shell(ShellWork::HostGeneration {
-                host,
-                generation,
-            }));
+            self.touched.host_set = true;
         }
         for key in &unlisted {
             self.drop_replica(key, RemovalReason::NoLongerListed, out)?;
@@ -848,10 +840,8 @@ impl Daemon {
         }
         self.sources.following.remove(&host);
         self.sources.ready.insert(host, session);
-        out.push(Output::Shell(ShellWork::HostCurrent {
-            host,
-            current: true,
-        }));
+        // The host's entry says whether its rows are current.
+        self.touched.host_set = true;
         // Deliveries to a parent on that host may have waited for it.
         self.deliveries_due();
         Ok(())
@@ -1661,6 +1651,18 @@ mod tests {
     use crate::payload::{CarrierKind, ClientRequest};
     use crate::{Input, LinkId, StartOptions};
 
+    /// Whether `host`'s entry in the host set a step published says its
+    /// rows are current.
+    fn listed_current(out: &[Output], host: [u8; 16]) -> Option<bool> {
+        out.iter().find_map(|output| match output {
+            Output::Shell(ShellWork::Hosts { entries }) => entries
+                .iter()
+                .find(|entry| entry.host_id == host)
+                .and_then(|entry| entry.current),
+            _ => None,
+        })
+    }
+
     const OWN: [u8; 16] = *b"own-host-0000000";
     const PEER: [u8; 16] = *b"far-host-0000000";
     const THEIRS: [u8; 16] = *b"agent-1111111111";
@@ -1793,7 +1795,7 @@ mod tests {
             },
         );
         match calls(&due).as_slice() {
-            [(call, PeerRequest::SubscribeInventory { .. })] => *call,
+            [(call, PeerRequest::SubscribeInventory)] => *call,
             other => panic!("the timer subscribes to the inventory: {other:?}"),
         }
     }
@@ -1826,10 +1828,7 @@ mod tests {
                 inventory_event::Of::CaughtUp(CaughtUp::default()),
             ),
         );
-        assert!(caught_up.contains(&Output::Shell(ShellWork::HostCurrent {
-            host: HostId(PEER),
-            current: true,
-        })));
+        assert_eq!(listed_current(&caught_up, PEER), Some(true));
         assert!(daemon.sources().ready(HostId(PEER)));
         assert_eq!(daemon.store.host_generation(&PEER).unwrap(), Some(3));
         let source = match calls(&caught_up).as_slice() {
@@ -2161,10 +2160,7 @@ mod tests {
             },
         );
         assert!(lost.contains(&Output::HangUp { call: source }));
-        assert!(lost.contains(&Output::Shell(ShellWork::HostCurrent {
-            host: HostId(PEER),
-            current: false,
-        })));
+        assert_eq!(listed_current(&lost, PEER), Some(false));
         assert!(matches!(
             answered_to_watching(&lost).as_slice(),
             [session_event::Of::Detached(_)]

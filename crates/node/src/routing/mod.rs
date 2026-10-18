@@ -3,18 +3,14 @@
 //! Two rules define routing (docs/PROTOCOL.md): advertise only adjacency,
 //! forward only to adjacency. The carrier-independent link runtime lives in
 //! `crate::link`; this module owns the wire-side adjacency discipline
-//! (`link_registry`) and the host catalogue (`core`). The routes and what
-//! each host reads as are the profile's core's.
+//! (`link_registry`). The routes, what each host reads as and the host
+//! catalogue are the profile's core's.
 
-mod core;
 mod host;
 mod link;
 mod link_registry;
 mod types;
 mod wire;
-
-pub use core::RoutingCore;
-pub(crate) use core::{RevocationMark, Revocations, RouteUpdateOutcome, TrustChanges};
 
 pub use host::local_kinds;
 pub(crate) use host::{

@@ -881,7 +881,7 @@ impl<'a> Transition<'a> {
             );
         }
         match request {
-            request @ PeerRequest::SubscribeInventory { .. } => {
+            request @ PeerRequest::SubscribeInventory => {
                 if let Some(old) = self.next.following.take() {
                     self.feed(PARENTS, Input::CallCancelled { call: old.call });
                 }

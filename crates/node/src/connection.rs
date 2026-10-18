@@ -19,9 +19,7 @@ use wire::Presence;
 use crate::HostId;
 use crate::driver::core_error;
 use crate::link::{ChannelClass, ChannelError, ChannelKey, ChannelPool};
-use crate::routing::{
-    LinkCarrier, LinkCloseRequest, LiveRoute, Route, RoutingCore, core_host, host_from_core,
-};
+use crate::routing::{LinkCarrier, LinkCloseRequest, LiveRoute, Route, core_host, host_from_core};
 use crate::transport::{TrustedPeerConnections, pairing_channel_from_io};
 
 /// How long one try the core asks for may take to open its channel before
@@ -31,7 +29,6 @@ const ATTEMPT_PATIENCE: Duration = Duration::from_secs(10);
 pub struct ConnectionManager {
     /// This manager, for the tries it runs in the background.
     me: Weak<ConnectionManager>,
-    routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     trusted_connections: TrustedPeerConnections,
     /// What the profile's core last told about each host it has something
@@ -67,14 +64,9 @@ impl View {
 }
 
 impl ConnectionManager {
-    pub(crate) fn new(
-        routing: Arc<RoutingCore>,
-        channels: Arc<ChannelPool>,
-        analytics: analytics::Analytics,
-    ) -> Arc<Self> {
+    pub(crate) fn new(channels: Arc<ChannelPool>, analytics: analytics::Analytics) -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
             me: me.clone(),
-            routing,
             channels,
             trusted_connections: TrustedPeerConnections::default(),
             views: Mutex::default(),
@@ -108,17 +100,12 @@ impl ConnectionManager {
             .iter()
             .any(|route| !before.routes.contains(route))
         {
-            self.reachability_errors.lock().unwrap().remove(&host);
+            self.dial_error(host, None);
         }
     }
 
     /// The core asks for a calls channel to `host` on `route`, and to be
-    /// told how it went. A host this one does not trust, or that said it
-    /// no longer trusts this one, is not tried: pairing again opens one of
-    /// its own. A host a channel on another route is open to answers this
-    /// one, so what it said before is out of date: it is tried, and its
-    /// answer on the new channel clears what it said. It may have refused
-    /// a stream only because its half of the pairing had not landed yet.
+    /// told how it went.
     pub(crate) fn attempt(&self, host: daemon_core::HostId, route: daemon_core::Route) {
         let me = self.me.clone();
         tokio::spawn(async move {
@@ -126,28 +113,17 @@ impl ConnectionManager {
                 return;
             };
             let peer = host_from_core(host);
-            let answering = manager
-                .views
-                .lock()
-                .unwrap()
-                .get(&peer)
-                .is_some_and(|view| view.active.is_some());
-            let revoked = manager.routing.revocations().contains(peer) && !answering;
-            let tried = if revoked || !manager.routing.trusts(peer) {
-                Tried::Abandoned
-            } else {
-                let opened = tokio::time::timeout(
-                    ATTEMPT_PATIENCE,
-                    manager.open_route(peer, Route::from_core(peer, route), ChannelClass::Calls),
-                )
-                .await;
-                match opened {
-                    Ok(Ok(_)) => Tried::Opened,
-                    Ok(Err(error)) => Tried::Failed(core_error(&error)),
-                    Err(_) => Tried::Failed(daemon_core::payload::ChannelError::Handshake(
-                        "no channel opened in time".to_owned(),
-                    )),
-                }
+            let opened = tokio::time::timeout(
+                ATTEMPT_PATIENCE,
+                manager.open_route(peer, Route::from_core(peer, route), ChannelClass::Calls),
+            )
+            .await;
+            let tried = match opened {
+                Ok(Ok(_)) => Tried::Opened,
+                Ok(Err(error)) => Tried::Failed(core_error(&error)),
+                Err(_) => Tried::Failed(daemon_core::payload::ChannelError::Handshake(
+                    "no channel opened in time".to_owned(),
+                )),
             };
             manager.report(Input::AttemptConcluded { host, route, tried });
         });
@@ -319,14 +295,54 @@ impl ConnectionManager {
     }
 
     pub(crate) async fn record_reachability_error(&self, peer: HostId, error: impl Into<String>) {
-        self.reachability_errors
-            .lock()
-            .unwrap()
-            .insert(peer, error.into());
+        self.dial_error(peer, Some(error.into()));
     }
 
     pub(crate) async fn clear_reachability_error(&self, peer: HostId) {
-        self.reachability_errors.lock().unwrap().remove(&peer);
+        self.dial_error(peer, None);
+    }
+
+    /// Keeps why the last dial to `peer` failed, and tells the core when
+    /// that moved: the host's entry carries it.
+    fn dial_error(&self, peer: HostId, error: Option<String>) {
+        let moved = {
+            let mut errors = self.reachability_errors.lock().unwrap();
+            let before = match &error {
+                Some(error) => errors.insert(peer, error.clone()),
+                None => errors.remove(&peer),
+            };
+            before != error
+        };
+        if moved {
+            self.report(Input::DialError {
+                host: core_host(peer),
+                error,
+            });
+        }
+    }
+
+    /// Keeps the address a trusted peer answered at as the only direct
+    /// address it is dialled at: the core writes it.
+    pub(crate) fn remember_direct_addr(&self, peer: HostId, addr: std::net::SocketAddr) {
+        self.report(Input::ChangeTrust(crate::trust::TrustChange::DirectAddrs {
+            host: peer,
+            addrs: vec![addr],
+        }));
+    }
+
+    /// Every machine discovery holds in this profile's scope now, newest
+    /// first: the host set lists those not paired as candidates.
+    pub(crate) fn candidates(&self, found: Vec<crate::discovery::Advertisement>) {
+        self.report(Input::Candidates {
+            found: found
+                .into_iter()
+                .map(|advert| daemon_core::host_set::Candidate {
+                    host: core_host(advert.host_id),
+                    name: advert.name,
+                    addrs: advert.addrs.iter().map(ToString::to_string).collect(),
+                })
+                .collect(),
+        });
     }
 
     /// Every route the core lists to `peer`, the one a fresh call takes
@@ -382,8 +398,6 @@ impl ConnectionManager {
     }
 
     pub(crate) async fn teardown_host(&self, peer: HostId) {
-        self.routing.begin_replacement(peer).await;
-        self.routing.remove_host(peer).await;
         self.forget(peer);
         self.trusted_connections.close_host(peer).await;
         self.channels
@@ -406,27 +420,17 @@ impl ConnectionManager {
     /// the trust store, so nothing of it gets back in unless it is paired
     /// again, and then its new streams must not be closed as they arrive.
     pub(crate) async fn close_host_access(&self, peer: HostId) {
-        self.routing.revocations().clear(peer);
         self.channels
             .link_registry()
             .close_host(peer, LinkCloseRequest::Revoked)
             .await;
-        self.routing.remove_direct_links(peer).await;
         self.forget(peer);
         self.trusted_connections.close_host(peer).await;
         self.forget(peer);
         self.trusted_connections.finish_host_replacement(peer);
     }
 
-    /// This host has just paired with `peer`: whatever `peer` said about
-    /// no longer trusting it is out of date, and streams waiting to reopen
-    /// to it try again now.
-    pub(crate) fn trust_renewed(&self, peer: HostId) {
-        self.routing.revocations().clear(peer);
-    }
-
-    pub(crate) async fn finish_host_replacement(&self, peer: HostId) {
-        self.routing.finish_replacement(peer).await;
+    pub(crate) fn finish_host_replacement(&self, peer: HostId) {
         self.trusted_connections.finish_host_replacement(peer);
     }
 
@@ -460,7 +464,14 @@ impl ConnectionManager {
 
     async fn cloud_relay_for(&self, peer: HostId) -> Result<HostId, ChannelError> {
         let registry = self.channels.link_registry();
-        for relay in self.routing.relays_to(peer).await {
+        let relays = self
+            .routes_to(peer)
+            .into_iter()
+            .filter_map(|route| match route {
+                Route::Via(relay) => Some(relay),
+                Route::Direct(_) => None,
+            });
+        for relay in relays {
             if registry.has_cloud_relay_link_to(relay).await {
                 return Ok(relay);
             }
@@ -612,7 +623,6 @@ mod tests {
     async fn a_call_on_a_link_superseded_while_opening_retries_on_its_replacement() {
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
         let manager = ConnectionManager::new(
-            Arc::new(RoutingCore::new()),
             Arc::new(ChannelPool::new(links.clone())),
             analytics::Analytics::off(),
         );

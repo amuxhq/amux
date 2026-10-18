@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use store::Sqlite;
 
 pub mod blobs;
+pub mod catalogue;
 pub mod checkpoints;
 mod codec;
 pub mod deliveries;
@@ -25,6 +26,7 @@ pub mod drafts;
 mod families;
 pub mod fingerprint;
 pub mod generation;
+pub mod host_set;
 pub mod ids;
 pub mod ingest;
 mod io;
@@ -70,6 +72,7 @@ pub struct Daemon {
     store: Sqlite,
     routing: RoutingState,
     presence: PresenceState,
+    host_set: host_set::HostSet,
     sources: Sources,
     families: FamilyState,
     pairing: PairingState,
@@ -122,6 +125,7 @@ impl Daemon {
             options,
             routing: RoutingState::default(),
             presence: PresenceState::default(),
+            host_set: host_set::HostSet::default(),
             sources: Sources::default(),
             families: FamilyState::default(),
             pairing: PairingState::default(),
@@ -270,9 +274,15 @@ impl Daemon {
                 id: TimerId::PairWindow,
             } => self.window_timer(out),
             Input::Entropy(fresh) => self.entropy(fresh),
+            Input::PeerRevoked { host } => self.peer_revoked(host),
+            Input::ChannelAnswered { channel } => self.channel_answered(channel, out),
+            Input::OwnHost(entry) => self.own_host_said(*entry),
+            Input::Candidates { found } => self.candidates_found(found),
+            Input::DialError { host, error } => self.dial_error(host, error),
         }
         self.settle_deliveries(out);
         self.tell_presence(out);
+        self.publish_host_set(out);
         self.follow_touched(out);
         self.arm_on_commit(out);
         if let Err(violation) = self.check_step_invariants() {
@@ -439,7 +449,7 @@ impl Daemon {
             &self.sources,
             &self.families,
             (&self.pairing, &self.trust),
-            &self.answers,
+            (&self.answers, &self.host_set),
             &self.journals,
             &self.checkpoints,
             &self.notifications,
@@ -472,7 +482,7 @@ impl Daemon {
             sources,
             families,
             (pairing, trust),
-            answers,
+            (answers, host_set),
             journals,
             checkpoints,
             notifications,
@@ -493,6 +503,7 @@ impl Daemon {
             pairing,
             trust,
             answers,
+            host_set,
             journals,
             checkpoints,
             notifications,
@@ -592,6 +603,8 @@ struct Touched {
     opened_under: Option<(u64, u64)>,
     /// Each host whose routes, attempts or presence the step moved.
     hosts: Vec<HostId>,
+    /// Something a host set entry is made of moved.
+    host_set: bool,
     /// Each page that joined a replica's block.
     paged: Vec<PageJoined>,
     /// Each parent whose deletion this host's children followed, and
@@ -629,6 +642,7 @@ impl Touched {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingState {
     links: LinkRegistry,
+    catalogue: catalogue::Catalogue,
     /// Each attempt under way, by host and route, counted.
     attempts: std::collections::BTreeMap<(HostId, Route), u32>,
 }

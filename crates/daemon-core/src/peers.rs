@@ -139,9 +139,7 @@ impl Daemon {
                 self.own(&request.agent_id)
                     .and_then(|()| self.subscribe(call, &request.agent_id, from, out))
             }
-            PeerRequest::SubscribeInventory { hosts } => {
-                self.subscribe_inventory(call, hosts, Some(own), out)
-            }
+            PeerRequest::SubscribeInventory => self.subscribe_inventory(call, Some(own), out),
             PeerRequest::Fetch(request) => self
                 .own(&request.agent_id)
                 .and_then(|()| self.fetch(call, &request, out)),

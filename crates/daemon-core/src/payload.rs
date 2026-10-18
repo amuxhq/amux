@@ -150,11 +150,7 @@ pub enum ClientRequest {
     Get(#[serde(with = "codec::message")] wire::GetRequest),
     /// Opens a stream of the fleet: hosts and agent rows, CaughtUp, then
     /// every change.
-    SubscribeInventory {
-        /// The host set as last published.
-        #[serde(with = "codec::messages")]
-        hosts: Vec<wire::HostEntry>,
-    },
+    SubscribeInventory,
     /// A call on an agent of another host, made on that host's daemon and
     /// answered with what it answered.
     Forward {
@@ -287,11 +283,7 @@ pub enum PeerRequest {
     /// came after the revision the peer's replica holds, or a tail.
     Subscribe(#[serde(with = "codec::message")] wire::PeerSubscribeRequest),
     /// A stream of this host's entry and its own agents.
-    SubscribeInventory {
-        /// The host set as last published, which holds this host's entry.
-        #[serde(with = "codec::messages")]
-        hosts: Vec<wire::HostEntry>,
-    },
+    SubscribeInventory,
     Fetch(#[serde(with = "codec::message")] wire::FetchRequest),
     Get(#[serde(with = "codec::message")] wire::GetRequest),
     SendInput(#[serde(with = "codec::message")] wire::SendInputRequest),

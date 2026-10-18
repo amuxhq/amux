@@ -120,9 +120,7 @@ impl Daemon {
             }
             ClientRequest::Fetch(request) => self.fetch(call, &request, out),
             ClientRequest::Get(request) => self.get(call, &request, out),
-            ClientRequest::SubscribeInventory { hosts } => {
-                self.subscribe_inventory(call, hosts, None, out)
-            }
+            ClientRequest::SubscribeInventory => self.subscribe_inventory(call, None, out),
             ClientRequest::Forward { host, request } => {
                 self.forward(call, host, request, out);
                 Ok(())
@@ -326,10 +324,14 @@ impl Daemon {
     pub(crate) fn subscribe_inventory(
         &mut self,
         call: CallId,
-        hosts: Vec<wire::HostEntry>,
         only: Option<Vec<u8>>,
         out: &mut Vec<Output>,
     ) -> Result<(), CallError> {
+        // What moved earlier in this step reaches the streams already open
+        // first, so the opening lists the set as it stands.
+        self.touched.host_set = true;
+        self.publish_host_set(out);
+        let hosts = self.host_set().to_vec();
         let rows = self.store.agents()?;
         let carried = |host: &[u8]| only.as_deref().is_none_or(|only| only == host);
         let mut answer = |of| {
@@ -534,7 +536,6 @@ impl Daemon {
                     self.publish_inventory(event, out);
                 }
             }
-            FromShell::Hosts(event) => self.publish_inventory(event, out),
             FromShell::Mute(agent) => {
                 self.answers.muted.insert(Key::from(&agent));
             }
@@ -766,9 +767,20 @@ mod tests {
     #[test]
     fn an_inventory_opening_carries_only_the_named_host_and_a_cancel_releases_it() {
         let mut daemon = daemon();
-        let host = |id: &[u8]| wire::HostEntry {
-            host_id: id.to_vec(),
+        // This host's entry as the core lists it, named as the driver says.
+        let own = |name: &str| wire::HostEntry {
+            host_id: OWN.to_vec(),
+            name: name.to_owned(),
+            generation: 7,
+            trust: wire::Trust::Trusted as i32,
+            presence: wire::Presence::Online as i32,
+            current: Some(true),
             ..wire::HostEntry::default()
+        };
+        let answers = |out: Vec<Output>| -> Vec<Output> {
+            out.into_iter()
+                .filter(|output| matches!(output, Output::Answer { .. }))
+                .collect()
         };
         // A paired host's inventory carries this host's entry and agents.
         let out = step(
@@ -776,9 +788,7 @@ mod tests {
             Input::PeerCall {
                 from: crate::HostId(*OTHER),
                 call: CallId(3),
-                request: crate::payload::PeerRequest::SubscribeInventory {
-                    hosts: vec![host(OWN), host(OTHER)],
-                },
+                request: crate::payload::PeerRequest::SubscribeInventory,
             },
         );
         let inventory_answer = |of| Output::Answer {
@@ -791,32 +801,37 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            out,
+            answers(out),
             vec![
-                inventory_answer(inventory_event::Of::Host(host(OWN))),
+                inventory_answer(inventory_event::Of::Host(own(""))),
                 inventory_answer(inventory_event::Of::Agent(to_wire(&row))),
                 inventory_answer(inventory_event::Of::CaughtUp(CaughtUp::default())),
             ]
         );
-        let elsewhere = Arc::new(inventory(inventory_event::Of::Host(host(OTHER))));
-        let here = Arc::new(inventory(inventory_event::Of::Host(host(OWN))));
+        let elsewhere = crate::host_set::Candidate {
+            host: crate::HostId(*OTHER),
+            name: "box".into(),
+            addrs: Vec::new(),
+        };
         assert_eq!(
-            step(
+            answers(step(
                 &mut daemon,
-                Input::FromShell(FromShell::Hosts(elsewhere.clone()))
-            ),
+                Input::Candidates {
+                    found: vec![elsewhere]
+                }
+            )),
             Vec::new(),
             "another host's change is not carried"
         );
         assert_eq!(
-            step(
+            answers(step(
                 &mut daemon,
-                Input::FromShell(FromShell::Hosts(here.clone()))
-            ),
-            vec![Output::Answer {
-                call: CallId(3),
-                response: Response::Inventory(here),
-            }]
+                Input::OwnHost(Box::new(wire::HostEntry {
+                    name: "desk".into(),
+                    ..wire::HostEntry::default()
+                }))
+            )),
+            vec![inventory_answer(inventory_event::Of::Host(own("desk")))]
         );
         assert_eq!(
             step(&mut daemon, Input::CallCancelled { call: CallId(3) }),

@@ -8,11 +8,7 @@
 //!
 //! The core owns the profile's store: every write to it is a step's. What
 //! the shell reads of it, it reads on the core thread between steps, so a
-//! read sees the store as of one point in the order of steps. The host set
-//! is the one thing the shell still publishes; what it changes it hands
-//! over, and the core thread steps those changes before the next input, so
-//! an inventory stream reads them in order: after its opening if handed
-//! over after it, in its opening if before.
+//! read sees the store as of one point in the order of steps.
 //!
 //! Links and channels report to the core through a queue of their own,
 //! stepped ahead of everything else, so a link's word never waits behind
@@ -45,8 +41,8 @@ use daemon_core::payload::{
     PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
 };
 use daemon_core::{
-    CallId, ChannelId, Daemon, DrainReport, FromShell, HostId, IngestEnd, Ingested, Input, Job,
-    JobId, LinkId, Output, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
+    CallId, ChannelId, Daemon, DrainReport, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
+    Output, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use links::{CoreLinks, core_error};
 use store::Sqlite;
@@ -125,7 +121,7 @@ pub(crate) enum Fed {
         want: Input,
         reply: oneshot::Sender<Result<Opened, ChannelError>>,
     },
-    /// The shell handed changes over.
+    /// Reports are queued.
     Wake,
     /// The profile is gone.
     Stop,
@@ -158,9 +154,6 @@ pub(crate) struct Driver {
     /// What links and channels reported, in the order they did.
     reports: Arc<Mutex<VecDeque<Input>>>,
     calls: Arc<CallTable>,
-    /// What the shell handed over, waiting for the core thread's next
-    /// input.
-    shell: Arc<Mutex<Vec<FromShell>>>,
     /// Where what the core decides about hosts goes, once the profile's
     /// edge is up.
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
@@ -192,7 +185,6 @@ impl Driver {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
         let calls = Arc::new(CallTable::default());
         let reports = Arc::new(Mutex::new(VecDeque::new()));
-        let shell = Arc::new(Mutex::new(Vec::new()));
         let connections = Arc::new(Mutex::new(Weak::new()));
         let outgoing = Outgoing::default();
         let window = Arc::new(pairing::PairWindow::default());
@@ -235,7 +227,6 @@ impl Driver {
             inputs: inputs.downgrade(),
             runtime,
             calls: calls.clone(),
-            shell: shell.clone(),
             connections: connections.clone(),
             outgoing: outgoing.clone(),
             timers: HashMap::new(),
@@ -250,7 +241,6 @@ impl Driver {
             inputs,
             reports,
             calls,
-            shell,
             connections,
             outgoing,
             thread: std::sync::OnceLock::new(),
@@ -437,15 +427,6 @@ impl Driver {
         }
         self.pairings.end_all();
     }
-
-    /// Hands the core a change to the host set, stepped before the next
-    /// input, or at once when made while the core thread carries out a
-    /// step.
-    pub(crate) fn hand_over(&self, change: FromShell) {
-        self.shell.lock().unwrap().push(change);
-        // A full channel wakes the core anyway.
-        let _ = self.inputs.try_send(Fed::Wake);
-    }
 }
 
 impl Drop for Driver {
@@ -504,7 +485,6 @@ pub(crate) struct CoreThread {
     inputs: mpsc::WeakSender<Fed>,
     runtime: Weak<ProfileRuntime>,
     calls: Arc<CallTable>,
-    shell: Arc<Mutex<Vec<FromShell>>>,
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
     outgoing: Outgoing,
     timers: HashMap<TimerId, AbortHandle>,
@@ -589,7 +569,7 @@ impl CoreThread {
                     self.step(&runtime, Input::ClientCall { call, request }, &mut out);
                     continue;
                 }
-                Fed::Wake if self.shell.lock().unwrap().is_empty() => continue,
+                Fed::Wake => continue,
                 fed => fed,
             };
             let mut call = None;
@@ -659,18 +639,6 @@ impl CoreThread {
                 self.settings = Some(settings);
                 self.step(&runtime, Input::Configure(settings), &mut out);
             }
-            // Handed over before this input arrived: told before anything
-            // it reads.
-            let changes = std::mem::take(&mut *self.shell.lock().unwrap());
-            for change in changes {
-                self.step(&runtime, Input::FromShell(change), &mut out);
-            }
-            // A call's request is read from the shell only now: a change
-            // handed over before this read is in it, and one handed over
-            // after is still queued, stepped after the call as a live
-            // answer to it. Read before the drain, a change handed over in
-            // between would reach the core before the call and be in
-            // neither.
             let input = match call {
                 Some(Arriving::Client(call, ask)) => Some(Input::ClientCall {
                     call,
@@ -933,7 +901,7 @@ impl CoreThread {
                 None => self.again.push_back(Input::AttemptConcluded {
                     host,
                     route,
-                    tried: daemon_core::Tried::Abandoned,
+                    tried: daemon_core::Tried::Failed(daemon_core::payload::ChannelError::NoLink),
                 }),
             },
             Output::DropRoute { host, route } => {
@@ -951,8 +919,7 @@ impl CoreThread {
                 let reports = self.reports.clone();
                 let inputs = self.inputs.clone();
                 let task = match request {
-                    request @ (PeerRequest::Subscribe(_)
-                    | PeerRequest::SubscribeInventory { .. }) => {
+                    request @ (PeerRequest::Subscribe(_) | PeerRequest::SubscribeInventory) => {
                         tokio::spawn(origin::stream(runtime, host, call, request, inputs))
                     }
                     request => tokio::spawn(async move {
@@ -1039,24 +1006,7 @@ impl CoreThread {
         match work {
             ShellWork::Wrote => runtime.wrote(),
             ShellWork::Sourcing { agent, open } => runtime.sourcing(agent, open),
-            ShellWork::HostCurrent { host, current } => {
-                runtime.host_current(host, current);
-                self.step_handed_over(runtime);
-            }
-            ShellWork::HostGeneration { host, generation } => {
-                runtime.host_generation_changed(&host.0, generation);
-                self.step_handed_over(runtime);
-            }
-            ShellWork::Providers { host, providers } => {
-                if runtime.peer_providers_said(&host.0, providers) {
-                    let runtime = Arc::downgrade(runtime);
-                    tokio::spawn(async move {
-                        if let Some(runtime) = runtime.upgrade() {
-                            runtime.sync_hosts().await;
-                        }
-                    });
-                }
-            }
+            ShellWork::Hosts { entries } => runtime.hosts_published(entries),
             ShellWork::ReplicaDropped { agent } => runtime.replica_dropped(&agent),
             ShellWork::Trust { store, changed } => {
                 *self.trust.write().unwrap() = *store;
@@ -1083,9 +1033,8 @@ impl CoreThread {
         let Some(connections) = self.connections() else {
             return;
         };
-        connections.trust_renewed(host);
         if update == PairingUpdate::ReplacedPubkey {
-            tokio::spawn(async move { connections.finish_host_replacement(host).await });
+            connections.finish_host_replacement(host);
         }
     }
 
@@ -1093,17 +1042,7 @@ impl CoreThread {
     /// open again under the key it had.
     fn replacement_ended(&self, host: uuid::Uuid) {
         if let Some(connections) = self.connections() {
-            tokio::spawn(async move { connections.finish_host_replacement(host).await });
-        }
-    }
-
-    /// Steps at once what the shell handed over while carrying out a step's
-    /// outputs, so subscribers read it in the order of the outputs around
-    /// it.
-    fn step_handed_over(&mut self, runtime: &Arc<ProfileRuntime>) {
-        let changes = std::mem::take(&mut *self.shell.lock().unwrap());
-        for change in changes {
-            self.step(runtime, Input::FromShell(change), &mut Vec::new());
+            connections.finish_host_replacement(host);
         }
     }
 
@@ -1369,9 +1308,7 @@ impl ProfileRuntime {
                 ClientRequest::Fetch(request)
             }
             Ask::Get(request) => ClientRequest::Get(request),
-            Ask::SubscribeInventory => ClientRequest::SubscribeInventory {
-                hosts: self.opening_hosts(),
-            },
+            Ask::SubscribeInventory => ClientRequest::SubscribeInventory,
             Ask::Ready(request) => request,
         }
     }
@@ -1384,9 +1321,6 @@ impl ProfileRuntime {
                 self.run_join_hook();
                 PeerRequest::Subscribe(request)
             }
-            PeerRequest::SubscribeInventory { .. } => PeerRequest::SubscribeInventory {
-                hosts: self.opening_hosts(),
-            },
             request => request,
         }
     }
@@ -1396,15 +1330,5 @@ impl ProfileRuntime {
         if let Some(hook) = hook {
             Handle::current().block_on(hook());
         }
-    }
-
-    /// The host set an inventory stream opens with.
-    fn opening_hosts(&self) -> Vec<wire::HostEntry> {
-        let hosts = self.published_hosts();
-        let hook = self.inventory_opening_hook.lock().unwrap().clone();
-        if let Some(hook) = hook {
-            Handle::current().block_on(hook());
-        }
-        hosts
     }
 }

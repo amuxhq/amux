@@ -27,9 +27,9 @@ use std::time::Duration;
 
 use agent_dir::Clock;
 use agent_dir::local_socket::{self, LocalListener, LocalStream};
+use daemon_core::Refusal;
 pub use daemon_core::ingest::{INGEST_BATCH, KEPT_SEGMENTS};
 use daemon_core::payload::{CallError, ClientRequest, Response, Status};
-use daemon_core::{FromShell, Refusal};
 use store::{AgentKey, AgentRow, Sqlite, StoreError};
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::{mpsc, oneshot, watch};
@@ -387,9 +387,6 @@ pub struct ProfileRuntime {
     /// For tests: awaited by a subscribe on the core thread before the
     /// core reads its cut.
     pub(crate) join_hook: Mutex<Option<JoinHook>>,
-    /// For tests: awaited by an inventory subscribe on the core thread
-    /// between reading the host set and the core answering it.
-    pub(crate) inventory_opening_hook: Mutex<Option<JoinHook>>,
     /// Counts the store's writes, own commits and absorbed replica rows
     /// alike, so a waiter wakes on the write it is waiting for instead of
     /// polling: a message waiting for its acceptance item, a test fencing
@@ -413,8 +410,8 @@ pub struct ProfileRuntime {
     pub(crate) replicas: Mutex<crate::replicas::Replicas>,
     /// Replica blob files by last read, indexed at the first sweep.
     pub(crate) replica_blobs: Mutex<Option<store::BlobLru>>,
-    /// The host set as last published on the inventory.
-    pub(crate) hosts: Mutex<crate::hosts::HostSet>,
+    /// The host set as the core last published it on the inventory.
+    pub(crate) hosts: Mutex<Vec<wire::HostEntry>>,
     /// The directories this profile's agents were started in.
     recent: Arc<Mutex<crate::repositories::Recent>>,
     analytics: analytics::Analytics,
@@ -422,9 +419,6 @@ pub struct ProfileRuntime {
     turns: crate::telemetry::Turns,
     /// What each provider offers on this host.
     offers: crate::offers::Offers,
-    /// What each trusted host last said its providers offer, from its own
-    /// entry on its inventory.
-    pub(crate) peer_providers: Mutex<HashMap<Vec<u8>, Vec<wire::ProviderOnHost>>>,
 }
 
 /// A write waiting for its verdict: its number, and where the verdict goes.
@@ -605,9 +599,6 @@ impl Drop for ProfileRuntime {
         for task in self.background.get_mut().unwrap().drain(..) {
             task.abort();
         }
-        if let Some(watcher) = self.replicas.get_mut().unwrap().take_watcher() {
-            watcher.abort();
-        }
     }
 }
 
@@ -673,7 +664,6 @@ impl ProfileRuntime {
                 driver
             },
             join_hook: Mutex::new(None),
-            inventory_opening_hook: Mutex::new(None),
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
             push,
@@ -688,15 +678,15 @@ impl ProfileRuntime {
             edge: std::sync::OnceLock::new(),
             replicas: Mutex::new(crate::replicas::Replicas::default()),
             replica_blobs: Mutex::new(None),
-            hosts: Mutex::new(crate::hosts::HostSet::new()),
+            hosts: Mutex::new(Vec::new()),
             recent: Arc::new(Mutex::new(crate::repositories::Recent::load(&dir))),
             offers: crate::offers::Offers::load(&dir),
-            peer_providers: Mutex::new(HashMap::new()),
             dir,
             analytics,
             turns: crate::telemetry::Turns::default(),
         });
         core.expect("built with the runtime").start(&runtime.driver);
+        runtime.tell_own_host();
         runtime
     }
 
@@ -718,7 +708,7 @@ impl ProfileRuntime {
         )
         .await?;
         let edge = self.edge.get_or_init(|| edge).clone();
-        self.start_replication();
+        self.tell_own_host();
         Ok(edge)
     }
 
@@ -818,14 +808,6 @@ impl ProfileRuntime {
     #[doc(hidden)]
     pub fn set_join_hook(&self, hook: Option<JoinHook>) {
         *self.join_hook.lock().unwrap() = hook;
-    }
-
-    /// For tests: runs `hook` inside every inventory subscribe between
-    /// reading the host set and the core answering it, so a test can
-    /// change the host set in that window.
-    #[doc(hidden)]
-    pub fn set_inventory_opening_hook(&self, hook: Option<JoinHook>) {
-        *self.inventory_opening_hook.lock().unwrap() = hook;
     }
 
     /// Replaces what the next spawn or resume starts with.
@@ -1677,11 +1659,6 @@ impl ProfileRuntime {
         {
             self.turns.add(kind, report.turn_ends);
         }
-    }
-
-    /// Hands the core a change to the host set.
-    pub(crate) fn hand_over(&self, change: FromShell) {
-        self.driver().hand_over(change);
     }
 
     // --- the watcher ---------------------------------------------------------

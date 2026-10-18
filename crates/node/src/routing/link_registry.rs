@@ -177,11 +177,6 @@ pub(crate) enum LinkCloseRequest {
 pub(crate) struct Registration {
     /// Receives the registry's requests to close this link.
     pub(crate) close_rx: mpsc::Receiver<LinkCloseRequest>,
-    /// Direct links to the same peer this one superseded. They are gone from
-    /// the registry already and are asked to close, but their own tasks take
-    /// time to finish; whoever routes over links has to forget them now, or a
-    /// call in that gap picks a link nothing can open a stream on.
-    pub(crate) displaced: Vec<LinkId>,
 }
 
 impl LinkRegistry {
@@ -346,7 +341,6 @@ impl LinkRegistry {
             },
         );
         drop(state);
-        let displaced_ids = displaced.iter().map(|(id, _)| *id).collect();
         for (id, writer) in displaced {
             let _ = writer.close_tx.try_send(LinkCloseRequest::Superseded);
             writer.closed.notify_waiters();
@@ -357,10 +351,7 @@ impl LinkRegistry {
             audit::link_down(old.host.id, &link, "replaced");
         }
         audit::link_up(host.id, &link, role);
-        Some(Registration {
-            close_rx,
-            displaced: displaced_ids,
-        })
+        Some(Registration { close_rx })
     }
 
     /// Removes a link; if it was the last link to its peer, other links
@@ -863,7 +854,7 @@ mod tests {
             .expect("a lone fallback link is usable");
 
         let (preferred_tx, _) = mpsc::channel(8);
-        let registration = registry
+        let _registration = registry
             .register_displacing(
                 preferred,
                 peer.clone(),
@@ -880,7 +871,6 @@ mod tests {
             )
             .await
             .expect("a preferred link supersedes a fallback");
-        assert_eq!(registration.displaced, vec![fallback]);
         assert_eq!(
             fallback_close.recv().await,
             Some(LinkCloseRequest::Superseded)
@@ -949,7 +939,7 @@ mod tests {
                 .expect("a lone link is usable");
 
             let (restarted_tx, _) = mpsc::channel(8);
-            let registration = registry
+            let _registration = registry
                 .register_displacing(
                     link(2, 2),
                     peer.clone(),
@@ -960,7 +950,6 @@ mod tests {
                 )
                 .await
                 .unwrap_or_else(|| panic!("{arriving:?} from a restart was refused by {held:?}"));
-            assert_eq!(registration.displaced, vec![dead]);
             assert_eq!(dead_close.recv().await, Some(LinkCloseRequest::Superseded));
             assert_eq!(registry.links_per_peer().await, vec![(peer.id, 1)]);
         }

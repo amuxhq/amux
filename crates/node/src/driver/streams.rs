@@ -107,7 +107,7 @@ impl ProfileRuntime {
         from: crate::HostId,
     ) -> Result<InventorySubscription, ServeError> {
         let room = self.launch().inventory_capacity;
-        let request = PeerRequest::SubscribeInventory { hosts: Vec::new() };
+        let request = PeerRequest::SubscribeInventory;
         let mut answers = self
             .driver()
             .peer_call(core_host(from), request, room)

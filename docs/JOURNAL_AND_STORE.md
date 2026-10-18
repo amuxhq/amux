@@ -225,7 +225,10 @@ items: every stream ends with a full item, at every restart boundary too.
 The `deliveries` primary key includes the child's incarnation, kind and turn
 id, and the insert is an upsert, so a turn end committed twice is one row.
 Agent messages are deduplicated by the recipient's daemon against the
-recipient's items by envelope id, using the `items_by_input` index.
+recipient's items by envelope id, using the `items_by_input` index, once
+the acceptance item has committed; a message handed over again before that
+is answered by the recipient's interpreter, which takes each envelope id
+once per incarnation.
 
 ### Checkpoints and reclaiming segments
 

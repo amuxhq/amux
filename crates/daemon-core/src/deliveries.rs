@@ -17,9 +17,12 @@
 //! A parent on this host is handed its report through its message lane, as
 //! any agent message is: one message at a time, deduped against the
 //! recipient's items by envelope id, and accepted only once the item the
-//! recipient wrote on accepting it has committed. A retry therefore always
-//! arrives after the original's answer, so that one store lookup is the
-//! whole dedupe. A parent's message to its exited child resumes the child
+//! recipient wrote on accepting it has committed. A retry after an answer
+//! finds that item, so the store lookup is the dedupe once a message has
+//! been accepted. A message handed over again with no answer seen (its
+//! patience ran out, or this daemon restarted and adopted the process) is
+//! answered by the recipient's process itself, which takes an envelope id
+//! once per incarnation. A parent's message to its exited child resumes the child
 //! with the message as the new incarnation's first input. A parent on
 //! another host is sent the report as a message from the child, and that
 //! host's daemon makes the same checks where the parent lives.

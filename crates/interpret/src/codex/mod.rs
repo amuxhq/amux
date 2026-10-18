@@ -1200,6 +1200,9 @@ impl State {
     /// injected item, then the inject.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
         let id = envelope.id.clone();
+        if self.shared.message_repeated(emit, &id) {
+            return;
+        }
         self.shared.message_accepted(&id);
         self.emit_item(
             emit,

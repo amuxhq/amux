@@ -41,7 +41,7 @@ use store::{AgentKey, Sqlite};
 use wire::{ErrorCode, InventoryEvent, Item, Lifecycle, Step, inventory_event};
 
 use crate::held::{Held, Slot};
-use crate::{Fault, Host, Machine, Parked, Property};
+use crate::{Fault, Host, Machine, Property};
 
 /// The parent's host and the child's.
 const HOSTS: [HostId; 2] = [HostId(*b"parent-host-0000"), HostId(*b"child-host-00000")];
@@ -131,6 +131,9 @@ struct Process {
     connected: bool,
     /// The daemon asked it to stop.
     asked_stop: bool,
+    /// Messages it took, by envelope id: one written to it again is
+    /// answered and goes no further, as the interpreter does at intake.
+    taken: BTreeSet<Vec<u8>>,
 }
 
 /// One report the child's outbox held.
@@ -164,7 +167,6 @@ struct Following {
 /// How much of the bounds a path has used.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 struct Used {
-    spawned: bool,
     stopped: bool,
     deleted: bool,
     turn_ends: u8,
@@ -420,7 +422,8 @@ impl Machine for FamilyDeliveries {
         if world {
             out.push(Action::Rest);
         }
-        if world && !s.used.spawned {
+        // A create refused leaves no child, and the person may try again.
+        if world && !s.seen.child_created {
             out.push(Action::Spawn);
         }
         if world && !s.used.stopped {
@@ -503,21 +506,7 @@ impl Machine for FamilyDeliveries {
                 "each report reaches its parent exactly once: no report is accepted by the parent's \
                  process twice",
                 |_, s: &State| s.reports.values().all(|report| report.reached <= 1),
-            )
-            .parked(Parked {
-                since: "2026-10-18",
-                counterexample: "Spawn, TurnEnd, ListingCaughtUp, Carry (the report is written to \
-                                 the parent's process), Crash(parent's host), Exit(Child), \
-                                 ListingCaughtUp, Carry (the child's host hands it again and the \
-                                 parent's lane, finding no acceptance yet, writes it again), \
-                                 Fire(Lane), Reply, Carry, Accept, Accept",
-                reason: "a report written to the parent's process whose verdict is lost, to the \
-                         parent's host crashing or to reply patience running out, is handed again \
-                         and written again, and the parent's agent takes every message it is \
-                         given; it waits on whether the agent's host ignores a message id it \
-                         already took, or the lane stops writing again a report that may still be \
-                         taken",
-            }),
+            ),
             Property::eventually(
                 "each report reaches its parent exactly once: once the world rests, a report for the \
                  parent's live incarnation on a paired, linked host has been accepted by it",
@@ -552,18 +541,7 @@ impl Machine for FamilyDeliveries {
                             || !s.parent_ended()
                             || !s.child.running && !s.child_live())
                 },
-            )
-            .parked(Parked {
-                since: "2026-10-18",
-                counterexample: "Stop, Exit(Parent), ListingCaughtUp, LinkDown, Crash(parent's \
-                                 host), LinkUp, Spawn, Rest, ListingCaughtUp: the child runs \
-                                 under its exited parent",
-                reason: "a child made while its parent's host's listing is asked for is not \
-                         judged by it, and when that listing already shows the parent exited the \
-                         live stream never speaks of it again; it waits on whether a create under \
-                         a parent on a host not yet caught up is refused until it is, or the \
-                         listing judges children made since by their parent's incarnation",
-            }),
+            ),
             Property::sometimes("a child is sometimes deleted", |_, s: &State| {
                 s.seen.child_deleted
             }),
@@ -952,7 +930,6 @@ impl<'a> Transition<'a> {
     fn take(&mut self, action: &Action) {
         match action {
             Action::Spawn => {
-                self.next.used.spawned = true;
                 let child = create(CHILD, "child", Some((HOSTS[PARENTS], PARENT)));
                 self.feed(
                     CHILDS,
@@ -1106,26 +1083,31 @@ impl<'a> Transition<'a> {
             }
             Action::Accept => {
                 let (id, by) = self.next.written.remove(0);
-                if let Some(report) = self.next.reports.get_mut(&id) {
-                    report.reached += 1;
-                }
-                // Keyed by the message, as the interpreter keys the item it
-                // writes on accepting one.
-                self.append(
-                    PARENTS,
-                    PARENT,
-                    &Step {
-                        items: vec![Item {
-                            key: format!("message-{}", hex(&id)),
-                            input_id: id.clone(),
-                            text: "accepted".into(),
+                let new = self.next.parent.taken.insert(id.clone());
+                if new {
+                    if let Some(report) = self.next.reports.get_mut(&id) {
+                        report.reached += 1;
+                    }
+                    // Keyed by the message, as the interpreter keys the item
+                    // it writes on accepting one.
+                    self.append(
+                        PARENTS,
+                        PARENT,
+                        &Step {
+                            items: vec![Item {
+                                key: format!("message-{}", hex(&id)),
+                                input_id: id.clone(),
+                                text: "accepted".into(),
+                                ..Default::default()
+                            }],
                             ..Default::default()
-                        }],
-                        ..Default::default()
-                    },
-                );
+                        },
+                    );
+                }
                 if self.next.parent.connected {
-                    self.feed(PARENTS, Input::Nudge { agent: PARENT });
+                    if new {
+                        self.feed(PARENTS, Input::Nudge { agent: PARENT });
+                    }
                     if by == self.next.hosts[PARENTS].run {
                         self.feed(
                             PARENTS,

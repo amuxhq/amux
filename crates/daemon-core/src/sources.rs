@@ -755,7 +755,10 @@ impl Daemon {
     /// its children here, and one no longer listed deletes them. Only
     /// `children`, the agents that existed before the listing was asked
     /// for, are judged by it: a child made since may belong to a parent the
-    /// listing predates, and the live stream speaks for that parent.
+    /// listing predates, and the live stream speaks for that parent. No
+    /// child is left unjudged so: a create under a parent on another host
+    /// is refused until this host has caught up with it and holds the
+    /// parent's row.
     fn inventory_caught_up(
         &mut self,
         host: HostId,
@@ -1817,6 +1820,110 @@ mod tests {
             open: true,
         })));
         (inventory, source)
+    }
+
+    /// A child under another host's parent is made only once this host has
+    /// caught up with that host's listing, so the parent is judged from a
+    /// caught-up row and the live stream after it speaks for the child.
+    #[test]
+    fn a_create_under_a_host_not_caught_up_is_refused_until_its_listing_is_in() {
+        const CHILD: crate::AgentId = crate::AgentId(*b"child-0000000000");
+        let create = || {
+            ClientRequest::CreateAgent(Box::new(crate::Create {
+                agent: CHILD,
+                cwd: "/src".into(),
+                given: Some("child".into()),
+                branches: BTreeSet::new(),
+                new_worktree: false,
+                spec: wire::AgentSpec {
+                    agent_id: CHILD.0.to_vec(),
+                    kind: wire::Kind::Codex as i32,
+                    parent: Some(wire::AgentRef {
+                        host_id: PEER.to_vec(),
+                        agent_id: THEIRS.to_vec(),
+                    }),
+                    ..wire::AgentSpec::default()
+                },
+            }))
+        };
+        let mut daemon = daemon();
+        step(&mut daemon, Input::Swept);
+        let inventory = following(&mut daemon);
+
+        let early = step(
+            &mut daemon,
+            Input::ClientCall {
+                call: CallId(1),
+                request: create(),
+            },
+        );
+        assert!(
+            early.iter().any(|output| matches!(
+                output,
+                Output::EndCall {
+                    call: CallId(1),
+                    status: crate::payload::Status::Failed(crate::payload::CallError::Registry(
+                        crate::Refusal::ParentHostNotCaughtUp(HostId(PEER))
+                    )),
+                }
+            )),
+            "{early:?}"
+        );
+        let child = AgentKey::new(OWN, CHILD.0);
+        assert!(daemon.store.agent(&child).unwrap().is_none());
+
+        step(
+            &mut daemon,
+            inventory_event(
+                inventory,
+                inventory_event::Of::Agent(listed(wire::Lifecycle::Live)),
+            ),
+        );
+        step(
+            &mut daemon,
+            inventory_event(
+                inventory,
+                inventory_event::Of::CaughtUp(CaughtUp::default()),
+            ),
+        );
+        let made = step(
+            &mut daemon,
+            Input::ClientCall {
+                call: CallId(2),
+                request: create(),
+            },
+        );
+        assert!(
+            made.contains(&Output::DialAgent { agent: CHILD }),
+            "{made:?}"
+        );
+        step(
+            &mut daemon,
+            Input::AgentHello {
+                agent: CHILD,
+                hello: Default::default(),
+            },
+        );
+
+        let exited = step(
+            &mut daemon,
+            inventory_event(
+                inventory,
+                inventory_event::Of::Agent(listed(wire::Lifecycle::Exited)),
+            ),
+        );
+        assert!(
+            exited.iter().any(|output| matches!(
+                output,
+                Output::WriteControl {
+                    agent: CHILD,
+                    frame: wire::CtlFrame {
+                        of: Some(wire::ctl_frame::Of::Stop(_)),
+                    },
+                }
+            )),
+            "the live stream stops the child its parent's exit leaves: {exited:?}"
+        );
     }
 
     #[test]

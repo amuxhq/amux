@@ -18,7 +18,7 @@ use node::SourceVerdict;
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Script, Step};
 use store::AgentRow;
-use testnet::{AgentDecl, Net, PATIENCE, Topology, holds_for, observe, until};
+use testnet::{AgentDecl, Net, NetError, PATIENCE, Topology, holds_for, observe, until};
 use tonic::{Code, Request};
 use ui_state::{Attention, FleetMsg, FleetState};
 use uuid::Uuid;
@@ -645,14 +645,15 @@ async fn a_far_child_whose_parent_was_deleted_while_its_host_was_away_is_deleted
     net.shutdown().await.unwrap();
 }
 
-/// A host still catching up with the parent's host never deletes a child
-/// on a listing that predates it. Here laptop is following desk again, its
-/// listing taken and its CaughtUp held back, when lead starts on desk and
-/// spawns scout on laptop: the listing lacks lead, yet scout is not judged
-/// by it, and lead's row arrives on the live stream after. Scout finishes
-/// its task and lead hears it.
+/// A host still catching up with the parent's host makes no child under
+/// it, so no child is ever judged by a listing that predates it. Here
+/// laptop is following desk again, its listing taken and its CaughtUp held
+/// back, when lead starts on desk and spawns scout on laptop: the spawn is
+/// refused in words that say to try again, and laptop holds no scout. Once
+/// laptop has caught up and heard of lead on the live stream, the same
+/// spawn succeeds; scout finishes its task and lead hears it.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_child_made_while_its_host_catches_up_is_not_deleted_by_the_older_listing() {
+async fn a_spawn_while_its_host_catches_up_is_refused_until_the_parent_is_heard() {
     let mut net = Net::start(
         Topology::new()
             .host("desk")
@@ -689,16 +690,38 @@ async fn a_child_made_while_its_host_catches_up_is_not_deleted_by_the_older_list
     println!("laptop has desk's listing and holds its CaughtUp");
 
     net.spawn(lead()).await.unwrap();
-    net.spawn_child(
-        "lead",
+    let scout = || {
         child(
             "scout",
             "laptop",
             vec![waits("finish"), text("Survey done."), Step::TurnEnd],
-        ),
-    )
-    .await
-    .unwrap();
+        )
+    };
+    let refused = net.spawn_child("lead", scout()).await;
+    let Err(NetError::Refused(status)) = &refused else {
+        panic!("a spawn under a host not caught up was not refused: {refused:?}");
+    };
+    assert_eq!(status.code(), Code::FailedPrecondition, "{status:?}");
+    assert!(
+        status.message().contains("spawn again in a moment"),
+        "{status:?}"
+    );
+    let named_scout = net
+        .runtime("laptop")
+        .unwrap()
+        .store()
+        .await
+        .agents()
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.name == "scout")
+        .count();
+    assert_eq!(
+        named_scout, 0,
+        "laptop made scout under a parent it could not judge"
+    );
+    println!("the spawn is refused: {}", status.message());
+
     release_tx.send(()).unwrap();
     until("laptop to hold lead's row", || {
         let net = &net;
@@ -712,10 +735,10 @@ async fn a_child_made_while_its_host_catches_up_is_not_deleted_by_the_older_list
     })
     .await
     .unwrap();
+    net.spawn_child("lead", scout()).await.unwrap();
     assert_eq!(
         lifecycle(&net, "laptop", "scout").await,
-        Some(Lifecycle::Live),
-        "laptop judged scout by a listing taken before it was made"
+        Some(Lifecycle::Live)
     );
     net.open_gate("finish").unwrap();
     until("lead to hear from scout", || {

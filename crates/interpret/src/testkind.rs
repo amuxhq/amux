@@ -221,6 +221,9 @@ impl<const FORGET: bool> TestKind<FORGET> {
 
     fn agent_message(state: &mut State<FORGET>, emit: &mut Emit, envelope: Envelope) {
         let shared = &mut state.shared;
+        if shared.message_repeated(emit, &envelope.id) {
+            return;
+        }
         shared.message_accepted(&envelope.id);
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),

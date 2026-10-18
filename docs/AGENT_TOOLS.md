@@ -195,10 +195,15 @@ start, and takes one `SendMessage` at a time, in order. For each message it:
    input id is the envelope id, has committed to the store. It waits up to 60
    seconds for that.
 
-Because a retry can only arrive after the original's answer, that one store
-lookup is the whole deduplication, and it is exact: there is no in-memory set
-of accepted-but-uncommitted ids and nothing in the interpreter. The cost is
-that the answer waits for ingest, which is milliseconds. A person's
+A retry that comes after the original's answer finds the acceptance item, so
+the store lookup deduplicates every message once it has been accepted. The
+one window it cannot see is a message handed over whose answer never came
+back: the lane's patience ran out, or the daemon restarted and adopted the
+still-running process. The lane hands such a message over again, and the
+recipient's interpreter answers it accepted without injecting it or writing
+a second item, since it remembers every envelope id it took in this
+incarnation. The cost is that the answer waits for ingest, which is
+milliseconds. A person's
 `SendInput` never uses the lane.
 
 ## Delivery
@@ -312,7 +317,13 @@ child whose parent's host is merely out of reach, or no longer paired, carries
 on, and its report waits for the parent's host (or, once unpaired, is
 dropped). A resumed parent hears nothing extra about stopped children. A
 `spawn` an agent makes once its host sees it as exited is refused ("agent …
-has ended and starts no more agents"); one made just as it stops is stopped as
+has ended and starts no more agents"). A `spawn` onto another host is also
+refused, as a definite refusal that made no child ("this host has not caught
+up with host …'s agents, so it cannot tell whether the parent has ended;
+spawn again in a moment"), while that host has not caught up with the
+parent's host since they reconnected, or has not yet heard of the parent;
+it is normally a sub-second window after a reconnect. One made just as it
+stops is stopped as
 soon as the child's host sees the stop, since the parent check and the child's
 row are written together. [The protocol](PROTOCOL.md#the-family-rule) gives
 the rule's exact terms.

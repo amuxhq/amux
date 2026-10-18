@@ -472,6 +472,9 @@ impl State {
     /// An immediate hand-off to Claude's own queue: a message sent while a
     /// turn runs folds into it.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        if self.shared.message_repeated(emit, &envelope.id) {
+            return;
+        }
         let attachments = crate::shared::attachments(&envelope).to_vec();
         self.shared.message_accepted(&envelope.id);
         self.clients.insert(

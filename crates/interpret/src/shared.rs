@@ -359,6 +359,11 @@ pub struct Shared<A: OpenAsk> {
     /// envelope id. A one-shot agent does not exit while this is non-empty.
     #[serde(with = "serde_pb::bytes_set")]
     pending_messages: BTreeSet<Vec<u8>>,
+    /// Agent messages the provider consumed, by envelope id. With the
+    /// pending set this is every message the incarnation took, so a second
+    /// hand-off of one is answered without a second inject or item.
+    #[serde(default, with = "serde_pb::bytes_set")]
+    taken_messages: BTreeSet<Vec<u8>>,
     working_on: Option<String>,
     /// The agent declared its work with the status tool: from then on only
     /// that call changes working_on. Until then it is the first line of
@@ -411,6 +416,7 @@ impl<A: OpenAsk> Shared<A> {
             queue: Queue::default(),
             asks: Asks::default(),
             pending_messages: BTreeSet::new(),
+            taken_messages: BTreeSet::new(),
             working_on: None,
             declared: false,
             turn: TurnCounter::default(),
@@ -889,7 +895,25 @@ impl<A: OpenAsk> Shared<A> {
 
     /// The carrier consumed the message. False if it was not pending.
     pub fn message_consumed(&mut self, envelope_id: &[u8]) -> bool {
-        self.pending_messages.remove(envelope_id)
+        let pending = self.pending_messages.remove(envelope_id);
+        if pending {
+            self.taken_messages.insert(envelope_id.to_vec());
+        }
+        pending
+    }
+
+    /// An agent message this incarnation already took, pending or consumed,
+    /// is accepted again and goes no further: the daemon hands a message
+    /// over again when it never saw the first answer (its patience ran out,
+    /// or it restarted and adopted this process), and the parent must see
+    /// it once. True when the kind must do nothing more.
+    pub fn message_repeated(&mut self, emit: &mut Emit, envelope_id: &[u8]) -> bool {
+        let pending = self.pending_messages.contains(envelope_id);
+        if !pending && !self.taken_messages.contains(envelope_id) {
+            return false;
+        }
+        self.accept(emit, envelope_id, pending);
+        true
     }
 
     pub fn pending_messages(&self) -> &BTreeSet<Vec<u8>> {

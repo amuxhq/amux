@@ -1296,6 +1296,9 @@ impl State {
     /// An agent message goes to Claude's messaging socket and is accepted
     /// at once; its item is the record that it arrived.
     fn agent_message(&mut self, emit: &mut Emit, envelope: Envelope) {
+        if self.shared.message_repeated(emit, &envelope.id) {
+            return;
+        }
         let words = crate::shared::words(&envelope);
         let attachments = crate::shared::attachments(&envelope).to_vec();
         self.shared.message_accepted(&envelope.id);

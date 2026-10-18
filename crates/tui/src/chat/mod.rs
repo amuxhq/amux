@@ -3893,10 +3893,13 @@ fn empty_feed(
 ) -> Vec<Line<'static>> {
     let mut lines = vec![Line::default(); height];
     let away = matches!(state.composer(), Composer::Holds(Waiting::Detached)) || !reach.online();
-    let words = if away {
-        Some("Its host is away, and nothing of this chat is held here yet.")
-    } else if state.has_snapshot() && state.caught_up() {
+    // A caught-up chat is current from its host, which loses its source
+    // the moment the host does: the fleet's word on the host comes on
+    // another stream and may still say away just after the host is back.
+    let words = if state.has_snapshot() && state.caught_up() {
         Some("Nothing here yet.")
+    } else if away {
+        Some("Its host is away, and nothing of this chat is held here yet.")
     } else if waited_ms >= LOADING_HINT_MS {
         Some("Loading…")
     } else {

@@ -1166,6 +1166,26 @@ fn a_host_away_on_the_free_plan_names_the_plan() {
     );
 }
 
+/// An empty chat caught up from its host has nothing yet, even while the
+/// fleet, on its own stream, still has the host away; once its source
+/// is lost the chat says the host is away.
+#[test]
+fn an_empty_caught_up_chat_is_not_away_by_a_lagging_fleet() {
+    let mut state = chat(vec![]);
+    let mut view = ChatView::new(b"agent".to_vec(), 0, false);
+    view.reach = ui_view::Reach::Offline(ui_view::Offline::Plain);
+    let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
+    assert!(screen.contains("Nothing here yet."), "{screen}");
+    assert!(!screen.contains("host is away"), "{screen}");
+
+    state.update(event(session_event::Of::Detached(wire::Detached {})));
+    let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
+    assert!(
+        screen.contains("Its host is away, and nothing of this chat is held here yet."),
+        "{screen}"
+    );
+}
+
 /// A host that closed its link saying it no longer trusts this machine is
 /// captioned and headed with that, never with its own old sign-in.
 #[test]

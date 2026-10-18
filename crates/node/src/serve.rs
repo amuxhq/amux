@@ -1,40 +1,21 @@
 //! Serving: what every client call reads. Subscribe, Fetch and Get read an
-//! agent's rows; SubscribeInventory and ResolveAgent read the fleet. All of
-//! them are store reads plus, for the streams, the fan-out channels; none
-//! touches an agent process.
+//! agent's rows and SubscribeInventory the fleet, each answered by the
+//! profile's core through its driver; ResolveAgent reads the fleet here.
+//! None touches an agent process.
 
-use std::collections::VecDeque;
 use std::sync::Arc;
 
+use daemon_core::payload::{CallError, Caller, Opening, Response, Status};
+pub use daemon_core::serve::MAX_PAGE;
 use prost::{Message as _, Name as _};
-use store::{AgentKey, AgentRow, Marker, PageEnd, Sqlite, StoreError};
-use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::broadcast::{self};
+use store::{AgentKey, StoreError};
 use wire::{
-    Agent, AmbiguousAgentName, CaughtUp, ErrorCode, ErrorDetail, FetchRequest, FetchResponse,
-    GetRequest, InventoryEvent, Item, Lagged, SessionEvent, Snapshot, inventory_event,
-    session_event,
+    Agent, AmbiguousAgentName, ErrorCode, ErrorDetail, FetchRequest, FetchResponse, GetRequest,
+    InventoryEvent, Item, SessionEvent, inventory_event, session_event,
 };
 
+use crate::driver::{Answers, Ask, Delivered};
 use crate::runtime::{ProfileRuntime, to_wire};
-
-/// The most items one Fetch returns, whatever the limit asked for.
-pub const MAX_PAGE: u32 = 500;
-/// The most rows a peer's catch-up may ask for.
-const MAX_CAP: u32 = 10_000;
-
-/// Where a Subscribe starts.
-enum Opening {
-    /// A client's: the newest rows.
-    Tail(u32),
-    /// A peer source's: what came after the revision it holds, taken
-    /// under `generation` of this origin.
-    After {
-        revision: u64,
-        cap: u32,
-        generation: u64,
-    },
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServeError {
@@ -59,6 +40,23 @@ pub enum ServeError {
     OriginUnreachable,
     #[error("the store: {0}")]
     Store(#[from] StoreError),
+    #[error("the store: {0}")]
+    Failed(String),
+    #[error("the profile is no longer running")]
+    Stopped,
+}
+
+impl From<Status> for ServeError {
+    /// How a call the core ended without answering failed.
+    fn from(status: Status) -> Self {
+        match status {
+            Status::Ok => ServeError::Stopped,
+            Status::Failed(CallError::NoAgent) => ServeError::NoAgent,
+            Status::Failed(CallError::NoItem(key)) => ServeError::NoItem(key),
+            Status::Failed(CallError::OriginUnreachable) => ServeError::OriginUnreachable,
+            Status::Failed(CallError::Store(why)) => ServeError::Failed(why),
+        }
+    }
 }
 
 impl ServeError {
@@ -69,7 +67,8 @@ impl ServeError {
             Self::NoAgent | Self::NoAgentNamed(_) | Self::NoItem(_) => ErrorCode::NotFound,
             Self::Ambiguous { .. } => ErrorCode::FailedPrecondition,
             Self::OriginUnreachable => ErrorCode::Unreachable,
-            Self::Store(_) => ErrorCode::Internal,
+            Self::Store(_) | Self::Failed(_) => ErrorCode::Internal,
+            Self::Stopped => ErrorCode::Unavailable,
         };
         let details = match self {
             Self::Ambiguous { detail, .. } => vec![ErrorDetail {
@@ -86,35 +85,21 @@ impl ServeError {
     }
 }
 
-/// One Subscribe stream: the opening read under the store lock, then every
-/// event the agent's channel carries, verbatim.
+/// One Subscribe stream: the opening the core read, then every event the
+/// agent's channel carries, verbatim.
 pub struct Subscription {
-    opening: VecDeque<Arc<SessionEvent>>,
-    live: broadcast::Receiver<Arc<SessionEvent>>,
-    ended: bool,
+    answers: Answers,
 }
 
 impl Subscription {
     /// The next event, or None once the stream has ended: after Lagged, or
     /// when the agent is deleted.
     pub async fn next(&mut self) -> Option<Arc<SessionEvent>> {
-        if let Some(event) = self.opening.pop_front() {
-            return Some(event);
-        }
-        if self.ended {
-            return None;
-        }
-        match self.live.recv().await {
-            Ok(event) => Some(event),
-            Err(RecvError::Lagged(_)) => {
-                // The ring moved on without this reader; what it missed is
-                // in the store, and the client re-tails to read it.
-                self.ended = true;
-                Some(Arc::new(event(session_event::Of::Lagged(Lagged {}))))
-            }
-            Err(RecvError::Closed) => {
-                self.ended = true;
-                None
+        loop {
+            match self.answers.next().await? {
+                Delivered::Answer(Response::Session(event)) => return Some(event),
+                Delivered::Answer(_) => {}
+                Delivered::End(_) => return None,
             }
         }
     }
@@ -123,54 +108,19 @@ impl Subscription {
 /// One SubscribeInventory stream: hosts and agent rows, CaughtUp, then
 /// every change.
 pub struct InventorySubscription {
-    opening: VecDeque<Arc<InventoryEvent>>,
-    live: broadcast::Receiver<Arc<InventoryEvent>>,
-    ended: bool,
-    /// The one host whose entry and agents the stream carries, for a
-    /// paired host's stream; every host's for a client's.
-    only: Option<Vec<u8>>,
+    answers: Answers,
 }
 
 impl InventorySubscription {
     /// The next event, or None once the stream has ended: after Lagged, or
     /// when the profile shuts down.
     pub async fn next(&mut self) -> Option<Arc<InventoryEvent>> {
-        if let Some(event) = self.opening.pop_front() {
-            return Some(event);
-        }
-        if self.ended {
-            return None;
-        }
         loop {
-            match self.live.recv().await {
-                Ok(event) if self.carries(&event) => return Some(event),
-                Ok(_) => {}
-                Err(RecvError::Lagged(_)) => {
-                    // The ring moved on without this reader. Saying so in
-                    // band lets the reader resubscribe at once for a fresh
-                    // listing, where a bare close would read as the far
-                    // side going away.
-                    self.ended = true;
-                    return Some(Arc::new(inventory(inventory_event::Of::Lagged(Lagged {}))));
-                }
-                Err(RecvError::Closed) => {
-                    self.ended = true;
-                    return None;
-                }
+            match self.answers.next().await? {
+                Delivered::Answer(Response::Inventory(event)) => return Some(event),
+                Delivered::Answer(_) => {}
+                Delivered::End(_) => return None,
             }
-        }
-    }
-
-    fn carries(&self, event: &InventoryEvent) -> bool {
-        let Some(only) = &self.only else {
-            return true;
-        };
-        match &event.of {
-            Some(inventory_event::Of::Host(host)) => &host.host_id == only,
-            Some(inventory_event::Of::HostRemoved(removed)) => &removed.host_id == only,
-            Some(inventory_event::Of::Agent(agent)) => &agent.host_id == only,
-            Some(inventory_event::Of::AgentRemoved(removed)) => &removed.host_id == only,
-            Some(inventory_event::Of::CaughtUp(_) | inventory_event::Of::Lagged(_)) | None => true,
         }
     }
 }
@@ -183,17 +133,13 @@ pub(crate) fn inventory(of: inventory_event::Of) -> InventoryEvent {
     InventoryEvent { of: Some(of) }
 }
 
-/// The row for an agent id, whichever host owns it.
-fn row_by_id(store: &Sqlite, agent_id: &[u8]) -> Result<AgentRow, ServeError> {
-    store.agent_by_id(agent_id)?.ok_or(ServeError::NoAgent)
-}
-
 impl ProfileRuntime {
     /// Opens a Subscribe stream on an agent: its Opening, its Snapshot,
     /// the newest `tail` rows of its block (at most K), its marker if one
     /// is set, then every event its source broadcasts.
     pub async fn subscribe(&self, agent_id: &[u8], tail: u32) -> Result<Subscription, ServeError> {
-        self.open_subscription(agent_id, Opening::Tail(tail)).await
+        self.open_subscription(Caller::Local, agent_id, Opening::Tail(tail))
+            .await
     }
 
     /// Opens a Subscribe stream for a peer that holds everything through
@@ -209,130 +155,28 @@ impl ProfileRuntime {
         cap: u32,
         generation: u64,
     ) -> Result<Subscription, ServeError> {
-        self.open_subscription(
-            agent_id,
-            Opening::After {
-                revision,
-                cap,
-                generation,
-            },
-        )
-        .await
+        let from = Opening::After {
+            revision,
+            cap,
+            generation,
+        };
+        self.open_subscription(Caller::Peer, agent_id, from).await
     }
 
     async fn open_subscription(
         &self,
+        who: Caller,
         agent_id: &[u8],
         from: Opening,
     ) -> Result<Subscription, ServeError> {
-        let k = self.launch().tail_rows;
-        // The store stays locked from the join through the whole opening.
-        // Commits and marker changes need the store exclusively and publish
-        // while they hold it, so with the lock held nothing commits between
-        // the join and the cut: every record is either in the opening or
-        // arrives live, never both and never neither, and the marker the
-        // cut reads describes the same point as its rows and Snapshot. A
-        // Snapshot read on its own could pair a queue from before a
-        // withdrawal with a CaughtUp from after it. The opening is built
-        // into memory, so nothing here waits on the client with the lock
-        // held; do not release it between the marker read and the row read.
-        let store = self.store.lock().await;
-        let row = row_by_id(&store, agent_id)?;
-        let own = row.agent.host == store.own_host();
-        if !own {
-            self.used(&row.agent);
-            self.ensure_source(&row.agent);
-        }
-        let live = self.fanout.join(&row.agent);
-        let hook = self.join_hook.lock().unwrap().clone();
-        if let Some(hook) = hook {
-            hook().await;
-        }
-        // The origin generation the rows belong to: this run's for an
-        // agent of this host, and what the replica's source last caught
-        // up under for a replica (0 until one has).
-        let generation = if own {
-            self.generation()
-        } else {
-            row.source_generation
+        let ask = Ask::Subscribe {
+            agent_id: agent_id.to_vec(),
+            from,
         };
-        let (reset, rows, cut) = match from {
-            // A client's tail never exceeds what a replica keeps.
-            Opening::Tail(tail) => {
-                let mut cut = store.cut(&row.agent, tail.min(k))?;
-                (false, std::mem::take(&mut cut.held), cut)
-            }
-            Opening::After {
-                revision,
-                cap,
-                generation: held,
-            } => {
-                let cap = cap.min(MAX_CAP);
-                // A cursor of another generation names revisions this
-                // origin may have minted again for different content, so
-                // it is answered as a cursor too far behind is: with a
-                // fresh tail.
-                let delta = if held == generation {
-                    store.after(&row.agent, revision, cap)?
-                } else {
-                    None
-                };
-                match delta {
-                    Some(delta) => (false, delta, store.cut(&row.agent, 0)?),
-                    None => {
-                        let mut cut = store.cut(&row.agent, cap)?;
-                        (true, std::mem::take(&mut cut.held), cut)
-                    }
-                }
-            }
-        };
-        let mut opening = VecDeque::with_capacity(rows.len() + 4);
-        opening.push_back(Arc::new(event(session_event::Of::Opening(wire::Opening {
-            generation,
-        }))));
-        if reset {
-            opening.push_back(Arc::new(event(session_event::Of::Reset(wire::Reset {}))));
-        }
-        let snapshot = cut.snapshot.unwrap_or_else(|| Snapshot {
-            // Nothing emitted yet: the kind tag and an empty body.
-            agent_id: row.agent.agent.clone(),
-            kind: row.kind,
-            ..Snapshot::default()
-        });
-        opening.push_back(Arc::new(event(session_event::Of::Snapshot(snapshot))));
-        for item in rows {
-            opening.push_back(Arc::new(event(session_event::Of::Item(item))));
-        }
-        let marker = match cut.marker {
-            // A replica nobody follows is served as it stands, stale and
-            // honestly: its host is away, or no source has reached it yet.
-            None if !own && !self.source_open(&row.agent) => Some(Marker::Detached),
-            marker => marker,
-        };
-        match marker {
-            Some(Marker::CaughtUp) => {
-                let revision = if own {
-                    row.next_revision.saturating_sub(1)
-                } else {
-                    row.source_cursor
-                };
-                opening.push_back(Arc::new(event(session_event::Of::CaughtUp(CaughtUp {
-                    revision,
-                }))));
-            }
-            Some(Marker::Detached) => {
-                opening.push_back(Arc::new(event(session_event::Of::Detached(
-                    wire::Detached {},
-                ))));
-            }
-            None => {}
-        }
-        drop(store);
-        Ok(Subscription {
-            opening,
-            live,
-            ended: false,
-        })
+        let room = self.launch().fanout_capacity;
+        let mut answers = self.driver().call(who, ask, room).await;
+        answers.opened().await?;
+        Ok(Subscription { answers })
     }
 
     /// A page of older items by order, newest first. Held rows answer it;
@@ -340,44 +184,10 @@ impl ProfileRuntime {
     /// and whose answer extends the block where it joins it. An origin that
     /// cannot be asked is an error, never an empty page.
     pub async fn fetch(&self, request: &FetchRequest) -> Result<FetchResponse, ServeError> {
-        let limit = request.limit.min(MAX_PAGE);
-        let (row, page) = {
-            let store = self.store.lock().await;
-            let row = row_by_id(&store, &request.agent_id)?;
-            let page = store.page(&row.agent, request.before_order, limit)?;
-            (row, page)
-        };
-        let own = row.agent.host == self.host().as_bytes().as_slice();
-        if own || page.end != PageEnd::Boundary || page.items.len() >= limit as usize {
-            return Ok(FetchResponse {
-                exhausted: page.end == PageEnd::Exhausted,
-                items: page.items,
-            });
-        }
-        self.used(&row.agent);
-        // Below the block: the origin's page starts where the held rows
-        // stop, or where the request asked if that is lower still.
-        let before = match (row.complete_from_order, request.before_order) {
-            (Some(floor), Some(before)) => Some(floor.min(before)),
-            (Some(floor), None) => Some(floor),
-            (None, before) => before,
-        };
-        let wanted = limit - page.items.len() as u32;
-        match self.fetch_from_origin(&row.agent, before, wanted).await {
-            Ok(older) => {
-                let mut items = page.items;
-                items.extend(older.items);
-                Ok(FetchResponse {
-                    items,
-                    exhausted: older.exhausted,
-                })
-            }
-            Err(()) if page.items.is_empty() => Err(ServeError::OriginUnreachable),
-            // What is held is served; the next page down asks again.
-            Err(()) => Ok(FetchResponse {
-                items: page.items,
-                exhausted: false,
-            }),
+        let ask = Ask::Fetch(request.clone());
+        match self.unary(ask).await? {
+            Response::Fetched(page) => Ok(page),
+            _ => Err(ServeError::Stopped),
         }
     }
 
@@ -392,17 +202,26 @@ impl ProfileRuntime {
 
     /// One item in full.
     pub async fn get(&self, request: &GetRequest) -> Result<Item, ServeError> {
-        let store = self.store.lock().await;
-        let row = row_by_id(&store, &request.agent_id)?;
-        store
-            .get(&row.agent, &request.key)?
-            .ok_or_else(|| ServeError::NoItem(request.key.clone()))
+        match self.unary(Ask::Get(request.clone())).await? {
+            Response::Item(item) => Ok(item),
+            _ => Err(ServeError::Stopped),
+        }
+    }
+
+    /// A call the core answers once.
+    async fn unary(&self, ask: Ask) -> Result<Response, ServeError> {
+        let mut answers = self.driver().call(Caller::Local, ask, 1).await;
+        match answers.next().await {
+            Some(Delivered::Answer(response)) => Ok(response),
+            Some(Delivered::End(status)) => Err(status.into()),
+            None => Err(ServeError::Stopped),
+        }
     }
 
     /// Opens a SubscribeInventory stream: the host set and every agent row
     /// the store holds, CaughtUp, then every change.
     pub async fn subscribe_inventory(&self) -> Result<InventorySubscription, ServeError> {
-        self.open_inventory(None).await
+        self.open_inventory(Caller::Local, None).await
     }
 
     /// Opens the SubscribeInventory stream a paired host reads: this host's
@@ -411,40 +230,20 @@ impl ProfileRuntime {
     pub(crate) async fn subscribe_own_inventory(
         &self,
     ) -> Result<InventorySubscription, ServeError> {
-        self.open_inventory(Some(self.host().as_bytes().to_vec()))
+        self.open_inventory(Caller::Peer, Some(self.host().as_bytes().to_vec()))
             .await
     }
 
     async fn open_inventory(
         &self,
+        who: Caller,
         only: Option<Vec<u8>>,
     ) -> Result<InventorySubscription, ServeError> {
-        // Locked across the join and the read for the reason Subscribe is:
-        // every row change publishes while it holds the store.
-        let store = self.store.lock().await;
-        let live = self.fanout.join_inventory();
-        let rows = store.agents()?;
-        let hosts = self.published_hosts();
-        drop(store);
-        let mut opening = VecDeque::with_capacity(rows.len() + hosts.len() + 1);
-        let carried = |host: &[u8]| only.as_deref().is_none_or(|only| only == host);
-        for host in hosts.into_iter().filter(|host| carried(&host.host_id)) {
-            opening.push_back(Arc::new(inventory(inventory_event::Of::Host(host))));
-        }
-        for row in rows.iter().filter(|row| carried(&row.agent.host)) {
-            opening.push_back(Arc::new(inventory(inventory_event::Of::Agent(to_wire(
-                row,
-            )))));
-        }
-        opening.push_back(Arc::new(inventory(inventory_event::Of::CaughtUp(
-            CaughtUp::default(),
-        ))));
-        Ok(InventorySubscription {
-            opening,
-            live,
-            ended: false,
-            only,
-        })
+        let room = self.launch().inventory_capacity;
+        let ask = Ask::SubscribeInventory { only };
+        let mut answers = self.driver().call(who, ask, room).await;
+        answers.opened().await?;
+        Ok(InventorySubscription { answers })
     }
 
     /// The one agent a reference names, across the fleet the store knows.

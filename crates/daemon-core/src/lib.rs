@@ -18,9 +18,11 @@ use store::Sqlite;
 pub mod ids;
 mod io;
 pub mod payload;
+pub mod serve;
 
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use io::{Input, Job, Output};
+pub use serve::Answers;
 
 /// The checkpoint layout this build writes and restores. A checkpoint under
 /// any other is refused whole.
@@ -38,14 +40,24 @@ pub struct Daemon {
     answers: Answers,
     timers: Timers,
     pending: Pending,
+    options: StartOptions,
     budget: StepBudget,
+}
+
+/// What a daemon runs under, fixed for the run.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartOptions {
+    /// The installation's generation as of this run: the one this host's
+    /// own rows are served under.
+    pub generation: u64,
 }
 
 impl Daemon {
     /// A daemon over `store` with nothing linked, open or armed.
-    pub fn new(store: Sqlite) -> Self {
+    pub fn new(store: Sqlite, options: StartOptions) -> Self {
         Self {
             store,
+            options,
             routing: RoutingState::default(),
             presence: PresenceState::default(),
             sources: Sources::default(),
@@ -63,6 +75,10 @@ impl Daemon {
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
         match input {
             Input::Tick { now_ms } => self.timers.now_ms = now_ms,
+            Input::ClientCall { call, who, request } => self.client_call(call, who, request, out),
+            Input::CallCancelled { call } => self.cancelled(call),
+            Input::AnswerLagged { call } => self.lagged(call, out),
+            Input::JobDone { job, result } => self.job_done(job, result, out),
             Input::Timer { .. }
             | Input::LinkUp { .. }
             | Input::LinkDown { .. }
@@ -76,10 +92,6 @@ impl Daemon {
             | Input::AgentHello { .. }
             | Input::Nudge { .. }
             | Input::ControlClosed { .. }
-            | Input::ClientCall { .. }
-            | Input::CallCancelled { .. }
-            | Input::AnswerLagged { .. }
-            | Input::JobDone { .. }
             | Input::Entropy(_) => {}
         }
         if let Err(violation) = self.check_step_invariants() {
@@ -113,6 +125,7 @@ impl Daemon {
             &self.answers,
             &self.timers,
             &self.pending,
+            &self.options,
         );
         Checkpoint {
             schema: CHECKPOINT_SCHEMA,
@@ -129,7 +142,7 @@ impl Daemon {
                 expected: CHECKPOINT_SCHEMA,
             });
         }
-        let (routing, presence, sources, families, pairing, answers, timers, pending) =
+        let (routing, presence, sources, families, pairing, answers, timers, pending, options) =
             postcard::from_bytes(&checkpoint.state)
                 .map_err(|error| RestoreError::Corrupt(error.to_string()))?;
         Ok(Daemon {
@@ -141,13 +154,21 @@ impl Daemon {
             answers,
             timers,
             pending,
-            ..Daemon::new(store)
+            ..Daemon::new(store, options)
         })
     }
 
     /// The store the core owns, for reading.
     pub fn store(&self) -> &Sqlite {
         &self.store
+    }
+
+    /// Exchanges the store the core reads and writes with `store`. While
+    /// the profile's shell still writes the store under a lock of its own,
+    /// its driver lends that store to the core for each step and takes it
+    /// back after.
+    pub fn swap_store(&mut self, store: &mut Sqlite) {
+        std::mem::swap(&mut self.store, store);
     }
 
     /// How long one step may take before it is reported.
@@ -182,10 +203,6 @@ pub struct FamilyState {}
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PairingState {}
 
-/// Open calls and subscriptions, by call id.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Answers {}
-
 /// The clock as last told and the timers armed.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timers {
@@ -194,7 +211,11 @@ pub struct Timers {
 
 /// Jobs and calls to peers awaiting their result.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Pending {}
+pub struct Pending {
+    /// The last job id minted.
+    next_job: u64,
+    fetches: std::collections::BTreeMap<JobId, serve::PendingFetch>,
+}
 
 /// How long one step may take before it is reported with a dump.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -281,7 +302,10 @@ mod tests {
     use super::*;
 
     fn daemon() -> Daemon {
-        Daemon::new(Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens"))
+        Daemon::new(
+            Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens"),
+            StartOptions { generation: 1 },
+        )
     }
 
     #[test]

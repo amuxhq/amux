@@ -708,6 +708,21 @@ impl ProfileRuntime {
         }
     }
 
+    /// For a subscribe on `agent_id`: when it names a replica, records the
+    /// use and opens its source if none is, and says whether one follows
+    /// it now.
+    pub(crate) fn follow_replica(&self, store: &store::Sqlite, agent_id: &[u8]) -> bool {
+        let Ok(Some(row)) = store.agent_by_id(agent_id) else {
+            return false;
+        };
+        if row.agent.host == store.own_host() {
+            return false;
+        }
+        self.used(&row.agent);
+        self.ensure_source(&row.agent);
+        self.source_open(&row.agent)
+    }
+
     /// Opens a source for a replica agent a client subscribed to, if its
     /// host is ready and none is open. Settled agents need none.
     pub(crate) fn ensure_source(&self, key: &AgentKey) {

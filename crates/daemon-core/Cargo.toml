@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 postcard = { workspace = true }
+prost = { workspace = true }
 serde = { workspace = true }
 store = { workspace = true }
 wire = { workspace = true }

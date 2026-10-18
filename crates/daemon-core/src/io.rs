@@ -3,6 +3,8 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
+use store::AgentKey;
+
 use crate::DumpReason;
 use crate::ids::{
     AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId,
@@ -130,6 +132,21 @@ pub enum Output {
         call: CallId,
         status: Status,
     },
+    /// Carry what the profile's shell publishes about `agent` on to the
+    /// stream `call` opened, after the opening the core answered. Joined
+    /// before the store is next written, so the opening and what follows
+    /// it meet at one point; the shell's publishing moves into the core
+    /// with ingest.
+    Follow {
+        call: CallId,
+        agent: AgentKey,
+    },
+    /// Carry what the shell publishes about the fleet on to the inventory
+    /// stream `call` opened, `only` one host's when it names one.
+    FollowInventory {
+        call: CallId,
+        only: Option<Vec<u8>>,
+    },
     /// Blob bytes go from the file to the call's stream without passing
     /// through the core.
     SendFile {
@@ -181,4 +198,13 @@ pub enum Job {
     },
     SendPush(Push),
     Upload(AnalyticsBatch),
+    /// Ask a replica's origin for up to `limit` items below `before_order`
+    /// and absorb what joins the block; answered as
+    /// [`JobResult::Fetched`](crate::payload::JobResult::Fetched). One round
+    /// trip with one result until peer channels are the core's.
+    FetchFromOrigin {
+        agent: AgentKey,
+        before_order: Option<u64>,
+        limit: u32,
+    },
 }

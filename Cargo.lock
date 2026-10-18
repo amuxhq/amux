@@ -1069,6 +1069,7 @@ name = "daemon-core"
 version = "0.1.0"
 dependencies = [
  "postcard",
+ "prost",
  "serde",
  "store",
  "wire",
@@ -2543,6 +2544,7 @@ dependencies = [
  "bytes",
  "chrono",
  "curve25519-dalek",
+ "daemon-core",
  "futures-util",
  "gethostname",
  "git-facts",

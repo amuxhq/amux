@@ -391,6 +391,8 @@ pub struct ProfileRuntime {
     /// it reads one point in that order.
     pub(crate) store: tokio::sync::Mutex<Sqlite>,
     pub(crate) fanout: Fanout,
+    /// The profile's core thread, started by the first call it answers.
+    driver: std::sync::OnceLock<crate::driver::Driver>,
     /// For tests: awaited by a subscribe between joining the channel and
     /// reading the cut, with the store held.
     pub(crate) join_hook: Mutex<Option<JoinHook>>,
@@ -703,6 +705,7 @@ impl ProfileRuntime {
             generation,
             clock,
             fanout: Fanout::new(launch.fanout_capacity, launch.inventory_capacity),
+            driver: std::sync::OnceLock::new(),
             join_hook: Mutex::new(None),
             lanes: Mutex::new(HashMap::new()),
             commits: watch::Sender::new(0),
@@ -810,6 +813,20 @@ impl ProfileRuntime {
     /// started.
     pub fn ingested_frames(&self) -> u64 {
         self.ingested_frames.load(Ordering::Relaxed)
+    }
+
+    /// The profile's core, from the shell's side; its thread starts here
+    /// on first use.
+    pub(crate) fn driver(&self) -> &crate::driver::Driver {
+        self.driver.get_or_init(|| {
+            crate::driver::Driver::start(
+                self.me.clone(),
+                self.host.as_bytes().to_vec(),
+                daemon_core::StartOptions {
+                    generation: self.generation,
+                },
+            )
+        })
     }
 
     /// The store, held exclusively while the guard lives.
@@ -2502,32 +2519,7 @@ pub(crate) fn kill_group(pid: u32) -> bool {
 }
 
 /// The inventory row for an agents row.
-pub fn to_wire(row: &AgentRow) -> Agent {
-    Agent {
-        agent_id: row.agent.agent.clone(),
-        host_id: row.agent.host.clone(),
-        kind: row.kind,
-        name: row.name.clone(),
-        cwd: row.cwd.clone(),
-        parent: row.parent.as_ref().map(|parent| AgentRef {
-            host_id: parent.host.clone(),
-            agent_id: parent.agent.clone(),
-        }),
-        created_at_ms: row.created_at_ms,
-        lifecycle: row.lifecycle,
-        exit_cause: row.exit_cause,
-        exit_detail: row.exit_detail.clone(),
-        phase: row.phase,
-        working_on: row.working_on.clone(),
-        // Before its first snapshot an agent has been starting since it
-        // was created.
-        phase_since_ms: row.phase_since_ms.unwrap_or(row.created_at_ms),
-        incarnation: row.incarnation,
-        git: row.git.clone(),
-        descendants: row.descendants,
-        background_jobs: row.background_jobs,
-    }
-}
+pub use daemon_core::serve::to_wire;
 
 pub(crate) fn ms(ms: i64) -> Duration {
     Duration::from_millis(ms.max(0) as u64)

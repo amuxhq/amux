@@ -6,6 +6,8 @@
 //! payload is the generated message type. The rest are the core's own, and
 //! a payload no machine in the core reads carries nothing until one does.
 
+use std::sync::Arc;
+
 /// A link control frame: the hello, its acknowledgement, a neighbor coming
 /// up or going down.
 pub type LinkFrame = wire::Message;
@@ -48,14 +50,6 @@ payload! {
     Answer;
     /// A host found on the local network.
     Advertisement;
-    /// Who made a client call: a local client or a paired peer's.
-    Caller;
-    /// A client's decoded request.
-    ClientRequest;
-    /// One reply, or one item of a streamed reply, to a call.
-    Response;
-    /// How a call ended.
-    Status;
     /// The key a channel's handshake must find at the other end.
     PublicKey;
     /// A blob's content hash.
@@ -64,6 +58,112 @@ payload! {
     Push;
     /// A batch of analytics events to upload.
     AnalyticsBatch;
-    /// What a job produced.
-    JobResult;
+}
+
+/// Who made a client call.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Caller {
+    /// A client of this profile: its socket, an agent's tools socket or
+    /// the in-process call.
+    Local,
+    /// A paired host, answered only about this host's own agents.
+    Peer,
+}
+
+/// Where a Subscribe stream starts.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Opening {
+    /// A client's: the newest `tail` rows.
+    Tail(u32),
+    /// A peer source's: what came after the revision it holds, taken
+    /// under `generation` of this origin, when there are at most `cap`.
+    After {
+        revision: u64,
+        cap: u32,
+        generation: u64,
+    },
+}
+
+/// A client's decoded request.
+///
+/// Some answers still read what the profile's shell owns: which replicas a
+/// source follows, the host set it publishes and the replica bound it runs
+/// under. Until those move into the core the driver reads them as it hands
+/// the call over, and they ride on the request.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ClientRequest {
+    /// Opens a stream of an agent's session events: the opening cut, then
+    /// every change.
+    Subscribe {
+        agent_id: Vec<u8>,
+        from: Opening,
+        /// The newest rows a replica keeps, K: a client's tail never asks
+        /// for more.
+        tail_rows: u32,
+        /// Whether a source follows the agent, when it is a replica: one
+        /// nobody follows is served as detached.
+        followed: bool,
+    },
+    /// A page of older items.
+    Fetch(wire::FetchRequest),
+    /// One item in full.
+    Get(wire::GetRequest),
+    /// Opens a stream of the fleet: hosts and agent rows, CaughtUp, then
+    /// every change.
+    SubscribeInventory {
+        /// The host set as last published.
+        hosts: Vec<wire::HostEntry>,
+        /// The one host whose entry and agents the stream carries, for a
+        /// paired host's stream; every host's for a client's.
+        only: Option<Vec<u8>>,
+    },
+}
+
+/// One reply, or one item of a streamed reply, to a call. Stream items are
+/// shared, since the same event goes to every subscriber.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Response {
+    Session(Arc<wire::SessionEvent>),
+    Inventory(Arc<wire::InventoryEvent>),
+    Fetched(wire::FetchResponse),
+    Item(wire::Item),
+}
+
+/// How a call ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Status {
+    /// Answered in full; a stream ends here.
+    Ok,
+    Failed(CallError),
+}
+
+/// Why a call was refused or could not be answered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CallError {
+    /// No agent with that id.
+    NoAgent,
+    /// The agent holds no item with this key.
+    NoItem(String),
+    /// Older history is held by the agent's host, which cannot be reached.
+    OriginUnreachable,
+    /// The store failed, in its own words.
+    Store(String),
+}
+
+impl From<store::StoreError> for CallError {
+    fn from(error: store::StoreError) -> Self {
+        CallError::Store(error.to_string())
+    }
+}
+
+/// What a job produced.
+#[derive(Clone, Debug, PartialEq)]
+pub enum JobResult {
+    /// It did what it was asked.
+    Done,
+    /// It could not, in the driver's words.
+    Failed(String),
+    /// The origin's page below a replica's block, or `None` when the origin
+    /// could not be asked.
+    Fetched(Option<wire::FetchResponse>),
 }

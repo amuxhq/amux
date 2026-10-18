@@ -764,6 +764,90 @@ fn stored_addrs(net: &Net, host: &str, peer: &str) -> Vec<String> {
         .collect()
 }
 
+/// Pairing with a host under an id this host already trusts replaces the
+/// pinned key, and a link the old key still holds open is closed, saying
+/// the trust was replaced, before the new key is trusted: nothing opened
+/// under the old key outlives the replacement.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_that_replaces_a_hosts_key_closes_the_old_keys_live_link_first() {
+    // Nothing discovers anything, and the desk listens on no LAN: the one
+    // link between the old desk and the laptop is the one held here.
+    let mut net = Net::start(
+        Topology::new()
+            .host_decl(testnet::HostDecl {
+                name: "desk".to_owned(),
+                ..testnet::HostDecl::default()
+            })
+            .host_decl(undiscovered_lan_host("laptop", "home")),
+    )
+    .await
+    .unwrap();
+    let desk = host_id(&net, "desk");
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    let old = edge(&net, "desk")
+        .link_in_process(&edge(&net, "laptop"))
+        .unwrap();
+    until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
+    let old_key = edge(&net, "desk").public_key().to_vec();
+
+    // Another machine starts under the desk's id with a key of its own,
+    // while the old desk and its link stay up.
+    net.add_host(undiscovered_lan_host("new-desk", "home"))
+        .await
+        .unwrap();
+    net.stop_daemon("new-desk").await.unwrap();
+    let profile_dir = |name: &str| {
+        let host = net.host(name).unwrap();
+        node::profile_dir(&host.data_dir, host.profile)
+    };
+    std::fs::copy(
+        node::harness::host_id_path(&profile_dir("desk")),
+        node::harness::host_id_path(&profile_dir("new-desk")),
+    )
+    .unwrap();
+    net.restart_daemon("new-desk").await.unwrap();
+    assert_eq!(edge(&net, "new-desk").host_id(), desk);
+    let new_key = edge(&net, "new-desk").public_key().to_vec();
+    assert_ne!(new_key, old_key);
+
+    // The moment the laptop's side of the old link ends, read what the
+    // laptop pins for the desk.
+    let closed = tokio::spawn({
+        let laptop = edge(&net, "laptop");
+        async move {
+            let end = old.accepted_end().await;
+            let pinned = laptop
+                .trusted()
+                .into_iter()
+                .find(|(host, ..)| *host == desk)
+                .map(|(.., key)| key);
+            (end, pinned)
+        }
+    });
+    pair(&net, "new-desk", "laptop").await;
+    let (end, pinned_at_close) = tokio::time::timeout(Duration::from_secs(10), closed)
+        .await
+        .expect("the old key's link closes when its key is replaced")
+        .unwrap();
+    let end = end.expect("the laptop ends the old link with a reason");
+    assert!(end.contains("peer trust was replaced"), "{end}");
+    assert_ne!(
+        pinned_at_close.as_ref(),
+        Some(&new_key),
+        "the old link closed before the new key was trusted"
+    );
+    let pinned = edge(&net, "laptop")
+        .trusted()
+        .into_iter()
+        .find(|(host, ..)| *host == desk)
+        .map(|(.., key)| key);
+    assert_eq!(pinned, Some(new_key), "the pairing replaced the pinned key");
+    println!("the old desk's live link closed ({end}) before its replacement key was trusted");
+
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_address() {
     // The phone listens for nothing, as a phone does: it dials, and only

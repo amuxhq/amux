@@ -688,6 +688,7 @@ section = "Boundaries"
 claim = "Many daemons: production runtimes enforce discovery and trust, routing, subscription, entitlement, revocation and blob contracts."
 tests = [
   "testnet/spec_network::a_key_that_does_not_match_the_pinned_one_is_refused",
+  "testnet/spec_network::a_pairing_that_replaces_a_hosts_key_closes_the_old_keys_live_link_first",
   "testnet/spec_network::a_pairing_window_is_one_shot_attempt_capped_and_expires",
   "testnet/spec_network::profiles_and_accounts_share_no_keys_windows_presence_or_administration",
   "testnet/spec_network::revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_the_relay",

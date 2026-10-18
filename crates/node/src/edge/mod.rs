@@ -764,10 +764,12 @@ impl Edge {
         let acceptor = Arc::new(MuxCarrier::new(far, MuxRole::Acceptor, CarrierKind::Quic));
         let accept_ctx = other.link_ctx().with_authenticated_peer(self.host_id());
         let connect_ctx = self.link_ctx().with_expected_peer(other.host_id());
+        let (accepted_tx, accepted) = watch::channel(None);
         tokio::spawn({
             let acceptor = acceptor.clone();
             async move {
-                let _ = run_link(accept_ctx, acceptor, ConnectRole::Acceptor).await;
+                let end = run_link(accept_ctx, acceptor, ConnectRole::Acceptor).await;
+                accepted_tx.send_replace(Some(end.err().map(|error| error.to_string())));
             }
         });
         let _ =
@@ -775,6 +777,7 @@ impl Edge {
         Ok(LoopbackLink {
             carriers: [connector, acceptor],
             carried,
+            accepted,
         })
     }
 
@@ -860,6 +863,9 @@ impl Drop for Edge {
 pub struct LoopbackLink {
     carriers: [Arc<MuxCarrier>; 2],
     carried: Arc<AtomicU64>,
+    /// How the accepting edge's side of the link ended, once it has: the
+    /// error it ended with, or none.
+    accepted: watch::Receiver<Option<Option<String>>>,
 }
 
 impl LoopbackLink {
@@ -868,6 +874,19 @@ impl LoopbackLink {
     /// crossing from one host to the other costs.
     pub fn carried(&self) -> u64 {
         self.carried.load(Ordering::Relaxed)
+    }
+
+    /// Waits until the accepting edge's side of the link has ended, and
+    /// says why that edge ended it: the error, or none for a link that
+    /// simply went.
+    pub async fn accepted_end(&self) -> Option<String> {
+        let mut accepted = self.accepted.clone();
+        let end = accepted
+            .wait_for(Option::is_some)
+            .await
+            .expect("the accepting side reports its end")
+            .clone();
+        end.expect("the link has ended")
     }
 
     /// Cuts the link the way a dead connection would: no LinkClose, the

@@ -110,7 +110,7 @@ pub mod harness {
 
     pub use crate::auth::claims::Tier;
     pub use crate::discovery::{Advertisement, Discovery, DiscoveryEvent, ScriptedDiscovery};
-    pub use crate::identity::device_key_path;
+    pub use crate::identity::{device_key_path, host_id_path};
     pub use crate::link::ByteStream;
     pub use crate::link::relay_host::RelayHost;
     pub use crate::routing::{AuthenticatedLinkUser, LinkTokenAuthenticator, LiveRoute};

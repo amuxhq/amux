@@ -701,7 +701,7 @@ pub fn device_key_path(data_dir: &Path) -> PathBuf {
     data_dir.join(DEVICE_KEY_FILE)
 }
 
-fn host_id_path(data_dir: &Path) -> PathBuf {
+pub fn host_id_path(data_dir: &Path) -> PathBuf {
     data_dir.join(HOST_ID_FILE)
 }
 

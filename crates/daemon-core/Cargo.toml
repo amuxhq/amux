@@ -7,5 +7,7 @@ description = "The daemon as one function of its state and an input: typed input
 publish = false
 
 [dependencies]
+postcard = { workspace = true }
+serde = { workspace = true }
 store = { workspace = true }
 wire = { workspace = true }

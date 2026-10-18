@@ -30,6 +30,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use core_ring::Ring;
+use interpret::ring::Entry;
 use interpret::{Effect, Event, Interpreter, Stepped, reply};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{Notify, mpsc, watch};
@@ -39,7 +41,6 @@ use crate::clock::Clock;
 use crate::dir::{self, PtyLog};
 use crate::local_socket::{LocalListener, LocalStream};
 use crate::provider::{Provider, ProviderEvent};
-use crate::ring::{self, Entry, Ring};
 use crate::{AgentError, ExitCause, VERSION, attach, ctl};
 
 /// Grace after the daemon leaves, when the spec leaves it unset.
@@ -151,7 +152,7 @@ pub(crate) struct Host<I: Interpreter> {
     clock: Arc<dyn Clock>,
     state: I::State,
     journal: journal::Writer,
-    ring: Ring,
+    ring: Ring<Entry>,
     pty_log: Option<PtyLog>,
     /// Where the terminal log ends, for attached terminal clients.
     written: Option<watch::Sender<u64>>,
@@ -910,7 +911,7 @@ fn start<I: Interpreter>(facts: &std::path::Path, spec: &AgentSpec) -> (I::State
         let (state, step) = I::initial(spec, VERSION);
         (state, vec![step])
     };
-    let saved = match ring::saved(facts) {
+    let saved = match core_ring::saved::<Entry>(facts) {
         Ok(Some(saved)) => saved,
         Ok(None) => return fresh(),
         Err(error) => {
@@ -926,10 +927,10 @@ fn start<I: Interpreter>(facts: &std::path::Path, spec: &AgentSpec) -> (I::State
         }
     };
     let ended = saved
-        .entries
+        .inputs
         .last()
         .is_none_or(|entry| matches!(entry, Entry::ProviderExit { .. } | Entry::Exiting { .. }));
-    for event in saved.entries.into_iter().filter_map(Entry::event) {
+    for event in saved.inputs.into_iter().filter_map(Entry::event) {
         let _ = I::step(&mut state, event);
     }
     let mut steps = Vec::new();

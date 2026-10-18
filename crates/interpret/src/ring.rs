@@ -121,13 +121,48 @@ impl Entry {
     }
 }
 
-/// The entries of one segment's bytes, in order. A torn last line, from a
-/// process that died mid-write, is left out, and so is everything after a
-/// line this build cannot read.
-pub fn entries(segment: &[u8]) -> Vec<Entry> {
-    segment
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.is_empty())
-        .map_while(|line| serde_json::from_slice(line).ok())
-        .collect()
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Channel, Event, Fact};
+
+    #[test]
+    fn entries_round_trip_every_event() {
+        let events = [
+            Event::Fact(Fact {
+                channel: Channel::Hook,
+                payload: br#"{"a":1}"#.to_vec(),
+            }),
+            Event::Fact(Fact {
+                channel: Channel::Stream,
+                payload: vec![0xff, 0x00],
+            }),
+            Event::Input(wire::Input {
+                input_id: b"i1".to_vec(),
+                ..Default::default()
+            }),
+            Event::Tick { at_ms: 5 },
+            Event::ProviderExit { code: Some(3) },
+            Event::DaemonLost,
+            Event::StopRequested,
+            Event::Exiting(wire::IncarnationEnd {
+                cause: wire::ExitCause::Stopped as i32,
+                detail: None,
+            }),
+            Event::Exiting(wire::IncarnationEnd {
+                cause: wire::ExitCause::ProviderExited as i32,
+                detail: Some("exit code 3".into()),
+            }),
+            // A cause a newer build wrote is kept as its value.
+            Event::Exiting(wire::IncarnationEnd {
+                cause: 99,
+                detail: None,
+            }),
+        ];
+        for event in events {
+            let line = serde_json::to_vec(&Entry::of(&event)).unwrap();
+            let entry: Entry = serde_json::from_slice(&line).unwrap();
+            assert_eq!(entry.event(), Some(event));
+        }
+    }
 }

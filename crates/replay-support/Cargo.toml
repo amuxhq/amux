@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 chrono.workspace = true
+core-ring.workspace = true
 interpret.workspace = true
 journal.workspace = true
 prost.workspace = true

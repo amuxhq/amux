@@ -13,6 +13,7 @@ claude = { workspace = true, features = ["pty"] }
 claude-protocol = { workspace = true }
 codex = { workspace = true }
 codex-protocol = { workspace = true }
+core-ring = { workspace = true }
 git-facts = { workspace = true }
 hyper-util = { workspace = true }
 interpret = { workspace = true }

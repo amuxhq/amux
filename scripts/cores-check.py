@@ -20,7 +20,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-CORES = ["daemon-core", "relay-core", "agent-core", "supervisor-core"]
+# The ring the cores record their inputs in is held to the same rule.
+CORES = ["daemon-core", "relay-core", "agent-core", "supervisor-core", "core-ring"]
 RUNTIME = re.compile(r"^(tokio(-[\w-]+)?) v")
 FORBIDDEN = [
     (re.compile(r"\bMutex\b"), "a Mutex"),

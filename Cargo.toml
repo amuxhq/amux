@@ -17,6 +17,7 @@ members = [
     "crates/codex",
     "crates/codex-protocol",
     "crates/codex-specs",
+    "crates/core-ring",
     "crates/daemon-core",
     "crates/fake-amux",
     "crates/git-facts",
@@ -56,6 +57,7 @@ license = "FSL-1.1-ALv2"
 # Internal
 agent = { path = "crates/agent" }
 agent-core = { path = "crates/agent-core" }
+core-ring = { path = "crates/core-ring" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 supervisor-core = { path = "crates/supervisor-core" }

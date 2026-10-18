@@ -12,6 +12,7 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
 use store::Sqlite;
 
 pub mod ids;
@@ -27,7 +28,6 @@ pub const CHECKPOINT_SCHEMA: u32 = 1;
 
 /// The daemon's whole state: the store owned outright, one machine per
 /// concern, open calls by id, armed timers and jobs awaiting their result.
-#[expect(dead_code, reason = "each machine's state is read once its inputs are")]
 pub struct Daemon {
     store: Sqlite,
     routing: RoutingState,
@@ -104,9 +104,19 @@ impl Daemon {
     /// The core as of this step. With the store's main file after a passive
     /// WAL checkpoint taken at the same step, it is the daemon exactly.
     pub fn checkpoint(&self) -> Checkpoint {
+        let core = (
+            &self.routing,
+            &self.presence,
+            &self.sources,
+            &self.families,
+            &self.pairing,
+            &self.answers,
+            &self.timers,
+            &self.pending,
+        );
         Checkpoint {
             schema: CHECKPOINT_SCHEMA,
-            state: Vec::new(),
+            state: postcard::to_allocvec(&core).expect("the core's state serializes"),
         }
     }
 
@@ -119,7 +129,20 @@ impl Daemon {
                 expected: CHECKPOINT_SCHEMA,
             });
         }
-        Ok(Daemon::new(store))
+        let (routing, presence, sources, families, pairing, answers, timers, pending) =
+            postcard::from_bytes(&checkpoint.state)
+                .map_err(|error| RestoreError::Corrupt(error.to_string()))?;
+        Ok(Daemon {
+            routing,
+            presence,
+            sources,
+            families,
+            pairing,
+            answers,
+            timers,
+            pending,
+            ..Daemon::new(store)
+        })
     }
 
     /// The store the core owns, for reading.
@@ -134,43 +157,43 @@ impl Daemon {
 }
 
 /// Links, routes and the attempts in flight on them.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingState {
     links: LinkRegistry,
 }
 
 /// Every link that is up, by id, with its peer. The relay keeps one too.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkRegistry {}
 
 /// What each paired host reads as: online, away or offline.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PresenceState {}
 
 /// Each replica this profile holds and the stream that feeds it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sources {}
 
 /// Parents, children and the deliveries owed between them.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FamilyState {}
 
 /// The pairing conversations in progress.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PairingState {}
 
 /// Open calls and subscriptions, by call id.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Answers {}
 
 /// The clock as last told and the timers armed.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timers {
     now_ms: u64,
 }
 
 /// Jobs and calls to peers awaiting their result.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pending {}
 
 /// How long one step may take before it is reported with a dump.
@@ -210,10 +233,24 @@ pub enum DumpReason {
 
 /// The core's state as of one step, serialized, under the layout it was
 /// written with.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub schema: u32,
     pub state: Vec<u8>,
+}
+
+impl Checkpoint {
+    /// The bytes a checkpoint job writes: the layout first, so a reader
+    /// knows whether it can read the rest before it tries.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        postcard::to_allocvec(self).expect("a checkpoint serializes")
+    }
+
+    /// Reads a checkpoint back. Its state is read only by
+    /// [`Daemon::restore`], which refuses another layout.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Checkpoint, RestoreError> {
+        postcard::from_bytes(bytes).map_err(|error| RestoreError::Corrupt(error.to_string()))
+    }
 }
 
 /// Why a checkpoint could not be restored.
@@ -256,11 +293,35 @@ mod tests {
     }
 
     #[test]
-    fn a_checkpoint_restores_beside_its_store() {
-        let checkpoint = daemon().checkpoint();
+    fn a_checkpoint_round_trips_through_its_bytes_and_restores_the_core() {
+        let mut daemon = daemon();
+        daemon.step(Input::Tick { now_ms: 5 }, &mut Vec::new());
+        let checkpoint = daemon.checkpoint();
+        let read = Checkpoint::from_bytes(&checkpoint.to_bytes()).expect("it reads back");
+        assert_eq!(read, checkpoint);
+
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
-        let restored = Daemon::restore(checkpoint.clone(), store).expect("it restores");
+        let restored = Daemon::restore(read, store).expect("it restores");
+        assert_eq!(restored.timers, daemon.timers);
         assert_eq!(restored.checkpoint(), checkpoint);
+        assert_ne!(checkpoint, self::daemon().checkpoint());
+    }
+
+    #[test]
+    fn a_checkpoint_that_does_not_decode_is_refused() {
+        let checkpoint = Checkpoint {
+            schema: CHECKPOINT_SCHEMA,
+            state: vec![0xff],
+        };
+        let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
+        assert!(matches!(
+            Daemon::restore(checkpoint, store),
+            Err(RestoreError::Corrupt(_))
+        ));
+        assert!(matches!(
+            Checkpoint::from_bytes(&[]),
+            Err(RestoreError::Corrupt(_))
+        ));
     }
 
     #[test]

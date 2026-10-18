@@ -30,7 +30,7 @@ ALLOWED_LOCAL = {
     # and the provider hosts.
     "agent": {
         "agent-dir", "attachments", "claude", "claude-protocol", "codex", "codex-protocol",
-        "git-facts", "interpret", "journal", "pty-host", "wire",
+        "core-ring", "git-facts", "interpret", "journal", "pty-host", "wire",
     },
     "claude": {"claude-protocol", "pty-host"},
     "codex": {"codex-protocol"},
@@ -73,8 +73,11 @@ ALLOWED_LOCAL = {
     # model, state through the views; and provider recordings for the
     # capture tools.
     "replay-support": {
-        "interpret", "journal", "redaction", "ui-state", "ui-view", "wire",
+        "core-ring", "interpret", "journal", "redaction", "ui-state", "ui-view", "wire",
     },
+    # The bounded ring of a core's inputs since its last checkpoint, in
+    # segments named as the journal's are.
+    "core-ring": {"journal"},
 }
 # The state-machine cores: each decides everything in one step over typed
 # inputs and outputs, so none may reach a runtime, a socket or a lock. Their

@@ -23,7 +23,6 @@ mod host;
 mod notebook;
 mod provider;
 mod ready;
-mod ring;
 mod terminal;
 mod tools;
 mod tree;

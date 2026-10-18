@@ -1,50 +1,49 @@
-//! The facts ring: every event the interpreter was fed, in order, in
-//! private/facts/, so the interpreter's state can be rebuilt and a dump can
-//! show what the provider actually said.
+//! The bounded ring of a core's inputs since its last checkpoint, on disk,
+//! so the core's state can be rebuilt and a dump can replay what it was fed.
 //!
 //! The ring is segments named by the global offset of their first byte, as
 //! the journal is. Each segment starts with a checkpoint beside it,
-//! `<offset>.checkpoint`: the interpreter's whole state before the
-//! segment's first entry. A segment rotates once it reaches its size; the
-//! newest two are kept, so a dump is the last two segments plus the
-//! checkpoint at each one's start. The state at any moment is the newest
-//! checkpoint with its segment's entries fed through the interpreter again.
-//!
-//! An entry is one JSON line. Provider payloads are text when they are
-//! UTF-8, which every provider's are, and hex otherwise; inputs are their
-//! encoded protobuf in hex.
+//! `<offset>.checkpoint`: the core's whole state before the segment's first
+//! input. A segment rotates once it reaches its size; the newest two are
+//! kept, so a dump is the last two segments plus the checkpoint at each
+//! one's start. The state at any moment is the newest checkpoint with its
+//! segment's inputs fed through the core again. An input is one JSON line,
+//! so recording one costs one bounded write.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write as _};
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-pub use interpret::ring::Entry;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// Segments kept.
 const KEEP: usize = 2;
 const CHECKPOINT: &str = "checkpoint";
 
-/// The writer of one agent's ring.
-pub struct Ring {
+/// The writer of one ring of `T`s.
+pub struct Ring<T> {
     dir: PathBuf,
     segment_bytes: u64,
     /// The global offset of the next byte.
     offset: u64,
     /// The open segment's start and file.
     segment: (u64, File),
+    inputs: PhantomData<fn(&T)>,
 }
 
-/// What a ring holds for resuming: the newest checkpoint and the entries
+/// What a ring holds for resuming: the newest checkpoint and the inputs
 /// written after it.
-pub struct Saved {
+pub struct Saved<T> {
     pub checkpoint: Vec<u8>,
-    pub entries: Vec<Entry>,
+    pub inputs: Vec<T>,
 }
 
-impl Ring {
-    /// Opens the ring in `dir`, starting a new segment whose checkpoint is
-    /// `checkpoint`: every incarnation starts its own segment from the state
-    /// it resumed.
+impl<T: Serialize + DeserializeOwned> Ring<T> {
+    /// Opens the ring in `dir`, `ring_bytes` across the segments it keeps,
+    /// starting a new segment whose checkpoint is `checkpoint`: every
+    /// process starts its own segment from the state it resumed.
     pub fn open(dir: PathBuf, ring_bytes: u64, checkpoint: &[u8]) -> io::Result<Self> {
         fs::create_dir_all(&dir)?;
         let offset = match journal::segments(&dir)?.last() {
@@ -57,33 +56,35 @@ impl Ring {
             segment_bytes: (ring_bytes / KEEP as u64).max(1),
             offset,
             segment: (offset, segment),
+            inputs: PhantomData,
         };
         ring.prune()?;
         Ok(ring)
     }
 
-    /// Whether the open segment is full, so the next entry starts a new one
+    /// Whether the open segment is full, so the next input starts a new one
     /// after [`Ring::rotate`].
     pub fn full(&self) -> bool {
         self.offset - self.segment.0 >= self.segment_bytes
     }
 
-    /// Starts a new segment from `checkpoint`, the state now.
+    /// Starts a new segment at `checkpoint`, the state now. Segments older
+    /// than the two newest are dropped.
     pub fn rotate(&mut self, checkpoint: &[u8]) -> io::Result<()> {
         let file = start_segment(&self.dir, self.offset, checkpoint)?;
         self.segment = (self.offset, file);
         self.prune()
     }
 
-    /// The global offset of the next entry.
+    /// The global offset of the next input.
     pub fn offset(&self) -> u64 {
         self.offset
     }
 
-    /// Appends one entry. A failed write leaves the ring as it was, since a
-    /// torn line would hide every entry written after it from a resume.
-    pub fn append(&mut self, entry: &Entry) -> io::Result<()> {
-        let mut line = serde_json::to_vec(entry).map_err(io::Error::other)?;
+    /// Appends one input. A failed write leaves the ring as it was, since a
+    /// torn line would hide every input written after it from a resume.
+    pub fn append(&mut self, input: &T) -> io::Result<()> {
+        let mut line = serde_json::to_vec(input).map_err(io::Error::other)?;
         line.push(b'\n');
         if let Err(error) = self.segment.1.write_all(&line) {
             self.undo(self.offset);
@@ -93,10 +94,10 @@ impl Ring {
         Ok(())
     }
 
-    /// Takes the open segment back to `offset`, forgetting the entries
-    /// after it: their steps never reached the journal, so a resume must
-    /// not count them as written. Best effort; a rotation since `offset`
-    /// keeps what it wrote.
+    /// Takes the open segment back to `offset`, forgetting the inputs after
+    /// it: whatever they led to never took effect, so a resume must not
+    /// count them. Best effort; a rotation since `offset` keeps what it
+    /// wrote.
     pub fn undo(&mut self, offset: u64) {
         let start = self.segment.0;
         if offset >= start
@@ -121,10 +122,10 @@ impl Ring {
     }
 }
 
-/// The newest checkpoint in `dir` and the entries after it; None when the
+/// The newest checkpoint in `dir` and the inputs after it; None when the
 /// ring holds none. A torn last line, from a process that died mid-write, is
-/// left out.
-pub fn saved(dir: &Path) -> io::Result<Option<Saved>> {
+/// cut.
+pub fn saved<T: DeserializeOwned>(dir: &Path) -> io::Result<Option<Saved<T>>> {
     for start in journal::segments(dir)?.into_iter().rev() {
         let checkpoint = match fs::read(checkpoint_path(dir, start)) {
             Ok(checkpoint) => checkpoint,
@@ -132,15 +133,26 @@ pub fn saved(dir: &Path) -> io::Result<Option<Saved>> {
             Err(error) => return Err(error),
         };
         let bytes = fs::read(journal::segment_path(dir, start))?;
-        let entries = interpret::ring::entries(&bytes);
         return Ok(Some(Saved {
             checkpoint,
-            entries,
+            inputs: inputs(&bytes),
         }));
     }
     Ok(None)
 }
 
+/// The inputs of one segment's bytes, in order. A torn last line, from a
+/// process that died mid-write, is cut, and so is everything after a line
+/// this build cannot read.
+pub fn inputs<T: DeserializeOwned>(segment: &[u8]) -> Vec<T> {
+    segment
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map_while(|line| serde_json::from_slice(line).ok())
+        .collect()
+}
+
+/// Where the checkpoint of the segment starting at `start` lives.
 pub fn checkpoint_path(dir: &Path, start: u64) -> PathBuf {
     dir.join(format!("{}.{CHECKPOINT}", journal::segment_name(start)))
 }
@@ -160,12 +172,13 @@ fn start_segment(dir: &Path, start: u64, checkpoint: &[u8]) -> io::Result<File> 
 
 #[cfg(test)]
 mod tests {
-    use interpret::{Channel, Event, Fact};
+    use serde::Deserialize;
 
     use super::*;
 
-    fn tick(at_ms: i64) -> Entry {
-        Entry::Tick { at_ms }
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    struct Tick {
+        at_ms: i64,
     }
 
     #[test]
@@ -177,67 +190,58 @@ mod tests {
             if ring.full() {
                 ring.rotate(format!("state {at}").as_bytes()).unwrap();
             }
-            ring.append(&tick(at)).unwrap();
+            ring.append(&Tick { at_ms: at }).unwrap();
         }
         let segments = journal::segments(&facts).unwrap();
         assert_eq!(segments.len(), 2);
         for start in &segments {
             assert!(checkpoint_path(&facts, *start).exists());
         }
-        let saved = super::saved(&facts).unwrap().unwrap();
-        let first = match saved.entries.first() {
-            Some(Entry::Tick { at_ms }) => *at_ms,
-            other => panic!("a tick, not {other:?}"),
-        };
+        let saved = super::saved::<Tick>(&facts).unwrap().unwrap();
+        let first = saved.inputs.first().expect("a tick").at_ms;
         assert_eq!(saved.checkpoint, format!("state {first}").into_bytes());
-        assert_eq!(saved.entries.last(), Some(&tick(9)));
+        assert_eq!(saved.inputs.last(), Some(&Tick { at_ms: 9 }));
 
-        // A new incarnation starts its own segment after the last.
+        // A new process starts its own segment after the last.
         drop(ring);
-        let ring = Ring::open(facts.clone(), 60, b"resumed").unwrap();
+        let ring = Ring::<Tick>::open(facts.clone(), 60, b"resumed").unwrap();
         assert!(!ring.full());
-        let saved = super::saved(&facts).unwrap().unwrap();
+        let saved = super::saved::<Tick>(&facts).unwrap().unwrap();
         assert_eq!(saved.checkpoint, b"resumed");
-        assert!(saved.entries.is_empty());
+        assert!(saved.inputs.is_empty());
     }
 
     #[test]
-    fn entries_round_trip_every_event() {
-        let events = [
-            Event::Fact(Fact {
-                channel: Channel::Hook,
-                payload: br#"{"a":1}"#.to_vec(),
-            }),
-            Event::Fact(Fact {
-                channel: Channel::Stream,
-                payload: vec![0xff, 0x00],
-            }),
-            Event::Input(wire::Input {
-                input_id: b"i1".to_vec(),
-                ..Default::default()
-            }),
-            Event::Tick { at_ms: 5 },
-            Event::ProviderExit { code: Some(3) },
-            Event::DaemonLost,
-            Event::StopRequested,
-            Event::Exiting(wire::IncarnationEnd {
-                cause: wire::ExitCause::Stopped as i32,
-                detail: None,
-            }),
-            Event::Exiting(wire::IncarnationEnd {
-                cause: wire::ExitCause::ProviderExited as i32,
-                detail: Some("exit code 3".into()),
-            }),
-            // A cause a newer build wrote is kept as its value.
-            Event::Exiting(wire::IncarnationEnd {
-                cause: 99,
-                detail: None,
-            }),
-        ];
-        for event in events {
-            let line = serde_json::to_vec(&Entry::of(&event)).unwrap();
-            let entry: Entry = serde_json::from_slice(&line).unwrap();
-            assert_eq!(entry.event(), Some(event));
-        }
+    fn a_torn_tail_is_cut_and_never_returned() {
+        let dir = tempfile::tempdir().unwrap();
+        let facts = dir.path().join("facts");
+        let mut ring = Ring::open(facts.clone(), 1 << 20, b"state").unwrap();
+        ring.append(&Tick { at_ms: 1 }).unwrap();
+        ring.append(&Tick { at_ms: 2 }).unwrap();
+        drop(ring);
+        let start = *journal::segments(&facts).unwrap().last().unwrap();
+        let mut segment = OpenOptions::new()
+            .append(true)
+            .open(journal::segment_path(&facts, start))
+            .unwrap();
+        segment.write_all(br#"{"at_ms":"#).unwrap();
+
+        let saved = super::saved::<Tick>(&facts).unwrap().unwrap();
+        assert_eq!(saved.inputs, vec![Tick { at_ms: 1 }, Tick { at_ms: 2 }]);
+    }
+
+    #[test]
+    fn an_undone_append_is_gone_from_the_saved_inputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let facts = dir.path().join("facts");
+        let mut ring = Ring::open(facts.clone(), 1 << 20, b"state").unwrap();
+        ring.append(&Tick { at_ms: 1 }).unwrap();
+        let mark = ring.offset();
+        ring.append(&Tick { at_ms: 2 }).unwrap();
+        ring.undo(mark);
+        ring.append(&Tick { at_ms: 3 }).unwrap();
+
+        let saved = super::saved::<Tick>(&facts).unwrap().unwrap();
+        assert_eq!(saved.inputs, vec![Tick { at_ms: 1 }, Tick { at_ms: 3 }]);
     }
 }

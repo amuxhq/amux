@@ -19,7 +19,7 @@ use interpret::Interpreter;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
-use interpret::ring::{self, Entry};
+use interpret::ring::Entry;
 use ui_state::{Msg, SessionState};
 use ui_view::{ChatOptions, Row};
 use wire::{Agent, CaughtUp, Item, Kind, SessionEvent, Step, session_event};
@@ -175,7 +175,7 @@ impl Bundle {
                 facts.push(FactsSegment {
                     start,
                     checkpoint,
-                    entries: ring::entries(&read(&path)?),
+                    entries: core_ring::inputs(&read(&path)?),
                 });
             }
             agents.push(AgentDump {

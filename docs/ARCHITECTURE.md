@@ -496,6 +496,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`daemon-core`](../crates/daemon-core/README.md) | The daemon as one function of its state and an input; it owns the profile store. |
 | [`relay-core`](../crates/relay-core/README.md) | The relay's admission and splice decisions, built on the daemon core's link state. |
 | [`agent-core`](../crates/agent-core/README.md) | The agent process around its interpreter: incarnation, timers, queue and the open ask. |
+| [`core-ring`](../crates/core-ring/src/lib.rs) | The bounded ring of a core's inputs since its last checkpoint, in segments beside their checkpoints; the agent process's facts ring is one. |
 | [`supervisor-core`](../crates/supervisor-core/README.md) | The supervisor's update decisions: which binary to fetch, start, set aside, go with or roll back to. |
 
 **The UI library** — reaches the daemon only through `client`.

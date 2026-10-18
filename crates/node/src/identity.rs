@@ -147,7 +147,24 @@ impl DeviceIdentity {
         trust_store: SharedTrustStore,
         peer: HostId,
     ) -> Result<ClientConfig, IdentityError> {
-        let verifier = std::sync::Arc::new(PinnedServerCertVerifier::new(peer, trust_store));
+        self.client_tls_config(PinnedServerCertVerifier::new(peer, trust_store))
+    }
+
+    /// A client config whose handshake accepts only `pin`, the key given
+    /// for `peer` as the channel was asked for.
+    pub(crate) fn client_tls_config_pinned(
+        &self,
+        peer: HostId,
+        pin: Vec<u8>,
+    ) -> Result<ClientConfig, IdentityError> {
+        self.client_tls_config(PinnedServerCertVerifier::with_pin(peer, pin))
+    }
+
+    fn client_tls_config(
+        &self,
+        verifier: PinnedServerCertVerifier,
+    ) -> Result<ClientConfig, IdentityError> {
+        let verifier = std::sync::Arc::new(verifier);
         let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(self.private_key_pkcs8.clone()));
         let mut config = ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
             .dangerous()
@@ -339,15 +356,32 @@ impl ClientCertVerifier for PinnedClientCertVerifier {
 #[derive(Clone)]
 struct PinnedServerCertVerifier {
     expected_host_id: HostId,
-    trust_store: SharedTrustStore,
+    pins: Pins,
     supported_algs: WebPkiSupportedAlgorithms,
+}
+
+/// Where the key the server must present comes from.
+#[derive(Clone)]
+enum Pins {
+    /// The trust store, as of the handshake.
+    Trusted(SharedTrustStore),
+    /// One key, given before the handshake began.
+    Key(Vec<u8>),
 }
 
 impl PinnedServerCertVerifier {
     fn new(expected_host_id: HostId, trust_store: SharedTrustStore) -> Self {
+        Self::pinned(expected_host_id, Pins::Trusted(trust_store))
+    }
+
+    fn with_pin(expected_host_id: HostId, pin: Vec<u8>) -> Self {
+        Self::pinned(expected_host_id, Pins::Key(pin))
+    }
+
+    fn pinned(expected_host_id: HostId, pins: Pins) -> Self {
         Self {
             expected_host_id,
-            trust_store,
+            pins,
             supported_algs: rustls::crypto::ring::default_provider()
                 .signature_verification_algorithms,
         }
@@ -378,11 +412,15 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
             );
             TlsError::InvalidCertificate(CertificateError::BadEncoding)
         })?;
-        let trust_store = self
-            .trust_store
-            .read()
-            .map_err(|_| TlsError::General("trust store lock is poisoned".to_string()))?;
-        match trust_store.pubkey_for_host(self.expected_host_id) {
+        let expected = match &self.pins {
+            Pins::Trusted(trust_store) => trust_store
+                .read()
+                .map_err(|_| TlsError::General("trust store lock is poisoned".to_string()))?
+                .pubkey_for_host(self.expected_host_id)
+                .map(<[u8]>::to_vec),
+            Pins::Key(pin) => Some(pin.clone()),
+        };
+        match expected {
             Some(expected) if expected == pubkey.as_slice() => Ok(ServerCertVerified::assertion()),
             Some(_) => {
                 emit_mtls_audit_for_host(

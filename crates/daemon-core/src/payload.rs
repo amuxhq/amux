@@ -41,12 +41,6 @@ macro_rules! payload {
 }
 
 payload! {
-    /// How a link reaches its peer: directly, over SSH or through a relay.
-    CarrierKind;
-    /// What a channel carries: calls, a session or bulk transfer.
-    ChannelClass;
-    /// Why a channel closed or could not open.
-    ChannelError;
     /// A peer's decoded request on a channel.
     PeerRequest;
     /// A peer's decoded reply, or one item of its streamed reply, to a call
@@ -54,8 +48,6 @@ payload! {
     Answer;
     /// A host found on the local network.
     Advertisement;
-    /// The key a channel's handshake must find at the other end.
-    PublicKey;
     /// A blob's content hash.
     BlobHash;
     /// A push notification to send.
@@ -63,6 +55,52 @@ payload! {
     /// A batch of analytics events to upload.
     AnalyticsBatch;
 }
+
+/// How a link reaches its peer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CarrierKind {
+    /// The peer's own connection, over the network.
+    Direct,
+    /// The peer's own connection, carried over SSH.
+    Ssh,
+    /// A connection to a relay, which reaches the hosts it claims.
+    Relay,
+}
+
+/// What a channel carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ChannelClass {
+    /// Calls to the peer.
+    Calls,
+    /// Session subscriptions, apart from the calls so that neither waits
+    /// behind the other.
+    Session,
+    /// One bulk transfer.
+    Bulk,
+}
+
+/// Why a channel closed or could not open.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ChannelError {
+    /// The link it was asked on is not up.
+    NoLink,
+    /// No key is pinned for the peer: it is not paired, or its pairing is
+    /// being replaced.
+    Unpinned,
+    /// The link went before the channel opened.
+    LinkClosed,
+    /// The far end refused the stream before carrying any of it.
+    Refused(#[serde(with = "codec::numbered")] StreamRefusal),
+    /// The handshake failed or took too long, in the driver's words.
+    Handshake(String),
+    /// The connection under an open channel ended.
+    Ended,
+}
+
+/// The key a channel's handshake must find at the other end: the peer's
+/// identity key as it was pinned at pairing.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PublicKey(pub Vec<u8>);
 
 /// Who made a client call.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

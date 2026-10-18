@@ -44,6 +44,16 @@ pub enum Input {
         #[serde(with = "codec::message")]
         frame: LinkFrame,
     },
+    /// The profile's shell wants a channel to `peer` over `link`. Until
+    /// the machines that open channels move into the core, the shell asks,
+    /// and the key it pinned for the peer rides on the request; the core
+    /// answers with [`Output::OpenChannel`] or [`Output::ChannelRefused`].
+    WantChannel {
+        link: LinkId,
+        peer: HostId,
+        class: ChannelClass,
+        pin: Option<PublicKey>,
+    },
     /// A channel the core asked for is open, after the driver's handshake
     /// verified the pin the core gave it.
     ChannelOpened {
@@ -121,6 +131,7 @@ impl Input {
             Input::LinkUp { .. } => "LinkUp",
             Input::LinkDown { .. } => "LinkDown",
             Input::LinkControl { .. } => "LinkControl",
+            Input::WantChannel { .. } => "WantChannel",
             Input::ChannelOpened { .. } => "ChannelOpened",
             Input::ChannelClosed { .. } => "ChannelClosed",
             Input::PeerCall { .. } => "PeerCall",
@@ -209,11 +220,22 @@ pub enum Output {
     CancelTimer {
         id: TimerId,
     },
+    /// Open a channel to `peer` over `link`, handshaking against `pin`,
+    /// and report it as [`Input::ChannelOpened`] or
+    /// [`Input::ChannelClosed`] under `channel`.
     OpenChannel {
+        channel: ChannelId,
         link: LinkId,
         peer: HostId,
         class: ChannelClass,
         pin: PublicKey,
+    },
+    /// The channel the shell wanted is not opened, and why.
+    ChannelRefused {
+        link: LinkId,
+        peer: HostId,
+        class: ChannelClass,
+        reason: ChannelError,
     },
     CloseChannel {
         channel: ChannelId,
@@ -348,7 +370,7 @@ pub enum Job {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payload::{Caller, ClientRequest, JobResult, Opening};
+    use crate::payload::{Caller, ClientRequest, JobResult, Opening, StreamRefusal};
 
     #[test]
     fn every_kind_of_input_reads_back_as_written() {
@@ -357,6 +379,35 @@ mod tests {
             Input::Tick { now_ms: 7 },
             Input::Timer {
                 id: TimerId::Checkpoint,
+            },
+            Input::LinkUp {
+                link: LinkId(1),
+                peer: HostId([1; 16]),
+                kind: CarrierKind::Direct,
+            },
+            Input::LinkControl {
+                link: LinkId(1),
+                frame: wire::Message {
+                    body: Some(wire::message::Body::NeighborDown(wire::NeighborDown {
+                        host_id: vec![2; 16],
+                    })),
+                },
+            },
+            Input::WantChannel {
+                link: LinkId(1),
+                peer: HostId([1; 16]),
+                class: ChannelClass::Session,
+                pin: Some(PublicKey(vec![7; 32])),
+            },
+            Input::ChannelOpened {
+                channel: ChannelId(4),
+                link: LinkId(1),
+                peer: HostId([1; 16]),
+                class: ChannelClass::Bulk,
+            },
+            Input::ChannelClosed {
+                channel: ChannelId(4),
+                reason: ChannelError::Refused(StreamRefusal::PaymentRequired),
             },
             Input::LinkDown {
                 link: LinkId(1),

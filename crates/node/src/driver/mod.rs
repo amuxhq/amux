@@ -14,11 +14,18 @@
 //! them in commit order: after its opening if they were committed after
 //! it, in its opening if before.
 //!
+//! Links and channels report to the core through a queue of their own,
+//! stepped ahead of everything else and without the store: no link input
+//! reads it, so a link never waits behind the shell's writes. A channel is
+//! opened only once the core has said so and given the key its handshake
+//! must find.
+//!
 //! Every input the core steps is recorded in the profile's input ring
 //! first, and the ring starts a new segment at each checkpoint the core
 //! takes, so the newest checkpoint and the inputs since rebuild the core.
 
 mod calls;
+mod links;
 mod streams;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -29,11 +36,14 @@ use std::time::Duration;
 pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::Ring;
-use daemon_core::payload::{Caller, ClientRequest, JobResult, Opening, Status};
-use daemon_core::{
-    CallId, Daemon, FromShell, IngestEnd, Ingested, Input, Job, JobId, Output, Settings,
-    StartOptions, TimerId,
+use daemon_core::payload::{
+    Caller, ChannelClass, ChannelError, ClientRequest, JobResult, Opening, PublicKey, Status,
 };
+use daemon_core::{
+    CallId, ChannelId, Daemon, FromShell, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
+    Output, Settings, StartOptions, TimerId,
+};
+pub(crate) use links::{CoreLinks, core_error};
 use store::{AgentKey, Sqlite};
 pub use streams::{InventorySubscription, Subscription};
 use tokio::runtime::Handle;
@@ -73,6 +83,11 @@ pub(crate) enum Fed {
     Checkpoint {
         done: oneshot::Sender<Result<(), String>>,
     },
+    /// The shell wants a channel, and waits for the core's word on it.
+    Channel {
+        want: Input,
+        reply: oneshot::Sender<Result<Opened, ChannelError>>,
+    },
     /// The shell handed changes over.
     Wake,
     /// The profile is gone.
@@ -89,9 +104,18 @@ pub(crate) enum Ask {
     SubscribeInventory { only: Option<Vec<u8>> },
 }
 
+/// A channel the core said to open, under the id it gave, handshaking
+/// against the key it gave.
+pub(crate) struct Opened {
+    pub(crate) channel: ChannelId,
+    pub(crate) pin: PublicKey,
+}
+
 /// A profile's core thread, from the shell's side.
 pub(crate) struct Driver {
     inputs: mpsc::Sender<Fed>,
+    /// What links and channels reported, in the order they did.
+    reports: Arc<Mutex<VecDeque<Input>>>,
     calls: Arc<CallTable>,
     /// What the shell committed, waiting for the core thread to take the
     /// store next.
@@ -111,6 +135,7 @@ impl Driver {
     ) -> Self {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
         let calls = Arc::new(CallTable::default());
+        let reports = Arc::new(Mutex::new(VecDeque::new()));
         let shell = Arc::new(Mutex::new(Vec::new()));
         let watched = Arc::new(Mutex::new(HashSet::new()));
         // The core owns a store of its own between steps; the profile's is
@@ -130,6 +155,8 @@ impl Driver {
             checkpointing: None,
             checkpoint_waiting: Vec::new(),
             fed,
+            reports: reports.clone(),
+            channel_reply: None,
             again: VecDeque::new(),
             inputs: inputs.downgrade(),
             runtime,
@@ -151,10 +178,46 @@ impl Driver {
             .expect("the core thread starts");
         Self {
             inputs,
+            reports,
             calls,
             shell,
             watched,
         }
+    }
+
+    /// Reports what a link or channel did. Never waits, so a stream can
+    /// say it ended as it is dropped.
+    pub(crate) fn report(&self, input: Input) {
+        self.reports.lock().unwrap().push_back(input);
+        // A full channel wakes the core anyway.
+        let _ = self.inputs.try_send(Fed::Wake);
+    }
+
+    /// Asks the core for a channel to `peer` over `link`, with the key the
+    /// shell pinned for the peer, and waits for its word.
+    pub(crate) async fn want_channel(
+        &self,
+        link: LinkId,
+        peer: HostId,
+        class: ChannelClass,
+        pin: Option<PublicKey>,
+    ) -> Result<Opened, ChannelError> {
+        let (reply, word) = oneshot::channel();
+        let want = Input::WantChannel {
+            link,
+            peer,
+            class,
+            pin,
+        };
+        if self
+            .inputs
+            .send(Fed::Channel { want, reply })
+            .await
+            .is_err()
+        {
+            return Err(ChannelError::LinkClosed);
+        }
+        word.await.unwrap_or(Err(ChannelError::LinkClosed))
     }
 
     /// Hands a call to the core and returns its answers. `room` is how many
@@ -245,6 +308,10 @@ struct CoreThread {
     /// Whoever waits for the next checkpoint to be on the drive.
     checkpoint_waiting: Vec<oneshot::Sender<Result<(), String>>>,
     fed: mpsc::Receiver<Fed>,
+    reports: Arc<Mutex<VecDeque<Input>>>,
+    /// Whoever waits for the core's word on the channel the step under way
+    /// was asked for.
+    channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
     /// Inputs the driver raised itself while carrying out a step, stepped
     /// before anything newer.
     again: VecDeque<Input>,
@@ -275,6 +342,22 @@ impl CoreThread {
             let Some(runtime) = self.runtime.upgrade() else {
                 return;
             };
+            // Links and channels first, and without the store: none of
+            // their inputs reads it.
+            let reports = std::mem::take(&mut *self.reports.lock().unwrap());
+            for report in reports {
+                self.step(&runtime, report, &mut out);
+            }
+            let fed = match fed {
+                Fed::Channel { want, reply } => {
+                    self.channel_reply = Some(reply);
+                    self.step(&runtime, want, &mut out);
+                    self.channel_reply = None;
+                    continue;
+                }
+                Fed::Wake if self.shell.lock().unwrap().is_empty() => continue,
+                fed => fed,
+            };
             let mut store = runtime.store.blocking_lock();
             let mut call = None;
             let input = match fed {
@@ -299,7 +382,7 @@ impl CoreThread {
                         }),
                     }
                 }
-                Fed::Wake | Fed::Stop => None,
+                Fed::Wake | Fed::Stop | Fed::Channel { .. } => None,
             };
             self.daemon.swap_store(&mut store);
             let now = runtime.clock_now().max(0) as u64;
@@ -487,8 +570,27 @@ impl CoreThread {
                     }
                 });
             }
-            output @ (Output::OpenChannel { .. }
-            | Output::CloseChannel { .. }
+            Output::OpenChannel { channel, pin, .. } => match self.channel_reply.take() {
+                Some(reply) => {
+                    if reply.send(Ok(Opened { channel, pin })).is_err() {
+                        // Nobody waits to open it: it never opened.
+                        self.again.push_back(Input::ChannelClosed {
+                            channel,
+                            reason: ChannelError::LinkClosed,
+                        });
+                    }
+                }
+                None => tracing::error!(
+                    ?channel,
+                    "the daemon core opened a channel nobody asked for"
+                ),
+            },
+            Output::ChannelRefused { reason, .. } => {
+                if let Some(reply) = self.channel_reply.take() {
+                    let _ = reply.send(Err(reason));
+                }
+            }
+            output @ (Output::CloseChannel { .. }
             | Output::Call { .. }
             | Output::SendFile { .. }
             | Output::LinkControl { .. }

@@ -43,6 +43,7 @@ use crate::auth::CredentialProvider;
 use crate::connection::ConnectionManager;
 use crate::discovery::{Advertisement, Discovery, FoundHosts, local_pairing_addrs};
 use crate::dispatcher::TunnelDispatcher;
+use crate::driver::CoreLinks;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::link::{CarrierKind, ChannelPool, MuxCarrier, MuxRole, run_link, serve_inbound_streams};
 use crate::pairing::PairMode;
@@ -265,7 +266,7 @@ impl Edge {
             trust.clone(),
             dir.to_owned(),
         ));
-        let links = Arc::new(LinkRegistry::default());
+        let links = Arc::new(LinkRegistry::for_core(CoreLinks::new(runtime.clone())));
         let channels = Arc::new(ChannelPool::with_device_tls(
             links,
             identity.clone(),

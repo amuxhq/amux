@@ -5,7 +5,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{Arc, OnceLock, RwLock, Weak};
 use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
@@ -21,9 +21,10 @@ use tonic::codegen::http;
 use tonic::transport::{Channel, Endpoint};
 use wire::pb;
 
-use super::{ByteStream, CarrierKind, OpenError};
+use super::{ByteStream, CarrierKind, LinkCarrier, OpenError};
 use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
+use crate::driver::{CoreLinks, core_error};
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::routing::{LinkId, LinkRegistry, RevocationMark, Revocations, Route};
 use crate::transport::{Compressed, channel_from_single_io, configure_tonic_endpoint_keepalive};
@@ -104,7 +105,43 @@ struct ChannelSecurity {
 #[derive(Clone)]
 struct Cached {
     channel: Channel,
-    ended: Arc<AtomicBool>,
+    ended: Arc<Ending>,
+}
+
+/// Whether the connection under a channel has ended, and the core to tell
+/// when it does, once the channel has been reported open.
+#[derive(Default)]
+struct Ending {
+    ended: AtomicBool,
+    tell: OnceLock<(CoreLinks, daemon_core::ChannelId)>,
+}
+
+impl Ending {
+    fn has_ended(&self) -> bool {
+        self.ended.load(Ordering::SeqCst)
+    }
+
+    fn end(&self) {
+        if !self.ended.swap(true, Ordering::SeqCst) {
+            self.tell_ended();
+        }
+    }
+
+    /// Tells `core` when the channel ends, or now if it already has. A
+    /// channel ending as it is armed may be told twice; the core forgets a
+    /// channel once.
+    fn arm(&self, core: CoreLinks, channel: daemon_core::ChannelId) {
+        let _ = self.tell.set((core, channel));
+        if self.has_ended() {
+            self.tell_ended();
+        }
+    }
+
+    fn tell_ended(&self) {
+        if let Some((core, channel)) = self.tell.get() {
+            core.closed(*channel, daemon_core::payload::ChannelError::Ended);
+        }
+    }
 }
 
 pub struct ChannelPool {
@@ -264,7 +301,7 @@ impl ChannelPool {
                     host_id: route_link_peer(key.route),
                 });
             }
-            if !cached.ended.load(Ordering::SeqCst) {
+            if !cached.ended.has_ended() {
                 return Ok(cached.channel);
             }
             // Forget the ended channel, unless another call already put a
@@ -282,13 +319,51 @@ impl ChannelPool {
         }
 
         let opened = std::time::Instant::now();
-        let (stream, handshake) = self
-            .open_stream(key.peer, key.route, Handshake::Any)
-            .await?;
-        let ended = Arc::new(AtomicBool::new(false));
-        let channel = self
-            .secure_channel(key, Watched::new(stream, ended.clone()), handshake)
-            .await?;
+        let (link, carrier) = self.carrier(key.route).await?;
+        let pinned = self.security.as_ref().and_then(|security| {
+            security
+                .trust_store
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .pubkey_for_host(key.peer)
+                .map(<[u8]>::to_vec)
+        });
+        // A profile's channels open at its core's word, with the key it
+        // gives; a pool with no core pins from the trust store itself.
+        let (told, pin) = match self.links.core() {
+            Some(core) => match core.want_channel(link, key.peer, key.class, pinned).await {
+                Ok(opening) => (Some((core, opening.channel)), Some(opening.pin.0)),
+                Err(refusal) => {
+                    return Err(match refusal {
+                        daemon_core::payload::ChannelError::Unpinned => unpinned(key.peer),
+                        _ => ChannelError::LinkUnavailable {
+                            host_id: route_link_peer(key.route),
+                        },
+                    });
+                }
+            },
+            None => (None, pinned),
+        };
+        let ended = Arc::new(Ending::default());
+        let secured = async {
+            let (stream, handshake) = self
+                .open_stream_on(carrier, key.peer, key.route, Handshake::Any)
+                .await?;
+            self.secure_channel(key, Watched::new(stream, ended.clone()), handshake, pin)
+                .await
+                .map(|channel| (channel, handshake))
+        }
+        .await;
+        if let Some((core, channel)) = told {
+            match &secured {
+                Ok(_) => {
+                    core.opened(channel, link, key.peer, key.class);
+                    ended.arm(core.clone(), channel);
+                }
+                Err(error) => core.closed(channel, core_error(error)),
+            }
+        }
+        let (channel, handshake) = secured?;
         tracing::debug!(
             peer = %key.peer,
             class = ?key.class,
@@ -316,7 +391,10 @@ impl ChannelPool {
         peer: HostId,
         route: Route,
     ) -> Result<ByteStream, ChannelError> {
-        let (stream, _) = self.open_stream(peer, route, Handshake::Pinned).await?;
+        let (_, carrier) = self.carrier(route).await?;
+        let (stream, _) = self
+            .open_stream_on(carrier, peer, route, Handshake::Pinned)
+            .await?;
         Ok(stream)
     }
 
@@ -357,28 +435,13 @@ impl ChannelPool {
     /// flight leaves with the preface, and a refusal comes back out of
     /// the handshake with its reason. Only an opener that asks for the
     /// pinned handshake outright, pairing, waits for the answer first.
-    async fn open_stream(
+    async fn open_stream_on(
         &self,
+        carrier: Arc<dyn LinkCarrier>,
         peer: HostId,
         route: Route,
         wanted: Handshake,
     ) -> Result<(ByteStream, Handshake), ChannelError> {
-        let carrier = match route {
-            Route::Direct(link) => {
-                self.links
-                    .native_carrier(&link)
-                    .await
-                    .ok_or(ChannelError::LinkUnavailable {
-                        host_id: link.peer(),
-                    })?
-            }
-            Route::Via(relay) => self
-                .links
-                .native_carrier_to_peer(relay)
-                .await
-                .map(|(_, carrier)| carrier)
-                .ok_or(ChannelError::LinkUnavailable { host_id: relay })?,
-        };
         let plain = wanted == Handshake::Any
             && matches!(route, Route::Direct(link) if link.peer() == peer)
             && carrier.kind() == CarrierKind::Quic;
@@ -401,11 +464,31 @@ impl ChannelPool {
         Ok((stream, Handshake::Pinned))
     }
 
+    /// The link `route` rides and its carrier, while it is up.
+    async fn carrier(&self, route: Route) -> Result<(LinkId, Arc<dyn LinkCarrier>), ChannelError> {
+        match route {
+            Route::Direct(link) => self
+                .links
+                .native_carrier(&link)
+                .await
+                .map(|carrier| (link, carrier))
+                .ok_or(ChannelError::LinkUnavailable {
+                    host_id: link.peer(),
+                }),
+            Route::Via(relay) => self
+                .links
+                .native_carrier_to_peer(relay)
+                .await
+                .ok_or(ChannelError::LinkUnavailable { host_id: relay }),
+        }
+    }
+
     async fn secure_channel(
         &self,
         key: ChannelKey,
         stream: Watched<ByteStream>,
         handshake: Handshake,
+        pin: Option<Vec<u8>>,
     ) -> Result<Channel, ChannelError> {
         let security = self
             .security
@@ -426,9 +509,8 @@ impl ChannelPool {
         let io: Box<dyn crate::transport::BoxedGrpcInner> = match handshake {
             Handshake::None => Box::new(stream),
             Handshake::Pinned | Handshake::Any => {
-                let config = security
-                    .identity
-                    .client_tls_config_for_peer(security.trust_store.clone(), key.peer)?;
+                let pin = pin.ok_or_else(|| unpinned(key.peer))?;
+                let config = security.identity.client_tls_config_pinned(key.peer, pin)?;
                 let connector = TlsConnector::from(Arc::new(config));
                 let server_name = ServerName::try_from("amux-device".to_string())
                     .map_err(|error| ChannelError::Tls(error.to_string()))?;
@@ -509,24 +591,24 @@ impl ChannelPool {
 /// when the connection over it lets it go.
 struct Watched<T> {
     inner: T,
-    ended: Arc<AtomicBool>,
+    ended: Arc<Ending>,
 }
 
 impl<T> Watched<T> {
-    fn new(inner: T, ended: Arc<AtomicBool>) -> Self {
+    fn new(inner: T, ended: Arc<Ending>) -> Self {
         Self { inner, ended }
     }
 
     fn end_on<R>(&self, result: &Poll<io::Result<R>>) {
         if matches!(result, Poll::Ready(Err(_))) {
-            self.ended.store(true, Ordering::SeqCst);
+            self.ended.end();
         }
     }
 }
 
 impl<T> Drop for Watched<T> {
     fn drop(&mut self) {
-        self.ended.store(true, Ordering::SeqCst);
+        self.ended.end();
     }
 }
 
@@ -539,7 +621,7 @@ impl<T: AsyncRead + Unpin> AsyncRead for Watched<T> {
         let (before, room) = (buf.filled().len(), buf.remaining() > 0);
         let result = Pin::new(&mut self.inner).poll_read(cx, buf);
         if room && matches!(result, Poll::Ready(Ok(()))) && buf.filled().len() == before {
-            self.ended.store(true, Ordering::SeqCst);
+            self.ended.end();
         }
         self.end_on(&result);
         result
@@ -893,6 +975,12 @@ pub(crate) fn serve_inbound_streams(
             });
         }
     })
+}
+
+/// A channel to a host no key is pinned for: not paired, or its pairing is
+/// being replaced.
+fn unpinned(peer: HostId) -> ChannelError {
+    ChannelError::Tls(format!("no key is pinned for host {peer}"))
 }
 
 fn map_open_error(error: OpenError, route: Route) -> ChannelError {

@@ -729,7 +729,7 @@ mod tests {
     fn link(peer: u128, instance: u128) -> LinkId {
         LinkId {
             peer: HostId::from_u128(peer),
-            instance: uuid::Uuid::from_u128(instance),
+            instance: u64::try_from(instance).expect("a test link's instance fits"),
         }
     }
 

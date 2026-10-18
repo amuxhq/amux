@@ -22,7 +22,7 @@ use crate::routing::{
     ConnectHandshake, ConnectHandshakeEvent, DirectLinkOrder, Host, LinkAdmission,
     LinkCarrier as RoutingCarrier, LinkCloseRequest, LinkId, LinkProperties, LinkRegistry,
     LinkRole, LiveLocalHost, Registration, RouteUpdateOutcome, RoutingCore, RuntimeInstance,
-    host_from_wire, host_to_wire, inbound_host_from_wire, neighbor_down_from_wire,
+    core_host, host_from_wire, host_to_wire, inbound_host_from_wire, neighbor_down_from_wire,
     neighbor_up_from_wire, protocol_error_hello_ack, protocol_error_link_close,
     validate_remote_host,
 };
@@ -291,6 +291,22 @@ impl LinkCtx {
         }
     }
 
+    /// Tells the profile's core, when the links are a profile's, what a
+    /// link did or what its peer said it reaches.
+    fn report(&self, input: daemon_core::Input) {
+        if let Some(core) = self.links.core() {
+            core.report(input);
+        }
+    }
+
+    /// Hands a control frame from the peer to the core.
+    fn report_frame(&self, link: LinkId, body: wire::pb::message::Body) {
+        self.report(daemon_core::Input::LinkControl {
+            link: link.core(),
+            frame: wire::pb::Message { body: Some(body) },
+        });
+    }
+
     pub fn with_expected_peer(mut self, peer: HostId) -> Self {
         self.expected_peer = Some(peer);
         self
@@ -368,6 +384,8 @@ pub async fn run_link(
 ) -> Result<(), LinkError> {
     let (mut sink, mut source) = carrier.control();
     let mut handshake = ConnectHandshake::new(role);
+    // The peer's hello or its answer to ours, as the core is told it.
+    let peer_frame;
     let ((peer_host, peer_instance), peer_neighbors, snapshot) = match role {
         crate::routing::ConnectRole::Connector => {
             let snapshot = ctx.links.neighbor_snapshot().await;
@@ -381,6 +399,7 @@ pub async fn run_link(
                 });
                 return Err(status.into());
             }
+            peer_frame = first.body.clone();
             match handshake.receive(first) {
                 Ok(ConnectHandshakeEvent::Accepted(accepted)) => {
                     let (peer, neighbors, runtime_instance) =
@@ -413,7 +432,15 @@ pub async fn run_link(
                     }
                 };
             let hello = match handshake.receive(first) {
-                Ok(ConnectHandshakeEvent::Hello(hello)) => hello,
+                Ok(ConnectHandshakeEvent::Hello(hello)) => {
+                    // The core records its inputs on the drive, so the
+                    // credential stays here.
+                    peer_frame = Some(wire::pb::message::Body::Hello(wire::pb::Hello {
+                        auth_token: None,
+                        ..hello.clone()
+                    }));
+                    hello
+                }
                 Ok(_) => {
                     write_message(
                         &mut sink,
@@ -475,7 +502,7 @@ pub async fn run_link(
         sink,
         source,
         handshake,
-        (peer_host, peer_instance, peer_neighbors, role),
+        (peer_host, peer_instance, peer_neighbors, role, peer_frame),
         snapshot.into_iter().map(|host| host.id).collect(),
     )
     .await
@@ -518,11 +545,12 @@ async fn run_established(
         RuntimeInstance,
         Vec<Host>,
         crate::routing::ConnectRole,
+        Option<wire::pb::message::Body>,
     ),
     sent_snapshot: Vec<HostId>,
 ) -> Result<(), LinkError> {
     debug_assert!(handshake.is_established());
-    let (peer_host, peer_instance, peer_neighbors, connect_role) = peer;
+    let (peer_host, peer_instance, peer_neighbors, connect_role, peer_frame) = peer;
     if ctx
         .shutdown_rx
         .as_ref()
@@ -550,6 +578,20 @@ async fn run_established(
         super::CarrierKind::Ssh => RoutingCarrier::Ssh,
         _ => ctx.routing_carrier,
     };
+    // The core hears of the link before anything can ask for a channel
+    // over it, and of the hosts its peer reaches as the peer said them.
+    ctx.report(daemon_core::Input::LinkUp {
+        link: link.core(),
+        peer: core_host(peer_host.id),
+        kind: match (link_role, carrier_tag) {
+            (LinkRole::CloudRelay, _) => daemon_core::payload::CarrierKind::Relay,
+            (LinkRole::Peer, RoutingCarrier::Ssh) => daemon_core::payload::CarrierKind::Ssh,
+            (LinkRole::Peer, RoutingCarrier::Direct) => daemon_core::payload::CarrierKind::Direct,
+        },
+    });
+    if let Some(frame) = peer_frame {
+        ctx.report_frame(link, frame);
+    }
     let (out_tx, mut out_rx) = mpsc::channel(256);
     let registration = ctx
         .links
@@ -578,6 +620,10 @@ async fn run_established(
     }) = registration
     else {
         signal_establishment(ctx.take_established_tx(), Ok(peer_host));
+        ctx.report(daemon_core::Input::LinkDown {
+            link: link.core(),
+            reason: wire::pb::LinkCloseReason::UserShutdown,
+        });
         carrier.close(wire::pb::LinkCloseReason::UserShutdown);
         return Ok(());
     };
@@ -598,7 +644,7 @@ async fn run_established(
                 let _ = out_tx
                     .send(protocol_error_link_close(status.to_string()))
                     .await;
-                cleanup_link(&ctx, link).await;
+                cleanup_link(&ctx, link, wire::pb::LinkCloseReason::ProtocolError).await;
                 return Err(status.into());
             }
         }
@@ -782,7 +828,7 @@ async fn run_established(
     while let Ok(message) = out_rx.try_recv() {
         let _ = write_message(&mut sink, &message).await;
     }
-    cleanup_link(&ctx, link).await;
+    cleanup_link(&ctx, link, close_reason).await;
     carrier.close(close_reason);
     match close_status {
         Some(status) => Err(status.into()),
@@ -864,8 +910,9 @@ async fn handle_control_body(
     acceptor_auth: Option<&mut LinkAuthSession>,
 ) -> ControlAction {
     match body {
-        wire::pb::message::Body::NeighborUp(event) => match neighbor_up_from_wire(event) {
+        wire::pb::message::Body::NeighborUp(event) => match neighbor_up_from_wire(event.clone()) {
             Ok(host) => {
+                ctx.report_frame(link, wire::pb::message::Body::NeighborUp(event));
                 if host.id != ctx.local_host.id() && host.id != link.peer() {
                     ctx.routing.apply_claim_up(link.peer(), host).await;
                 }
@@ -876,16 +923,19 @@ async fn handle_control_body(
                 wire::pb::LinkCloseReason::ProtocolError,
             ),
         },
-        wire::pb::message::Body::NeighborDown(event) => match neighbor_down_from_wire(event) {
-            Ok(host_id) => {
-                ctx.routing.apply_claim_down(link.peer(), host_id).await;
-                ControlAction::Continue
+        wire::pb::message::Body::NeighborDown(event) => {
+            match neighbor_down_from_wire(event.clone()) {
+                Ok(host_id) => {
+                    ctx.report_frame(link, wire::pb::message::Body::NeighborDown(event));
+                    ctx.routing.apply_claim_down(link.peer(), host_id).await;
+                    ControlAction::Continue
+                }
+                Err(error) => ControlAction::ReplyAndClose(
+                    Box::new(protocol_error_link_close(error.to_string())),
+                    wire::pb::LinkCloseReason::ProtocolError,
+                ),
             }
-            Err(error) => ControlAction::ReplyAndClose(
-                Box::new(protocol_error_link_close(error.to_string())),
-                wire::pb::LinkCloseReason::ProtocolError,
-            ),
-        },
+        }
         wire::pb::message::Body::Reauth(reauth) => {
             let Some(auth) = acceptor_auth else {
                 return ControlAction::ReplyAndClose(
@@ -1121,7 +1171,11 @@ fn should_audit_auth_refresh_failure(status: &tonic::Status) -> bool {
     net_error::code_of(status) != Some(wire::ErrorCode::PaymentRequired)
 }
 
-async fn cleanup_link(ctx: &LinkCtx, link: LinkId) {
+async fn cleanup_link(ctx: &LinkCtx, link: LinkId, reason: wire::pb::LinkCloseReason) {
+    ctx.report(daemon_core::Input::LinkDown {
+        link: link.core(),
+        reason,
+    });
     let peer = link.peer();
     ctx.links.remove(&link).await;
     ctx.routing.apply_direct_down(link).await;

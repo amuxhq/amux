@@ -16,6 +16,7 @@ use std::sync::Arc;
 use tokio::sync::{Notify, RwLock, mpsc};
 use wire::pb;
 
+use crate::driver::CoreLinks;
 use crate::link::LinkCarrier as NativeLinkCarrier;
 use crate::routing::types::LinkId;
 use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
@@ -24,9 +25,27 @@ use crate::{HostId, Tier, audit};
 
 pub(crate) type LinkOutputTx = mpsc::Sender<pb::Message>;
 
+impl LinkRegistry {
+    /// A profile's registry, whose links its core hears of.
+    pub(crate) fn for_core(core: CoreLinks) -> Self {
+        Self {
+            core: Some(core),
+            ..Self::default()
+        }
+    }
+
+    /// The profile's core, when this is a profile's registry.
+    pub(crate) fn core(&self) -> Option<&CoreLinks> {
+        self.core.as_ref()
+    }
+}
+
 #[derive(Default)]
 pub struct LinkRegistry {
     state: RwLock<LinkRegistryState>,
+    /// The profile's core, told of every link registered here and asked
+    /// for every channel opened over one. A relay's registry has none.
+    core: Option<CoreLinks>,
 }
 
 #[derive(Default)]
@@ -649,7 +668,7 @@ mod tests {
     fn link(peer: u128, instance: u128) -> LinkId {
         LinkId {
             peer: Uuid::from_u128(peer),
-            instance: Uuid::from_u128(instance),
+            instance: u64::try_from(instance).expect("a test link's instance fits"),
         }
     }
 

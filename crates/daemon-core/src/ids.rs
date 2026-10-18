@@ -35,8 +35,16 @@ pub struct JobId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct HostId(pub [u8; 16]);
 
-/// One link to a peer: the driver's connection, named by the core when the
-/// driver reports it up. Two links to one peer have different ids.
+impl HostId {
+    /// The host an id's bytes name, when they are an id.
+    pub fn from_slice(bytes: &[u8]) -> Option<HostId> {
+        bytes.try_into().ok().map(HostId)
+    }
+}
+
+/// One link to a peer: the driver's connection, which the driver names as
+/// it reports it up, since it holds the connection first. Two links to one
+/// peer have different ids.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LinkId(pub u64);
 

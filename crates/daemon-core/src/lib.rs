@@ -23,6 +23,7 @@ pub mod generation;
 pub mod ids;
 pub mod ingest;
 mod io;
+pub mod links;
 pub mod payload;
 pub mod serve;
 
@@ -30,6 +31,7 @@ pub use checkpoints::Checkpoints;
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use ingest::Journals;
 pub use io::{FromShell, IngestEnd, Ingested, Input, Job, Output, Settings, Wake};
+pub use links::LinkRegistry;
 pub use serve::Answers;
 
 /// The checkpoint layout this build writes and restores. A checkpoint under
@@ -121,12 +123,18 @@ impl Daemon {
             } => self.take_checkpoint(out),
             Input::Configure(settings) => self.settings = settings,
             Input::FromShell(change) => self.shell_changed(change, out),
-            Input::LinkUp { .. }
-            | Input::LinkDown { .. }
-            | Input::LinkControl { .. }
-            | Input::ChannelOpened { .. }
-            | Input::ChannelClosed { .. }
-            | Input::PeerCall { .. }
+            Input::LinkUp { link, peer, kind } => self.link_up(link, peer, kind),
+            Input::LinkDown { link, .. } => self.link_down(link),
+            Input::LinkControl { link, frame } => self.link_control(link, frame),
+            Input::WantChannel {
+                link,
+                peer,
+                class,
+                pin,
+            } => self.want_channel(link, peer, class, pin, out),
+            Input::ChannelOpened { channel, .. } => self.channel_opened(channel),
+            Input::ChannelClosed { channel, .. } => self.channel_closed(channel),
+            Input::PeerCall { .. }
             | Input::PeerAnswer { .. }
             | Input::PairingMessage { .. }
             | Input::Discovered { .. }
@@ -349,10 +357,6 @@ impl Touched {
 pub struct RoutingState {
     links: LinkRegistry,
 }
-
-/// Every link that is up, by id, with its peer. The relay keeps one too.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LinkRegistry {}
 
 /// What each paired host reads as: online, away or offline.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -4,6 +4,8 @@
 //! nothing about a link's identity crosses the wire. A route is either
 //! `Direct` (a link of our own) or `Via` (any adjacent relay).
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use uuid::Uuid;
 use wire::pb;
 
@@ -29,35 +31,42 @@ pub struct Host {
 }
 
 /// Local identity of one link: the authenticated peer plus a connection
-/// instance. Two links to the same peer differ only in `instance`.
+/// instance. Two links to the same peer differ only in `instance`, which is
+/// unique within the process, so it alone names the link to the core.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LinkId {
     pub(crate) peer: HostId,
-    pub(crate) instance: Uuid,
+    pub(crate) instance: u64,
 }
 
 impl LinkId {
     pub(crate) fn new(peer: HostId) -> Self {
+        static INSTANCES: AtomicU64 = AtomicU64::new(1);
         Self {
             peer,
-            instance: Uuid::new_v4(),
+            instance: INSTANCES.fetch_add(1, Ordering::Relaxed),
         }
     }
 
     pub(crate) fn peer(&self) -> HostId {
         self.peer
     }
+
+    /// The link as the profile's core names it.
+    pub(crate) fn core(&self) -> daemon_core::LinkId {
+        daemon_core::LinkId(self.instance)
+    }
 }
 
 impl std::fmt::Display for LinkId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}#{}",
-            self.peer.as_simple(),
-            &self.instance.as_simple().to_string()[..8]
-        )
+        write!(f, "{}#{}", self.peer.as_simple(), self.instance)
     }
+}
+
+/// A host as the profile's core names it.
+pub(crate) fn core_host(host: HostId) -> daemon_core::HostId {
+    daemon_core::HostId(*host.as_bytes())
 }
 
 /// How this daemon reaches a host: over its own link, or through one

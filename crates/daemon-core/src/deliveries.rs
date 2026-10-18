@@ -424,6 +424,7 @@ impl Daemon {
             Some(envelope::Body::Report(report)) => Some(report.to_incarnation),
             _ => None,
         };
+        self.touched_hand_off(&envelope.id);
         if parent.0 == self.store.own_host() {
             let Some(agent) = AgentId::from_slice(&parent.1) else {
                 return;
@@ -440,7 +441,6 @@ impl Daemon {
         let Some(host) = HostId::from_slice(&parent.0) else {
             return;
         };
-        self.touched_hand_off(&envelope.id);
         let made = self.pending.peers.mint();
         self.pending.peers.waiting.insert(
             made,
@@ -546,14 +546,15 @@ impl Daemon {
     }
 
     /// Records a report going to its parent, and whether one with its
-    /// envelope id was already in hand.
+    /// envelope id was already in hand: in a lane here, under way or
+    /// queued, or sent to its parent's host and not yet answered.
     fn touched_hand_off(&mut self, id: &[u8]) {
         let in_lane = self.deliveries.lanes.values().any(|lane| {
-            lane.current.as_ref().is_some_and(|current| {
-                current.message.whose == Whose::Report
-                    && current.stage != Stage::Connecting
-                    && current.message.envelope.id == id
-            })
+            lane.current
+                .iter()
+                .map(|current| &current.message)
+                .chain(&lane.queued)
+                .any(|message| message.envelope.id == id)
         });
         let sent = self
             .pending
@@ -725,9 +726,6 @@ impl Daemon {
         if !self.families.connected(agent) {
             self.arm_after(TimerId::Lane(agent), CONNECT_PATIENCE_MS, out);
             return Stage::Connecting;
-        }
-        if message.whose == Whose::Report {
-            self.touched_hand_off(&message.envelope.id);
         }
         out.push(Output::WriteControl {
             agent,
@@ -1137,6 +1135,83 @@ mod tests {
             }),
             "{out:?}"
         );
+    }
+
+    #[test]
+    fn a_report_handed_to_a_parent_here_while_one_is_in_its_lane_asks_for_a_dump() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = daemon(&dir);
+        let parent = daemon.own_key(PARENT);
+        daemon
+            .store
+            .put_agent(&{
+                let mut row = AgentRow::new(parent.clone(), 1, "/src");
+                row.incarnation = 1;
+                row
+            })
+            .unwrap();
+        daemon.store.put_delivery(&report_to(parent)).unwrap();
+        step(
+            &mut daemon,
+            Input::AgentHello {
+                agent: PARENT,
+                hello: Default::default(),
+            },
+        );
+        let out = step(&mut daemon, Input::Swept);
+        let report = out
+            .iter()
+            .find_map(|output| match output {
+                Output::WriteControl {
+                    agent: PARENT,
+                    frame:
+                        wire::CtlFrame {
+                            of: Some(ctl_frame::Of::AgentMessage(envelope)),
+                        },
+                } => Some(envelope.id.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("the report goes through the parent's lane: {out:?}"));
+        assert_eq!(violations(&out), Vec::<&str>::new());
+
+        // Its verdict lost, the report is concluded lost and kept, and the
+        // next pass hands it over again: once at a time.
+        let lost = step(
+            &mut daemon,
+            Input::Verdict {
+                agent: PARENT,
+                input_id: report.clone(),
+                verdict: None,
+            },
+        );
+        assert_eq!(violations(&lost), Vec::<&str>::new());
+        let again = step(
+            &mut daemon,
+            Input::Timer {
+                id: TimerId::Deliveries,
+            },
+        );
+        assert!(
+            again.iter().any(|output| matches!(
+                output,
+                Output::WriteControl { agent: PARENT, frame }
+                    if matches!(&frame.of, Some(ctl_frame::Of::AgentMessage(envelope)) if envelope.id == report)
+            )),
+            "{again:?}"
+        );
+        assert_eq!(violations(&again), Vec::<&str>::new());
+
+        // A pass that lost track of the report it handed over, as only a
+        // core whose state went wrong could, hands it again while it is in
+        // the lane.
+        daemon.deliveries.pass = None;
+        let out = step(
+            &mut daemon,
+            Input::Timer {
+                id: TimerId::Deliveries,
+            },
+        );
+        assert_eq!(violations(&out), vec![crate::REPORT_HANDED_TWICE]);
     }
 
     #[test]

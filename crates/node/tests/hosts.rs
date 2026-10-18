@@ -52,3 +52,52 @@ async fn remote_entry_carries_version_and_capabilities() {
     desk_daemon.shutdown().await.unwrap();
     laptop_daemon.shutdown().await.unwrap();
 }
+
+/// A host-set change made while an inventory stream is opening, after the
+/// opening has read the host set, reaches that stream: the core answers the
+/// opening before it steps the change, so the change arrives live.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_published_while_an_inventory_opens_reaches_it() {
+    let install = Install::new();
+    let daemon = install.start("boot-1", quiet_launch()).await;
+    let runtime = runtime(&daemon, &install);
+    let newcomer = uuid::Uuid::new_v4().as_bytes().to_vec();
+    let entry = wire::HostEntry {
+        host_id: newcomer.clone(),
+        name: "newcomer".to_owned(),
+        trust: wire::Trust::Candidate as i32,
+        presence: wire::Presence::Online as i32,
+        ..wire::HostEntry::default()
+    };
+    let target = std::sync::Arc::downgrade(&runtime);
+    let hook: node::JoinHook = std::sync::Arc::new(move || {
+        let (target, entry) = (target.clone(), entry.clone());
+        Box::pin(async move {
+            if let Some(runtime) = target.upgrade() {
+                runtime.publish_host(entry);
+            }
+        })
+    });
+    runtime.set_inventory_opening_hook(Some(hook));
+    let mut inventory = runtime.subscribe_inventory().await.unwrap();
+    runtime.set_inventory_opening_hook(None);
+
+    let listed = tokio::time::timeout(PATIENCE, async {
+        while let Some(event) = inventory.next().await {
+            if let Some(wire::inventory_event::Of::Host(host)) = &event.of
+                && host.host_id == newcomer
+            {
+                return true;
+            }
+        }
+        false
+    })
+    .await;
+    assert!(
+        matches!(listed, Ok(true)),
+        "the host published while the stream opened never reached it"
+    );
+
+    drop((inventory, runtime));
+    daemon.shutdown().await.unwrap();
+}

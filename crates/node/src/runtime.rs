@@ -401,6 +401,9 @@ pub struct ProfileRuntime {
     /// For tests: awaited by a subscribe before the core reads its cut,
     /// with the store held.
     pub(crate) join_hook: Mutex<Option<JoinHook>>,
+    /// For tests: awaited by an inventory subscribe between reading the
+    /// host set and the core answering it, with the store held.
+    pub(crate) inventory_opening_hook: Mutex<Option<JoinHook>>,
     /// Each own agent's message lane: one agent message at a time.
     pub(crate) lanes: Mutex<HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>>,
     /// Counts the store's writes, own commits and absorbed replica rows
@@ -707,6 +710,7 @@ impl ProfileRuntime {
             clock,
             driver: std::sync::OnceLock::new(),
             join_hook: Mutex::new(None),
+            inventory_opening_hook: Mutex::new(None),
             lanes: Mutex::new(HashMap::new()),
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
@@ -843,6 +847,14 @@ impl ProfileRuntime {
     #[doc(hidden)]
     pub fn set_join_hook(&self, hook: Option<JoinHook>) {
         *self.join_hook.lock().unwrap() = hook;
+    }
+
+    /// For tests: runs `hook` inside every inventory subscribe between
+    /// reading the host set and the core answering it, so a test can
+    /// change the host set in that window.
+    #[doc(hidden)]
+    pub fn set_inventory_opening_hook(&self, hook: Option<JoinHook>) {
+        *self.inventory_opening_hook.lock().unwrap() = hook;
     }
 
     /// Replaces what the next spawn or resume starts with.

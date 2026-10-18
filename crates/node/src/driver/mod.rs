@@ -276,13 +276,13 @@ impl CoreThread {
                 return;
             };
             let mut store = runtime.store.blocking_lock();
+            let mut call = None;
             let input = match fed {
                 Fed::Input(input) => Some(input),
-                Fed::Call { call, who, ask } => Some(Input::ClientCall {
-                    call,
-                    who,
-                    request: runtime.client_request(&store, ask),
-                }),
+                Fed::Call { call: id, who, ask } => {
+                    call = Some((id, who, ask));
+                    None
+                }
                 Fed::Ingest { agent, done } => {
                     let waiting = Waiting { frames: 0, done };
                     self.waiting.entry(agent).or_default().push(waiting);
@@ -322,6 +322,20 @@ impl CoreThread {
             for change in changes {
                 self.step(&runtime, Input::FromShell(change), &mut out);
             }
+            // A call's request is read from the shell only now: a change
+            // handed over before this read is in it, and one handed over
+            // after is still queued, stepped after the call as a live
+            // answer to it. Read before the drain, a change handed over in
+            // between would reach the core before the call and be in
+            // neither.
+            let input = match call {
+                Some((call, who, ask)) => Some(Input::ClientCall {
+                    call,
+                    who,
+                    request: runtime.client_request(self.daemon.store(), ask),
+                }),
+                None => input,
+            };
             if let Some(input) = input {
                 self.step(&runtime, input, &mut out);
             }
@@ -608,10 +622,14 @@ impl ProfileRuntime {
             }
             Ask::Fetch(request) => ClientRequest::Fetch(request),
             Ask::Get(request) => ClientRequest::Get(request),
-            Ask::SubscribeInventory { only } => ClientRequest::SubscribeInventory {
-                hosts: self.published_hosts(),
-                only,
-            },
+            Ask::SubscribeInventory { only } => {
+                let hosts = self.published_hosts();
+                let hook = self.inventory_opening_hook.lock().unwrap().clone();
+                if let Some(hook) = hook {
+                    Handle::current().block_on(hook());
+                }
+                ClientRequest::SubscribeInventory { hosts, only }
+            }
         }
     }
 }

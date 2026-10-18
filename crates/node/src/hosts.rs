@@ -70,6 +70,15 @@ impl ProfileRuntime {
         hosts.values().cloned().collect()
     }
 
+    /// For tests: puts `entry` in the published host set and publishes it,
+    /// as a recomputed host set would, until the next recomputation.
+    #[doc(hidden)]
+    pub fn publish_host(&self, entry: HostEntry) {
+        let mut published = self.hosts.lock().unwrap();
+        published.insert(entry.host_id.clone(), entry.clone());
+        self.publish_hosts(inventory_event::Of::Host(entry));
+    }
+
     /// Recomputes the host set and publishes what changed.
     pub(crate) async fn sync_hosts(&self) {
         let mut fresh = HostSet::new();

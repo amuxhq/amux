@@ -427,6 +427,9 @@ pub struct ProfileRuntime {
     pub(crate) peer_providers: Mutex<HashMap<Vec<u8>, Vec<wire::ProviderOnHost>>>,
 }
 
+/// A write waiting for its verdict: its number, and where the verdict goes.
+type Waiting = (u64, oneshot::Sender<SendInputResponse>);
+
 pub(crate) struct AgentHandle {
     dir: PathBuf,
     /// The write half of the control connection, while one is open.
@@ -434,8 +437,11 @@ pub(crate) struct AgentHandle {
     /// The frames the core asked to write, in its order.
     writes: mpsc::UnboundedSender<CtlFrame>,
     /// Inputs waiting for their verdict on the current connection, by
-    /// input id; dropped when the connection ends.
-    replies: Mutex<HashMap<Vec<u8>, oneshot::Sender<SendInputResponse>>>,
+    /// input id, with the number of the write that waits; dropped when the
+    /// connection ends.
+    replies: Mutex<HashMap<Vec<u8>, Waiting>>,
+    /// The number the next write waiting for a verdict takes.
+    next_write: std::sync::atomic::AtomicU64,
     /// Inputs written to the process and not yet answered.
     pub(crate) handed: std::sync::atomic::AtomicUsize,
     /// Dumps waiting for the agent's part, by dump id; dropped when the
@@ -472,6 +478,7 @@ impl AgentHandle {
             ctl: tokio::sync::Mutex::new(None),
             writes,
             replies: Mutex::new(HashMap::new()),
+            next_write: std::sync::atomic::AtomicU64::new(0),
             dumps: Mutex::new(HashMap::new()),
             hello: watch::Sender::new(None),
             handed: std::sync::atomic::AtomicUsize::new(0),
@@ -504,16 +511,41 @@ impl AgentHandle {
         }
     }
 
+    /// Waits for the verdict on `input_id`, in place of any write of it
+    /// still waiting: the number of this write.
     pub(crate) fn expect_reply(
         &self,
         input_id: Vec<u8>,
         reply: oneshot::Sender<SendInputResponse>,
-    ) {
-        self.replies.lock().unwrap().insert(input_id, reply);
+    ) -> u64 {
+        let write = self.next_write.fetch_add(1, Ordering::SeqCst);
+        self.replies
+            .lock()
+            .unwrap()
+            .insert(input_id, (write, reply));
+        write
     }
 
-    pub(crate) fn forget_reply(&self, input_id: &[u8]) {
-        self.replies.lock().unwrap().remove(input_id);
+    /// Stops waiting for the verdict on `write`, unless a later write of
+    /// the same input took its place.
+    pub(crate) fn forget_reply(&self, input_id: &[u8], write: u64) {
+        let mut replies = self.replies.lock().unwrap();
+        if replies
+            .get(input_id)
+            .is_some_and(|(waiting, _)| *waiting == write)
+        {
+            replies.remove(input_id);
+        }
+    }
+
+    /// Whether a later write of the input took the place of `write`, rather
+    /// than the connection ending.
+    fn superseded(&self, input_id: &[u8], write: u64) -> bool {
+        self.replies
+            .lock()
+            .unwrap()
+            .get(input_id)
+            .is_some_and(|(waiting, _)| *waiting != write)
     }
 
     pub(crate) fn expect_dump(&self, dump_id: Vec<u8>, part: oneshot::Sender<DumpPart>) {
@@ -1247,7 +1279,9 @@ impl ProfileRuntime {
 
     /// Writes a message the core handed to the agent, and reports the
     /// interpreter's verdict on it to the core, or that the connection
-    /// ended before one came. The message is in hand until then.
+    /// ended before one came. The message is in hand until then, or until
+    /// reply patience runs out, when the core's own patience has given up
+    /// on it and a write of it again waits afresh.
     pub(crate) fn write_message(
         &self,
         id: AgentId,
@@ -1275,13 +1309,23 @@ impl ProfileRuntime {
             return;
         };
         let (tx, rx) = oneshot::channel();
-        handle.expect_reply(input_id_of(&frame), tx);
+        let input_id = input_id_of(&frame);
+        let write = handle.expect_reply(input_id.clone(), tx);
         let _ = handle.writes.send(frame);
         handle.handed.fetch_add(1, Ordering::SeqCst);
+        let patience = ms(self.launch().reply_patience_ms);
         tokio::spawn(async move {
-            let verdict = rx.await.ok();
+            let waited = tokio::time::timeout(patience, rx).await;
             handle.handed.fetch_sub(1, Ordering::SeqCst);
-            report(verdict).await;
+            match waited {
+                Ok(Ok(verdict)) => report(Some(verdict)).await,
+                // A later write of the message waits in this one's place
+                // and is answered on its own.
+                Ok(Err(_)) if handle.superseded(&input_id, write) => {}
+                Ok(Err(_)) => report(None).await,
+                // The core concluded the message on its own patience.
+                Err(_) => handle.forget_reply(&input_id, write),
+            }
         });
     }
 
@@ -1708,7 +1752,7 @@ impl ProfileRuntime {
                             of: Some(ctl_frame::Of::Reply(reply)),
                         })) => {
                             let waiting = watched.replies.lock().unwrap().remove(&reply.id);
-                            if let (Some(waiting), Some(verdict)) = (waiting, reply.verdict) {
+                            if let (Some((_, waiting)), Some(verdict)) = (waiting, reply.verdict) {
                                 let _ = waiting.send(verdict);
                             }
                         }

@@ -197,7 +197,7 @@ impl ProfileRuntime {
             return Ok(rejected(Refusal::Exited));
         };
         let (tx, rx) = oneshot::channel();
-        handle.expect_reply(input_id.clone(), tx);
+        let write = handle.expect_reply(input_id.clone(), tx);
         let frame = wire::CtlFrame { of: Some(of) };
         let launch = self.launch();
         let connect_by = tokio::time::Instant::now() + CONNECT_PATIENCE;
@@ -205,17 +205,17 @@ impl ProfileRuntime {
             match handle.write_ctl(&frame, ms(launch.ctl_write_ms)).await {
                 Sent::Written => break,
                 Sent::Failed => {
-                    handle.forget_reply(&input_id);
+                    handle.forget_reply(&input_id, write);
                     return Err(RelayError::Lost);
                 }
                 Sent::NoConnection => {}
             }
             if *handle.exited.borrow() {
-                handle.forget_reply(&input_id);
+                handle.forget_reply(&input_id, write);
                 return Ok(rejected(Refusal::Exited));
             }
             if tokio::time::Instant::now() >= connect_by {
-                handle.forget_reply(&input_id);
+                handle.forget_reply(&input_id, write);
                 return Err(RelayError::Unavailable);
             }
             tokio::time::sleep(POLL).await;
@@ -227,7 +227,7 @@ impl ProfileRuntime {
             // every waiting reply.
             Ok(Err(_)) => Err(RelayError::Lost),
             Err(_) => {
-                handle.forget_reply(&input_id);
+                handle.forget_reply(&input_id, write);
                 Err(RelayError::Lost)
             }
         }

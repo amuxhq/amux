@@ -505,6 +505,59 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
     crash(daemon, runtime).await;
 }
 
+/// A message whose verdict comes after reply patience is concluded lost;
+/// the sender's retry is written again and concluded by the verdict that
+/// comes, not lost on arrival because the first write stopped waiting.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
+    const REPLY_MS: i64 = 400;
+    let install = Install::new();
+    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
+    recipient.register_offline(&install);
+    recipient.go_live();
+    recipient.freeze();
+    let launch = Launch {
+        reply_patience_ms: REPLY_MS,
+        ..quiet_launch()
+    };
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let envelope = SendMessageRequest {
+        id: b"envelope-1".to_vec(),
+        to: to(&recipient, &install),
+        text: "can you look at the build?".into(),
+        ..SendMessageRequest::default()
+    };
+
+    let first = runtime.send_message(envelope.clone(), None).await;
+    assert!(matches!(first, Err(RelayError::Lost)), "{first:?}");
+    let retry = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { runtime.send_message(envelope, None).await }
+    });
+    // A window: the retry is written to the frozen recipient, which reads
+    // it only once it answers the first, and waits for its verdict; a first
+    // write that gave up must not answer for it.
+    holds_for(
+        "the retry to wait for its verdict",
+        Duration::from_millis(300),
+        || async { !retry.is_finished() },
+    )
+    .await
+    .expect("the retry waits for the verdict, not concluded lost by the first write");
+    recipient.thaw();
+    retry
+        .await
+        .unwrap()
+        .expect("the retry is accepted on the verdict that came");
+    until("the retry written again", || async {
+        handed(&recipient, 2)
+    })
+    .await
+    .unwrap();
+    crash(daemon, runtime).await;
+}
+
 /// A daemon that starts real agent processes on the fake provider, for
 /// resumes of synthetic agents.
 async fn start_resuming(install: &Install) -> (Daemon, Arc<ProfileRuntime>) {

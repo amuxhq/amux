@@ -319,7 +319,10 @@ impl Daemon {
     }
 
     /// The retry timer for `host` fired: try the route a fresh call would
-    /// take, unless no route lists the host or a channel is already open.
+    /// take, unless no route lists the host or a channel is already open
+    /// on a route as good. A direct route listed while a hop carries the
+    /// host's traffic is tried: its first try may have been abandoned or
+    /// failed while the hop opened, and nothing else would try it again.
     pub(crate) fn retry_fired(&mut self, host: HostId, out: &mut Vec<Output>) {
         self.touched.host(host);
         self.timers.armed.remove(&TimerId::Retry(host));
@@ -330,8 +333,12 @@ impl Daemon {
         let Some(retry) = known.retry.as_mut().filter(|retry| !retry.trying) else {
             return;
         };
+        let better = |route: Route| match known.active {
+            None => true,
+            Some(active) => route.is_direct() && !active.is_direct(),
+        };
         match route {
-            Some(route) if known.active.is_none() => {
+            Some(route) if better(route) => {
                 retry.wait_kicked = std::mem::take(&mut retry.kicked);
                 retry.trying = true;
                 self.start_attempt(host, route, out);
@@ -830,6 +837,36 @@ mod tests {
             Tried::Failed(ChannelError::Handshake("timed out".into())),
         );
         assert_eq!(view(&daemon, DESK).active, Some(via));
+        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
+    }
+
+    #[test]
+    fn a_direct_route_abandoned_while_a_hop_carries_the_host_is_tried_once_it_is_trusted() {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
+        claims(&mut daemon, 1, &[DESK]);
+        let via = Route::Via(LAPTOP);
+        concluded(&mut daemon, DESK, via, Tried::Opened);
+        let out = up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        let direct = Route::Direct(LinkId(2));
+        assert_eq!(attempts(&out), vec![(DESK, direct)]);
+
+        // The shell gives the try up: the host's trust has not landed.
+        concluded(&mut daemon, DESK, direct, Tried::Abandoned);
+        assert_eq!(view(&daemon, DESK).active, Some(via));
+
+        // Once it is trusted the direct route is tried again, although the
+        // hop still carries the host, and opened it takes the traffic.
+        let trusted = step(
+            &mut daemon,
+            Input::Trusted {
+                hosts: vec![DESK, LAPTOP],
+            },
+        );
+        assert_eq!(retry_at(&trusted, DESK), Some(0));
+        assert_eq!(attempts(&fire(&mut daemon, DESK)), vec![(DESK, direct)]);
+        concluded(&mut daemon, DESK, direct, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(direct));
         assert_eq!(view(&daemon, DESK).presence, Presence::Online);
     }
 

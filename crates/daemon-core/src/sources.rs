@@ -245,7 +245,15 @@ impl Daemon {
         let own = self.store.own_host().to_vec();
         let trusted: BTreeSet<HostId> = hosts.into_iter().filter(|host| host.0 != *own).collect();
         let gone: Vec<HostId> = self.sources.trusted.difference(&trusted).copied().collect();
+        let added: Vec<HostId> = trusted.difference(&self.sources.trusted).copied().collect();
         self.sources.trusted = trusted.clone();
+        // An attempt on a host a route reached before its trust landed was
+        // abandoned: it is tried again now.
+        for host in added {
+            if self.reachable(host) {
+                self.try_again(host, out);
+            }
+        }
         for host in gone {
             self.unfollow(host, out);
         }

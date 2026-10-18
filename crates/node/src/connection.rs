@@ -115,7 +115,10 @@ impl ConnectionManager {
     /// The core asks for a calls channel to `host` on `route`, and to be
     /// told how it went. A host this one does not trust, or that said it
     /// no longer trusts this one, is not tried: pairing again opens one of
-    /// its own.
+    /// its own. A host a channel on another route is open to answers this
+    /// one, so what it said before is out of date: it is tried, and its
+    /// answer on the new channel clears what it said. It may have refused
+    /// a stream only because its half of the pairing had not landed yet.
     pub(crate) fn attempt(&self, host: daemon_core::HostId, route: daemon_core::Route) {
         let me = self.me.clone();
         tokio::spawn(async move {
@@ -123,9 +126,14 @@ impl ConnectionManager {
                 return;
             };
             let peer = host_from_core(host);
-            let tried = if manager.routing.revocations().contains(peer)
-                || !manager.routing.trusts(peer)
-            {
+            let answering = manager
+                .views
+                .lock()
+                .unwrap()
+                .get(&peer)
+                .is_some_and(|view| view.active.is_some());
+            let revoked = manager.routing.revocations().contains(peer) && !answering;
+            let tried = if revoked || !manager.routing.trusts(peer) {
                 Tried::Abandoned
             } else {
                 let opened = tokio::time::timeout(

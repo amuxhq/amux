@@ -26,6 +26,7 @@ pub mod ingest;
 mod io;
 pub mod links;
 pub mod names;
+mod notifications;
 pub mod payload;
 mod peers;
 pub mod presence;
@@ -41,6 +42,7 @@ pub use io::{
     SourcePolicy, Wake,
 };
 pub use links::LinkRegistry;
+pub use notifications::Notifications;
 pub use presence::{HostView, Presence, PresenceState, Route, Tried};
 pub use serve::Answers;
 pub use sources::{Sources, from_wire};
@@ -61,6 +63,7 @@ pub struct Daemon {
     answers: Answers,
     journals: Journals,
     checkpoints: Checkpoints,
+    notifications: Notifications,
     timers: Timers,
     pending: Pending,
     settings: Settings,
@@ -96,6 +99,7 @@ impl Daemon {
             answers: Answers::default(),
             journals: Journals::default(),
             checkpoints: Checkpoints::default(),
+            notifications: Notifications::default(),
             timers: Timers::default(),
             pending: Pending::default(),
             settings: Settings::default(),
@@ -127,7 +131,9 @@ impl Daemon {
                 self.checkpoint_done(result, out)
             }
             Input::JobDone { job, result } => {
-                self.registry_job(job, result, out);
+                if !self.push_done(job, &result, out) {
+                    self.registry_job(job, result, out);
+                }
             }
             Input::Nudge { agent } => self.ingest(agent, out),
             Input::AgentHello { agent, .. } => {
@@ -137,7 +143,10 @@ impl Daemon {
             Input::ControlClosed { agent, ended } => self.control_closed(agent, ended, out),
             Input::Adopted { agent } => self.adopted(agent, out),
             Input::Exiting { agent } => self.exiting(agent),
-            Input::Swept => self.swept(out),
+            Input::Swept => {
+                self.swept(out);
+                self.drain_notifications(out);
+            }
             Input::Timer {
                 id: id @ (TimerId::Start(_) | TimerId::Exit(_)),
             } => self.registry_timer(id, out),
@@ -150,6 +159,9 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Checkpoint,
             } => self.take_checkpoint(out),
+            Input::Timer {
+                id: TimerId::Notifications,
+            } => self.notifications_due(out),
             Input::Timer {
                 id: TimerId::Follow(host),
             } => self.follow_due(host, out),
@@ -287,6 +299,7 @@ impl Daemon {
             &self.answers,
             &self.journals,
             &self.checkpoints,
+            &self.notifications,
             &self.timers,
             &self.pending,
             &self.settings,
@@ -316,6 +329,7 @@ impl Daemon {
             answers,
             journals,
             checkpoints,
+            notifications,
             timers,
             pending,
             settings,
@@ -331,6 +345,7 @@ impl Daemon {
             answers,
             journals,
             checkpoints,
+            notifications,
             timers,
             pending,
             settings,

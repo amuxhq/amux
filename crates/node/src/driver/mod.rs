@@ -504,6 +504,7 @@ impl CoreThread {
             let launch = runtime.launch();
             let settings = Settings {
                 notify_delay_ms: launch.notify_delay_ms,
+                push_retry_ms: launch.push_retry_ms.max(0) as u64,
                 checkpoint_interval_ms: launch.checkpoint_interval_ms.max(0) as u64,
                 tail_rows: launch.tail_rows,
                 source_backoff_ms: launch.source_backoff_ms.max(0) as u64,
@@ -640,8 +641,12 @@ impl CoreThread {
                 // one its backoff is reckoned on; one due now is stepped
                 // next, with the store.
                 let sourcing = matches!(id, TimerId::Follow(_) | TimerId::Source(..));
-                // An agent's start and stop deadlines keep to it too.
-                let registry = matches!(id, TimerId::Start(_) | TimerId::Exit(_));
+                // An agent's start and stop deadlines keep to it too, and
+                // so do notifications, whose due times it stamped.
+                let registry = matches!(
+                    id,
+                    TimerId::Start(_) | TimerId::Exit(_) | TimerId::Notifications
+                );
                 if sourcing && at_ms <= now {
                     if let Some(armed) = self.timers.remove(&id) {
                         armed.abort();
@@ -981,7 +986,16 @@ async fn run_job(
             };
             runtime.make_worktree(&repo, &name).await
         }
-        op @ (Job::WriteBlob { .. } | Job::SendPush(_) | Job::Upload(_)) => {
+        Job::SendPush(push) => {
+            let Some(sender) = runtime.upgrade().map(|runtime| runtime.push.clone()) else {
+                return;
+            };
+            match sender.send(&push).await {
+                Ok(()) => JobResult::Done,
+                Err(error) => JobResult::Failed(error.to_string()),
+            }
+        }
+        op @ (Job::WriteBlob { .. } | Job::Upload(_)) => {
             JobResult::Failed(format!("this driver does not run {op:?} yet"))
         }
     };

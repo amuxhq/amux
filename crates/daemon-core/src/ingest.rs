@@ -12,7 +12,7 @@ use wire::{CaughtUp, session_event};
 
 use crate::Daemon;
 use crate::ids::{AgentId, TimerId};
-use crate::io::{IngestEnd, Ingested, Output, Wake};
+use crate::io::{IngestEnd, Ingested, Output};
 use crate::serve::event;
 
 /// The most journal frames one step commits. A step delays every other
@@ -193,7 +193,7 @@ impl Daemon {
             if envelope {
                 // Phase, working_on, since-when and git ride the inventory row.
                 self.publish_row(&key, out)?;
-                out.push(Output::Wake(Wake::Notifications));
+                self.drain_notifications(out);
             }
         }
         if at_end && self.journals.caught_up_due.remove(&agent) {
@@ -424,7 +424,7 @@ mod tests {
                     id: TimerId::Deliveries,
                 },
             ),
-            vec![Output::Wake(Wake::Deliveries)]
+            vec![Output::Wake(crate::Wake::Deliveries)]
         );
     }
 

@@ -22,6 +22,8 @@ pub enum TimerId {
     Ingest(AgentId),
     /// A turn ended: deliveries may be due.
     Deliveries,
+    /// A notification falls due, or a push that failed is tried again.
+    Notifications,
     /// Something was committed since the last checkpoint: take the next.
     Checkpoint,
     /// Try the host again: no channel to it is open while a route lists it.

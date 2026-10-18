@@ -225,6 +225,8 @@ impl Input {
 pub struct Settings {
     /// How long a turn's notification waits before it is sent.
     pub notify_delay_ms: i64,
+    /// How long a push that failed waits before it is tried again.
+    pub push_retry_ms: u64,
     /// How long after a commit the core checkpoints: what a crash costs to
     /// replay, what the input ring holds, and how long the journal below
     /// the last checkpoint waits to be reclaimed.
@@ -248,6 +250,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             notify_delay_ms: 30_000,
+            push_retry_ms: 60_000,
             checkpoint_interval_ms: 60_000,
             tail_rows: 200,
             source_backoff_ms: 1_000,
@@ -455,8 +458,6 @@ pub enum IngestEnd {
 pub enum Wake {
     /// The outbox drain: a turn ended, so a delivery may be due.
     Deliveries,
-    /// The notification sender: an envelope changed.
-    Notifications,
 }
 
 /// What the replicas' sources leave to the profile's shell: what it owns
@@ -534,6 +535,7 @@ pub enum Job {
     RefreshToken {
         link: LinkId,
     },
+    /// Hand the push to the profile's sender.
     SendPush(Push),
     Upload(AnalyticsBatch),
     /// Kill the agent's process group from outside: the process this

@@ -386,7 +386,6 @@ pub struct ProfileRuntime {
     /// Set once every own journal has been read to its end after start.
     pub(crate) journals_read: watch::Sender<bool>,
     pub(crate) deliveries_due: Arc<Notify>,
-    notifications_due: Arc<Notify>,
     pub(crate) push: Arc<dyn PushSender>,
     /// The outbox drains and the retention sweep.
     pub(crate) background: Mutex<Vec<JoinHandle<()>>>,
@@ -623,7 +622,6 @@ impl ProfileRuntime {
             ingested_frames: AtomicU64::new(0),
             journals_read: watch::Sender::new(false),
             deliveries_due: Arc::new(Notify::new()),
-            notifications_due: Arc::new(Notify::new()),
             push,
             background: Mutex::new(Vec::new()),
             launch: Mutex::new(launch),
@@ -1479,8 +1477,8 @@ impl ProfileRuntime {
     }
 
     /// Starts the background work: the deliveries outbox now and whenever
-    /// a row may have become deliverable, notifications as each falls due,
-    /// and the retention sweep now and then on its interval.
+    /// a row may have become deliverable, and the retention sweep now and
+    /// then on its interval.
     pub fn start_background(&self) {
         let retention = self.start_retention();
         self.background.lock().unwrap().push(retention);
@@ -1511,34 +1509,7 @@ impl ProfileRuntime {
                 }
             })
         };
-        let notifications = {
-            let runtime = self.me.clone();
-            let due_now = self.notifications_due.clone();
-            tokio::spawn(async move {
-                loop {
-                    let Some(me) = runtime.upgrade() else { return };
-                    let wake = due_now.notified();
-                    tokio::pin!(wake);
-                    wake.as_mut().enable();
-                    let next = me.drain_notifications().await;
-                    let due = next.map(|at| me.clock.sleep_until(at));
-                    drop(me);
-                    match due {
-                        Some(due) => {
-                            tokio::select! {
-                                () = wake => {}
-                                () = due => {}
-                            }
-                        }
-                        None => wake.await,
-                    }
-                }
-            })
-        };
-        self.background
-            .lock()
-            .unwrap()
-            .extend([deliveries, notifications]);
+        self.background.lock().unwrap().push(deliveries);
         if self.analytics.is_on() {
             let check_ins = self.start_check_ins();
             self.background.lock().unwrap().push(check_ins);
@@ -1656,7 +1627,6 @@ impl ProfileRuntime {
     pub(crate) fn wake(&self, wake: daemon_core::Wake) {
         match wake {
             daemon_core::Wake::Deliveries => self.deliveries_due.notify_one(),
-            daemon_core::Wake::Notifications => self.notifications_due.notify_one(),
         }
     }
 

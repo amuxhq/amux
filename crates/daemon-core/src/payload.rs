@@ -45,8 +45,6 @@ macro_rules! payload {
 payload! {
     /// A blob's content hash.
     BlobHash;
-    /// A push notification to send.
-    Push;
     /// A batch of analytics events to upload.
     AnalyticsBatch;
 }
@@ -54,6 +52,20 @@ payload! {
 /// A host found on the local network: a hint where to dial it, which the
 /// driver keeps. Whether the host is paired rides along until the trust
 /// store moves into the core.
+/// What a push carries: envelope fields only, so producing it interprets
+/// nothing.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Push {
+    pub host_id: Vec<u8>,
+    pub agent_id: Vec<u8>,
+    /// The revision of the snapshot that turned the agent to needs_you.
+    pub revision: u64,
+    pub name: Option<String>,
+    pub working_on: Option<String>,
+    /// The agent's newest item's text when it turned.
+    pub text: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Advertisement {
     pub host: HostId,

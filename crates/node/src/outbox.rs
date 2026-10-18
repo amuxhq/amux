@@ -1,6 +1,6 @@
 //! The two outboxes the daemon drains: deliveries, which tell a parent a
-//! turn of its child's ended or the child's incarnation exited, and notifications, which push "needs you" to
-//! the person's devices.
+//! turn of its child's ended or the child's incarnation exited, and
+//! notifications, which push "needs you" to the person's devices.
 //!
 //! A deliveries row is written in the transaction that commits the child's
 //! turn end, or when a child's process goes without one. The drain hands
@@ -13,36 +13,21 @@
 //! once after start, so the lane's lookup for an earlier acceptance never
 //! runs against a store that is behind it.
 //!
-//! A notifications row is written in the transaction that turns an agent's
-//! phase to needs_you, with a due time a delay away, and deleted unsent if
-//! the phase leaves needs_you first, at the agent's exit or with the agent.
-//! The drain sends each once it is due and deletes it.
+//! The daemon core drains the notifications outbox and asks for each push
+//! as a job; what is here is where the job hands it.
 
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 
-use store::{Delivery, Notification};
+pub use daemon_core::payload::Push;
+use store::Delivery;
 use uuid::Uuid;
 use wire::{AgentRef, ChildReport, Envelope, ErrorCode, Lifecycle, envelope};
 
 use crate::forward::ForwardError;
 use crate::relay::{RelayError, delivery_envelope_id};
 use crate::runtime::ProfileRuntime;
-
-/// What a push carries: envelope fields only, so producing it interprets
-/// nothing.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Push {
-    pub host_id: Vec<u8>,
-    pub agent_id: Vec<u8>,
-    /// The revision of the snapshot that turned the agent to needs_you.
-    pub revision: u64,
-    pub name: Option<String>,
-    pub working_on: Option<String>,
-    /// The agent's newest item's text when it turned.
-    pub text: String,
-}
 
 #[derive(Debug, thiserror::Error)]
 #[error("sending a push: {0}")]
@@ -293,51 +278,6 @@ impl ProfileRuntime {
                 ErrorCode::Aborted | ErrorCode::Unavailable => Err(RelayError::Lost),
                 _ => Err(error.into()),
             },
-        }
-    }
-
-    /// Sends every notification that is due and deletes it. Returns when
-    /// the next one falls due.
-    pub async fn drain_notifications(&self) -> Option<i64> {
-        let now = self.clock_now();
-        let rows = match self.store.lock().await.notifications() {
-            Ok(rows) => rows,
-            Err(error) => {
-                tracing::warn!(%error, "reading the notifications outbox failed");
-                return None;
-            }
-        };
-        let mut next: Option<i64> = None;
-        for row in rows {
-            if row.due_at_ms > now {
-                next = Some(next.map_or(row.due_at_ms, |next| next.min(row.due_at_ms)));
-                continue;
-            }
-            let push = self.push_for(&row);
-            match self.push.send(&push).await {
-                Ok(()) => {
-                    if let Err(error) = self.store.lock().await.remove_notification(&row) {
-                        tracing::warn!(%error, "deleting a sent notification failed");
-                    }
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "a push failed; it is tried again");
-                    let retry = now + self.launch().push_retry_ms;
-                    next = Some(next.map_or(retry, |next| next.min(retry)));
-                }
-            }
-        }
-        next
-    }
-
-    fn push_for(&self, row: &Notification) -> Push {
-        Push {
-            host_id: self.host().as_bytes().to_vec(),
-            agent_id: row.agent_id.clone(),
-            revision: row.revision,
-            name: row.name.clone(),
-            working_on: row.working_on.clone(),
-            text: row.text.clone(),
         }
     }
 }

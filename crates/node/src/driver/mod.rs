@@ -850,9 +850,9 @@ impl CoreThread {
             Output::Dump { reason } => {
                 // The core logged why. The bundle is written off this
                 // thread, reading the store between later steps.
-                let runtime = Arc::downgrade(runtime);
-                tokio::spawn(async move {
-                    let Some(runtime) = runtime.upgrade() else {
+                let weak = Arc::downgrade(runtime);
+                let task = tokio::spawn(async move {
+                    let Some(runtime) = weak.upgrade() else {
                         return;
                     };
                     let request = wire::DumpRequest {
@@ -870,6 +870,9 @@ impl CoreThread {
                         }
                     }
                 });
+                let mut dumps = runtime.core_dumps.lock().unwrap();
+                dumps.retain(|dump| !dump.is_finished());
+                dumps.push(task);
             }
             Output::OpenChannel { channel, pin, .. } => match self.channel_reply.take() {
                 Some(reply) => {

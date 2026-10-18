@@ -398,6 +398,10 @@ pub struct ProfileRuntime {
     pub(crate) push: Arc<dyn PushSender>,
     /// The outbox drains and the retention sweep.
     pub(crate) background: Mutex<Vec<JoinHandle<()>>>,
+    /// The dumps the core asked for that are still being written. A crash
+    /// aborts them, as it does every other task of the run; a shutdown lets
+    /// them finish.
+    pub(crate) core_dumps: Mutex<Vec<JoinHandle<()>>>,
     agents: Mutex<HashMap<AgentId, Arc<AgentHandle>>>,
     pub(crate) retention: watch::Sender<Retention>,
     pub(crate) reports: PathBuf,
@@ -668,6 +672,7 @@ impl ProfileRuntime {
             ingested_frames: AtomicU64::new(0),
             push,
             background: Mutex::new(Vec::new()),
+            core_dumps: Mutex::new(Vec::new()),
             launch: Mutex::new(launch),
             agents: Mutex::new(HashMap::new()),
             retention: watch::Sender::new(Retention::default()),
@@ -1580,6 +1585,9 @@ impl ProfileRuntime {
     /// keep running.
     pub fn abort_all(&self) {
         for task in self.background.lock().unwrap().drain(..) {
+            task.abort();
+        }
+        for task in self.core_dumps.lock().unwrap().drain(..) {
             task.abort();
         }
         for handle in self.agents.lock().unwrap().values() {

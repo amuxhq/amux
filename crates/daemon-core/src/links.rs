@@ -84,7 +84,11 @@ impl LinkRegistry {
     /// Every route to `host`, the one a fresh call takes first: its own
     /// links, newest first, since a second link to a peer is a crossed dial
     /// whose newer link is the one both sides keep; then each peer that
-    /// claims to reach it, in the order their links came up.
+    /// claims to reach it, in the order their links came up; and last the
+    /// account's relay. The relay claims every host on the account and
+    /// refuses to carry a channel while the plan has no connections between
+    /// hosts, and a retry tries only the first route: listed first, it
+    /// would keep a host a peer reaches reading away.
     pub fn routes_to(&self, host: HostId) -> Vec<Route> {
         let mut routes: Vec<Route> = self
             .links
@@ -93,7 +97,9 @@ impl LinkRegistry {
             .filter(|(_, link)| link.peer == host)
             .map(|(id, _)| Route::Direct(*id))
             .collect();
-        for link in self.links.values() {
+        let relayed = |link: &&Link| link.kind == CarrierKind::Relay;
+        let peers = self.links.values().filter(|link| !relayed(link));
+        for link in peers.chain(self.links.values().filter(relayed)) {
             let via = Route::Via(link.peer);
             if link.claims.contains(&host) && !routes.contains(&via) {
                 routes.push(via);

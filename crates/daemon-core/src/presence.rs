@@ -255,7 +255,19 @@ impl Daemon {
                     out.push(Output::DropRoute { host, route: old });
                 }
             }
-            Err(ChannelError::LinkClosed | ChannelError::NoLink) => {}
+            Err(ChannelError::LinkClosed | ChannelError::NoLink) => {
+                // The route went under the attempt, which then decided
+                // nothing; a host no channel is open to is tried on the
+                // routes that remain, or nothing would try it again.
+                let open = self
+                    .presence
+                    .hosts
+                    .get(&host)
+                    .is_some_and(|known| known.active.is_some());
+                if !open && !routes.is_empty() && !routes.contains(&route) {
+                    self.retry(host, true, out);
+                }
+            }
             Err(_) if routes.first() != Some(&route) => {}
             Err(error) => {
                 let known = self.presence.hosts.entry(host).or_default();
@@ -683,13 +695,15 @@ mod tests {
     #[test]
     fn a_hosts_own_links_come_first_newest_first_then_each_host_claiming_to_reach_it() {
         let mut daemon = daemon();
-        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
-        claims(&mut daemon, 1, &[DESK]);
-        up(&mut daemon, 2, RELAY, CarrierKind::Relay);
-        claims(&mut daemon, 2, &[DESK, LAPTOP]);
+        // The relay's link is the older, and still its claim comes last.
+        up(&mut daemon, 1, RELAY, CarrierKind::Relay);
+        claims(&mut daemon, 1, &[DESK, LAPTOP]);
+        up(&mut daemon, 2, LAPTOP, CarrierKind::Direct);
+        claims(&mut daemon, 2, &[DESK]);
         assert_eq!(
             view(&daemon, DESK).routes,
-            vec![Route::Via(LAPTOP), Route::Via(RELAY)]
+            vec![Route::Via(LAPTOP), Route::Via(RELAY)],
+            "the relay is the route of last resort"
         );
 
         up(&mut daemon, 3, DESK, CarrierKind::Direct);
@@ -708,17 +722,17 @@ mod tests {
         // One link of two going leaves the other; the relay going takes
         // every claim it made.
         down(&mut daemon, 4);
-        down(&mut daemon, 2);
+        down(&mut daemon, 1);
         assert_eq!(
             view(&daemon, DESK).routes,
             vec![Route::Direct(LinkId(3)), Route::Via(LAPTOP)]
         );
-        assert_eq!(view(&daemon, LAPTOP).routes, vec![Route::Direct(LinkId(1))]);
+        assert_eq!(view(&daemon, LAPTOP).routes, vec![Route::Direct(LinkId(2))]);
 
         // A neighbor saying it lost the host withdraws its claim alone.
         frame(
             &mut daemon,
-            1,
+            2,
             Body::NeighborDown(NeighborDown {
                 host_id: DESK.0.to_vec(),
             }),
@@ -919,6 +933,43 @@ mod tests {
         down(&mut daemon, 2);
         assert_eq!(attempts(&fire(&mut daemon, LAPTOP)), Vec::new());
         assert!(!daemon.presence().retrying(LAPTOP));
+    }
+
+    #[test]
+    fn an_attempt_whose_route_went_leaves_the_host_tried_on_the_routes_that_remain() {
+        let mut daemon = daemon();
+        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
+        concluded(&mut daemon, LAPTOP, Route::Direct(LinkId(1)), Tried::Opened);
+        up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        claims(&mut daemon, 1, &[DESK]);
+        let (direct, via) = (Route::Direct(LinkId(2)), Route::Via(LAPTOP));
+
+        // The relayed route is not the one a fresh call takes first, so its
+        // failure says nothing and starts no retry.
+        let out = concluded(
+            &mut daemon,
+            DESK,
+            via,
+            Tried::Failed(ChannelError::Handshake("timed out".into())),
+        );
+        assert_eq!(retry_at(&out, DESK), None);
+
+        // The direct link goes before its attempt concludes: no channel was
+        // open on it, so its going starts no retry either.
+        tick(&mut daemon, 50);
+        let out = down(&mut daemon, 2);
+        assert_eq!(retry_at(&out, DESK), None);
+
+        // Its attempt failing as the link closed tries what remains at once.
+        let out = concluded(
+            &mut daemon,
+            DESK,
+            direct,
+            Tried::Failed(ChannelError::LinkClosed),
+        );
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        assert_eq!(retry_at(&out, DESK), Some(50));
+        assert_eq!(attempts(&fire(&mut daemon, DESK)), vec![(DESK, via)]);
     }
 
     #[test]

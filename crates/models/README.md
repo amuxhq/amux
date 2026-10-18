@@ -69,6 +69,19 @@ taken beside, stepped through every input since against the journal as each
 step found it, must come out as the live core, store and journal. The
 properties are in `src/single_daemon.rs`.
 
+## Presence and routing
+
+`PresenceRouting` follows what one host reads as on a real daemon core
+whose links to the account's relay and to one peer are already up. The
+host's own links come up and go, the peer and the relay start and stop
+claiming to reach it, each attempt the core asks for opens a channel, is
+refused, times out, is refused by the relay for the account's plan or
+fails because its route went, the plan is bought and lapses, the retry
+timer fires, and at any point the world may stop changing. The relay
+refuses for the plan for as long as the plan lapses; the model bounds how
+many such refusals come in a row so that a path retrying only the relay
+ends and its liveness is judged. The properties are in `src/presence.rs`.
+
 ## Cost, bounds and budget
 
 A model explores real stores, so a state costs a store transaction or two
@@ -81,6 +94,7 @@ under `just test`.
 | --- | --- | --- | --- | --- | --- | --- |
 | Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 194,522 | 18 (94 on one thread) | 11,000 (2,070 on one thread) | 120 s | revisions up to 5, 3 in flight: 2,038,361 states in 186 s |
 | Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 179,245 | 34 (125 on one thread) | 5,300 (1,430 on one thread) | 120 s | 2 crashes, power losses or reboots: 910,364 states in 148 s |
+| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts, 2 plan changes, 2 refusals for the plan in a row | 118,374 | 2 (12 on one thread) | 62,000 (9,900 on one thread) | 60 s | 5 up, 4 down, 3 failed attempts: 4,367,842 states in 91 s |
 
 Measured on 2026-10-18 on the enrolled Mac (Mac14,6, 12 cores), with the
 development profile, which optimises SQLite, the store and the models. The

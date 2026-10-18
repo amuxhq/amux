@@ -14,8 +14,10 @@ use std::time::Instant;
 
 use stateright::{Checker, Chooser, UniformChooser};
 
+pub mod presence;
 pub mod replication;
 pub mod single_daemon;
+pub use presence::PresenceRouting;
 pub use replication::Replication;
 pub use single_daemon::SingleDaemon;
 
@@ -67,6 +69,7 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
     }
     let mut parked = of("replication", &Replication::ci());
     parked.extend(of("single daemon", &SingleDaemon::ci()));
+    parked.extend(of("presence and routing", &PresenceRouting::ci()));
     parked
 }
 

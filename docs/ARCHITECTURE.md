@@ -488,6 +488,16 @@ checks.
 | [`store`](../crates/store/src/lib.rs) | The profile store: one SQLite file per profile holding own and replica rows, commit and absorb, retention decisions. |
 | [`node`](../crates/node/src/lib.rs) | The daemon: installation, profile runtimes, agent registry, ingest, fan-out, edges, pairing, the relay server, outboxes, debug bundles and the supervisor. |
 
+**The state-machine cores** — each decides everything in one `step` over
+typed inputs and outputs, with no runtime, socket or lock in its graph.
+
+| Crate | What it is |
+|---|---|
+| [`daemon-core`](../crates/daemon-core/README.md) | The daemon as one function of its state and an input; it owns the profile store. |
+| [`relay-core`](../crates/relay-core/README.md) | The relay's admission and splice decisions, built on the daemon core's link state. |
+| [`agent-core`](../crates/agent-core/README.md) | The agent process around its interpreter: incarnation, timers, queue and the open ask. |
+| [`supervisor-core`](../crates/supervisor-core/README.md) | The supervisor's update decisions: which binary to fetch, start, set aside, go with or roll back to. |
+
 **The UI library** — reaches the daemon only through `client`.
 
 | Crate | What it is |
@@ -516,6 +526,7 @@ checks.
 | [`provider-fakes`](../crates/provider-fakes/src/lib.rs) | Scripted stand-ins for the Claude and Codex binaries, playing authored scripts or recordings. |
 | [`qualification`](../crates/qualification/src/lib.rs) | Environment-dependent checks: live providers and performance baselines on enrolled machines. |
 | [`claude-specs`](../crates/claude-specs/src/lib.rs), [`codex-specs`](../crates/codex-specs/src/lib.rs) | Recorded protocol corpora for each provider, and the probes that record them. |
+| [`models`](../crates/models/README.md) | The protocol's promises as properties, explored by a checker over the real code; one fault vocabulary for every model's environment. |
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle's three pure stages, and manages provider recordings for the capture tools. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states. |

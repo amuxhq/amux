@@ -15,9 +15,11 @@ use prost::Message as _;
 use store::{Absorb, AgentKey, AgentRow, CommitClock, Dump, Marker, SourceEvent, Sqlite};
 use wire::{Item, Phase, Snapshot, Step};
 
-use crate::{Machine, Property};
+use crate::{Fault, Host, Machine, MsgIndex, Property};
 
 const ORIGIN: &[u8] = b"origin";
+/// The origin, as the fault vocabulary names hosts.
+const ORIGIN_HOST: Host = Host(0);
 const REPLICA: &[u8] = b"replica";
 const KEYS: [&str; 4] = ["a", "b", "c", "d"];
 const CLOCK: CommitClock = CommitClock {
@@ -174,9 +176,6 @@ pub enum Action {
     Commit { key: &'static str },
     /// The origin's retention drops its oldest row.
     Trim,
-    /// The origin loses its newest commit and comes back under the next
-    /// generation, minting those revisions again.
-    UncleanReboot,
     /// The replica opens a stream: after its cursor, or for a tail.
     Open,
     /// The origin answers the opening: a delta when it fits and the
@@ -184,9 +183,11 @@ pub enum Action {
     Answer,
     /// The stream delivers its next message to the replica.
     Deliver,
-    /// The stream dies at this message: it and everything behind it are
-    /// gone.
-    Lose(usize),
+    /// The world's doing: the origin reboots uncleanly, losing its newest
+    /// commit and coming back under the next generation to mint those
+    /// revisions again; or the stream dies at a message, which goes with
+    /// everything behind it.
+    Fault(Fault),
     /// The replica fetches the page below its block from the origin and
     /// absorbs it.
     AskPage,
@@ -250,7 +251,7 @@ impl Machine for Replication {
             out.push(Action::Trim);
         }
         if s.generation < self.generations {
-            out.push(Action::UncleanReboot);
+            out.push(Action::Fault(Fault::RebootUnclean(ORIGIN_HOST)));
         }
         match &s.link {
             Link::Idle => out.push(Action::Open),
@@ -260,7 +261,9 @@ impl Machine for Replication {
                     out.push(Action::Deliver);
                 }
                 if s.lost < self.losses {
-                    out.extend((0..queue.len()).map(Action::Lose));
+                    out.extend(
+                        (0..queue.len()).map(|index| Action::Fault(Fault::Lose(MsgIndex(index)))),
+                    );
                 }
             }
         }
@@ -452,7 +455,7 @@ impl Replication {
                 let pool = origin.pool_bytes(true)?;
                 origin.sweep_own(pool.saturating_sub(1), 1, 1)?;
             }
-            Action::UncleanReboot => {
+            Action::Fault(Fault::RebootUnclean(_)) => {
                 if let Some(durable) = next.durable.take() {
                     origin.load(&durable)?;
                 }
@@ -492,7 +495,7 @@ impl Replication {
                 next.lost = 0;
                 land(replica, message)?;
             }
-            Action::Lose(index) => {
+            Action::Fault(Fault::Lose(MsgIndex(index))) => {
                 let Link::Open { queue, live } = &mut next.link else {
                     unreachable!("lost without a stream")
                 };
@@ -500,6 +503,7 @@ impl Replication {
                 *live = false;
                 next.lost += 1;
             }
+            Action::Fault(fault) => unreachable!("replication never offers {fault:?}"),
             Action::AskPage => {
                 let floor = replica
                     .agent(&agent)?
@@ -690,7 +694,7 @@ impl Wrote {
 
     fn by(action: &Action) -> Self {
         match action {
-            Action::Commit { .. } | Action::Trim | Action::UncleanReboot => Self {
+            Action::Commit { .. } | Action::Trim | Action::Fault(Fault::RebootUnclean(_)) => Self {
                 origin: true,
                 replica: false,
             },
@@ -698,7 +702,7 @@ impl Wrote {
                 origin: false,
                 replica: true,
             },
-            Action::Open | Action::Answer | Action::Lose(_) => Self {
+            Action::Open | Action::Answer | Action::Fault(_) => Self {
                 origin: false,
                 replica: false,
             },

@@ -42,6 +42,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-core"
+version = "0.1.0"
+dependencies = [
+ "interpret",
+ "wire",
+]
+
+[[package]]
 name = "agent-dir"
 version = "0.1.0"
 dependencies = [
@@ -1013,6 +1021,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "daemon-core"
+version = "0.1.0"
+dependencies = [
+ "store",
+ "wire",
 ]
 
 [[package]]
@@ -3684,6 +3700,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "relay-core"
+version = "0.1.0"
+dependencies = [
+ "daemon-core",
+]
+
+[[package]]
 name = "release"
 version = "0.1.0"
 dependencies = [
@@ -4381,6 +4404,13 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "supervisor-core"
+version = "0.1.0"
+dependencies = [
+ "release",
+]
 
 [[package]]
 name = "syn"

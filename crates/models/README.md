@@ -20,6 +20,15 @@ prints the shortest path to a failing state. `walk(model, bounds, seed)` follows
 one schedule chosen by the seed: the same seed walks the same schedule on every
 run, so a failing walk is reproduced by its seed alone.
 
+## Faults
+
+What the world may do to a machine between its own actions is one
+vocabulary, `Fault`, shared by every model's environment and by the
+simulator: a message in flight lost, delayed or reordered, a host crashing,
+rebooting uncleanly or losing power, and the clock moving on. Each model
+offers the faults its slice of the world can suffer and says how each plays
+out on it; nothing else is simulated.
+
 ## Parked properties
 
 When the checker finds a property failing and what to do about it is a

@@ -17,6 +17,38 @@ use stateright::{Checker, Chooser, UniformChooser};
 pub mod replication;
 pub use replication::Replication;
 
+/// What the world may do to a machine between its own actions: the one
+/// fault vocabulary every model's environment and the simulator draw from,
+/// and the only thing either simulates. Each model offers the faults its
+/// slice of the world can suffer and says how each plays out on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Fault {
+    /// The message at this place in flight is lost. On an ordered stream
+    /// the stream dies with it, taking everything behind it.
+    Lose(MsgIndex),
+    /// The message at this place in flight is held back behind the rest.
+    Delay(MsgIndex),
+    /// Two messages in flight swap places.
+    Reorder(MsgIndex, MsgIndex),
+    /// The host's process dies at this step; what it had written stays.
+    Crash(Host),
+    /// The host's process dies without its clean shutdown, and comes back
+    /// knowing it did.
+    RebootUnclean(Host),
+    /// The host loses power: what was written but not synced is gone.
+    PowerLoss(Host),
+    /// The clock moves on.
+    Tick { ms: u64 },
+}
+
+/// A message's place among those in flight, oldest first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MsgIndex(pub usize);
+
+/// A host of a model, by its place in the model's topology.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Host(pub u8);
+
 /// Every parked property of the protocol's models: the model, the
 /// property's sentence and why it is parked. The landing gate,
 /// `just parked-check`, fails while this is not empty.

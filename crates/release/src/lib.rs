@@ -35,7 +35,7 @@ use uuid::Uuid;
 /// and every build in it are under the one signature, so the server that
 /// hands it out can neither move a build to another channel nor widen a
 /// rollout.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     /// The channel this manifest is for; a supervisor on another refuses it.
     pub channel: String,

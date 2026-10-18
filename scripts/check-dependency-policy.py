@@ -76,6 +76,20 @@ ALLOWED_LOCAL = {
         "interpret", "journal", "redaction", "ui-state", "ui-view", "wire",
     },
 }
+# The state-machine cores: each decides everything in one step over typed
+# inputs and outputs, so none may reach a runtime, a socket or a lock. Their
+# edges are what each core may use, a ceiling rather than an exact list,
+# since each core takes in its machines one at a time. The daemon's holds the
+# store, reads journals, speaks the message types and records its inputs in
+# the ring; the relay's is built from the daemon's link and routing state;
+# the agent's wraps the interpreter; the supervisor's reads release
+# manifests and version stamps.
+CORES_ALLOWED_LOCAL = {
+    "daemon-core": {"core-ring", "journal", "store", "wire"},
+    "relay-core": {"daemon-core"},
+    "agent-core": {"core-ring", "interpret", "journal", "wire"},
+    "supervisor-core": {"release", "version-stamp"},
+}
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,
 # the daemon, its store, the interpreters or a provider. The phone bridge
@@ -171,6 +185,13 @@ def main() -> int:
                 f"{name}: local dependencies are {sorted(actual)}, expected {sorted(allowed)}"
             )
 
+    for name, allowed in CORES_ALLOWED_LOCAL.items():
+        package = packages.get(name)
+        if package is None:
+            failures.append(f"missing required workspace package {name}")
+        elif extra := local_edges(package) - allowed:
+            failures.append(f"{name}: a core depends on {sorted(extra)}, outside {sorted(allowed)}")
+
     for name, allowed in PURE_EXTERNAL.items():
         package = packages.get(name)
         if package is None:
@@ -199,7 +220,7 @@ def main() -> int:
         if forbidden := reached & FORBIDDEN_FOR_UI:
             failures.append(f"{name}: a UI crate reaches {sorted(forbidden)}")
 
-    unlisted = packages.keys() - (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL).keys()
+    unlisted = packages.keys() - (ALLOWED_LOCAL | SUPPORT_ALLOWED_LOCAL | CORES_ALLOWED_LOCAL).keys()
     for name in sorted(unlisted):
         failures.append(f"{name}: a workspace package with no entry in the policy")
 

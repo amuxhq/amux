@@ -73,8 +73,10 @@ fn child_key() -> AgentKey {
 pub struct FamilyDeliveries {
     /// Turns the child ends, all told.
     pub turn_ends: u8,
-    /// Processes that exit without being asked to, all told.
-    pub exits: u8,
+    /// Times the parent's process exits without being asked to.
+    pub parent_exits: u8,
+    /// Times the child's process exits without being asked to.
+    pub child_exits: u8,
     /// Times the link goes down, all told; it may come back once after each.
     pub downs: u8,
     /// Daemon crashes, all told.
@@ -85,11 +87,15 @@ pub struct FamilyDeliveries {
 }
 
 impl FamilyDeliveries {
-    /// The bounds `just test` explores exhaustively.
+    /// The bounds `just test` explores exhaustively: 391,540 states in 74 s
+    /// on 4 threads of an M-series Mac. The child's unasked exit is left to
+    /// the nightly bounds, as it alone nearly tripled the states; the child
+    /// still exits when asked to, and its turn end still writes a report.
     pub const fn ci() -> Self {
         Self {
             turn_ends: 1,
-            exits: 1,
+            parent_exits: 1,
+            child_exits: 0,
             downs: 1,
             crashes: 1,
             waits: 1,
@@ -99,6 +105,7 @@ impl FamilyDeliveries {
     /// The larger bounds a nightly run explores.
     pub const fn nightly() -> Self {
         Self {
+            child_exits: 1,
             downs: 2,
             waits: 2,
             ..Self::ci()
@@ -170,7 +177,8 @@ struct Used {
     stopped: bool,
     deleted: bool,
     turn_ends: u8,
-    exits: u8,
+    /// Unasked exits, the parent's and the child's.
+    exits: [u8; 2],
     downs: u8,
     /// Links that came up after a down.
     ups: u8,
@@ -436,8 +444,13 @@ impl Machine for FamilyDeliveries {
         if world && !s.used.deleted {
             out.push(Action::Delete);
         }
-        for (who, process) in [(Who::Parent, &s.parent), (Who::Child, &s.child)] {
-            if process.running && (process.asked_stop || world && s.used.exits < self.exits) {
+        for (who, process, exits) in [
+            (Who::Parent, &s.parent, self.parent_exits),
+            (Who::Child, &s.child, self.child_exits),
+        ] {
+            if process.running
+                && (process.asked_stop || world && s.used.exits[who as usize] < exits)
+            {
                 out.push(Action::Exit(who));
             }
         }
@@ -997,7 +1010,7 @@ impl<'a> Transition<'a> {
                     Who::Child => (CHILDS, CHILD, &mut self.next.child),
                 };
                 if !process.asked_stop {
-                    self.next.used.exits += 1;
+                    self.next.used.exits[*who as usize] += 1;
                 } else if *who == Who::Child {
                     self.next.seen.child_followed = true;
                 }

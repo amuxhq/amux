@@ -5,7 +5,7 @@ use models::{Bounds, FamilyDeliveries, check, walk};
 
 /// How long the exhaustive run may take under `just test`; a run past the
 /// budget says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 180.0;
+const BUDGET_SECONDS: f64 = 120.0;
 
 fn threads() -> usize {
     std::thread::available_parallelism().map_or(1, |threads| threads.get())

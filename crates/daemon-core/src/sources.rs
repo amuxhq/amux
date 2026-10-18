@@ -663,6 +663,7 @@ impl Daemon {
         children: &BTreeSet<Key>,
         out: &mut Vec<Output>,
     ) -> Result<(), StoreError> {
+        self.touched.judging = Some(host);
         let listed_keys: BTreeSet<&[u8]> = listed
             .iter()
             .map(|agent| agent.agent_id.as_slice())
@@ -1343,7 +1344,9 @@ impl Daemon {
             // generation this store may already have dropped.
             let current = HostId::from_slice(&agent.host)
                 .is_some_and(|host| self.sources.is_current(host, page.session));
-            if current && self.store.agent(&agent).ok().flatten().is_some() {
+            let row = self.store.agent(&agent).ok().flatten();
+            if current && let Some(row) = row {
+                let boundary = row.complete_from_order;
                 let absorbed = self.store.absorb(
                     &agent,
                     Absorb::Page {
@@ -1353,7 +1356,12 @@ impl Daemon {
                     },
                 );
                 match absorbed {
-                    Ok(_) => out.push(Output::Shell(ShellWork::Wrote)),
+                    Ok(_) => {
+                        self.touched
+                            .paged
+                            .push((agent.clone(), before_order, boundary));
+                        out.push(Output::Shell(ShellWork::Wrote));
+                    }
                     Err(error) => {
                         tracing::warn!(%error, "absorbing a page from the origin failed");
                     }

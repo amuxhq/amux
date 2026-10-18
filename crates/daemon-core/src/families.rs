@@ -1039,6 +1039,14 @@ impl Daemon {
                 continue;
             }
             if let Some(child) = AgentId::from_slice(&child.agent.agent) {
+                if says == ParentSays::Deleted {
+                    let caught_up = crate::HostId::from_slice(&parent.host).is_some_and(|host| {
+                        self.sources.ready(host) || self.touched.judging == Some(host)
+                    });
+                    self.touched
+                        .deleted_parents
+                        .push((parent.clone(), caught_up));
+                }
                 self.follow(child, says, out);
             }
         }
@@ -1494,6 +1502,33 @@ mod tests {
 
         let (late, out) = rig.call(create(AgentId(*b"late-00000000000"), "late", Some(PARENT)));
         assert_eq!(refusal_of(&out, late), Some(Refusal::ParentEnded(PARENT)));
+    }
+
+    #[test]
+    fn a_child_deleted_for_a_parent_whose_hosts_listing_has_not_caught_up_asks_for_a_dump() {
+        let mut rig = rig();
+        rig.step(Input::Swept);
+        let parent = AgentKey::new(vec![9; 16], b"far-parent-00000".to_vec());
+        let mut child = AgentRow::new(rig.daemon.own_key(CHILD), 1, "/src");
+        child.parent = Some(parent.clone());
+        rig.daemon.store.put_agent(&child).unwrap();
+
+        // Told the far parent is gone before its host's listing caught up,
+        // as only a shell handing over another host's removal could.
+        let out = rig.step(Input::FromShell(crate::FromShell::Removed {
+            agent: parent,
+            event: Default::default(),
+        }));
+        let violations: Vec<&str> = out
+            .iter()
+            .filter_map(|output| match output {
+                Output::Dump {
+                    reason: crate::DumpReason::Violation(violation),
+                } => Some(violation.invariant),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(violations, vec![crate::DELETED_UNDER_A_STALE_LISTING]);
     }
 
     #[test]

@@ -254,6 +254,30 @@ impl Daemon {
     /// step touched and never scans the block.
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
         self.check_presence()?;
+        for (agent, before_order, boundary) in &self.touched.paged {
+            if *boundary != Some(*before_order) {
+                return Err(Violation {
+                    invariant: PAGE_OFF_THE_BOUNDARY,
+                    detail: format!(
+                        "a page below order {before_order} joined replica {}'s block, whose lower \
+                         boundary was {boundary:?}",
+                        hex(&agent.agent)
+                    ),
+                });
+            }
+        }
+        for (parent, caught_up) in &self.touched.deleted_parents {
+            if parent.host != self.store.own_host() && !caught_up {
+                return Err(Violation {
+                    invariant: DELETED_UNDER_A_STALE_LISTING,
+                    detail: format!(
+                        "children of {} were deleted with it before host {}'s listing caught up",
+                        hex(&parent.agent),
+                        hex(&parent.host)
+                    ),
+                });
+            }
+        }
         for (agent, revision) in &self.touched.answered {
             let committed = self
                 .store
@@ -420,6 +444,12 @@ pub const RECLAIMED_ABOVE_CHECKPOINT: &str =
     "an agent's journal is reclaimed only below the cursor of the newest checkpoint on the drive";
 pub const GENERATION_FELL: &str = "the generation this host's streams open under only ever rises";
 
+/// The sources' and families' cheap invariants.
+pub const PAGE_OFF_THE_BOUNDARY: &str =
+    "a page from the origin joins a replica's block only at the block's lower boundary";
+pub const DELETED_UNDER_A_STALE_LISTING: &str =
+    "a child is deleted for its parent on another host only under that host's caught-up listing";
+
 /// An id as a violation names it.
 fn hex(id: &[u8]) -> String {
     id.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -438,6 +468,14 @@ struct Touched {
     opened_under: Option<(u64, u64)>,
     /// Each host whose routes, attempts or presence the step moved.
     hosts: Vec<HostId>,
+    /// Each page absorbed: the replica, the order it was below, and the
+    /// block's lower boundary before it.
+    paged: Vec<(store::AgentKey, u64, Option<u64>)>,
+    /// Each parent whose deletion this host's children followed, and
+    /// whether its host's listing had caught up then.
+    deleted_parents: Vec<(store::AgentKey, bool)>,
+    /// The host whose listing this step reads at its CaughtUp.
+    judging: Option<HostId>,
 }
 
 impl Touched {

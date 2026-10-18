@@ -23,8 +23,8 @@ mod serde_pb;
 mod shared;
 pub mod unknown;
 
-#[cfg(test)]
-mod testkind;
+#[cfg(any(test, feature = "testkind"))]
+pub mod testkind;
 
 pub use claude_common::NOTEBOOK_OLD_SOURCE;
 pub use golden::{

@@ -9,3 +9,7 @@ publish = false
 [dependencies]
 interpret = { workspace = true }
 wire = { workspace = true }
+
+[dev-dependencies]
+interpret = { workspace = true, features = ["testkind"] }
+serde_json = { workspace = true }

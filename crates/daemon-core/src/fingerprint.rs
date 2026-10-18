@@ -63,7 +63,6 @@ impl Daemon {
     pub fn fingerprint(&self) -> Fingerprint {
         let mut jobs = Vec::new();
         self.families.jobs(&mut jobs);
-        self.deliveries.jobs(&mut jobs);
         self.notifications.jobs(&mut jobs);
         self.blobs.jobs(&mut jobs);
         self.drafts.jobs(&mut jobs);
@@ -96,7 +95,7 @@ impl Daemon {
             &self.notifications.canonical(&ids),
             &self.blobs.canonical(&ids),
             &self.drafts.canonical(&ids),
-            &self.deliveries.canonical(&ids),
+            &self.deliveries.canonical(),
             &self.timers,
             &pending,
             &self.settings,

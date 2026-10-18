@@ -1114,17 +1114,11 @@ impl ProfileRuntime {
         id: AgentId,
         bootstrap: Option<Bootstrap>,
     ) -> Result<Agent, RegistryError> {
-        // An agent the store does not hold is the core's to refuse.
-        let key = self.key(id);
-        let snapshot = self
-            .read_rows(move |store| store.cut(&key, 0))
-            .await
-            .ok()
-            .and_then(|cut| cut.snapshot);
-        let spec = self.next_spec(id, bootstrap, snapshot.as_ref().map(|s| s.body.as_slice()))?;
+        // An agent the store does not hold is the core's to refuse; the
+        // core asks for the next spec once the previous process has ended.
         let resume = daemon_core::Resume {
             agent: core_agent(id),
-            spec,
+            bootstrap,
         };
         self.registry_row(id, ClientRequest::ResumeAgent(Box::new(resume)))
             .await

@@ -158,7 +158,6 @@ impl Daemon {
                 if !self.push_done(job, &result, out)
                     && !self.blob_done(job, &result, out)
                     && !self.drafts_written(job, &result, out)
-                    && !self.lane_job(job, &result, out)
                 {
                     self.registry_job(job, result, out);
                 }

@@ -1158,7 +1158,7 @@ async fn run_job(
                 return;
             };
             let agent = uuid::Uuid::from_bytes(agent.0);
-            match runtime.next_spec(agent, Some(bootstrap), snapshot.as_deref()) {
+            match runtime.next_spec(agent, bootstrap, snapshot.as_deref()) {
                 Ok(spec) => JobResult::Spec(spec.map(Box::new)),
                 Err(error) => JobResult::Failed(error.to_string()),
             }

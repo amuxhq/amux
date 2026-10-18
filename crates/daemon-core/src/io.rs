@@ -558,7 +558,7 @@ pub enum Job {
     /// seeded by `bootstrap`; answered as [`JobResult::Spec`].
     NextSpec {
         agent: AgentId,
-        bootstrap: wire::Bootstrap,
+        bootstrap: Option<wire::Bootstrap>,
         snapshot: Option<Vec<u8>>,
     },
     Upload(AnalyticsBatch),
@@ -789,7 +789,7 @@ mod tests {
                 call: CallId(14),
                 request: ClientRequest::ResumeAgent(Box::new(crate::Resume {
                     agent: AgentId([5; 16]),
-                    spec: None,
+                    bootstrap: None,
                 })),
             },
             Input::ControlClosed {

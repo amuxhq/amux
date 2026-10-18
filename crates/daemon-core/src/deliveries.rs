@@ -42,10 +42,10 @@ use wire::{
 };
 
 use crate::families::{Caller, Refusal};
-use crate::ids::{AgentId, CallId, HostId, JobId, TimerId};
-use crate::io::{Job, Output};
+use crate::ids::{AgentId, CallId, HostId, TimerId};
+use crate::io::Output;
 use crate::payload::{
-    Answer, CallError, JobResult, MessageFrom, MessageRefusal, PeerFailure, PeerRequest, Status,
+    Answer, CallError, MessageFrom, MessageRefusal, PeerFailure, PeerRequest, Status,
 };
 use crate::peers::Waiting;
 use crate::{Daemon, codec};
@@ -70,32 +70,10 @@ pub struct Deliveries {
 }
 
 impl Deliveries {
-    /// The jobs the lanes wait on.
-    pub(crate) fn jobs(&self, out: &mut Vec<JobId>) {
-        out.extend(
-            self.lanes
-                .values()
-                .filter_map(|lane| match lane.current.as_ref()?.stage {
-                    Stage::Resuming { job } => job,
-                    _ => None,
-                }),
-        );
-    }
-
-    /// The drain and lanes with the jobs they wait on under canonical ids,
-    /// and no count of passes run.
-    pub(crate) fn canonical(&self, ids: &crate::fingerprint::Ids) -> Deliveries {
+    /// The drain and lanes with no count of passes run.
+    pub(crate) fn canonical(&self) -> Deliveries {
         let mut deliveries = self.clone();
         deliveries.passes = 0;
-        for lane in deliveries.lanes.values_mut() {
-            if let Some(InLane {
-                stage: Stage::Resuming { job: Some(job) },
-                ..
-            }) = lane.current.as_mut()
-            {
-                *job = ids.jobs.get(*job);
-            }
-        }
         deliveries
     }
 
@@ -185,8 +163,8 @@ enum Stage {
     /// Accepted: waiting for the acceptance item to commit.
     Accepting,
     /// Resuming the exited recipient with the message as its first input:
-    /// its next spec is being built, then the registry starts it.
-    Resuming { job: Option<JobId> },
+    /// the registry builds its next spec and starts it.
+    Resuming,
 }
 
 /// How a row handed to its parent came out.
@@ -676,8 +654,14 @@ impl Daemon {
             };
             match self.begin_message(agent, &message, out) {
                 Ok(Some(stage)) => {
+                    let envelope = (stage == Stage::Resuming).then(|| message.envelope.clone());
                     if let Some(lane) = self.deliveries.lanes.get_mut(&agent) {
                         lane.current = Some(InLane { message, stage });
+                    }
+                    // Asked once the lane holds the message, so a registry
+                    // that refuses at once concludes it.
+                    if let Some(envelope) = envelope {
+                        self.resume_with(agent, &envelope, out);
                     }
                     return;
                 }
@@ -728,9 +712,7 @@ impl Daemon {
         }
         if row.lifecycle == Lifecycle::Exited as i32 {
             return if message.resume {
-                self.resume_with(agent, &message.envelope, out)
-                    .map(Some)
-                    .map_err(store)
+                Ok(Some(Stage::Resuming))
             } else {
                 Err(MessageRefusal::Rejected(refused(Refused::Exited)))
             };
@@ -758,31 +740,22 @@ impl Daemon {
     }
 
     /// Resumes an exited child with its parent's message as the new
-    /// incarnation's first input: its next spec is built from the settings
-    /// it last ran with, then the registry starts it.
-    fn resume_with(
-        &mut self,
-        agent: AgentId,
-        envelope: &Envelope,
-        out: &mut Vec<Output>,
-    ) -> Result<Stage, StoreError> {
-        let snapshot = self
-            .store
-            .cut(&self.own_key(agent), 0)?
-            .snapshot
-            .map(|snapshot| snapshot.body);
-        let job = self.pending.mint();
-        out.push(Output::Job {
-            id: job,
-            op: Job::NextSpec {
-                agent,
-                bootstrap: Bootstrap {
-                    of: Some(bootstrap::Of::AgentMessage(envelope.clone())),
-                },
-                snapshot,
-            },
-        });
-        Ok(Stage::Resuming { job: Some(job) })
+    /// incarnation's first input, once the lane holds it as resuming: the
+    /// registry builds its next spec from the settings it last ran with
+    /// and starts it.
+    fn resume_with(&mut self, agent: AgentId, envelope: &Envelope, out: &mut Vec<Output>) {
+        let resume = crate::Resume {
+            agent,
+            bootstrap: Some(Bootstrap {
+                of: Some(bootstrap::Of::AgentMessage(envelope.clone())),
+            }),
+        };
+        self.registry_call(
+            Caller::Lane,
+            agent,
+            crate::families::Op::Resume(Box::new(resume)),
+            out,
+        );
     }
 
     fn stage(&self, agent: AgentId) -> Option<Stage> {
@@ -928,7 +901,7 @@ impl Daemon {
                 };
                 self.conclude(agent, result, out);
             }
-            Some(Stage::Resuming { .. }) | None => {}
+            Some(Stage::Resuming) | None => {}
         }
     }
 
@@ -968,17 +941,11 @@ impl Daemon {
                         out,
                     );
                 }
-                match self.resume_with(agent, &envelope, out) {
-                    Ok(stage) => {
-                        out.push(Output::CancelTimer {
-                            id: TimerId::Lane(agent),
-                        });
-                        self.set_stage(agent, stage);
-                    }
-                    Err(error) => {
-                        self.conclude(agent, Err(MessageRefusal::Store(error.to_string())), out)
-                    }
-                }
+                out.push(Output::CancelTimer {
+                    id: TimerId::Lane(agent),
+                });
+                self.set_stage(agent, Stage::Resuming);
+                self.resume_with(agent, &envelope, out);
             }
             Some(send_input_response::Of::Rejected(rejected)) => {
                 self.conclude(agent, Err(MessageRefusal::Rejected(rejected)), out)
@@ -989,10 +956,8 @@ impl Daemon {
     /// The agent's journal committed: a message waiting for its acceptance
     /// item may have it.
     pub(crate) fn lane_committed(&mut self, agent: AgentId, out: &mut Vec<Output>) {
-        if matches!(
-            self.stage(agent),
-            Some(Stage::Accepting | Stage::Resuming { job: None })
-        ) && self.accepted(agent)
+        if matches!(self.stage(agent), Some(Stage::Accepting | Stage::Resuming))
+            && self.accepted(agent)
         {
             self.conclude(agent, Ok(()), out);
         }
@@ -1005,49 +970,9 @@ impl Daemon {
             Some(Stage::Verdict) => Err(MessageRefusal::Lost),
             Some(Stage::Accepting) if self.accepted(agent) => Ok(()),
             Some(Stage::Accepting) => Err(MessageRefusal::Lost),
-            Some(Stage::Resuming { .. }) | None => return,
+            Some(Stage::Resuming) | None => return,
         };
         self.conclude(agent, result, out);
-    }
-
-    /// The next spec a resume with a message asked for is built, or could
-    /// not be. Returns whether a lane waited on the job.
-    pub(crate) fn lane_job(
-        &mut self,
-        job: JobId,
-        result: &JobResult,
-        out: &mut Vec<Output>,
-    ) -> bool {
-        let Some(agent) = self.deliveries.lanes.iter().find_map(|(agent, lane)| {
-            let current = lane.current.as_ref()?;
-            (current.stage == (Stage::Resuming { job: Some(job) })).then_some(*agent)
-        }) else {
-            return false;
-        };
-        match result {
-            JobResult::Spec(spec) => {
-                self.set_stage(agent, Stage::Resuming { job: None });
-                let resume = crate::Resume {
-                    agent,
-                    spec: spec.as_deref().cloned(),
-                };
-                self.registry_call(
-                    Caller::Lane,
-                    agent,
-                    crate::families::Op::Resume(Box::new(resume)),
-                    out,
-                );
-            }
-            other => {
-                let words = format!("{other:?}");
-                self.conclude(
-                    agent,
-                    Err(MessageRefusal::Resume(Refusal::CouldNotStart(words))),
-                    out,
-                );
-            }
-        }
-        true
     }
 
     /// The registry finished a resume a message asked for.
@@ -1057,7 +982,7 @@ impl Daemon {
         outcome: Result<(), Refusal>,
         out: &mut Vec<Output>,
     ) {
-        if self.stage(agent) != Some(Stage::Resuming { job: None }) {
+        if self.stage(agent) != Some(Stage::Resuming) {
             return;
         }
         match outcome {

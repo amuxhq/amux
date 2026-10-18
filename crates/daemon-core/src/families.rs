@@ -74,6 +74,7 @@ impl FamilyState {
                 match &mut operation.doing {
                     Doing::Worktree { job, .. }
                     | Doing::AwaitUnlock { job, .. }
+                    | Doing::AwaitSpec { job, .. }
                     | Doing::Removing { job }
                     | Doing::Ending {
                         phase: Phase::Killing { job: Some(job) },
@@ -165,13 +166,14 @@ pub struct Create {
     pub spec: AgentSpec,
 }
 
-/// A resume, with the spec its next incarnation starts with, carried from
-/// its newest: none when it has none.
+/// A resume, with what seeds its next incarnation's queue. Its spec is
+/// built once the previous process has ended, so it carries the settings
+/// that process's last snapshot recorded.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Resume {
     pub agent: AgentId,
     #[serde(with = "codec::optional")]
-    pub spec: Option<AgentSpec>,
+    pub bootstrap: Option<wire::Bootstrap>,
 }
 
 /// Why the registry refused or could not finish an operation.
@@ -262,6 +264,8 @@ enum Doing {
     AwaitExit { resume: Box<Resume> },
     /// A resume waits for the directory's lock to be free.
     AwaitUnlock { job: JobId, resume: Box<Resume> },
+    /// A resume waits for its next spec to be built.
+    AwaitSpec { job: JobId, resume: Box<Resume> },
     /// A stop or a kill is ending the process.
     Ending { phase: Phase, then: Then },
     /// A delete removed the rows; the directory goes.
@@ -274,6 +278,7 @@ impl Doing {
         match self {
             Doing::Worktree { job, .. }
             | Doing::AwaitUnlock { job, .. }
+            | Doing::AwaitSpec { job, .. }
             | Doing::Removing { job }
             | Doing::Ending {
                 phase: Phase::Killing { job: Some(job) },
@@ -660,18 +665,45 @@ impl Daemon {
         Doing::AwaitUnlock { job, resume }
     }
 
-    /// The directory is free: the row says live under the next incarnation
-    /// and its process starts.
-    fn resume_unlocked(
+    /// The directory is free, so the previous process has ended and its
+    /// journal's tail is committed: the next spec is built from the
+    /// snapshot as it stands now, carrying the settings that process last
+    /// ran with.
+    fn ask_spec(
         &mut self,
         resume: Box<Resume>,
         out: &mut Vec<Output>,
+    ) -> Result<Doing, StoreError> {
+        let snapshot = self
+            .store
+            .cut(&self.own_key(resume.agent), 0)?
+            .snapshot
+            .map(|snapshot| snapshot.body);
+        let job = self.pending.mint();
+        out.push(Output::Job {
+            id: job,
+            op: Job::NextSpec {
+                agent: resume.agent,
+                bootstrap: resume.bootstrap.clone(),
+                snapshot,
+            },
+        });
+        Ok(Doing::AwaitSpec { job, resume })
+    }
+
+    /// The next spec is built: the row says live under the next incarnation
+    /// and its process starts.
+    fn resume_unlocked(
+        &mut self,
+        agent: AgentId,
+        spec: Option<AgentSpec>,
+        out: &mut Vec<Output>,
     ) -> Result<Doing, Refusal> {
-        let key = self.own_key(resume.agent);
+        let key = self.own_key(agent);
         // Looked up again: retention may have removed an exited agent while
         // the resume waited.
         let mut row = self.store.agent(&key)?.ok_or(Refusal::NotFound)?;
-        let mut spec = resume.spec.ok_or(Refusal::NoSpec)?;
+        let mut spec = spec.ok_or(Refusal::NoSpec)?;
         // The name it has now: a rename while it was not running reaches
         // its Codex thread this way.
         spec.name = row.name.clone();
@@ -683,7 +715,7 @@ impl Daemon {
         self.put_own_row(&row, out)?;
         // The next CaughtUp comes from this incarnation's journal.
         self.store.set_marker(&key, None);
-        Ok(self.spawn_process(resume.agent, spec, out))
+        Ok(self.spawn_process(agent, spec, out))
     }
 
     fn spawn_process(&mut self, agent: AgentId, spec: AgentSpec, out: &mut Vec<Output>) -> Doing {
@@ -971,7 +1003,12 @@ impl Daemon {
                     },
                 }
             }
-            Some(Doing::Worktree { .. } | Doing::AwaitUnlock { .. } | Doing::Removing { .. })
+            Some(
+                Doing::Worktree { .. }
+                | Doing::AwaitUnlock { .. }
+                | Doing::AwaitSpec { .. }
+                | Doing::Removing { .. },
+            )
             | None => {}
         }
     }
@@ -1046,6 +1083,7 @@ impl Daemon {
             let waits = match doing {
                 Doing::Worktree { job: waiting, .. }
                 | Doing::AwaitUnlock { job: waiting, .. }
+                | Doing::AwaitSpec { job: waiting, .. }
                 | Doing::Removing { job: waiting } => *waiting == job,
                 Doing::Ending {
                     phase: Phase::Killing { job: Some(waiting) },
@@ -1062,11 +1100,22 @@ impl Daemon {
                 self.worktree_made(agent, create, name, result, out)
             }
             Doing::AwaitUnlock { resume, .. } => match result {
-                JobResult::Done => match self.resume_unlocked(resume, out) {
+                JobResult::Done => match self.ask_spec(resume, out) {
+                    Ok(doing) => self.set_doing(agent, doing),
+                    Err(error) => self.finish(agent, Err(error.into()), out),
+                },
+                _ => self.finish(agent, Err(Refusal::StillLocked), out),
+            },
+            Doing::AwaitSpec { .. } => match result {
+                JobResult::Spec(spec) => match self.resume_unlocked(agent, spec.map(|s| *s), out) {
                     Ok(doing) => self.set_doing(agent, doing),
                     Err(refusal) => self.finish(agent, Err(refusal), out),
                 },
-                _ => self.finish(agent, Err(Refusal::StillLocked), out),
+                other => self.finish(
+                    agent,
+                    Err(Refusal::CouldNotStart(format!("{other:?}"))),
+                    out,
+                ),
             },
             Doing::Ending { then, .. } => match result {
                 JobResult::Done => {
@@ -1552,6 +1601,90 @@ mod tests {
         assert_eq!(refusal_of(&out, again), Some(Refusal::AlreadyExists));
         rig.call(create(CHILD, "lead", None));
         assert_eq!(rig.row(CHILD).map(|row| row.name), Some("lead-2".into()));
+    }
+
+    /// A resume issued while the process is still on its way out builds
+    /// its spec only once the exit is recorded, from the snapshot the
+    /// journal's tail left, so it carries the settings the agent last ran
+    /// with.
+    #[test]
+    fn a_resume_behind_a_stop_asks_for_its_spec_from_the_snapshot_the_exit_committed() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        let mut journal = journal::Writer::open(rig.daemon.journal_dir(PARENT), 1 << 20)
+            .expect("the journal opens");
+        let mut said = |body: &[u8]| {
+            journal
+                .append(&wire::Step {
+                    snapshot: Some(wire::Snapshot {
+                        kind: wire::Kind::Codex as i32,
+                        body: body.to_vec(),
+                        ..wire::Snapshot::default()
+                    }),
+                    ..wire::Step::default()
+                })
+                .expect("a frame is written");
+        };
+        said(b"model a");
+        rig.step(Input::Nudge { agent: PARENT });
+
+        rig.call(ClientRequest::StopAgent { agent: PARENT });
+        let (resume, out) = rig.call(ClientRequest::ResumeAgent(Box::new(Resume {
+            agent: PARENT,
+            bootstrap: None,
+        })));
+        assert_eq!(job_of(&out), None, "it waits behind the stop: {out:?}");
+        // The last snapshot is written as the agent ends, and read with the
+        // rest of its journal at the exit.
+        said(b"model b");
+        let gone = rig.step(Input::ControlClosed {
+            agent: PARENT,
+            ended: Ended::Exited,
+        });
+        let Some((unlock, Job::AwaitUnlocked { .. })) = job_of(&gone) else {
+            panic!("the resume waits for the directory: {gone:?}");
+        };
+        let unlocked = rig.step(Input::JobDone {
+            job: unlock,
+            result: JobResult::Done,
+        });
+        let Some((
+            spec_job,
+            Job::NextSpec {
+                agent: PARENT,
+                snapshot,
+                ..
+            },
+        )) = job_of(&unlocked)
+        else {
+            panic!("the spec is asked for once the directory is free: {unlocked:?}");
+        };
+        assert_eq!(snapshot.as_deref(), Some(&b"model b"[..]));
+
+        let built = rig.step(Input::JobDone {
+            job: spec_job,
+            result: JobResult::Spec(Some(Box::new(AgentSpec {
+                agent_id: PARENT.0.to_vec(),
+                kind: wire::Kind::Codex as i32,
+                incarnation: 2,
+                ..AgentSpec::default()
+            }))),
+        });
+        let spawned = built.iter().find_map(|output| match output {
+            Output::SpawnAgent { spec, .. } => Some(spec.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            spawned.map(|spec| (spec.name, spec.incarnation)),
+            Some(("lead".into(), 2)),
+            "{built:?}"
+        );
+        assert_eq!(rig.row(PARENT).unwrap().incarnation, 2);
+        let hello = rig.step(Input::AgentHello {
+            agent: PARENT,
+            hello: Default::default(),
+        });
+        assert!(answer_of(&hello, resume).is_some(), "{hello:?}");
     }
 
     #[test]

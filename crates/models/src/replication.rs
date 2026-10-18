@@ -334,8 +334,8 @@ impl Machine for Replication {
             };
             t.origin(Input::Configure(self.settings()));
             t.replica(Input::Configure(self.settings()));
-            t.replica(Input::Trusted {
-                hosts: vec![ORIGIN],
+            t.replica(Input::TrustRead {
+                store: daemon_core::trust::TrustStore::of_hosts(vec![ORIGIN]),
             });
             t.replica(Input::LinkUp {
                 link: LINK,

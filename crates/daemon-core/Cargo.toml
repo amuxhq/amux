@@ -7,10 +7,14 @@ description = "The daemon as one function of its state and an input: typed input
 publish = false
 
 [dependencies]
+chrono = { workspace = true }
+curve25519-dalek = { workspace = true }
 postcard = { workspace = true }
 journal = { workspace = true }
 prost = { workspace = true }
+ring = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 store = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
@@ -18,5 +22,4 @@ wire = { workspace = true }
 
 [dev-dependencies]
 journal = { workspace = true, features = ["synthetic"] }
-serde_json = { workspace = true }
 tempfile = { workspace = true }

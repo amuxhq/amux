@@ -15,7 +15,6 @@
 //! is being replaced, and who said they no longer trust this host.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::{RwLock, watch};
@@ -135,12 +134,32 @@ impl Revocations {
     }
 }
 
+/// Where what a peer said of itself goes to be remembered: the profile's
+/// core, which owns the trust store.
+#[derive(Clone, Default)]
+pub(crate) struct TrustChanges(Option<std::sync::Weak<crate::runtime::ProfileRuntime>>);
+
+impl TrustChanges {
+    pub(crate) fn to_core(runtime: std::sync::Weak<crate::runtime::ProfileRuntime>) -> Self {
+        Self(Some(runtime))
+    }
+
+    /// Hands `change` to the core without waiting.
+    pub(crate) fn post(&self, change: crate::trust::TrustChange) {
+        if let Some(runtime) = self.0.as_ref().and_then(std::sync::Weak::upgrade) {
+            runtime
+                .driver()
+                .post(daemon_core::Input::ChangeTrust(change));
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct RoutingCore {
     state: RwLock<RoutingState>,
     revocations: Revocations,
     trust_store: Option<SharedTrustStore>,
-    trust_data_dir: Option<PathBuf>,
+    trust_changes: TrustChanges,
 }
 
 impl RoutingCore {
@@ -154,19 +173,21 @@ impl RoutingCore {
             state: RwLock::new(RoutingState::default()),
             revocations: Revocations::default(),
             trust_store: Some(trust_store),
-            trust_data_dir: None,
+            trust_changes: TrustChanges::default(),
         }
     }
 
-    pub(crate) fn with_persisted_trust_store(
+    /// Routing that reads `trust_store` and remembers what peers say of
+    /// themselves through `trust_changes`.
+    pub(crate) fn with_trust_changes(
         trust_store: SharedTrustStore,
-        data_dir: PathBuf,
+        trust_changes: TrustChanges,
     ) -> Self {
         Self {
             state: RwLock::new(RoutingState::default()),
             revocations: Revocations::default(),
             trust_store: Some(trust_store),
-            trust_data_dir: Some(data_dir),
+            trust_changes,
         }
     }
 
@@ -365,23 +386,37 @@ impl RoutingCore {
             .and_then(|entry| entry.platform.clone())
     }
 
+    /// Keeps the address a trusted peer answered at, as the only direct
+    /// address it is dialled at: the core writes it.
+    pub(crate) fn remember_direct_addr(&self, host: HostId, addr: std::net::SocketAddr) {
+        self.trust_changes
+            .post(crate::trust::TrustChange::DirectAddrs {
+                host,
+                addrs: vec![addr],
+            });
+    }
+
+    /// Keeps what a peer said of itself, if it moved: the core writes it.
     fn remember_signed_in(&self, host: &Host) {
         let Some(trust_store) = &self.trust_store else {
             return;
         };
-        let Ok(mut trust_store) = trust_store.write() else {
-            tracing::warn!(peer = %host.id, "failed to update signed-in state: trust store poisoned");
-            return;
-        };
-        let signed_in = trust_store.remember_signed_in(host.id, host.signed_in);
-        let platform = trust_store.remember_platform(host.id, host.platform.as_deref());
-        if !signed_in && !platform {
-            return;
-        }
-        if let Some(data_dir) = &self.trust_data_dir
-            && let Err(error) = trust_store.save_in(data_dir)
-        {
-            tracing::warn!(peer = %host.id, error = %error, "failed to persist signed-in state");
+        let moved = trust_store.read().is_ok_and(|store| {
+            store.entry(host.id).is_some_and(|entry| {
+                entry.signed_in != host.signed_in
+                    || host
+                        .platform
+                        .as_deref()
+                        .is_some_and(|platform| entry.platform.as_deref() != Some(platform))
+            })
+        });
+        if moved {
+            self.trust_changes
+                .post(crate::trust::TrustChange::Remember {
+                    host: host.id,
+                    signed_in: host.signed_in,
+                    platform: host.platform.clone(),
+                });
         }
     }
 

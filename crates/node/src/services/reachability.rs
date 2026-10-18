@@ -1,7 +1,6 @@
 //! Runtime Link establishment from discovery and persisted reachabilities.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -93,7 +92,6 @@ struct ReachabilityLinkContext {
 
 #[derive(Clone)]
 struct ReachabilityRuntime {
-    data_dir: PathBuf,
     discovery: Arc<dyn Discovery>,
     found_hosts: Arc<FoundHosts>,
     /// Discovery lists only hosts in this scope.
@@ -146,7 +144,6 @@ impl ReachabilityLinkConnector {
 
     pub fn configure(
         &self,
-        data_dir: PathBuf,
         discovery: Arc<dyn Discovery>,
         found_hosts: Arc<FoundHosts>,
         quic_endpoint: quinn::Endpoint,
@@ -156,7 +153,6 @@ impl ReachabilityLinkConnector {
             return;
         };
         *inner.context.runtime.lock().unwrap() = Some(ReachabilityRuntime {
-            data_dir,
             discovery,
             found_hosts,
             scope,
@@ -696,18 +692,7 @@ fn persist_working_addr(
     peer: HostId,
     addr: std::net::SocketAddr,
 ) {
-    let Some(runtime) = context.runtime.lock().unwrap().clone() else {
-        return;
-    };
-    let Ok(mut store) = context.trust_store.write() else {
-        tracing::warn!("failed to lock trust store after direct dial");
-        return;
-    };
-    if store.replace_direct_addrs(peer, vec![addr])
-        && let Err(error) = store.save_in(&runtime.data_dir)
-    {
-        tracing::warn!(error = %error, "failed to persist working direct address");
-    }
+    context.routing.remember_direct_addr(peer, addr);
 }
 
 async fn await_connector(

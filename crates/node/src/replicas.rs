@@ -6,7 +6,7 @@
 //! revocation, the published host set, a dropped replica's files, and the
 //! reads the shell makes of what the core decided.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -193,27 +193,16 @@ impl ProfileRuntime {
         }
     }
 
-    /// Starts telling the core which hosts the trust store trusts, and which
-    /// took back a revocation, and keeping the published host set current.
+    /// Starts telling the core which paired hosts took back a revocation,
+    /// and keeping the published host set current.
     pub(crate) fn start_replication(&self) {
         let runtime = self.me.clone();
         let watcher = tokio::spawn(async move {
-            let mut told: Option<BTreeSet<CoreHost>> = None;
             let mut revoked: HashSet<HostId> = HashSet::new();
             loop {
                 {
                     let Some(me) = runtime.upgrade() else { return };
                     if let Some(edge) = me.edge() {
-                        let trusted: BTreeSet<CoreHost> = edge
-                            .trusted()
-                            .into_iter()
-                            .map(|(host, ..)| core_host(host))
-                            .collect();
-                        if told.as_ref() != Some(&trusted) {
-                            let hosts = trusted.iter().copied().collect();
-                            me.driver().feed(Input::Trusted { hosts }).await;
-                            told = Some(trusted);
-                        }
                         // A host that takes back its revocation, or is
                         // paired again, takes this host's calls again: its
                         // streams open at once rather than after a backoff

@@ -46,7 +46,6 @@ use crate::dispatcher::TunnelDispatcher;
 use crate::driver::CoreLinks;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::link::{CarrierKind, ChannelPool, MuxCarrier, MuxRole, run_link, serve_inbound_streams};
-use crate::pairing::PairMode;
 use crate::routing::{
     Capabilities, ConnectRole, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute,
     RoutingCore, local_host,
@@ -54,7 +53,7 @@ use crate::routing::{
 use crate::runtime::ProfileRuntime;
 use crate::services::{LocalPairingIdentity, PairingService, ReachabilityLinkConnector};
 use crate::transport::{BoxedGrpcIo, tonic_server_builder};
-use crate::trust::{SharedTrustStore, TrustGate, TrustStore};
+use crate::trust::SharedTrustStore;
 use crate::{Clock, HostId};
 
 /// How long a peer has to finish its TLS handshake inside a stream.
@@ -212,14 +211,13 @@ pub struct Edge {
     host_name: String,
     identity: DeviceIdentity,
     trust: SharedTrustStore,
-    trust_gate: Arc<TrustGate>,
+    runtime: Weak<ProfileRuntime>,
     local_host: LiveLocalHost,
     routing: Arc<RoutingCore>,
     channels: Arc<ChannelPool>,
     connections: Arc<ConnectionManager>,
     incoming_streams_tx: mpsc::Sender<crate::link::InboundStream>,
-    pair_mode: Arc<PairMode>,
-    pending: admin::PendingPairs,
+    pair_mode: Arc<crate::driver::pairing::PairWindow>,
     reachability: ReachabilityLinkConnector,
     discovery: Arc<dyn Discovery>,
     found: Arc<FoundHosts>,
@@ -249,8 +247,13 @@ impl Edge {
         analytics: analytics::Analytics,
     ) -> Result<Arc<Self>, EdgeError> {
         let identity = crate::identity::load_or_create_device_identity_in(dir)?;
-        let trust: SharedTrustStore =
-            Arc::new(std::sync::RwLock::new(TrustStore::load_or_create_in(dir)?));
+        // The core holds the trust store; the edge reads it as the core
+        // publishes it. A trust file that does not read stops the edge.
+        let read = crate::trust::load_or_create_in(dir)?;
+        let (trust, pair_mode): (SharedTrustStore, _) = match runtime.upgrade() {
+            Some(runtime) => (runtime.driver().trust(), runtime.driver().pair_window()),
+            None => (Arc::new(std::sync::RwLock::new(read)), Arc::default()),
+        };
         let account = Account::open(dir).map_err(EdgeError::Account)?;
         let signed_in = options.cloud.credentials.is_some() || account.wants_cloud();
         let local_host = LiveLocalHost::new(local_host(
@@ -262,9 +265,9 @@ impl Edge {
             },
             signed_in,
         ));
-        let routing = Arc::new(RoutingCore::with_persisted_trust_store(
+        let routing = Arc::new(RoutingCore::with_trust_changes(
             trust.clone(),
-            dir.to_owned(),
+            crate::routing::TrustChanges::to_core(runtime.clone()),
         ));
         let links = Arc::new(LinkRegistry::for_core(CoreLinks::new(runtime.clone())));
         let channels = Arc::new(ChannelPool::with_device_tls(
@@ -283,8 +286,6 @@ impl Edge {
         let (incoming_streams_tx, incoming_streams_rx) = mpsc::channel(64);
         let (trusted_tx, trusted_rx) = mpsc::channel(64);
         let (pairing_tx, pairing_rx) = mpsc::channel(64);
-        let pair_mode = Arc::new(PairMode::new());
-        let trust_gate = Arc::new(TrustGate::default());
         let (shutdown, _) = watch::channel(false);
 
         let link_ctx = LinkCtx::new_live(
@@ -307,18 +308,13 @@ impl Edge {
 
         let mut tasks = vec![
             serve_inbound_streams(Arc::new(dispatcher.clone()), incoming_streams_rx),
-            peer::serve(runtime, trusted_rx, shutdown.subscribe()),
+            peer::serve(runtime.clone(), trusted_rx, shutdown.subscribe()),
             serve_pairing(
                 PairingService::new(
-                    pair_mode.clone(),
+                    runtime.clone(),
                     LocalPairingIdentity::from_device_identity(&identity),
                     options.host_name.clone(),
-                    trust.clone(),
-                    trust_gate.clone(),
-                    connections.clone(),
-                    dir.to_owned(),
-                )
-                .with_analytics(analytics.clone()),
+                ),
                 pairing_rx,
                 shutdown.subscribe(),
             ),
@@ -368,7 +364,6 @@ impl Edge {
             incoming_streams_tx.clone(),
         );
         reachability.configure(
-            dir.to_owned(),
             discovery.clone(),
             found.clone(),
             quic_endpoint.clone(),
@@ -405,14 +400,13 @@ impl Edge {
             host_name: options.host_name.clone(),
             identity,
             trust,
-            trust_gate,
+            runtime: runtime.clone(),
             local_host,
             routing,
             channels,
             connections,
             incoming_streams_tx,
             pair_mode,
-            pending: admin::PendingPairs::default(),
             reachability,
             discovery,
             found,
@@ -852,7 +846,6 @@ impl Edge {
     /// crash leaves behind.
     pub(crate) fn abort(&self) {
         self.shutdown.send_replace(true);
-        self.trust_gate.close();
         self.quic_endpoint
             .close(quinn::VarInt::from_u32(0), b"profile stopping");
         if let Ok(mut cloud) = self.cloud.try_lock()
@@ -877,7 +870,6 @@ impl Edge {
         if let Some(link) = self.cloud.lock().await.take() {
             link.stop().await;
         }
-        self.trust_gate.close();
         self.quic_endpoint
             .close(quinn::VarInt::from_u32(0), b"profile stopping");
         let tasks = std::mem::take(&mut *self.tasks.lock().unwrap());

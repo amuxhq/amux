@@ -342,6 +342,21 @@ impl Daemon {
     /// followed no more and its replicas go; this host's own agents whose
     /// parent lives there carry on, and the reports they owe it go with
     /// the outbox's next pass.
+    /// The paired hosts as the trust store holds them now: followed anew
+    /// only when they moved, or the first time trust is known.
+    pub(crate) fn trusted_if_moved(&mut self, hosts: Vec<HostId>, out: &mut Vec<Output>) {
+        let own = self.store.own_host().to_vec();
+        let moved = hosts
+            .iter()
+            .filter(|host| host.0 != *own)
+            .copied()
+            .collect::<BTreeSet<_>>()
+            != self.sources.trusted;
+        if moved || !self.sources.told_trust {
+            self.trusted(hosts, out);
+        }
+    }
+
     pub(crate) fn trusted(&mut self, hosts: Vec<HostId>, out: &mut Vec<Output>) {
         let own = self.store.own_host().to_vec();
         let trusted: BTreeSet<HostId> = hosts.into_iter().filter(|host| host.0 != *own).collect();
@@ -1741,8 +1756,8 @@ mod tests {
         assert_eq!(
             step(
                 daemon,
-                Input::Trusted {
-                    hosts: vec![HostId(PEER)]
+                Input::TrustRead {
+                    store: crate::trust::TrustStore::of_hosts(vec![HostId(PEER)])
                 }
             )
             .iter()
@@ -2387,7 +2402,12 @@ mod tests {
     fn a_host_no_longer_trusted_is_followed_no_more_and_its_replicas_go() {
         let mut daemon = daemon();
         let (inventory, source) = sourced(&mut daemon);
-        let untrusted = step(&mut daemon, Input::Trusted { hosts: Vec::new() });
+        let untrusted = step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(Vec::new()),
+            },
+        );
         assert!(untrusted.contains(&Output::HangUp { call: inventory }));
         assert!(untrusted.contains(&Output::HangUp { call: source }));
         assert!(untrusted.contains(&Output::Shell(ShellWork::ReplicaDropped { agent: key() })));

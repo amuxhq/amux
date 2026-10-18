@@ -870,8 +870,8 @@ mod tests {
         // hop still carries the host, and opened it takes the traffic.
         let trusted = step(
             &mut daemon,
-            Input::Trusted {
-                hosts: vec![DESK, LAPTOP],
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![DESK, LAPTOP]),
             },
         );
         assert_eq!(retry_at(&trusted, DESK), Some(0));

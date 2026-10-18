@@ -6,22 +6,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-#[cfg(test)]
-use tokio::io::DuplexStream;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_util::sync::CancellationToken;
-#[cfg(test)]
-use tonic::transport::{Channel, Endpoint};
-
-#[cfg(test)]
-use super::channel_from_single_io;
-
-/// Two ends of an in-process byte stream, for tests that serve a service on
-/// one end and call it on the other.
-#[cfg(test)]
-pub(crate) fn in_process_transport_pair() -> (DuplexStream, DuplexStream) {
-    tokio::io::duplex(64 * 1024)
-}
 
 pub(crate) struct ShutdownIo<T> {
     inner: T,
@@ -87,13 +73,4 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for ShutdownIo<T> {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
-}
-
-#[cfg(test)]
-pub(crate) fn in_process_channel(transport: DuplexStream) -> Channel {
-    channel_from_single_io(
-        Endpoint::from_static("http://in-process"),
-        "in-process transport",
-        transport,
-    )
 }

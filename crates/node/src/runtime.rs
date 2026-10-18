@@ -657,6 +657,7 @@ impl ProfileRuntime {
             agents: dir.join(AGENTS),
             replicas: dir.join(crate::install::REPLICAS),
             drafts: dir.join(crate::drafts::DRAFTS_FILE),
+            trust: crate::trust::trust_path(&dir),
             budget: launch.step_budget,
         };
         let mut core = None;

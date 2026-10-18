@@ -29,6 +29,7 @@
 mod calls;
 mod links;
 mod origin;
+pub(crate) mod pairing;
 mod streams;
 
 use std::collections::{HashMap, VecDeque};
@@ -167,6 +168,12 @@ pub(crate) struct Driver {
     outgoing: Outgoing,
     /// The core thread, once started: the store closes when it ends.
     thread: std::sync::OnceLock<std::thread::JoinHandle<()>>,
+    /// The trust store as the core last published it.
+    trust: crate::trust::SharedTrustStore,
+    /// The pairing window as the core last said.
+    window: Arc<pairing::PairWindow>,
+    /// The pairing streams the driver carries for the core.
+    pairings: Arc<pairing::Carriers>,
 }
 
 /// The tasks carrying the calls the core made of peers, by call.
@@ -188,6 +195,14 @@ impl Driver {
         let shell = Arc::new(Mutex::new(Vec::new()));
         let connections = Arc::new(Mutex::new(Weak::new()));
         let outgoing = Outgoing::default();
+        let window = Arc::new(pairing::PairWindow::default());
+        let pairings = Arc::new(pairing::Carriers::default());
+        // A trust file that does not read is never written over: the core
+        // is not told of it, and the edge refuses to start.
+        let read = crate::trust::load_or_create_in(&dir)
+            .inspect_err(|error| tracing::warn!(%error, "the trust file does not read"))
+            .ok();
+        let trust = Arc::new(std::sync::RwLock::new(read.clone().unwrap_or_default()));
         let daemon = Daemon::new(store, options);
         let ring = Ring::open(
             dir.join(CORE_RING),
@@ -206,11 +221,17 @@ impl Driver {
             fed,
             reports: reports.clone(),
             channel_reply: None,
-            // The drafts the profile's file holds are the first thing the
-            // core is told.
-            again: VecDeque::from([Input::Drafts {
-                drafts: crate::drafts::load(&dir),
-            }]),
+            // The drafts and the trust the profile's files hold, and fresh
+            // randomness, are the first things the core is told.
+            again: [
+                Input::Drafts {
+                    drafts: crate::drafts::load(&dir),
+                },
+                Input::Entropy(entropy()),
+            ]
+            .into_iter()
+            .chain(read.map(|store| Input::TrustRead { store }))
+            .collect(),
             inputs: inputs.downgrade(),
             runtime,
             calls: calls.clone(),
@@ -221,6 +242,9 @@ impl Driver {
             waiting: HashMap::new(),
             ticked: None,
             settings: None,
+            trust: trust.clone(),
+            window: window.clone(),
+            pairings: pairings.clone(),
         };
         let driver = Self {
             inputs,
@@ -230,6 +254,9 @@ impl Driver {
             connections,
             outgoing,
             thread: std::sync::OnceLock::new(),
+            trust,
+            window,
+            pairings,
         };
         (driver, core)
     }
@@ -408,6 +435,7 @@ impl Driver {
         for (_, task) in self.outgoing.lock().unwrap().drain() {
             task.abort();
         }
+        self.pairings.end_all();
     }
 
     /// Hands the core a change to the host set, stepped before the next
@@ -485,6 +513,19 @@ pub(crate) struct CoreThread {
     ticked: Option<u64>,
     /// The settings as last told to the core.
     settings: Option<Settings>,
+    trust: crate::trust::SharedTrustStore,
+    window: Arc<pairing::PairWindow>,
+    pairings: Arc<pairing::Carriers>,
+}
+
+/// Fresh randomness for the core to draw from.
+fn entropy() -> [u8; 32] {
+    use ring::rand::SecureRandom as _;
+    let mut seed = [0_u8; 32];
+    ring::rand::SystemRandom::new()
+        .fill(&mut seed)
+        .expect("the system's randomness is readable");
+    seed
 }
 
 impl CoreThread {
@@ -753,14 +794,17 @@ impl CoreThread {
                 // next, with the store.
                 let sourcing = matches!(id, TimerId::Follow(_) | TimerId::Source(..));
                 // An agent's start and stop deadlines keep to it too, and
-                // so do notifications, whose due times it stamped, and the
-                // outbox's retries.
+                // so do notifications, whose due times it stamped, the
+                // outbox's retries, and the pairing window and its
+                // conversations, whose expiries the peers read.
                 let registry = matches!(
                     id,
                     TimerId::Start(_)
                         | TimerId::Exit(_)
                         | TimerId::Notifications
                         | TimerId::Deliveries
+                        | TimerId::PairWindow
+                        | TimerId::Pairing(_)
                 );
                 if sourcing && at_ms <= now {
                     if let Some(armed) = self.timers.remove(&id) {
@@ -970,6 +1014,13 @@ impl CoreThread {
                     range,
                 ));
             }
+            Output::Pair { session, message } => self.pairings.send(session, message),
+            Output::PairPending {
+                session,
+                token,
+                peer,
+            } => self.pairings.pending(session, token, peer),
+            Output::PairEnded { session, failure } => self.pairings.end(session, failure),
             output @ (Output::CloseChannel { .. } | Output::LinkControl { .. }) => {
                 tracing::error!(
                     ?output,
@@ -1007,6 +1058,42 @@ impl CoreThread {
                 }
             }
             ShellWork::ReplicaDropped { agent } => runtime.replica_dropped(&agent),
+            ShellWork::Trust { store, changed } => {
+                *self.trust.write().unwrap() = *store;
+                if let Some((host, changed)) = changed {
+                    self.trust_changed(uuid::Uuid::from_bytes(host.0), changed);
+                }
+            }
+            ShellWork::ReplacementEnded { host } => {
+                self.replacement_ended(uuid::Uuid::from_bytes(host.0))
+            }
+            ShellWork::PairWindow { active, locked_out } => self.window.publish(active, locked_out),
+            ShellWork::Pairing(event) => pairing::record(&event, runtime.analytics()),
+        }
+    }
+
+    /// What follows a trust change on the drive, on the connections.
+    fn trust_changed(&self, host: uuid::Uuid, changed: daemon_core::trust::TrustChanged) {
+        use daemon_core::trust::{PairingUpdate, TrustChanged};
+
+        let TrustChanged::Paired(update) = changed else {
+            return;
+        };
+        crate::audit::trust_pairing_update(host, &update);
+        let Some(connections) = self.connections() else {
+            return;
+        };
+        connections.trust_renewed(host);
+        if update == PairingUpdate::ReplacedPubkey {
+            tokio::spawn(async move { connections.finish_host_replacement(host).await });
+        }
+    }
+
+    /// A key replacement that was not written: the host's connections may
+    /// open again under the key it had.
+    fn replacement_ended(&self, host: uuid::Uuid) {
+        if let Some(connections) = self.connections() {
+            tokio::spawn(async move { connections.finish_host_replacement(host).await });
         }
     }
 
@@ -1056,6 +1143,18 @@ async fn run_job(
 ) {
     let result = match op {
         Job::Fsync { path, bytes } => fsync(path, bytes).await,
+        Job::TeardownHost { host } => {
+            let Some(runtime) = runtime.upgrade() else {
+                return;
+            };
+            let connections = runtime.driver().connections.lock().unwrap().upgrade();
+            if let Some(connections) = connections {
+                connections
+                    .teardown_host(uuid::Uuid::from_bytes(host.0))
+                    .await;
+            }
+            JobResult::Done
+        }
         Job::Checkpoint { state } => {
             let Some(dir) = runtime.upgrade().map(|runtime| runtime.dir().to_path_buf()) else {
                 return;

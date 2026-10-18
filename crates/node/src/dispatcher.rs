@@ -9,9 +9,9 @@ use tokio::sync::{Mutex, Semaphore, mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
 
+use crate::driver::pairing::PairWindow as PairMode;
 use crate::identity::{self, DeviceIdentity, IdentityError};
 use crate::link::{InboundStream, LinkCtx, QuicCarrier, accepted_quic_bidi_stream, run_link};
-use crate::pairing::PairMode;
 use crate::resource_limits::{
     Admission, EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY, EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT,
     EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW, QUIC_RETRY_REPEAT_INTERVAL, RetryAdmission,
@@ -665,7 +665,7 @@ mod tests {
         let (_server_dir, server_identity) = temp_identity();
         let (_peer_dir, peer_identity) = temp_identity();
         let trust_store = trust_store_for(&peer_identity);
-        let pair_mode = Arc::new(PairMode::new());
+        let pair_mode = Arc::new(PairMode::default());
         let (trusted_tx, mut trusted_rx) = mpsc::channel(1);
         let (pairing_tx, mut pairing_rx) = mpsc::channel(1);
         let dispatcher = TunnelDispatcher::new(
@@ -701,7 +701,7 @@ mod tests {
     #[tokio::test]
     async fn dispatches_anonymous_tls_only_when_pair_mode_is_active() {
         let (_server_dir, server_identity) = temp_identity();
-        let pair_mode = Arc::new(PairMode::new());
+        let pair_mode = Arc::new(PairMode::default());
         let (trusted_tx, mut trusted_rx) = mpsc::channel(1);
         let (pairing_tx, mut pairing_rx) = mpsc::channel(1);
         let dispatcher = TunnelDispatcher::new(
@@ -724,9 +724,7 @@ mod tests {
         assert!(trusted_rx.try_recv().is_err());
         assert!(pairing_rx.try_recv().is_err());
 
-        pair_mode
-            .start_qr_secret_for_duration([1_u8; 32], Duration::from_secs(60))
-            .unwrap();
+        pair_mode.publish(true, false);
         run_dispatch(
             dispatcher,
             client_config(TestClientConfig { identity: None }),
@@ -749,7 +747,7 @@ mod tests {
     #[tokio::test]
     async fn dispatches_direct_pairing_without_reusable_reachability() {
         let (_server_dir, server_identity) = temp_identity();
-        let pair_mode = Arc::new(PairMode::new());
+        let pair_mode = Arc::new(PairMode::default());
         let (trusted_tx, mut trusted_rx) = mpsc::channel(1);
         let (pairing_tx, mut pairing_rx) = mpsc::channel(1);
         let dispatcher = TunnelDispatcher::new(
@@ -762,9 +760,7 @@ mod tests {
             Duration::from_secs(1),
         )
         .unwrap();
-        pair_mode
-            .start_pin_for_duration("123456".to_string(), Duration::from_secs(60))
-            .unwrap();
+        pair_mode.publish(true, false);
 
         run_dispatch_with_reachability(
             dispatcher,
@@ -797,7 +793,7 @@ mod tests {
         let dispatcher = TunnelDispatcher::new(
             &server_identity,
             Arc::new(std::sync::RwLock::new(TrustStore::default())),
-            Arc::new(PairMode::new()),
+            Arc::new(PairMode::default()),
             TrustedPeerConnections::default(),
             trusted_tx,
             pairing_tx,
@@ -822,7 +818,7 @@ mod tests {
         let dispatcher = TunnelDispatcher::new(
             &server_identity,
             Arc::new(std::sync::RwLock::new(TrustStore::default())),
-            Arc::new(PairMode::new()),
+            Arc::new(PairMode::default()),
             TrustedPeerConnections::default(),
             trusted_tx,
             pairing_tx,
@@ -888,7 +884,7 @@ mod tests {
         let dispatcher = TunnelDispatcher::new(
             &server_identity,
             Arc::new(std::sync::RwLock::new(TrustStore::default())),
-            Arc::new(PairMode::new()),
+            Arc::new(PairMode::default()),
             TrustedPeerConnections::default(),
             trusted_tx,
             pairing_tx,

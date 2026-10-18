@@ -66,8 +66,10 @@ pub enum IdentityError {
     InvalidDeviceCertificate,
     #[error("TLS config error: {0}")]
     TlsConfig(String),
-    #[error("pubkey is already trusted for host {0}")]
-    DuplicatePubkey(HostId),
+    #[error("failed to parse {path}: {reason}")]
+    TrustFile { path: PathBuf, reason: String },
+    #[error("{0}")]
+    Trust(daemon_core::trust::TrustError),
     #[error("trust store lock is poisoned")]
     TrustStorePoisoned,
 }
@@ -466,7 +468,7 @@ impl ServerCertVerifier for PinnedServerCertVerifier {
 
 #[cfg(all(test, unix))]
 fn ensure_device_files_in(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> {
-    TrustStore::load_or_create_in(data_dir)?;
+    crate::trust::load_or_create_in(data_dir)?;
     load_or_create_device_identity_in(data_dir)
 }
 
@@ -584,21 +586,6 @@ fn ed25519_public_key_from_spki(spki: &[u8]) -> Result<[u8; ED25519_PUBKEY_LEN],
     let mut pubkey = [0_u8; ED25519_PUBKEY_LEN];
     pubkey.copy_from_slice(&spki[ED25519_SPKI_PREFIX.len()..]);
     Ok(pubkey)
-}
-
-pub(crate) fn validate_len(
-    field: &'static str,
-    bytes: &[u8],
-    expected: usize,
-) -> Result<(), IdentityError> {
-    if bytes.len() != expected {
-        return Err(IdentityError::InvalidLength {
-            field,
-            expected,
-            actual: bytes.len(),
-        });
-    }
-    Ok(())
 }
 
 pub(crate) fn create_private_file(path: &Path, bytes: &[u8]) -> Result<(), IdentityError> {

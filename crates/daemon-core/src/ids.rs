@@ -43,6 +43,11 @@ pub enum TimerId {
     /// What the agent's process was given to end in is up: its stop
     /// deadline, or a kill's patience.
     Exit(AgentId),
+    /// The pairing window expires, or its lockout lifts.
+    PairWindow,
+    /// A pairing conversation's deadline, or a pending pairing's token
+    /// expiry.
+    Pairing(PairingId),
 }
 
 /// A job the driver runs off the core thread; its outcome returns as

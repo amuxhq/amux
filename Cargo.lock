@@ -1068,9 +1068,12 @@ dependencies = [
 name = "daemon-core"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "curve25519-dalek",
  "journal",
  "postcard",
  "prost",
+ "ring",
  "serde",
  "serde_json",
  "store",

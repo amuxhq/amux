@@ -97,11 +97,14 @@ pub enum Input {
     HostForgotten {
         host: HostId,
     },
-    /// The hosts this profile trusts, said whenever that changes. Until
-    /// the trust store moves into the core, the shell reads it and says.
-    Trusted {
-        hosts: Vec<HostId>,
+    /// The trust file as the driver read it at start: the hosts this
+    /// profile trusts and the keys it pins for them.
+    TrustRead {
+        store: crate::trust::TrustStore,
     },
+    /// A change of the trust store nobody waits on: what a peer said of
+    /// itself, or the address it answered at.
+    ChangeTrust(crate::trust::TrustChange),
     /// Which replica agents keep a source open from now on.
     Policy(SourcePolicy),
     /// A paired host's call, from the host whose pinned key its channel's
@@ -116,10 +119,22 @@ pub enum Input {
         call: CallId,
         answer: Answer,
     },
+    /// A pairing conversation's carrier opened, and how.
+    PairingOpened {
+        session: PairingId,
+        opened: crate::pairing::Opened,
+    },
+    /// One message of a pairing conversation, as its carrier read it.
     PairingMessage {
         session: PairingId,
         #[serde(with = "codec::message")]
         message: PairMessage,
+    },
+    /// A pairing conversation's carrier ended from the other side, with
+    /// the status it ended with, if any.
+    PairingClosed {
+        session: PairingId,
+        status: Option<crate::pairing::PairFailure>,
     },
     /// Hosts the local network browse resolved, as each resolves.
     Discovered {
@@ -212,11 +227,14 @@ impl Input {
             Input::CallsFailed { .. } => "CallsFailed",
             Input::TryAgain { .. } => "TryAgain",
             Input::HostForgotten { .. } => "HostForgotten",
-            Input::Trusted { .. } => "Trusted",
+            Input::TrustRead { .. } => "TrustRead",
+            Input::ChangeTrust(_) => "ChangeTrust",
             Input::Policy(_) => "Policy",
             Input::PeerCall { .. } => "PeerCall",
             Input::PeerAnswer { .. } => "PeerAnswer",
+            Input::PairingOpened { .. } => "PairingOpened",
             Input::PairingMessage { .. } => "PairingMessage",
+            Input::PairingClosed { .. } => "PairingClosed",
             Input::Discovered { .. } => "Discovered",
             Input::AgentHello { .. } => "AgentHello",
             Input::Nudge { .. } => "Nudge",
@@ -446,6 +464,24 @@ pub enum Output {
         id: JobId,
         op: Job,
     },
+    /// Send `message` on the pairing conversation's carrier.
+    Pair {
+        session: PairingId,
+        message: PairMessage,
+    },
+    /// The joining side's conversation learned who the peer is: it waits,
+    /// under `token`, for a person to confirm or abandon it.
+    PairPending {
+        session: PairingId,
+        token: Vec<u8>,
+        peer: wire::PairingIdentity,
+    },
+    /// End the pairing conversation's carrier: cleanly, or with `failure`
+    /// as its status.
+    PairEnded {
+        session: PairingId,
+        failure: Option<crate::pairing::PairFailure>,
+    },
     /// Take a dump: the core saw something it must not carry on from.
     Dump {
         reason: DumpReason,
@@ -498,6 +534,21 @@ pub enum ShellWork {
     /// The replica is gone from the store: its directory and blob files
     /// go with it.
     ReplicaDropped { agent: AgentKey },
+    /// The trust store as the core serves it now, for the handshakes to
+    /// read, and the change that made it, once that change is on the
+    /// drive: what follows it on the connections is the shell's.
+    Trust {
+        store: Box<crate::trust::TrustStore>,
+        changed: Option<(HostId, crate::trust::TrustChanged)>,
+    },
+    /// The host's key will not be replaced after all: what waited on the
+    /// replacement goes on.
+    ReplacementEnded { host: HostId },
+    /// Whether the pairing window is open, and whether too many wrong
+    /// secrets closed the last one, said when either moves.
+    PairWindow { active: bool, locked_out: bool },
+    /// What a pairing did, for the audit log and analytics.
+    Pairing(crate::pairing::PairingEvent),
 }
 
 /// What a parent's row says to the children that follow it.
@@ -532,6 +583,11 @@ pub enum Job {
     Fsync {
         path: PathBuf,
         bytes: Vec<u8>,
+    },
+    /// Close every connection to `host`: its key is being replaced, and
+    /// nothing opened under the old one may outlive it.
+    TeardownHost {
+        host: HostId,
     },
     /// Write the serialized core beside the store's passive WAL checkpoint.
     Checkpoint {
@@ -756,8 +812,8 @@ mod tests {
             Input::Timer {
                 id: TimerId::Source(HostId([1; 16]), AgentId([2; 16])),
             },
-            Input::Trusted {
-                hosts: vec![HostId([1; 16])],
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts([HostId([1; 16])]),
             },
             Input::Policy(SourcePolicy::OnDemand),
             Input::FromShell(FromShell::Session {

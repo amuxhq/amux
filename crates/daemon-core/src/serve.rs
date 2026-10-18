@@ -168,6 +168,34 @@ impl Daemon {
                 self.get_draft(call, &agent_id, out);
                 Ok(())
             }
+            ClientRequest::ChangeTrust(change) => {
+                self.change_trust_call(call, change, out);
+                Ok(())
+            }
+            ClientRequest::StartPairing { method, ttl_ms } => {
+                self.start_pairing(call, method, ttl_ms, out);
+                Ok(())
+            }
+            ClientRequest::CancelPairing => {
+                self.cancel_pairing(call, out);
+                Ok(())
+            }
+            ClientRequest::ConfirmPair { token } => {
+                self.confirm_pair(call, token, out);
+                Ok(())
+            }
+            ClientRequest::AbandonPair { token } => {
+                self.abandon_pair(call, token, out);
+                Ok(())
+            }
+            ClientRequest::PairOverSsh {
+                local,
+                peer,
+                reachability,
+            } => {
+                self.pair_over_ssh(call, local, peer, reachability, out);
+                Ok(())
+            }
             ClientRequest::SendMessage { envelope, from } => {
                 self.send_message(call, *envelope, from, out)
             }

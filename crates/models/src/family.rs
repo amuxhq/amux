@@ -1139,7 +1139,12 @@ impl<'a> Transition<'a> {
             }
             Action::Unpair => {
                 self.next.used.unpaired = true;
-                self.feed(CHILDS, Input::Trusted { hosts: Vec::new() });
+                self.feed(
+                    CHILDS,
+                    Input::TrustRead {
+                        store: daemon_core::trust::TrustStore::of_hosts(Vec::new()),
+                    },
+                );
             }
             Action::Fault(Fault::Crash(Host(host))) => {
                 self.next.used.crashes += 1;
@@ -1259,7 +1264,12 @@ impl<'a> Transition<'a> {
             } else {
                 vec![HOSTS[PARENTS]]
             };
-            self.feed(host, Input::Trusted { hosts });
+            self.feed(
+                host,
+                Input::TrustRead {
+                    store: daemon_core::trust::TrustStore::of_hosts(hosts),
+                },
+            );
         }
         let (agent, process) = if host == PARENTS {
             (PARENT, &self.next.parent)

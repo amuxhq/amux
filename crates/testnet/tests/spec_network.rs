@@ -354,6 +354,9 @@ async fn a_pairing_window_is_one_shot_attempt_capped_and_expires() {
     .await
     .unwrap();
     assert_eq!(started.ttl_seconds, 1);
+    // The window keeps to the net's policy clock, as every daemon's
+    // deadlines do.
+    net.advance(Duration::from_secs(1)).unwrap();
     until("the window to expire", || async {
         (!edge(&net, "attic").pairing_active())
             .then_some(())

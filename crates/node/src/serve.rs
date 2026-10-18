@@ -66,7 +66,10 @@ impl From<Status> for ServeError {
                 | CallError::Registry(_)
                 | CallError::NoBlob(_)
                 | CallError::Blob(_)
-                | CallError::Message(_)),
+                | CallError::Message(_)
+                | CallError::Trust(_)
+                | CallError::Window(_)
+                | CallError::Pairing(_)),
             ) => ServeError::Failed(format!("{error:?}")),
         }
     }

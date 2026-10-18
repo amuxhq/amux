@@ -1228,7 +1228,12 @@ mod tests {
             })
             .unwrap();
         daemon.store.put_delivery(&report_to(parent)).unwrap();
-        step(&mut daemon, Input::Trusted { hosts: vec![FAR] });
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![FAR]),
+            },
+        );
         let out = step(&mut daemon, Input::Swept);
         assert!(
             out.iter().any(|output| matches!(

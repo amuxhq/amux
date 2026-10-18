@@ -67,6 +67,7 @@ impl Daemon {
         self.blobs.jobs(&mut jobs);
         self.drafts.jobs(&mut jobs);
         self.checkpoints.jobs(&mut jobs);
+        self.trust.jobs(&mut jobs);
         let mut sessions = Vec::new();
         self.sources.sessions(&mut sessions);
         self.pending.peers.sessions(&mut sessions);
@@ -88,7 +89,7 @@ impl Daemon {
             &self.presence.canonical(),
             &self.sources.canonical(&ids),
             &self.families.canonical(&ids),
-            &self.pairing,
+            (&self.pairing, &self.trust.canonical(&ids)),
             &self.answers,
             &self.journals,
             &self.checkpoints.canonical(&ids),
@@ -127,7 +128,12 @@ mod tests {
             },
         );
         let mut out = Vec::new();
-        daemon.step(Input::Trusted { hosts: vec![PEER] }, &mut out);
+        daemon.step(
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![PEER]),
+            },
+            &mut out,
+        );
         daemon.step(
             Input::LinkUp {
                 link: LinkId(1),

@@ -31,12 +31,14 @@ mod io;
 pub mod links;
 pub mod names;
 mod notifications;
+pub mod pairing;
 pub mod payload;
 mod peers;
 pub mod presence;
 pub mod retention;
 pub mod serve;
 pub mod sources;
+pub mod trust;
 
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
@@ -52,6 +54,7 @@ pub use io::{
 };
 pub use links::LinkRegistry;
 pub use notifications::Notifications;
+pub use pairing::PairingState;
 pub use presence::{HostView, Presence, PresenceState, Route, Tried};
 pub use retention::{Retain, Retained};
 pub use serve::Answers;
@@ -70,6 +73,7 @@ pub struct Daemon {
     sources: Sources,
     families: FamilyState,
     pairing: PairingState,
+    trust: trust::Trust,
     answers: Answers,
     journals: Journals,
     checkpoints: Checkpoints,
@@ -103,6 +107,8 @@ pub struct StartOptions {
     pub replicas: PathBuf,
     /// The file this machine's clients' drafts are kept in.
     pub drafts: PathBuf,
+    /// The profile's trust file.
+    pub trust: PathBuf,
     /// How long one step may take before it is reported with a dump.
     pub budget: StepBudget,
 }
@@ -119,6 +125,7 @@ impl Daemon {
             sources: Sources::default(),
             families: FamilyState::default(),
             pairing: PairingState::default(),
+            trust: trust::Trust::default(),
             answers: Answers::default(),
             journals: Journals::default(),
             checkpoints: Checkpoints::default(),
@@ -163,6 +170,7 @@ impl Daemon {
                 if !self.push_done(job, &result, out)
                     && !self.blob_done(job, &result, out)
                     && !self.drafts_written(job, &result, out)
+                    && !self.trust_job_done(job, &result, out)
                 {
                     self.registry_job(job, result, out);
                 }
@@ -245,11 +253,23 @@ impl Daemon {
                 self.try_again(host, out);
                 self.sources_try_again(host, out);
             }
-            Input::Trusted { hosts } => self.trusted(hosts, out),
+            Input::TrustRead { store } => self.trust_read(store, out),
+            Input::ChangeTrust(change) => self.change_trust(change, None, out),
             Input::Policy(policy) => self.set_policy(policy, out),
             Input::HostForgotten { host } => self.forget_host(host, out),
             Input::Discovered { found } => self.discovered(found, out),
-            Input::PairingMessage { .. } | Input::Entropy(_) => {}
+            Input::PairingOpened { session, opened } => self.pairing_opened(session, opened, out),
+            Input::PairingMessage { session, message } => {
+                self.pairing_message(session, message, out)
+            }
+            Input::PairingClosed { session, status } => self.pairing_closed(session, status, out),
+            Input::Timer {
+                id: TimerId::Pairing(session),
+            } => self.pairing_timer(session, out),
+            Input::Timer {
+                id: TimerId::PairWindow,
+            } => self.window_timer(out),
+            Input::Entropy(fresh) => self.entropy(fresh),
         }
         self.settle_deliveries(out);
         self.tell_presence(out);
@@ -418,7 +438,7 @@ impl Daemon {
             &self.presence,
             &self.sources,
             &self.families,
-            &self.pairing,
+            (&self.pairing, &self.trust),
             &self.answers,
             &self.journals,
             &self.checkpoints,
@@ -451,7 +471,7 @@ impl Daemon {
             presence,
             sources,
             families,
-            pairing,
+            (pairing, trust),
             answers,
             journals,
             checkpoints,
@@ -471,6 +491,7 @@ impl Daemon {
             sources,
             families,
             pairing,
+            trust,
             answers,
             journals,
             checkpoints,
@@ -611,10 +632,6 @@ pub struct RoutingState {
     /// Each attempt under way, by host and route, counted.
     attempts: std::collections::BTreeMap<(HostId, Route), u32>,
 }
-
-/// The pairing conversations in progress.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PairingState {}
 
 /// The clock as last told and the timers armed.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

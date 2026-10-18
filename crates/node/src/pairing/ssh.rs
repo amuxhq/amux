@@ -366,7 +366,7 @@ fn reject_self_pairing(
 
 fn identity_error(error: IdentityError) -> SshPairingError {
     match error {
-        IdentityError::DuplicatePubkey(_) => {
+        IdentityError::Trust(daemon_core::trust::TrustError::DuplicatePubkey(_)) => {
             SshPairingError::Protocol("pubkey is already trusted by another host")
         }
         other => SshPairingError::Identity(other.to_string()),

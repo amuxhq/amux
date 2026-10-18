@@ -190,7 +190,10 @@ runtime is a complete amux with three groups of work:
 
 - **Edges** ([`node::edge`](../crates/node/src/edge/mod.rs)): the profile's
   local socket, its LAN listener, its links to paired hosts and to the
-  relay, discovery, pairing and the account binding.
+  relay, discovery, the pairing streams and the account binding. The
+  pairing window, the exchange and the trust store are the profile's core's
+  ([`daemon_core::pairing`](../crates/daemon-core/src/pairing/mod.rs),
+  [`daemon_core::trust`](../crates/daemon-core/src/trust.rs)).
 - **Agent hosting**: the agent registry (spawn, stop, resume, delete,
   rename), one handle per agent, and journal ingest into the store.
 - **Serving** ([`node::serve`](../crates/node/src/serve.rs), and the

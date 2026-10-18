@@ -314,11 +314,6 @@ impl ConnectionManager {
         self.cloud_relay_for(peer).await.is_ok()
     }
 
-    #[cfg(test)]
-    pub(crate) fn routing(&self) -> &Arc<RoutingCore> {
-        &self.routing
-    }
-
     pub(crate) async fn stored_reachability_error(&self, peer: HostId) -> Option<String> {
         self.reachability_errors.lock().unwrap().get(&peer).cloned()
     }

@@ -8,6 +8,18 @@ timer and job the driver holds for it is named by a `CallId`, `TimerId` or
 `JobId`. `checkpoint` and `restore` take the core's state out and back in
 beside the store it was taken with.
 
+Pairing and trust are the core's too. The trust store is core state, read
+at start from the trust file (`Input::TrustRead`) and changed only by core
+steps, one at a time, each written whole by an `Fsync` job and served only
+once that write is done; the shell's handshakes read the copy the driver
+publishes. The pairing window (its secret, attempts, lockout and expiry), the
+SPAKE2 exchange, key confirmation and the sealed identities run as steps over
+`PairingMessage` inputs, with each conversation's deadline and each pending
+pairing's token as timers; the driver carries only the pairing streams. An
+SSH pairing commits through the same trust writes. Randomness arrives as
+`Input::Entropy` and is stretched by counting, so a run is a function of its
+inputs.
+
 What belongs inside: anything whose interleaving with the core's state can
 matter is in the core; anything that only produces a result is a job the
 driver runs and reports back as an input; transport and codec are the

@@ -14,7 +14,7 @@ mod types;
 mod wire;
 
 pub use core::RoutingCore;
-pub(crate) use core::{RevocationMark, Revocations, RouteUpdateOutcome};
+pub(crate) use core::{RevocationMark, Revocations, RouteUpdateOutcome, TrustChanges};
 
 pub use host::local_kinds;
 pub(crate) use host::{

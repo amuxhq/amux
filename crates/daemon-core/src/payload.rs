@@ -216,6 +216,32 @@ pub enum ClientRequest {
         envelope: Box<wire::Envelope>,
         from: MessageFrom,
     },
+    /// A change of the trust store, answered once it is on the drive.
+    ChangeTrust(crate::trust::TrustChange),
+    /// Opens the pairing window for `ttl_ms`.
+    StartPairing {
+        method: crate::pairing::WindowMethod,
+        ttl_ms: u64,
+    },
+    /// Closes the pairing window.
+    CancelPairing,
+    /// Finishes the pending pairing a person confirmed.
+    ConfirmPair {
+        token: Vec<u8>,
+    },
+    /// Abandons the pending pairing a person turned down.
+    AbandonPair {
+        token: Vec<u8>,
+    },
+    /// Trusts a peer whose identity an SSH exchange carried; `reachability`
+    /// is how this host reaches it, when this host dialled.
+    PairOverSsh {
+        #[serde(with = "codec::message")]
+        local: wire::PairingIdentity,
+        #[serde(with = "codec::message")]
+        peer: wire::PairingIdentity,
+        reachability: Option<crate::trust::Reachability>,
+    },
 }
 
 /// Who sent a message, as the call it came on says.
@@ -360,6 +386,20 @@ pub enum Response {
     /// One of this host's agents' rows, as a registry call left it.
     Agent(Box<wire::Agent>),
     Draft(wire::ComposerDraft),
+    /// What a trust change did, once it is on the drive.
+    Trust(crate::trust::TrustChanged),
+    /// The pairing window is open, with this secret.
+    PairingWindow(crate::pairing::WindowSecret),
+    /// The pairing window is closed; whether one was open.
+    PairingCancelled {
+        was_active: bool,
+    },
+    /// The pairing is committed: `host` is trusted, and reached as
+    /// `reachability` when this side dialled it.
+    Paired {
+        host: HostId,
+        reachability: Option<crate::trust::Reachability>,
+    },
 }
 
 /// How a call ended.
@@ -394,6 +434,12 @@ pub enum CallError {
     Blob(BlobRefusal),
     /// A message was not accepted.
     Message(MessageRefusal),
+    /// A trust change was refused or could not be saved.
+    Trust(crate::trust::TrustError),
+    /// The pairing window could not open.
+    Window(crate::pairing::WindowRefusal),
+    /// A pairing did not finish.
+    Pairing(crate::pairing::PairFailure),
 }
 
 /// Why a blob call failed.

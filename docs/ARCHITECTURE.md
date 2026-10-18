@@ -105,6 +105,29 @@ The principles that follow from that picture:
 - **Ask the operating system first.** Existence is a directory, liveness is
   a held file lock, "the peer went away" is end of file on a socket. A
   protocol earns its place only where the kernel has no answer.
+- **A core is a function of its inputs.** The daemon, the relay, the agent
+  process and the supervisor each decide everything in one `step`: a typed
+  input in, typed outputs appended, with no lock, task or await inside.
+  Sockets, codecs, timers and disk belong to a driver around the core,
+  which decodes what arrives into inputs and carries out the outputs. What
+  only produces a result, such as an fsync or a token refresh, is a job the
+  driver runs and reports back as an input.
+- **The properties are the protocol spec.** Every promise the protocol
+  makes is written once, as a sentence and a predicate over a core's state,
+  in [`models`](../crates/models/README.md). A checker explores the real
+  cores against them under `just test`. The code is the only
+  implementation of a rule; a test that restates a rule a property already
+  holds is a second copy, and goes.
+- **A seed reproduces a run.** Nothing in a core reads the clock, the
+  network or a random source, so a run is decided by its inputs, and a
+  simulated run's inputs are decided by its seed. A failure is reported as
+  the seed that produced it, and that seed alone replays it.
+- **An invariant violation produces a dump, and a dump replays.** The cheap
+  invariants are checked inside `step` in production, and a violation
+  emits a dump with the violation as its reason instead of carrying on. A
+  dump is, for each stage, a checkpoint and the inputs since, so replaying
+  it re-runs the stage with every property checked and stops at the step
+  that broke one.
 
 ## Processes
 

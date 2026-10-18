@@ -1,0 +1,35 @@
+# CI checks every protocol model at its CI bounds on each push. This
+# workflow checks them at their nightly bounds, which explore further than
+# a push can wait for, each model in a job of its own.
+name: Models at nightly bounds
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  nightly:
+    name: Nightly bounds (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    # TIMEOUT_PLACEHOLDER
+    timeout-minutes: 0
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [family, presence, replication, single_daemon]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+      # The models job's cache: this job builds the same test binaries.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: models
+          save-if: false
+      - uses: extractions/setup-just@v2
+      - name: Check the model at its nightly bounds
+        run: just models-nightly ${{ matrix.target }}

@@ -7,13 +7,10 @@ use models::{Bounds, FamilyDeliveries, check, walk};
 /// budget says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 120.0;
 
-fn threads() -> usize {
-    std::thread::available_parallelism().map_or(1, |threads| threads.get())
-}
 
 #[test]
 fn every_family_promise_holds_at_ci_bounds() {
-    let threads = threads();
+    let threads = models::threads();
     let verdict = check(
         &FamilyDeliveries::ci(),
         Bounds::exhaustive().threads(threads),
@@ -58,7 +55,7 @@ fn one_seed_walks_one_family_schedule() {
 fn every_family_promise_holds_at_nightly_bounds() {
     let verdict = check(
         &FamilyDeliveries::nightly(),
-        Bounds::exhaustive().threads(threads()),
+        Bounds::exhaustive().threads(models::threads()),
     );
     println!("{verdict}");
     verdict.assert_holds();

@@ -77,6 +77,17 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
     parked
 }
 
+/// How many threads a model's test explores with: `MODELS_THREADS` when
+/// set, so a run can price a model on a CI runner's core count, otherwise
+/// every core.
+pub fn threads() -> usize {
+    std::env::var("MODELS_THREADS")
+        .ok()
+        .and_then(|threads| threads.parse().ok())
+        .filter(|threads| *threads > 0)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |threads| threads.get()))
+}
+
 /// Turns off SQLite's memory statistics for this process before any
 /// database opens. Every SQLite allocation otherwise takes one global lock
 /// to count itself, so checker threads exploring real stores side by side

@@ -215,6 +215,12 @@ tests-check:
 parked-check:
     {{bounded}} 600 cargo run --locked -q -p models --bin parked-check
 
+# Check the protocol models at their nightly bounds: each model's ignored
+# test, one test binary after another, every core each. Names of test
+# targets (`just models-nightly family`) narrow it to those models.
+models-nightly *TARGETS:
+    if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 3600 cargo test --locked -p models $targets -- --ignored --nocapture
+
 # Fail when a contract in tests/contracts.toml names no test or a test that
 # does not exist; `--table PATH` also writes the coverage table as Markdown.
 contracts-check *ARGS:

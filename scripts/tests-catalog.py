@@ -46,6 +46,8 @@ REQUIRED = {
     "evidence",
     "update",
 }
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+MODELS_SUITE = "protocol-models"
 PERF_BASELINE_ROOTS = (
     ROOT / "perf" / "baselines" / "desktop",
     ROOT / "perf" / "baselines" / "phone",
@@ -354,7 +356,46 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
     for baseline in sorted(discovered_baselines - set(catalog_baselines)):
         errors.append(f"performance baseline {baseline} is not listed")
 
+    errors.extend(validate_models_matrix(suites))
+
     return errors, set(catalog_cargo), set(catalog_swift)
+
+
+def models_matrix() -> set[str] | None:
+    """The test targets the CI workflow's models job runs, one per matrix entry."""
+    text = CI_WORKFLOW.read_text()
+    job = re.search(r"^  models:\n((?:    .*\n|\s*\n)*)", text, re.MULTILINE)
+    if job is None:
+        return None
+    targets = re.search(r"^\s+target: \[([^\]]*)\]", job.group(1), re.MULTILINE)
+    if targets is None:
+        return None
+    return {target.strip() for target in targets.group(1).split(",") if target.strip()}
+
+
+def validate_models_matrix(suites: list[dict[str, Any]]) -> list[str]:
+    """Every protocol model's test target is its own entry of the CI models job."""
+    suite = next((suite for suite in suites if suite["name"] == MODELS_SUITE), None)
+    if suite is None:
+        return [f"suite {MODELS_SUITE} is missing"]
+    targets = {
+        target
+        for entry in suite.get("cargo", [])
+        if entry.get("kind", "test") == "test" and entry.get("package") == "models"
+        for target in entry.get("targets", [])
+    }
+    matrix = models_matrix()
+    if matrix is None:
+        return [f"{CI_WORKFLOW.relative_to(ROOT)} has no models job with a target matrix"]
+    errors = [
+        f"{MODELS_SUITE} test target {target} is not in the CI models job's matrix"
+        for target in sorted(targets - matrix)
+    ]
+    errors.extend(
+        f"the CI models job's matrix names {target}, which is no {MODELS_SUITE} test target"
+        for target in sorted(matrix - targets)
+    )
+    return errors
 
 
 def print_table(suites: list[dict[str, Any]], cargo: set[tuple[str, str, str]], swift: set[str]) -> None:

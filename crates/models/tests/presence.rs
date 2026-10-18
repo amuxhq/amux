@@ -8,13 +8,10 @@ use models::{Bounds, PresenceRouting, check, walk};
 /// says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 60.0;
 
-fn threads() -> usize {
-    std::thread::available_parallelism().map_or(1, |threads| threads.get())
-}
 
 #[test]
 fn every_presence_promise_holds_at_ci_bounds() {
-    let threads = threads();
+    let threads = models::threads();
     let verdict = check(
         &PresenceRouting::ci(),
         Bounds::exhaustive().threads(threads),
@@ -60,7 +57,7 @@ fn one_seed_walks_one_presence_schedule() {
 fn every_presence_promise_holds_at_nightly_bounds() {
     let verdict = check(
         &PresenceRouting::nightly(),
-        Bounds::exhaustive().threads(threads()),
+        Bounds::exhaustive().threads(models::threads()),
     );
     println!("{verdict}");
     verdict.assert_holds();

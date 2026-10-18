@@ -6,13 +6,10 @@ use models::{Bounds, SingleDaemon, check, walk};
 /// How long the exhaustive run may take under `just test`.
 const BUDGET_SECONDS: f64 = 120.0;
 
-fn threads() -> usize {
-    std::thread::available_parallelism().map_or(1, |threads| threads.get())
-}
 
 #[test]
 fn every_single_daemon_promise_holds_at_ci_bounds() {
-    let threads = threads();
+    let threads = models::threads();
     let verdict = check(&SingleDaemon::ci(), Bounds::exhaustive().threads(threads));
     println!("{verdict}");
     let measured = verdict.measured;
@@ -56,7 +53,7 @@ fn one_seed_walks_one_single_daemon_schedule() {
 fn every_single_daemon_promise_holds_at_nightly_bounds() {
     let verdict = check(
         &SingleDaemon::nightly(),
-        Bounds::exhaustive().threads(threads()),
+        Bounds::exhaustive().threads(models::threads()),
     );
     println!("{verdict}");
     verdict.assert_holds();

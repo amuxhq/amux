@@ -51,7 +51,7 @@ pub use links::LinkRegistry;
 pub use notifications::Notifications;
 pub use presence::{HostView, Presence, PresenceState, Route, Tried};
 pub use serve::Answers;
-pub use sources::{Sources, from_wire};
+pub use sources::{Sources, Standing, from_wire};
 
 /// The checkpoint layout this build writes and restores. A checkpoint under
 /// any other is refused whole.

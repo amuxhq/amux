@@ -14,6 +14,7 @@ use std::time::Instant;
 
 use stateright::{Checker, Chooser, UniformChooser};
 
+mod held;
 pub mod presence;
 pub mod replication;
 pub mod single_daemon;

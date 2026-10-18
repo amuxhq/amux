@@ -201,6 +201,52 @@ impl Sources {
     pub fn policy(&self) -> SourcePolicy {
         self.policy
     }
+
+    /// How the replica agent's source stands now, without the call it
+    /// streams on or the length of its backoff.
+    pub fn standing(&self, agent: &AgentKey) -> Standing {
+        let key = Key::from(agent);
+        let Some(source) = self.open.get(&key) else {
+            return Standing::Closed {
+                settled: self.settled.contains(&key),
+            };
+        };
+        match &source.feeding {
+            Feeding::Streaming {
+                generation,
+                catch_up,
+                caught_up,
+                ..
+            } => Standing::Streaming {
+                generation: *generation,
+                holding: catch_up
+                    .as_ref()
+                    .map(|held| (held.reset, held.events.len())),
+                caught_up: *caught_up,
+            },
+            Feeding::Waiting => Standing::Waiting,
+        }
+    }
+}
+
+/// How one replica agent's source stands: everything its next steps depend
+/// on but the numbering of its calls and the length of its waits, so a
+/// checker can tell two states apart by what they will go on to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Standing {
+    /// No source is open; settled once the agent's exit has landed, when
+    /// none opens again until its host lists it live.
+    Closed { settled: bool },
+    /// A stream is open: the origin's generation from its Opening, the
+    /// catch-up it holds until the origin's CaughtUp (whether it replaces
+    /// the block, and how many events), and whether it has caught up.
+    Streaming {
+        generation: Option<u64>,
+        holding: Option<(bool, usize)>,
+        caught_up: bool,
+    },
+    /// The stream was lost: it opens again when its backoff timer fires.
+    Waiting,
 }
 
 impl Daemon {

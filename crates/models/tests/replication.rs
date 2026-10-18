@@ -1,10 +1,10 @@
-//! Replication explored over two real stores at the bounds `just test` runs,
-//! and walked by seed.
+//! Replication explored over two real daemon cores at the bounds `just test`
+//! runs, and walked by seed.
 
 use models::{Bounds, Outcome, Replication, check, walk};
 
 /// How long the exhaustive run may take under `just test`. It takes about
-/// 18 seconds on the enrolled Mac's cores and 94 on one; the budget leaves
+/// 37 seconds on the enrolled Mac's cores; the budget leaves
 /// room for a smaller CI runner and a busy machine, and a run past it says
 /// the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 120.0;
@@ -69,8 +69,8 @@ fn one_seed_walks_one_replication_schedule() {
     );
 }
 
-/// The nightly bounds, run by hand or by the nightly recipe: about two
-/// million states, three minutes on the enrolled Mac's cores.
+/// The nightly bounds, run by hand or by the nightly recipe: minutes on the
+/// enrolled Mac's cores.
 #[test]
 #[ignore = "nightly bounds: minutes on every core"]
 fn every_replication_promise_holds_at_nightly_bounds() {

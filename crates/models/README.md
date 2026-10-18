@@ -43,12 +43,17 @@ remains, so nothing lands with one.
 ## Replication
 
 `Replication` follows one agent from its origin to one replica, both real
-in-memory stores, over a stream that delivers in order and may die at any
-message. The origin commits keys, trims its oldest row and reboots
-uncleanly, losing its newest commit and minting those revisions again under
-the next generation; the replica opens streams, absorbs what they carry and
-pages below its block. The properties are in `src/replication.rs`, each a
-sentence over the two stores.
+daemon cores over real in-memory stores, over a stream that delivers in
+order and may die at any message. The replica's core follows the origin's
+inventory and keeps a source on the agent: it decides when to open a
+stream and what to ask for, absorbs what arrives, and asks the origin's
+core for a page when a client fetches below its block. The origin commits
+keys, trims its oldest row and reboots uncleanly, losing its newest commit
+and minting those revisions again under the next generation. Two states
+are one when their stores, the link and the replica's source stand alike;
+the cores' checkpoints ride along, since what else differs between them is
+the numbering of their calls and the length of a backoff. The properties
+are in `src/replication.rs`, each a sentence over the two stores.
 
 ## Single daemon under crash
 
@@ -92,7 +97,7 @@ under `just test`.
 
 | Model | CI bounds | States | Seconds | states_per_second | Budget | Nightly bounds |
 | --- | --- | --- | --- | --- | --- | --- |
-| Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 194,522 | 18 (94 on one thread) | 11,000 (2,070 on one thread) | 120 s | revisions up to 5, 3 in flight: 2,038,361 states in 186 s |
+| Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 207,443 | 37 | 5,700 | 120 s | revisions up to 5, 3 in flight |
 | Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 179,245 | 34 (125 on one thread) | 5,300 (1,430 on one thread) | 120 s | 2 crashes, power losses or reboots: 910,364 states in 148 s |
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts, 2 plan changes, 2 refusals for the plan in a row | 118,374 | 2 (12 on one thread) | 62,000 (9,900 on one thread) | 60 s | 5 up, 4 down, 3 failed attempts: 4,367,842 states in 91 s |
 

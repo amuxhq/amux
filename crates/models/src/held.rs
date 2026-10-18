@@ -9,6 +9,7 @@
 //! do not and a dump reads every table.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use daemon_core::{Checkpoint, Daemon, Input, Output};
 use store::{AgentKey, Dump, Marker, Sqlite};
@@ -91,15 +92,40 @@ impl Slot {
         input: Input,
         read: impl FnOnce(&Daemon) -> R,
     ) -> (Vec<Output>, R) {
+        self.step_in(held, input, None, read)
+    }
+
+    /// Steps the host's core with one input, its agents' directories at
+    /// `place`'s first path for the step: the checkpoint names the second,
+    /// so it reads the same on every thread.
+    pub(crate) fn step_in<R>(
+        &mut self,
+        held: &mut Held,
+        input: Input,
+        place: Option<(&Path, &Path)>,
+        read: impl FnOnce(&Daemon) -> R,
+    ) -> (Vec<Output>, R) {
         let before = Changes::of(self.load(&held.store));
         let store = self.store.take().expect("the slot's store is home");
         let checkpoint = Checkpoint::from_bytes(&held.core).expect("a checkpoint reads");
         let mut daemon = Daemon::restore(checkpoint, store).expect("a checkpoint restores");
+        if let Some((scratch, _)) = place {
+            daemon.move_agents(scratch.to_path_buf());
+        }
         let mut out = Vec::new();
         daemon.step(input, &mut out);
+        if let Some((_, home)) = place {
+            daemon.move_agents(home.to_path_buf());
+        }
         let read = read(&daemon);
         self.put_back(held, daemon, Some(before));
         (out, read)
+    }
+
+    /// The store as this slot holds it now, for reading straight after a
+    /// step.
+    pub(crate) fn store(&self) -> &Sqlite {
+        self.store.as_ref().expect("the slot's store is home")
     }
 
     fn put_back(&mut self, held: &mut Held, daemon: Daemon, before: Option<Changes>) {

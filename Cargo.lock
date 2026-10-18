@@ -2476,11 +2476,13 @@ dependencies = [
 name = "models"
 version = "0.1.0"
 dependencies = [
+ "daemon-core",
  "journal",
  "prost",
  "rusqlite",
  "stateright",
  "store",
+ "tempfile",
  "wire",
 ]
 

@@ -214,6 +214,18 @@ impl Daemon {
         &self.store
     }
 
+    /// The store the core owned, once the core is done with.
+    pub fn into_store(self) -> Sqlite {
+        self.store
+    }
+
+    /// Points the core at agent directories that now live under `agents`:
+    /// a replay reads a dump's journals where it unpacked them. The core
+    /// checkpoints the place it was last pointed at.
+    pub fn move_agents(&mut self, agents: PathBuf) {
+        self.options.agents = agents;
+    }
+
     /// Exchanges the store the core reads and writes with `store`. While
     /// the profile's shell still writes the store under a lock of its own,
     /// its driver lends that store to the core for each step and takes it
@@ -383,6 +395,44 @@ mod tests {
         assert_eq!(restored.timers, daemon.timers);
         assert_eq!(restored.checkpoint(), checkpoint);
         assert_ne!(checkpoint, self::daemon().checkpoint());
+    }
+
+    #[test]
+    fn the_state_a_checkpoint_job_writes_is_the_core_after_the_step_that_took_it() {
+        let mut daemon = daemon();
+        let mut out = Vec::new();
+        daemon.step(
+            Input::Timer {
+                id: TimerId::Checkpoint,
+            },
+            &mut out,
+        );
+        let Some(Output::Job {
+            id,
+            op: Job::Checkpoint { state },
+        }) = out.pop()
+        else {
+            panic!("the timer takes a checkpoint");
+        };
+        let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
+        let mut restored =
+            Daemon::restore(Checkpoint::from_bytes(&state).expect("it reads"), store)
+                .expect("it restores");
+        assert_eq!(restored.checkpoint(), daemon.checkpoint());
+        assert!(
+            restored.checkpoints().taking(),
+            "it is taking its checkpoint"
+        );
+
+        // So the job's end, the next input the ring holds, ends it there too.
+        let done = Input::JobDone {
+            job: id,
+            result: payload::JobResult::Done,
+        };
+        daemon.step(done.clone(), &mut Vec::new());
+        restored.step(done, &mut Vec::new());
+        assert!(!restored.checkpoints().taking());
+        assert_eq!(restored.checkpoint(), daemon.checkpoint());
     }
 
     #[test]

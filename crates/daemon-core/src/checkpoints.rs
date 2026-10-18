@@ -86,9 +86,12 @@ impl Daemon {
                 }
             }
         }
-        let state = self.checkpoint().to_bytes();
+        // Serialized once the step has decided everything it will, so the
+        // checkpoint is the core after this step: the inputs after it,
+        // its own job's end among them, replay onto it.
         let job = self.pending.mint();
         self.checkpoints.taking = Some(Taking { job, cursors });
+        let state = self.checkpoint().to_bytes();
         out.push(Output::Job {
             id: job,
             op: Job::Checkpoint { state },

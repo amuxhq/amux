@@ -3,7 +3,7 @@
 //! made it.
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -217,18 +217,23 @@ impl Daemon {
         Ok(())
     }
 
-    /// The agent's journal: in its directory, which is named by its id in
-    /// the hyphenated form.
-    pub(crate) fn journal_dir(&self, agent: AgentId) -> PathBuf {
-        let mut name = String::with_capacity(36);
-        for (at, byte) in agent.0.iter().enumerate() {
-            if matches!(at, 4 | 6 | 8 | 10) {
-                name.push('-');
-            }
-            name.push_str(&format!("{byte:02x}"));
-        }
-        self.options.agents.join(name).join(JOURNAL)
+    /// The agent's journal, where this core reads it.
+    pub fn journal_dir(&self, agent: AgentId) -> PathBuf {
+        journal_dir(&self.options.agents, agent)
     }
+}
+
+/// An agent's journal under `agents`: in the agent's directory, which is
+/// named by its id in the hyphenated form.
+pub fn journal_dir(agents: &Path, agent: AgentId) -> PathBuf {
+    let mut name = String::with_capacity(36);
+    for (at, byte) in agent.0.iter().enumerate() {
+        if matches!(at, 4 | 6 | 8 | 10) {
+            name.push('-');
+        }
+        name.push_str(&format!("{byte:02x}"));
+    }
+    agents.join(name).join(JOURNAL)
 }
 
 #[cfg(test)]

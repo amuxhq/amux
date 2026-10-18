@@ -15,7 +15,9 @@ use std::time::Instant;
 use stateright::{Checker, Chooser, UniformChooser};
 
 pub mod replication;
+pub mod single_daemon;
 pub use replication::Replication;
+pub use single_daemon::SingleDaemon;
 
 /// What the world may do to a machine between its own actions: the one
 /// fault vocabulary every model's environment and the simulator draw from,
@@ -37,6 +39,9 @@ pub enum Fault {
     RebootUnclean(Host),
     /// The host loses power: what was written but not synced is gone.
     PowerLoss(Host),
+    /// The host's drive refuses the next write it is asked for, as a full
+    /// or failing drive does.
+    WriteRefused(Host),
     /// The clock moves on.
     Tick { ms: u64 },
 }
@@ -60,7 +65,9 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
             .filter_map(|property| Some((name, property.sentence, property.parked?)))
             .collect()
     }
-    of("replication", &Replication::ci())
+    let mut parked = of("replication", &Replication::ci());
+    parked.extend(of("single daemon", &SingleDaemon::ci()));
+    parked
 }
 
 /// Turns off SQLite's memory statistics for this process before any

@@ -7,11 +7,13 @@ description = "The protocol's promises as properties a checker explores over the
 publish = false
 
 [dependencies]
+daemon-core = { workspace = true }
 journal = { workspace = true }
 prost = { workspace = true }
 rusqlite = { workspace = true }
 stateright = { workspace = true }
 store = { workspace = true }
+tempfile = { workspace = true }
 wire = { workspace = true }
 
 [[bin]]

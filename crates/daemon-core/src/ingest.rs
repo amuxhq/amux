@@ -170,10 +170,8 @@ impl Daemon {
                 .filter(|(_, step)| step.turn_end.is_some())
                 .count() as u32;
             if report.turn_ends > 0 {
-                out.push(Output::ArmTimer {
-                    id: TimerId::Deliveries,
-                    at_ms: self.timers.now_ms,
-                });
+                // A turn end may have written an outbox row.
+                self.deliveries_due();
                 report.kind = self.store.agent(&key)?.map_or(0, |row| row.kind);
             }
             // Only now, with the transaction committed: a subscriber never
@@ -195,6 +193,9 @@ impl Daemon {
                 self.publish_row(&key, out)?;
                 self.drain_notifications(out);
             }
+            // A message waiting for its acceptance item is answered after
+            // the subscribers were told of the item.
+            self.lane_committed(agent, out);
         }
         if at_end && self.journals.caught_up_due.remove(&agent) {
             self.announce_caught_up(&key, out)?;
@@ -405,27 +406,36 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_end_arms_the_deliveries_timer_and_its_firing_wakes_the_drain() {
+    fn a_turn_end_runs_a_drain_pass_once_the_sweep_is_done() {
         let mut rig = rig();
         let mut ended = item(0);
         ended.turn_end = Some(wire::TurnEnd::default());
         rig.journal
             .append(&ended)
             .expect("the journal takes a step");
+        let drained = |out: &[Output]| {
+            out.iter()
+                .filter_map(|output| match output {
+                    Output::Drained { pass, .. } => Some(*pass),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
         let out = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
-        assert!(out.contains(&Output::ArmTimer {
-            id: TimerId::Deliveries,
-            at_ms: 0,
-        }));
         assert_eq!(
-            step(
-                &mut rig.daemon,
-                Input::Timer {
-                    id: TimerId::Deliveries,
-                },
-            ),
-            vec![Output::Wake(crate::Wake::Deliveries)]
+            drained(&out),
+            Vec::<u64>::new(),
+            "nothing drains before the sweep"
         );
+        assert_eq!(drained(&step(&mut rig.daemon, Input::Swept)), vec![1]);
+
+        let mut again = item(1);
+        again.turn_end = Some(wire::TurnEnd::default());
+        rig.journal
+            .append(&again)
+            .expect("the journal takes a step");
+        let out = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        assert_eq!(drained(&out), vec![2]);
     }
 
     #[test]

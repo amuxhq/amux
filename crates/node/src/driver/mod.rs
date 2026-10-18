@@ -44,8 +44,8 @@ use daemon_core::payload::{
     PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
 };
 use daemon_core::{
-    CallId, ChannelId, Daemon, FromShell, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
-    Output, Settings, ShellWork, StartOptions, TimerId,
+    CallId, ChannelId, Daemon, DrainReport, FromShell, HostId, IngestEnd, Ingested, Input, Job,
+    JobId, LinkId, Output, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use links::{CoreLinks, core_error};
 use store::Sqlite;
@@ -105,6 +105,11 @@ pub(crate) enum Fed {
     /// A checkpoint, for someone who waits for it to be on the drive.
     Checkpoint {
         done: oneshot::Sender<Result<(), String>>,
+    },
+    /// A pass over the deliveries outbox, for someone who waits for its
+    /// report.
+    Drain {
+        done: oneshot::Sender<DrainReport>,
     },
     /// The shell wants a channel, and waits for the core's word on it.
     Channel {
@@ -189,6 +194,7 @@ impl Driver {
             ring,
             checkpointing: None,
             checkpoint_waiting: Vec::new(),
+            drain_waiting: Vec::new(),
             fed,
             reports: reports.clone(),
             channel_reply: None,
@@ -336,6 +342,16 @@ impl Driver {
             .unwrap_or_else(|_| Err("the profile is no longer running".to_owned()))
     }
 
+    /// Asks the core for a pass over the deliveries outbox and waits for
+    /// its report: the pass under way, else the one asking begins.
+    pub(crate) async fn drain(&self) -> DrainReport {
+        let (done, drained) = oneshot::channel();
+        if self.inputs.send(Fed::Drain { done }).await.is_err() {
+            return DrainReport::default();
+        }
+        drained.await.unwrap_or_default()
+    }
+
     /// Feeds the core an input.
     pub(crate) async fn feed(&self, input: Input) {
         let _ = self.inputs.send(Fed::Input(input)).await;
@@ -400,6 +416,9 @@ struct CoreThread {
     checkpointing: Option<JobId>,
     /// Whoever waits for the next checkpoint to be on the drive.
     checkpoint_waiting: Vec<oneshot::Sender<Result<(), String>>>,
+    /// Whoever waits for a drain pass, with the first pass whose report
+    /// answers them.
+    drain_waiting: Vec<(u64, oneshot::Sender<DrainReport>)>,
     fed: mpsc::Receiver<Fed>,
     reports: Arc<Mutex<VecDeque<Input>>>,
     /// Whoever waits for the core's word on the channel the step under way
@@ -500,6 +519,14 @@ impl CoreThread {
                         }),
                     }
                 }
+                Fed::Drain { done } => {
+                    // The timer begins a pass now unless one is under way.
+                    let pass = self.daemon.deliveries().answering_pass();
+                    self.drain_waiting.push((pass, done));
+                    Some(Input::Timer {
+                        id: TimerId::Deliveries,
+                    })
+                }
                 Fed::Wake | Fed::Stop | Fed::Channel { .. } | Fed::Forward { .. } => None,
             };
             self.daemon.swap_store(&mut store);
@@ -515,6 +542,8 @@ impl CoreThread {
                 source_backoff_max_ms: launch.source_backoff_max_ms.max(0) as u64,
                 start_deadline_ms: launch.start_deadline_ms.max(0) as u64,
                 stop_deadline_ms: launch.stop_deadline_ms.max(0) as u64,
+                delivery_retry_ms: launch.delivery_retry_ms.max(0) as u64,
+                reply_patience_ms: launch.reply_patience_ms.max(0) as u64,
             };
             if self.settings != Some(settings) {
                 self.settings = Some(settings);
@@ -638,7 +667,15 @@ impl CoreThread {
                 runtime.ingested(&report);
                 self.ingested(agent, report);
             }
-            Output::Wake(wake) => runtime.wake(wake),
+            Output::Drained { pass, report } => {
+                let (answered, waiting) = std::mem::take(&mut self.drain_waiting)
+                    .into_iter()
+                    .partition(|(first, _)| *first <= pass);
+                self.drain_waiting = waiting;
+                for (_, done) in answered {
+                    let _ = done.send(report);
+                }
+            }
             Output::ArmTimer { id, at_ms } => {
                 let now = runtime.clock_now().max(0) as u64;
                 // A follower or source keeps to the profile's clock, the
@@ -646,10 +683,14 @@ impl CoreThread {
                 // next, with the store.
                 let sourcing = matches!(id, TimerId::Follow(_) | TimerId::Source(..));
                 // An agent's start and stop deadlines keep to it too, and
-                // so do notifications, whose due times it stamped.
+                // so do notifications, whose due times it stamped, and the
+                // outbox's retries.
                 let registry = matches!(
                     id,
-                    TimerId::Start(_) | TimerId::Exit(_) | TimerId::Notifications
+                    TimerId::Start(_)
+                        | TimerId::Exit(_)
+                        | TimerId::Notifications
+                        | TimerId::Deliveries
                 );
                 if sourcing && at_ms <= now {
                     if let Some(armed) = self.timers.remove(&id) {
@@ -801,7 +842,7 @@ impl CoreThread {
                         tokio::spawn(origin::stream(runtime, host, call, request, inputs))
                     }
                     request => tokio::spawn(async move {
-                        let answer = if absorbed {
+                        let answer = if matches!(request, PeerRequest::Fetch(_)) {
                             tokio::time::timeout(PAGE_PATIENCE, call_peer(runtime, host, request))
                                 .await
                                 .unwrap_or(Some(Answer::Failed(PeerFailure::Uncertain)))
@@ -841,7 +882,13 @@ impl CoreThread {
             Output::SpawnAgent { dir, spec } => runtime.spawn_process(dir, *spec),
             Output::DialAgent { agent } => runtime.dial_agent(uuid::Uuid::from_bytes(agent.0)),
             Output::WriteControl { agent, frame } => {
-                runtime.write_control(uuid::Uuid::from_bytes(agent.0), frame)
+                let id = uuid::Uuid::from_bytes(agent.0);
+                match &frame.of {
+                    Some(wire::ctl_frame::Of::AgentMessage(_)) => {
+                        runtime.write_message(id, frame, self.inputs.clone())
+                    }
+                    _ => runtime.write_control(id, frame),
+                }
             }
             Output::ForgetAgent { agent } => runtime.forget_agent(uuid::Uuid::from_bytes(agent.0)),
             Output::SendFile { call, path, range } => {
@@ -1035,6 +1082,20 @@ async fn run_job(
             base,
             with_patch,
         } => crate::blobs::compare(&cwd, base, with_patch).await,
+        Job::NextSpec {
+            agent,
+            bootstrap,
+            snapshot,
+        } => {
+            let Some(runtime) = runtime.upgrade() else {
+                return;
+            };
+            let agent = uuid::Uuid::from_bytes(agent.0);
+            match runtime.next_spec(agent, Some(bootstrap), snapshot.as_deref()) {
+                Ok(spec) => JobResult::Spec(spec.map(Box::new)),
+                Err(error) => JobResult::Failed(error.to_string()),
+            }
+        }
         op @ Job::Upload(_) => JobResult::Failed(format!("this driver does not run {op:?} yet")),
     };
     feed(&inputs, Input::JobDone { job, result }).await;

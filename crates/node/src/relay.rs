@@ -2,32 +2,31 @@
 //!
 //! A person's input is relayed to the agent over its control socket and
 //! the interpreter's verdict comes back as the answer; the daemon answers
-//! only for an agent that has exited. An agent message goes through the
-//! recipient's lane: one message at a time, deduped against the
-//! recipient's items by envelope id, and accepted only once the item the
-//! recipient wrote on accepting it has committed. A retry therefore always
-//! arrives after the original's answer, so that one store lookup is the
-//! whole dedupe. A parent's message to its exited child resumes the child
-//! with the message as the new incarnation's first input.
+//! only for an agent that has exited. An agent message goes to the daemon
+//! core, which hands it through the recipient's lane and answers once the
+//! recipient has accepted it; what stays here is setting the sender of a
+//! message for another host, and bringing the files a message carries to
+//! the recipient's host before it is sent.
 
-use std::sync::Arc;
 use std::time::Duration;
 
-use store::{AgentKey, StoreError};
+use daemon_core::payload::{
+    CallError, ClientRequest, MessageFrom, MessageRefusal, Status as CoreStatus,
+};
+use store::StoreError;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 use wire::{
-    AgentSender, Bootstrap, Envelope, ErrorCode, Human, Lifecycle, MessageBody, Refusal, Rejected,
+    AgentSender, Envelope, ErrorCode, Human, Lifecycle, MessageBody, Refusal, Rejected,
     SendInputRequest, SendInputResponse, SendMessageRequest, SendMessageResponse, Sender,
-    bootstrap, ctl_frame, envelope, send_input_response, sender,
+    ctl_frame, envelope, send_input_response, sender,
 };
 
-use crate::runtime::{AgentId, ProfileRuntime, RegistryError, Sent, ms};
+use crate::driver::{Ask, Delivered};
+use crate::runtime::{AgentId, ProfileRuntime, Sent, core_agent, ms};
 
 /// How long an input waits for the agent to be connected.
 const CONNECT_PATIENCE: Duration = Duration::from_secs(5);
-/// How long an accepted message waits for its acceptance item to commit.
-const ACCEPT_PATIENCE: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(20);
 
 #[derive(Debug, thiserror::Error)]
@@ -46,8 +45,8 @@ pub enum RelayError {
     Rejected(Rejected),
     #[error("the recipient's incarnation the message was for has ended")]
     Stale,
-    #[error("resuming the agent: {0}")]
-    Resume(Box<RegistryError>),
+    #[error("resuming the agent: {0:?}")]
+    Resume(daemon_core::Refusal),
     /// A file the message carries could not be brought to the recipient's
     /// host, so the recipient could not open it; the message is not sent.
     #[error("the message's attachment {name} could not be brought to the recipient: {why}")]
@@ -56,6 +55,9 @@ pub enum RelayError {
     Forwarded(#[from] crate::forward::ForwardError),
     #[error("the store: {0}")]
     Store(#[from] StoreError),
+    /// The core could not take the message, in its words.
+    #[error("{0}")]
+    Core(String),
 }
 
 impl RelayError {
@@ -73,7 +75,7 @@ impl RelayError {
             Self::Stale => ErrorCode::NotFound,
             Self::Forwarded(error) => return error.to_wire(),
             Self::Attachment { .. } => ErrorCode::FailedPrecondition,
-            Self::Resume(_) | Self::Store(_) => ErrorCode::Internal,
+            Self::Resume(_) | Self::Store(_) | Self::Core(_) => ErrorCode::Internal,
         };
         wire::Error {
             code: code as i32,
@@ -81,18 +83,6 @@ impl RelayError {
             details: Vec::new(),
         }
     }
-}
-
-/// Who a message is from.
-enum From {
-    /// A person, on the profile socket.
-    Person,
-    /// One of this host's agents, on its tools socket.
-    Agent(AgentId),
-    /// A paired host's agent.
-    Peer(AgentSender),
-    /// The person, through a paired host.
-    PeerPerson,
 }
 
 pub(crate) fn rejected(refusal: Refusal) -> SendInputResponse {
@@ -150,18 +140,6 @@ fn blob_of(attachment: &wire::Attachment) -> Option<&wire::BlobRef> {
         Of::Review(review) => review.diff.as_ref()?.patch.as_ref(),
         Of::Text(_) => None,
     }
-}
-
-/// The envelope id of an outbox row: the same for every re-send of one
-/// row, so the receiver's lookup by envelope id catches a duplicate.
-pub(crate) fn delivery_envelope_id(delivery: &store::Delivery) -> Vec<u8> {
-    let mut name = delivery.child_id.clone();
-    name.extend(delivery.incarnation.to_be_bytes());
-    name.push(u8::from(delivery.is_exit()));
-    name.extend(delivery.turn_id.to_be_bytes());
-    Uuid::new_v5(&Uuid::NAMESPACE_OID, &name)
-        .as_bytes()
-        .to_vec()
 }
 
 impl ProfileRuntime {
@@ -272,8 +250,10 @@ impl ProfileRuntime {
                 attachments: request.attachments,
             })),
         };
-        self.send_message_from(envelope, caller.map_or(From::Person, From::Agent))
-            .await
+        let from = caller.map_or(MessageFrom::Person, |caller| {
+            MessageFrom::Agent(core_agent(caller))
+        });
+        self.send_message_from(envelope, from).await
     }
 
     /// A message a paired host sends on behalf of one of its agents, or of
@@ -285,8 +265,8 @@ impl ProfileRuntime {
         envelope: Envelope,
     ) -> Result<SendMessageResponse, RelayError> {
         let from = match envelope.from.clone().and_then(|from| from.value) {
-            Some(sender::Value::Agent(sender)) => From::Peer(sender),
-            _ => From::PeerPerson,
+            Some(sender::Value::Agent(sender)) => MessageFrom::Peer(sender),
+            _ => MessageFrom::PeerPerson,
         };
         self.send_message_from(envelope, from).await
     }
@@ -294,53 +274,51 @@ impl ProfileRuntime {
     async fn send_message_from(
         &self,
         mut envelope: Envelope,
-        caller: From,
+        from: MessageFrom,
     ) -> Result<SendMessageResponse, RelayError> {
         let to = envelope.to.clone().ok_or(RelayError::NoAgent)?;
         if envelope.id.is_empty() {
             envelope.id = Uuid::new_v4().as_bytes().to_vec();
         }
         if to.host_id != self.host().as_bytes() {
-            return self.forward_message(envelope, caller, &to.host_id).await;
+            return self.forward_message(envelope, from, &to.host_id).await;
         }
         let id = self.own_agent(&to.agent_id).await?;
-        let (from, is_parent) = {
-            let store = self.store.lock().await;
-            let recipient = store.agent(&self.key(id))?.ok_or(RelayError::NoAgent)?;
-            match caller {
-                From::Person | From::PeerPerson => (
-                    Sender {
-                        value: Some(sender::Value::Human(Human {})),
-                    },
-                    false,
-                ),
-                From::Agent(caller) => {
-                    let row = store.agent(&self.key(caller))?;
-                    let is_parent = recipient.parent.as_ref() == Some(&self.key(caller));
-                    (self.agent_sender(caller, row.as_ref()), is_parent)
-                }
-                From::Peer(sender) => {
-                    let key = AgentKey::new(sender.host_id.clone(), sender.agent_id.clone());
-                    let is_parent = recipient.parent.as_ref() == Some(&key);
-                    (
-                        Sender {
-                            value: Some(sender::Value::Agent(sender)),
-                        },
-                        is_parent,
-                    )
-                }
+        let sender = match &from {
+            MessageFrom::Agent(caller) => {
+                Some((self.host().as_bytes().to_vec(), caller.0.to_vec()))
             }
+            MessageFrom::Peer(sender) => Some((sender.host_id.clone(), sender.agent_id.clone())),
+            MessageFrom::Person | MessageFrom::PeerPerson => None,
         };
-        envelope.from = Some(from);
-        self.bring_attachments(id, &envelope).await?;
+        if let Some((host, agent)) = sender {
+            self.bring_attachments(id, &host, &agent, &envelope).await?;
+        }
         let envelope_id = envelope.id.clone();
-        // A child's report is for one incarnation of its parent.
-        let incarnation = match &envelope.body {
-            Some(envelope::Body::Report(report)) => Some(report.to_incarnation),
-            _ => None,
+        let request = ClientRequest::SendMessage {
+            envelope: Box::new(envelope),
+            from,
         };
-        self.deliver(id, envelope, is_parent, incarnation).await?;
-        Ok(SendMessageResponse { envelope_id })
+        let mut answers = self.driver().call(Ask::Ready(request), 1).await;
+        loop {
+            match answers.next().await {
+                Some(Delivered::Answer(_)) => {}
+                Some(Delivered::End(CoreStatus::Ok)) => {
+                    return Ok(SendMessageResponse { envelope_id });
+                }
+                Some(Delivered::End(CoreStatus::Failed(CallError::Message(refusal)))) => {
+                    return Err(refused_message(refusal));
+                }
+                Some(Delivered::End(CoreStatus::Failed(CallError::NoAgent))) => {
+                    return Err(RelayError::NoAgent);
+                }
+                Some(Delivered::End(CoreStatus::Failed(other))) => {
+                    return Err(RelayError::Core(format!("{other:?}")));
+                }
+                // The profile stopped before the recipient answered.
+                None => return Err(RelayError::Lost),
+            }
+        }
     }
 
     /// A message for another host's agent: the sender is set here, from
@@ -349,19 +327,20 @@ impl ProfileRuntime {
     async fn forward_message(
         &self,
         mut envelope: Envelope,
-        caller: From,
+        from: MessageFrom,
         host: &[u8],
     ) -> Result<SendMessageResponse, RelayError> {
         let host = Uuid::from_slice(host).map_err(|_| RelayError::NoAgent)?;
-        envelope.from = Some(match caller {
-            From::Person => Sender {
+        envelope.from = Some(match from {
+            MessageFrom::Person => Sender {
                 value: Some(sender::Value::Human(Human {})),
             },
-            From::Agent(caller) => {
+            MessageFrom::Agent(caller) => {
+                let caller = Uuid::from_bytes(caller.0);
                 let row = self.store.lock().await.agent(&self.key(caller))?;
                 self.agent_sender(caller, row.as_ref())
             }
-            From::Peer(_) | From::PeerPerson => return Err(RelayError::OtherHost),
+            MessageFrom::Peer(_) | MessageFrom::PeerPerson => return Err(RelayError::OtherHost),
         });
         Ok(self.on_peer(host, envelope).await?)
     }
@@ -375,13 +354,10 @@ impl ProfileRuntime {
     async fn bring_attachments(
         &self,
         recipient: AgentId,
+        sender_host: &[u8],
+        sender_agent: &[u8],
         envelope: &Envelope,
     ) -> Result<(), RelayError> {
-        let Some(sender::Value::Agent(sender)) =
-            envelope.from.as_ref().and_then(|from| from.value.as_ref())
-        else {
-            return Ok(());
-        };
         let blobs = self.agent_dir(recipient).join(agent_dir::BLOBS);
         let Some(envelope::Body::Message(message)) = &envelope.body else {
             return Ok(());
@@ -400,16 +376,16 @@ impl ProfileRuntime {
                 continue;
             }
             let request = wire::GetBlobRequest {
-                agent_id: sender.agent_id.clone(),
+                agent_id: sender_agent.to_vec(),
                 hash: blob.hash.clone(),
             };
-            let bytes = if sender.host_id == self.host().as_bytes() {
+            let bytes = if sender_host == self.host().as_bytes() {
                 self.get_blob(request)
                     .await
                     .map_err(|error| failed(error.to_string()))?
                     .bytes
             } else {
-                let host = Uuid::from_slice(&sender.host_id)
+                let host = Uuid::from_slice(sender_host)
                     .map_err(|_| failed("its sender names no host".to_owned()))?;
                 self.on_peer(host, request)
                     .await
@@ -443,119 +419,9 @@ impl ProfileRuntime {
         }
     }
 
-    /// The recipient's lane: one message at a time, answered only once
-    /// accepted and committed. `resume` lets an exited recipient be resumed
-    /// with the message, which only its parent may do. A message for one
-    /// `incarnation` of the recipient is stale once another has begun.
-    pub(crate) async fn deliver(
-        &self,
-        id: AgentId,
-        envelope: Envelope,
-        resume: bool,
-        incarnation: Option<u32>,
-    ) -> Result<(), RelayError> {
-        let lane = self.lane(id);
-        let _turn = lane.lock().await;
-        // Until every journal has been read once after start, the lookup
-        // below could miss an acceptance item still in a journal.
-        let mut read = self.journals_read.subscribe();
-        let _ = read.wait_for(|read| *read).await;
-
-        let key = self.key(id);
-        let row = {
-            let store = self.store.lock().await;
-            if store.item_by_input(&key, &envelope.id)?.is_some() {
-                return Ok(());
-            }
-            store.agent(&key)?.ok_or(RelayError::NoAgent)?
-        };
-        // Checked again under the lane: whoever held it may have resumed
-        // the recipient while this message waited.
-        if incarnation.is_some_and(|incarnation| incarnation != row.incarnation) {
-            return Err(RelayError::Stale);
-        }
-        if row.lifecycle == Lifecycle::Exited as i32 {
-            return if resume {
-                self.resume_with(id, envelope).await
-            } else {
-                Err(RelayError::Rejected(refused(Refusal::Exited)))
-            };
-        }
-        let verdict = self
-            .relay(
-                id,
-                envelope.id.clone(),
-                ctl_frame::Of::AgentMessage(envelope.clone()),
-            )
-            .await?;
-        match rejection(&verdict) {
-            None => self.accepted(id, &key, &envelope.id).await,
-            Some(rejected) if rejected.refusal() == Refusal::Exiting => {
-                self.mark_exiting(id);
-                if resume {
-                    self.resume_with(id, envelope).await
-                } else {
-                    Err(RelayError::Rejected(refused(Refusal::Exited)))
-                }
-            }
-            Some(rejected) => Err(RelayError::Rejected(rejected.clone())),
-        }
-    }
-
-    /// Resumes an exited child with its parent's message as the new
-    /// incarnation's first input.
-    async fn resume_with(&self, id: AgentId, envelope: Envelope) -> Result<(), RelayError> {
-        let envelope_id = envelope.id.clone();
-        let bootstrap = Bootstrap {
-            of: Some(bootstrap::Of::AgentMessage(envelope)),
-        };
-        self.resume(id, Some(bootstrap))
-            .await
-            .map_err(|error| RelayError::Resume(Box::new(error)))?;
-        self.accepted(id, &self.key(id), &envelope_id).await
-    }
-
-    /// Waits for the item the recipient wrote on accepting the message.
-    async fn accepted(
-        &self,
-        id: AgentId,
-        key: &AgentKey,
-        envelope_id: &[u8],
-    ) -> Result<(), RelayError> {
-        let mut commits = self.commits.subscribe();
-        let deadline = tokio::time::Instant::now() + ACCEPT_PATIENCE;
-        loop {
-            commits.borrow_and_update();
-            if self
-                .store
-                .lock()
-                .await
-                .item_by_input(key, envelope_id)?
-                .is_some()
-            {
-                return Ok(());
-            }
-            let exited = self.handle(id).is_none_or(|handle| *handle.exited.borrow());
-            if exited {
-                // Everything the process wrote was ingested before its exit
-                // was recorded, and the item was not in it.
-                return Err(RelayError::Lost);
-            }
-            match tokio::time::timeout_at(deadline, commits.changed()).await {
-                Ok(Ok(())) => {}
-                _ => return Err(RelayError::Lost),
-            }
-        }
-    }
-
-    fn lane(&self, id: AgentId) -> Arc<tokio::sync::Mutex<()>> {
-        self.lanes.lock().unwrap().entry(id).or_default().clone()
-    }
-
     /// Whether an input to the agent is in hand: written to its process
-    /// and awaiting the verdict. A message whose lane is taken but which is
-    /// not written yet is not in hand: a caller that goes away then takes
-    /// it with it.
+    /// and awaiting the verdict. A message waiting in its lane is not in
+    /// hand: a caller that goes away then takes it with it.
     pub fn in_hand(&self, id: AgentId) -> bool {
         self.handle(id)
             .is_some_and(|handle| handle.handed.load(std::sync::atomic::Ordering::SeqCst) > 0)
@@ -580,5 +446,19 @@ impl Drop for Handed<'_> {
         self.0
             .handed
             .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// A message the core did not get accepted, as the shell's callers read it.
+fn refused_message(refusal: MessageRefusal) -> RelayError {
+    match refusal {
+        MessageRefusal::NoAgent => RelayError::NoAgent,
+        MessageRefusal::OtherHost => RelayError::OtherHost,
+        MessageRefusal::Unavailable => RelayError::Unavailable,
+        MessageRefusal::Lost => RelayError::Lost,
+        MessageRefusal::Rejected(rejected) => RelayError::Rejected(rejected),
+        MessageRefusal::Stale => RelayError::Stale,
+        MessageRefusal::Resume(refusal) => RelayError::Resume(refusal),
+        MessageRefusal::Store(words) => RelayError::Core(format!("the store: {words}")),
     }
 }

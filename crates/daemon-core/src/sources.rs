@@ -50,7 +50,7 @@ use wire::{
 };
 
 use crate::ids::{AgentId, CallId, HostId, TimerId};
-use crate::io::{Output, ParentSays, ShellWork, SourcePolicy, Wake};
+use crate::io::{Output, ParentSays, ShellWork, SourcePolicy};
 use crate::payload::{Answer, CallError, PeerFailure, PeerReply, PeerRequest, Response, Status};
 use crate::peers::{Page, Waiting};
 use crate::presence::Route;
@@ -63,6 +63,8 @@ pub struct Sources {
     policy: SourcePolicy,
     /// The hosts this profile trusts, as the shell last said.
     trusted: BTreeSet<HostId>,
+    /// Whether the shell has said which hosts it trusts yet.
+    told_trust: bool,
     /// One per trusted host.
     followers: BTreeMap<HostId, Follower>,
     /// Hosts whose inventory has caught up on the current stream, by the
@@ -169,6 +171,16 @@ struct Backoff {
 }
 
 impl Sources {
+    /// Whether the shell has said which hosts this profile trusts.
+    pub(crate) fn knows_trust(&self) -> bool {
+        self.told_trust
+    }
+
+    /// Whether this profile trusts `host`, as last said.
+    pub(crate) fn trusts(&self, host: HostId) -> bool {
+        self.trusted.contains(&host)
+    }
+
     /// Whether `session` is the one `host`'s agents are sourced under now,
     /// caught up or still following.
     fn is_current(&self, host: HostId, session: u64) -> bool {
@@ -247,6 +259,7 @@ impl Daemon {
         let gone: Vec<HostId> = self.sources.trusted.difference(&trusted).copied().collect();
         let added: Vec<HostId> = trusted.difference(&self.sources.trusted).copied().collect();
         self.sources.trusted = trusted.clone();
+        self.sources.told_trust = true;
         // An attempt on a host a route reached before its trust landed was
         // abandoned: it is tried again now.
         for host in added {
@@ -281,7 +294,7 @@ impl Daemon {
             self.drop_replica(key, RemovalReason::HostUntrusted, out)?;
         }
         // The outbox drops what is owed to agents there.
-        out.push(Output::Wake(Wake::Deliveries));
+        self.deliveries_due();
         Ok(())
     }
 
@@ -733,7 +746,7 @@ impl Daemon {
             current: true,
         }));
         // Deliveries to a parent on that host may have waited for it.
-        out.push(Output::Wake(Wake::Deliveries));
+        self.deliveries_due();
         Ok(())
     }
 

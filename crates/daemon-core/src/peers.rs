@@ -48,6 +48,13 @@ pub(crate) enum Waiting {
     Source { agent: Key },
     /// A page below a replica's block, for a client's Fetch.
     Page(Box<Page>),
+    /// A child's report, sent to its parent's host as a message from the
+    /// child: the outbox row its envelope id names.
+    Report {
+        #[serde(with = "codec::agent_key")]
+        parent: store::AgentKey,
+        id: Vec<u8>,
+    },
 }
 
 /// A client's Fetch that went below a replica's block: the call it
@@ -176,6 +183,7 @@ impl Daemon {
             Waiting::Inventory { host } => self.inventory_answered(host, made, answer, out),
             Waiting::Source { agent } => self.source_answered(&agent, made, answer, out),
             Waiting::Page(page) => self.page_answered(*page, answer, out),
+            Waiting::Report { parent, id } => self.report_answered(&parent, &id, answer, out),
             Waiting::Forward { call } => {
                 // A client that let its call go wants no answer.
                 if !self.release_call(call) {

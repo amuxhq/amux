@@ -20,8 +20,10 @@ pub struct CallId(pub u64);
 pub enum TimerId {
     /// The agent's journal holds more than one batch: read the next.
     Ingest(AgentId),
-    /// A turn ended: deliveries may be due.
+    /// A drain pass kept rows: try them again.
     Deliveries,
+    /// The message under way in the agent's lane has waited its patience.
+    Lane(AgentId),
     /// A notification falls due, or a push that failed is tried again.
     Notifications,
     /// Something was committed since the last checkpoint: take the next.

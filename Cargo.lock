@@ -1076,6 +1076,7 @@ dependencies = [
  "store",
  "tempfile",
  "tracing",
+ "uuid",
  "wire",
 ]
 

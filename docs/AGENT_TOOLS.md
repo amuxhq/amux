@@ -12,9 +12,11 @@ process decides how a message reaches its provider.
 
 The tool server is [`crates/agent/src/tools.rs`](../crates/agent/src/tools.rs).
 The daemon's side is `ClientApi` in
-[`crates/node/src/grpc.rs`](../crates/node/src/grpc.rs), the message lane in
-[`crates/node/src/relay.rs`](../crates/node/src/relay.rs) and the parent
-outbox in [`crates/node/src/outbox.rs`](../crates/node/src/outbox.rs). The
+[`crates/node/src/grpc.rs`](../crates/node/src/grpc.rs), the sender and
+attachments a message needs before it is handed over in
+[`crates/node/src/relay.rs`](../crates/node/src/relay.rs), and the message
+lanes and the parent outbox in the daemon core's
+[`crates/daemon-core/src/deliveries.rs`](../crates/daemon-core/src/deliveries.rs). The
 per-kind carriers are in the interpreters (`crates/interpret`) and in
 `crates/agent/src/provider.rs`.
 

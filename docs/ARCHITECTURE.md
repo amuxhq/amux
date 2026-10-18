@@ -401,8 +401,10 @@ pinned key has no tier to check. The account service is a separate
 deployment; [the phone and amux.sh](CLOUD.md) describes what the app asks of
 it.
 
-**Push notifications** come from an outbox
-([`node::outbox`](../crates/node/src/outbox.rs)). In the transaction that
+**Push notifications** come from an outbox the daemon core drains
+([`notifications.rs`](../crates/daemon-core/src/notifications.rs)), handing
+each push to a sender in [`node::outbox`](../crates/node/src/outbox.rs) as a
+job. In the transaction that
 turns an agent's phase to needs-you, ingest writes a notifications row with
 a due time a short delay away; the row is deleted unsent if the phase moves
 on first, or when the agent exits or is deleted. A drain hands due rows to a

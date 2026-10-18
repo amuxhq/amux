@@ -149,6 +149,15 @@ pub enum Input {
     Exiting {
         agent: AgentId,
     },
+    /// The interpreter's verdict on a message the core wrote to the agent,
+    /// by the message's envelope id; none when the connection it was
+    /// written on ended first.
+    Verdict {
+        agent: AgentId,
+        input_id: Vec<u8>,
+        #[serde(with = "codec::optional")]
+        verdict: Option<wire::SendInputResponse>,
+    },
     /// The start's sweep has reported every agent it found.
     Swept,
     /// A call by a client of this profile: its socket, an agent's tools
@@ -212,6 +221,7 @@ impl Input {
             Input::ControlClosed { .. } => "ControlClosed",
             Input::Adopted { .. } => "Adopted",
             Input::Exiting { .. } => "Exiting",
+            Input::Verdict { .. } => "Verdict",
             Input::Swept => "Swept",
             Input::ClientCall { .. } => "ClientCall",
             Input::CallCancelled { .. } => "CallCancelled",
@@ -249,6 +259,10 @@ pub struct Settings {
     /// How long a stop may take before the process is killed, and how long
     /// a resume waits for a process on its way out.
     pub stop_deadline_ms: u64,
+    /// How long a drain pass that kept rows waits before the next.
+    pub delivery_retry_ms: u64,
+    /// How long a message written to an agent waits for its verdict.
+    pub reply_patience_ms: u64,
 }
 
 impl Default for Settings {
@@ -262,6 +276,8 @@ impl Default for Settings {
             source_backoff_max_ms: 30_000,
             start_deadline_ms: 20_000,
             stop_deadline_ms: 30_000,
+            delivery_retry_ms: 30_000,
+            reply_patience_ms: 30_000,
         }
     }
 }
@@ -386,8 +402,11 @@ pub enum Output {
         agent: AgentId,
         report: Ingested,
     },
-    /// Wake the shell's own loop for `Wake`, until it moves into the core.
-    Wake(Wake),
+    /// A pass over the deliveries outbox ended, the `pass`th since start.
+    Drained {
+        pass: u64,
+        report: crate::DrainReport,
+    },
     /// Work the profile's shell still does for the core.
     Shell(ShellWork),
     /// Blob bytes go from the file to the call's stream without passing
@@ -456,13 +475,6 @@ pub enum IngestEnd {
     Read,
     /// Nothing was committed, in the step's words.
     Failed(String),
-}
-
-/// A loop the shell still runs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Wake {
-    /// The outbox drain: a turn ended, so a delivery may be due.
-    Deliveries,
 }
 
 /// What the replicas' sources leave to the profile's shell: what it owns
@@ -543,6 +555,14 @@ pub enum Job {
     },
     /// Hand the push to the profile's sender.
     SendPush(Push),
+    /// Build the exited agent's next spec from its newest, carrying the
+    /// settings its newest `snapshot` body says it last ran with, its queue
+    /// seeded by `bootstrap`; answered as [`JobResult::Spec`].
+    NextSpec {
+        agent: AgentId,
+        bootstrap: wire::Bootstrap,
+        snapshot: Option<Vec<u8>>,
+    },
     Upload(AnalyticsBatch),
     /// Kill the agent's process group from outside: the process this
     /// daemon started, or the one on the other end of its control socket.
@@ -808,6 +828,31 @@ mod tests {
                     hash: vec![9; 32],
                     bytes: b"notes".to_vec(),
                 },
+            },
+            Input::ClientCall {
+                call: CallId(17),
+                request: ClientRequest::SendMessage {
+                    envelope: Box::new(wire::Envelope {
+                        id: vec![4; 16],
+                        ..Default::default()
+                    }),
+                    from: crate::payload::MessageFrom::Agent(AgentId([5; 16])),
+                },
+            },
+            Input::Verdict {
+                agent: AgentId([5; 16]),
+                input_id: vec![4; 16],
+                verdict: None,
+            },
+            Input::JobDone {
+                job: JobId(7),
+                result: JobResult::Spec(Some(Box::new(wire::AgentSpec {
+                    name: "lead".into(),
+                    ..Default::default()
+                }))),
+            },
+            Input::Timer {
+                id: TimerId::Lane(AgentId([5; 16])),
             },
             Input::Configure(Settings::default()),
             Input::Entropy([3; 32]),

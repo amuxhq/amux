@@ -32,7 +32,7 @@ use daemon_core::payload::{CallError, ClientRequest, Response, Status};
 use daemon_core::{FromShell, Refusal};
 use store::{AgentKey, AgentRow, Sqlite, StoreError};
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::sync::{Notify, mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
@@ -373,8 +373,6 @@ pub struct ProfileRuntime {
     /// For tests: awaited by an inventory subscribe between reading the
     /// host set and the core answering it, with the store held.
     pub(crate) inventory_opening_hook: Mutex<Option<JoinHook>>,
-    /// Each own agent's message lane: one agent message at a time.
-    pub(crate) lanes: Mutex<HashMap<AgentId, Arc<tokio::sync::Mutex<()>>>>,
     /// Counts the store's writes, own commits and absorbed replica rows
     /// alike, so a waiter wakes on the write it is waiting for instead of
     /// polling: a message waiting for its acceptance item, a test fencing
@@ -383,9 +381,6 @@ pub struct ProfileRuntime {
     /// Journal frames committed since start: what ingest has done, so its
     /// cost per frame can be measured from outside.
     ingested_frames: AtomicU64,
-    /// Set once every own journal has been read to its end after start.
-    pub(crate) journals_read: watch::Sender<bool>,
-    pub(crate) deliveries_due: Arc<Notify>,
     pub(crate) push: Arc<dyn PushSender>,
     /// The outbox drains and the retention sweep.
     pub(crate) background: Mutex<Vec<JoinHandle<()>>>,
@@ -615,11 +610,8 @@ impl ProfileRuntime {
             driver: std::sync::OnceLock::new(),
             join_hook: Mutex::new(None),
             inventory_opening_hook: Mutex::new(None),
-            lanes: Mutex::new(HashMap::new()),
             commits: watch::Sender::new(0),
             ingested_frames: AtomicU64::new(0),
-            journals_read: watch::Sender::new(false),
-            deliveries_due: Arc::new(Notify::new()),
             push,
             background: Mutex::new(Vec::new()),
             launch: Mutex::new(launch),
@@ -1085,35 +1077,10 @@ impl ProfileRuntime {
         id: AgentId,
         bootstrap: Option<Bootstrap>,
     ) -> Result<Agent, RegistryError> {
-        let previous = match spec::newest(&self.agent_dir(id)) {
-            Ok(previous) => previous,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => return Err(error.into()),
-        };
-        let spec = match previous {
-            None => None,
-            Some(previous) => {
-                let latest = self.last_settings(&self.key(id), previous.kind()).await?;
-                let resolved = spec::carry(&previous, latest);
-                Some(spec::build(
-                    &self.launch(),
-                    spec::Incarnation {
-                        agent_id: id.as_bytes(),
-                        profile_id: self.profile.as_bytes(),
-                        kind: previous.kind(),
-                        cwd: &previous.cwd,
-                        name: "",
-                        parent: previous.parent.clone(),
-                        resolved: &resolved,
-                        created_at_ms: 0,
-                        incarnation: previous.incarnation + 1,
-                        bootstrap,
-                        offered: None,
-                        base_branch: previous.base_branch.clone(),
-                    },
-                ))
-            }
-        };
+        // An agent the store does not hold is the core's to refuse.
+        let snapshot =
+            (self.store.lock().await.cut(&self.key(id), 0).ok()).and_then(|cut| cut.snapshot);
+        let spec = self.next_spec(id, bootstrap, snapshot.as_ref().map(|s| s.body.as_slice()))?;
         let resume = daemon_core::Resume {
             agent: core_agent(id),
             spec,
@@ -1122,46 +1089,42 @@ impl ProfileRuntime {
             .await
     }
 
-    /// The model, permission, mode and effort the agent last ran with, as
-    /// its newest snapshot says them; nothing for a setting it never said.
-    async fn last_settings(
+    /// The agent's next spec, from its newest: the current configuration,
+    /// the settings its newest `snapshot` body says it last ran with, and
+    /// `bootstrap` to seed its queue. None when it has no spec.
+    pub(crate) fn next_spec(
         &self,
-        key: &AgentKey,
-        kind: Kind,
-    ) -> Result<spec::Settings, RegistryError> {
-        use prost::Message as _;
-        let snapshot = self.store.lock().await.cut(key, 0)?.snapshot;
-        let Some(body) = snapshot.map(|snapshot| snapshot.body) else {
-            return Ok(spec::Settings::default());
+        id: AgentId,
+        bootstrap: Option<Bootstrap>,
+        snapshot: Option<&[u8]>,
+    ) -> Result<Option<AgentSpec>, RegistryError> {
+        let previous = match spec::newest(&self.agent_dir(id)) {
+            Ok(previous) => previous,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
         };
-        let body = body.as_slice();
-        Ok(match kind {
-            Kind::ClaudeSdk => wire::ClaudeSdkSnapshot::decode(body)
-                .map(|snapshot| spec::Settings {
-                    model: snapshot.model,
-                    permission: snapshot.permission,
-                    mode: None,
-                    effort: snapshot.effort,
-                })
-                .unwrap_or_default(),
-            Kind::ClaudePty => wire::ClaudePtySnapshot::decode(body)
-                .map(|snapshot| spec::Settings {
-                    model: snapshot.model,
-                    permission: snapshot.permission,
-                    mode: None,
-                    effort: snapshot.effort,
-                })
-                .unwrap_or_default(),
-            Kind::Codex => wire::CodexSnapshot::decode(body)
-                .map(|snapshot| spec::Settings {
-                    model: snapshot.model,
-                    permission: snapshot.permission,
-                    mode: snapshot.mode,
-                    effort: snapshot.effort,
-                })
-                .unwrap_or_default(),
-            Kind::Unspecified => spec::Settings::default(),
-        })
+        let Some(previous) = previous else {
+            return Ok(None);
+        };
+        let latest = last_settings(snapshot, previous.kind());
+        let resolved = spec::carry(&previous, latest);
+        Ok(Some(spec::build(
+            &self.launch(),
+            spec::Incarnation {
+                agent_id: id.as_bytes(),
+                profile_id: self.profile.as_bytes(),
+                kind: previous.kind(),
+                cwd: &previous.cwd,
+                name: "",
+                parent: previous.parent.clone(),
+                resolved: &resolved,
+                created_at_ms: 0,
+                incarnation: previous.incarnation + 1,
+                bootstrap,
+                offered: None,
+                base_branch: previous.base_branch.clone(),
+            },
+        )))
     }
 
     /// What the host's provider offers, for a kind that cannot ask its
@@ -1245,6 +1208,46 @@ impl ProfileRuntime {
         if let Some(handle) = self.handle(id) {
             let _ = handle.writes.send(frame);
         }
+    }
+
+    /// Writes a message the core handed to the agent, and reports the
+    /// interpreter's verdict on it to the core, or that the connection
+    /// ended before one came. The message is in hand until then.
+    pub(crate) fn write_message(
+        &self,
+        id: AgentId,
+        frame: CtlFrame,
+        inputs: tokio::sync::mpsc::WeakSender<crate::driver::Fed>,
+    ) {
+        let agent = core_agent(id);
+        let input_id = input_id_of(&frame);
+        let report = move |verdict| {
+            let input_id = input_id.clone();
+            let inputs = inputs.clone();
+            async move {
+                if let Some(inputs) = inputs.upgrade() {
+                    let verdict = daemon_core::Input::Verdict {
+                        agent,
+                        input_id,
+                        verdict,
+                    };
+                    let _ = inputs.send(crate::driver::Fed::Input(verdict)).await;
+                }
+            }
+        };
+        let Some(handle) = self.handle(id) else {
+            tokio::spawn(report(None));
+            return;
+        };
+        let (tx, rx) = oneshot::channel();
+        handle.expect_reply(input_id_of(&frame), tx);
+        let _ = handle.writes.send(frame);
+        handle.handed.fetch_add(1, Ordering::SeqCst);
+        tokio::spawn(async move {
+            let verdict = rx.await.ok();
+            handle.handed.fetch_sub(1, Ordering::SeqCst);
+            report(verdict).await;
+        });
     }
 
     /// The core recorded the agent's exit: its handle goes, and with it the
@@ -1477,44 +1480,14 @@ impl ProfileRuntime {
             list.sort();
         }
         self.driver().feed(daemon_core::Input::Swept).await;
-        self.journals_read.send_replace(true);
         Ok(report)
     }
 
-    /// Starts the background work: the deliveries outbox now and whenever
-    /// a row may have become deliverable, and the retention sweep now and
-    /// then on its interval.
+    /// Starts the background work: the retention sweep now and then on its
+    /// interval, and the analytics check-ins.
     pub fn start_background(&self) {
         let retention = self.start_retention();
         self.background.lock().unwrap().push(retention);
-        let deliveries = {
-            let runtime = self.me.clone();
-            let due = self.deliveries_due.clone();
-            tokio::spawn(async move {
-                loop {
-                    let Some(me) = runtime.upgrade() else { return };
-                    let wake = due.notified();
-                    tokio::pin!(wake);
-                    wake.as_mut().enable();
-                    let report = me.drain_deliveries().await;
-                    let retry = (report.kept > 0).then(|| {
-                        me.clock
-                            .sleep_until(me.clock.now_ms() + me.launch().delivery_retry_ms)
-                    });
-                    drop(me);
-                    match retry {
-                        Some(retry) => {
-                            tokio::select! {
-                                () = wake => {}
-                                () = retry => {}
-                            }
-                        }
-                        None => wake.await,
-                    }
-                }
-            })
-        };
-        self.background.lock().unwrap().push(deliveries);
         if self.analytics.is_on() {
             let check_ins = self.start_check_ins();
             self.background.lock().unwrap().push(check_ins);
@@ -1625,13 +1598,6 @@ impl ProfileRuntime {
             && let Some(kind) = crate::telemetry::kind_coded(report.kind)
         {
             self.turns.add(kind, report.turn_ends);
-        }
-    }
-
-    /// Wakes a loop the shell still runs, at the core's word.
-    pub(crate) fn wake(&self, wake: daemon_core::Wake) {
-        match wake {
-            daemon_core::Wake::Deliveries => self.deliveries_due.notify_one(),
         }
     }
 
@@ -1956,4 +1922,49 @@ fn registry_error(id: AgentId, error: CallError) -> RegistryError {
 
 pub(crate) fn ms(ms: i64) -> Duration {
     Duration::from_millis(ms.max(0) as u64)
+}
+
+/// The model, permission, mode and effort an agent last ran with, as its
+/// newest snapshot's body says them; nothing for a setting it never said.
+fn last_settings(body: Option<&[u8]>, kind: Kind) -> spec::Settings {
+    use prost::Message as _;
+    let Some(body) = body else {
+        return spec::Settings::default();
+    };
+    match kind {
+        Kind::ClaudeSdk => wire::ClaudeSdkSnapshot::decode(body)
+            .map(|snapshot| spec::Settings {
+                model: snapshot.model,
+                permission: snapshot.permission,
+                mode: None,
+                effort: snapshot.effort,
+            })
+            .unwrap_or_default(),
+        Kind::ClaudePty => wire::ClaudePtySnapshot::decode(body)
+            .map(|snapshot| spec::Settings {
+                model: snapshot.model,
+                permission: snapshot.permission,
+                mode: None,
+                effort: snapshot.effort,
+            })
+            .unwrap_or_default(),
+        Kind::Codex => wire::CodexSnapshot::decode(body)
+            .map(|snapshot| spec::Settings {
+                model: snapshot.model,
+                permission: snapshot.permission,
+                mode: snapshot.mode,
+                effort: snapshot.effort,
+            })
+            .unwrap_or_default(),
+        Kind::Unspecified => spec::Settings::default(),
+    }
+}
+
+/// The id a frame's verdict comes back under: a message's envelope id.
+fn input_id_of(frame: &CtlFrame) -> Vec<u8> {
+    match &frame.of {
+        Some(ctl_frame::Of::AgentMessage(envelope)) => envelope.id.clone(),
+        Some(ctl_frame::Of::Input(input)) => input.input_id.clone(),
+        _ => Vec::new(),
+    }
 }

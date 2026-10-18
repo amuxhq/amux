@@ -26,7 +26,7 @@ use wire::{
 };
 
 use crate::ids::{AgentId, CallId, JobId, TimerId};
-use crate::io::{Job, Output, ParentSays, Wake};
+use crate::io::{Job, Output, ParentSays};
 use crate::payload::{CallError, JobResult, Response, Status};
 use crate::serve::{inventory, to_wire};
 use crate::{Daemon, codec};
@@ -60,6 +60,18 @@ impl FamilyState {
     /// The agents with a process this run knows of.
     pub fn processes(&self) -> impl Iterator<Item = AgentId> + '_ {
         self.processes.keys().copied()
+    }
+
+    /// Whether the start's sweep has reported every agent it found.
+    pub(crate) fn swept(&self) -> bool {
+        self.swept
+    }
+
+    /// Whether the agent's process has a connection that said Hello.
+    pub(crate) fn connected(&self, agent: AgentId) -> bool {
+        self.processes
+            .get(&agent)
+            .is_some_and(|process| process.hello && process.ended.is_none())
     }
 }
 
@@ -171,12 +183,23 @@ struct Lane {
 /// An operation waiting its turn on an agent.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct Queued {
-    call: Option<CallId>,
+    call: Caller,
     op: Op,
 }
 
+/// Who waits for an operation's outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum Caller {
+    /// A client's call.
+    Client(CallId),
+    /// Nobody: a child following its parent.
+    Family,
+    /// The agent's message lane: a parent's message resumes it.
+    Lane,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-enum Op {
+pub(crate) enum Op {
     Create(Box<Create>),
     Resume(Box<Resume>),
     Stop,
@@ -187,7 +210,7 @@ enum Op {
 /// The operation under way on an agent, and whoever waits for its answer.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct Operation {
-    call: Option<CallId>,
+    call: Caller,
     doing: Doing,
 }
 
@@ -254,7 +277,7 @@ impl Daemon {
         &self.families
     }
 
-    fn own_key(&self, agent: AgentId) -> AgentKey {
+    pub(crate) fn own_key(&self, agent: AgentId) -> AgentKey {
         AgentKey::new(self.store.own_host(), agent.0)
     }
 
@@ -264,7 +287,7 @@ impl Daemon {
         crate::ingest::agent_dir(&self.options.agents, agent)
     }
 
-    fn arm_after(&self, id: TimerId, after_ms: u64, out: &mut Vec<Output>) {
+    pub(crate) fn arm_after(&self, id: TimerId, after_ms: u64, out: &mut Vec<Output>) {
         out.push(Output::ArmTimer {
             id,
             at_ms: self.timers.now_ms.saturating_add(after_ms),
@@ -275,9 +298,9 @@ impl Daemon {
 
     /// A registry request: queued behind the agent's operation under way,
     /// or begun now.
-    fn registry_call(
+    pub(crate) fn registry_call(
         &mut self,
-        call: Option<CallId>,
+        call: Caller,
         agent: AgentId,
         op: Op,
         out: &mut Vec<Output>,
@@ -291,24 +314,24 @@ impl Daemon {
 
     pub(crate) fn create(&mut self, call: CallId, create: Box<Create>, out: &mut Vec<Output>) {
         let agent = create.agent;
-        self.registry_call(Some(call), agent, Op::Create(create), out);
+        self.registry_call(Caller::Client(call), agent, Op::Create(create), out);
     }
 
     pub(crate) fn resume(&mut self, call: CallId, resume: Box<Resume>, out: &mut Vec<Output>) {
         let agent = resume.agent;
-        self.registry_call(Some(call), agent, Op::Resume(resume), out);
+        self.registry_call(Caller::Client(call), agent, Op::Resume(resume), out);
     }
 
     pub(crate) fn stop(&mut self, call: CallId, agent: AgentId, out: &mut Vec<Output>) {
-        self.registry_call(Some(call), agent, Op::Stop, out);
+        self.registry_call(Caller::Client(call), agent, Op::Stop, out);
     }
 
     pub(crate) fn kill(&mut self, call: CallId, agent: AgentId, out: &mut Vec<Output>) {
-        self.registry_call(Some(call), agent, Op::Kill, out);
+        self.registry_call(Caller::Client(call), agent, Op::Kill, out);
     }
 
     pub(crate) fn delete(&mut self, call: CallId, agent: AgentId, out: &mut Vec<Output>) {
-        self.registry_call(Some(call), agent, Op::Delete, out);
+        self.registry_call(Caller::Client(call), agent, Op::Delete, out);
     }
 
     /// Begins the agent's next queued operation, and the one after it while
@@ -353,21 +376,25 @@ impl Daemon {
             .lanes
             .get_mut(&agent)
             .and_then(|lane| lane.current.take())
-            .and_then(|operation| operation.call);
+            .map_or(Caller::Family, |operation| operation.call);
         self.reply(agent, call, outcome, out);
         self.next_operation(agent, out);
     }
 
     /// Answers whoever waits, or says why an operation nobody waits for
     /// did not finish.
-    fn reply(&self, agent: AgentId, call: Option<CallId>, outcome: Outcome, out: &mut Vec<Output>) {
-        let Some(call) = call else {
-            if let Err(refusal) = outcome
-                && refusal != Refusal::NotFound
-            {
-                tracing::warn!(agent = %crate::hex(&agent.0), ?refusal, "following its parent failed");
+    fn reply(&mut self, agent: AgentId, call: Caller, outcome: Outcome, out: &mut Vec<Output>) {
+        let call = match call {
+            Caller::Client(call) => call,
+            Caller::Family => {
+                if let Err(refusal) = outcome
+                    && refusal != Refusal::NotFound
+                {
+                    tracing::warn!(agent = %crate::hex(&agent.0), ?refusal, "following its parent failed");
+                }
+                return;
             }
-            return;
+            Caller::Lane => return self.lane_resumed(agent, outcome.map(|_| ()), out),
         };
         match outcome {
             Ok(Some(agent)) => crate::serve::answered(call, Response::Agent(Box::new(agent)), out),
@@ -747,7 +774,7 @@ impl Daemon {
             }
             Ok(Some(to_wire(&row)))
         })();
-        self.reply(agent, Some(call), outcome, out);
+        self.reply(agent, Caller::Client(call), outcome, out);
     }
 
     // --- what the driver reports ----------------------------------------------
@@ -773,6 +800,7 @@ impl Daemon {
             let outcome = self.row_outcome(agent);
             self.finish(agent, outcome, out);
         }
+        self.lane_connected(agent, out);
     }
 
     /// The start's sweep found a process holding the agent's directory that
@@ -836,6 +864,7 @@ impl Daemon {
             tracing::warn!(agent = %crate::hex(&agent.0), %error, "marking an agent exited failed");
         }
         out.push(Output::ForgetAgent { agent });
+        self.lane_exited(agent, out);
         match self.doing(agent).cloned() {
             Some(Doing::Starting) => {
                 out.push(Output::CancelTimer {
@@ -1064,7 +1093,7 @@ impl Daemon {
             ParentSays::Exited => Op::Stop,
             ParentSays::Deleted => Op::Delete,
         };
-        self.registry_call(None, child, op, out);
+        self.registry_call(Caller::Family, child, op, out);
     }
 
     /// Whether `parent` has already ended as this host sees it: exited by
@@ -1103,7 +1132,7 @@ impl Daemon {
     /// deliverable, or stale.
     fn put_own_row(&mut self, row: &AgentRow, out: &mut Vec<Output>) -> Result<(), StoreError> {
         self.store.put_agent(row)?;
-        out.push(Output::Wake(Wake::Deliveries));
+        self.deliveries_due();
         self.publish_row(&row.agent, out)?;
         self.recount_from(row.parent.clone(), out)
     }
@@ -1183,7 +1212,7 @@ impl Daemon {
             parent_incarnation,
             end: wire::child_report::End::Exited(wire::Exited { ended: Some(cause) }),
         })?;
-        out.push(Output::Wake(Wake::Deliveries));
+        self.deliveries_due();
         Ok(())
     }
 

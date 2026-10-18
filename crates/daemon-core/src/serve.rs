@@ -168,6 +168,9 @@ impl Daemon {
                 self.get_draft(call, &agent_id, out);
                 Ok(())
             }
+            ClientRequest::SendMessage { envelope, from } => {
+                self.send_message(call, *envelope, from, out)
+            }
         };
         self.end_unanswered(call, answered, out);
     }

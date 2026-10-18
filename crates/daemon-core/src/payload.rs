@@ -209,6 +209,48 @@ pub enum ClientRequest {
     GetDraft {
         agent_id: Vec<u8>,
     },
+    /// A message for one of this host's agents, answered once the
+    /// recipient accepted it. Its envelope id is set.
+    SendMessage {
+        #[serde(with = "codec::message")]
+        envelope: Box<wire::Envelope>,
+        from: MessageFrom,
+    },
+}
+
+/// Who sent a message, as the call it came on says.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum MessageFrom {
+    /// A person, on the profile socket.
+    Person,
+    /// One of this host's agents, on its tools socket.
+    Agent(AgentId),
+    /// A paired host's agent, as that host stamped it.
+    Peer(#[serde(with = "codec::message")] wire::AgentSender),
+    /// The person, through a paired host.
+    PeerPerson,
+}
+
+/// Why a message was not accepted.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MessageRefusal {
+    /// No agent with that id.
+    NoAgent,
+    /// The recipient lives on another host.
+    OtherHost,
+    /// The recipient's process was not connected in time.
+    Unavailable,
+    /// The recipient's answer was lost; the message may or may not have
+    /// arrived.
+    Lost,
+    /// The recipient refused it.
+    Rejected(wire::Rejected),
+    /// The recipient's incarnation the message was for has ended.
+    Stale,
+    /// Resuming the recipient with it failed.
+    Resume(Refusal),
+    /// The store failed, in its own words.
+    Store(String),
 }
 
 /// A request on a peer's PeerService, decoded: one a paired host makes of
@@ -350,6 +392,8 @@ pub enum CallError {
     NoBlob(String),
     /// A blob could not be written or read.
     Blob(BlobRefusal),
+    /// A message was not accepted.
+    Message(MessageRefusal),
 }
 
 /// Why a blob call failed.
@@ -408,4 +452,6 @@ pub enum JobResult {
     },
     /// Git could not compare the working tree.
     CompareFailed(GitRefusal),
+    /// The next spec a resume starts from; none when the agent has none.
+    Spec(#[serde(with = "codec::optional")] Option<Box<wire::AgentSpec>>),
 }

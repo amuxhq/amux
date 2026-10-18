@@ -20,6 +20,7 @@ use store::Sqlite;
 pub mod blobs;
 pub mod checkpoints;
 mod codec;
+pub mod deliveries;
 pub mod drafts;
 mod families;
 pub mod generation;
@@ -37,13 +38,14 @@ pub mod sources;
 
 pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
+pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
 pub use drafts::Drafts;
 pub use families::{Create, Ended, FamilyState, Refusal, Resume};
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use ingest::Journals;
 pub use io::{
     FromShell, IngestEnd, Ingested, Input, Job, Output, ParentSays, Settings, ShellWork,
-    SourcePolicy, Wake,
+    SourcePolicy,
 };
 pub use links::LinkRegistry;
 pub use notifications::Notifications;
@@ -70,6 +72,7 @@ pub struct Daemon {
     notifications: Notifications,
     blobs: Blobs,
     drafts: Drafts,
+    deliveries: Deliveries,
     timers: Timers,
     pending: Pending,
     settings: Settings,
@@ -113,6 +116,7 @@ impl Daemon {
             notifications: Notifications::default(),
             blobs: Blobs::default(),
             drafts: Drafts::default(),
+            deliveries: Deliveries::default(),
             timers: Timers::default(),
             pending: Pending::default(),
             settings: Settings::default(),
@@ -138,7 +142,10 @@ impl Daemon {
                 request,
             } => self.peer_call(from, call, request, out),
             Input::PeerAnswer { call, answer } => self.peer_answered(call, answer, out),
-            Input::CallCancelled { call } => self.cancelled(call),
+            Input::CallCancelled { call } => {
+                self.cancelled(call);
+                self.message_cancelled(call, out);
+            }
             Input::AnswerLagged { call } => self.lagged(call, out),
             Input::JobDone { job, result } if self.is_checkpoint(job) => {
                 self.checkpoint_done(result, out)
@@ -147,6 +154,7 @@ impl Daemon {
                 if !self.push_done(job, &result, out)
                     && !self.blob_done(job, &result, out)
                     && !self.drafts_written(job, &result, out)
+                    && !self.lane_job(job, &result, out)
                 {
                     self.registry_job(job, result, out);
                 }
@@ -161,8 +169,18 @@ impl Daemon {
             Input::Exiting { agent } => self.exiting(agent),
             Input::Swept => {
                 self.swept(out);
+                self.lanes_swept(out);
+                self.deliveries_due();
                 self.drain_notifications(out);
             }
+            Input::Verdict {
+                agent,
+                input_id,
+                verdict,
+            } => self.verdict(agent, &input_id, verdict, out),
+            Input::Timer {
+                id: TimerId::Lane(agent),
+            } => self.lane_timer(agent, out),
             Input::Timer {
                 id: id @ (TimerId::Start(_) | TimerId::Exit(_)),
             } => self.registry_timer(id, out),
@@ -171,7 +189,7 @@ impl Daemon {
             } => self.ingest_again(agent, out),
             Input::Timer {
                 id: TimerId::Deliveries,
-            } => out.push(Output::Wake(Wake::Deliveries)),
+            } => self.deliveries_due(),
             Input::Timer {
                 id: TimerId::Checkpoint,
             } => self.take_checkpoint(out),
@@ -224,6 +242,7 @@ impl Daemon {
             Input::Discovered { found } => self.discovered(found, out),
             Input::PairingMessage { .. } | Input::Entropy(_) => {}
         }
+        self.settle_deliveries(out);
         self.tell_presence(out);
         self.follow_touched(out);
         if let Err(violation) = self.check_step_invariants() {
@@ -274,6 +293,48 @@ impl Daemon {
                         "children of {} were deleted with it before host {}'s listing caught up",
                         hex(&parent.agent),
                         hex(&parent.host)
+                    ),
+                });
+            }
+        }
+        for (parent, id, parent_incarnation, removal) in &self.touched.outbox_removed {
+            let held = match removal {
+                deliveries::Removal::Accepted => self
+                    .store
+                    .item_by_input(parent, id)
+                    .ok()
+                    .flatten()
+                    .is_some(),
+                deliveries::Removal::Stale => self
+                    .store
+                    .agent(parent)
+                    .ok()
+                    .flatten()
+                    .is_none_or(|row| row.incarnation != *parent_incarnation),
+                deliveries::Removal::Unpaired => {
+                    HostId::from_slice(&parent.host).is_some_and(|host| !self.sources.trusts(host))
+                }
+                deliveries::Removal::AcceptedThere | deliveries::Removal::StaleThere => true,
+            };
+            if !held {
+                return Err(Violation {
+                    invariant: OUTBOX_ROW_DELETED_UNACCEPTED,
+                    detail: format!(
+                        "the report {} to {} was deleted as {removal:?}, which its parent's row \
+                         and items do not bear out",
+                        hex(id),
+                        hex(&parent.agent)
+                    ),
+                });
+            }
+        }
+        for (id, already) in &self.touched.handed {
+            if *already {
+                return Err(Violation {
+                    invariant: REPORT_HANDED_TWICE,
+                    detail: format!(
+                        "the report {} was handed to its parent while it was already in hand",
+                        hex(id)
                     ),
                 });
             }
@@ -343,6 +404,7 @@ impl Daemon {
             &self.notifications,
             &self.blobs,
             &self.drafts,
+            &self.deliveries,
             &self.timers,
             &self.pending,
             &self.settings,
@@ -375,6 +437,7 @@ impl Daemon {
             notifications,
             blobs,
             drafts,
+            deliveries,
             timers,
             pending,
             settings,
@@ -393,6 +456,7 @@ impl Daemon {
             notifications,
             blobs,
             drafts,
+            deliveries,
             timers,
             pending,
             settings,
@@ -450,6 +514,11 @@ pub const PAGE_OFF_THE_BOUNDARY: &str =
 pub const DELETED_UNDER_A_STALE_LISTING: &str =
     "a child is deleted for its parent on another host only under that host's caught-up listing";
 
+/// The deliveries' cheap invariants.
+pub const OUTBOX_ROW_DELETED_UNACCEPTED: &str = "an outbox row is deleted only once its parent \
+     accepted it, or once the parent's incarnation or pairing it was for is gone";
+pub const REPORT_HANDED_TWICE: &str = "a report is handed to its parent at most once at a time";
+
 /// An id as a violation names it.
 fn hex(id: &[u8]) -> String {
     id.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -476,6 +545,14 @@ struct Touched {
     deleted_parents: Vec<(store::AgentKey, bool)>,
     /// The host whose listing this step reads at its CaughtUp.
     judging: Option<HostId>,
+    /// Something may have made an outbox row deliverable or stale.
+    deliveries_due: bool,
+    /// Each outbox row deleted: its parent, envelope id, the parent
+    /// incarnation it was for, and why.
+    outbox_removed: Vec<(store::AgentKey, Vec<u8>, u32, deliveries::Removal)>,
+    /// Each report handed to its parent, by envelope id, and whether one
+    /// with that id was already in hand.
+    handed: Vec<(Vec<u8>, bool)>,
 }
 
 impl Touched {

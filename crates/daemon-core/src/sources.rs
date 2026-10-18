@@ -1450,8 +1450,7 @@ impl Daemon {
             let current = HostId::from_slice(&agent.host)
                 .is_some_and(|host| self.sources.is_current(host, page.session));
             let row = self.store.agent(&agent).ok().flatten();
-            if current && let Some(row) = row {
-                let boundary = row.complete_from_order;
+            if current && row.is_some() {
                 let absorbed = self.store.absorb(
                     &agent,
                     Absorb::Page {
@@ -1461,10 +1460,25 @@ impl Daemon {
                     },
                 );
                 match absorbed {
+                    // A page that no longer meets the block (another page
+                    // from the same floor got there first, or a reset moved
+                    // it) is refused and only answered.
+                    Ok(absorbed) if !absorbed.joined => {}
                     Ok(_) => {
-                        self.touched
-                            .paged
-                            .push((agent.clone(), before_order, boundary));
+                        let boundary = self
+                            .store
+                            .agent(&agent)
+                            .ok()
+                            .flatten()
+                            .and_then(|row| row.complete_from_order);
+                        let orders = older.items.iter().map(|item| item.order);
+                        self.touched.paged.push(crate::PageJoined {
+                            agent: agent.clone(),
+                            before_order,
+                            lowest: orders.clone().min(),
+                            highest: orders.max(),
+                            boundary,
+                        });
                         out.push(Output::Shell(ShellWork::Wrote));
                     }
                     Err(error) => {
@@ -2150,6 +2164,117 @@ mod tests {
             daemon.store.get(&key(), "c").unwrap().is_some(),
             "the page joins the block"
         );
+    }
+
+    /// Two Fetches asked from one floor: the first page lowers the block,
+    /// so the store refuses the second, which is only answered.
+    #[test]
+    fn a_second_page_from_the_same_floor_is_refused_and_asks_for_no_dump() {
+        let mut daemon = daemon();
+        let (_, source) = sourced(&mut daemon);
+        for of in [
+            session_event::Of::Opening(Opening { generation: 3 }),
+            session_event::Of::Item(item("e", 5, 4)),
+            session_event::Of::CaughtUp(CaughtUp { revision: 4 }),
+        ] {
+            step(&mut daemon, session(source, of));
+        }
+        let mut ask = |call| {
+            let asked = step(
+                &mut daemon,
+                Input::ClientCall {
+                    call,
+                    request: ClientRequest::Fetch(wire::FetchRequest {
+                        agent_id: THEIRS.to_vec(),
+                        before_order: None,
+                        limit: 10,
+                    }),
+                },
+            );
+            match calls(&asked).as_slice() {
+                [(page, PeerRequest::Fetch(request))] => {
+                    assert_eq!(request.before_order, Some(5));
+                    *page
+                }
+                other => panic!("the origin is asked below the block: {other:?}"),
+            }
+        };
+        let (first, second) = (ask(CallId(60)), ask(CallId(61)));
+        let mut answer = |page, items| {
+            step(
+                &mut daemon,
+                Input::PeerAnswer {
+                    call: page,
+                    answer: Answer::Reply(Box::new(PeerReply::Fetched(wire::FetchResponse {
+                        items,
+                        exhausted: false,
+                    }))),
+                },
+            )
+        };
+        let joined = answer(first, vec![item("c", 3, 2)]);
+        assert!(
+            joined.contains(&Output::Shell(ShellWork::Wrote)),
+            "{joined:?}"
+        );
+        let refused = answer(second, vec![item("d", 4, 3)]);
+        assert!(
+            !refused
+                .iter()
+                .any(|output| matches!(output, Output::Dump { .. } | Output::Shell(_))),
+            "a refused page writes nothing and breaks nothing: {refused:?}"
+        );
+        assert!(
+            refused.contains(&Output::EndCall {
+                call: CallId(61),
+                status: Status::Ok,
+            }),
+            "the client is still answered: {refused:?}"
+        );
+        assert!(daemon.store.get(&key(), "d").unwrap().is_none());
+        assert_eq!(
+            daemon
+                .store
+                .agent(&key())
+                .unwrap()
+                .unwrap()
+                .complete_from_order,
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn a_page_that_joined_off_the_boundary_is_named() {
+        let joined = |lowest, highest, boundary| crate::PageJoined {
+            agent: key(),
+            before_order: 5,
+            lowest,
+            highest,
+            boundary,
+        };
+        let judge = |page| {
+            let mut daemon = Daemon::new(
+                Sqlite::open_in_memory(OWN).expect("a store opens"),
+                StartOptions::default(),
+            );
+            daemon.touched.paged.push(page);
+            daemon.check_step_invariants().err().map(|v| v.invariant)
+        };
+        assert_eq!(judge(joined(Some(3), Some(4), Some(3))), None);
+        assert_eq!(judge(joined(None, None, Some(5))), None, "an empty page");
+        for (page, why) in [
+            (
+                joined(Some(3), Some(4), Some(4)),
+                "the block does not begin at the page",
+            ),
+            (
+                joined(Some(3), Some(5), Some(3)),
+                "an item at the order it was below",
+            ),
+            (joined(None, None, Some(7)), "an empty page moved the block"),
+        ] {
+            assert_eq!(judge(page), Some(crate::PAGE_OFF_THE_BOUNDARY), "{why}");
+        }
     }
 
     #[test]

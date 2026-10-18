@@ -278,13 +278,23 @@ impl Daemon {
     /// step touched and never scans the block.
     pub fn check_step_invariants(&self) -> Result<(), Violation> {
         self.check_presence()?;
-        for (agent, before_order, boundary) in &self.touched.paged {
-            if *boundary != Some(*before_order) {
+        for page in &self.touched.paged {
+            let PageJoined {
+                agent,
+                before_order,
+                lowest,
+                highest,
+                boundary,
+            } = page;
+            // Joined where the block began, the block now begins at the
+            // page's lowest item, or where it did for an empty page.
+            let joined_below = highest.is_none_or(|highest| highest < *before_order);
+            if !joined_below || *boundary != Some(lowest.unwrap_or(*before_order)) {
                 return Err(Violation {
                     invariant: PAGE_OFF_THE_BOUNDARY,
                     detail: format!(
-                        "a page below order {before_order} joined replica {}'s block, whose lower \
-                         boundary was {boundary:?}",
+                        "a page below order {before_order} holding orders {lowest:?}..={highest:?} \
+                         joined replica {}'s block, whose lower boundary is now {boundary:?}",
                         hex(&agent.agent)
                     ),
                 });
@@ -529,6 +539,20 @@ fn hex(id: &[u8]) -> String {
     id.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// A page from the origin that joined a replica's block, as the store held
+/// the row after it.
+#[derive(Debug)]
+struct PageJoined {
+    agent: store::AgentKey,
+    /// The order the page was asked below.
+    before_order: u64,
+    /// The page's lowest and highest orders; none for an empty page.
+    lowest: Option<u64>,
+    highest: Option<u64>,
+    /// The block's lower boundary after the page joined.
+    boundary: Option<u64>,
+}
+
 /// What the step under way touched, as the cheap invariants judge it.
 #[derive(Debug, Default)]
 struct Touched {
@@ -542,9 +566,8 @@ struct Touched {
     opened_under: Option<(u64, u64)>,
     /// Each host whose routes, attempts or presence the step moved.
     hosts: Vec<HostId>,
-    /// Each page absorbed: the replica, the order it was below, and the
-    /// block's lower boundary before it.
-    paged: Vec<(store::AgentKey, u64, Option<u64>)>,
+    /// Each page that joined a replica's block.
+    paged: Vec<PageJoined>,
     /// Each parent whose deletion this host's children followed, and
     /// whether its host's listing had caught up then.
     deleted_parents: Vec<(store::AgentKey, bool)>,

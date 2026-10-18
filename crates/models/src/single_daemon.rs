@@ -487,7 +487,6 @@ impl Machine for SingleDaemon {
                 let request = ClientRequest::Subscribe {
                     agent_id: AGENT.0.to_vec(),
                     tail: TAIL,
-                    followed: false,
                 };
                 let input = Input::ClientCall { call, request };
                 self.step(&mut next, input, false);

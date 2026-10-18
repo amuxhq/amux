@@ -656,7 +656,7 @@ whose parent lives there against that complete listing: whatever happened
 while the hosts were apart is acted on then. Only agents that existed before
 that listing was asked for are judged by it; a child made since may belong to
 a parent the listing predates, and the live stream speaks for that parent
-(`inventory_caught_up` in `crates/node/src/sources.rs`).
+(`inventory_caught_up` in `crates/daemon-core/src/sources.rs`).
 
 A create names its parent (the caller, or for a create forwarded from another
 host, the parent that host stamped). If this host already sees that parent as

@@ -133,23 +133,6 @@ impl Revocations {
     pub(crate) fn contains(&self, host_id: HostId) -> bool {
         self.0.borrow().hosts.contains_key(&host_id)
     }
-
-    /// Resolves when `host_id`, in the set now, leaves it; never when it
-    /// is not in the set now.
-    pub(crate) fn cleared(&self, host_id: HostId) -> impl Future<Output = ()> + Send + use<> {
-        let mut revoked = self.0.subscribe();
-        let marked = revoked.borrow_and_update().hosts.contains_key(&host_id);
-        async move {
-            if !marked
-                || revoked
-                    .wait_for(|revoked| !revoked.hosts.contains_key(&host_id))
-                    .await
-                    .is_err()
-            {
-                std::future::pending::<()>().await;
-            }
-        }
-    }
 }
 
 #[derive(Default)]

@@ -121,9 +121,9 @@ pub(crate) enum Opening {
 
 /// A client's decoded request.
 ///
-/// Some answers still read what the profile's shell owns: which replicas a
-/// source follows and the host set it publishes. Until those move into the core the driver reads them as it hands
-/// the call over, and they ride on the request.
+/// An inventory opening still reads the host set the profile's shell
+/// publishes. Until that moves into the core the driver reads it as it
+/// hands the call over, and it rides on the request.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ClientRequest {
     /// Opens a stream of an agent's session events: the opening cut, then
@@ -132,9 +132,6 @@ pub enum ClientRequest {
         agent_id: Vec<u8>,
         /// How many of the newest rows it opens with.
         tail: u32,
-        /// Whether a source follows the agent, when it is a replica: one
-        /// nobody follows is served as detached.
-        followed: bool,
     },
     /// A page of older items.
     Fetch(#[serde(with = "codec::message")] wire::FetchRequest),
@@ -204,11 +201,24 @@ pub enum PeerReply {
     Dump(#[serde(with = "codec::message")] wire::DumpPart),
 }
 
-/// How a call this host made of a peer came back.
+/// How a call this host made of a peer came back: its whole reply, one
+/// event of the stream it opened, that stream's end, or why there is no
+/// more. A unary call has one answer; a stream has an answer per event and
+/// then [`Answer::Ended`] or [`Answer::Failed`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Answer {
     Reply(Box<PeerReply>),
+    Session(#[serde(with = "codec::message")] wire::SessionEvent),
+    Inventory(#[serde(with = "codec::message")] wire::InventoryEvent),
+    Ended,
     Failed(PeerFailure),
+}
+
+impl Answer {
+    /// Whether nothing more comes back of the call after this.
+    pub fn is_last(&self) -> bool {
+        !matches!(self, Answer::Session(_) | Answer::Inventory(_))
+    }
 }
 
 /// Why a call made of a peer has no reply. Whether it went out is what a
@@ -280,7 +290,4 @@ pub enum JobResult {
     Done,
     /// It could not, in the driver's words.
     Failed(String),
-    /// The origin's page below a replica's block, or `None` when the origin
-    /// could not be asked.
-    Fetched(#[serde(with = "codec::optional")] Option<wire::FetchResponse>),
 }

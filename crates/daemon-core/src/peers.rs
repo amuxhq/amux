@@ -19,9 +19,9 @@ use wire::peer_subscribe_request;
 
 use crate::ids::{CallId, HostId};
 use crate::io::Output;
-use crate::payload::{Answer, CallError, Opening, PeerRequest, Response, Status};
-use crate::serve::answered;
-use crate::{Daemon, Pending};
+use crate::payload::{Answer, CallError, Opening, PeerFailure, PeerRequest, Response, Status};
+use crate::serve::{Key, answered};
+use crate::{Daemon, Pending, codec};
 
 /// The ids the core mints for its own calls carry this bit; the driver
 /// names arriving calls from a counter that never reaches it, so the two
@@ -29,23 +29,42 @@ use crate::{Daemon, Pending};
 const MINTED: u64 = 1 << 63;
 
 /// The calls the core made of peers, awaiting what comes back.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PeerCalls {
     /// The last call id minted, below [`MINTED`].
     last: u64,
-    waiting: BTreeMap<CallId, Waiting>,
+    pub(crate) waiting: BTreeMap<CallId, Waiting>,
 }
 
 /// What a call made of a peer is for.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Waiting {
     /// A client's call forwarded to the agent's host, answered with its
     /// reply.
     Forward { call: CallId },
+    /// A host's inventory, followed.
+    Inventory { host: HostId },
+    /// The stream that feeds a replica agent.
+    Source { agent: Key },
+    /// A page below a replica's block, for a client's Fetch.
+    Page(Box<Page>),
+}
+
+/// A client's Fetch that went below a replica's block: the call it
+/// answers, where the origin's page joins the block, the host session it
+/// was asked under, and the held items that lead the origin's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Page {
+    pub(crate) call: CallId,
+    pub(crate) agent: Key,
+    pub(crate) before_order: Option<u64>,
+    pub(crate) session: u64,
+    #[serde(with = "codec::messages")]
+    pub(crate) held: Vec<wire::Item>,
 }
 
 impl PeerCalls {
-    fn mint(&mut self) -> CallId {
+    pub(crate) fn mint(&mut self) -> CallId {
         self.last += 1;
         CallId(MINTED | self.last)
     }
@@ -81,7 +100,7 @@ impl Daemon {
                     None => Opening::Tail(0),
                 };
                 self.own(&request.agent_id)
-                    .and_then(|()| self.subscribe(call, &request.agent_id, from, true, out))
+                    .and_then(|()| self.subscribe(call, &request.agent_id, from, out))
             }
             PeerRequest::SubscribeInventory { hosts } => {
                 self.subscribe_inventory(call, hosts, Some(own), out)
@@ -139,18 +158,27 @@ impl Daemon {
             host,
             call: made,
             request: *request,
+            absorbed: false,
         });
     }
 
     /// What came back of a call the core made of a peer.
     pub(crate) fn peer_answered(&mut self, made: CallId, answer: Answer, out: &mut Vec<Output>) {
-        let Some(waiting) = self.pending.peers.waiting.remove(&made) else {
+        let waiting = if answer.is_last() {
+            self.pending.peers.waiting.remove(&made)
+        } else {
+            self.pending.peers.waiting.get(&made).cloned()
+        };
+        let Some(waiting) = waiting else {
             return;
         };
         match waiting {
+            Waiting::Inventory { host } => self.inventory_answered(host, made, answer, out),
+            Waiting::Source { agent } => self.source_answered(&agent, made, answer, out),
+            Waiting::Page(page) => self.page_answered(*page, answer, out),
             Waiting::Forward { call } => {
                 // A client that let its call go wants no answer.
-                if !self.release_call(call, out) {
+                if !self.release_call(call) {
                     return;
                 }
                 match answer {
@@ -159,6 +187,13 @@ impl Daemon {
                         call,
                         status: Status::Failed(CallError::Peer(failure)),
                     }),
+                    // A forwarded call is never a stream.
+                    Answer::Session(_) | Answer::Inventory(_) | Answer::Ended => {
+                        out.push(Output::EndCall {
+                            call,
+                            status: Status::Failed(CallError::Peer(PeerFailure::Uncertain)),
+                        })
+                    }
                 }
             }
         }
@@ -276,6 +311,7 @@ mod tests {
                 host,
                 call: made,
                 request: sent,
+                absorbed: false,
             },
         ] = out.as_slice()
         else {

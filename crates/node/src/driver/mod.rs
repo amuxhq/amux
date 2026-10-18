@@ -28,9 +28,10 @@
 
 mod calls;
 mod links;
+mod origin;
 mod streams;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -39,14 +40,15 @@ pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::Ring;
 use daemon_core::payload::{
-    Answer, ChannelClass, ChannelError, ClientRequest, JobResult, PeerRequest, PublicKey, Status,
+    Answer, ChannelClass, ChannelError, ClientRequest, JobResult, PeerFailure, PeerRequest,
+    PublicKey, Status,
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, FromShell, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
-    Output, Settings, StartOptions, TimerId,
+    Output, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use links::{CoreLinks, core_error};
-use store::{AgentKey, Sqlite};
+use store::Sqlite;
 pub use streams::{InventorySubscription, Subscription};
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot};
@@ -62,6 +64,10 @@ pub const CORE_DUMP: &str = "the daemon core: ";
 /// Inputs waiting for the core. A full channel holds its senders back
 /// rather than growing.
 const INPUT_ROOM: usize = 1024;
+/// How long a page the core asks of a replica's origin waits on it before
+/// the client is answered with what is held, or that the origin cannot be
+/// reached.
+const PAGE_PATIENCE: Duration = Duration::from_secs(10);
 /// The bytes the input ring keeps across its segments. A segment that
 /// fills before the checkpoint interval is up asks for a checkpoint early.
 const RING_BYTES: u64 = 8 << 20;
@@ -137,12 +143,15 @@ pub(crate) struct Driver {
     /// What the shell committed, waiting for the core thread to take the
     /// store next.
     shell: Arc<Mutex<Vec<FromShell>>>,
-    /// The agents a stream follows, as the core last said.
-    watched: Arc<Mutex<HashSet<AgentKey>>>,
     /// Where what the core decides about hosts goes, once the profile's
     /// edge is up.
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
+    /// The calls the core made of peers that are still out.
+    outgoing: Outgoing,
 }
+
+/// The tasks carrying the calls the core made of peers, by call.
+type Outgoing = Arc<Mutex<HashMap<CallId, AbortHandle>>>;
 
 impl Driver {
     /// Starts the core thread for `runtime`'s profile. It ends when the
@@ -157,8 +166,8 @@ impl Driver {
         let calls = Arc::new(CallTable::default());
         let reports = Arc::new(Mutex::new(VecDeque::new()));
         let shell = Arc::new(Mutex::new(Vec::new()));
-        let watched = Arc::new(Mutex::new(HashSet::new()));
         let connections = Arc::new(Mutex::new(Weak::new()));
+        let outgoing = Outgoing::default();
         // The core owns a store of its own between steps; the profile's is
         // lent to it for each one.
         let store = Sqlite::open_in_memory(own_host).expect("an in-memory store opens");
@@ -183,8 +192,9 @@ impl Driver {
             runtime,
             calls: calls.clone(),
             shell: shell.clone(),
-            watched: watched.clone(),
             connections: connections.clone(),
+            outgoing: outgoing.clone(),
+            lent: false,
             timers: HashMap::new(),
             waiting: HashMap::new(),
             ticked: None,
@@ -203,8 +213,8 @@ impl Driver {
             reports,
             calls,
             shell,
-            watched,
             connections,
+            outgoing,
         }
     }
 
@@ -322,6 +332,25 @@ impl Driver {
         let _ = self.inputs.send(Fed::Input(input)).await;
     }
 
+    /// Feeds the core an input without waiting: at once if the channel has
+    /// room, otherwise from a task once it does.
+    pub(crate) fn post(&self, input: Input) {
+        if let Err(mpsc::error::TrySendError::Full(fed)) = self.inputs.try_send(Fed::Input(input)) {
+            let inputs = self.inputs.clone();
+            tokio::spawn(async move {
+                let _ = inputs.send(fed).await;
+            });
+        }
+    }
+
+    /// Lets go of every call the core made of a peer, without waiting and
+    /// without telling the core: the profile's run is ending.
+    pub(crate) fn hang_up_all(&self) {
+        for (_, task) in self.outgoing.lock().unwrap().drain() {
+            task.abort();
+        }
+    }
+
     /// Hands the core a change the shell committed. Called with the store
     /// still held, so the core steps it before anything that reads the
     /// store after it.
@@ -330,11 +359,6 @@ impl Driver {
         // A full channel wakes the core anyway.
         let _ = self.inputs.try_send(Fed::Wake);
     }
-
-    /// Whether any stream follows the agent now.
-    pub(crate) fn watched(&self, agent: &AgentKey) -> bool {
-        self.watched.lock().unwrap().contains(agent)
-    }
 }
 
 impl Drop for Driver {
@@ -342,6 +366,7 @@ impl Drop for Driver {
         // Every stream ends with the profile; the thread sees the stop or,
         // if the channel is full, the runtime gone.
         self.calls.end_all(Status::Ok);
+        self.hang_up_all();
         let _ = self.inputs.try_send(Fed::Stop);
     }
 }
@@ -378,8 +403,10 @@ struct CoreThread {
     runtime: Weak<ProfileRuntime>,
     calls: Arc<CallTable>,
     shell: Arc<Mutex<Vec<FromShell>>>,
-    watched: Arc<Mutex<HashSet<AgentKey>>>,
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
+    outgoing: Outgoing,
+    /// Whether the shell's store is lent to the core now.
+    lent: bool,
     timers: HashMap<TimerId, AbortHandle>,
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clock as last told to the core.
@@ -467,12 +494,15 @@ impl CoreThread {
                 Fed::Wake | Fed::Stop | Fed::Channel { .. } | Fed::Forward { .. } => None,
             };
             self.daemon.swap_store(&mut store);
+            self.lent = true;
             self.tick(&runtime, &mut out);
             let launch = runtime.launch();
             let settings = Settings {
                 notify_delay_ms: launch.notify_delay_ms,
                 checkpoint_interval_ms: launch.checkpoint_interval_ms.max(0) as u64,
                 tail_rows: launch.tail_rows,
+                source_backoff_ms: launch.source_backoff_ms.max(0) as u64,
+                source_backoff_max_ms: launch.source_backoff_max_ms.max(0) as u64,
             };
             if self.settings != Some(settings) {
                 self.settings = Some(settings);
@@ -505,6 +535,7 @@ impl CoreThread {
             if let Some(input) = input {
                 self.step(&runtime, input, &mut out);
             }
+            self.lent = false;
             self.daemon.swap_store(&mut store);
             drop(store);
             drop(runtime);
@@ -539,9 +570,17 @@ impl CoreThread {
             }
             _ => None,
         };
+        if let Input::PeerAnswer { call, answer } = &input
+            && answer.is_last()
+        {
+            self.outgoing.lock().unwrap().remove(call);
+        }
         self.record(&input);
         self.daemon.step(input, out);
-        for output in out.drain(..) {
+        // Carrying out an output may step another input, with outputs of
+        // its own.
+        let outputs: Vec<Output> = std::mem::take(out);
+        for output in outputs {
             self.execute(runtime, output, replying);
         }
         if let Some(outcome) = checkpointed {
@@ -582,21 +621,26 @@ impl CoreThread {
                 }
             }
             Output::EndCall { call, status } => self.calls.end(call, status),
-            Output::Watching { agent, watched } => {
-                let mut watching = self.watched.lock().unwrap();
-                if watched {
-                    watching.insert(agent);
-                } else {
-                    watching.remove(&agent);
-                }
-            }
+            Output::Shell(work) => self.shell_work(runtime, work),
             Output::Ingested { agent, report } => {
                 runtime.ingested(&report);
                 self.ingested(agent, report);
             }
             Output::Wake(wake) => runtime.wake(wake),
             Output::ArmTimer { id, at_ms } => {
-                let wait = at_ms.saturating_sub(runtime.clock_now().max(0) as u64);
+                let now = runtime.clock_now().max(0) as u64;
+                // A follower or source keeps to the profile's clock, the
+                // one its backoff is reckoned on; one due now is stepped
+                // next, with the store.
+                let sourcing = matches!(id, TimerId::Follow(_) | TimerId::Source(..));
+                if sourcing && at_ms <= now {
+                    if let Some(armed) = self.timers.remove(&id) {
+                        armed.abort();
+                    }
+                    self.again.push_back(Input::Timer { id });
+                    return;
+                }
+                let wait = at_ms.saturating_sub(now);
                 let inputs = self.inputs.clone();
                 // A host's retry and a link's refresh read no store, so
                 // they fire as links report, ahead of the shell's writes.
@@ -604,7 +648,7 @@ impl CoreThread {
                     .then(|| self.reports.clone());
                 // A credential's refresh keeps to the profile's clock, the
                 // one the relay judges the credential's expiry by.
-                let refresh = matches!(id, TimerId::Refresh(_)).then(|| {
+                let refresh = (sourcing || matches!(id, TimerId::Refresh(_))).then(|| {
                     runtime
                         .clock()
                         .sleep_until(at_ms.min(i64::MAX as u64) as i64)
@@ -727,24 +771,48 @@ impl CoreThread {
                 host,
                 call,
                 request,
+                absorbed,
             } => {
                 let runtime = Arc::downgrade(runtime);
                 let reports = self.reports.clone();
                 let inputs = self.inputs.clone();
-                tokio::spawn(async move {
-                    let Some(answer) = call_peer(runtime, host, request).await else {
-                        return;
-                    };
-                    // Nothing an answer steps reads the store: it waits on
-                    // nobody's writes.
-                    reports
-                        .lock()
-                        .unwrap()
-                        .push_back(Input::PeerAnswer { call, answer });
-                    if let Some(inputs) = inputs.upgrade() {
-                        let _ = inputs.try_send(Fed::Wake);
+                let task = match request {
+                    request @ (PeerRequest::Subscribe(_)
+                    | PeerRequest::SubscribeInventory { .. }) => {
+                        tokio::spawn(origin::stream(runtime, host, call, request, inputs))
                     }
-                });
+                    request => tokio::spawn(async move {
+                        let answer = if absorbed {
+                            tokio::time::timeout(PAGE_PATIENCE, call_peer(runtime, host, request))
+                                .await
+                                .unwrap_or(Some(Answer::Failed(PeerFailure::Uncertain)))
+                        } else {
+                            call_peer(runtime, host, request).await
+                        };
+                        let Some(answer) = answer else {
+                            return;
+                        };
+                        let answered = Input::PeerAnswer { call, answer };
+                        if absorbed {
+                            return feed(&inputs, answered).await;
+                        }
+                        // A reply that is not absorbed reads nothing of the
+                        // store: it waits on nobody's writes.
+                        reports.lock().unwrap().push_back(answered);
+                        if let Some(inputs) = inputs.upgrade() {
+                            let _ = inputs.try_send(Fed::Wake);
+                        }
+                    }),
+                };
+                self.outgoing
+                    .lock()
+                    .unwrap()
+                    .insert(call, task.abort_handle());
+            }
+            Output::HangUp { call } => {
+                if let Some(task) = self.outgoing.lock().unwrap().remove(&call) {
+                    task.abort();
+                }
             }
             Output::Dial { host } => {
                 if let Some(connections) = self.connections() {
@@ -767,6 +835,55 @@ impl CoreThread {
 
     fn connections(&self) -> Option<Arc<ConnectionManager>> {
         self.connections.lock().unwrap().upgrade()
+    }
+
+    /// Does what the core left to the shell.
+    fn shell_work(&mut self, runtime: &Arc<ProfileRuntime>, work: ShellWork) {
+        match work {
+            ShellWork::Wrote => runtime.wrote(),
+            ShellWork::Sourcing { agent, open } => runtime.sourcing(agent, open),
+            ShellWork::HostCurrent { host, current } => {
+                runtime.host_current(host, current);
+                self.step_handed_over(runtime);
+            }
+            ShellWork::HostGeneration { host, generation } => {
+                runtime.host_generation_changed(&host.0, generation);
+                self.step_handed_over(runtime);
+            }
+            ShellWork::Providers { host, providers } => {
+                if runtime.peer_providers_said(&host.0, providers) {
+                    let runtime = Arc::downgrade(runtime);
+                    tokio::spawn(async move {
+                        if let Some(runtime) = runtime.upgrade() {
+                            runtime.sync_hosts().await;
+                        }
+                    });
+                }
+            }
+            ShellWork::ReplicaDropped { agent, listed } => runtime.replica_dropped(&agent, listed),
+            ShellWork::FollowParent { child, says } => {
+                runtime.follow(uuid::Uuid::from_bytes(child.0), says)
+            }
+            ShellWork::TellChildren { agent } => {
+                let key = runtime.key(uuid::Uuid::from_bytes(agent.0));
+                if let Err(error) = runtime.tell_children(self.daemon.store(), &key) {
+                    tracing::warn!(%error, "telling an agent of its children failed");
+                }
+            }
+        }
+    }
+
+    /// Steps at once what the shell handed over while carrying out a step's
+    /// outputs, with the store still lent, so subscribers read it in the
+    /// order of the outputs around it.
+    fn step_handed_over(&mut self, runtime: &Arc<ProfileRuntime>) {
+        if !self.lent {
+            return;
+        }
+        let changes = std::mem::take(&mut *self.shell.lock().unwrap());
+        for change in changes {
+            self.step(runtime, Input::FromShell(change), &mut Vec::new());
+        }
     }
 
     /// Tells whoever waits on the agent's journal what one ingest step did.
@@ -811,16 +928,6 @@ async fn run_job(
             };
             blocking(move || checkpoint(&dir, &state)).await
         }
-        Job::FetchFromOrigin {
-            agent,
-            before_order,
-            limit,
-        } => {
-            let Some(runtime) = runtime.upgrade() else {
-                return;
-            };
-            JobResult::Fetched(fetch_from_origin(&runtime, &agent, before_order, limit).await)
-        }
         Job::RefreshToken { link } => {
             let Some(edge) = runtime.upgrade().and_then(|runtime| runtime.edge()) else {
                 return;
@@ -856,19 +963,6 @@ async fn call_peer(
     )
 }
 
-async fn fetch_from_origin(
-    runtime: &ProfileRuntime,
-    agent: &AgentKey,
-    before_order: Option<u64>,
-    limit: u32,
-) -> Option<wire::FetchResponse> {
-    runtime.used(agent);
-    runtime
-        .fetch_from_origin(agent, before_order, limit)
-        .await
-        .ok()
-}
-
 /// The fsync job: replaces the file at `path` with `bytes` so that a crash
 /// or power cut leaves the old file or the new one, and the new one is on
 /// the drive when it is done. The installation runs it too, for the writes
@@ -901,15 +995,14 @@ impl ProfileRuntime {
     fn client_request(&self, store: &Sqlite, ask: Ask) -> ClientRequest {
         match ask {
             Ask::Subscribe { agent_id, tail } => {
-                let followed = self.follow_replica(store, &agent_id);
+                self.used(store, &agent_id);
                 self.run_join_hook();
-                ClientRequest::Subscribe {
-                    agent_id,
-                    tail,
-                    followed,
-                }
+                ClientRequest::Subscribe { agent_id, tail }
             }
-            Ask::Fetch(request) => ClientRequest::Fetch(request),
+            Ask::Fetch(request) => {
+                self.used(store, &request.agent_id);
+                ClientRequest::Fetch(request)
+            }
             Ask::Get(request) => ClientRequest::Get(request),
             Ask::SubscribeInventory => ClientRequest::SubscribeInventory {
                 hosts: self.opening_hosts(),

@@ -28,6 +28,12 @@ pub enum TimerId {
     Retry(HostId),
     /// Refresh the credential the relay link presents.
     Refresh(LinkId),
+    /// Follow the host's inventory: now, or once a lost stream's backoff
+    /// is waited out.
+    Follow(HostId),
+    /// Open the replica agent's source again once its backoff is waited
+    /// out.
+    Source(HostId, AgentId),
 }
 
 /// A job the driver runs off the core thread; its outcome returns as
@@ -56,9 +62,16 @@ pub struct LinkId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChannelId(pub u64);
 
-/// An agent of this profile, by its directory's id.
+/// An agent, by its id: for one of this host's own, its directory's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AgentId(pub [u8; 16]);
+
+impl AgentId {
+    /// The agent an id's bytes name, when they are an id.
+    pub fn from_slice(bytes: &[u8]) -> Option<AgentId> {
+        bytes.try_into().ok().map(AgentId)
+    }
+}
 
 /// One pairing conversation, from its first message to its end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

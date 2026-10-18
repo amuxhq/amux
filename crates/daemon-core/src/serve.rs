@@ -7,17 +7,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use store::{AgentKey, AgentRow, Marker, PageEnd};
 use wire::{
-    Agent, AgentRef, CaughtUp, FetchRequest, FetchResponse, GetRequest, InventoryEvent, Item,
-    Lagged, SessionEvent, Snapshot, inventory_event, session_event,
+    Agent, AgentRef, CaughtUp, FetchRequest, FetchResponse, GetRequest, InventoryEvent, Lagged,
+    SessionEvent, Snapshot, inventory_event, session_event,
 };
 
 use crate::ids::{CallId, JobId};
-use crate::io::{FromShell, Job, Output};
-use crate::payload::{CallError, ClientRequest, JobResult, Opening, Response, Status};
+use crate::io::{FromShell, Output};
+use crate::payload::{CallError, ClientRequest, Opening, Response, Status};
 use crate::{Daemon, Pending};
 
 /// The most items one Fetch returns, whatever the limit asked for.
@@ -38,9 +37,9 @@ pub struct Answers {
 
 /// An agent by its host and id, as the checkpoint keeps it.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-struct Key {
-    host: Vec<u8>,
-    agent: Vec<u8>,
+pub(crate) struct Key {
+    pub(crate) host: Vec<u8>,
+    pub(crate) agent: Vec<u8>,
 }
 
 impl From<&AgentKey> for Key {
@@ -53,7 +52,7 @@ impl From<&AgentKey> for Key {
 }
 
 impl Key {
-    fn agent_key(&self) -> AgentKey {
+    pub(crate) fn agent_key(&self) -> AgentKey {
         AgentKey::new(self.host.clone(), self.agent.clone())
     }
 }
@@ -71,14 +70,6 @@ enum OpenCall {
     Forward,
 }
 
-/// A Fetch that went below a replica's block: the call it answers and the
-/// held items, encoded, that lead the origin's.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PendingFetch {
-    call: CallId,
-    held: Vec<Vec<u8>>,
-}
-
 impl Answers {
     fn muted(&self, agent: &AgentKey) -> bool {
         !self.muted.is_empty() && self.muted.contains(&Key::from(agent))
@@ -89,36 +80,20 @@ impl Answers {
         self.open.insert(call, OpenCall::Forward);
     }
 
-    fn watched(&self, key: &Key) -> bool {
+    pub(crate) fn watched(&self, key: &Key) -> bool {
         self.open
             .values()
             .any(|open| matches!(open, OpenCall::Session(watching) if watching == key))
     }
 
-    /// Opens `call` as a stream on `agent`, saying so when it is the first.
-    fn watch(&mut self, call: CallId, agent: &AgentKey, out: &mut Vec<Output>) {
-        let key = Key::from(agent);
-        if !self.watched(&key) {
-            out.push(Output::Watching {
-                agent: agent.clone(),
-                watched: true,
-            });
-        }
-        self.open.insert(call, OpenCall::Session(key));
+    /// Opens `call` as a stream on `agent`.
+    fn watch(&mut self, call: CallId, agent: &AgentKey) {
+        self.open.insert(call, OpenCall::Session(Key::from(agent)));
     }
 
-    /// Lets `call` go, saying so when it was the last stream on its agent.
-    fn release(&mut self, call: CallId, out: &mut Vec<Output>) -> Option<OpenCall> {
-        let released = self.open.remove(&call)?;
-        if let OpenCall::Session(key) = &released
-            && !self.watched(key)
-        {
-            out.push(Output::Watching {
-                agent: key.agent_key(),
-                watched: false,
-            });
-        }
-        Some(released)
+    /// Lets `call` go.
+    fn release(&mut self, call: CallId) -> Option<OpenCall> {
+        self.open.remove(&call)
     }
 }
 
@@ -130,11 +105,9 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) {
         let answered = match request {
-            ClientRequest::Subscribe {
-                agent_id,
-                tail,
-                followed,
-            } => self.subscribe(call, &agent_id, Opening::Tail(tail), followed, out),
+            ClientRequest::Subscribe { agent_id, tail } => {
+                self.subscribe(call, &agent_id, Opening::Tail(tail), out)
+            }
             ClientRequest::Fetch(request) => self.fetch(call, &request, out),
             ClientRequest::Get(request) => self.get(call, &request, out),
             ClientRequest::SubscribeInventory { hosts } => {
@@ -156,7 +129,7 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) {
         if let Err(error) = answered {
-            self.answers.release(call, out);
+            self.answers.release(call);
             out.push(Output::EndCall {
                 call,
                 status: Status::Failed(error),
@@ -166,18 +139,22 @@ impl Daemon {
 
     /// Opens a Subscribe stream: its Opening, a Reset when a peer's cursor
     /// cannot be continued, its Snapshot, the rows the opening asks for,
-    /// its marker if one is set, then whatever follows.
+    /// its marker if one is set, then whatever follows. A replica's source
+    /// is opened for it if none is.
     pub(crate) fn subscribe(
         &mut self,
         call: CallId,
         agent_id: &[u8],
         from: Opening,
-        followed: bool,
         out: &mut Vec<Output>,
     ) -> Result<(), CallError> {
+        let row = self
+            .store
+            .agent_by_id(agent_id)?
+            .ok_or(CallError::NoAgent)?;
+        let own = row.agent.host == self.store.own_host();
+        let followed = !own && self.follow_replica(&row.agent, out);
         let store = &self.store;
-        let row = store.agent_by_id(agent_id)?.ok_or(CallError::NoAgent)?;
-        let own = row.agent.host == store.own_host();
         // The origin generation the rows belong to: this run's for an
         // agent of this host, and what the replica's source last caught
         // up under for a replica (0 until one has).
@@ -258,7 +235,7 @@ impl Daemon {
             Some(Marker::Detached) => answer(session_event::Of::Detached(wire::Detached {})),
             None => {}
         }
-        self.answers.watch(call, &row.agent, out);
+        self.answers.watch(call, &row.agent);
         Ok(())
     }
 
@@ -325,23 +302,13 @@ impl Daemon {
             (Some(floor), None) => Some(floor),
             (None, before) => before,
         };
-        let job = self.pending.mint();
-        self.pending.fetches.insert(
-            job,
-            PendingFetch {
-                call,
-                held: page.items.iter().map(|item| item.encode_to_vec()).collect(),
-            },
-        );
-        self.answers.open.insert(call, OpenCall::Fetch);
-        out.push(Output::Job {
-            id: job,
-            op: Job::FetchFromOrigin {
-                agent: row.agent,
-                before_order,
-                limit: limit - page.items.len() as u32,
-            },
-        });
+        let rest = limit - page.items.len() as u32;
+        match self.ask_page(call, &row.agent, before_order, page.items, rest, out) {
+            Ok(()) => {
+                self.answers.open.insert(call, OpenCall::Fetch);
+            }
+            Err(held) => crate::sources::answer_page(call, held, None, out),
+        }
         Ok(())
     }
 
@@ -364,43 +331,6 @@ impl Daemon {
         Ok(())
     }
 
-    /// A job's result, for the call that waits on it.
-    pub(crate) fn job_done(&mut self, job: JobId, result: JobResult, out: &mut Vec<Output>) {
-        let Some(PendingFetch { call, held }) = self.pending.fetches.remove(&job) else {
-            return;
-        };
-        // A call cancelled while its origin was asked wants no answer.
-        if self.answers.release(call, out).is_none() {
-            return;
-        }
-        let mut items: Vec<Item> = held
-            .iter()
-            .map(|bytes| Item::decode(bytes.as_slice()).expect("an item the core encoded"))
-            .collect();
-        let response = match result {
-            JobResult::Fetched(Some(older)) => {
-                items.extend(older.items);
-                FetchResponse {
-                    items,
-                    exhausted: older.exhausted,
-                }
-            }
-            _ if items.is_empty() => {
-                out.push(Output::EndCall {
-                    call,
-                    status: Status::Failed(CallError::OriginUnreachable),
-                });
-                return;
-            }
-            // What is held is served; the next page down asks again.
-            _ => FetchResponse {
-                items,
-                exhausted: false,
-            },
-        };
-        answered(call, Response::Fetched(response), out);
-    }
-
     /// The call's stream fell more than its queue behind. Saying so in
     /// band lets the reader resubscribe at once for a fresh opening, where
     /// a bare close would read as the far side going away; what it missed
@@ -415,18 +345,18 @@ impl Daemon {
             }
             Some(OpenCall::Fetch | OpenCall::Forward) | None => return,
         };
-        self.answers.release(call, out);
+        self.answers.release(call);
         answered(call, response, out);
     }
 
     /// Lets `call` go; whether it was still open.
-    pub(crate) fn release_call(&mut self, call: CallId, out: &mut Vec<Output>) -> bool {
-        self.answers.release(call, out).is_some()
+    pub(crate) fn release_call(&mut self, call: CallId) -> bool {
+        self.answers.release(call).is_some()
     }
 
     /// The caller dropped the call or its stream.
-    pub(crate) fn cancelled(&mut self, call: CallId, out: &mut Vec<Output>) {
-        self.answers.release(call, out);
+    pub(crate) fn cancelled(&mut self, call: CallId) {
+        self.answers.release(call);
     }
 
     /// Tells every stream on `agent` of one committed event, unless the
@@ -470,6 +400,32 @@ impl Daemon {
         }
     }
 
+    /// The agent is gone: its streams end, and every inventory stream that
+    /// carries it hears `removed`, which says why.
+    pub(crate) fn agent_removed(
+        &mut self,
+        agent: &AgentKey,
+        removed: Arc<InventoryEvent>,
+        out: &mut Vec<Output>,
+    ) {
+        let key = Key::from(agent);
+        let streams: Vec<CallId> = self
+            .answers
+            .open
+            .iter()
+            .filter(|(_, open)| matches!(open, OpenCall::Session(watching) if *watching == key))
+            .map(|(call, _)| *call)
+            .collect();
+        for call in streams {
+            self.answers.release(call);
+            out.push(Output::EndCall {
+                call,
+                status: Status::Ok,
+            });
+        }
+        self.publish_inventory(removed, out);
+    }
+
     /// Tells inventory streams what the agent's row now says, unless the
     /// agent is muted.
     pub(crate) fn publish_row(
@@ -497,26 +453,7 @@ impl Daemon {
                 }
             }
             FromShell::Hosts(event) => self.publish_inventory(event, out),
-            FromShell::Removed { agent, event } => {
-                let key = Key::from(&agent);
-                let streams: Vec<CallId> = self
-                    .answers
-                    .open
-                    .iter()
-                    .filter(
-                        |(_, open)| matches!(open, OpenCall::Session(watching) if *watching == key),
-                    )
-                    .map(|(call, _)| *call)
-                    .collect();
-                for call in streams {
-                    self.answers.release(call, out);
-                    out.push(Output::EndCall {
-                        call,
-                        status: Status::Ok,
-                    });
-                }
-                self.publish_inventory(event, out);
-            }
+            FromShell::Removed { agent, event } => self.agent_removed(&agent, event, out),
             FromShell::Mute(agent) => {
                 self.answers.muted.insert(Key::from(&agent));
             }
@@ -573,7 +510,7 @@ pub(crate) fn event(of: session_event::Of) -> SessionEvent {
     SessionEvent { of: Some(of) }
 }
 
-fn inventory(of: inventory_event::Of) -> InventoryEvent {
+pub(crate) fn inventory(of: inventory_event::Of) -> InventoryEvent {
     InventoryEvent { of: Some(of) }
 }
 
@@ -654,7 +591,6 @@ mod tests {
         ClientRequest::Subscribe {
             agent_id: agent_id.to_vec(),
             tail: 10,
-            followed: false,
         }
     }
 
@@ -722,10 +658,6 @@ mod tests {
                     call: CallId(1),
                     response: session(session_event::Of::Snapshot(snapshot)),
                 },
-                Output::Watching {
-                    agent: AgentKey::new(*OWN, *b"agent-0000000000"),
-                    watched: true,
-                },
             ]
         );
 
@@ -733,10 +665,6 @@ mod tests {
         assert_eq!(
             lagged,
             vec![
-                Output::Watching {
-                    agent: AgentKey::new(*OWN, *b"agent-0000000000"),
-                    watched: false,
-                },
                 Output::Answer {
                     call: CallId(1),
                     response: session(session_event::Of::Lagged(Lagged {})),
@@ -881,10 +809,6 @@ mod tests {
                 Output::EndCall {
                     call: CallId(1),
                     status: Status::Ok,
-                },
-                Output::Watching {
-                    agent,
-                    watched: false,
                 },
                 Output::EndCall {
                     call: CallId(2),

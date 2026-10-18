@@ -327,7 +327,6 @@ mod tests {
         let subscribe = ClientRequest::Subscribe {
             agent_id: AGENT.0.to_vec(),
             tail: 10,
-            followed: false,
         };
         let call = CallId(1);
         step(
@@ -435,7 +434,6 @@ mod tests {
                 request: ClientRequest::Subscribe {
                     agent_id: AGENT.0.to_vec(),
                     tail: 10,
-                    followed: false,
                 },
             },
         );
@@ -567,7 +565,6 @@ mod tests {
                 request: ClientRequest::Subscribe {
                     agent_id: AGENT.0.to_vec(),
                     tail: 10,
-                    followed: false,
                 },
             },
         );

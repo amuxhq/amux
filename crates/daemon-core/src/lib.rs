@@ -28,14 +28,19 @@ pub mod payload;
 mod peers;
 pub mod presence;
 pub mod serve;
+pub mod sources;
 
 pub use checkpoints::Checkpoints;
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use ingest::Journals;
-pub use io::{FromShell, IngestEnd, Ingested, Input, Job, Output, Settings, Wake};
+pub use io::{
+    FromShell, IngestEnd, Ingested, Input, Job, Output, ParentSays, Settings, ShellWork,
+    SourcePolicy, Wake,
+};
 pub use links::LinkRegistry;
 pub use presence::{HostView, Presence, PresenceState, Route, Tried};
 pub use serve::Answers;
+pub use sources::{Sources, from_wire};
 
 /// The checkpoint layout this build writes and restores. A checkpoint under
 /// any other is refused whole.
@@ -113,12 +118,13 @@ impl Daemon {
                 request,
             } => self.peer_call(from, call, request, out),
             Input::PeerAnswer { call, answer } => self.peer_answered(call, answer, out),
-            Input::CallCancelled { call } => self.cancelled(call, out),
+            Input::CallCancelled { call } => self.cancelled(call),
             Input::AnswerLagged { call } => self.lagged(call, out),
             Input::JobDone { job, result } if self.is_checkpoint(job) => {
                 self.checkpoint_done(result, out)
             }
-            Input::JobDone { job, result } => self.job_done(job, result, out),
+            // Nothing waits on any other job's result.
+            Input::JobDone { .. } => {}
             Input::Nudge { agent } => self.ingest(agent, out),
             Input::AgentHello { agent, .. } => self.hello(agent),
             Input::Timer {
@@ -130,6 +136,12 @@ impl Daemon {
             Input::Timer {
                 id: TimerId::Checkpoint,
             } => self.take_checkpoint(out),
+            Input::Timer {
+                id: TimerId::Follow(host),
+            } => self.follow_due(host, out),
+            Input::Timer {
+                id: TimerId::Source(host, agent),
+            } => self.source_due(host, agent, out),
             Input::Configure(settings) => self.settings = settings,
             Input::FromShell(change) => self.shell_changed(change, out),
             Input::LinkUp { link, peer, kind } => self.link_up(link, peer, kind, out),
@@ -159,12 +171,18 @@ impl Daemon {
             }
             Input::PlanChanged => self.plan_changed(out),
             Input::CallsFailed { host } => self.calls_failed(host, out),
-            Input::TryAgain { host } => self.try_again(host, out),
+            Input::TryAgain { host } => {
+                self.try_again(host, out);
+                self.sources_try_again(host, out);
+            }
+            Input::Trusted { hosts } => self.trusted(hosts, out),
+            Input::Policy(policy) => self.set_policy(policy, out),
             Input::HostForgotten { host } => self.forget_host(host, out),
             Input::Discovered { found } => self.discovered(found, out),
             Input::PairingMessage { .. } | Input::ControlClosed { .. } | Input::Entropy(_) => {}
         }
         self.tell_presence(out);
+        self.follow_touched(out);
         if let Err(violation) = self.check_step_invariants() {
             tracing::error!(%violation, input = kind, "a daemon core step broke an invariant");
             out.push(Output::Dump {
@@ -394,10 +412,6 @@ pub struct RoutingState {
     attempts: std::collections::BTreeMap<(HostId, Route), u32>,
 }
 
-/// Each replica this profile holds and the stream that feeds it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Sources {}
-
 /// Parents, children and the deliveries owed between them.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FamilyState {}
@@ -415,11 +429,10 @@ pub struct Timers {
 }
 
 /// Jobs and calls to peers awaiting their result.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Pending {
     /// The last job id minted.
     next_job: u64,
-    fetches: std::collections::BTreeMap<JobId, serve::PendingFetch>,
     /// The calls made of peers.
     peers: peers::PeerCalls,
 }

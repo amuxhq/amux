@@ -550,22 +550,6 @@ impl Edge {
         self.routing.revocations().contains(host)
     }
 
-    /// Resolves when `host`, which said it no longer trusts this host,
-    /// takes that back or is paired again; never when it has not said so.
-    pub(crate) fn revocation_cleared(
-        &self,
-        host: HostId,
-    ) -> impl Future<Output = ()> + Send + use<> {
-        self.routing.revocations().cleared(host)
-    }
-
-    /// The route calls to `host` take now. A different value from one
-    /// read earlier means the host went away or came back in between,
-    /// however briefly.
-    pub(crate) async fn route(&self, host: HostId) -> Option<crate::routing::Route> {
-        self.connections.route_for(host).await
-    }
-
     /// Waits until calls to `host` have a route, or the timeout passes.
     pub async fn wait_for_route(&self, host: HostId, timeout: Duration) -> bool {
         tokio::time::timeout(timeout, async {

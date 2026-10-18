@@ -93,7 +93,6 @@ impl Generation {
         match crate::driver::fsync(data_dir.join(GENERATION), bytes).await {
             JobResult::Done => Ok(()),
             JobResult::Failed(why) => Err(io::Error::other(why)),
-            JobResult::Fetched(_) => unreachable!("an fsync job fetches nothing"),
         }
     }
 }

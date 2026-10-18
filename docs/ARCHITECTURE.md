@@ -368,11 +368,12 @@ handshake, routing and the relay's forwarding rule are on
 host's inventory, keeps replica rows for the agents it lists, and for each
 of those agents holds one subscription to the origin: a tail when it holds
 nothing, or what came after its revision cursor. What arrives is absorbed
-into the local store before it is broadcast to local subscribers
-([`node::sources`](../crates/node/src/sources.rs)). So every client,
-including the terminal on the same machine, reads through its own local
-runtime: the calls on the local socket and on a peer link are one
-vocabulary. Untrusting a host drops its replicas and ends its followers;
+into the local store before it is broadcast to local subscribers, all of it
+decided in the daemon core
+([`daemon_core::sources`](../crates/daemon-core/src/sources.rs)) while its
+driver only carries the streams. So every client, including the terminal on
+the same machine, reads through its own local runtime: the calls on the
+local socket and on a peer link are one vocabulary. Untrusting a host drops its replicas and ends its followers;
 nothing else drops one.
 
 The remembered agents' subscriptions are opened in the same flight as the

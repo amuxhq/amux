@@ -38,6 +38,7 @@ mod pairing;
 mod profiles;
 mod relay;
 pub mod release;
+mod replicas;
 mod repositories;
 mod resource_limits;
 mod retention;
@@ -45,7 +46,6 @@ mod routing;
 mod runtime;
 mod serve;
 mod services;
-mod sources;
 mod spec;
 #[cfg(not(target_os = "ios"))]
 pub mod supervisor;
@@ -91,6 +91,7 @@ pub use profiles::{
     PROFILE_SOCKET, ProfileEntry, ProfileId, Registry, create_profile, host_id, profile_dir,
 };
 pub use relay::RelayError;
+pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
 pub use retention::Retention;
 pub use routing::local_kinds;
 pub use runtime::{
@@ -98,7 +99,6 @@ pub use runtime::{
     ProfileRuntime, RegistryError, SweepReport, TAIL_ROWS, locked, to_wire,
 };
 pub use serve::{MAX_PAGE, ServeError};
-pub use sources::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
 pub use telemetry::Telemetry;
 pub use worktree::{GitWorktrees, MakeWorktree, WORKTREES};
 

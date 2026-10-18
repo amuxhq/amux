@@ -102,26 +102,6 @@ pub(crate) mod messages {
     }
 }
 
-/// A message that may be absent.
-pub(crate) mod optional {
-    use super::*;
-
-    pub(crate) fn serialize<T: prost::Message, S: Serializer>(
-        message: &Option<T>,
-        to: S,
-    ) -> Result<S::Ok, S::Error> {
-        message.as_ref().map(encode).serialize(to)
-    }
-
-    pub(crate) fn deserialize<'de, T: prost::Message + Default, D: Deserializer<'de>>(
-        from: D,
-    ) -> Result<Option<T>, D::Error> {
-        Option::<String>::deserialize(from)?
-            .map(|text| decode::<T, D>(&text))
-            .transpose()
-    }
-}
-
 /// A protocol enumeration, by its number.
 pub(crate) mod numbered {
     use super::*;

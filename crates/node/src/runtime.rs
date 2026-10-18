@@ -432,8 +432,8 @@ pub struct ProfileRuntime {
     pub(crate) me: Weak<ProfileRuntime>,
     /// The network edge, once the profile is in service.
     edge: std::sync::OnceLock<Arc<crate::edge::Edge>>,
-    /// Followers of trusted hosts and the sources of replica agents.
-    pub(crate) sources: Mutex<crate::sources::Sources>,
+    /// What the shell keeps of replication; the core keeps the rest.
+    pub(crate) replicas: Mutex<crate::replicas::Replicas>,
     /// Replica blob files by last read, indexed at the first sweep.
     pub(crate) replica_blobs: Mutex<Option<store::BlobLru>>,
     /// The host set as last published on the inventory.
@@ -463,14 +463,7 @@ enum Stopping {
 
 /// What a parent's row, as this host holds it, says its children here must
 /// do. See [`ProfileRuntime::parent_changed`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ParentSays {
-    /// The parent exited, whatever the cause: its children stop.
-    Exited,
-    /// The parent is gone from its host for good: its children are
-    /// stopped and deleted.
-    Deleted,
-}
+pub(crate) use daemon_core::ParentSays;
 
 /// An agent whose changes are not published while a delete removes it,
 /// until this is dropped. A delete dropped before it settled (its caller
@@ -659,7 +652,9 @@ impl Drop for ProfileRuntime {
         for task in self.background.get_mut().unwrap().drain(..) {
             task.abort();
         }
-        self.sources.get_mut().unwrap().abort_all();
+        if let Some(watcher) = self.replicas.get_mut().unwrap().take_watcher() {
+            watcher.abort();
+        }
     }
 }
 
@@ -729,7 +724,7 @@ impl ProfileRuntime {
             worktrees,
             me: me.clone(),
             edge: std::sync::OnceLock::new(),
-            sources: Mutex::new(crate::sources::Sources::default()),
+            replicas: Mutex::new(crate::replicas::Replicas::default()),
             replica_blobs: Mutex::new(None),
             hosts: Mutex::new(crate::hosts::HostSet::new()),
             recent: Arc::new(Mutex::new(crate::repositories::Recent::load(&dir))),
@@ -771,7 +766,7 @@ impl ProfileRuntime {
 
     /// Closes the edge's links with `reason` and stops serving the network.
     pub async fn stop_edge(&self, reason: wire::LinkCloseReason) {
-        self.sources.lock().unwrap().abort_all();
+        self.stop_replication();
         if let Some(edge) = self.edge.get() {
             edge.stop(reason).await;
         }
@@ -817,6 +812,11 @@ impl ProfileRuntime {
     /// started.
     pub fn ingested_frames(&self) -> u64 {
         self.ingested_frames.load(Ordering::Relaxed)
+    }
+
+    /// The profile's core, from the shell's side, if its thread started.
+    pub(crate) fn started_driver(&self) -> Option<&crate::driver::Driver> {
+        self.driver.get()
     }
 
     /// The profile's core, from the shell's side; its thread starts here
@@ -1857,7 +1857,7 @@ impl ProfileRuntime {
                 task.abort();
             }
         }
-        self.sources.lock().unwrap().abort_all();
+        self.stop_replication();
         if let Some(edge) = self.edge.get() {
             edge.abort();
         }
@@ -1966,11 +1966,6 @@ impl ProfileRuntime {
             agent: agent.clone(),
             event: Arc::new(inventory(inventory_event::Of::AgentRemoved(removed))),
         });
-    }
-
-    /// Whether any stream follows the agent now.
-    pub(crate) fn watched(&self, agent: &AgentKey) -> bool {
-        self.driver().watched(agent)
     }
 
     // --- the watcher ---------------------------------------------------------
@@ -2193,7 +2188,7 @@ impl ProfileRuntime {
     /// Tells a running agent which agents directly below it are now live,
     /// when that changed: a one-shot agent waits for the last report of
     /// every child incarnation it was told of.
-    fn tell_children(&self, store: &Sqlite, key: &AgentKey) -> Result<(), StoreError> {
+    pub(crate) fn tell_children(&self, store: &Sqlite, key: &AgentKey) -> Result<(), StoreError> {
         let Ok(id) = AgentId::from_slice(&key.agent) else {
             return Ok(());
         };

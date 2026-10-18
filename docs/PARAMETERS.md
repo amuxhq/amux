@@ -118,7 +118,7 @@ and are tuned the same way:
 | One write on an agent's control socket | 5 s | `Launch.ctl_write_ms` |
 | Deliveries outbox retry | 30 s | `Launch.delivery_retry_ms` |
 | Push retry after a failure | 60 s | `Launch.push_retry_ms` |
-| Wait on an origin for a page | 10 s | `FETCH_PATIENCE` in [`crates/node/src/sources.rs`](../crates/node/src/sources.rs) |
+| Wait on an origin for a page | 10 s | `PAGE_PATIENCE` in [`crates/node/src/driver/mod.rs`](../crates/node/src/driver/mod.rs) |
 | Largest journal or control-socket frame | 64 MiB | `journal::MAX_FRAME_BYTES`; `agent_dir::MAX_FRAME_BYTES` |
 | Fixed per-row allowance in retention's byte count | 48 bytes | `ITEM_OVERHEAD_BYTES` in [`crates/store/src/lib.rs`](../crates/store/src/lib.rs) |
 | Analytics batch: wait, size and queue | Sent every 60 s, or at once at 50 events; at most 1,000 waiting, beyond which new events are dropped; at most 100 events in one request, the server's limit | `Params` in [`crates/analytics/src/upload.rs`](../crates/analytics/src/upload.rs) |

@@ -96,6 +96,13 @@ pub enum Input {
     HostForgotten {
         host: HostId,
     },
+    /// The hosts this profile trusts, said whenever that changes. Until
+    /// the trust store moves into the core, the shell reads it and says.
+    Trusted {
+        hosts: Vec<HostId>,
+    },
+    /// Which replica agents keep a source open from now on.
+    Policy(SourcePolicy),
     /// A paired host's call, from the host whose pinned key its channel's
     /// handshake presented.
     PeerCall {
@@ -175,6 +182,8 @@ impl Input {
             Input::CallsFailed { .. } => "CallsFailed",
             Input::TryAgain { .. } => "TryAgain",
             Input::HostForgotten { .. } => "HostForgotten",
+            Input::Trusted { .. } => "Trusted",
+            Input::Policy(_) => "Policy",
             Input::PeerCall { .. } => "PeerCall",
             Input::PeerAnswer { .. } => "PeerAnswer",
             Input::PairingMessage { .. } => "PairingMessage",
@@ -205,6 +214,11 @@ pub struct Settings {
     /// The newest rows a replica keeps, K: no tail a stream opens with is
     /// longer.
     pub tail_rows: u32,
+    /// How long a lost source or inventory stream waits before it is
+    /// opened again, doubling after each loss up to the ceiling, and
+    /// starting afresh once a stream has caught up.
+    pub source_backoff_ms: u64,
+    pub source_backoff_max_ms: u64,
 }
 
 impl Default for Settings {
@@ -213,6 +227,8 @@ impl Default for Settings {
             notify_delay_ms: 30_000,
             checkpoint_interval_ms: 60_000,
             tail_rows: 200,
+            source_backoff_ms: 1_000,
+            source_backoff_max_ms: 30_000,
         }
     }
 }
@@ -306,12 +322,22 @@ pub enum Output {
         host: HostId,
         view: HostView,
     },
-    /// Make `request` of `host` on a calls channel to it, and report what
-    /// came back as [`Input::PeerAnswer`] under `call`.
+    /// Make `request` of `host` on a channel to it, and report what came
+    /// back as [`Input::PeerAnswer`] under `call`: one answer for a unary
+    /// call, one per event and then its end for a stream.
     Call {
         host: HostId,
         call: CallId,
         request: PeerRequest,
+        /// What comes back is absorbed into the store, so the driver steps
+        /// it with the store lent. A forwarded call's reply reads nothing
+        /// of it, and is stepped at once.
+        absorbed: bool,
+    },
+    /// The core wants nothing more of a call it made: the driver lets go
+    /// of its stream, and reports nothing more of it.
+    HangUp {
+        call: CallId,
     },
     Answer {
         call: CallId,
@@ -321,12 +347,6 @@ pub enum Output {
         call: CallId,
         status: Status,
     },
-    /// Whether any stream follows `agent` now: the shell keeps a replica
-    /// current while one does. Said when it changes.
-    Watching {
-        agent: AgentKey,
-        watched: bool,
-    },
     /// What one ingest step did: for the shell's counters, and for whoever
     /// waits for the journal to be read to its end.
     Ingested {
@@ -335,6 +355,8 @@ pub enum Output {
     },
     /// Wake the shell's own loop for `Wake`, until it moves into the core.
     Wake(Wake),
+    /// Work the profile's shell still does for the core.
+    Shell(ShellWork),
     /// Blob bytes go from the file to the call's stream without passing
     /// through the core.
     SendFile {
@@ -399,6 +421,59 @@ pub enum Wake {
     Notifications,
 }
 
+/// What the replicas' sources leave to the profile's shell: what it owns
+/// beside the store, until it moves into the core.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ShellWork {
+    /// The core wrote items to the store: an absorb, catch-up or live.
+    Wrote,
+    /// A source opened for the replica agent, or closed.
+    Sourcing { agent: AgentKey, open: bool },
+    /// `host`'s inventory caught up on a live stream, so its rows are
+    /// current, or that stream ended and they may be stale: its published
+    /// entry says so.
+    HostCurrent { host: HostId, current: bool },
+    /// `host` runs under a new generation, which its published entry
+    /// carries.
+    HostGeneration { host: HostId, generation: u64 },
+    /// What `host`'s providers offer, as its entry said.
+    Providers {
+        host: HostId,
+        providers: Vec<wire::ProviderOnHost>,
+    },
+    /// The replica is gone from the store: its directory and blob files
+    /// go with it, and its draft too when its host no longer lists it.
+    ReplicaDropped { agent: AgentKey, listed: bool },
+    /// One of this host's agents follows its parent, whose row says
+    /// `says`: it stops, or is deleted.
+    FollowParent { child: AgentId, says: ParentSays },
+    /// The live children of one of this host's running agents may have
+    /// changed: it hears which they are, if it has not.
+    TellChildren { agent: AgentId },
+}
+
+/// What a parent's row says to the children that follow it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ParentSays {
+    /// The parent exited, whatever the cause: its children stop.
+    Exited,
+    /// The parent is gone from its host for good: its children are stopped
+    /// and deleted.
+    Deleted,
+}
+
+/// Which replica agents the profile keeps a source open for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SourcePolicy {
+    /// Every agent a reachable host lists. A desktop daemon, and the
+    /// phone's runtime in the foreground.
+    #[default]
+    Listed,
+    /// Only agents a client subscribes to: the phone's runtime woken in the
+    /// background, bringing the one chat a notification names current.
+    OnDemand,
+}
+
 /// A result-only mechanism the driver runs off the core thread; its outcome
 /// returns as [`Input::JobDone`].
 #[derive(Clone, Debug, PartialEq)]
@@ -427,15 +502,6 @@ pub enum Job {
     },
     SendPush(Push),
     Upload(AnalyticsBatch),
-    /// Ask a replica's origin for up to `limit` items below `before_order`
-    /// and absorb what joins the block; answered as
-    /// [`JobResult::Fetched`](crate::payload::JobResult::Fetched). One round
-    /// trip with one result until peer channels are the core's.
-    FetchFromOrigin {
-        agent: AgentKey,
-        before_order: Option<u64>,
-        limit: u32,
-    },
 }
 
 #[cfg(test)]
@@ -513,7 +579,6 @@ mod tests {
                 request: ClientRequest::Subscribe {
                     agent_id: vec![1, 2],
                     tail: 6,
-                    followed: true,
                 },
             },
             Input::PeerCall {
@@ -575,12 +640,35 @@ mod tests {
             },
             Input::JobDone {
                 job: JobId(5),
-                result: JobResult::Fetched(Some(wire::FetchResponse::default())),
+                result: JobResult::Done,
             },
-            Input::JobDone {
-                job: JobId(6),
-                result: JobResult::Fetched(None),
+            Input::PeerAnswer {
+                call: CallId(11),
+                answer: Answer::Session(SessionEvent {
+                    of: Some(wire::session_event::Of::CaughtUp(wire::CaughtUp {
+                        revision: 4,
+                    })),
+                }),
             },
+            Input::PeerAnswer {
+                call: CallId(12),
+                answer: Answer::Inventory(InventoryEvent {
+                    of: Some(wire::inventory_event::Of::CaughtUp(
+                        wire::CaughtUp::default(),
+                    )),
+                }),
+            },
+            Input::PeerAnswer {
+                call: CallId(12),
+                answer: Answer::Ended,
+            },
+            Input::Timer {
+                id: TimerId::Source(HostId([1; 16]), AgentId([2; 16])),
+            },
+            Input::Trusted {
+                hosts: vec![HostId([1; 16])],
+            },
+            Input::Policy(SourcePolicy::OnDemand),
             Input::FromShell(FromShell::Session {
                 agent: agent.clone(),
                 event: Arc::new(SessionEvent {

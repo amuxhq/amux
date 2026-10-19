@@ -140,6 +140,16 @@ impl RingReader {
             .ring
             .clone()
     }
+
+    /// Every delivery the net made, as [`SimNet::trace`] reads it.
+    pub fn trace(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .net
+            .trace()
+            .to_vec()
+    }
 }
 
 /// What a simulated net runs under: its seed and its faults.

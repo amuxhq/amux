@@ -36,7 +36,7 @@ use std::sync::Arc;
 use agent_core::{Agent, AgentValue, ConnId, Resumed};
 use daemon_core::payload::{
     Answer, CallError, CarrierKind, ChannelError, ClientRequest, GitRefusal, JobResult,
-    MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
+    MessageFrom, MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
 };
 use daemon_core::{
     AgentId, CallId, Daemon, Ended, Fingerprint, HostId, Input, Job, JobId, LinkId, Output,
@@ -1284,7 +1284,7 @@ impl Transition<'_> {
                     }
                     _ => {}
                 }
-                self.feed(h, input);
+                self.feed(h, served_by_the_shell(input));
             }
             Delivery::Agent(p, Dbg(input)) => self.feed_agent(p, input),
             Delivery::Job(h, id, Dbg(op)) => {
@@ -2551,6 +2551,36 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
     }
 }
 
+/// A paired host's call as the core is handed it: a message comes as
+/// [`peer_message`] makes it.
+fn served_by_the_shell(input: Input) -> Input {
+    match input {
+        Input::PeerCall {
+            call,
+            request: PeerRequest::SendMessage(envelope),
+            ..
+        } => Input::ClientCall {
+            call,
+            request: peer_message(envelope),
+        },
+        other => other,
+    }
+}
+
+/// A message a paired host sent, as node's peer edge hands it to the
+/// core: a client call from the agent the sending host stamped as its
+/// sender, or from the person when it names none.
+pub fn peer_message(envelope: wire::Envelope) -> ClientRequest {
+    let from = match envelope.from.clone().and_then(|from| from.value) {
+        Some(wire::sender::Value::Agent(sender)) => MessageFrom::Peer(sender),
+        _ => MessageFrom::PeerPerson,
+    };
+    ClientRequest::SendMessage {
+        envelope: Box::new(envelope),
+        from,
+    }
+}
+
 /// The host a delivery is for, when it is for a host's daemon.
 fn addressed_to(processes: &[Process], delivery: &Delivery) -> Option<usize> {
     match delivery {
@@ -2582,7 +2612,9 @@ fn reply_of(response: Response) -> Option<PeerReply> {
 }
 
 /// A refusal as the peer service sends it.
-fn wire_error(error: &CallError) -> wire::Error {
+/// The wire error a call ending in `error` reaches a caller as, by
+/// node's mapping.
+pub fn wire_error(error: &CallError) -> wire::Error {
     use wire::ErrorCode;
     let code = match error {
         CallError::NoAgent
@@ -2630,13 +2662,16 @@ fn peer_request(request: &PeerRequest) -> &'static str {
     }
 }
 
-fn answer_kind(answer: &Answer) -> &'static str {
+fn answer_kind(answer: &Answer) -> String {
     match answer {
-        Answer::Reply(_) => "Reply",
-        Answer::Session(_) => "Session",
-        Answer::Inventory(_) => "Inventory",
-        Answer::Ended => "Ended",
-        Answer::Failed(_) => "Failed",
+        Answer::Reply(_) => "Reply".to_owned(),
+        Answer::Session(_) => "Session".to_owned(),
+        Answer::Inventory(_) => "Inventory".to_owned(),
+        Answer::Ended => "Ended".to_owned(),
+        Answer::Failed(PeerFailure::Refused(error)) => {
+            format!("Failed: {:?} {}", error.code(), error.message)
+        }
+        Answer::Failed(failure) => format!("Failed: {failure:?}"),
     }
 }
 
@@ -2666,7 +2701,12 @@ fn agent_input(input: &agent_core::Input) -> &'static str {
         In::ProviderExited { .. } => "ProviderExited",
         In::DaemonDials { .. } => "DaemonDials",
         In::DaemonGone { .. } => "DaemonGone",
-        In::Control { .. } => "Control",
+        In::Control { frame, .. } => match &frame.of {
+            Some(ctl_frame::Of::Children(_)) => "Control Children",
+            Some(ctl_frame::Of::AgentMessage(_)) => "Control AgentMessage",
+            Some(ctl_frame::Of::Stop(_)) => "Control Stop",
+            _ => "Control",
+        },
         In::Timer(_) => "Timer",
         In::Tick { .. } => "Tick",
         In::WriteFailed { .. } => "WriteFailed",

@@ -23,7 +23,10 @@ mod provider;
 
 use daemon_core::payload::ClientRequest;
 use daemon_core::{AgentId, Create, HostId};
-pub use env::{ClientCall, Dbg, Failure, Journal, Lane, Net, Process, START_MS, journal_end};
+pub use env::{
+    ClientCall, Dbg, Failure, Journal, Lane, Net, Process, START_MS, journal_end, peer_message,
+    wire_error,
+};
 pub use provider_fakes::script::Step;
 use store::AgentKey;
 use wire::Lifecycle;

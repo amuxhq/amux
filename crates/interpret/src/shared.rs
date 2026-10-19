@@ -902,6 +902,21 @@ impl<A: OpenAsk> Shared<A> {
         self.pending_messages.insert(envelope_id.to_vec());
     }
 
+    /// The kind handed an agent message to the provider. An idle provider
+    /// runs it as a turn at once, as it does a handed prompt, so the turn
+    /// begins here as a submission's does, and the provider's own turn
+    /// start finds it open: a stop arriving before that start must find
+    /// the turn running and cancel it the provider's way. A message handed
+    /// while a turn runs joins that turn and changes nothing. A kind whose
+    /// turns start on the provider's reflection begins none.
+    pub fn message_handed(&mut self) {
+        if self.turn_on_reflection || self.busy {
+            return;
+        }
+        self.busy = true;
+        self.turn.begin(self.now_ms);
+    }
+
     /// The carrier consumed the message. False if it was not pending.
     pub fn message_consumed(&mut self, envelope_id: &[u8]) -> bool {
         let pending = self.pending_messages.remove(envelope_id);

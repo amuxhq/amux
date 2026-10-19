@@ -270,6 +270,42 @@ fn a_stop_with_no_turn_running_exits_at_once() {
     assert_eq!(provider_exits(&mut run), Some(ExitCause::Stopped));
 }
 
+/// An idle provider runs a handed agent message as a turn at once, so a
+/// stop that arrives before the provider says the turn started cancels
+/// that turn, and the agent exits only as the turn ends.
+#[test]
+fn a_stop_right_after_an_injected_message_exits_stopped_at_the_turns_end() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.frame(ctl_frame::Of::AgentMessage(wire::Envelope {
+        id: b"env-1".to_vec(),
+        body: Some(wire::envelope::Body::Message(wire::MessageBody {
+            text: "look at the build".into(),
+            ..Default::default()
+        })),
+        ..Default::default()
+    }));
+    let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: false }));
+    assert!(out.contains(&Output::Record(Entry::Stop)));
+    assert_eq!(provider_writes(&out), vec![r#"{"type":"interrupt"}"#]);
+    assert!(!closes(&out), "the message's turn is still running");
+    assert_eq!(run.agent.exited(), None);
+
+    run.fact(json!({"type": "turn_start"}));
+    let out = run.turn_end();
+    let outcomes: Vec<i32> = out
+        .iter()
+        .filter_map(|output| match output {
+            Output::AppendJournal(step) => step.turn_end.as_ref().map(|end| end.outcome),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(outcomes, vec![wire::TurnOutcome::Stopped as i32]);
+    assert!(closes(&out));
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::Stopped));
+}
+
 #[test]
 fn a_draining_agent_refuses_new_input() {
     let mut run = Run::start(&spec(false, None));

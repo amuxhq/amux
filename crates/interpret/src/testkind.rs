@@ -235,6 +235,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
             return;
         }
         shared.message_accepted(&envelope.id);
+        shared.message_handed();
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
             text: crate::shared::words(&envelope),
@@ -516,6 +517,46 @@ mod tests {
             })
             .collect();
         assert_eq!(turns, [TurnOutcome::Stopped as i32]);
+    }
+
+    /// An idle provider runs a handed agent message as a turn at once, so
+    /// a stop that arrives before the provider says its turn started still
+    /// finds one to cancel.
+    #[test]
+    fn a_stop_after_a_message_handed_to_an_idle_provider_interrupts_its_turn() {
+        let mut state = started();
+        let handed = TestKind::step(
+            &mut state,
+            Event::AgentMessage(Envelope {
+                id: b"env-1".to_vec(),
+                body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                    text: "look at the build".into(),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }),
+        );
+        assert!(
+            handed
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Inject { .. })),
+            "{:?}",
+            handed.effects
+        );
+        let stopped = TestKind::step(&mut state, Event::StopRequested);
+        assert_eq!(
+            stopped.effects,
+            [Effect::ProviderWrite(br#"{"type":"interrupt"}"#.to_vec())]
+        );
+
+        TestKind::step(&mut state, stream(r#"{"type":"turn_start"}"#));
+        let ended = TestKind::step(&mut state, stream(r#"{"type":"turn_end"}"#));
+        assert_eq!(
+            ended.step.turn_end.map(|end| (end.turn_id, end.outcome)),
+            Some((1, TurnOutcome::Stopped as i32)),
+            "the provider's turn start joins the turn the hand-off began"
+        );
     }
 
     #[test]

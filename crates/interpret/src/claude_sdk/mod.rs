@@ -484,6 +484,7 @@ impl State {
                 message: true,
             },
         );
+        self.shared.message_handed();
         emit.effect(Effect::Inject {
             id: envelope.id.clone(),
             text: crate::shared::carried(&envelope),

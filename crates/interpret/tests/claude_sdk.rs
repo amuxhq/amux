@@ -274,6 +274,47 @@ fn a_message_handed_over_twice_is_taken_once() {
     assert!(state.shared().pending_messages().is_empty());
 }
 
+/// An idle Claude runs a handed agent message as a turn at once, so a stop
+/// that arrives before Claude says the turn started still interrupts it,
+/// and the turn that ends reads stopped.
+#[test]
+fn a_stop_after_a_message_handed_to_an_idle_claude_interrupts_its_turn() {
+    let mut state = started();
+    let handed = ClaudeSdk::step(&mut state, agent_message(b"env-1", "look at the build"));
+    assert!(
+        handed
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::Inject { .. })),
+        "{:?}",
+        handed.effects
+    );
+    let stopped = ClaudeSdk::step(&mut state, Event::StopRequested);
+    let written: Vec<String> = stopped
+        .effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::ProviderWrite(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        written
+            .iter()
+            .any(|line| line.contains("control_request") && line.contains("interrupt")),
+        "the stop interrupts the message's turn: {written:?}"
+    );
+
+    let ended = ClaudeSdk::step(
+        &mut state,
+        stream(json!({"type": "result", "subtype": "success", "uuid": "r", "duration_ms": 10})),
+    );
+    assert_eq!(
+        ended.step.turn_end.map(|end| end.outcome),
+        Some(wire::TurnOutcome::Stopped as i32)
+    );
+}
+
 /// The SDK probe found the uuid on a stdin message echoed on its replay and
 /// lifecycle frames, and found messages written during a turn folding into
 /// it: reflections are matched by that id, not by arrival order.

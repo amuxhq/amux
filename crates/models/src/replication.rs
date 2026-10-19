@@ -10,7 +10,8 @@
 //! below its block when a client fetches there. The origin's core answers
 //! the opening, every row committed after it and the page. What the
 //! drivers do between the two (carrying each answer to the other core in
-//! order, a stream dying at a message, telling the origin a stream was
+//! order, a page's answer arriving after whatever the stream delivers
+//! meanwhile, a stream dying at a message, telling the origin a stream was
 //! dropped, firing the timer the replica armed) and what the world does
 //! (the agent's commits, which reach the origin's core as the store's own
 //! records; retention trimming the origin's oldest row; the origin
@@ -85,11 +86,12 @@ pub struct Replication {
 }
 
 impl Replication {
-    /// The bounds `just test` explores exhaustively.
+    /// The bounds `just test` explores exhaustively: one key more than the
+    /// cap, so a tail, a delta and a page each leave a row out.
     pub const fn ci() -> Self {
         Self {
-            keys: 3,
-            cap: 2,
+            keys: 2,
+            cap: 1,
             revisions: 4,
             generations: 2,
             in_flight: 2,
@@ -98,10 +100,12 @@ impl Replication {
         }
     }
 
-    /// The larger bounds a nightly run explores: a fifth revision and a
-    /// third message in flight.
+    /// The larger bounds a nightly run explores: a third key, a cap of two,
+    /// a fifth revision and a third message in flight.
     pub const fn nightly() -> Self {
         Self {
+            keys: 3,
+            cap: 2,
             revisions: 5,
             in_flight: 3,
             ..Self::ci()
@@ -219,6 +223,10 @@ pub struct State {
     /// Losses since the link last delivered.
     lost: u8,
     seen: Seen,
+    /// The page the origin answered that has not yet reached the replica:
+    /// the call it answers, and the page encoded, or nothing when the
+    /// origin failed it.
+    page: Option<(CallId, Option<Vec<u8>>)>,
     /// A write the store refused; nothing happens after one.
     refused: Option<String>,
     /// A core asked for a dump.
@@ -240,6 +248,7 @@ impl State {
         (
             (&self.origin.store, &self.replica.store, &self.durable),
             (link, self.generation, self.timer, self.lost),
+            self.page.as_ref().map(|(_, page)| page),
             (&self.refused, &self.dumped, self.standing),
         )
     }
@@ -280,8 +289,11 @@ pub enum Action {
     /// everything behind it.
     Fault(Fault),
     /// A client fetches below the replica's block: the replica's core asks
-    /// the origin's for the page and absorbs it.
+    /// the origin's for the page, which answers it at once.
     AskPage,
+    /// The origin's answer to the page reaches the replica's core, which
+    /// absorbs it where it still joins the block.
+    PageArrives,
 }
 
 impl Machine for Replication {
@@ -322,6 +334,7 @@ impl Machine for Replication {
                 origin_rows: 0,
                 can_page: false,
             },
+            page: None,
             refused: None,
             dumped: None,
             standing: Standing::Closed { settled: false },
@@ -414,8 +427,10 @@ impl Machine for Replication {
                 }
             }
         }
-        if s.seen.can_page {
-            out.push(Action::AskPage);
+        match s.page {
+            None if s.seen.can_page => out.push(Action::AskPage),
+            None => {}
+            Some(_) => out.push(Action::PageArrives),
         }
     }
 
@@ -549,6 +564,14 @@ impl Transition<'_> {
                     Daemon::new(store, options(generation))
                 });
                 self.origin(Input::Configure(self.model.settings()));
+                // A page on its way back goes with the link the reboot
+                // dropped.
+                if let Some((call, _)) = self.next.page.take() {
+                    self.replica(Input::PeerAnswer {
+                        call,
+                        answer: Answer::Failed(PeerFailure::Uncertain),
+                    });
+                }
                 // Every stream the origin answered is gone with its process.
                 self.next.link = match std::mem::replace(&mut self.next.link, Link::Idle) {
                     Link::Open { call, queue, .. } => Link::Open {
@@ -630,6 +653,16 @@ impl Transition<'_> {
             }
             Action::Fault(fault) => unreachable!("replication never offers {fault:?}"),
             Action::AskPage => self.ask_page(),
+            Action::PageArrives => {
+                let (call, page) = self.next.page.take().expect("a page in flight");
+                let answer = match page {
+                    Some(page) => Answer::Reply(Box::new(PeerReply::Fetched(
+                        wire::FetchResponse::decode(page.as_slice()).expect("a page decodes"),
+                    ))),
+                    None => Answer::Failed(PeerFailure::Uncertain),
+                };
+                self.replica(Input::PeerAnswer { call, answer });
+            }
         }
         Ok(())
     }
@@ -705,7 +738,7 @@ impl Transition<'_> {
     }
 
     /// A client fetches below the replica's block; the replica's core asks
-    /// the origin's for the page, which is carried back and absorbed.
+    /// the origin's for the page, whose answer the link then carries back.
     fn ask_page(&mut self) {
         let floor = self
             .slots
@@ -742,21 +775,21 @@ impl Transition<'_> {
             call: made,
             request,
         });
-        let answer = answered
+        let page = answered
             .into_iter()
             .find_map(|output| match output {
                 Output::Answer {
                     call,
                     response: Response::Fetched(page),
-                } if call == made => Some(Answer::Reply(Box::new(PeerReply::Fetched(page)))),
+                } if call == made => Some(Some(page.encode_to_vec())),
                 Output::EndCall {
                     call,
                     status: Status::Failed(_),
-                } if call == made => Some(Answer::Failed(PeerFailure::Uncertain)),
+                } if call == made => Some(None),
                 _ => None,
             })
             .expect("the origin answers a page");
-        self.replica(Input::PeerAnswer { call: made, answer });
+        self.next.page = Some((made, page));
     }
 
     /// A stream dropped whose queue has drained ends: the replica's driver
@@ -960,6 +993,16 @@ impl fmt::Debug for State {
             }
             debug
                 .field("link", &self.link)
+                .field(
+                    "page",
+                    &self.page.as_ref().map(|(_, page)| {
+                        page.as_ref().map(|page| {
+                            let page = wire::FetchResponse::decode(page.as_slice())
+                                .expect("a page decodes");
+                            page.items.iter().map(row).collect::<Vec<_>>()
+                        })
+                    }),
+                )
                 .field("timer", &self.timer)
                 .field("standing", &self.standing)
                 .field("refused", &self.refused)

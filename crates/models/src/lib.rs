@@ -445,9 +445,20 @@ pub fn check<M: Machine>(model: &M, bounds: Bounds) -> Verdict {
                 (PropertyKind::Sometimes, Some(_)) => Outcome::Holds,
                 (PropertyKind::Sometimes, None) => Outcome::NeverReached,
                 (_, None) => Outcome::Holds,
-                (_, Some(path)) => {
-                    let state = format!("{:?}", path.last_state());
-                    let steps = path.into_vec();
+                (kind, Some(path)) => {
+                    let mut steps = path.into_vec();
+                    // The checker keeps the last state it found breaking an
+                    // `Always`, which may lie past the first one on its
+                    // path; the path ends where the property first broke.
+                    if kind == PropertyKind::Always
+                        && let Some(first) = steps
+                            .iter()
+                            .position(|(state, _)| !(property.holds)(model, state))
+                    {
+                        steps.truncate(first + 1);
+                        steps[first].1 = None;
+                    }
+                    let state = format!("{:?}", steps.last().expect("a path has a state").0);
                     Outcome::Fails(Counterexample {
                         state,
                         // Each pair is a state and the action taken from it.

@@ -95,6 +95,7 @@ impl Install {
             install_path: binary("amux"),
             claude_command: binary("fake-claude-sdk").to_string_lossy().into_owned(),
             codex_command: binary("fake-codex").to_string_lossy().into_owned(),
+            step_budget: daemon_core::StepBudget::TEST,
             ..Launch::default()
         };
         launch

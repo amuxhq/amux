@@ -1474,6 +1474,7 @@ impl Net {
                 .fake(FakeKind::Codex)
                 .to_string_lossy()
                 .into_owned(),
+            step_budget: daemon_core::StepBudget::TEST,
             ..Launch::default()
         };
         let provider = agent.map_or(own.decl.provider, |(_, _, provider)| provider);

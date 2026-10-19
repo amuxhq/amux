@@ -26,6 +26,7 @@ use super::{Install, PATIENCE, until};
 pub fn quiet_launch() -> Launch {
     Launch {
         install_path: PathBuf::from("/nonexistent/amux"),
+        step_budget: daemon_core::StepBudget::TEST,
         ..Launch::default()
     }
 }

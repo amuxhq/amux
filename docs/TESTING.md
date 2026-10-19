@@ -126,6 +126,13 @@ Waits subscribe before they read, return what they saw, and fail on a deadline o
 passes by timing out. An absence is shown by draining to a declared boundary or watching a whole declared window,
 never by one empty poll.
 
+A daemon core reports a step that runs past its budget with a dump. Test installations (node's test support and
+testnet's real hosts) run under `StepBudget::TEST`, one second, not the daemon's 100 ms: debug builds on a loaded
+four-core CI runner take 118 to 143 ms for such steps, and a dump for that overrun would land in `reports/` while
+a test may be reading it. Tests see the tripwire only where they set a budget themselves (node's dump tests set 0 µs;
+a testnet `NetOptions.launch` hook may set any), and `just perf` judges the real daemon at its own budget. A test
+installation's teardown prints any over-budget dump and fails only on a broken invariant's.
+
 ## Fixtures and goldens
 
 Three kinds of fixture, kept distinguishable: recordings of a real provider, reviewed derivations produced by the

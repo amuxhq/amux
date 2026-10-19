@@ -158,14 +158,14 @@ Every model's test prints its measured cost as `states`, `seconds` and
 `states_per_second`, and fails when the exhaustive run outlasts its budget
 under `just test`.
 
-| Model | CI bounds | States | 12 threads | 4 threads | Budget | Nightly bounds | Nightly, 12 threads |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 207,443 | 37 s | 66 s | 240 s | revisions up to 5, 3 in flight | 333 s |
-| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 254,451 | 61 s | 96 s | 300 s | 2 crashes, power losses or reboots | 252 s |
-| Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 391,552 | 39 s | 71 s | 240 s | the child's spontaneous exit too, 2 links down, 2 waits | 740 s |
-| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 859,652 | 24 s | 52 s | 180 s | 4 up, 3 down, 3 failures | 319 s |
-| Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,275,996 and 71,250 | 8 s | 17 s | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
-| Supervisor update, both swap orders | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 4,189,038 and 4,449,354 | 5 s | 11 s | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 77 s |
+| Model | CI bounds | States | 12 threads | 4 threads | Four-core runner | Budget | Nightly bounds | Nightly, 12 threads |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 207,443 | 37 s | 66 s | 274 s | 600 s | revisions up to 5, 3 in flight | 333 s |
+| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 254,451 | 61 s | 96 s | 199 s | 420 s | 2 crashes, power losses or reboots | 252 s |
+| Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 391,552 | 39 s | 71 s | 161 s | 360 s | the child's spontaneous exit too, 2 links down, 2 waits | 740 s |
+| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 859,652 | 24 s | 52 s | 134 s | 300 s | 4 up, 3 down, 3 failures | 319 s |
+| Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,275,996 and 71,250 | 8 s | 17 s | 44 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
+| Supervisor update, both swap orders | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 4,189,038 and 4,449,354 | 5 s | 11 s | not yet measured | 120 s each | 3 releases, 2 failed starts, 6 timers firing | 77 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), with the development profile, which optimises SQLite, the store and
@@ -174,16 +174,22 @@ runs on every core the machine has; the verdict and the state count do not
 depend on the number of threads, only which of several equally short
 counterexamples is printed.
 
-Each model runs in CI as a job of its own on a four-core Linux runner, and
-its budget is sized to that runner: **three times the model's four-thread
-time on the Mac fits inside its budget, and no budget is above 600 s.** One
-CI run measured the ratio: the family model took 136 s on the Mac's 12
-threads and 918 s on a four-core Windows runner, and was stopped past 760 s
-on a four-core Linux one, about 2 to 2.5 times the Mac's time per thread.
-A new model is sized by the same rule; one that does not fit has its CI
-bounds cut, and the bounds it loses move to its nightly test. The nightly
-bounds run daily in their own workflow, each model in a job of its own, and
-locally through `just models-nightly`.
+The four-core runner column is each model's time at its CI bounds on CI's
+four-core Linux runner, measured by CI run
+[39185561814](https://github.com/jordanwebster/amux/actions/runs/39185561814);
+the lifecycle figure is its test binary, both models together.
+
+Each model runs in CI as a job of its own on that runner, and its budget is
+sized to it: **a model's budget is at least twice its measured time on the
+four-core runner at its CI bounds, rounded up to the next full minute, and no
+budget is above 600 s.** A model with no runner figure yet is sized from its
+four-thread Mac time times 4.2, the slowest runner-to-Mac ratio measured (the
+runner took 2.1 to 4.2 times the Mac's four-thread time; replication, the
+model heaviest on the store, was the slowest), doubled and rounded up the same
+way, until a CI run measures it. A model whose doubled runner time would pass
+600 s has its CI bounds cut, and the bounds it loses move to its nightly
+test. The nightly bounds run daily in their own workflow, each model in a job
+of its own, and locally through `just models-nightly`.
 
 A walk is reproducible: one seed walks one schedule on every run, and
 another seed walks another (`one_seed_walks_one_replication_schedule`).

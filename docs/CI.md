@@ -114,13 +114,14 @@ job's matrix. Linux minutes cost a public repository nothing, and each job
 stays far inside the run's wall time, which the iOS gate sets.
 
 A model's budget is sized to that runner. CI run
-[39162128137](https://github.com/jordanwebster/amux/actions/runs/39162128137)
-measured the ratio: the family model took 136 s on the enrolled Mac's 12
-threads, 918 s on `windows-latest` (6.75 times) and was stopped past 760 s
-on `ubuntu-latest` (over 5.6 times), about 2 to 2.5 times the Mac's time per
-thread. So a model fits CI when three times its time on four Mac threads is
-inside its budget, and no budget is above 600 s; the models' README records
-each model's times. The job guard is 25 minutes.
+[39185561814](https://github.com/jordanwebster/amux/actions/runs/39185561814)
+measured the models there at their CI bounds: the runner took 2.1 to 4.2 times
+the enrolled Mac's four-thread time, and replication, the model heaviest on
+the store, was the slowest (274 s against 66 s). So a model's budget is at
+least twice its runner time, rounded up to a whole minute, and no budget is
+above 600 s; a model not yet measured there is sized from its four-thread Mac
+time times 4.2. The models' README records each model's times. The job
+guard is 25 minutes.
 
 The Models at nightly bounds workflow runs each model's ignored nightly
 test, the same matrix, daily and by hand; `just models-nightly` runs the

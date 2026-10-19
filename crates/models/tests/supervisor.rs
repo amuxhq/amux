@@ -4,10 +4,11 @@
 use models::{Bounds, SupervisorUpdate, check, walk};
 
 /// How long each exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: three times the slower run's time on four of the
-/// enrolled Mac's threads (5 s, the daemon stopping before the swap) fits
-/// inside it. A run past it says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 60.0;
+/// four-core runner, where it has not been measured yet: twice its time on four
+/// of the enrolled Mac's threads (11 s) times 4.2, the slowest runner-to-Mac
+/// ratio measured, rounded up to a whole minute. A run past it says the bounds
+/// have outgrown their place.
+const BUDGET_SECONDS: f64 = 120.0;
 
 fn holds_within_budget(name: &str, model: &SupervisorUpdate) {
     let threads = models::threads();

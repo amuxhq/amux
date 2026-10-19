@@ -4,9 +4,9 @@
 use models::{AgentLifecycle, Bounds, check, walk};
 
 /// How long each exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: three times the slower run's time on four of the
-/// enrolled Mac's threads (16 s, the one-shot child) fits inside it. A run
-/// past it says the bounds have outgrown their place.
+/// four-core runner: twice the binary's measured time there (44 s for both
+/// runs), rounded up to a whole minute. A run past it says the bounds have
+/// outgrown their place.
 const BUDGET_SECONDS: f64 = 120.0;
 
 fn holds_within_budget(name: &str, model: &AgentLifecycle) {

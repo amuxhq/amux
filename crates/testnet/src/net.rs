@@ -1530,6 +1530,9 @@ impl Net {
         if !own.decl.repositories.is_empty() {
             launch.repository_roots = vec![own.dir.join(REPOSITORIES)];
         }
+        if let Some(k) = own.decl.tail_rows {
+            launch.tail_rows = k;
+        }
         if let Some(hook) = &self.launch_hook {
             hook(&host.name, &mut launch);
         }

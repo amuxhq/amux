@@ -704,6 +704,23 @@ update = ""
 cargo = [{ package = "testnet", targets = ["harness_stories"], features = [] }]
 
 [[suite]]
+name = "replication-stories"
+contract = "Replication's stories that hold on either net, a replica taking a tail, live records, a delta and a Reset with its markers in sequence, pages served from the block and from the origin with an error when the origin is away, and switching to OnDemand closing every source no client watches, pass on the real net and under every seed on the simulated one."
+paths = ["crates/testnet/tests/replication_stories.rs"]
+recipe = "just test -- --test replication_stories"
+modes = ["real", "simulated"]
+boundary = "Many daemons"
+oracle = "The stories' marker sequences, pages, open sources and fences on each net, and the seeds each simulated story walked."
+real = ["daemon runtimes and agent processes in real mode", "daemon cores, agent cores and the test kind's interpreter in simulated mode", "stores", "journal files"]
+substituted = ["cloud account", "providers by the scripted fakes", "in simulated mode: transport by in-memory links, agent processes by their cores, the wall clock by the virtual clock, jobs by fakes"]
+time = "driven"
+capabilities = ["desktop", "loopback network", "Unix"]
+lane = "fast"
+evidence = "`just sim` prints each story's seeds walked and failing seeds"
+update = ""
+cargo = [{ package = "testnet", targets = ["replication_stories"], features = [] }]
+
+[[suite]]
 name = "simulated-net-harness"
 contract = "The simulated net makes one schedule of one seed and another of another, replays a seed's schedule line for line, reports a failing seed that fails again the same way on demand and shrinks it to a shorter run by seed search and ring cut, moves time only when the story advances it, lets an agent outlive its daemon for exactly its grace, breaks a call whose message it loses and still brings the replica current, carries a recorded Claude journal an agent plays turn by turn to the far host, and fails a wait as soon as nothing is left to deliver, under every seed it walks."
 paths = ["crates/testnet/src/sim", "crates/testnet/tests/sim_harness.rs", "crates/testnet/tests/sim_seeds.rs"]

@@ -230,7 +230,16 @@ impl SimNet {
                     }
                 })
                 .collect();
-            sim.net.add_host(&host.name, ids[at], trusted);
+            let h = sim.net.add_host(&host.name, ids[at], trusted);
+            if let Some(k) = host.tail_rows {
+                sim.net.configure(
+                    h,
+                    daemon_core::Settings {
+                        tail_rows: k,
+                        ..daemon_core::Settings::default()
+                    },
+                );
+            }
         }
         let mut links = BTreeMap::new();
         for link in &topology.links {
@@ -757,6 +766,93 @@ impl World for SimNet {
         sim.net
             .read(h, read)
             .ok_or_else(|| NetError::Down(host.to_owned()))
+    }
+
+    async fn block_whole(&self, host: &str, agent: &str) -> Result<(), NetError> {
+        let (origin, key) = self.origin(agent)?;
+        let replica = self.host_index(host)?;
+        let sim = self.sim();
+        failed(&sim)?;
+        let block = |h: usize| {
+            read(&sim, h, |store| invariant::block(store, &key)).map_err(|error| NetError::Host {
+                host: sim.net.host_name(h).to_owned(),
+                error,
+            })
+        };
+        Ok(invariant::check(&block(replica)?, &block(origin)?)?)
+    }
+
+    async fn fetch(
+        &self,
+        host: &str,
+        agent: &str,
+        before_order: Option<u64>,
+        limit: u32,
+    ) -> Result<wire::FetchResponse, NetError> {
+        let id = self.agent_named(agent)?.id;
+        let h = self.host_index(host)?;
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if !sim.is_up(h) {
+            return Err(NetError::Down(host.to_owned()));
+        }
+        let call = sim.net.client_call(
+            h,
+            ClientRequest::Fetch(wire::FetchRequest {
+                agent_id: id.as_bytes().to_vec(),
+                before_order,
+                limit,
+            }),
+        );
+        let what = format!("a page of {agent} at {host}");
+        let answer = wait(&mut sim, &what, |sim| {
+            let Some(answered) = sim.net.client(h, call) else {
+                return Ok(Err(daemon_core::payload::Status::Ok));
+            };
+            if let Some(Response::Fetched(page)) = answered.responses().next() {
+                return Ok(Ok(page.clone()));
+            }
+            match answered.ended() {
+                Some(status) => Ok(Err(status.clone())),
+                None => Err("no page yet".to_owned()),
+            }
+        });
+        sim.net.take_client(h, call);
+        Ok(answer?.map_err(node::ServeError::from)?)
+    }
+
+    fn set_source_policy(&self, host: &str, policy: node::SourcePolicy) -> Result<Ack, NetError> {
+        let h = self.host_index(host)?;
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if !sim.is_up(h) {
+            return Err(NetError::Down(host.to_owned()));
+        }
+        sim.net.feed(h, Input::Policy(policy));
+        drop(sim);
+        Ok(self.ack(format!("{host}'s source policy {policy:?}")))
+    }
+
+    async fn open_sources(&self, host: &str) -> Result<Vec<store::AgentKey>, NetError> {
+        let h = self.host_index(host)?;
+        let sim = self.sim();
+        failed(&sim)?;
+        let mut open = sim
+            .net
+            .with_daemon(h, |daemon| daemon.sources().open().collect::<Vec<_>>())
+            .ok_or_else(|| NetError::Down(host.to_owned()))?;
+        open.sort();
+        Ok(open)
+    }
+
+    async fn host_ready(&self, at: &str, host: &str) -> Result<bool, NetError> {
+        let (h, of) = (self.host_index(at)?, self.host_index(host)?);
+        let sim = self.sim();
+        failed(&sim)?;
+        let id = sim.net.host_id(of);
+        sim.net
+            .with_daemon(h, |daemon| daemon.sources().ready(id))
+            .ok_or_else(|| NetError::Down(at.to_owned()))
     }
 
     async fn until<T, E, F>(&self, what: &str, mut probe: impl FnMut() -> F) -> Result<T, NetError>

@@ -261,6 +261,8 @@ struct HostPlan {
     id: HostId,
     /// The hosts it trusts: the ones the topology links it to.
     trusted: Vec<HostId>,
+    /// What its daemon is configured with at every start.
+    settings: Settings,
 }
 
 /// One host: its core while it runs and its store, its agents' journals,
@@ -734,6 +736,7 @@ impl Net {
             name: name.to_owned(),
             id,
             trusted,
+            settings: Settings::default(),
         });
         let store = Sqlite::open_in_memory(id.0).expect("a store opens in memory");
         let held = Held {
@@ -753,6 +756,12 @@ impl Net {
             journals: BTreeMap::new(),
         });
         self.w.hosts.len() - 1
+    }
+
+    /// Configures the host's daemon with `settings` from its next start
+    /// on, where a story needs other than the product's.
+    pub fn configure(&mut self, h: usize, settings: Settings) {
+        Arc::make_mut(&mut self.plan).hosts[h].settings = settings;
     }
 
     /// Adds a link between two hosts, down until both ends run.
@@ -1518,6 +1527,7 @@ impl Transition<'_> {
             ..wire::HostEntry::default()
         };
         let trusted = plan.trusted.clone();
+        let settings = plan.settings;
         let running = &self.w.running;
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
@@ -1542,7 +1552,7 @@ impl Transition<'_> {
                     }
                 };
                 step(daemon, Input::Tick { now_ms: now });
-                step(daemon, Input::Configure(Settings::default()));
+                step(daemon, Input::Configure(settings));
                 step(daemon, Input::Entropy(entropy));
                 step(
                     daemon,

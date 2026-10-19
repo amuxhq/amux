@@ -109,6 +109,10 @@ pub struct HostDecl {
     /// the net's release feed; a supervised host is a process host.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub supervised: bool,
+    /// The newest rows its replicas keep, K, where it differs from the
+    /// product's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_rows: Option<u32>,
 }
 
 /// What an agent's provider is.
@@ -376,6 +380,16 @@ impl Topology {
     pub fn host(self, name: &str) -> Self {
         self.host_decl(HostDecl {
             name: name.to_owned(),
+            ..HostDecl::default()
+        })
+    }
+
+    /// A host like [`Topology::host`] whose replicas keep the newest `k`
+    /// rows.
+    pub fn host_keeping(self, name: &str, k: u32) -> Self {
+        self.host_decl(HostDecl {
+            name: name.to_owned(),
+            tail_rows: Some(k),
             ..HostDecl::default()
         })
     }

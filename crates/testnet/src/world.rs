@@ -83,6 +83,27 @@ pub trait World {
         read: impl FnOnce(&store::Sqlite) -> T + Send + 'static,
     ) -> Result<T, NetError>;
 
+    /// Fails unless the host's block of the agent's rows is whole against
+    /// what the agent's own host holds.
+    async fn block_whole(&self, host: &str, agent: &str) -> Result<(), NetError>;
+    /// A page of the agent's older items, as a client on the host asks for
+    /// it: from the host's own rows, or below them from the agent's host.
+    async fn fetch(
+        &self,
+        host: &str,
+        agent: &str,
+        before_order: Option<u64>,
+        limit: u32,
+    ) -> Result<wire::FetchResponse, NetError>;
+    /// Sets which replica agents keep a source open on the host, as its
+    /// app does going to the background and back.
+    fn set_source_policy(&self, host: &str, policy: node::SourcePolicy) -> Result<Ack, NetError>;
+    /// The replica agents with a source open on the host now, in order.
+    async fn open_sources(&self, host: &str) -> Result<Vec<store::AgentKey>, NetError>;
+    /// Whether `at` has caught up on a live inventory stream from `host`,
+    /// so pages of its agents' history are asked of it.
+    async fn host_ready(&self, at: &str, host: &str) -> Result<bool, NetError>;
+
     /// Waits until `probe` answers `Ok`, and returns what it answered.
     async fn until<T, E, F>(&self, what: &str, probe: impl FnMut() -> F) -> Result<T, NetError>
     where
@@ -205,6 +226,45 @@ impl World for Net {
             .read_store(read)
             .await
             .map_err(|_| NetError::Down(host.to_owned()))
+    }
+
+    async fn block_whole(&self, host: &str, agent: &str) -> Result<(), NetError> {
+        Net::assert_block_invariant(self, host, agent).await
+    }
+
+    async fn fetch(
+        &self,
+        host: &str,
+        agent: &str,
+        before_order: Option<u64>,
+        limit: u32,
+    ) -> Result<wire::FetchResponse, NetError> {
+        let id = Net::agent(self, agent)?.id;
+        Ok(self
+            .runtime(host)?
+            .fetch(&wire::FetchRequest {
+                agent_id: id.as_bytes().to_vec(),
+                before_order,
+                limit,
+            })
+            .await?)
+    }
+
+    fn set_source_policy(&self, host: &str, policy: node::SourcePolicy) -> Result<Ack, NetError> {
+        self.runtime(host)?.set_source_policy(policy);
+        Ok(Ack {
+            installed: format!("{host}'s source policy {policy:?}"),
+            at_ms: Net::now_ms(self),
+        })
+    }
+
+    async fn open_sources(&self, host: &str) -> Result<Vec<store::AgentKey>, NetError> {
+        Ok(self.runtime(host)?.open_sources())
+    }
+
+    async fn host_ready(&self, at: &str, host: &str) -> Result<bool, NetError> {
+        let id = self.host(host)?.host_id;
+        Ok(self.runtime(at)?.host_ready(id))
     }
 
     async fn until<T, E, F>(&self, what: &str, probe: impl FnMut() -> F) -> Result<T, NetError>

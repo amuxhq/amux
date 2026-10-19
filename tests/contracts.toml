@@ -33,7 +33,7 @@ source = "worked failure"
 section = "Replication and the client model"
 claim = "Opening a chat against a replica an hour stale: the source asks after its cursor with a cap, a gap beyond the cap answers Reset with a fresh tail and CaughtUp, a gap within it answers the delta; a chat opened before the source answers paints the stale rows unmarked and swaps the new block in at CaughtUp; with the origin asleep it paints the held rows and Detached, and a send is held by the client library until the chat is current."
 tests = [
-  "testnet/spec_replication::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
+  "testnet/replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
   "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
   "ui-state/spec::open::a_subscribe_to_an_away_host_paints_held_rows_then_detached",
   "ui-runtime/session::an_away_host_paints_its_held_rows_then_detached_with_send_disabled",
@@ -125,7 +125,7 @@ source = "worked failure"
 section = "Replication"
 claim = "Scrolling past a replica's held rows with the origin offline answers an error, never an empty page and never exhausted, and keeps what is held; once the origin is back the next page fills the rows."
 tests = [
-  "testnet/spec_replication::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
+  "testnet/replication_stories::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
   "ui-runtime/session::an_unreachable_origin_is_an_error_never_an_empty_page",
 ]
 
@@ -372,7 +372,7 @@ claim = "A replica's rows are empty or one contiguous block ending at the origin
 tests = [
   "testnet/harness::the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_hole",
   "testnet/lib::invariant::tests::empty_and_whole_tails_pass_and_holes_stale_rows_and_short_tops_fail",
-  "testnet/spec_replication::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
+  "testnet/replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
   "testnet/spec_replication::trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_interval",
 ]
 
@@ -385,7 +385,7 @@ tests = [
   "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
   "store/conformance::pages_extend_the_block_downwards_only_when_they_join",
   "store/conformance::absorb_refuses_own_rows",
-  "testnet/spec_replication::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
+  "testnet/replication_stories::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
 ]
 
 [[contract]]
@@ -406,7 +406,7 @@ section = "Runtime"
 claim = "One source per agent."
 tests = [
   "testnet/spec_replication::on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close",
-  "testnet/spec_replication::switching_to_on_demand_closes_every_source_no_client_watches",
+  "testnet/replication_stories::switching_to_on_demand_closes_every_source_no_client_watches",
 ]
 
 [[contract]]
@@ -415,7 +415,7 @@ source = "invariant"
 section = "Runtime"
 claim = "CaughtUp, Reset and Detached ride the broadcast in sequence with the rows they cover; CaughtUp is forwarded only after the origin's."
 tests = [
-  "testnet/spec_replication::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
+  "testnet/replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
   "testnet/spec_replication::a_stream_lost_with_the_link_up_detaches_through_the_backoff",
   "testnet/spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
 ]

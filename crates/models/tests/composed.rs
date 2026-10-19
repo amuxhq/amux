@@ -7,7 +7,7 @@ use models::{Bounds, ComposedNet, Machine as _, check, walk};
 
 /// How long the three exhaustive runs together may take under `just
 /// test`, sized to CI's four-core runner by the crate's rule until the
-/// runner measures it: their four-thread Mac time (45 s) times 4.2,
+/// runner measures it: their four-thread Mac time (46 s) times 4.2,
 /// doubled, rounded up to a whole minute. A run past it says the bounds
 /// have outgrown their place.
 const BUDGET_SECONDS: f64 = 420.0;

@@ -8,9 +8,13 @@
 //! delivery, a call's message lost, a link severed and restored, a daemon
 //! killed and started again or rebooted uncleanly, the clock moved to the
 //! next timer, and a person's calls, an input sent and a stop; its
-//! properties are every machine's promises that a net of two hosts and one
-//! agent can break, judged over the same stores, beside the promises that
-//! hold only between machines. Explored breadth first it is the composed
+//! properties are the promises of the single daemon, replication, presence
+//! and the agent lifecycle that a net of two hosts and one agent can break,
+//! judged by the predicates those machines' own models judge them by, beside
+//! the promises that hold only between machines. The environment judges the
+//! promises about a step as the step is made, so the simulated mode keeps
+//! them too; the models crate's README names the promises the net leaves to
+//! their own models, and why. Explored breadth first it is the composed
 //! check; walked one seeded delivery at a time it is the testnet's
 //! simulated mode.
 
@@ -24,9 +28,17 @@ pub use provider_fakes::script::Step;
 use store::AgentKey;
 use wire::Lifecycle;
 
+use crate::lifecycle::{EXIT_CAUSE_LAST_STEP, EXITS_AT_TURN_END};
+use crate::presence::{
+    AWAY_ONLY_ON_PAYMENT_REFUSAL, CHANGES_ON_A_CONCLUDED_ATTEMPT, ONE_ATTEMPT_IN_FLIGHT,
+};
 use crate::replication::{
     BLOCK_AGREES, BLOCK_CONTIGUOUS, CURSOR_COMPLETE, NO_OTHER_GENERATION, block_agrees,
     block_contiguous, cursor_complete, no_other_generation,
+};
+use crate::single_daemon::{
+    COMMIT_BEFORE_BROADCAST, GENERATION_BUMPS_AFTER_UNCLEAN, GENERATION_BUMPS_ONLY_AFTER_UNCLEAN,
+    RECLAIMED_BELOW_CURSOR, reclaimed_below_cursor,
 };
 use crate::{Machine, Property};
 
@@ -202,7 +214,7 @@ impl ComposedNet {
     }
 
     /// A person sends a prompt and asks for a stop while either daemon may
-    /// be killed and started again: 194,762 states in 19 s on 12 threads.
+    /// be killed and started again: 194,762 states in 20 s on 12 threads.
     pub fn calls_through_a_crash() -> Self {
         Self {
             kills: 1,
@@ -317,6 +329,9 @@ struct Judged {
     /// Each of the four replication promises over the two stores, judged
     /// under the origin's generation.
     block: [bool; 4],
+    /// The agent's journal on its host still holds every frame from the
+    /// cursor its host's store has.
+    journal_kept: bool,
     /// The agent's row on its own host and on the replica.
     origin_row: Option<i32>,
     replica_row: Option<i32>,
@@ -350,6 +365,10 @@ impl State {
         let key = self.key(model);
         let generation = self.net.generation(model.origin());
         let accepted = self.accepted();
+        let oldest = (self
+            .net
+            .journal(model.origin(), agent_id(&model.topology.agents[0].name)))
+        .and_then(|journal| journal.keys().next().copied());
         let mut judged = self
             .net
             .read_two(model.origin(), model.replica(), |origin, replica| {
@@ -365,6 +384,7 @@ impl State {
                     same_generation,
                     current: same_generation && replica.current_with(&key, origin).unwrap(),
                     block,
+                    journal_kept: reclaimed_below_cursor(oldest, origin.cursor(&key).unwrap()),
                     origin_row: origin.agent(&key).unwrap().map(|row| row.lifecycle),
                     replica_row: replica.agent(&key).unwrap().map(|row| row.lifecycle),
                     accepted: accepted.len(),
@@ -490,7 +510,14 @@ impl Machine for ComposedNet {
             seen: Seen::default(),
             judged: Judged::default(),
         };
-        state.judge(self);
+        // A start that failed may have created nothing to judge: its
+        // failure is all the properties read of it.
+        if state.net.failure().is_none() {
+            state.judge(self);
+        } else {
+            state.judged.block = [true; 4];
+            state.judged.journal_kept = true;
+        }
         state
     }
 
@@ -626,9 +653,34 @@ impl Machine for ComposedNet {
             Property::always(BLOCK_AGREES, |_, s: &State| s.judged.block[1]),
             Property::always(NO_OTHER_GENERATION, |_, s: &State| s.judged.block[2]),
             Property::always(CURSOR_COMPLETE, |_, s: &State| s.judged.block[3]),
+            Property::always(COMMIT_BEFORE_BROADCAST, |_, s: &State| {
+                !s.net.broke(COMMIT_BEFORE_BROADCAST)
+            }),
+            Property::always(RECLAIMED_BELOW_CURSOR, |_, s: &State| s.judged.journal_kept),
+            Property::always(GENERATION_BUMPS_AFTER_UNCLEAN, |_, s: &State| {
+                !s.net.broke(GENERATION_BUMPS_AFTER_UNCLEAN)
+            }),
+            Property::always(GENERATION_BUMPS_ONLY_AFTER_UNCLEAN, |_, s: &State| {
+                !s.net.broke(GENERATION_BUMPS_ONLY_AFTER_UNCLEAN)
+            }),
+            Property::always(EXITS_AT_TURN_END, |_, s: &State| {
+                !s.net.broke(EXITS_AT_TURN_END)
+            }),
+            Property::always(EXIT_CAUSE_LAST_STEP, |_, s: &State| {
+                !s.net.broke(EXIT_CAUSE_LAST_STEP)
+            }),
+            Property::always(CHANGES_ON_A_CONCLUDED_ATTEMPT, |_, s: &State| {
+                !s.net.broke(CHANGES_ON_A_CONCLUDED_ATTEMPT)
+            }),
+            Property::always(AWAY_ONLY_ON_PAYMENT_REFUSAL, |_, s: &State| {
+                !s.net.broke(AWAY_ONLY_ON_PAYMENT_REFUSAL)
+            }),
+            Property::always(ONE_ATTEMPT_IN_FLIGHT, |_, s: &State| {
+                !s.net.broke(ONE_ATTEMPT_IN_FLIGHT)
+            }),
             Property::always(
-                "the listing a far host's family acts on follows replication's order: a replica \
-                 reads an agent exited only once the agent's own host does",
+                "a replica reads an agent exited only once the agent's own host does: the order \
+                 a far host's family listing relies on, with no family here to act on it",
                 |_, s: &State| !s.seen.exited_early,
             ),
             // What must hold once the world rests is judged at every state
@@ -707,11 +759,12 @@ impl Machine for ComposedNet {
     }
 }
 
-/// Makes the first lane's delivery until `done` holds or nothing is left
-/// to deliver: the one schedule a model starts from.
+/// Makes the first lane's delivery until `done` holds, nothing is left to
+/// deliver or the net fails: the one schedule a model starts from. A start
+/// that fails is the initial state, judged like any other.
 fn settle(net: &mut Net, done: impl Fn(&Net) -> bool) {
     for _ in 0..MOST_SETTLING {
-        if done(net) {
+        if done(net) || net.failure().is_some() {
             return;
         }
         let Some(&lane) = net.deliverable().first() else {

@@ -165,23 +165,69 @@ environment's and a person's: a lane's next delivery (or a later one, within
 a bound on reorderings), a call's message lost, a link severed and restored
 once both ends have heard it go, a daemon killed and started again or
 rebooted uncleanly under its next generation, the clock moved on to the
-next timer, a prompt sent to the agent and a stop asked of its host. Its
-properties are the promises of every machine above that a net of two hosts
-and one agent can break, judged over the same stores (no core asks for a
-dump, replication's four promises over the block, hosts on a working link
-read each other online, an accepted input keeps its row), beside the ones
-that hold only between machines: a reset arriving while presence flips
-still leaves the replica current under the newest generation, and the
-listing a far host's family acts on never reads an agent exited before
-the agent's own host does. Two nets are one when the cores' fingerprints,
-the stores, the journals, the timers and what waits in each lane match,
-with the calls and jobs a core numbered ranked as its fingerprint ranks
-them; the ranking is not exact, so on several threads the count may differ
-by a few dozen states between runs while the verdict does not. The
-checked topology is two linked hosts and one agent whose one turn writes
-three items, explored under three sets of faults. Walked one seeded
-delivery at a time, the same model is the testnet's simulated mode. The
-properties are in `src/net/mod.rs`.
+next timer, a prompt sent to the agent and a stop asked of its host.
+
+Its properties are the promises of the machines above that a net of two
+hosts and one agent can break, each judged by the same predicate its own
+model judges it by, over the same stores and cores:
+
+- no core asks for a dump, and every store keeps every invariant its core
+  checks after a write;
+- the single daemon's commit before broadcast, a segment reclaimed only
+  below the cursor, and the generation bumping after an unclean reboot and
+  only after one;
+- replication's four promises over the block, and a replica whose origin
+  and link fall quiet becoming current;
+- the lifecycle's exit only at a turn end or a drain deadline, and the exit
+  cause on the journal's last step;
+- presence changing only on a concluded attempt on the preferred route,
+  Away only on payment refusal, at most one attempt in flight per host and
+  route, and hosts on a working link reading each other online once the
+  world rests;
+- an accepted prompt keeping its row on its host.
+
+The environment judges the promises about a step as it makes the step, so
+the simulated mode keeps them too. Beside them are the promises that hold
+only between machines: a reset arriving while presence flips still leaves
+the replica current under the newest generation, and a replica reads an
+agent exited only once the agent's own host does, the order a far host's
+family listing relies on (the net's one agent has no parent, so no family
+acts on it here).
+
+The rest are left to their own models, because this net cannot break or
+observe them:
+
+- the single daemon's "the open is one cut": no client subscribes in the
+  net; its one subscription is the replica's, which replication's promises
+  over the block judge;
+- the single daemon's "a checkpoint plus the inputs since reproduces the
+  state": the net keeps no ring of the inputs since a checkpoint, and
+  replaying one at every state would double what a state costs;
+- replication's "the store never refuses a write": the net's stores never
+  refuse one;
+- the lifecycle's "a resume continues where the last incarnation was": the
+  net keeps no facts ring, since nothing in it reads one back;
+- the lifecycle's "a one-shot child runs a queued follow-up before exiting"
+  and "a message after the exit decision resumes": both need a parent and
+  its one-shot child;
+- presence's "offline after failed calls until a channel opens": no call in
+  the net waits for a channel, since a call is carried whenever its link is
+  up;
+- presence's "no flap while another route carries traffic": each host
+  reaches the other by one route, their link, with no relay or peer to
+  claim another;
+- every promise of the family model, which needs a parent and a child;
+- every promise of the supervisor, which is outside the net.
+
+Two nets are one when the cores' fingerprints, the stores, the journals,
+the timers and what waits in each lane match, with the calls and jobs a
+core numbered ranked as its fingerprint ranks them; the ranking is not
+exact, so on several threads the count may differ by a few dozen states
+between runs while the verdict does not. The checked topology is two
+linked hosts and one agent whose one turn writes three items, explored
+under three sets of faults. Walked one seeded delivery at a time, the same
+model is the testnet's simulated mode. The properties are in
+`src/net/mod.rs`, and the judging of a step in `src/net/env.rs`.
 
 ## Cost, bounds and budget
 
@@ -199,7 +245,7 @@ under `just test`.
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 1,134,868 | 31 s | 68 s | not yet measured (134 s at 859,652 states) | 600 s | 4 up, 3 down, 3 failures | 431 s |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,275,996 and 71,250 | 8 s | 17 s | 44 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both swap orders | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 4,189,038 and 4,449,354 | 5 s | 11 s | not yet measured | 120 s each | 3 releases, 2 failed starts, 6 timers firing | 77 s |
-| Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 194,762 | 23 s | 45 s | not yet measured | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
+| Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 194,762 | 24 s | 46 s | not yet measured | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), with the development profile, which optimises SQLite, the store and

@@ -48,8 +48,19 @@ use provider_fakes::script::Step;
 use store::Sqlite;
 use wire::{CtlFrame, Lifecycle, ctl_frame};
 
-use super::provider::{Provider, flatten};
+use super::provider::{Provider, flatten, is_turn_end};
 use crate::held::{Held, Slot};
+use crate::lifecycle::{
+    EXIT_CAUSE_LAST_STEP, EXITS_AT_TURN_END, cause_on_last_step, decided_in_its_time,
+};
+use crate::presence::{
+    AWAY_ONLY_ON_PAYMENT_REFUSAL, CHANGES_ON_A_CONCLUDED_ATTEMPT, ONE_ATTEMPT_IN_FLIGHT,
+    attempt_not_doubled, away_explained, change_prompted,
+};
+use crate::single_daemon::{
+    COMMIT_BEFORE_BROADCAST, GENERATION_BUMPS_AFTER_UNCLEAN, GENERATION_BUMPS_ONLY_AFTER_UNCLEAN,
+    answered_uncommitted, bumps_after_unclean, bumps_only_after_unclean,
+};
 
 type Kind = TestKind;
 
@@ -121,6 +132,80 @@ fn append(journal: &mut Journal, step: &wire::Step) {
     }
 }
 
+/// What a host's step broke of the promises judged as it steps, if it
+/// broke one: what it answered that its store does not hold, and how it
+/// moved another host's presence, each host having read as `views` before
+/// the step and `concluded` the attempt the step concluded.
+fn judge_step(
+    daemon: &Daemon,
+    out: &[Output],
+    kind: &str,
+    name: &str,
+    others: &[(HostId, &str)],
+    views: Vec<daemon_core::HostView>,
+    concluded: Option<(HostId, Route)>,
+) -> Option<(&'static str, String)> {
+    let answers = out.iter().any(|output| {
+        matches!(
+            output,
+            Output::Answer {
+                response: Response::Session(_),
+                ..
+            }
+        )
+    });
+    if answers {
+        let store = daemon.store();
+        let agents: Vec<store::AgentKey> = store
+            .agents()
+            .unwrap()
+            .into_iter()
+            .map(|row| row.agent)
+            .collect();
+        if let Some(row) = answered_uncommitted(out, store, &agents) {
+            let what = format!("{name} answered {row} on {kind} before its store held it");
+            return Some((COMMIT_BEFORE_BROADCAST, what));
+        }
+    }
+    for (&(other, other_name), was) in others.iter().zip(views) {
+        let now = daemon.presence().view(other);
+        if now.presence == was.presence {
+            continue;
+        }
+        let change = format!(
+            "{name} read {other_name} {:?} -> {:?} on {kind}",
+            was.presence, now.presence
+        );
+        let on = concluded
+            .filter(|(host, _)| *host == other)
+            .map(|(_, route)| route);
+        // No call in the net waits for a channel: calls are carried
+        // whenever their link is up.
+        if !change_prompted(&now, on, false) {
+            return Some((CHANGES_ON_A_CONCLUDED_ATTEMPT, change));
+        }
+        // Nor does any relay refuse one for the account's plan.
+        if !away_explained(&now, false) {
+            return Some((AWAY_ONLY_ON_PAYMENT_REFUSAL, change));
+        }
+    }
+    None
+}
+
+/// The incarnation end the journal's newest step records, if it records
+/// one: its cause and detail.
+fn last_end(journal: &Journal) -> Option<(i32, Option<String>)> {
+    let (_, bytes) = journal.iter().rev().find(|(_, bytes)| !bytes.is_empty())?;
+    let mut newest = None;
+    let mut at = 0;
+    while let journal::Frame::Whole(step, length) = journal::decode_frame(&bytes[at..]) {
+        newest = Some(step);
+        at += length;
+    }
+    let end = newest?.incarnation_end?;
+    Some((end.cause, end.detail))
+}
+
 /// Why a net failed: what its cores reported, or what its drivers could
 /// not do.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -132,6 +217,9 @@ pub enum Failure {
     Violation(String),
     /// The drivers met something no driver should: a spec naming no agent.
     Driver(String),
+    /// A promise a machine's own model checks, judged here as the net
+    /// steps, broke: the promise, and what broke it.
+    Broke(&'static str, String),
 }
 
 impl fmt::Display for Failure {
@@ -140,6 +228,7 @@ impl fmt::Display for Failure {
             Failure::Dump(what) | Failure::Violation(what) | Failure::Driver(what) => {
                 f.write_str(what)
             }
+            Failure::Broke(promise, what) => write!(f, "{what}, breaking \"{promise}\""),
         }
     }
 }
@@ -695,6 +784,11 @@ impl Net {
         self.w.now_ms
     }
 
+    /// Whether the net failed by breaking `promise`.
+    pub fn broke(&self, promise: &str) -> bool {
+        matches!(self.failure(), Some(Failure::Broke(broke, _)) if *broke == promise)
+    }
+
     pub fn failure(&self) -> Option<&Failure> {
         self.w.failure.as_ref()
     }
@@ -917,7 +1011,7 @@ impl Net {
 
     /// Starts the host's daemon over what its store holds.
     pub fn start_host(&mut self, h: usize, entropy: [u8; 32]) {
-        self.transition(|t| t.start_host(h, entropy));
+        self.transition(|t| t.start_host(h, entropy, false));
     }
 
     /// The host's daemon dies; its store stays as it was.
@@ -939,7 +1033,7 @@ impl Net {
                 }
             }
             t.w.hosts[h].boot += 1;
-            t.start_host(h, entropy);
+            t.start_host(h, entropy, true);
         });
     }
 
@@ -1087,6 +1181,9 @@ impl Transition<'_> {
                 Failure::Dump(what) => Failure::Dump(format!("at step {at}: {what}")),
                 Failure::Violation(what) => Failure::Violation(format!("at step {at}: {what}")),
                 Failure::Driver(what) => Failure::Driver(format!("at step {at}: {what}")),
+                Failure::Broke(promise, what) => {
+                    Failure::Broke(promise, format!("at step {at}: {what}"))
+                }
             });
         }
     }
@@ -1194,22 +1291,46 @@ impl Transition<'_> {
     // --- hosts ------------------------------------------------------------
 
     /// Steps the host's core with each input in turn over this thread's
-    /// store and directory, checking the store whole after each write, and
+    /// store and directory, checking the store whole after each write and
+    /// what each step answered and made of the other hosts' presence, and
     /// returns what the steps asked for, its paths named at the host's
     /// home.
     fn step_host(&mut self, h: usize, inputs: Vec<Input>) -> Vec<Output> {
         let id = self.plan.hosts[h].id;
         let name = &self.plan.hosts[h].name;
+        let others: Vec<(HostId, &str)> = self
+            .plan
+            .hosts
+            .iter()
+            .filter(|other| other.id != id)
+            .map(|other| (other.id, other.name.as_str()))
+            .collect();
         let host = &mut self.w.hosts[h];
         let (slot, dir) = self.scratch.of(id);
         dir.lay_out(&host.journals);
         let home = agents_home(id);
         let mut violation = None;
+        let mut broke = None;
         let (out, print) = slot.with_core(&mut host.held, (dir.path(), &home), |daemon| {
             let mut out = Vec::new();
             for input in inputs {
                 let before = daemon.store().changes();
                 let kind = input.kind();
+                let views: Vec<_> = others
+                    .iter()
+                    .map(|&(other, _)| daemon.presence().view(other))
+                    .collect();
+                // An attempt whose link closed under it concludes on no
+                // route: the route went before it did.
+                let concluded = match &input {
+                    Input::AttemptConcluded { host, route, tried }
+                        if !matches!(tried, Tried::Failed(ChannelError::LinkClosed)) =>
+                    {
+                        Some((*host, *route))
+                    }
+                    _ => None,
+                };
+                let from = out.len();
                 daemon.step(input, &mut out);
                 if daemon.store().changes() != before
                     && let Err(broken) = daemon.check_all()
@@ -1217,6 +1338,9 @@ impl Transition<'_> {
                     violation.get_or_insert(format!(
                         "{name}'s store broke an invariant after {kind}: {broken}"
                     ));
+                }
+                if broke.is_none() {
+                    broke = judge_step(daemon, &out[from..], kind, name, &others, views, concluded);
                 }
             }
             out
@@ -1226,6 +1350,9 @@ impl Transition<'_> {
         let scratch = dir.path().to_path_buf();
         if let Some(violation) = violation {
             self.fail(Failure::Violation(violation));
+        }
+        if let Some((promise, what)) = broke {
+            self.fail(Failure::Broke(promise, what));
         }
         out.into_iter()
             .map(|output| rehome(output, &scratch, &home))
@@ -1252,8 +1379,10 @@ impl Transition<'_> {
 
     /// Starts the host's daemon over what its store holds: its settings,
     /// randomness, trust and own entry, then the start's sweep of its
-    /// agents, then its links.
-    fn start_host(&mut self, h: usize, entropy: [u8; 32]) {
+    /// agents, then its links. `owed` says the machine restarted under a
+    /// run that had not shut down cleanly, which the generation it serves
+    /// must answer for.
+    fn start_host(&mut self, h: usize, entropy: [u8; 32], owed: bool) {
         if self.w.hosts[h].up {
             return;
         }
@@ -1278,6 +1407,27 @@ impl Transition<'_> {
                 }),
             &boot_id(host.boot),
         );
+        let previous = host.run.map(|run| run.counter);
+        let promise = [
+            (
+                GENERATION_BUMPS_AFTER_UNCLEAN,
+                bumps_after_unclean as fn(_, _, _) -> _,
+            ),
+            (
+                GENERATION_BUMPS_ONLY_AFTER_UNCLEAN,
+                bumps_only_after_unclean,
+            ),
+        ]
+        .into_iter()
+        .find(|(_, keeps)| !keeps(owed, previous, generation));
+        let broke = promise.map(|(promise, _)| {
+            let after = if owed { "an unclean reboot" } else { "a restart on the same boot" };
+            let what = format!(
+                "{} served generation {generation} after {after}, its last run having served {previous:?}",
+                plan.name
+            );
+            (promise, what)
+        });
         host.run = Some(RunRecord {
             boot: host.boot,
             clean: false,
@@ -1360,6 +1510,9 @@ impl Transition<'_> {
         let scratch = dir.path().to_path_buf();
         if let Some(violation) = violation {
             self.fail(Failure::Violation(violation));
+        }
+        if let Some((promise, what)) = broke {
+            self.fail(Failure::Broke(promise, what));
         }
         let out = out
             .into_iter()
@@ -1715,6 +1868,29 @@ impl Transition<'_> {
                 Output::EndCall { call, status } => self.ended(h, call, status),
                 Output::Attempt { host: to, route } => {
                     let far = self.host_index(to);
+                    let lanes = [far.map(|far| Lane::Link(h, far)), Some(Lane::Local(h))];
+                    let in_flight: BTreeSet<Route> = lanes
+                        .iter()
+                        .flatten()
+                        .filter_map(|lane| self.w.lanes.get(lane))
+                        .flatten()
+                        .filter_map(|delivery| match delivery {
+                            Delivery::Host(_, Dbg(Input::AttemptConcluded { host, route, .. }))
+                                if *host == to =>
+                            {
+                                Some(*route)
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    if !attempt_not_doubled(&in_flight, route) {
+                        let what = format!(
+                            "{} asked for a second attempt at {} on {route:?}",
+                            self.name(h),
+                            far.map_or("a host it does not know", |far| self.name(far)),
+                        );
+                        self.fail(Failure::Broke(ONE_ATTEMPT_IN_FLIGHT, what));
+                    }
                     let tried = match (route, far.and_then(|far| self.live_link(h, far))) {
                         (Route::Direct(link), Some(live)) if link == live => Tried::Opened,
                         _ => Tried::Failed(ChannelError::LinkClosed),
@@ -1921,10 +2097,29 @@ impl Transition<'_> {
             return;
         };
         let mut core = Agent::<Kind>::from_value(value).expect("an agent's value restores");
+        let deciding = core.exiting().is_none();
+        let at_turn_end =
+            matches!(&input, agent_core::Input::Provider(fact) if is_turn_end(&fact.payload));
+        let at_turn_end_or_deadline =
+            at_turn_end || matches!(input, agent_core::Input::Timer(agent_core::TimerId::Drain));
+        // The provider has said what it says by now: a turn end it just
+        // said ends a turn that ran until this input.
+        let turn_running = at_turn_end || process.provider.turn_running();
+        let kind = agent_input(&input);
         let mut out = Vec::new();
         core.step(agent_core::Input::Tick { now_ms: now }, &mut out);
         core.step(input, &mut out);
+        let early = core
+            .exiting()
+            .filter(|cause| {
+                deciding && !decided_in_its_time(cause, at_turn_end_or_deadline, turn_running)
+            })
+            .map(|cause| format!("decided to exit {cause:?} on {kind} while a turn ran"));
         process.core = Some(Core(core.value()));
+        if let Some(early) = early {
+            let what = format!("{} {early}", self.agent_name(p));
+            self.fail(Failure::Broke(EXITS_AT_TURN_END, what));
+        }
         self.carry_out_agent(p, out);
     }
 
@@ -1997,7 +2192,19 @@ impl Transition<'_> {
                 } => {}
                 Out::CloseProvider => self.w.processes[p].provider.close(),
                 Out::KillProvider => self.w.processes[p].provider.kill(),
-                Out::Exit(_) => self.exited(p),
+                Out::Exit(cause) => {
+                    let process = &self.w.processes[p];
+                    let journal = self.w.hosts[process.host].journals.get(&process.agent);
+                    let end = journal.and_then(last_end);
+                    if !cause_on_last_step(&cause, end.as_ref()) {
+                        let what = format!(
+                            "{} exited {cause:?}, its journal's newest step recording {end:?}",
+                            self.agent_name(p)
+                        );
+                        self.fail(Failure::Broke(EXIT_CAUSE_LAST_STEP, what));
+                    }
+                    self.exited(p);
+                }
                 Out::Dump { reason } => {
                     let name = self.agent_name(p);
                     self.fail(Failure::Dump(format!(

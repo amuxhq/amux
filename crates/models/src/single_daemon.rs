@@ -571,10 +571,9 @@ impl Machine for SingleDaemon {
 
     fn properties(&self) -> Vec<Property<Self>> {
         vec![
-            Property::always(
-                "commit before broadcast: every row a step answers is in the store once the step is done",
-                |_, s: &State| s.broadcast_uncommitted.is_none(),
-            ),
+            Property::always(COMMIT_BEFORE_BROADCAST, |_, s: &State| {
+                s.broadcast_uncommitted.is_none()
+            }),
             Property::always(
                 "the open is one cut: an open subscriber has read every row the store holds exactly once, \
                  in the order the store revised them, and nothing else",
@@ -587,36 +586,19 @@ impl Machine for SingleDaemon {
                         })
                 },
             ),
-            Property::always(
-                "a segment is reclaimed only below the last checkpoint's cursor: the journal still holds \
-                 every frame from the cursor the drive's store has",
-                |_, s: &State| {
-                    s.journal
-                        .first_key_value()
-                        .is_none_or(|(oldest, _)| *oldest <= s.durable_cursor)
-                },
-            ),
-            Property::always(
-                "the generation bumps after an unclean reboot: a start after the machine restarted under a \
-                 daemon that had not shut down cleanly serves a higher generation than the run before",
-                |_, s: &State| {
-                    s.run.as_ref().is_none_or(|run| {
-                        !run.owed
-                            || run
-                                .previous
-                                .is_none_or(|previous| run.generation > previous)
-                    })
-                },
-            ),
-            Property::always(
-                "the generation bumps only after an unclean reboot: a start after a crash on the same boot, \
-                 or after a clean shutdown, serves the generation of the run before",
-                |_, s: &State| {
-                    s.run
-                        .as_ref()
-                        .is_none_or(|run| run.owed || run.generation == run.previous.unwrap_or(1))
-                },
-            ),
+            Property::always(RECLAIMED_BELOW_CURSOR, |_, s: &State| {
+                reclaimed_below_cursor(s.journal.keys().next().copied(), s.durable_cursor)
+            }),
+            Property::always(GENERATION_BUMPS_AFTER_UNCLEAN, |_, s: &State| {
+                s.run
+                    .as_ref()
+                    .is_none_or(|run| bumps_after_unclean(run.owed, run.previous, run.generation))
+            }),
+            Property::always(GENERATION_BUMPS_ONLY_AFTER_UNCLEAN, |_, s: &State| {
+                s.run.as_ref().is_none_or(|run| {
+                    bumps_only_after_unclean(run.owed, run.previous, run.generation)
+                })
+            }),
             Property::always(
                 "a checkpoint plus the inputs since reproduces the state: the core restored from the newest \
                  checkpoint and stepped through every input since, against the journal as each found it, \
@@ -671,27 +653,25 @@ impl SingleDaemon {
         let journal_before = next.journal.clone();
         let cursor_before = next.cursor;
         let run = next.run.as_mut().expect("a step needs a running daemon");
-        let (out, held, core, store, journal) = with_scratch(&LIVE, |scratch| {
+        let (out, uncommitted, core, store, journal) = with_scratch(&LIVE, |scratch| {
             let mut daemon = scratch.daemon(&run.core, &next.store, &next.journal);
             let mut out = Vec::new();
             stepped(&mut daemon, input.clone(), refuse, &mut out);
             run.held = daemon.checkpoints().held();
             // Each row a step answered, and whether the store holds it.
-            let held: Vec<bool> = answered(&out)
-                .map(|(_, key, revision)| {
-                    daemon
-                        .store()
-                        .get(&agent(), &key)
-                        .unwrap()
-                        .is_some_and(|row| row.revision == revision)
-                })
-                .collect();
+            let uncommitted = answered_uncommitted(&out, daemon.store(), &[agent()]);
             let (core, store) = scratch.put_back(daemon);
             let cursor = store.cursor(&agent()).unwrap();
             let rows = rows_in(store);
             let dump = store.dump().expect("the store dumps");
             scratch.holds = dump.clone();
-            (out, held, core, (dump, cursor, rows), scratch.read_back())
+            (
+                out,
+                uncommitted,
+                core,
+                (dump, cursor, rows),
+                scratch.read_back(),
+            )
         });
         run.core = core;
         (next.store, next.cursor, next.rows) = store;
@@ -701,10 +681,8 @@ impl SingleDaemon {
         }
         next.ring.inputs.push((input, journal_before, refuse));
 
-        for ((_, key, revision), held) in answered(&out).zip(held) {
-            if !held && next.broadcast_uncommitted.is_none() {
-                next.broadcast_uncommitted = Some(format!("{key} r{revision}"));
-            }
+        if next.broadcast_uncommitted.is_none() {
+            next.broadcast_uncommitted = uncommitted;
         }
         for output in out {
             match output {
@@ -900,17 +878,67 @@ fn summary(core: &[u8]) -> String {
 
 /// Every row a step answered to any call, as the call, the key and the
 /// revision.
-fn answered(out: &[Output]) -> impl Iterator<Item = (CallId, String, u64)> + '_ {
-    out.iter().filter_map(|output| match output {
-        Output::Answer {
-            call,
-            response: Response::Session(event),
-        } => match &event.of {
-            Some(session_event::Of::Item(item)) => Some((*call, item.key.clone(), item.revision)),
+/// The single daemon's promises the composed net judges too, each with
+/// the predicate both judge it by.
+pub(crate) const COMMIT_BEFORE_BROADCAST: &str = "commit before broadcast: every row a step answers \
+     is in the store once the step is done, at the revision answered or a later one the step wrote over it";
+pub(crate) const RECLAIMED_BELOW_CURSOR: &str = "a segment is reclaimed only below the last checkpoint's \
+     cursor: the journal still holds every frame from the cursor the drive's store has";
+pub(crate) const GENERATION_BUMPS_AFTER_UNCLEAN: &str = "the generation bumps after an unclean reboot: a \
+     start after the machine restarted under a daemon that had not shut down cleanly serves a higher \
+     generation than the run before";
+pub(crate) const GENERATION_BUMPS_ONLY_AFTER_UNCLEAN: &str = "the generation bumps only after an unclean \
+     reboot: a start after a crash on the same boot, or after a clean shutdown, serves the generation of \
+     the run before";
+
+/// The first row `out` answers on a session that `store` does not hold at
+/// the revision answered or a later one, under any of `agents`. A step that
+/// ingests a batch revising one row twice answers both revisions and
+/// commits them in one transaction, which leaves the later.
+pub(crate) fn answered_uncommitted(
+    out: &[Output],
+    store: &Sqlite,
+    agents: &[AgentKey],
+) -> Option<String> {
+    out.iter()
+        .filter_map(|output| match output {
+            Output::Answer {
+                response: Response::Session(event),
+                ..
+            } => match &event.of {
+                Some(session_event::Of::Item(item)) => Some((&item.key, item.revision)),
+                _ => None,
+            },
             _ => None,
-        },
-        _ => None,
-    })
+        })
+        .find(|(key, revision)| {
+            !agents.iter().any(|agent| {
+                store
+                    .get(agent, key)
+                    .unwrap()
+                    .is_some_and(|row| row.revision >= *revision)
+            })
+        })
+        .map(|(key, revision)| format!("{key} r{revision}"))
+}
+
+/// Whether a journal whose oldest segment starts at `oldest` still holds
+/// every frame from `cursor`.
+pub(crate) fn reclaimed_below_cursor(oldest: Option<u64>, cursor: u64) -> bool {
+    oldest.is_none_or(|oldest| oldest <= cursor)
+}
+
+/// Whether a start serving `generation` after a run that served
+/// `previous` bumped it if `owed`: the machine restarted under a run that
+/// had not shut down cleanly.
+pub(crate) fn bumps_after_unclean(owed: bool, previous: Option<u64>, generation: u64) -> bool {
+    !owed || previous.is_none_or(|previous| generation > previous)
+}
+
+/// Whether a start serving `generation` after a run that served
+/// `previous` kept it unless `owed`.
+pub(crate) fn bumps_only_after_unclean(owed: bool, previous: Option<u64>, generation: u64) -> bool {
+    owed || generation == previous.unwrap_or(1)
 }
 
 /// The frame the agent writes `n`th: one row under a key of its own.

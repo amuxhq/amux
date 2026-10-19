@@ -507,18 +507,12 @@ impl Machine for PresenceRouting {
 
     fn properties(&self) -> Vec<Property<Self>> {
         vec![
-            Property::always(
-                "presence changes only on a concluded attempt on the preferred route: a host's \
-                 presence moves only when an attempt or a call's channel concludes on the route \
-                 carrying its traffic, or else the first listed, as the attempt leaves them, when \
-                 a call finds no channel on the route calls take, or when no route lists it",
-                |_, s: &State| s.unprompted.is_none(),
-            ),
-            Property::always(
-                "Away only on payment refusal: a host reads away only once the relay refused a \
-                 channel to it for the account's plan, and no channel to it opened since",
-                |_, s: &State| s.view.presence != Presence::Away || s.refused_for_plan,
-            ),
+            Property::always(CHANGES_ON_A_CONCLUDED_ATTEMPT, |_, s: &State| {
+                s.unprompted.is_none()
+            }),
+            Property::always(AWAY_ONLY_ON_PAYMENT_REFUSAL, |_, s: &State| {
+                away_explained(&s.view, s.refused_for_plan)
+            }),
             Property::always(
                 "offline after failed calls until a channel opens: once calls to a host have \
                  failed, it reads offline until a channel to it opens or the relay refuses one \
@@ -531,10 +525,7 @@ impl Machine for PresenceRouting {
                  host reads",
                 |_, s: &State| s.flapped.is_none(),
             ),
-            Property::always(
-                "at most one attempt the core asked for is in flight per host and route",
-                |_, s: &State| s.doubled.is_none(),
-            ),
+            Property::always(ONE_ATTEMPT_IN_FLIGHT, |_, s: &State| s.doubled.is_none()),
             Property::always("the core never asks for a dump", |_, s: &State| {
                 s.dumped.is_none()
             }),
@@ -691,9 +682,10 @@ impl PresenceRouting {
         for output in out {
             match output {
                 Output::Attempt { host, route } if host == TARGET => {
-                    if !next.attempts.insert(route) && next.doubled.is_none() {
+                    if !attempt_not_doubled(&next.attempts, route) && next.doubled.is_none() {
                         next.doubled = Some(format!("{route:?}"));
                     }
+                    next.attempts.insert(route);
                 }
                 Output::Attempt { host, route } => {
                     unreachable!("only the target is ever tried again, not {host:?} on {route:?}")
@@ -731,11 +723,9 @@ impl PresenceRouting {
             Action::CallsFailed => was.route(),
             _ => None,
         };
-        let on_preferred = match action {
-            Action::CallsFailed => true,
-            _ => concluded.is_some_and(|route| now.route() == Some(route)),
-        };
-        if !on_preferred && !now.routes.is_empty() && next.unprompted.is_none() {
+        if !change_prompted(now, concluded, *action == Action::CallsFailed)
+            && next.unprompted.is_none()
+        {
             next.unprompted = Some(change.clone());
         }
         if let Some(carrying) = was.active
@@ -746,6 +736,43 @@ impl PresenceRouting {
             next.flapped = Some(format!("{change} while {carrying:?} carried traffic"));
         }
     }
+}
+
+/// Presence's promises the composed net judges too, each with the
+/// predicate both judge it by.
+pub(crate) const CHANGES_ON_A_CONCLUDED_ATTEMPT: &str = "presence changes only on a concluded attempt \
+     on the preferred route: a host's presence moves only when an attempt or a call's channel concludes \
+     on the route carrying its traffic, or else the first listed, as the attempt leaves them, when a call \
+     finds no channel on the route calls take, or when no route lists it";
+pub(crate) const AWAY_ONLY_ON_PAYMENT_REFUSAL: &str = "Away only on payment refusal: a host reads away \
+     only once the relay refused a channel to it for the account's plan, and no channel to it opened since";
+pub(crate) const ONE_ATTEMPT_IN_FLIGHT: &str =
+    "at most one attempt the core asked for is in flight per host and route";
+
+/// Whether a host's presence, having moved to read as `now`, moved for a
+/// reason: an attempt or a call's channel concluding on `concluded`, the
+/// route calls now take; calls finding no channel (`calls_failed`); or no
+/// route listing the host.
+pub(crate) fn change_prompted(
+    now: &HostView,
+    concluded: Option<Route>,
+    calls_failed: bool,
+) -> bool {
+    calls_failed
+        || now.routes.is_empty()
+        || concluded.is_some_and(|route| now.route() == Some(route))
+}
+
+/// Whether a host reading as `view` reads away only after the relay
+/// refused it for the plan, `refused_for_plan`.
+pub(crate) fn away_explained(view: &HostView, refused_for_plan: bool) -> bool {
+    view.presence != Presence::Away || refused_for_plan
+}
+
+/// Whether the core asking for an attempt on `route` leaves at most one in
+/// flight, `in_flight` being the routes its attempts to the host are on.
+pub(crate) fn attempt_not_doubled(in_flight: &BTreeSet<Route>, route: Route) -> bool {
+    !in_flight.contains(&route)
 }
 
 thread_local! {

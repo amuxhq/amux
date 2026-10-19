@@ -54,6 +54,11 @@ fn fact(value: Value) -> Vec<u8> {
     serde_json::to_vec(&value).expect("a fact encodes")
 }
 
+/// Whether a fact the provider says ends its turn.
+pub(crate) fn is_turn_end(payload: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(payload).is_ok_and(|fact| fact["type"] == "turn_end")
+}
+
 impl Provider {
     /// A provider that has just started and says it is ready.
     pub(crate) fn start() -> Self {
@@ -66,6 +71,16 @@ impl Provider {
             alive: true,
             next: 0,
         }
+    }
+
+    /// Whether a turn runs as the agent hears it: one is playing, or the
+    /// end of one is said and not yet heard.
+    pub(crate) fn turn_running(&self) -> bool {
+        self.turn
+            || self
+                .said
+                .iter()
+                .any(|said| matches!(said, Said::Fact(payload) if is_turn_end(payload)))
     }
 
     /// Whether it has something to say now, with `gates` open.

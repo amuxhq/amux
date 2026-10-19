@@ -290,6 +290,41 @@ impl State {
     }
 }
 
+/// The lifecycle's promises the composed net judges too, each with the
+/// predicate both judge it by.
+pub(crate) const EXITS_AT_TURN_END: &str = "an agent exits only at a turn end or a drain deadline: the \
+     lifecycle decides to end an incarnation only as a turn ends, while no turn runs, or as its drain \
+     deadline passes";
+pub(crate) const EXIT_CAUSE_LAST_STEP: &str = "the exit cause is the journal's last step: an incarnation \
+     that exits having written its end records its cause on its newest step";
+
+/// Whether a decision to end an incarnation for `cause` came in its time:
+/// as a turn ended or the drain deadline passed (`at_turn_end_or_deadline`),
+/// or while no turn ran, unless it was not the lifecycle's to make.
+pub(crate) fn decided_in_its_time(
+    cause: &ExitCause,
+    at_turn_end_or_deadline: bool,
+    turn_running: bool,
+) -> bool {
+    !decided_by_the_lifecycle(cause) || at_turn_end_or_deadline || !turn_running
+}
+
+/// Whether an incarnation that exited for `cause` recorded it on its
+/// journal's newest step, whose incarnation end, if any, is `last_end`: its
+/// cause and detail. A kill or a failed write leaves no end to record.
+pub(crate) fn cause_on_last_step(
+    cause: &ExitCause,
+    last_end: Option<&(i32, Option<String>)>,
+) -> bool {
+    match cause {
+        ExitCause::Killed | ExitCause::WriteFailed(_) => true,
+        cause => {
+            let end = cause.end();
+            last_end == Some(&(end.cause, end.detail))
+        }
+    }
+}
+
 /// Decided by the lifecycle itself, rather than something that happened to
 /// the agent.
 fn decided_by_the_lifecycle(cause: &ExitCause) -> bool {
@@ -701,18 +736,15 @@ impl Machine for AgentLifecycle {
                  interpreter that recorded it",
                 |_, s: &State| !s.seen.ring_diverged,
             ),
-            Property::always(
-                "an agent exits only at a turn end or a drain deadline: the lifecycle decides to end \
-                 an incarnation only as a turn ends, while no turn runs, or as its drain deadline \
-                 passes",
-                |_, s: &State| {
-                    s.seen.decided.as_ref().is_none_or(|decided| {
-                        !decided_by_the_lifecycle(&decided.cause)
-                            || matches!(decided.by, Action::TurnEnd | Action::DrainExpires)
-                            || !decided.turn_running
-                    })
-                },
-            ),
+            Property::always(EXITS_AT_TURN_END, |_, s: &State| {
+                s.seen.decided.as_ref().is_none_or(|decided| {
+                    decided_in_its_time(
+                        &decided.cause,
+                        matches!(decided.by, Action::TurnEnd | Action::DrainExpires),
+                        decided.turn_running,
+                    )
+                })
+            }),
             Property::always(
                 "a one-shot child runs a queued follow-up before exiting: when it decides it has \
                  finished, every input and message it accepted has been taken",
@@ -723,17 +755,12 @@ impl Machine for AgentLifecycle {
                     })
                 },
             ),
-            Property::always(
-                "the exit cause is the journal's last step: an incarnation that exits having written \
-                 its end records its cause on its newest step",
-                |_, s: &State| match &s.seen.exited {
-                    None | Some(ExitCause::Killed | ExitCause::WriteFailed(_)) => true,
-                    Some(cause) => {
-                        let end = cause.end();
-                        s.seen.last_end == Some((end.cause, end.detail))
-                    }
-                },
-            ),
+            Property::always(EXIT_CAUSE_LAST_STEP, |_, s: &State| {
+                s.seen
+                    .exited
+                    .as_ref()
+                    .is_none_or(|cause| cause_on_last_step(cause, s.seen.last_end.as_ref()))
+            }),
             Property::eventually(
                 "a message after the exit decision resumes: once the world rests, every message \
                  from its parent the agent refused as exiting has been taken by a later incarnation",

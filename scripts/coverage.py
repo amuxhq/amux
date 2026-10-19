@@ -136,7 +136,7 @@ def write_report(
         "",
         "Written by `just coverage`: every workspace test target run under",
         "cargo-llvm-cov with the desktop features. Lines are counted in each",
-        "crate's own sources (`crates/<crate>/`), whichever crate's tests ran",
+        "crate's own sources (`crates/<crate>/src`), whichever crate's tests ran",
         "them, so a core's figure includes what the protocol models and the",
         "testnet reach in it. Regenerate it rather than editing it.",
         "",

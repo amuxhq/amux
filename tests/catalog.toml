@@ -1257,6 +1257,22 @@ update = ""
 cases = ["scripts/ios-scope-audit.py"]
 
 [[suite]]
+name = "line-coverage"
+contract = "The coverage recipe runs every workspace test under instrumentation with the desktop features and reports line coverage per crate with the commit it measured, naming any target that failed while measured."
+paths = ["scripts/coverage.py", "tests/coverage.md"]
+recipe = "just coverage"
+boundary = "System composition"
+oracle = "cargo-llvm-cov's per-file line counts summed over each crate's own sources; a reading aid, never a gate on the numbers."
+real = ["every workspace test target", "LLVM source-based coverage"]
+substituted = []
+time = "real"
+capabilities = ["Rust toolchain", "cargo-llvm-cov", "llvm-tools-preview"]
+lane = "tool"
+evidence = "tests/coverage.md"
+update = "just coverage, then commit tests/coverage.md."
+cases = ["scripts/coverage.py"]
+
+[[suite]]
 name = "production-cloud-signin-qualification"
 contract = "A real QA account signs in to production and reports the entitlement and relay credential the service issues."
 paths = ["scripts/qa-cloud-signin.py"]

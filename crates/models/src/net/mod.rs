@@ -214,7 +214,7 @@ impl ComposedNet {
     }
 
     /// A person sends a prompt and asks for a stop while either daemon may
-    /// be killed and started again: 194,762 states in 20 s on 12 threads.
+    /// be killed and started again: 216,320 states in 22 s on 12 threads.
     pub fn calls_through_a_crash() -> Self {
         Self {
             kills: 1,

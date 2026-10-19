@@ -62,7 +62,7 @@ pub struct AgentLifecycle {
 
 impl AgentLifecycle {
     /// The one-shot child at the bounds `just test` explores exhaustively:
-    /// 1,275,996 states in 16 s on 4 threads of an M-series Mac.
+    /// 1,296,718 states in 16 s on 4 threads of an M-series Mac.
     pub const fn ci() -> Self {
         Self {
             one_shot: true,

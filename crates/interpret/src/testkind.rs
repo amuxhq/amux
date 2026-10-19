@@ -4,8 +4,9 @@
 //! Facts arrive on the stream channel as `{"type": …}`: `ready`, `user`
 //! (a prompt's reflection, or `envelope` for an injected message's),
 //! `text`/`text_done` (a streamed message), `tool`/`tool_result`,
-//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`. Bodies are the
-//! SDK's messages under the kind tag `test`.
+//! `ask`/`ask_closed`, `turn_start`, `turn_end` and `model`. It writes
+//! `user`, `answer` and, on a stop while a turn runs or an ask is open,
+//! `interrupt`. Bodies are the SDK's messages under the kind tag `test`.
 
 use std::collections::BTreeMap;
 
@@ -32,6 +33,8 @@ pub struct State<const FORGET: bool> {
     shared: Shared<Ask>,
     model: Option<String>,
     tools: BTreeMap<String, String>,
+    /// A stop interrupted the turn running: its end reads as cut short.
+    interrupted: bool,
 }
 
 impl<const FORGET: bool> State<FORGET> {
@@ -196,14 +199,23 @@ impl<const FORGET: bool> TestKind<FORGET> {
                 shared.close_ask(&id);
             }
             "turn_end" => {
-                if let Some(turn) = shared.turn_ended(emit, TurnOutcome::Completed) {
+                // Only a stop interrupts this kind's turns, so an
+                // interrupted turn reads as stopped, as the step's TurnEnd
+                // records it.
+                let interrupted = std::mem::take(&mut state.interrupted);
+                let (ended, outcome) = if interrupted {
+                    (TurnOutcome::Interrupted, TurnOutcome::Stopped)
+                } else {
+                    (TurnOutcome::Completed, TurnOutcome::Completed)
+                };
+                if let Some(turn) = shared.turn_ended(emit, ended) {
                     shared.item(
                         emit,
                         ItemDraft {
                             key: format!("turn:{}", turn.id),
                             body: body(claude_sdk_item::Kind::Turn(Turn {
                                 turn_id: turn.id,
-                                outcome: TurnOutcome::Completed as i32,
+                                outcome: outcome as i32,
                                 started_at_ms: turn.started_at_ms,
                                 cost_usd: None,
                             })),
@@ -295,6 +307,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             shared: Shared::new(spec, Self::KIND, producer_version),
             model: None,
             tools: BTreeMap::new(),
+            interrupted: false,
         };
         let step = state.shared.initial_step(Self::unknown_snapshot());
         (state, step)
@@ -331,7 +344,16 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
                 state.shared.provider_exited();
                 emit.end_incarnation(end);
             }
-            Event::DaemonLost | Event::StopRequested => state.shared.leaving(),
+            Event::DaemonLost => state.shared.leaving(),
+            // A stop cancels the turn the provider's way, as every kind
+            // does, and the agent drains.
+            Event::StopRequested => {
+                state.shared.stop_requested();
+                if state.shared.is_busy() || !state.shared.asks().is_empty() {
+                    state.interrupted = true;
+                    emit.effect(Effect::ProviderWrite(br#"{"type":"interrupt"}"#.to_vec()));
+                }
+            }
             Event::Git(git) => state.shared.set_git(git),
         }
         if let Some(entry) = state.shared.next_queued() {
@@ -452,6 +474,55 @@ mod tests {
     #[test]
     fn a_spawn_prompt_seeds_the_queue_and_working_on() {
         run("spawn");
+    }
+
+    fn stream(json: &str) -> Event {
+        Event::Fact(Fact {
+            channel: Channel::Stream,
+            payload: json.as_bytes().to_vec(),
+        })
+    }
+
+    fn started() -> State<false> {
+        let (mut state, _) = TestKind::<false>::initial(&AgentSpec::default(), "1.0.0");
+        TestKind::step(&mut state, stream(r#"{"type":"ready"}"#));
+        state
+    }
+
+    #[test]
+    fn a_stop_mid_turn_interrupts_the_provider_and_the_turn_ends_stopped() {
+        let mut state = started();
+        TestKind::step(&mut state, stream(r#"{"type":"turn_start"}"#));
+        let stopped = TestKind::step(&mut state, Event::StopRequested);
+        assert_eq!(
+            stopped.effects,
+            [Effect::ProviderWrite(br#"{"type":"interrupt"}"#.to_vec())]
+        );
+
+        let ended = TestKind::step(&mut state, stream(r#"{"type":"turn_end"}"#));
+        assert_eq!(
+            ended.step.turn_end.map(|end| end.outcome),
+            Some(TurnOutcome::Stopped as i32)
+        );
+        let turns: Vec<i32> = ended
+            .step
+            .items
+            .iter()
+            .filter_map(|item| match ClaudeSdkItem::decode(item.body.as_slice()) {
+                Ok(ClaudeSdkItem {
+                    kind: Some(claude_sdk_item::Kind::Turn(turn)),
+                }) => Some(turn.outcome),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(turns, [TurnOutcome::Stopped as i32]);
+    }
+
+    #[test]
+    fn a_stop_with_no_turn_running_writes_nothing() {
+        let mut state = started();
+        let stopped = TestKind::step(&mut state, Event::StopRequested);
+        assert_eq!(stopped.effects, []);
     }
 
     #[test]

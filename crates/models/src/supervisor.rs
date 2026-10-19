@@ -241,6 +241,9 @@ struct Seen {
     go_before_prepared: Option<DaemonId>,
     /// A daemon was started while another still lived.
     started_beside: Option<DaemonId>,
+    /// A binary was installed at the path while a daemon ran, where a
+    /// running binary cannot be replaced.
+    installed_under: Option<String>,
     /// A rollback put back something other than the binary from before the
     /// update, or recorded another build as rejected.
     wrong_rollback: Option<String>,
@@ -447,6 +450,13 @@ impl SupervisorUpdate {
                 state.seen.rolled_back = true;
             }
             Pending::InstallStaged => {
+                if !self.replace_while_running && !world.daemons.is_empty() {
+                    state.seen.installed_under.get_or_insert(format!(
+                        "installed {:?} while {:?} ran",
+                        world.staged,
+                        world.daemons.keys().collect::<Vec<_>>()
+                    ));
+                }
                 world.before_update = world.path;
                 world.prev = world.path;
                 world.path = world.staged.take();
@@ -666,6 +676,11 @@ impl Machine for SupervisorUpdate {
             Property::always(
                 "never two daemons serving: no daemon is started while another lives",
                 |_, s: &State| s.seen.started_beside.is_none(),
+            ),
+            Property::always(
+                "where a running binary cannot be replaced, no binary is installed while a daemon \
+                 runs: the daemon stops before the swap",
+                |_, s: &State| s.seen.installed_under.is_none(),
             ),
             Property::always(
                 "a rollback restores the previous binary: it records the build it rolls back as \

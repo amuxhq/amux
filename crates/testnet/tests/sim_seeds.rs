@@ -111,12 +111,12 @@ async fn a_failing_seed_reproduces_its_failure_on_demand_and_shrinks() {
         .await
         .expect("the reported seed fails");
     println!(
-        "shrunk: seed {}'s first {} choices, then the net's own order, fail after {} deliveries \
-         (the reported run failed after {}): {}",
+        "shrunk: seed {} and its first {} choices reproduce it, where the reported run made {}; \
+         past them the net delivers in its own order and fails after {} deliveries: {}",
         shrunk.seed,
         shrunk.ring.len(),
-        shrunk.deliveries,
         first_ring.len(),
+        shrunk.deliveries,
         shrunk.failure
     );
     assert!(same_failure(&shrunk.failure, &failure), "{shrunk:?}");

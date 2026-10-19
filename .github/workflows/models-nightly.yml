@@ -16,8 +16,10 @@ jobs:
   nightly:
     name: Nightly bounds (${{ matrix.target }})
     runs-on: ubuntu-latest
-    # TIMEOUT_PLACEHOLDER
-    timeout-minutes: 0
+    # The slowest model at its nightly bounds, the family, takes 740 s on
+    # the enrolled Mac's 12 threads and roughly seven times that here, with
+    # the build before it.
+    timeout-minutes: 100
     strategy:
       fail-fast: false
       matrix:

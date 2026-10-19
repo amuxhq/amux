@@ -50,8 +50,8 @@ fn one_seed_walks_one_presence_schedule() {
     );
 }
 
-/// The nightly bounds, run by hand or by the nightly recipe: about four
-/// million states, a minute and a half on the enrolled Mac's cores.
+/// The nightly bounds, run by hand or by the nightly recipe: about nine
+/// million states, five minutes on the enrolled Mac's cores.
 #[test]
 #[ignore = "nightly bounds: minutes on every core"]
 fn every_presence_promise_holds_at_nightly_bounds() {

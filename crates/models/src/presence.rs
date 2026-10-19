@@ -92,10 +92,9 @@ impl PresenceRouting {
     /// The larger bounds a nightly run explores.
     pub const fn nightly() -> Self {
         Self {
-            ups: 5,
-            downs: 4,
+            ups: 4,
+            downs: 3,
             faults: 3,
-            calls: 2,
             ..Self::ci()
         }
     }

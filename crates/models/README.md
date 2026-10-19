@@ -124,10 +124,10 @@ under `just test`.
 
 | Model | CI bounds | States | 12 threads | 4 threads | Budget | Nightly bounds | Nightly, 12 threads |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 207,443 | 37 s | 66 s | 240 s | revisions up to 5, 3 in flight | NIGHTLY_REPLICATION |
-| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 254,451 | 61 s | 96 s | 300 s | 2 crashes, power losses or reboots | NIGHTLY_SINGLE |
-| Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 391,552 | 39 s | 71 s | 240 s | the child's spontaneous exit too, 2 links down, 2 waits | NIGHTLY_FAMILY |
-| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 859,652 | 24 s | 52 s | 180 s | 5 up, 4 down, 3 failures, 2 calls | NIGHTLY_PRESENCE |
+| Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 207,443 | 37 s | 66 s | 240 s | revisions up to 5, 3 in flight | 333 s |
+| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 254,451 | 61 s | 96 s | 300 s | 2 crashes, power losses or reboots | 252 s |
+| Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 391,552 | 39 s | 71 s | 240 s | the child's spontaneous exit too, 2 links down, 2 waits | 740 s |
+| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 859,652 | 24 s | 52 s | 180 s | 4 up, 3 down, 3 failures | 319 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), with the development profile, which optimises SQLite, the store and

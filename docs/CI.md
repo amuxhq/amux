@@ -125,9 +125,9 @@ each model's times. The job guard is 25 minutes.
 The Models at nightly bounds workflow runs each model's ignored nightly
 test, the same matrix, daily and by hand; `just models-nightly` runs the
 same tests locally, one test binary after another. It restores the Models
-job's Rust cache and never saves its own. Its job guard is NIGHTLY_GUARD
-minutes: the slowest model at its nightly bounds, NIGHTLY_SLOWEST, takes
-NIGHTLY_SECONDS s on the Mac's 12 threads, and roughly seven times that on
+job's Rust cache and never saves its own. Its job guard is 100
+minutes: the slowest model at its nightly bounds, the family model, takes
+740 s on the Mac's 12 threads, and roughly seven times that on
 the runner.
 
 ### The iOS gate

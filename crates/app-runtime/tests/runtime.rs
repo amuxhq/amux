@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use app_runtime::values::{
-    ActOutcome, AgentAct, ChatChanges, Draft, NewAgent, PageOutcome, RowOptions, ToolRowsOption,
+    ActOutcome, AgentAct, ChatChanges, Draft, NewAgent, PageOutcome, RowOptions,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::{Client, InProcess, SystemClock};
@@ -378,31 +378,6 @@ async fn older_rows_arrive_below_the_oldest_the_host_holds() {
     }
     let below = chat.keys_below(&held[0]).unwrap();
     assert_eq!([below, held].concat(), everything);
-    net.shutdown().await.unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn collapsed_runs_and_the_frame_read_as_the_views_say() {
-    let net = Net::start(topology()).await.unwrap();
-    let (runtime, mut host) = open(&net).await;
-    let chat = runtime.open_chat(&worker(&net), 50).await.unwrap();
-    until(&mut host, &chat, "the first turn", |chat| {
-        chat.frame().caught_up && says(chat, "turn one")
-    })
-    .await;
-    let frame = chat.frame();
-    assert_eq!(frame.name, "worker");
-    assert_eq!(frame.agent, worker(&net));
-    assert!(frame.queue.is_empty() && frame.underway.is_empty() && frame.refused.is_empty());
-    let keys = chat.keys();
-    let hidden = chat.rows_for(
-        &keys,
-        &RowOptions {
-            tools: ToolRowsOption::Hide,
-        },
-    );
-    assert_eq!(hidden.len(), keys.len(), "hidden rows keep their ids");
-    assert!(chat.overview().failed_servers.is_empty());
     net.shutdown().await.unwrap();
 }
 

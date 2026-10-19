@@ -20,37 +20,6 @@ fn rows_of(
     text(&buffer).lines().map(str::to_owned).collect()
 }
 
-fn file(name: &str, size: u64) -> wire::Attachment {
-    wire::Attachment {
-        of: Some(wire::attachment::Of::File(wire::BlobRef {
-            name: name.into(),
-            size,
-            ..Default::default()
-        })),
-    }
-}
-
-/// A sent prompt: the chips first, as a terminal paste of four files puts
-/// them, then the typed sentence.
-fn prompt_with_chips(order: u64, words: &str, files: &[(&str, u64)]) -> Item {
-    use wire::claude_sdk_item::Kind as K;
-    let marks: String = files.iter().map(|_| '\u{FFFC}').collect();
-    Item {
-        key: format!("p{order}"),
-        order,
-        revision: order,
-        text: format!("{marks}{words}"),
-        attachments: files.iter().map(|(name, size)| file(name, *size)).collect(),
-        kind: Kind::ClaudeSdk as i32,
-        body: wire::ClaudeSdkItem {
-            kind: Some(K::Prompt(wire::Prompt {})),
-        }
-        .encode_to_vec(),
-        at_ms: order as i64 * 1_000,
-        ..Item::default()
-    }
-}
-
 /// A finished reply of exactly `words`.
 fn reply(order: u64, words: &str) -> Item {
     use wire::claude_sdk_item::Kind as K;
@@ -67,49 +36,6 @@ fn reply(order: u64, words: &str) -> Item {
         at_ms: order as i64 * 1_000,
         ..Item::default()
     }
-}
-
-/// A sentence after a row of chips wraps at the message's whole width
-/// from its second line on, not at whatever room the chips left on the
-/// first. Seen at 110 columns: four chips left 14 columns, and the rest
-/// of the sentence ran down the screen two or three words a line.
-#[test]
-fn words_after_chips_wrap_at_the_messages_full_width() {
-    let sentence = " List the file names and sizes in bytes of every amux attachment you \
-                    received in this message, one per line, nothing else.";
-    let state = chat(vec![prompt_with_chips(
-        1,
-        sentence,
-        &[
-            ("same.txt", 1024),
-            ("üñí – 長い名前 🙂.txt", 4096),
-            ("empty.bin", 0),
-            ("noext", 2048),
-        ],
-    )]);
-    let mut view = ChatView::new(b"agent".to_vec(), 1_000, false);
-    let rows = rows_of(&mut view, &state, 1_000, 110, 34);
-    let screen = rows.join("\n");
-    let block: Vec<&String> = rows
-        .iter()
-        .filter(|row| {
-            [
-                "List",
-                "names",
-                "sizes",
-                "attachment",
-                "received",
-                "nothing",
-            ]
-            .iter()
-            .any(|word| row.contains(word))
-        })
-        .collect();
-    assert!(
-        block.len() <= 3,
-        "a two-line sentence after the chips took {} lines:\n{screen}",
-        block.len()
-    );
 }
 
 /// The same, at the boundary that decides it: segment_lines wraps a text

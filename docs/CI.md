@@ -128,7 +128,7 @@ test, the same matrix, daily and by hand; `just models-nightly` runs the
 same tests locally, one test binary after another. It restores the Models
 job's Rust cache and never saves its own. Its job guard is 100
 minutes: the slowest model at its nightly bounds, the family model, takes
-740 s on the Mac's 12 threads, and roughly seven times that on
+757 s on the Mac's 12 threads, and roughly seven times that on
 the runner.
 
 ### Simulated stories

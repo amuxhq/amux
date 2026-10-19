@@ -578,6 +578,15 @@ impl Machine for FamilyDeliveries {
                 "a child sometimes stops because its parent did",
                 |_, s: &State| s.seen.child_followed,
             ),
+            Property::sometimes(
+                "a child made before its host could judge its parent sometimes reports to it: a \
+                 spawn while the child's host had not caught up with the parent's host, or held no \
+                 row for the parent, is made, and its report reaches the parent",
+                |_, s: &State| {
+                    s.seen.child_made_unready
+                        && s.reports.values().any(|report| report.reached == 1)
+                },
+            ),
         ]
     }
 }

@@ -76,6 +76,15 @@ pub trait World {
     /// client does there, seeded with `prompt`; its process plays the same
     /// script again.
     async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError>;
+    /// Sends `envelope` to host `to` as host `from`'s daemon sends a
+    /// message on its link: the sender it names is taken as given. A
+    /// refusal is [`NetError::Refused`] with the code a peer reads.
+    async fn peer_message(
+        &self,
+        from: &str,
+        to: &str,
+        envelope: wire::Envelope,
+    ) -> Result<wire::SendMessageResponse, NetError>;
 
     /// Opens a Subscribe stream on the agent at the host and records it.
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError>;
@@ -228,6 +237,27 @@ impl World for Net {
 
     async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError> {
         Net::resume(self, agent, prompt).await
+    }
+
+    async fn peer_message(
+        &self,
+        from: &str,
+        to: &str,
+        envelope: wire::Envelope,
+    ) -> Result<wire::SendMessageResponse, NetError> {
+        let to = self.host(to)?.host_id;
+        let mut peer = self
+            .edge(from)?
+            .peer(to)
+            .await
+            .map_err(|error| NetError::Host {
+                host: from.to_owned(),
+                error: format!("no channel to {to}: {error}"),
+            })?;
+        peer.send_message(envelope)
+            .await
+            .map(tonic::Response::into_inner)
+            .map_err(|status| NetError::Refused(Box::new(status)))
     }
 
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {

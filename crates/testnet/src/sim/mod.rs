@@ -747,6 +747,40 @@ impl World for SimNet {
         .ok_or_else(|| answered_without_row(&at.host, &what))
     }
 
+    async fn peer_message(
+        &self,
+        from: &str,
+        to: &str,
+        envelope: wire::Envelope,
+    ) -> Result<wire::SendMessageResponse, NetError> {
+        let (f, h) = (self.host_index(from)?, self.host_index(to)?);
+        let link = self.link(from, to)?;
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if !(sim.is_up(f) && sim.is_up(h) && sim.net.is_live(link)) {
+            return Err(NetError::Host {
+                host: from.to_owned(),
+                error: format!("no channel to {to}"),
+            });
+        }
+        let envelope_id = envelope.id.clone();
+        let what = format!("{from}'s message to {to}");
+        let call = sim.net.client_call(h, models::net::peer_message(envelope));
+        let ended = wait(&mut sim, &what, |sim| {
+            sim.net
+                .client(h, call)
+                .and_then(|client| client.ended().cloned())
+                .ok_or_else(|| "not yet answered".to_owned())
+        })?;
+        sim.net.take_client(h, call);
+        match ended {
+            daemon_core::payload::Status::Ok => Ok(wire::SendMessageResponse { envelope_id }),
+            daemon_core::payload::Status::Failed(error) => Err(NetError::Refused(Box::new(
+                node::status(models::net::wire_error(&error)),
+            ))),
+        }
+    }
+
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {
         let id = self.agent_named(agent)?.id;
         self.observe_call(

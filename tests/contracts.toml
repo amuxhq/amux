@@ -610,7 +610,7 @@ source = "invariant"
 section = "Agent and supervisor"
 claim = "Rollback only before activation."
 tests = [
-  "node/supervisor::a_crash_after_go_is_restarted_and_not_rolled_back",
+  "supervisor-core/lib::tests::a_crash_after_go_restarts_with_backoff_and_never_rolls_back",
   "node/supervisor::a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back",
   "node/supervisor::a_starting_supervisor_finishes_a_recorded_rollback",
   "amux/overlap::the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared",
@@ -1305,4 +1305,34 @@ property = { crate = "models", machine = "agent lifecycle", sentence = "a one-sh
 checker = "models/lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
 tests = [
   "agent/lifecycle::a_one_shot_terminal_child_runs_the_follow_up_it_typed_as_its_turn_ended",
+]
+
+[[contract]]
+id = "supervisor-go-only-after-prepared"
+source = "model"
+property = { crate = "models", machine = "supervisor update", sentence = "everything before go is read-only apart from migration and generation: no daemon is told go before it has prepared" }
+checker = "models/supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
+tests = [
+  "node/supervisor::installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and_lock",
+  "amux/overlap::the_previous_build_reopens_a_store_the_new_one_migrated_before_prepared",
+]
+
+[[contract]]
+id = "supervisor-rollback-restores-previous"
+source = "model"
+property = { crate = "models", machine = "supervisor update", sentence = "a rollback restores the previous binary: it records the build it rolls back as rejected and puts back the binary that was at the path before the update" }
+checker = "models/supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
+tests = [
+  "node/supervisor::k_starts_that_never_prepare_roll_back_and_the_rejected_build_is_skipped",
+  "node/supervisor::a_starting_supervisor_finishes_a_recorded_rollback",
+]
+
+[[contract]]
+id = "supervisor-always-a-binary-that-starts"
+source = "model"
+property = { crate = "models", machine = "supervisor update", sentence = "there is always a binary that can start: the binary at the path is a build whose daemon starts, or prev, which is, is kept beside it" }
+checker = "models/supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
+tests = [
+  "node/supervisor::a_starting_supervisor_deletes_a_prev_that_is_the_binary",
+  "node/supervisor::a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back",
 ]

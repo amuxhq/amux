@@ -626,21 +626,6 @@ async fn a_child_that_hangs_before_prepared_is_stopped_at_the_start_deadline_and
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_crash_after_go_is_restarted_and_not_rolled_back() {
-    let mut fixture = Fixture::new().await;
-    fixture.start();
-    fixture.nth(1, "go", "1.0.0").await;
-    fixture.behave("2.0.0", "crash-after-go");
-    fixture.publish("2.0.0");
-
-    fixture.nth(1, "crash", "2.0.0").await;
-    fixture.nth(2, "go", "2.0.0").await;
-    assert_eq!(fixture.rejected(), None);
-    assert_eq!(fixture.installed(), "2.0.0");
-    assert_eq!(fixture.count("go", "1.0.0"), 1);
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn a_daemon_that_ignores_the_stop_signal_is_killed_at_the_stop_deadline() {
     let mut fixture = Fixture::new().await;
     fixture.start();

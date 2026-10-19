@@ -382,6 +382,22 @@ update = ""
 cargo = [{ package = "interpret", targets = ["redaction"], features = [] }]
 
 [[suite]]
+name = "simulated-agent-journals"
+contract = "Every journal the simulated net's agents play is listed, made of whole frames, obeys its interpreter's invariants and reaches what its listing says: turn ends, asks, follow-ups and exits, cut from Claude and Codex recordings and from authored scripts."
+paths = ["crates/testnet/fixtures/journals", "crates/testnet/tests/journal_fixtures.rs"]
+recipe = "just test -- --test journal_fixtures"
+boundary = "Interpreter"
+oracle = "Whole journal frames, the interpreter's journal invariants and each listing's reach claims."
+real = ["recorded provider facts", "the interpreters", "journal frame encoding"]
+substituted = ["provider processes", "agent process", "wall clock"]
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = "crates/testnet/fixtures/journals"
+update = ""
+cargo = [{ package = "testnet", targets = ["journal_fixtures"], features = [] }]
+
+[[suite]]
 name = "attachment-elements"
 contract = "Attachments round-trip between positioned text and the element the model sees, placeholders are counted against attachments, and malformed or stray elements stay text and are reported."
 paths = ["crates/attachments/tests", "crates/attachments/src"]

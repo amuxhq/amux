@@ -1,0 +1,12 @@
+{
+  "about": "The provider dies mid-turn with an ask open: the ask closes with its outcome unknown and the journal's last step says the provider exited.",
+  "spec": { "created_at_ms": 1000 },
+  "events": [
+    { "fact": { "channel": "stream", "json": { "type": "ready" } } },
+    { "input": { "id": "p1", "prompt": { "text": "deploy it" } } },
+    { "fact": { "channel": "stream", "json": { "type": "user", "id": "u1", "text": "deploy it" } } },
+    { "fact": { "channel": "stream", "json": { "type": "tool", "id": "t1", "name": "Bash", "input": { "command": "just deploy" } } } },
+    { "fact": { "channel": "stream", "json": { "type": "ask", "id": "a1", "tool": "t1", "tool_name": "Bash" } } },
+    { "provider_exit": { "code": 1 } }
+  ]
+}

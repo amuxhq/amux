@@ -46,5 +46,6 @@ wire = { workspace = true, features = ["grpc"] }
 
 [dev-dependencies]
 analytics = { workspace = true }
-interpret = { workspace = true }
+interpret = { workspace = true, features = ["testkind"] }
+toml = { workspace = true }
 ui-state = { workspace = true }

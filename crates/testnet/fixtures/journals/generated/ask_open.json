@@ -1,0 +1,11 @@
+{
+  "about": "A tool call opens an ask nobody answers: the journal ends with the agent needing you.",
+  "spec": { "created_at_ms": 1000 },
+  "events": [
+    { "fact": { "channel": "stream", "json": { "type": "ready" } } },
+    { "input": { "id": "p1", "prompt": { "text": "write the config" } } },
+    { "fact": { "channel": "stream", "json": { "type": "user", "id": "u1", "text": "write the config" } } },
+    { "fact": { "channel": "stream", "json": { "type": "tool", "id": "t1", "name": "Write", "input": { "path": "amux.toml" } } } },
+    { "fact": { "channel": "stream", "json": { "type": "ask", "id": "a1", "tool": "t1", "tool_name": "Write" } } }
+  ]
+}

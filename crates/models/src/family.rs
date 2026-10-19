@@ -87,7 +87,7 @@ pub struct FamilyDeliveries {
 }
 
 impl FamilyDeliveries {
-    /// The bounds `just test` explores exhaustively: 391,540 states in 74 s
+    /// The bounds `just test` explores exhaustively: 396,826 states in 74 s
     /// on 4 threads of an M-series Mac. The child's unasked exit is left to
     /// the nightly bounds, as it alone nearly tripled the states; the child
     /// still exits when asked to, and its turn end still writes a report.
@@ -408,7 +408,16 @@ impl Machine for FamilyDeliveries {
         };
         with_scratch(|scratch| {
             let mut t = Transition::new(scratch, &mut s);
+            // The child's host follows the parent's before the parent is
+            // made, so its first listing predates the parent: a child
+            // spawned before that listing catches up is one the listing
+            // must not judge, and its parent's row arrives on the live
+            // stream after it.
             t.start(PARENTS);
+            t.start(CHILDS);
+            t.run();
+            t.link_up();
+            t.run();
             t.feed(
                 PARENTS,
                 Input::ClientCall {
@@ -416,9 +425,6 @@ impl Machine for FamilyDeliveries {
                     request: ClientRequest::CreateAgent(Box::new(create(PARENT, "lead", None))),
                 },
             );
-            t.start(CHILDS);
-            t.run();
-            t.link_up();
             t.run();
         });
         assert!(s.parent.connected, "the parent starts");

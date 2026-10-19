@@ -109,8 +109,10 @@ ends and its liveness is judged. The properties are in `src/presence.rs`.
 `FamilyDeliveries` runs two hosts' real daemon cores, each over its own
 in-memory store and its agents' journals laid out as files: a parent agent
 on one host and, once a client spawns it, its child on the other, which
-follows the parent's host's inventory. A spawn the child's host refuses
-makes no child and may be tried again. The world spawns, stops and deletes
+follows the parent's host's inventory. The child's host starts following
+before the parent is made, so its first listing predates the parent and a
+child spawned before that listing catches up is one it must not judge. A
+spawn the child's host refuses makes no child and may be tried again. The world spawns, stops and deletes
 the parent, lets either process exit, ends the child's turn (writing a
 report for its parent into the child's outbox), lets the child's listing
 catch up, takes a link down and up, unpairs the child's host and crashes
@@ -274,7 +276,7 @@ under `just test`.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 81,268 | 13 s | 25 s | not yet measured (274 s at 3 keys and cap 2, before a page's answer arrived on its own) | 240 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 493 s |
 | Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag | 207,594 | 51 s | 68 s | not yet measured (199 s before the checkpoint's WAL job) | 600 s | 2 crashes, power losses or reboots, 1 refused commit | 527 s |
-| Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 391,552 | 39 s | 71 s | 161 s | 360 s | the child's spontaneous exit too, 2 links down, 2 waits | 740 s |
+| Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 396,826 | 38 s | 74 s | 161 s (at 391,552 states, before the first listing predated the parent) | 360 s | the child's spontaneous exit too, 2 links down, 2 waits | 740 s |
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 1,134,868 | 31 s | 68 s | not yet measured (134 s at 859,652 states) | 600 s | 4 up, 3 down, 3 failures | 431 s |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 44 s for both (before a stop interrupted the test kind's turn) | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both swap orders | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 4,189,038 and 4,449,354 | 5 s | 11 s | not yet measured | 120 s each | 3 releases, 2 failed starts, 6 timers firing | 77 s |

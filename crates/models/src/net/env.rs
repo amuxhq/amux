@@ -173,7 +173,11 @@ pub struct HostState {
     /// The core as a checker tells it apart, while it runs.
     print: Option<Fingerprint>,
     up: bool,
-    generation: u64,
+    /// The machine's boot: a new one after each unclean reboot.
+    boot: u32,
+    /// What the last start recorded of its run, as the installation keeps
+    /// it beside the store, synced.
+    run: Option<RunRecord>,
     ticked: Option<u64>,
     /// Timers its core armed for later, by when they fall due.
     timers: BTreeMap<TimerId, u64>,
@@ -181,6 +185,22 @@ pub struct HostState {
     next_call: u64,
     next_link: u64,
     journals: BTreeMap<AgentId, Journal>,
+}
+
+/// The installation's record of its last run: the boot it started under,
+/// whether it shut down cleanly, and the generation it ran under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct RunRecord {
+    boot: u32,
+    clean: bool,
+    counter: u64,
+}
+
+impl HostState {
+    /// The generation the host runs under, or ran under last.
+    fn generation(&self) -> u64 {
+        self.run.map_or(1, |run| run.counter)
+    }
 }
 
 /// A link between two hosts, and each end's id for it while it is up.
@@ -368,7 +388,8 @@ struct HostCanon<'a> {
     print: Option<&'a [u8]>,
     store: &'a store::Dump,
     up: bool,
-    generation: u64,
+    boot: u32,
+    run: Option<RunRecord>,
     ticked: Option<u64>,
     timers: &'a BTreeMap<TimerId, u64>,
     journals: &'a BTreeMap<AgentId, Journal>,
@@ -465,7 +486,8 @@ impl World {
                     print: host.print.as_ref().map(|print| print.state.as_slice()),
                     store: &host.held.store,
                     up: host.up,
-                    generation: host.generation,
+                    boot: host.boot,
+                    run: host.run,
                     ticked: host.ticked,
                     timers: &host.timers,
                     journals: &host.journals,
@@ -616,7 +638,8 @@ impl Net {
             held,
             print: None,
             up: false,
-            generation: 1,
+            boot: 0,
+            run: None,
             ticked: None,
             timers: BTreeMap::new(),
             next_call: 0,
@@ -665,7 +688,7 @@ impl Net {
     }
 
     pub fn generation(&self, h: usize) -> u64 {
-        self.w.hosts[h].generation
+        self.w.hosts[h].generation()
     }
 
     pub fn now_ms(&self) -> u64 {
@@ -902,12 +925,20 @@ impl Net {
         self.transition(|t| t.stop_host(h));
     }
 
-    /// The host's daemon dies without its clean shutdown and starts again
-    /// under the next generation.
+    /// The host's machine reboots under its daemon, which never shuts down
+    /// cleanly: the daemon and the agent processes go with the machine,
+    /// and the daemon starts again on the new boot, under the generation
+    /// the installation's record then decides.
     pub fn reboot_unclean(&mut self, h: usize, entropy: [u8; 32]) {
         self.transition(|t| {
             t.stop_host(h);
-            t.w.hosts[h].generation += 1;
+            for p in 0..t.w.processes.len() {
+                if t.w.processes[p].host == h && t.w.processes[p].running {
+                    t.w.processes[p].provider.kill();
+                    t.exited(p);
+                }
+            }
+            t.w.hosts[h].boot += 1;
             t.start_host(h, entropy);
         });
     }
@@ -1234,8 +1265,26 @@ impl Transition<'_> {
         let host = &mut self.w.hosts[h];
         host.up = true;
         host.ticked = Some(now);
+        // As the installation decides it at start, and records it synced
+        // before anything is served.
+        let boot_id = |boot: u32| format!("boot-{boot}");
+        let last = host.run.map(|run| (boot_id(run.boot), run));
+        let generation = daemon_core::generation::at_start(
+            last.as_ref()
+                .map(|(boot, run)| daemon_core::generation::LastRun {
+                    boot_id: boot,
+                    clean: run.clean,
+                    counter: run.counter,
+                }),
+            &boot_id(host.boot),
+        );
+        host.run = Some(RunRecord {
+            boot: host.boot,
+            clean: false,
+            counter: generation,
+        });
         let options = StartOptions {
-            generation: host.generation,
+            generation,
             agents: agents.clone(),
             replicas: home.join("replicas"),
             drafts: home.join("drafts"),
@@ -1245,7 +1294,7 @@ impl Transition<'_> {
         let entry = wire::HostEntry {
             host_id: id.0.to_vec(),
             name: plan.name.clone(),
-            generation: host.generation,
+            generation,
             trust: wire::Trust::Trusted as i32,
             presence: wire::Presence::Online as i32,
             current: Some(true),

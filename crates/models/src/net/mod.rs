@@ -180,7 +180,7 @@ impl ComposedNet {
     }
 
     /// The origin reboots uncleanly, resetting the replica, while the link
-    /// may be severed and restored around it: 54,661 states in 3 s on 12
+    /// may be severed and restored around it: 33,025 states in 2 s on 12
     /// threads of an M-series Mac.
     pub fn reset_while_flipping() -> Self {
         Self {
@@ -225,9 +225,9 @@ impl ComposedNet {
     }
 
     /// The larger configurations a nightly run explores: every fault but a
-    /// kill with a reordering (2,365,233 states in 145 s on 12 threads), and
-    /// the person's calls through a crash with a lost message (1,394,624
-    /// states in 125 s).
+    /// kill with a reordering (953,190 states in 55 s on 12 threads), and
+    /// the person's calls through a crash with a lost message (1,393,830
+    /// states in 124 s).
     pub fn nightly() -> [(&'static str, Self); 2] {
         [
             (

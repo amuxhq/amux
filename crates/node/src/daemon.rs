@@ -607,6 +607,9 @@ impl Daemon {
                 .await;
         }
         for hosted in hosted.values() {
+            // Before the watchers stop: a dump in flight still gets its
+            // agents' parts until its time is up.
+            hosted.runtime.finish_dumps().await;
             hosted.runtime.stop_background().await;
             hosted.runtime.stop_watching().await;
         }

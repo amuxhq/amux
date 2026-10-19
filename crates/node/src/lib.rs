@@ -95,8 +95,9 @@ pub use replicas::{InventoryHook, SourceHook, SourcePolicy, SourceVerdict};
 pub use retention::Retention;
 pub use routing::local_kinds;
 pub use runtime::{
-    AGENT_LOG, AgentId, FANOUT_CAPACITY, INGEST_BATCH, JoinHook, KEPT_SEGMENTS, Launch, Profile,
-    ProfileRuntime, RegistryError, Stopped, SweepReport, TAIL_ROWS, locked, to_wire,
+    AGENT_LOG, AgentId, DUMPS_FINISH_WITHIN, FANOUT_CAPACITY, INGEST_BATCH, JoinHook,
+    KEPT_SEGMENTS, Launch, Profile, ProfileRuntime, RegistryError, Stopped, SweepReport, TAIL_ROWS,
+    locked, to_wire,
 };
 pub use serve::{MAX_PAGE, ServeError};
 pub use telemetry::Telemetry;

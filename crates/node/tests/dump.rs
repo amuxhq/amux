@@ -412,3 +412,60 @@ async fn a_dump_the_daemon_core_asks_for_is_written_with_its_reason() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
+    let install = Install::new();
+    // A live agent that takes the dump request and never answers it: the
+    // dump waits on its part, holding the runtime.
+    let mut silent = support::synthetic::SyntheticAgent::new(&install, "silent", 1 << 20);
+    silent.register_offline(&install);
+    silent.go_live();
+    let launch = node::Launch {
+        step_budget: daemon_core::StepBudget { micros: 0 },
+        ..support::synthetic::quiet_launch()
+    };
+    let daemon = install.start("boot-1", launch).await;
+    let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
+    until("the daemon to connect to the agent", || {
+        let hellos = silent.hellos();
+        async move { (hellos > 0).then_some(()).ok_or("no hello yet") }
+    })
+    .await
+    .unwrap();
+    silent.append(&support::synthetic::item("a", "hello"));
+    runtime.ingest(silent.id).await.unwrap();
+    let reports = install.data_dir.join(node::REPORTS);
+    until("a dump under way", || {
+        let partial = std::fs::read_dir(&reports)
+            .into_iter()
+            .flatten()
+            .any(|entry| {
+                entry.is_ok_and(|entry| entry.file_name().to_string_lossy().starts_with(".dump-"))
+            });
+        async move { partial.then_some(()).ok_or("no dump started yet") }
+    })
+    .await
+    .unwrap();
+
+    let gone = Arc::downgrade(&runtime);
+    drop(runtime);
+    let started = std::time::Instant::now();
+    daemon.shutdown().await.unwrap();
+    let took = started.elapsed();
+    assert!(
+        took < node::DUMPS_FINISH_WITHIN + std::time::Duration::from_secs(3),
+        "the shutdown waited {took:?} for its dumps"
+    );
+    // Gone at once, not once the agent's part has been waited out.
+    patience::until_within(
+        "the runtime to be gone",
+        std::time::Duration::from_secs(2),
+        || {
+            let live = gone.upgrade().is_some();
+            async move { (!live).then_some(()).ok_or("a reference is still live") }
+        },
+    )
+    .await
+    .unwrap();
+}

@@ -63,6 +63,11 @@ const PROBE_INTERVAL: Duration = Duration::from_millis(20);
 const LOOK_PATIENCE: Duration = Duration::from_secs(2);
 /// How long a connected agent has to send its Hello.
 const HELLO_PATIENCE: Duration = Duration::from_secs(5);
+/// How long a clean shutdown lets the dumps the core asked for go on
+/// before it abandons them, leaving their bundles unfinished. A dump waits
+/// on agents and paired hosts for their parts, ten seconds each, and on a
+/// loaded machine a shutdown would otherwise wait out every one of them.
+pub const DUMPS_FINISH_WITHIN: Duration = Duration::from_secs(5);
 /// Live events a subscriber's queue holds unread. A batch's records are
 /// answered in one burst at memory speed by the step that commits it, so a
 /// reader's slack is counted in batches: a subscriber that has read
@@ -387,10 +392,11 @@ pub struct ProfileRuntime {
     pub(crate) push: Arc<dyn PushSender>,
     /// The outbox drains and the retention sweep.
     pub(crate) background: Mutex<Vec<JoinHandle<()>>>,
-    /// The dumps the core asked for that are still being written. A crash
-    /// aborts them, as it does every other task of the run; a shutdown lets
-    /// them finish.
-    pub(crate) core_dumps: Mutex<Vec<JoinHandle<()>>>,
+    /// The dumps the core asked for that are still being written; none
+    /// once the profile stops waiting for them, so no dump starts after. A
+    /// crash aborts them, as it does every other task of the run; a
+    /// shutdown lets them finish for [`DUMPS_FINISH_WITHIN`].
+    pub(crate) core_dumps: Mutex<Option<Vec<JoinHandle<()>>>>,
     agents: Mutex<HashMap<AgentId, Arc<AgentHandle>>>,
     pub(crate) retention: watch::Sender<Retention>,
     pub(crate) reports: PathBuf,
@@ -661,7 +667,7 @@ impl ProfileRuntime {
             ingested_frames: AtomicU64::new(0),
             push,
             background: Mutex::new(Vec::new()),
-            core_dumps: Mutex::new(Vec::new()),
+            core_dumps: Mutex::new(Some(Vec::new())),
             launch: Mutex::new(launch),
             agents: Mutex::new(HashMap::new()),
             retention: watch::Sender::new(Retention::default()),
@@ -1576,7 +1582,7 @@ impl ProfileRuntime {
         for task in self.background.lock().unwrap().drain(..) {
             task.abort();
         }
-        for task in self.core_dumps.lock().unwrap().drain(..) {
+        for task in self.core_dumps.lock().unwrap().take().into_iter().flatten() {
             task.abort();
         }
         for handle in self.agents.lock().unwrap().values() {
@@ -1587,6 +1593,20 @@ impl ProfileRuntime {
         self.stop_replication();
         if let Some(edge) = self.edge.get() {
             edge.abort();
+        }
+    }
+
+    /// Lets the dumps the core asked for finish within
+    /// [`DUMPS_FINISH_WITHIN`], aborts the rest, and starts no more; returns
+    /// once none is left, so none holds the runtime past a shutdown.
+    pub async fn finish_dumps(&self) {
+        let tasks = self.core_dumps.lock().unwrap().take().unwrap_or_default();
+        let deadline = tokio::time::Instant::now() + DUMPS_FINISH_WITHIN;
+        for mut task in tasks {
+            if tokio::time::timeout_at(deadline, &mut task).await.is_err() {
+                task.abort();
+                let _ = task.await;
+            }
         }
     }
 

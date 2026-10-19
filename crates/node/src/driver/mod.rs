@@ -910,6 +910,13 @@ impl CoreThread {
                     }
                     daemon_core::DumpReason::OverBudget { .. } => format!("{CORE_DUMP}{reason}"),
                 };
+                let mut dumps = runtime.core_dumps.lock().unwrap();
+                // A profile shutting down has stopped waiting for dumps: one
+                // started now would hold the runtime past its shutdown.
+                let Some(dumps) = dumps.as_mut() else {
+                    tracing::warn!(%reason, "not dumped for the daemon core: the profile is stopping");
+                    return;
+                };
                 let weak = Arc::downgrade(runtime);
                 let task = tokio::spawn(async move {
                     let Some(runtime) = weak.upgrade() else {
@@ -930,7 +937,6 @@ impl CoreThread {
                         }
                     }
                 });
-                let mut dumps = runtime.core_dumps.lock().unwrap();
                 dumps.retain(|dump| !dump.is_finished());
                 dumps.push(task);
             }

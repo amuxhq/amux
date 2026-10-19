@@ -702,7 +702,6 @@ tests = [
   "testnet/spec_network::malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_carries_on",
   "testnet/spec_network::a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its_stream",
   "testnet/spec_network::a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pro",
-  "testnet/spec_network::free_tier_relay_only_host_is_away",
   "testnet/spec_replication::blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader",
 ]
 
@@ -1018,15 +1017,6 @@ tests = [
 ]
 
 [[contract]]
-id = "free-tier-relay-host-is-away"
-source = "invariant"
-section = "Fleet"
-claim = "A trusted host the relay alone reaches while the account is on the free tier is away, not online, since the relay lists it and carries nothing to it; a direct route to it, or the account going Pro, makes it online again; a client draws away from the daemon's word."
-tests = [
-  "testnet/spec_network::free_tier_relay_only_host_is_away",
-]
-
-[[contract]]
 id = "compacting-reads-until-the-compaction-lands"
 source = "invariant"
 section = "Session state"
@@ -1272,4 +1262,32 @@ tests = [
   "testnet/spec_replication::a_replica_is_carried_compressed",
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
+]
+
+[[contract]]
+id = "presence-away-only-on-payment-refusal"
+source = "model"
+property = { crate = "models", machine = "presence and routing", sentence = "Away only on payment refusal: a host reads away only once the relay refused a channel to it for the account's plan, and no channel to it opened since" }
+checker = "models/presence::every_presence_promise_holds_at_ci_bounds"
+tests = [
+  "testnet/spec_network::a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro",
+  "testnet/spec_network::a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once",
+]
+
+[[contract]]
+id = "presence-offline-after-failed-calls"
+source = "model"
+property = { crate = "models", machine = "presence and routing", sentence = "offline after failed calls until a channel opens: once calls to a host have failed, it reads offline until a channel to it opens or the relay refuses one for the account's plan, whatever routes come, go or are listed again meanwhile" }
+checker = "models/presence::every_presence_promise_holds_at_ci_bounds"
+tests = [
+  "tui/frames::a_prompt_held_when_no_call_reaches_its_host_goes_once_one_does",
+]
+
+[[contract]]
+id = "presence-working-route-reads-online"
+source = "model"
+property = { crate = "models", machine = "presence and routing", sentence = "a host with a working route eventually reads online: once the world stops changing and the core comes to rest, a host listed on a route that carries a channel reads online" }
+checker = "models/presence::every_presence_promise_holds_at_ci_bounds"
+tests = [
+  "testnet/spec_network::a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in",
 ]

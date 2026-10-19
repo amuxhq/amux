@@ -860,74 +860,6 @@ mod tests {
     }
 
     #[test]
-    fn a_route_coming_up_is_tried_and_the_host_reads_as_the_attempt_on_it_finds() {
-        let mut daemon = daemon();
-        let out = up(&mut daemon, 1, DESK, CarrierKind::Direct);
-        let direct = Route::Direct(LinkId(1));
-        assert_eq!(attempts(&out), vec![(DESK, direct)]);
-        assert_eq!(
-            view(&daemon, DESK).presence,
-            Presence::Offline,
-            "a route coming up changes nothing until its attempt concludes"
-        );
-
-        concluded(&mut daemon, DESK, direct, Tried::Opened);
-        let online = view(&daemon, DESK);
-        assert_eq!(online.presence, Presence::Online);
-        assert_eq!(online.active, Some(direct));
-
-        // A relay's claim adds a route but no attempt: the direct link
-        // carries the host's traffic.
-        up(&mut daemon, 2, LAPTOP, CarrierKind::Direct);
-        let out = claims(&mut daemon, 2, &[DESK]);
-        assert_eq!(attempts(&out), Vec::new());
-        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-    }
-
-    #[test]
-    fn a_failure_counts_only_on_the_route_a_fresh_call_takes_first() {
-        let mut daemon = daemon();
-        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
-        claims(&mut daemon, 1, &[DESK]);
-        let via = Route::Via(LAPTOP);
-        concluded(&mut daemon, DESK, via, Tried::Opened);
-        up(&mut daemon, 2, DESK, CarrierKind::Direct);
-
-        // The direct link is first now: the relayed route failing says
-        // nothing, and the host reads as it did.
-        let out = concluded(
-            &mut daemon,
-            DESK,
-            via,
-            Tried::Failed(ChannelError::Handshake("reset".into())),
-        );
-        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-        assert_eq!(retry_at(&out, DESK), None);
-
-        // The link going under an attempt says nothing either: the link
-        // going decides.
-        let direct = Route::Direct(LinkId(2));
-        concluded(
-            &mut daemon,
-            DESK,
-            direct,
-            Tried::Failed(ChannelError::LinkClosed),
-        );
-        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-
-        // A failure on the first route with no other carrying traffic
-        // reads offline. The relayed route still carries it here.
-        concluded(
-            &mut daemon,
-            DESK,
-            direct,
-            Tried::Failed(ChannelError::Handshake("timed out".into())),
-        );
-        assert_eq!(view(&daemon, DESK).active, Some(via));
-        assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-    }
-
-    #[test]
     fn a_direct_route_not_tried_while_untrusted_is_tried_once_it_is_trusted() {
         let mut daemon = daemon();
         step(
@@ -961,33 +893,6 @@ mod tests {
         concluded(&mut daemon, DESK, direct, Tried::Opened);
         assert_eq!(view(&daemon, DESK).active, Some(direct));
         assert_eq!(view(&daemon, DESK).presence, Presence::Online);
-    }
-
-    #[test]
-    fn a_host_reads_away_only_when_the_relay_refuses_it_for_the_plan() {
-        let mut daemon = daemon();
-        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
-        claims(&mut daemon, 1, &[DESK]);
-        let via = Route::Via(LAPTOP);
-        tick(&mut daemon, 100);
-
-        let out = concluded(
-            &mut daemon,
-            DESK,
-            via,
-            refused(StreamRefusal::PaymentRequired),
-        );
-        assert_eq!(view(&daemon, DESK).presence, Presence::Away);
-        assert_eq!(retry_at(&out, DESK), Some(100 + RETRY_FIRST_MS));
-
-        let out = concluded(&mut daemon, DESK, via, refused(StreamRefusal::NoRoute));
-        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
-        assert_eq!(
-            retry_at(&out, DESK),
-            None,
-            "one retry per host: a second failure does not arm another"
-        );
-        assert!(daemon.presence().retrying(DESK));
     }
 
     #[test]
@@ -1068,43 +973,6 @@ mod tests {
         down(&mut daemon, 2);
         assert_eq!(attempts(&fire(&mut daemon, LAPTOP)), Vec::new());
         assert!(!daemon.presence().retrying(LAPTOP));
-    }
-
-    #[test]
-    fn an_attempt_whose_route_went_leaves_the_host_tried_on_the_routes_that_remain() {
-        let mut daemon = daemon();
-        up(&mut daemon, 1, LAPTOP, CarrierKind::Direct);
-        concluded(&mut daemon, LAPTOP, Route::Direct(LinkId(1)), Tried::Opened);
-        up(&mut daemon, 2, DESK, CarrierKind::Direct);
-        claims(&mut daemon, 1, &[DESK]);
-        let (direct, via) = (Route::Direct(LinkId(2)), Route::Via(LAPTOP));
-
-        // The relayed route is not the one a fresh call takes first, so its
-        // failure says nothing and starts no retry.
-        let out = concluded(
-            &mut daemon,
-            DESK,
-            via,
-            Tried::Failed(ChannelError::Handshake("timed out".into())),
-        );
-        assert_eq!(retry_at(&out, DESK), None);
-
-        // The direct link goes before its attempt concludes: no channel was
-        // open on it, so its going starts no retry either.
-        tick(&mut daemon, 50);
-        let out = down(&mut daemon, 2);
-        assert_eq!(retry_at(&out, DESK), None);
-
-        // Its attempt failing as the link closed tries what remains at once.
-        let out = concluded(
-            &mut daemon,
-            DESK,
-            direct,
-            Tried::Failed(ChannelError::LinkClosed),
-        );
-        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
-        assert_eq!(retry_at(&out, DESK), Some(50));
-        assert_eq!(attempts(&fire(&mut daemon, DESK)), vec![(DESK, via)]);
     }
 
     #[test]

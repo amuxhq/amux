@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use crate::net::{Ack, Net, NetAgent, NetError};
 use crate::observe::{self, InventoryObserver, Observer};
+use crate::topology::AgentDecl;
 
 /// A net a story drives.
 #[allow(
@@ -60,6 +61,14 @@ pub trait World {
         input: wire::Input,
     ) -> Result<wire::SendInputResponse, NetError>;
 
+    /// Starts `decl` as a child of `parent` on the host it names; the
+    /// returned row is the child's own once its process said Hello.
+    async fn spawn_child(&mut self, parent: &str, decl: AgentDecl)
+    -> Result<wire::Agent, NetError>;
+    /// Deletes the agent on its own host, as a client does there. Its
+    /// children follow on their own hosts by the family rule, after this
+    /// returns; the net forgets only this agent.
+    async fn delete(&mut self, agent: &str) -> Result<Ack, NetError>;
     /// Stops the agent on its own host, as a client does there, and waits
     /// until it has exited.
     async fn stop(&self, agent: &str) -> Result<Ack, NetError>;
@@ -199,6 +208,18 @@ impl World for Net {
         input: wire::Input,
     ) -> Result<wire::SendInputResponse, NetError> {
         Net::input(self, agent, input).await
+    }
+
+    async fn spawn_child(
+        &mut self,
+        parent: &str,
+        decl: AgentDecl,
+    ) -> Result<wire::Agent, NetError> {
+        Net::spawn_child(self, parent, decl).await
+    }
+
+    async fn delete(&mut self, agent: &str) -> Result<Ack, NetError> {
+        Net::delete(self, agent).await
     }
 
     async fn stop(&self, agent: &str) -> Result<Ack, NetError> {

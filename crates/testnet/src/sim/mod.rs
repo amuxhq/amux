@@ -377,7 +377,8 @@ impl SimNet {
             h,
             &what,
             ClientRequest::CreateAgent(Box::new(create)),
-        )?;
+        )?
+        .ok_or_else(|| answered_without_row(&decl.host, &what))?;
         drop(sim);
         self.agents.insert(
             decl.name.clone(),
@@ -671,6 +672,30 @@ impl World for SimNet {
         Ok(verdict)
     }
 
+    async fn spawn_child(
+        &mut self,
+        parent: &str,
+        decl: AgentDecl,
+    ) -> Result<wire::Agent, NetError> {
+        self.spawn(decl.parent(parent))
+    }
+
+    async fn delete(&mut self, agent: &str) -> Result<Ack, NetError> {
+        let at = self.agent_named(agent)?;
+        let h = self.host_index(&at.host)?;
+        let id = AgentId(at.id.into_bytes());
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if !sim.is_up(h) {
+            return Err(NetError::Down(at.host.clone()));
+        }
+        let what = format!("{agent} to be deleted");
+        registry_call(&mut sim, h, &what, ClientRequest::DeleteAgent { agent: id })?;
+        drop(sim);
+        self.agents.remove(agent);
+        Ok(self.ack(format!("{agent} deleted")))
+    }
+
     async fn stop(&self, agent: &str) -> Result<Ack, NetError> {
         let at = self.agent_named(agent)?;
         let h = self.host_index(&at.host)?;
@@ -708,7 +733,8 @@ impl World for SimNet {
                 agent: id,
                 bootstrap,
             })),
-        )
+        )?
+        .ok_or_else(|| answered_without_row(&at.host, &what))
     }
 
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {
@@ -998,13 +1024,13 @@ fn wait<T>(
 }
 
 /// Makes a registry call on the host as a client does, waits until it
-/// ends, and returns the agent's row it was answered with.
+/// ends, and returns the agent's row it was answered with, if any.
 fn registry_call(
     sim: &mut Sim,
     h: usize,
     what: &str,
     request: ClientRequest,
-) -> Result<wire::Agent, NetError> {
+) -> Result<Option<wire::Agent>, NetError> {
     let call = sim.net.client_call(h, request);
     let ended = wait(sim, what, |sim| {
         sim.net
@@ -1017,12 +1043,19 @@ fn registry_call(
         Response::Agent(row) => Some((**row).clone()),
         _ => None,
     });
-    match (ended, row) {
-        (daemon_core::payload::Status::Ok, Some(row)) => Ok(row),
-        (status, _) => Err(NetError::Host {
+    match ended {
+        daemon_core::payload::Status::Ok => Ok(row),
+        status => Err(NetError::Host {
             host: sim.net.host_name(h).to_owned(),
             error: format!("{what}: the call ended {status:?}"),
         }),
+    }
+}
+
+fn answered_without_row(host: &str, what: &str) -> NetError {
+    NetError::Host {
+        host: host.to_owned(),
+        error: format!("{what}: answered without the agent's row"),
     }
 }
 

@@ -11,6 +11,7 @@ core-ring.workspace = true
 daemon-core.workspace = true
 interpret.workspace = true
 journal.workspace = true
+models.workspace = true
 prost.workspace = true
 redaction.workspace = true
 semver = { workspace = true, features = ["serde"] }

@@ -599,15 +599,8 @@ impl Machine for SingleDaemon {
                     bumps_only_after_unclean(run.owed, run.previous, run.generation)
                 })
             }),
-            Property::always(
-                "a checkpoint plus the inputs since reproduces the state: the core restored from the newest \
-                 checkpoint and stepped through every input since, against the journal as each found it, \
-                 is the live core, store and journal",
-                |_, s: &State| s.diverged.is_none(),
-            ),
-            Property::always("the core never asks for a dump", |_, s: &State| {
-                s.dumped.is_none()
-            }),
+            Property::always(REPRODUCES, |_, s: &State| s.diverged.is_none()),
+            Property::always(NEVER_DUMPS, |_, s: &State| s.dumped.is_none()),
             Property::sometimes("a subscriber lags", |_, s: &State| {
                 s.run
                     .as_ref()
@@ -880,7 +873,7 @@ fn summary(core: &[u8]) -> String {
 /// revision.
 /// The single daemon's promises the composed net judges too, each with
 /// the predicate both judge it by.
-pub(crate) const COMMIT_BEFORE_BROADCAST: &str = "commit before broadcast: every row a step answers \
+pub const COMMIT_BEFORE_BROADCAST: &str = "commit before broadcast: every row a step answers \
      is in the store once the step is done, at the revision answered or a later one the step wrote over it";
 pub(crate) const RECLAIMED_BELOW_CURSOR: &str = "a segment is reclaimed only below the last checkpoint's \
      cursor: the journal still holds every frame from the cursor the drive's store has";
@@ -890,6 +883,71 @@ pub(crate) const GENERATION_BUMPS_AFTER_UNCLEAN: &str = "the generation bumps af
 pub(crate) const GENERATION_BUMPS_ONLY_AFTER_UNCLEAN: &str = "the generation bumps only after an unclean \
      reboot: a start after a crash on the same boot, or after a clean shutdown, serves the generation of \
      the run before";
+
+/// The single daemon's promises a replay of a dump judges too.
+pub const REPRODUCES: &str = "a checkpoint plus the inputs since reproduces the state: the core restored \
+     from the newest checkpoint and stepped through every input since, against the journal as each found \
+     it, is the live core, store and journal";
+pub const NEVER_DUMPS: &str = "the core never asks for a dump";
+
+/// A promise one step broke, and what broke it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Broken {
+    pub promise: &'static str,
+    pub detail: String,
+}
+
+/// What one step of a core running anywhere broke of the promises a step
+/// is judged by alone, `out` being what it asked for: a dump it asked for,
+/// an invariant its store breaks, or a row it answered that the store does
+/// not hold. The rest of the single daemon's promises need the world the
+/// model tracks around the core: what reached the drive, the run before.
+pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
+    if let Some(reason) = out.iter().find_map(|output| match output {
+        Output::Dump { reason } => Some(reason),
+        _ => None,
+    }) {
+        return Some(Broken {
+            promise: NEVER_DUMPS,
+            detail: reason.to_string(),
+        });
+    }
+    if let Err(violation) = daemon.check_all() {
+        return Some(Broken {
+            promise: violation.invariant,
+            detail: violation.detail,
+        });
+    }
+    answered_unheld(daemon, out).map(|row| Broken {
+        promise: COMMIT_BEFORE_BROADCAST,
+        detail: format!("answered {row} before the store held it"),
+    })
+}
+
+/// The first row `out` answers on a session that the daemon's store does
+/// not hold, under any agent it has a row for.
+pub(crate) fn answered_unheld(daemon: &Daemon, out: &[Output]) -> Option<String> {
+    let answers = out.iter().any(|output| {
+        matches!(
+            output,
+            Output::Answer {
+                response: Response::Session(_),
+                ..
+            }
+        )
+    });
+    if !answers {
+        return None;
+    }
+    let store = daemon.store();
+    let agents: Vec<AgentKey> = store
+        .agents()
+        .unwrap()
+        .into_iter()
+        .map(|row| row.agent)
+        .collect();
+    answered_uncommitted(out, store, &agents)
+}
 
 /// The first row `out` answers on a session that `store` does not hold at
 /// the revision answered or a later one, under any of `agents`. A step that

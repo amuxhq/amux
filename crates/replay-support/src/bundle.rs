@@ -1,10 +1,11 @@
-//! Replaying a dump bundle's three pure stages, each from what the bundle
-//! carries: the facts ring through the agent's interpreter from the
+//! Opening a dump bundle, and replaying an agent's stages from what the
+//! bundle carries: the facts ring through the agent's interpreter from the
 //! checkpoint at its oldest segment, the daemon's store slice through the
 //! session model as a Subscribe opening would deliver it, and that state
-//! through the views. A client bug reproduces from the second and third
-//! stages; an interpreter bug from the first, compared with the journal the
-//! bundle also carries.
+//! through the views. A client bug reproduces from the slice; an
+//! interpreter bug from the facts, compared with the journal the bundle
+//! also carries. `replay` runs these and the daemon core's stage with the
+//! properties judged.
 //!
 //! The layout is the daemon's (see `node::dump`): `manifest.json`, per
 //! agent `agents/<id>/row.pb`, `store.pb`, `journal/<segment>` and the
@@ -276,18 +277,27 @@ impl AgentDump {
     /// CaughtUp.
     pub fn session(&self) -> SessionState {
         let mut state = SessionState::new(self.row.clone(), usize::MAX);
-        let event = |of| Msg::Event(SessionEvent { of: Some(of) });
+        for of in self.opening() {
+            state.update(Msg::Event(SessionEvent { of: Some(of) }));
+        }
+        state
+    }
+
+    /// The events a Subscribe opening delivers for the slice: the
+    /// snapshot, the held rows, then CaughtUp.
+    pub fn opening(&self) -> Vec<session_event::Of> {
+        let mut events = Vec::new();
         let mut revision = 0;
         if let Some(snapshot) = &self.store.snapshot {
             revision = snapshot.revision;
-            state.update(event(session_event::Of::Snapshot(snapshot.clone())));
+            events.push(session_event::Of::Snapshot(snapshot.clone()));
         }
         for item in &self.store.items {
             revision = revision.max(item.revision);
-            state.update(event(session_event::Of::Item(item.clone())));
+            events.push(session_event::Of::Item(item.clone()));
         }
-        state.update(event(session_event::Of::CaughtUp(CaughtUp { revision })));
-        state
+        events.push(session_event::Of::CaughtUp(CaughtUp { revision }));
+        events
     }
 
     /// Stage three: the rows the views draw for everything the state holds.

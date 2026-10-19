@@ -59,7 +59,7 @@ use crate::presence::{
 };
 use crate::single_daemon::{
     COMMIT_BEFORE_BROADCAST, GENERATION_BUMPS_AFTER_UNCLEAN, GENERATION_BUMPS_ONLY_AFTER_UNCLEAN,
-    answered_uncommitted, bumps_after_unclean, bumps_only_after_unclean,
+    answered_unheld, bumps_after_unclean, bumps_only_after_unclean,
 };
 
 type Kind = TestKind;
@@ -145,27 +145,9 @@ fn judge_step(
     views: Vec<daemon_core::HostView>,
     concluded: Option<(HostId, Route)>,
 ) -> Option<(&'static str, String)> {
-    let answers = out.iter().any(|output| {
-        matches!(
-            output,
-            Output::Answer {
-                response: Response::Session(_),
-                ..
-            }
-        )
-    });
-    if answers {
-        let store = daemon.store();
-        let agents: Vec<store::AgentKey> = store
-            .agents()
-            .unwrap()
-            .into_iter()
-            .map(|row| row.agent)
-            .collect();
-        if let Some(row) = answered_uncommitted(out, store, &agents) {
-            let what = format!("{name} answered {row} on {kind} before its store held it");
-            return Some((COMMIT_BEFORE_BROADCAST, what));
-        }
+    if let Some(row) = answered_unheld(daemon, out) {
+        let what = format!("{name} answered {row} on {kind} before its store held it");
+        return Some((COMMIT_BEFORE_BROADCAST, what));
     }
     for (&(other, other_name), was) in others.iter().zip(views) {
         let now = daemon.presence().view(other);

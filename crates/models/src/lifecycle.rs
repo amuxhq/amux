@@ -298,6 +298,10 @@ pub(crate) const EXITS_AT_TURN_END: &str = "an agent exits only at a turn end or
 pub(crate) const EXIT_CAUSE_LAST_STEP: &str = "the exit cause is the journal's last step: an incarnation \
      that exits having written its end records its cause on its newest step";
 
+/// The agent lifecycle's promise a replay of a dump judges too.
+pub const RESUME_CONTINUES: &str = "a resume continues where the last incarnation was: the facts ring \
+     replays to the interpreter that recorded it";
+
 /// Whether a decision to end an incarnation for `cause` came in its time:
 /// as a turn ended or the drain deadline passed (`at_turn_end_or_deadline`),
 /// or while no turn ran, unless it was not the lifecycle's to make.
@@ -731,11 +735,7 @@ impl Machine for AgentLifecycle {
             Property::always("the agent core never asks for a dump", |_, s: &State| {
                 s.seen.dumped.is_none()
             }),
-            Property::always(
-                "a resume continues where the last incarnation was: the facts ring replays to the \
-                 interpreter that recorded it",
-                |_, s: &State| !s.seen.ring_diverged,
-            ),
+            Property::always(RESUME_CONTINUES, |_, s: &State| !s.seen.ring_diverged),
             Property::always(EXITS_AT_TURN_END, |_, s: &State| {
                 s.seen.decided.as_ref().is_none_or(|decided| {
                     decided_in_its_time(

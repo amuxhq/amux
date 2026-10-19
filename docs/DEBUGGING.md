@@ -179,10 +179,40 @@ sharing it.
 
 ## Replaying a dump
 
-`replay-support` (`crates/replay-support/src/bundle.rs`) opens a bundle and replays its three pure stages:
+A dump runs. `dump-replay` replays a bundle through its four stages, in the order a row passes through them, with
+the protocol's properties (the sentences the models in `crates/models` check) judged at every step, and prints one
+line per stage:
+
+```sh
+cargo build -p replay-support --bins
+target/debug/dump-replay reports/dump-<unix ms>-<id>
+```
+
+```text
+interpreter  holds   1 agent, the facts replayed to the journal's last 6 frames
+daemon core  holds   38 inputs from the checkpoint, each step judged
+session      holds   1 agent, 7 events, the window checked after each
+views        holds   5 rows drawn for 1 agent
+```
+
+| Stage | Replays | Judged |
+| --- | --- | --- |
+| interpreter | each agent's facts through its interpreter, from the oldest checkpoint kept | the replay renders as the journal's frames it overlaps, redaction placeholders aside: a resume continues where the last incarnation was |
+| daemon core | the core restored from `core/checkpoint` over a copy of `core/store.sqlite`, fed every input in `core/inputs` with each journal it reads cut to where the live step found it, and a commit the live step had refused refused again | after each input: the core asks for no dump, its store keeps every invariant it checks, every row it answers is committed, and every journal read finds what the live one found (a checkpoint plus the inputs since reproduces the state) |
+| session | each agent's store slice through the session model, as a Subscribe opening delivers it | after each event: the window is one block |
+| views | that state through the chat view | nothing: views are functions of state |
+
+A stage that fails prints `FAILS`, the step (the input counted from one, for the core), the property's sentence and
+what broke it, and the command exits non-zero. The first stage that fails is the culprit. When every stage holds,
+the fault is in a driver or in presentation, and the daemon's log tail is where to look. A stage the bundle carries
+nothing for prints `absent` and why: a bundle from a peer has no core part.
+
+The same is a library, `replay-support` (`crates/replay-support/src/bundle.rs` and `replay.rs`):
 
 ```rust
 let bundle = Bundle::open(path)?;
+let verdicts = bundle.replay_all()?;            // one StageVerdict per stage, as dump-replay prints them
+let failing = bundle.replay_core()?;            // the core's first failing step and its property, or None
 for agent in &bundle.agents {
     let steps = agent.replay_facts()?;          // facts through the interpreter, from the oldest checkpoint
     let state = agent.session();               // the store slice through SessionState, as Subscribe delivers it
@@ -190,15 +220,10 @@ for agent in &bundle.agents {
 }
 ```
 
-`bundle.core`, when the bundle carries the core's part, holds the core's checkpoint, every recorded line since
-(`daemon_core::Recorded`: an input, or how far the ingest of the input before it read an agent's journal) and the
-path of the store copy. A replay of the core restores the checkpoint over a copy of that store and steps each
-input with each journal it reads cut to where the live step found it.
-
 `final_texts(steps)` reduces a sequence of steps to each item key's final text, which is how two sequences are
 compared when their revisions differ. The simplest way to work on a bundle is a scratch test beside
-`crates/replay-support/tests/bundle.rs`, which replays the committed bundle in
-`crates/replay-support/tests/fixtures/bundle` the same way. A bundle whose interpreter state format has changed
+`crates/replay-support/tests/bundle.rs` and `core_replay.rs`, which replay the committed bundles in
+`crates/replay-support/tests/fixtures` the same way. A bundle whose interpreter state format has changed
 since it was written will not decode its checkpoint; take a fresh one.
 
 ### Narrowing a problem to one stage

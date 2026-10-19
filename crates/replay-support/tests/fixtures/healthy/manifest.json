@@ -1,0 +1,32 @@
+{
+  "agents": [
+    {
+      "agent_id": "214ca4a9-1a0e-472e-9160-f19812f7ee46",
+      "host_id": "6f436304-07b3-46f6-a914-cd8602099ff9",
+      "incarnation": 1,
+      "kind": 2,
+      "lifecycle": 1,
+      "own": true,
+      "part": [
+        "facts/0000000000",
+        "facts/0000000000.checkpoint",
+        "spec.1"
+      ],
+      "rows": 5
+    }
+  ],
+  "automatic": false,
+  "core": {
+    "inputs": 38,
+    "reads": 7,
+    "schema": 1
+  },
+  "created_at_ms": 1792443486636,
+  "daemon_version": "0.8.0",
+  "dump_id": "ca9d98d4-e4f6-4f69-a51c-3a9b308264bc",
+  "errors": [],
+  "generation": 1,
+  "host": "6f436304-07b3-46f6-a914-cd8602099ff9",
+  "profile": "552562f7-44e9-4302-88b7-8fb11f214a9c",
+  "reason": "a healthy net, for the replay fixture"
+}

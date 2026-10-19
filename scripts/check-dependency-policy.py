@@ -68,14 +68,6 @@ ALLOWED_LOCAL = {
     "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
     # The terminal client composes the views over the drivers' state.
     "tui": {"attachments", "client", "ui-runtime", "ui-state", "ui-view", "wire"},
-    # Replays a dump bundle's stages: facts through the interpreter (the
-    # journal for comparison), the daemon core from its checkpoint over its
-    # store, records through the session model, state through the views; and
-    # provider recordings for the capture tools.
-    "replay-support": {
-        "core-ring", "daemon-core", "interpret", "journal", "redaction", "store", "ui-state",
-        "ui-view", "wire",
-    },
     # The bounded ring of a core's inputs since its last checkpoint, in
     # segments named as the journal's are.
     "core-ring": {"journal"},
@@ -120,6 +112,7 @@ TEST_SUPPORT = {
     "shot",
     "tui-set",
     "models",
+    "replay-support",
 }
 SUPPORT_ALLOWED_LOCAL = {
     # The many-daemons harness: real daemons in process, real agents on the
@@ -152,6 +145,16 @@ SUPPORT_ALLOWED_LOCAL = {
     # Serves a declared world with `testnet serve` and runs the terminal
     # client on it, or draws it headlessly through `shot`.
     "tui-set": {"agent-dir", "client", "settings", "shot", "tui", "ui-runtime", "wire"},
+    # Replays a dump bundle's stages with the models' properties judged at
+    # every step: facts through the interpreter (the journal for
+    # comparison), the daemon core from its checkpoint over its store,
+    # records through the session model, state through the views; and
+    # provider recordings for the capture tools. A debugging tool: nothing
+    # that ships links it.
+    "replay-support": {
+        "core-ring", "daemon-core", "interpret", "journal", "models", "redaction", "store",
+        "ui-state", "ui-view", "wire",
+    },
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the
     # clients' session state.

@@ -437,19 +437,22 @@ cargo = [
 
 [[suite]]
 name = "dump-bundle-replay"
-contract = "A dump bundle a real daemon wrote replays its facts through the interpreter to what the journal holds, and its store slice through the session model and the views."
-paths = ["crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/fixtures"]
-recipe = "just test-crate replay-support -- --test bundle"
+contract = "A dump bundle a real daemon wrote replays through its four stages with the models' properties judged at every step: its facts through the interpreter to what the journal holds, the daemon core from its checkpoint through every input since, its store slice through the session model, and that state through the views; `dump-replay` prints one line per stage and a ring the replay does not reproduce fails, naming the step and the property."
+paths = ["crates/replay-support/src/replay.rs", "crates/replay-support/src/bin/dump-replay.rs", "crates/replay-support/tests/bundle.rs", "crates/replay-support/tests/core_replay.rs", "crates/replay-support/tests/fixtures"]
+recipe = "just test-crate replay-support -- --test bundle --test core_replay"
 boundary = "Client model"
-oracle = "Equality between replayed steps and the journaled ones, and the views drawn from the replayed session."
-real = ["a recorded dump bundle"]
-substituted = ["daemon", "provider", "network"]
+oracle = "Equality between replayed steps and the journaled ones, the models' properties after every replayed step, and the views drawn from the replayed session."
+real = ["recorded dump bundles", "the daemon core", "the store"]
+substituted = ["provider", "network", "the core's drivers"]
 time = "none"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = "crates/replay-support/tests/fixtures"
 update = ""
-cargo = [{ package = "replay-support", targets = ["bundle"], features = [] }]
+cargo = [
+  { package = "replay-support", kind = "bin", targets = ["dump-replay"], features = [] },
+  { package = "replay-support", targets = ["bundle", "core_replay"], features = [] },
+]
 
 [[suite]]
 name = "wire-size"

@@ -478,6 +478,10 @@ pub(crate) const REPLAY: &str = "replay from any checkpoint equals the whole: th
 pub(crate) const UNCERTAIN_LEFT: &str = "an uncertain input absent at CaughtUp is left with resend and \
      discard: an input whose send was lost leaves uncertain only once an item reflecting it or a queue \
      listing it reached the client, and settles only on an item reflecting it";
+/// The client's promise a replay of a dump judges too, after every event
+/// its session takes.
+pub const ONE_BLOCK: &str = "the window is one block: the rows a client holds have contiguous orders \
+     and every index names a held row";
 
 impl Machine for ClientModel {
     type State = State;
@@ -793,11 +797,9 @@ impl Machine for ClientModel {
             Property::always(GENERATION_KNOWN, |_, s: &State| {
                 !s.at_rest() || s.client.generation() == Some(s.daemon.generation)
             }),
-            Property::always(
-                "the window is one block: the rows a client holds have contiguous orders and every \
-                 index names a held row",
-                |_, s: &State| s.client.transcript().check().is_ok(),
-            ),
+            Property::always(ONE_BLOCK, |_, s: &State| {
+                s.client.transcript().check().is_ok()
+            }),
             Property::sometimes(
                 "an append to a revision the client does not hold is answered with Get",
                 |_, s: &State| s.seen.got,

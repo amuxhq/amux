@@ -3843,6 +3843,7 @@ dependencies = [
  "daemon-core",
  "interpret",
  "journal",
+ "models",
  "prost",
  "redaction",
  "semver",

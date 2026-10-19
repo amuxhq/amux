@@ -598,11 +598,13 @@ from the frame's `arrivals_held`. [IOS.md](IOS.md) and
 [`replay-support`](../crates/replay-support/src/lib.rs) serves two purposes.
 
 - **Dump bundles.** [`bundle.rs`](../crates/replay-support/src/bundle.rs) opens a bundle the daemon wrote and
-  replays its three pure stages: `AgentDump::replay_facts` runs the agent's facts ring through its interpreter
+  replays its stages: `AgentDump::replay_facts` runs the agent's facts ring through its interpreter
   from the checkpoint at the oldest segment (compare the result with the journal the bundle also carries);
   `AgentDump::session` feeds the store slice through `SessionState` exactly as a Subscribe opening delivers it
   (snapshot, held rows, CaughtUp); `AgentDump::rows` renders that state through `chat_rows`. An interpreter bug
-  reproduces from the first stage, a client bug from the second and third.
+  reproduces from the facts, a client bug from the slice. `Bundle::replay_all` (in `replay.rs`, and the
+  `dump-replay` binary) runs all four stages, the daemon core's among them, with the properties judged at every
+  step; see [Debugging](DEBUGGING.md#replaying-a-dump).
 - **Recorded provider traffic.** `ReplayTransport`, `strict_replay`, recording manifests and probes let the
   provider spec crates (`claude-specs`, `codex-specs`) replay captured sessions byte for byte.
 
@@ -620,6 +622,6 @@ only code that can decode them.
 | `crates/ui-view/tests/` | View goldens replayed from every interpreter fixture of all three kinds (`goldens.rs`), authored goldens, row invariants over random windows (`views.rs`), and the interpreter accepting each card's answers (`answers.rs`). Rewrite goldens with `UI_VIEW_UPDATE_GOLDENS=1` and review the diff. | `just test-crate ui-view` |
 | `crates/ui-runtime/tests/` | The drivers against an in-memory runtime whose every answer and clock tick the test controls (opening, reconnect and re-tail, uncertain inputs, paging, blobs, traces and dump parts), and against a real daemon in process running an agent on a fake provider, through both clients. | `just test-crate ui-runtime` |
 | `crates/client/tests/seam.rs` | Both `Client` implementations answer alike against one real daemon. | `just test-crate client` |
-| `crates/replay-support/tests/` | A real dump bundle replayed through its three stages, and strict replay of recordings. | `just test-crate replay-support` |
+| `crates/replay-support/tests/` | Real dump bundles replayed through their four stages, and strict replay of recordings. | `just test-crate replay-support` |
 
 [TESTING.md](TESTING.md) places these in the suite catalogue.

@@ -575,6 +575,13 @@ impl Daemon {
     pub fn budget(&self) -> StepBudget {
         self.options.budget
     }
+
+    /// Sets how long one step may take before it is reported: a replay of
+    /// a checkpoint the daemon took under its own budget runs under none,
+    /// so that its steps are a function of their inputs alone.
+    pub fn set_budget(&mut self, budget: StepBudget) {
+        self.options.budget = budget;
+    }
 }
 
 /// The single daemon's cheap invariants, as the sentences a violation

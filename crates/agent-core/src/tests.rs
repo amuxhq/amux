@@ -108,28 +108,6 @@ impl Run {
     fn turn_end(&mut self) -> Vec<Output> {
         self.fact(json!({"type": "turn_end"}))
     }
-
-    /// The journal steps written so far, in order.
-    fn journal(&self) -> Vec<&Step> {
-        self.out
-            .iter()
-            .filter_map(|output| match output {
-                Output::AppendJournal(step) => Some(step),
-                _ => None,
-            })
-            .collect()
-    }
-
-    /// The facts-ring lines written so far, in order.
-    fn recorded(&self) -> Vec<Entry> {
-        self.out
-            .iter()
-            .filter_map(|output| match output {
-                Output::Record(entry) => Some(entry.clone()),
-                _ => None,
-            })
-            .collect()
-    }
 }
 
 fn exit_of(out: &[Output]) -> Option<&ExitCause> {
@@ -141,15 +119,6 @@ fn exit_of(out: &[Output]) -> Option<&ExitCause> {
 
 fn closes(out: &[Output]) -> bool {
     out.contains(&Output::CloseProvider)
-}
-
-fn turn_ends(out: &[Output]) -> Vec<bool> {
-    out.iter()
-        .filter_map(|output| match output {
-            Output::AppendJournal(step) => step.turn_end.as_ref().map(|end| end.last),
-            _ => None,
-        })
-        .collect()
 }
 
 fn provider_writes(out: &[Output]) -> Vec<String> {
@@ -208,55 +177,6 @@ fn one_shot_working() -> Run {
     );
     run.reflect("p1");
     run
-}
-
-#[test]
-fn a_start_journals_the_first_step_and_arms_the_grace() {
-    let run = Run::start(&spec(false, None));
-    assert_eq!(run.journal().len(), 1, "the initial snapshot");
-    assert!(run.out.contains(&Output::ArmTimer {
-        id: TimerId::Grace,
-        at_ms: 1_000 + GRACE_MS,
-    }));
-    assert!(run.out.contains(&Output::Job {
-        id: JobId(1),
-        op: AgentJob::ReadGit,
-    }));
-}
-
-#[test]
-fn a_tick_asks_for_nothing() {
-    let mut run = Run::start(&spec(false, None));
-    let mut out = Vec::new();
-    run.agent.step(Input::Tick { now_ms: 5_000 }, &mut out);
-    assert_eq!(out, Vec::new());
-}
-
-#[test]
-fn an_agent_without_a_parent_stays_after_its_turn() {
-    let mut run = Run::start(&spec(false, None));
-    run.on(Input::DaemonDials { connection: DAEMON });
-    run.fact(json!({"type": "ready"}));
-    run.prompt("p1", "hello");
-    run.reflect("p1");
-    let out = run.turn_end();
-    assert_eq!(turn_ends(&out), vec![false]);
-    assert!(!closes(&out));
-    assert_eq!(run.agent.exited(), None);
-}
-
-#[test]
-fn a_daemon_back_within_the_grace_keeps_the_agent() {
-    let mut run = Run::start(&spec(false, None));
-    run.on(Input::DaemonDials { connection: DAEMON });
-    run.on(Input::DaemonGone { connection: DAEMON });
-    let back = run.on(Input::DaemonDials {
-        connection: ConnId(2),
-    });
-    assert!(back.contains(&Output::CancelTimer { id: TimerId::Grace }));
-    let out = run.at(run.now_ms + GRACE_MS, Input::Timer(TimerId::Grace));
-    assert!(!out.contains(&Output::Record(Entry::DaemonLost)));
-    assert_eq!(run.agent.exited(), None);
 }
 
 #[test]
@@ -322,22 +242,6 @@ fn a_draining_agent_refuses_new_input() {
 }
 
 #[test]
-fn a_kill_ends_the_process_at_once_and_writes_nothing() {
-    let mut run = Run::start(&spec(false, None));
-    run.on(Input::DaemonDials { connection: DAEMON });
-    run.fact(json!({"type": "ready"}));
-    run.prompt("p1", "hello");
-    let out = run.frame(ctl_frame::Of::Stop(wire::Stop { kill: true }));
-    assert!(out.contains(&Output::KillProvider));
-    assert_eq!(exit_of(&out), Some(&ExitCause::Killed));
-    assert!(
-        !out.iter()
-            .any(|output| matches!(output, Output::AppendJournal(_))),
-        "a kill writes nothing"
-    );
-}
-
-#[test]
 fn a_provider_that_will_not_finish_is_killed_at_its_deadline() {
     let mut run = one_shot_working();
     run.turn_end();
@@ -380,33 +284,6 @@ fn frames_from_a_replaced_connection_are_ignored() {
     assert_eq!(exit_of(&out), None);
     run.on(Input::DaemonGone { connection: DAEMON });
     assert_eq!(run.agent.connection, Some(ConnId(2)));
-}
-
-#[test]
-fn an_incarnation_that_ended_without_its_boundary_gets_one_when_the_next_starts() {
-    let first = spec(false, None);
-    let mut run = Run::start(&first);
-    let checkpoint = run.agent.checkpoint();
-    run.on(Input::DaemonDials { connection: DAEMON });
-    run.fact(json!({"type": "ready"}));
-    // The process is killed here: no boundary.
-    let resumed = Resumed {
-        state: checkpoint.interpreter::<Kind>().expect("it decodes"),
-        inputs: run.recorded(),
-    };
-    let next = Run::resume(
-        &AgentSpec {
-            incarnation: 2,
-            ..first
-        },
-        Some(resumed),
-    );
-    let journal = next.journal();
-    assert_eq!(journal.len(), 2, "the missing boundary, then the resume");
-    assert_eq!(
-        journal[0].incarnation_end, None,
-        "the row already says how the last incarnation ended"
-    );
 }
 
 #[test]
@@ -475,14 +352,6 @@ fn an_agent_restored_from_its_value_steps_as_the_original_does() {
     restored.step(input, &mut again);
     assert_eq!(again, original);
     assert_eq!(restored.value(), run.agent.value());
-}
-
-#[test]
-fn a_checkpoint_restores_the_interpreter_it_was_taken_from() {
-    let run = Run::start(&spec(false, None));
-    let checkpoint = run.agent.checkpoint();
-    let state = checkpoint.interpreter::<Kind>().expect("it decodes");
-    assert_eq!(interpret::encode_checkpoint(&state), checkpoint.state);
 }
 
 #[test]

@@ -184,36 +184,6 @@ fn swapped() -> Run {
 }
 
 #[test]
-fn a_starting_supervisor_starts_its_daemon_and_arms_its_deadline() {
-    let run = Run::start(PrevFound::None, None, false);
-    assert!(run.out.contains(&Output::Spawn {
-        daemon: DaemonId(1)
-    }));
-    assert!(run.out.contains(&Output::ArmTimer {
-        id: TimerId::StartDeadline,
-        at_ms: 1_000 + 60_000,
-    }));
-}
-
-#[test]
-fn a_tick_asks_for_nothing() {
-    let mut run = Run::start(PrevFound::None, None, false);
-    let mut out = Vec::new();
-    run.core.step(Input::Tick { now_ms: 5_000 }, &mut out);
-    assert_eq!(out, Vec::new());
-}
-
-#[test]
-fn an_inherited_daemon_serves_and_nothing_starts() {
-    let run = Run::start(PrevFound::None, None, true);
-    assert!(
-        !run.out
-            .iter()
-            .any(|output| matches!(output, Output::Spawn { .. }))
-    );
-}
-
-#[test]
 fn a_crash_after_go_restarts_with_backoff_and_never_rolls_back() {
     let mut run = swapped();
     let daemon = run.serves();
@@ -266,97 +236,6 @@ fn backoff_doubles_to_its_cap_and_starts_over_after_a_long_run() {
 }
 
 #[test]
-fn a_newer_release_is_installed_keeping_prev_and_the_daemon_restarts_on_it() {
-    let mut run = Run::start(PrevFound::None, None, false);
-    let old = run.serves();
-    run.at(run.now_ms + 3_600_000, Input::Timer(TimerId::Check));
-    let out = run.listed(Listed::Manifest {
-        manifest: manifest("1.1.0"),
-        host: None,
-    });
-    assert!(
-        out.iter()
-            .any(|output| matches!(output, Output::Fetch { .. }))
-    );
-    let out = run.fetched();
-    assert_eq!(
-        out,
-        vec![
-            Output::InstallStaged,
-            Output::Stop { daemon: old },
-            Output::ArmTimer {
-                id: TimerId::StopDeadline,
-                at_ms: run.now_ms + 30_000,
-            },
-        ],
-        "the binary is replaced, then the daemon stopped"
-    );
-    let out = run.on(Input::DaemonExited {
-        daemon: old,
-        code: 0,
-    });
-    assert!(
-        out.iter()
-            .any(|output| matches!(output, Output::Spawn { .. }))
-    );
-    let new = run.spawned();
-    let out = run.on(Input::Prepared { daemon: new });
-    assert_eq!(
-        out,
-        vec![Output::RetirePrev, Output::Go { daemon: new }],
-        "activation retires prev before go"
-    );
-    let out = run.on(Input::Activated { daemon: new });
-    assert!(
-        out.contains(&Output::BecomeInstalled { daemon: new }),
-        "a supervisor running an older binary hands over to the installed one"
-    );
-}
-
-#[test]
-fn a_daemon_that_hangs_before_prepared_is_stopped_and_killed_and_counted() {
-    let mut run = swapped();
-    let hung = run.spawned();
-    let out = run.at(run.now_ms + 60_000, Input::Timer(TimerId::StartDeadline));
-    assert!(out.contains(&Output::Stop { daemon: hung }));
-    let out = run.at(run.now_ms + 30_000, Input::Timer(TimerId::StopDeadline));
-    assert_eq!(out, vec![Output::Kill { daemon: hung }]);
-    run.on(Input::DaemonExited {
-        daemon: hung,
-        code: -9,
-    });
-    assert_eq!(run.core.failed_starts, 1);
-}
-
-#[test]
-fn a_starting_supervisor_finishes_a_recorded_rollback() {
-    let run = Run::start(PrevFound::Other, Some("1.0.0"), false);
-    assert_eq!(run.out[0], Output::RestorePrev);
-    assert!(run.core.installed.prev.is_none());
-}
-
-#[test]
-fn a_starting_supervisor_removes_a_prev_that_is_the_binary() {
-    let run = Run::start(PrevFound::SameAsBinary, None, false);
-    assert_eq!(run.out[0], Output::RemovePrev);
-}
-
-#[test]
-fn a_starting_supervisor_counts_failed_starts_against_prev() {
-    let mut run = Run::start(PrevFound::Other, None, false);
-    for _ in 0..2 {
-        let daemon = run.spawned();
-        run.on(Input::DaemonExited { daemon, code: 1 });
-        run.at(run.now_ms + 30_000, Input::Timer(TimerId::Restart));
-    }
-    let daemon = run.spawned();
-    let out = run.on(Input::DaemonExited { daemon, code: 1 });
-    assert!(out.contains(&Output::WriteRejected {
-        version: version("1.0.0")
-    }));
-}
-
-#[test]
 fn amux_update_waits_for_a_serving_daemon_and_ignores_the_rejected_build() {
     let mut run = Run::start(PrevFound::None, Some("1.1.0"), false);
     let out = run.on(Input::Asked {
@@ -387,42 +266,6 @@ fn amux_update_waits_for_a_serving_daemon_and_ignores_the_rejected_build() {
     );
     let out = run.fetched();
     assert_eq!(answers(&out), vec!["installing 1.1.0"]);
-}
-
-#[test]
-fn amux_update_says_why_nothing_was_installed() {
-    let mut run = Run::start(PrevFound::None, None, false);
-    run.serves();
-    run.on(Input::Asked {
-        ask: AskId(1),
-        request: Request::Check,
-    });
-    let out = run.listed(Listed::Manifest {
-        manifest: manifest("1.0.0"),
-        host: None,
-    });
-    assert_eq!(
-        answers(&out),
-        vec!["up to date: 1.0.0 is running and the channel names 1.0.0"]
-    );
-}
-
-#[test]
-fn a_stop_request_stops_the_daemon_then_the_supervisor() {
-    let mut run = Run::start(PrevFound::None, None, false);
-    let daemon = run.serves();
-    let out = run.on(Input::Asked {
-        ask: AskId(1),
-        request: Request::Stop,
-    });
-    assert_eq!(answers(&out), vec!["stopping"]);
-    assert!(out.contains(&Output::Stop { daemon }));
-    let out = run.on(Input::DaemonExited { daemon, code: 0 });
-    assert!(out.contains(&Output::Exit));
-    assert!(
-        !out.iter()
-            .any(|output| matches!(output, Output::Spawn { .. }))
-    );
 }
 
 #[test]

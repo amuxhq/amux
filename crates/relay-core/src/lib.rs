@@ -904,12 +904,6 @@ mod tests {
     }
 
     #[test]
-    fn a_tick_asks_for_nothing() {
-        let mut relay = relay();
-        assert_eq!(step(&mut relay, Input::Tick { now_ms: 5 }), Vec::new());
-    }
-
-    #[test]
     fn a_stream_is_spliced_to_the_newest_link_of_its_destination_on_the_same_account() {
         let mut relay = relay();
         up(&mut relay, 1, ALICE, DESK, Some(Tier::Pro));

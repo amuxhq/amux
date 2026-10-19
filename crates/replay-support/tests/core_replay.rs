@@ -1,7 +1,13 @@
 //! Dump bundles replayed through all four stages with the models'
-//! properties judged at every step. `fixtures/healthy` is a bundle a real
-//! daemon wrote on a served net: one host, one agent on the fake Claude SDK
-//! provider, two turns, then `amux dump` through `testnet ctl`.
+//! properties judged at every step. Both fixtures are bundles a real daemon
+//! wrote on a net served through `testnet ctl`, one host and one agent on
+//! the fake Claude SDK provider. `fixtures/healthy`: two turns, then `amux
+//! dump`. `fixtures/violation`: the dump the core asked for itself when a
+//! stream opened under a lower generation than one before it, on a build
+//! that recorded the highest generation opened as one more than it was.
+//! The first stream raised the record to 2 and a checkpoint kept it, so
+//! the second stream, after that checkpoint, breaks the invariant again
+//! when replayed by this build, which records it correctly.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -65,6 +71,75 @@ fn dump_replay_prints_one_holding_line_per_stage() {
         assert!(line.starts_with(stage), "{line}");
         assert!(line.contains(" holds "), "{line}");
     }
+}
+
+#[test]
+fn a_dump_the_core_asked_for_replays_to_its_failing_step_and_names_the_invariant() {
+    let dir = fixture("violation");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+    let reason = manifest["reason"].as_str().unwrap();
+    assert!(
+        reason.starts_with("the daemon core: ") && reason.contains(daemon_core::GENERATION_FELL),
+        "{reason}"
+    );
+    assert_eq!(manifest["automatic"], true);
+
+    let bundle = Bundle::open(&dir).expect("the fixture opens");
+    let failing = bundle
+        .replay_core()
+        .expect("the core replays")
+        .expect("the replay fails where the live core did");
+    // The fourth input since the checkpoint is the second stream's
+    // Subscribe, the step the live core asked for the dump at.
+    let core = bundle.core.as_ref().unwrap();
+    let Some(daemon_core::Recorded::Input(input)) = core.inputs.get(3) else {
+        panic!("the ring's fourth line is an input");
+    };
+    assert!(
+        matches!(
+            input.as_ref(),
+            daemon_core::Input::ClientCall {
+                request: daemon_core::payload::ClientRequest::Subscribe { .. },
+                ..
+            }
+        ),
+        "{input:?}"
+    );
+    assert_eq!(failing.step, 4, "{failing}");
+    assert_eq!(failing.property, daemon_core::GENERATION_FELL);
+    assert!(
+        failing.detail.contains("generation 1 after one under 2"),
+        "{failing}"
+    );
+
+    let verdicts = bundle.replay_all().expect("the bundle replays");
+    let failing_stages: Vec<Stage> = verdicts
+        .iter()
+        .filter(|verdict| matches!(verdict.verdict, Verdict::Fails(_)))
+        .map(|verdict| verdict.stage)
+        .collect();
+    assert_eq!(failing_stages, [Stage::Core], "the core is the culprit");
+}
+
+#[test]
+fn dump_replay_exits_non_zero_naming_the_step_and_the_property() {
+    let output = Command::new(env!("CARGO_BIN_EXE_dump-replay"))
+        .arg(fixture("violation"))
+        .output()
+        .expect("dump-replay runs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!(
+        "$ dump-replay tests/fixtures/violation\n{stdout}exit status {:?}\n",
+        output.status.code()
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let core = stdout
+        .lines()
+        .find(|line| line.starts_with("daemon core"))
+        .expect("a line for the core");
+    assert!(core.contains("FAILS") && core.contains("step 4"), "{core}");
+    assert!(core.contains(daemon_core::GENERATION_FELL), "{core}");
 }
 
 #[test]

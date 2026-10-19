@@ -207,6 +207,10 @@ what broke it, and the command exits non-zero. The first stage that fails is the
 the fault is in a driver or in presentation, and the daemon's log tail is where to look. A stage the bundle carries
 nothing for prints `absent` and why: a bundle from a peer has no core part.
 
+A dump the core asked for because one of its invariants broke replays to the step that broke it, naming the
+invariant. Replay it with the build that wrote it: a build with the bug fixed steps the same inputs through the fix
+and holds, unless the state the checkpoint carries was already broken, in which case it fails at the same step.
+
 The same is a library, `replay-support` (`crates/replay-support/src/bundle.rs` and `replay.rs`):
 
 ```rust

@@ -549,6 +549,37 @@ mod tests {
         assert_eq!(dumps_in(&out), Vec::<&crate::DumpReason>::new());
     }
 
+    #[test]
+    fn a_step_over_its_budget_asks_for_a_dump_and_still_does_its_work() {
+        let mut rig = rig();
+        for n in 0..3 {
+            rig.journal
+                .append(&item(n))
+                .expect("the journal takes a step");
+        }
+        // No commit takes less than a microsecond.
+        let tiny = crate::StepBudget { micros: 0 };
+        rig.daemon.set_budget(tiny);
+        let out = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        let dumps = dumps_in(&out);
+        let [crate::DumpReason::OverBudget { micros, budget }] = dumps[..] else {
+            panic!("one dump for the overrun: {dumps:?}");
+        };
+        println!("dump: {}", dumps[0]);
+        assert_eq!(*budget, tiny);
+        assert!(*micros > 0);
+        let key = AgentKey::new(OWN, AGENT.0);
+        assert_eq!(rig.daemon.store.cursor(&key).unwrap(), rig.journal.offset());
+
+        // Under the daemon's own budget the same work asks for nothing.
+        rig.daemon.set_budget(crate::StepBudget::DAEMON);
+        rig.journal
+            .append(&item(3))
+            .expect("the journal takes a step");
+        let out = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        assert_eq!(dumps_in(&out), Vec::<&crate::DumpReason>::new());
+    }
+
     /// The checkpoint's write job a step asked for.
     fn checkpoint_job(out: &[Output]) -> Option<crate::JobId> {
         out.iter().find_map(|output| match output {

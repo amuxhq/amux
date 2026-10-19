@@ -33,8 +33,8 @@ use std::path::PathBuf;
 use daemon_core::generation::{LastRun, at_start};
 use daemon_core::payload::{ClientRequest, JobResult, Response};
 use daemon_core::{
-    AgentId, CallId, Checkpoint, Daemon, Input, Job, JobId, Output, StartOptions, StepBudget,
-    TimerId,
+    AgentId, CallId, Checkpoint, Daemon, DumpReason, Input, Job, JobId, Output, StartOptions,
+    StepBudget, TimerId,
 };
 use store::{AgentKey, AgentRow, Dump, Sqlite};
 use wire::{Item, Step, session_event};
@@ -898,18 +898,25 @@ pub struct Broken {
 }
 
 /// What one step of a core running anywhere broke of the promises a step
-/// is judged by alone, `out` being what it asked for: a dump it asked for,
-/// an invariant its store breaks, or a row it answered that the store does
-/// not hold. The rest of the single daemon's promises need the world the
-/// model tracks around the core: what reached the drive, the run before.
+/// is judged by alone, `out` being what it asked for: a dump it asked for
+/// (named by the invariant that failed, when one did), an invariant its
+/// store breaks, or a row it answered that the store does not hold. The
+/// rest of the single daemon's promises need the world the model tracks
+/// around the core: what reached the drive, the run before.
 pub fn judge_step(daemon: &Daemon, out: &[Output]) -> Option<Broken> {
     if let Some(reason) = out.iter().find_map(|output| match output {
         Output::Dump { reason } => Some(reason),
         _ => None,
     }) {
-        return Some(Broken {
-            promise: NEVER_DUMPS,
-            detail: reason.to_string(),
+        return Some(match reason {
+            DumpReason::Violation(violation) => Broken {
+                promise: violation.invariant,
+                detail: violation.detail.clone(),
+            },
+            DumpReason::OverBudget { .. } => Broken {
+                promise: NEVER_DUMPS,
+                detail: reason.to_string(),
+            },
         });
     }
     if let Err(violation) = daemon.check_all() {

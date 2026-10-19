@@ -15,8 +15,10 @@ numbers of a partial run understate what the suite covers.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -24,7 +26,9 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / "tests" / "coverage.md"
-SUMMARY = ROOT / "target" / "coverage-summary.json"
+# Kept apart from target/debug: instrumented builds would invalidate it.
+TARGET = ROOT / "target" / "coverage"
+SUMMARY = TARGET / "summary.json"
 # Cargo's closing list of the targets whose tests failed, one per line.
 FAILED_TARGET = re.compile(r"^\s+`(?P<target>.+)`$")
 
@@ -35,17 +39,40 @@ def git(*arguments: str) -> str:
     ).stdout.strip()
 
 
-def run_tests() -> tuple[list[str], float]:
+def coverage_env() -> dict[str, str]:
+    """The environment cargo-llvm-cov instruments a plain cargo build under.
+
+    Tests that build binaries of their own mid-run (the fake providers,
+    fake-amux) call cargo again and look for the result beside their own
+    executable. `cargo llvm-cov test` builds into a target directory it names
+    only on its own command line, so those nested builds went to
+    target/debug and the tests ran stale or missing binaries. Running plain
+    `cargo test` under the variables `show-env` prints, with
+    CARGO_TARGET_DIR set, sends every build to one instrumented directory
+    that the developer's own target/debug never shares.
+    """
+    env = dict(os.environ, CARGO_TARGET_DIR=str(TARGET))
+    shown = subprocess.run(
+        ["cargo", "llvm-cov", "show-env", "--sh"],
+        cwd=ROOT, env=env, check=True, capture_output=True, text=True,
+    ).stdout
+    for line in shown.splitlines():
+        if line.startswith("export "):
+            name, _, value = line.removeprefix("export ").partition("=")
+            env[name] = shlex.split(value)[0] if value else ""
+    return env
+
+
+def run_tests(env: dict[str, str]) -> tuple[list[str], float]:
     """Run the workspace's tests under instrumentation; return the failed targets."""
+    subprocess.run(["cargo", "llvm-cov", "clean", "--workspace"], cwd=ROOT, env=env, check=True)
     command = [
-        "cargo", "llvm-cov", "--locked", "--workspace", "--all-targets",
-        "--features", "bundled",
-        "--ignore-run-fail",
-        "--json", "--summary-only", "--output-path", str(SUMMARY),
+        "cargo", "test", "--locked", "--workspace", "--all-targets",
+        "--features", "bundled", "--no-fail-fast",
     ]
     started = time.monotonic()
     process = subprocess.Popen(
-        command, cwd=ROOT, stderr=subprocess.PIPE, text=True, bufsize=1
+        command, cwd=ROOT, env=env, stderr=subprocess.PIPE, text=True, bufsize=1
     )
     failed: list[str] = []
     listing = False
@@ -62,8 +89,12 @@ def run_tests() -> tuple[list[str], float]:
             else:
                 listing = False
     status = process.wait()
-    if status != 0 and not SUMMARY.is_file():
-        sys.exit(f"coverage: cargo llvm-cov exited {status} without a report")
+    if status != 0 and not failed:
+        sys.exit(f"coverage: cargo test exited {status} without naming a failed target")
+    subprocess.run(
+        ["cargo", "llvm-cov", "report", "--json", "--summary-only", "--output-path", str(SUMMARY)],
+        cwd=ROOT, env=env, check=True,
+    )
     return failed, time.monotonic() - started
 
 
@@ -134,7 +165,7 @@ def write_report(
 def main() -> int:
     commit = git("rev-parse", "HEAD")
     dirty = bool(git("status", "--porcelain", "--untracked-files=no"))
-    failed, seconds = run_tests()
+    failed, seconds = run_tests(coverage_env())
     totals = per_crate(json.loads(SUMMARY.read_text()))
     write_report(totals, failed, commit, dirty, seconds)
     print(f"coverage: wrote {REPORT.relative_to(ROOT)} ({len(totals)} crates)")

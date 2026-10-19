@@ -24,8 +24,9 @@
 //! headless Claude, whose bodies the test kind speaks.
 
 mod rng;
+mod shrink;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Display;
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -35,6 +36,7 @@ use daemon_core::payload::{ClientRequest, Response};
 use daemon_core::{AgentId, CallId, Create, HostId, Input};
 use models::net::Net;
 use rng::Rng;
+pub use shrink::{Reproduction, same_failure, shrink};
 use uuid::Uuid;
 use wire::{InventoryEvent, Lifecycle, SessionEvent};
 
@@ -59,12 +61,29 @@ pub struct Faults {
     pub lose_per_mille: u16,
 }
 
+/// One delivery's choice: the place of the lane that delivered among those
+/// waiting, and whether its message was lost instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Choice {
+    pub lane: usize,
+    pub lost: bool,
+}
+
 /// The composed net as the model holds it, and the seed's choices over it.
 struct Sim {
     net: Net,
     seed: u64,
+    /// Where the schedule's choices come from.
     rng: Rng,
+    /// Where host and agent ids and the hosts' entropy come from, apart from
+    /// the schedule, so a replayed schedule mints the same ids.
+    ids: Rng,
     faults: Faults,
+    /// Every choice made, in order: the ring a run replays from.
+    ring: Vec<Choice>,
+    /// Choices still to replay, when the net replays a ring; once they run
+    /// out the net delivers in its own order, the first lane waiting.
+    replay: Option<VecDeque<Choice>>,
 }
 
 impl Sim {
@@ -79,17 +98,46 @@ impl Sim {
         if lanes.is_empty() {
             return false;
         }
-        let lane = lanes[self.rng.below(lanes.len())];
-        if self.net.can_lose(lane) && self.rng.chance(self.faults.lose_per_mille) {
-            self.net.lose(lane);
+        let choice = match &mut self.replay {
+            Some(replay) => replay.pop_front().unwrap_or(Choice {
+                lane: 0,
+                lost: false,
+            }),
+            None => {
+                let lane = self.rng.below(lanes.len());
+                let lost =
+                    self.net.can_lose(lanes[lane]) && self.rng.chance(self.faults.lose_per_mille);
+                Choice { lane, lost }
+            }
+        };
+        // A ring cut short or replayed over a changed net may name a place
+        // past the lanes waiting now: the last one stands in.
+        let at = choice.lane.min(lanes.len() - 1);
+        let lost = choice.lost && self.net.can_lose(lanes[at]);
+        if lost {
+            self.net.lose(lanes[at]);
         } else {
-            self.net.deliver(lane);
+            self.net.deliver(lanes[at]);
         }
+        self.ring.push(Choice { lane: at, lost });
         true
     }
 
     fn is_up(&self, h: usize) -> bool {
         self.net.is_up(h)
+    }
+}
+
+/// Reads a net's ring, even after the story holding the net failed.
+pub struct RingReader(Arc<Mutex<Sim>>);
+
+impl RingReader {
+    pub fn ring(&self) -> Vec<Choice> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .ring
+            .clone()
     }
 }
 
@@ -123,7 +171,27 @@ impl SimNet {
         )
     }
 
-    pub fn start_with(mut topology: Topology, options: SimOptions) -> Result<Self, NetError> {
+    pub fn start_with(topology: Topology, options: SimOptions) -> Result<Self, NetError> {
+        Self::begin(topology, options, None)
+    }
+
+    /// Starts `topology` replaying `ring`, the choices a run under
+    /// `options` recorded (see [`SimNet::ring`]), or any prefix of them:
+    /// once the ring runs out, the net delivers in its own order, the
+    /// first lane waiting, and loses nothing more.
+    pub fn replay(
+        topology: Topology,
+        options: SimOptions,
+        ring: Vec<Choice>,
+    ) -> Result<Self, NetError> {
+        Self::begin(topology, options, Some(ring.into()))
+    }
+
+    fn begin(
+        mut topology: Topology,
+        options: SimOptions,
+        replay: Option<VecDeque<Choice>>,
+    ) -> Result<Self, NetError> {
         topology.validate()?;
         refuse(&topology)?;
         let root = tempfile::tempdir()?;
@@ -131,12 +199,15 @@ impl SimNet {
             net: Net::new(true),
             seed: options.seed,
             rng: Rng::new(options.seed),
+            ids: Rng::new(!options.seed),
             faults: options.faults,
+            ring: Vec::new(),
+            replay,
         };
         let ids: Vec<HostId> = topology
             .hosts
             .iter()
-            .map(|_| HostId(sim.rng.bytes()))
+            .map(|_| HostId(sim.ids.bytes()))
             .collect();
         let hosts: BTreeMap<String, usize> = topology
             .hosts
@@ -166,7 +237,7 @@ impl SimNet {
             links.insert(link_key(&link.a, &link.b), at);
         }
         for at in 0..topology.hosts.len() {
-            let entropy = sim.rng.bytes();
+            let entropy = sim.ids.bytes();
             sim.net.start_host(at, entropy);
         }
         // As on a real net, the declared links are up at start: each end
@@ -200,6 +271,17 @@ impl SimNet {
     /// The seed this net runs under.
     pub fn seed(&self) -> u64 {
         self.sim().seed
+    }
+
+    /// Every choice made so far, in order: replayed by [`SimNet::replay`],
+    /// it makes the same run.
+    pub fn ring(&self) -> Vec<Choice> {
+        self.sim().ring.clone()
+    }
+
+    /// What reads this net's ring after the net itself has gone to a story.
+    pub fn ring_reader(&self) -> RingReader {
+        RingReader(self.sim.clone())
     }
 
     /// Every delivery made so far, one line each, by host and agent name:
@@ -242,7 +324,7 @@ impl SimNet {
         if !sim.is_up(h) {
             return Err(NetError::Down(decl.host.clone()));
         }
-        let agent = AgentId(sim.rng.bytes());
+        let agent = AgentId(sim.ids.bytes());
         let host_id = sim.net.host_id(h);
         let spec = wire::AgentSpec {
             agent_id: agent.0.to_vec(),
@@ -517,7 +599,7 @@ impl World for SimNet {
         if sim.is_up(h) {
             return Err(NetError::Running(host.to_owned()));
         }
-        let entropy = sim.rng.bytes();
+        let entropy = sim.ids.bytes();
         sim.net.start_host(h, entropy);
         failed(&sim)?;
         drop(sim);
@@ -526,7 +608,7 @@ impl World for SimNet {
 
     async fn send(&self, agent: &str, text: &str) -> Result<wire::SendInputResponse, NetError> {
         let kind = self.agent_named(agent)?.kind;
-        let id = self.sim().rng.bytes::<16>();
+        let id = self.sim().ids.bytes::<16>();
         self.input(agent, prompt(kind, &id, text)).await
     }
 

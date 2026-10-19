@@ -126,17 +126,16 @@ where
     let name = story_name();
     let seeds = seeds();
     let started = Instant::now();
-    let mut failing = Vec::new();
-    for seed in seeds.clone() {
-        let run = AssertUnwindSafe(async { story(seed).await }).catch_unwind();
-        if let Err(panic) = run.await {
+    let failing: Vec<u64> = walk(seeds.clone(), story)
+        .await
+        .into_iter()
+        .map(|(seed, failure)| {
             eprintln!(
-                "seed {seed} failed: {}\n  reproduce it with: just sim --seed {seed} {name}",
-                panic_text(&*panic)
+                "seed {seed} failed: {failure}\n  reproduce it with: just sim --seed {seed} {name}"
             );
-            failing.push(seed);
-        }
-    }
+            seed
+        })
+        .collect();
     // The line the sim recipe reads its report from.
     println!(
         "simulated story {name}: {} seeds walked in {:.2}s, failing seeds {failing:?}",
@@ -148,6 +147,30 @@ where
         "{name} failed under seeds {failing:?}; reproduce one with `just sim --seed {} {name}`",
         failing[0]
     );
+}
+
+/// Runs `story` under each of `seeds` and returns the seeds whose run
+/// failed, each with what it failed on, without failing itself.
+pub async fn walk<S>(seeds: Range<u64>, story: impl Fn(u64) -> S) -> Vec<(u64, String)>
+where
+    S: Future<Output = ()>,
+{
+    let mut failing = Vec::new();
+    for seed in seeds {
+        if let Err(failure) = attempt(story(seed)).await {
+            failing.push((seed, failure));
+        }
+    }
+    failing
+}
+
+/// Runs one story's run to its end, catching the panic a failing story
+/// ends in as what it failed on.
+pub async fn attempt(run: impl Future<Output = ()>) -> Result<(), String> {
+    AssertUnwindSafe(run)
+        .catch_unwind()
+        .await
+        .map_err(|panic| panic_text(&*panic).to_owned())
 }
 
 /// The test running this story: libtest names its thread after it.

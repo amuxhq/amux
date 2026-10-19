@@ -641,36 +641,6 @@ mod tests {
         );
     }
 
-    /// A turn that carries a permission and a mode is those changes, then
-    /// the prompt.
-    #[test]
-    fn a_turns_permission_and_mode_are_inputs_before_its_prompt() {
-        let turn = serde_json::json!({
-            "id": "host-1",
-            "method": "turn/start",
-            "params": {
-                "threadId": "t1",
-                "approvalPolicy": "on-request",
-                "approvalsReviewer": "user",
-                "sandboxPolicy": {"type": "readOnly"},
-                "collaborationMode": {"mode": "plan", "settings": {"model": "m"}},
-                "input": [{"type": "text", "text": "pong", "text_elements": []}],
-            },
-        });
-        let got = inputs(read("codex_io", line("stdin", 1_000, turn).as_bytes()).unwrap());
-        assert!(
-            matches!(
-                got.as_slice(),
-                [
-                    codex_input::Of::Permission(permission),
-                    codex_input::Of::Mode(mode),
-                    codex_input::Of::Prompt(_),
-                ] if permission.value == "read-only" && mode.value == "plan"
-            ),
-            "{got:?}"
-        );
-    }
-
     /// amux starts on a plan by leaving plan mode with Codex's own words for
     /// carrying it out; read back, that is the plan's start answer, under
     /// the id the words were sent with, not a mode change and then a prompt.

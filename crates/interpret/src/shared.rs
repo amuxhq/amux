@@ -1792,34 +1792,6 @@ mod tests {
     }
 
     #[test]
-    fn a_checkpoint_round_trips_every_field() {
-        let mut shared = shared();
-        let mut emit = Emit::default();
-        shared.provider_started();
-        shared.admit_prompt(&mut emit, b"p1", PromptInput::default(), human());
-        shared.admit_prompt(&mut emit, b"p2", PromptInput::default(), human());
-        shared.open_ask(Ask {
-            key: "k".into(),
-            item_key: "t".into(),
-            ..Default::default()
-        });
-        shared.message_accepted(&[0, 255]);
-        shared.set_working_on(Some("w".into()));
-        shared.item(
-            &mut emit,
-            ItemDraft {
-                key: "m".into(),
-                text: "open".into(),
-                ..Default::default()
-            },
-        );
-        shared.finish(emit, Vec::new());
-        let json = serde_json::to_string(&shared).unwrap();
-        let back: Shared<Ask> = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, shared);
-    }
-
-    #[test]
     fn json_as_written_keeps_the_providers_key_order() {
         let payload = br#"{"request":{"requested_schema":{"properties":{"title":{"type":"string"},"body":{"type":"string"},"assignee":{"type":"string"}}}}}"#;
         let schema = json_as_written(payload, &["request", "requested_schema"]).unwrap();

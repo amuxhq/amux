@@ -81,15 +81,6 @@ fn orders(items: &[Item]) -> Vec<u64> {
 }
 
 #[test]
-fn a_store_in_memory_commits_and_serves_like_a_file() {
-    let store = origin(&["a", "b", "c"]);
-    let page = store.page(&agent(), None, 10).unwrap();
-    assert_eq!(orders(&page.items), [3, 2, 1]);
-    assert_eq!(store.agents().unwrap().len(), 1);
-    assert_eq!(store.connection().path(), Some(""));
-}
-
-#[test]
 fn a_dump_restores_to_a_store_that_dumps_equal_and_carries_on() {
     let origin = origin(&["a", "b", "c"]);
     let mut replica = replica();

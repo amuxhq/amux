@@ -705,7 +705,7 @@ cargo = [{ package = "testnet", targets = ["harness_stories"], features = [] }]
 
 [[suite]]
 name = "replication-stories"
-contract = "Replication's stories that hold on either net, a replica taking a tail, live records, a delta and a Reset with its markers in sequence, pages served from the block and from the origin with an error when the origin is away, and switching to OnDemand closing every source no client watches, pass on the real net and under every seed on the simulated one."
+contract = "Replication's stories that hold on either net, a replica taking a tail, live records, a delta and a Reset with its markers in sequence, pages served from the block and from the origin with an error when the origin is away, switching to OnDemand closing every source no client watches, and OnDemand warming one chat with an exited agent's source closing and reopening on its resume, pass on the real net and under every seed on the simulated one."
 paths = ["crates/testnet/tests/replication_stories.rs"]
 recipe = "just test -- --test replication_stories"
 modes = ["real", "simulated"]

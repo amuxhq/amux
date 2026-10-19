@@ -64,6 +64,27 @@ fn pages_extend_the_low_edge_and_never_the_top() {
 }
 
 #[test]
+fn page_and_live_overlap_dedupe_by_key() {
+    for kind in KINDS {
+        let mut state = open_with(kind, 5..=7);
+        // A page that overlaps the window brings a newer revision of a held
+        // row and an older one of another.
+        let items = vec![
+            text(kind, 6, 15, "newer from page"),
+            text(kind, 5, 2, "older from page"),
+            text(kind, 4, 1, "p4"),
+        ];
+        let outcome = apply_page(&mut state, items, false);
+        assert_eq!(outcome.changed, vec!["k6", "k4"]);
+        assert_eq!(
+            state.transcript().get("k6").unwrap().item.text,
+            "newer from page"
+        );
+        assert_eq!(state.transcript().get("k5").unwrap().item.text, "held");
+    }
+}
+
+#[test]
 fn the_store_read_and_broadcast_overlap_is_deduped_by_key() {
     for kind in KINDS {
         let mut state = SessionState::new(agent(kind), CAP);

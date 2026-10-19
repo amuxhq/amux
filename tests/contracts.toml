@@ -94,6 +94,7 @@ claim = "A link dies halfway through a catch-up delta or right after the Snapsho
 tests = [
   "testnet/spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
   "store/conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
+  "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
 ]
 
 [[contract]]
@@ -104,6 +105,7 @@ claim = "A prompt's verdict is lost with the connection and another client withd
 tests = [
   "ui-state/spec::inputs::an_uncertain_input_found_in_the_queue_or_items_at_caught_up_resolves",
   "ui-state/spec::inputs::a_prompt_withdrawn_before_a_reset_is_never_shown_as_queued",
+  "ui-runtime/session::an_uncertain_input_is_settled_from_the_queue_or_the_items_and_otherwise_left",
   "tui/lib::tests::an_unconfirmed_prompt_offers_resend_and_discard",
 ]
 
@@ -304,6 +306,7 @@ claim = "A reader that falls behind a stream's ring is sent Lagged before the st
 tests = [
   "node/single_daemon::a_lagging_subscriber_is_closed_with_lagged_and_ingest_never_waits",
   "node/single_daemon::a_lagging_inventory_subscriber_is_told_it_lagged",
+  "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
   "ui-runtime/fleet::inventory_lag_resubscribes_at_once",
   "ui-runtime/fleet::the_fleet_opens_at_caught_up_and_relists_after_a_reconnect",
 ]
@@ -459,6 +462,7 @@ source = "invariant"
 section = "Session state"
 claim = "The transcript window is contiguous; rows above head append, inside upsert if newer, below oldest are dropped."
 tests = [
+  "ui-state/spec::window::page_and_live_overlap_dedupe_by_key",
   "ui-state/spec::window::a_live_row_below_the_window_is_dropped",
 ]
 

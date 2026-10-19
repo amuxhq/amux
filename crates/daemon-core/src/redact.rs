@@ -6,8 +6,10 @@
 //! The core decodes no agent's bodies and knows no redaction rules, so the
 //! caller brings a [`Redactor`]. The values are walked by serialization: a
 //! protocol message is written by `codec` as its encoding in hex, and says
-//! so on its way through, so the redactor sees it whole and by name; every
-//! other string is free text.
+//! so on its way through, so the redactor sees it whole and by name;
+//! content bytes, such as a kept blob or a diff's patch, are written as hex
+//! and redacted as text when they are text; every other string is free
+//! text.
 
 use std::cell::Cell;
 
@@ -35,6 +37,9 @@ pub(crate) enum Opaque {
     Message(&'static str, &'static str),
     /// Hex of an id: kept as it is.
     Verbatim,
+    /// Hex of content bytes, such as a blob or a patch: redacted as text
+    /// when they are UTF-8, kept when they are not.
+    Content,
 }
 
 thread_local! {
@@ -160,6 +165,17 @@ impl<'r, S: Serializer> Serializer for Redacting<'r, S> {
                 self.inner.serialize_str(&hex(&redacted))
             }
             Some(Opaque::Verbatim) => self.inner.serialize_str(text),
+            Some(Opaque::Content) => {
+                let Some(bytes) = unhex(text) else {
+                    return Err(ser::Error::custom("content that is not hex"));
+                };
+                match std::str::from_utf8(&bytes) {
+                    Ok(content) => self
+                        .inner
+                        .serialize_str(&hex(self.redactor.text(content).as_bytes())),
+                    Err(_) => self.inner.serialize_str(text),
+                }
+            }
             None => self.inner.serialize_str(&self.redactor.text(text)),
         }
     }
@@ -572,6 +588,57 @@ mod tests {
                 seen: 42,
                 failed: Some("disk REMOVED".into()),
             }
+        );
+    }
+
+    #[test]
+    fn a_kept_blob_and_a_patch_are_redacted_as_text_and_binary_content_is_kept() {
+        use crate::payload::{ClientRequest, JobResult, Patch};
+        use crate::{CallId, JobId};
+
+        let redactor = Swap::default();
+        let keep = |bytes: &[u8]| {
+            Recorded::Input(Box::new(Input::ClientCall {
+                call: CallId(3),
+                request: ClientRequest::KeepBlob {
+                    agent_id: vec![5; 16],
+                    hash: vec![9; 32],
+                    bytes: bytes.to_vec(),
+                },
+            }))
+        };
+        let compared = |bytes: &[u8]| {
+            Recorded::Input(Box::new(Input::JobDone {
+                job: JobId(4),
+                result: JobResult::Compared {
+                    diff: wire::Diff::default(),
+                    patch: Some(Patch {
+                        hash: vec![8; 32],
+                        bytes: bytes.to_vec(),
+                    }),
+                },
+            }))
+        };
+        for (planted, removed) in [
+            (keep(b"the key is PLANTED"), keep(b"the key is REMOVED")),
+            (
+                compared(b"+token = PLANTED\n"),
+                compared(b"+token = REMOVED\n"),
+            ),
+        ] {
+            let in_hex = hex(PLANTED);
+            let carries = |line: &Recorded| serde_json::to_string(line).unwrap().contains(&in_hex);
+            assert!(carries(&planted), "the line carries the content in hex");
+            let redacted = planted.redacted(&redactor);
+            assert!(!carries(&redacted), "the planted word is gone");
+            assert_eq!(redacted, removed, "only the content's text changed");
+        }
+
+        let binary = [0xff, 0xfe, b'P', b'L', b'A', b'N', b'T', b'E', b'D'];
+        assert_eq!(
+            keep(&binary).redacted(&redactor),
+            keep(&binary),
+            "content that is not text is kept as it is"
         );
     }
 }

@@ -70,6 +70,19 @@ impl Serialize for Id {
     }
 }
 
+/// Content bytes, such as a blob or a patch, as their marked hex.
+pub(crate) mod content {
+    use super::*;
+
+    pub(crate) fn serialize<S: Serializer>(bytes: &[u8], to: S) -> Result<S::Ok, S::Error> {
+        write_opaque(Opaque::Content, &hex(bytes), to)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<Vec<u8>, D::Error> {
+        unhex::<D::Error>(&String::deserialize(from)?)
+    }
+}
+
 fn decode<'de, T: prost::Message + Default, D: Deserializer<'de>>(
     text: &str,
 ) -> Result<T, D::Error> {

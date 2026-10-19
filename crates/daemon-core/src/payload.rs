@@ -191,6 +191,7 @@ pub enum ClientRequest {
     KeepBlob {
         agent_id: Vec<u8>,
         hash: Vec<u8>,
+        #[serde(with = "codec::content")]
         bytes: Vec<u8>,
     },
     GetBlob(#[serde(with = "codec::message")] wire::GetBlobRequest),
@@ -362,6 +363,7 @@ pub enum PeerFailure {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Patch {
     pub hash: Vec<u8>,
+    #[serde(with = "codec::content")]
     pub bytes: Vec<u8>,
 }
 

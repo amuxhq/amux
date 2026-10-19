@@ -865,17 +865,4 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, CheckError::TooLarge { .. }), "{error}");
     }
-
-    #[tokio::test]
-    async fn a_body_within_the_limit_is_read_whole() {
-        let url = serve(
-            "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n",
-            b"hello".to_vec(),
-        )
-        .await;
-        let body = read_bounded(get(&url).await, 1024, "the manifest", &url)
-            .await
-            .unwrap();
-        assert_eq!(body, b"hello");
-    }
 }

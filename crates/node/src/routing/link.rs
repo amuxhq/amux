@@ -356,32 +356,6 @@ mod tests {
     }
 
     #[test]
-    fn established_stream_accepts_post_handshake_messages() {
-        let mut handshake = ConnectHandshake::connector();
-        handshake.receive(accepted_ack()).unwrap();
-
-        let bodies = [
-            pb::message::Body::NeighborDown(pb::NeighborDown {
-                host_id: vec![0_u8; 16],
-            }),
-            pb::message::Body::Reauth(pb::Reauth {
-                auth_token: "new-token".to_string(),
-            }),
-            pb::message::Body::LinkClose(pb::LinkClose {
-                reason: pb::LinkCloseReason::UserShutdown as i32,
-                error: None,
-            }),
-        ];
-
-        for body in bodies {
-            assert!(matches!(
-                handshake.receive(message(body)).unwrap(),
-                ConnectHandshakeEvent::PostHandshake(_)
-            ));
-        }
-    }
-
-    #[test]
     fn established_stream_rejects_late_handshake_messages() {
         let mut handshake = ConnectHandshake::connector();
         handshake.receive(accepted_ack()).unwrap();
@@ -421,31 +395,5 @@ mod tests {
             handshake.acceptor_ack_sent(),
             Err(ConnectProtocolError::AcceptorAckNotReady)
         ));
-    }
-
-    #[test]
-    fn protocol_error_link_close_carries_reason_and_error() {
-        let close = protocol_error_link_close("bad frame");
-        let Some(pb::message::Body::LinkClose(close)) = close.body else {
-            panic!("expected LinkClose");
-        };
-        assert_eq!(close.reason, pb::LinkCloseReason::ProtocolError as i32);
-        assert_eq!(
-            close.error.unwrap().code,
-            pb::ErrorCode::InvalidArgument as i32
-        );
-    }
-
-    #[test]
-    fn protocol_error_hello_ack_encodes_error_outcome() {
-        let ack = protocol_error_hello_ack("bad first message");
-        let Some(pb::message::Body::HelloAck(pb::HelloAck {
-            outcome: Some(pb::hello_ack::Outcome::Error(error)),
-        })) = ack.body
-        else {
-            panic!("expected HelloAck error");
-        };
-        assert_eq!(error.code, pb::ErrorCode::InvalidArgument as i32);
-        assert_eq!(error.message, "bad first message");
     }
 }

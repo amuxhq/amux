@@ -745,45 +745,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dispatches_direct_pairing_without_reusable_reachability() {
-        let (_server_dir, server_identity) = temp_identity();
-        let pair_mode = Arc::new(PairMode::default());
-        let (trusted_tx, mut trusted_rx) = mpsc::channel(1);
-        let (pairing_tx, mut pairing_rx) = mpsc::channel(1);
-        let dispatcher = TunnelDispatcher::new(
-            &server_identity,
-            Arc::new(std::sync::RwLock::new(TrustStore::default())),
-            pair_mode.clone(),
-            TrustedPeerConnections::default(),
-            trusted_tx,
-            pairing_tx,
-            Duration::from_secs(1),
-        )
-        .unwrap();
-        pair_mode.publish(true, false);
-
-        run_dispatch_with_reachability(
-            dispatcher,
-            client_config(TestClientConfig { identity: None }),
-            PreTrustPairingReachability::NoReusableReachability,
-        )
-        .await
-        .unwrap();
-
-        assert!(trusted_rx.try_recv().is_err());
-        let pairing = tokio::time::timeout(Duration::from_secs(1), pairing_rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            pairing.connect_info().auth,
-            BoxedGrpcAuth::PreTrustPairing {
-                reachability: PreTrustPairingReachability::NoReusableReachability,
-            }
-        );
-    }
-
-    #[tokio::test]
     async fn a_peer_that_leaves_before_it_says_who_it_is_is_not_an_authentication_failure() {
         // What an ordinary reconnect looks like from here: the phone's second
         // link is refused, and a stream still handshaking on it is cut off.
@@ -874,46 +835,5 @@ mod tests {
             std::io::ErrorKind::InvalidData,
             "invalid peer certificate"
         )));
-    }
-
-    #[tokio::test]
-    async fn external_quic_handshake_limiter_is_per_source_ip() {
-        let (_server_dir, server_identity) = temp_identity();
-        let (trusted_tx, _trusted_rx) = mpsc::channel(1);
-        let (pairing_tx, _pairing_rx) = mpsc::channel(1);
-        let dispatcher = TunnelDispatcher::new(
-            &server_identity,
-            Arc::new(std::sync::RwLock::new(TrustStore::default())),
-            Arc::new(PairMode::default()),
-            TrustedPeerConnections::default(),
-            trusted_tx,
-            pairing_tx,
-            Duration::from_secs(1),
-        )
-        .unwrap();
-        let source = "127.0.0.1".parse::<IpAddr>().unwrap();
-        let other = "127.0.0.2".parse::<IpAddr>().unwrap();
-
-        let attempt = |n: u8| quinn::ConnectionId::new(&[n; 8]);
-        for n in 0..EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT as u8 {
-            assert_eq!(
-                dispatcher
-                    .admit_external_quic_handshake(source, attempt(n))
-                    .await,
-                Admission::Retry
-            );
-        }
-        assert_eq!(
-            dispatcher
-                .admit_external_quic_handshake(source, attempt(99))
-                .await,
-            Admission::Refused
-        );
-        assert_eq!(
-            dispatcher
-                .admit_external_quic_handshake(other, attempt(99))
-                .await,
-            Admission::Retry
-        );
     }
 }

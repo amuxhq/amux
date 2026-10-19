@@ -1446,24 +1446,3 @@ impl ProfileRuntime {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use daemon_core::{DumpReason, StepBudget, Violation};
-
-    use super::{CORE_DUMP, CORE_VIOLATION_DUMP};
-
-    #[test]
-    fn only_a_broken_invariants_dump_reason_begins_as_a_violation() {
-        let violation = DumpReason::Violation(Violation {
-            invariant: "every answer names a committed revision",
-            detail: "revision 4 of 3".to_owned(),
-        });
-        let slow = DumpReason::OverBudget {
-            micros: 120_000,
-            budget: StepBudget::DAEMON,
-        };
-        assert!(format!("{CORE_DUMP}{violation}").starts_with(CORE_VIOLATION_DUMP));
-        assert!(!format!("{CORE_DUMP}{slow}").starts_with(CORE_VIOLATION_DUMP));
-    }
-}

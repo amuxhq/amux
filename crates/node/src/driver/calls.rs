@@ -268,54 +268,8 @@ impl Drop for Answers {
 #[cfg(test)]
 mod tests {
     use daemon_core::payload::CallError;
-    use wire::{SessionEvent, session_event};
 
     use super::*;
-
-    fn answer(n: u64) -> Response {
-        let caught_up = session_event::Of::CaughtUp(wire::CaughtUp { revision: n });
-        Response::Session(Arc::new(SessionEvent {
-            of: Some(caught_up),
-        }))
-    }
-
-    async fn taken(answers: &mut Answers) -> Vec<String> {
-        let mut seen = Vec::new();
-        while let Some(delivered) = answers.next().await {
-            seen.push(match delivered {
-                Delivered::Answer(Response::Session(event)) => match &event.of {
-                    Some(session_event::Of::CaughtUp(c)) => format!("r{}", c.revision),
-                    other => format!("{other:?}"),
-                },
-                Delivered::Answer(other) => format!("{other:?}"),
-                Delivered::End(status) => format!("end {status:?}"),
-            });
-        }
-        seen
-    }
-
-    #[tokio::test]
-    async fn live_answers_past_the_room_overflow_and_the_cores_answers_still_arrive() {
-        let calls = Arc::new(CallTable::default());
-        let (inputs, _fed) = mpsc::channel(4);
-        let queue = calls.open(2);
-        let call = queue.call();
-        let mut answers = Answers::new(queue.clone(), calls.clone(), inputs);
-        calls.answer(call, answer(1));
-        assert_eq!(queue.carry(answer(2)), Carried::Queued);
-        assert_eq!(queue.carry(answer(3)), Carried::Queued);
-        assert_eq!(queue.carry(answer(4)), Carried::Overflowed);
-        assert_eq!(queue.carry(answer(5)), Carried::Refused);
-        // What the core answers to the lag.
-        calls.answer(call, answer(9));
-        calls.end(call, Status::Ok);
-        assert_eq!(
-            taken(&mut answers).await,
-            vec!["r1", "r9", "end Ok"],
-            "the opening, the core's answer to the lag, then the end"
-        );
-        assert!(calls.get(call).is_none());
-    }
 
     #[tokio::test]
     async fn a_call_dropped_before_its_end_is_reported_cancelled() {

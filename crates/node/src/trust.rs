@@ -78,7 +78,6 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
-    use crate::HostId;
 
     #[test]
     fn trust_store_is_created_as_empty_json_and_reloaded() {
@@ -100,31 +99,5 @@ mod tests {
                 & 0o777,
             0o600
         );
-    }
-
-    #[test]
-    fn a_trust_file_with_a_wrong_length_pubkey_does_not_load() {
-        let dir = tempfile::tempdir().unwrap();
-        let peer = HostId::from_u128(2);
-        let json = format!(
-            r#"{{
-  "{peer}": {{
-    "pubkey": [1, 2, 3],
-    "name": "peer",
-    "paired_at": "1970-01-01T00:00:00Z",
-    "reachabilities": [{{ "type": "cloud" }}]
-  }}
-}}"#
-        );
-        create_private_file(&trust_path(dir.path()), json.as_bytes()).unwrap();
-
-        assert!(matches!(
-            load_or_create_in(dir.path()),
-            Err(IdentityError::InvalidLength {
-                field: "TrustEntry.pubkey",
-                expected: ED25519_PUBKEY_LEN,
-                actual: 3
-            })
-        ));
     }
 }

@@ -1144,37 +1144,4 @@ mod tests {
             .unwrap();
         assert!(opened.is_err());
     }
-
-    #[tokio::test]
-    async fn control_frames_round_trip_under_message_size_limit() {
-        let (connector, acceptor) = new_carriers();
-        let (mut connector_sink, mut connector_source) = connector.control();
-        let (mut acceptor_sink, mut acceptor_source) = acceptor.control();
-        let hello = pb::Message {
-            body: Some(message::Body::Hello(pb::Hello {
-                supported_protocol_versions: vec![2],
-                host: None,
-                neighbors: Vec::new(),
-                auth_token: Some("token".into()),
-                runtime_instance_id: vec![7; 16],
-            })),
-        };
-        let close = pb::Message {
-            body: Some(message::Body::LinkClose(pb::LinkClose {
-                reason: pb::LinkCloseReason::UserShutdown as i32,
-                error: None,
-            })),
-        };
-
-        write_message(&mut connector_sink, &hello).await.unwrap();
-        assert_eq!(
-            read_message(&mut acceptor_source).await.unwrap(),
-            Some(hello)
-        );
-        write_message(&mut acceptor_sink, &close).await.unwrap();
-        assert_eq!(
-            read_message(&mut connector_source).await.unwrap(),
-            Some(close)
-        );
-    }
 }

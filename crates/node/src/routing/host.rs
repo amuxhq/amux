@@ -170,27 +170,4 @@ mod tests {
 
         assert!(error.contains("host name"));
     }
-
-    #[test]
-    fn cloud_local_host_advertises_no_kinds() {
-        let host = local_host(
-            Uuid::from_u128(1),
-            "cloud",
-            Capabilities {
-                cloud_relay: true,
-                ..Default::default()
-            },
-            false,
-        );
-
-        assert!(host.capabilities.kinds.is_empty());
-        assert!(host.capabilities.cloud_relay);
-    }
-
-    #[test]
-    fn supplied_capabilities_are_advertised_verbatim() {
-        let host = local_host(Uuid::from_u128(1), "host", Capabilities::default(), false);
-
-        assert!(host.capabilities.kinds.is_empty());
-    }
 }

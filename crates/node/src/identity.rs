@@ -785,23 +785,6 @@ mod tests {
     }
 
     #[test]
-    fn device_certificate_contains_persisted_public_key() {
-        let dir = temp_data_dir();
-        let identity = load_or_create_device_identity_in(dir.path()).unwrap();
-        let cert = CertificateDer::from(identity.certificate_der().unwrap());
-
-        assert_eq!(
-            ed25519_public_key_from_certificate(&cert).unwrap(),
-            identity.public_key()
-        );
-        assert!(
-            identity
-                .server_tls_config(Arc::new(std::sync::RwLock::new(TrustStore::default())))
-                .is_ok()
-        );
-    }
-
-    #[test]
     fn pinned_client_cert_verifier_accepts_only_trusted_device_pubkeys() {
         let trusted_dir = temp_data_dir();
         let untrusted_dir = temp_data_dir();

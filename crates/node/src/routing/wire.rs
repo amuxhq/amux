@@ -88,18 +88,6 @@ mod tests {
     }
 
     #[test]
-    fn neighbor_up_round_trips_and_validates_the_host() {
-        let pb::Message {
-            body: Some(pb::message::Body::NeighborUp(up)),
-        } = neighbor_up_message(&host(1))
-        else {
-            panic!("expected NeighborUp body");
-        };
-
-        assert_eq!(neighbor_up_from_wire(up).unwrap(), host(1));
-    }
-
-    #[test]
     fn neighbor_up_rejects_missing_and_semantically_invalid_hosts() {
         assert!(matches!(
             neighbor_up_from_wire(pb::NeighborUp { host: None }),

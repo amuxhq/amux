@@ -20,11 +20,13 @@ pub mod lifecycle;
 pub mod presence;
 pub mod replication;
 pub mod single_daemon;
+pub mod supervisor;
 pub use family::FamilyDeliveries;
 pub use lifecycle::AgentLifecycle;
 pub use presence::PresenceRouting;
 pub use replication::Replication;
 pub use single_daemon::SingleDaemon;
+pub use supervisor::SupervisorUpdate;
 
 /// What the world may do to a machine between its own actions: the one
 /// fault vocabulary every model's environment and the simulator draw from,
@@ -77,6 +79,7 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
     parked.extend(of("presence and routing", &PresenceRouting::ci()));
     parked.extend(of("family and deliveries", &FamilyDeliveries::ci()));
     parked.extend(of("agent lifecycle", &AgentLifecycle::ci()));
+    parked.extend(of("supervisor update", &SupervisorUpdate::ci()));
     parked
 }
 

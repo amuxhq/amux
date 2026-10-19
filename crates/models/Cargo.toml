@@ -12,10 +12,12 @@ daemon-core = { workspace = true }
 interpret = { workspace = true, features = ["testkind"] }
 journal = { workspace = true }
 prost = { workspace = true }
+release = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 stateright = { workspace = true }
 store = { workspace = true }
+supervisor-core = { workspace = true }
 tempfile = { workspace = true }
 wire = { workspace = true }
 

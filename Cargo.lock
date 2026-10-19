@@ -2487,10 +2487,12 @@ dependencies = [
  "interpret",
  "journal",
  "prost",
+ "release",
  "rusqlite",
  "serde_json",
  "stateright",
  "store",
+ "supervisor-core",
  "tempfile",
  "wire",
 ]

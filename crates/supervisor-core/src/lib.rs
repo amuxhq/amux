@@ -352,7 +352,9 @@ struct Touched {
 }
 
 /// Installed binaries, the running daemon and its phase, the release seen,
-/// failed starts and the rollback target.
+/// failed starts and the rollback target. A value between steps: equal
+/// supervisors step alike.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Supervisor {
     params: Params,
     target: String,
@@ -377,10 +379,7 @@ pub struct Supervisor {
     exited: bool,
     now_ms: u64,
     next_id: u64,
-    #[expect(
-        dead_code,
-        reason = "the driver measures a step against it once it times steps"
-    )]
+    /// Read by the driver once it times steps.
     budget: StepBudget,
     touched: Touched,
 }
@@ -493,6 +492,7 @@ impl Supervisor {
                 reason: DumpReason::Violation(violation),
             });
         }
+        self.touched = Touched::default();
     }
 
     /// The cheap predicates checked after every step:

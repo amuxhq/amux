@@ -131,6 +131,25 @@ grace or drain timer fires. Two configurations are checked: a one-shot
 child started on its spawn prompt, and an agent without a parent. The
 properties are in `src/lifecycle.rs`.
 
+## Supervisor update
+
+`SupervisorUpdate` runs the real supervisor core, held between steps as
+its value, against what is true on the machine: the binary at the install
+path, prev beside it, a staged download, the rejected-build record, the
+daemon processes and what the release feed publishes. The driver performs
+the core's outputs in order, answers a look at the feed and a download at
+once, starts a daemon from whatever binary is at the path and kills one at
+once; when the core hands over, the installed binary starts as a
+supervisor that inherits the serving daemon. The feed publishes newer
+releases, each good or bad (a daemon from a bad build never prepares); a
+daemon prepares, receives `go`, cannot be started, exits when asked or
+crashes; the start, stop and restart timers fire; `amux update` asks for a
+look; and the supervisor crashes, also before any file output of a step,
+so every prefix of a swap or a rollback is explored, and starts again from
+the binary at the path while its daemons exit with their pipe. Both swap
+orders are checked: the binary renamed over while the daemon runs, and the
+daemon stopped first. The properties are in `src/supervisor.rs`.
+
 ## Cost, bounds and budget
 
 A model explores real stores, so a state costs a store transaction or two
@@ -146,6 +165,7 @@ under `just test`.
 | Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 391,552 | 39 s | 71 s | 240 s | the child's spontaneous exit too, 2 links down, 2 waits | 740 s |
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 859,652 | 24 s | 52 s | 180 s | 4 up, 3 down, 3 failures | 319 s |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,275,996 and 71,250 | 8 s | 17 s | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
+| Supervisor update, both swap orders | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 4,189,038 and 4,449,354 | 5 s | 11 s | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 77 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), with the development profile, which optimises SQLite, the store and

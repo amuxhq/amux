@@ -143,7 +143,6 @@ claim = "After a power cut the origin's store opens at its last checkpoint, the 
 tests = [
   "node/single_daemon::power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor",
   "node/single_daemon::a_clean_reboot_bumps_nothing",
-  "node/single_daemon::a_daemon_crash_under_the_same_boot_id_bumps_nothing",
   "node/single_daemon::a_journal_cut_below_a_durable_cursor_rewinds_it_and_re_derived_steps_commit_anew",
   "testnet/harness::a_rewound_host_loses_what_the_drive_never_got_under_a_new_generation",
   "testnet/spec_inventory::a_generation_change_resets_one_hosts_replicas_and_nothing_else",
@@ -302,28 +301,6 @@ tests = [
   "store/sqlite::a_store_with_another_history_is_refused_and_named",
   "store/sqlite::a_store_migrated_by_different_text_is_refused",
   "node/registry::a_store_from_before_the_release_schema_stops_the_daemon_and_is_kept",
-]
-
-[[contract]]
-id = "commit-before-broadcast"
-source = "invariant"
-section = "Daemon"
-claim = "Commit precedes broadcast; the snapshot is never ahead of its items."
-tests = [
-  "node/single_daemon::each_record_is_broadcast_once_after_its_commit_and_caught_up_once_per_hello",
-  "node/single_daemon::a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it",
-  "node/single_daemon::a_failure_before_or_after_each_write_commit_and_cursor_step_changes_nothing",
-  "node/single_daemon::a_withdrawn_prompt_is_never_read_as_queued",
-]
-
-[[contract]]
-id = "subscribe-open-is-one-cut"
-source = "invariant"
-section = "Daemon"
-claim = "What a subscriber receives at open, Snapshot, held rows and marker, is one commit-lock cut."
-tests = [
-  "store/conformance::cut_reads_snapshot_rows_and_marker_together",
-  "node/single_daemon::a_snapshot_committed_between_join_and_cut_arrives_once",
 ]
 
 [[contract]]
@@ -1335,4 +1312,65 @@ checker = "models/supervisor::every_update_promise_holds_where_a_running_binary_
 tests = [
   "node/supervisor::a_starting_supervisor_deletes_a_prev_that_is_the_binary",
   "node/supervisor::a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back",
+]
+
+[[contract]]
+id = "commit-before-broadcast"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "commit before broadcast: every row a step answers is in the store once the step is done, at the revision answered or a later one the step wrote over it" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "node/single_daemon::a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it",
+  "daemon-core/lib::ingest::tests::a_failed_commit_answers_nothing_and_says_why",
+  "node/single_daemon::a_failure_before_or_after_each_write_commit_and_cursor_step_changes_nothing",
+  "node/single_daemon::a_withdrawn_prompt_is_never_read_as_queued",
+]
+
+[[contract]]
+id = "subscribe-open-is-one-cut"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "the open is one cut: an open subscriber has read every row the store holds exactly once, in the order the store revised them, and nothing else" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "store/conformance::cut_reads_snapshot_rows_and_marker_together",
+  "node/single_daemon::a_withdrawn_prompt_is_never_read_as_queued",
+]
+
+[[contract]]
+id = "single-daemon-reclaims-below-the-checkpoint"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "a segment is reclaimed only below the last checkpoint's cursor: the journal still holds every frame from the cursor the drive's store has" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "node/single_daemon::segments_are_deleted_only_below_a_cursor_on_the_drive",
+  "journal/journal::segments_below_a_durable_cursor_are_reclaimable_except_the_kept_ones",
+]
+
+[[contract]]
+id = "single-daemon-generation-bumps-after-unclean-reboot"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "the generation bumps after an unclean reboot: a start after the machine restarted under a daemon that had not shut down cleanly serves a higher generation than the run before" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "node/single_daemon::power_loss_bumps_the_generation_and_re_ingests_from_the_durable_cursor",
+  "node/registry::the_generation_bumps_only_after_an_unclean_reboot",
+]
+
+[[contract]]
+id = "single-daemon-generation-bumps-only-after-unclean-reboot"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "the generation bumps only after an unclean reboot: a start after a crash on the same boot, or after a clean shutdown, serves the generation of the run before" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "node/single_daemon::a_clean_reboot_bumps_nothing",
+  "node/registry::the_generation_bumps_only_after_an_unclean_reboot",
+]
+
+[[contract]]
+id = "single-daemon-checkpoint-reproduces-the-state"
+source = "model"
+property = { crate = "models", machine = "single daemon", sentence = "a checkpoint plus the inputs since reproduces the state: the core restored from the newest checkpoint and stepped through every input since, against the journal as each found it, is the live core, store and journal" }
+checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
+tests = [
+  "node/single_daemon::every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint",
 ]

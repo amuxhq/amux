@@ -14,7 +14,7 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows, plus the iOS gate |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | Nightly 03:00 UTC (GitHub often starts it hours late), and by hand | The phone's photographed suites |
-| Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model |
+| Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
 Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
@@ -27,7 +27,7 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | Check and Clippy | `ubuntu-latest` | `just check`, `just lint` |
 | Format | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30` |
 | Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just cores-check`, `just typed-provider-check`, `just tests-check`, `just docs-check`, `just deletion-ledger-check` |
-| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models`, `just doctest`; on macOS also `just contracts-check` |
+| Test | `ubuntu-latest`, `macos-latest`, `windows-latest` | `scripts/no-update-flags.sh`, `just test -- --no-fail-fast --exclude models`, `just doctest`; on Linux and macOS `just sim`; on macOS also `just contracts-check` |
 | Models | `ubuntu-latest`, one job per protocol-models test target | `just test-crate models -- --test <target>`: one model at its CI bounds |
 | Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
@@ -130,6 +130,19 @@ job's Rust cache and never saves its own. Its job guard is 100
 minutes: the slowest model at its nightly bounds, the family model, takes
 740 s on the Mac's 12 threads, and roughly seven times that on
 the runner.
+
+### Simulated stories
+
+The testnet's stories that the test catalogue declares a simulated mode for
+(`modes` in [`tests/catalog.toml`](../tests/catalog.toml)) run in the Test
+job twice: on the real net under `just test`, then on the simulated net
+under `just sim`, every core in one process, a few seeds per story. A
+failing seed is printed with the `just sim --seed N <story>` that reruns
+it. The Windows job skips `just sim`, whose scripts need a Unix shell. The
+nightly workflow's seeds job runs `just nightly --seeds 2000 --bounds none`:
+2000 seeds per story and a report of every failing seed, without the models,
+which its matrix already checks. Locally, `just nightly --seeds N` walks the
+seeds and then runs `just models-nightly`.
 
 ### The iOS gate
 

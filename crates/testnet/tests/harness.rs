@@ -233,31 +233,6 @@ async fn every_daemon_sleeps_its_policy_timers_on_the_driven_clock() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_stuck_observation_fails_at_its_deadline_and_a_closed_one_at_once() {
-    let net = Net::start(stories::stuck_topology()).await.unwrap();
-    stories::a_stuck_observation_fails_at_its_deadline_and_a_closed_one_at_once(net).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_fence_holds_a_host_to_what_its_own_cursors_report() {
-    let net = Net::start(stories::fence_topology()).await.unwrap();
-    stories::a_fence_holds_a_host_to_what_its_own_cursors_report(net).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_severed_link_goes_down_and_a_restored_one_comes_back() {
-    let net = Net::start(stories::severed_topology()).await.unwrap();
-    stories::a_severed_link_goes_down_and_a_restored_one_comes_back(net).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_killed_daemon_leaves_its_agents_running_and_its_restart_reads_what_they_wrote() {
-    let net = Net::start(stories::killed_topology()).await.unwrap();
-    stories::a_killed_daemon_leaves_its_agents_running_and_its_restart_reads_what_they_wrote(net)
-        .await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn a_rewound_host_loses_what_the_drive_never_got_under_a_new_generation() {
     let topology = Topology::new().host("desk").agent(
         AgentDecl::new("worker", "desk")

@@ -816,7 +816,7 @@ source = "testing page"
 section = "Time and absence"
 claim = "A stuck predicate fails rather than passing at its deadline, and a broken observer is rejected."
 tests = [
-  "testnet/harness::a_stuck_observation_fails_at_its_deadline_and_a_closed_one_at_once",
+  "testnet/harness_stories::a_stuck_observation_fails_at_its_deadline_and_a_closed_one_at_once",
   "testnet/harness::the_polling_waiters_fail_on_a_false_a_broken_or_a_hung_check",
 ]
 

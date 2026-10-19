@@ -669,6 +669,7 @@ name = "testnet-harness"
 contract = "The test network harness validates topologies, runs real agents on each fake provider, sleeps every daemon's policy timers on its driven clock, installs each fault, fails stuck observations, catches a broken replica, and serves a topology through its door."
 paths = ["crates/patience/src", "crates/testnet/src", "crates/testnet/tests/harness.rs", "crates/testnet/tests/stories"]
 recipe = "just test -- --test harness"
+modes = ["real"]
 boundary = "Many daemons"
 oracle = "Harness values, event observations, observation deadlines, door replies and the capability map the crate docs list."
 real = ["daemon runtimes", "agent processes", "loopback sockets", "child processes"]
@@ -686,10 +687,28 @@ cargo = [
 ]
 
 [[suite]]
+name = "testnet-stories"
+contract = "The harness's stories that hold on either net, a stuck observation failing at its deadline, a fence holding a host to its own cursors, a severed link going down and coming back, and a killed daemon's agents running on while its restart reads what they wrote, pass on the real net and under every seed on the simulated one, and a failing seed is reported with the command that reruns it."
+paths = ["crates/testnet/src/modes.rs", "crates/testnet/src/world.rs", "crates/testnet/src/probes.rs", "crates/testnet/tests/harness_stories.rs", "crates/testnet/tests/stories", "scripts/sim.py"]
+recipe = "just test -- --test harness_stories"
+modes = ["real", "simulated"]
+boundary = "Many daemons"
+oracle = "The stories' observations and fences on each net, and the seeds each simulated story walked."
+real = ["daemon runtimes and agent processes in real mode", "daemon cores, agent cores and the test kind's interpreter in simulated mode", "stores", "journal files"]
+substituted = ["cloud account", "providers by the scripted fakes", "in simulated mode: transport by in-memory links, agent processes by their cores, the wall clock by the virtual clock, jobs by fakes"]
+time = "driven"
+capabilities = ["desktop", "loopback network", "Unix"]
+lane = "fast"
+evidence = "`just sim` prints each story's seeds walked and failing seeds"
+update = ""
+cargo = [{ package = "testnet", targets = ["harness_stories"], features = [] }]
+
+[[suite]]
 name = "simulated-net-harness"
-contract = "The simulated net holds the harness's own stories under several seeds through the same verbs, fences and observations as the real net, makes one schedule of one seed and another of another, moves time only when the story advances it, breaks a call whose message it loses and still brings the replica current, and fails a wait as soon as nothing is left to deliver."
-paths = ["crates/testnet/src/sim", "crates/testnet/src/world.rs", "crates/testnet/src/probes.rs", "crates/testnet/tests/sim_harness.rs", "crates/testnet/tests/stories"]
+contract = "The simulated net makes one schedule of one seed and another of another, moves time only when the story advances it, lets an agent outlive its daemon for exactly its grace, breaks a call whose message it loses and still brings the replica current, and fails a wait as soon as nothing is left to deliver, under every seed it walks."
+paths = ["crates/testnet/src/sim", "crates/testnet/tests/sim_harness.rs"]
 recipe = "just test -- --test sim_harness"
+modes = ["simulated"]
 boundary = "Many daemons"
 oracle = "The stories' observations and fences, the delivery trace of each seed, and the virtual clock."
 real = ["daemon cores", "agent cores", "the test kind's interpreter", "in-memory stores", "journal files"]
@@ -706,6 +725,7 @@ name = "testnet-ctl"
 contract = "testnet ctl, run from a folder, starts an empty net there, adds hosts and a link, runs a fake agent, drives the real terminal client in tmux and draws it to PNG, captures the topology, session log, a dump of every host, the screens and the logs, and shuts the net down leaving the evidence."
 paths = ["crates/testnet/src/ctl", "crates/testnet/src/bin/testnet.rs", "crates/testnet/tests/ctl.rs"]
 recipe = "just test -- --test ctl"
+modes = ["real"]
 boundary = "System composition"
 oracle = "Command exit status and replies, the host's chat, the client's screen text and frame, and the files a capture writes."
 real = ["built testnet and amux binaries", "daemon runtimes", "agent processes", "tmux", "terminal client", "loopback sockets", "temporary files"]
@@ -722,6 +742,7 @@ name = "many-daemon-protocol-spec"
 contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host."
 paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/support"]
 recipe = "just test -- --test spec_analytics --test spec_edge --test spec_families --test spec_inventory --test spec_network --test spec_replication"
+modes = ["real"]
 boundary = "Many daemons"
 oracle = "Typed topology observations, protocol events, refusals, replica markers and state dumps at bounded deadlines."
 real = ["daemon runtimes", "agent processes", "loopback QUIC and TCP", "TLS", "relay server", "files"]

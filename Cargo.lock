@@ -4724,6 +4724,7 @@ dependencies = [
  "chrono",
  "clap",
  "daemon-core",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",

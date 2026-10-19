@@ -73,6 +73,33 @@ class TestsCatalogTest(unittest.TestCase):
             [".github/workflows/ci.yml has no models job with a target matrix"],
         )
 
+    def test_every_suite_of_testnet_stories_declares_its_modes(self):
+        def errors_of(suite):
+            errors = []
+            catalog.validate_modes(suite["name"], suite, errors)
+            return errors
+
+        stories = {"time": "driven", "cargo": [{"package": "testnet", "targets": ["harness"]}]}
+        self.assertEqual(errors_of({"name": "both", **stories, "modes": ["real", "simulated"]}), [])
+        self.assertEqual(
+            errors_of({"name": "silent", **stories}),
+            ["silent: a suite of testnet stories must declare its modes (real, simulated)"],
+        )
+        self.assertEqual(
+            errors_of({"name": "odd", **stories, "modes": ["real", "real", "imagined"]}),
+            ["odd: unknown modes 'imagined'", "odd: modes lists a mode twice"],
+        )
+        self.assertEqual(
+            errors_of({"name": "empty", **stories, "modes": []}),
+            ["empty: modes must be a non-empty list"],
+        )
+        fixtures = {"time": "none", "cargo": [{"package": "testnet", "targets": ["journal_fixtures"]}]}
+        self.assertEqual(errors_of({"name": "fixtures", **fixtures}), [])
+        self.assertEqual(
+            errors_of({"name": "store", "time": "driven", "cargo": [{"package": "store", "targets": ["x"]}], "modes": ["real"]}),
+            ["store: modes belong to suites of testnet stories only"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

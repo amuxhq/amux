@@ -31,6 +31,9 @@ BOUNDARIES = {
 }
 TIMES = {"driven", "real", "none"}
 LANES = {"fast", "system", "journey", "qualification", "tool"}
+# The nets a testnet story runs on: production daemons on loopback, or every
+# core in one process walked by seed (`just sim` runs the simulated ones).
+MODES = {"real", "simulated"}
 REQUIRED = {
     "name",
     "contract",
@@ -176,6 +179,36 @@ def validate_cargo_recipe(
                 errors.append(f"{label}: recipe selects zero catalogued tests named {value!r}")
 
 
+def runs_testnet_stories(suite: dict[str, Any]) -> bool:
+    """Whether the suite's tests run nets: a testnet test target in a suite
+    whose time moves."""
+    return suite.get("time") != "none" and any(
+        selector.get("package") == "testnet" and selector.get("kind", "test") == "test"
+        for selector in suite.get("cargo", [])
+    )
+
+
+def validate_modes(label: str, suite: dict[str, Any], errors: list[str]) -> None:
+    """Every suite of testnet stories says which nets its stories run on,
+    and no other suite does."""
+    modes = suite.get("modes")
+    if not runs_testnet_stories(suite):
+        if modes is not None:
+            errors.append(f"{label}: modes belong to suites of testnet stories only")
+        return
+    if modes is None:
+        errors.append(f"{label}: a suite of testnet stories must declare its modes ({', '.join(sorted(MODES))})")
+        return
+    if not isinstance(modes, list) or not modes:
+        errors.append(f"{label}: modes must be a non-empty list")
+        return
+    unknown = [mode for mode in modes if mode not in MODES]
+    if unknown:
+        errors.append(f"{label}: unknown modes {', '.join(map(repr, unknown))}")
+    if len(set(modes)) != len(modes):
+        errors.append(f"{label}: modes lists a mode twice")
+
+
 def expand(pattern: str) -> list[Path]:
     if any(character in pattern for character in "*?["):
         return sorted(ROOT.glob(pattern))
@@ -221,6 +254,8 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
         for field in ("recipe", "oracle", "evidence", "update"):
             if not isinstance(suite.get(field), str):
                 errors.append(f"{label}: {field} must be a string")
+
+        validate_modes(label, suite, errors)
 
         command = suite.get("recipe", "")
         recipe = recipe_name(command) if isinstance(command, str) else None

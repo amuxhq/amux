@@ -91,6 +91,7 @@ mod feed;
 mod gate;
 mod invariant;
 mod lan;
+pub mod modes;
 mod net;
 pub mod observe;
 mod probes;

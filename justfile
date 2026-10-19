@@ -221,6 +221,19 @@ parked-check:
 models-nightly *TARGETS:
     if [ "${1-}" = -- ]; then shift; fi; targets=--tests; [ $# -eq 0 ] || targets=$(printf -- '--test %s ' "$@"); {{bounded}} 3600 cargo test --locked -p models $targets -- --ignored --nocapture
 
+# Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
+# declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per
+# story. `--seed N` reruns one seed (a failure prints its command), `--seeds N`
+# walks N, and names after them narrow the run to matching stories.
+sim *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 1200 scripts/py scripts/sim.py sim "$@"
+
+# The nightly run: walk `--seeds N` seeds per simulated story, then check the
+# protocol models at `--bounds nightly` (the default), `ci` or `none`, and
+# print a report of seeds walked, time and failing seeds.
+nightly *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 14400 scripts/py scripts/sim.py nightly "$@"
+
 # Fail when a contract in tests/contracts.toml names no test or a test that
 # does not exist; `--table PATH` also writes the coverage table as Markdown.
 contracts-check *ARGS:

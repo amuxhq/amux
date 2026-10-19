@@ -99,6 +99,12 @@ jobs:
         # journey are ordinary test targets, compiled out on Windows. The
         # protocol models run in the models job instead, on Linux only.
         run: just test -- --no-fail-fast --exclude models
+      - name: Walk the simulated stories by seed
+        # The same stories under TESTNET_MODE=simulated, a few seeds each;
+        # a failure prints the seed and the `just sim --seed` that reruns
+        # it. The recipe's scripts need a Unix shell.
+        if: runner.os != 'Windows'
+        run: just sim
       - name: Run doctests
         run: just doctest
       - name: Check every design contract names tests that exist

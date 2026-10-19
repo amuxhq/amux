@@ -21,6 +21,7 @@ mod sqlite;
 
 mod blobs;
 mod explore;
+pub mod redact;
 mod retention;
 
 pub use blobs::BlobLru;

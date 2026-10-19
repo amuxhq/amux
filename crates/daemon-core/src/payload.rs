@@ -208,7 +208,7 @@ pub enum ClientRequest {
     /// A message for one of this host's agents, answered once the
     /// recipient accepted it. Its envelope id is set.
     SendMessage {
-        #[serde(with = "codec::message")]
+        #[serde(with = "codec::boxed")]
         envelope: Box<wire::Envelope>,
         from: MessageFrom,
     },
@@ -491,5 +491,5 @@ pub enum JobResult {
     /// Git could not compare the working tree.
     CompareFailed(GitRefusal),
     /// The next spec a resume starts from; none when the agent has none.
-    Spec(#[serde(with = "codec::optional")] Option<Box<wire::AgentSpec>>),
+    Spec(#[serde(with = "codec::optional_boxed")] Option<Box<wire::AgentSpec>>),
 }

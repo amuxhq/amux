@@ -68,12 +68,13 @@ ALLOWED_LOCAL = {
     "app-ffi": {"app-embedded", "app-runtime", "client", "model", "node", "ui-view"},
     # The terminal client composes the views over the drivers' state.
     "tui": {"attachments", "client", "ui-runtime", "ui-state", "ui-view", "wire"},
-    # Replays a dump bundle's three pure stages: facts through the
-    # interpreter (the journal for comparison), records through the session
-    # model, state through the views; and provider recordings for the
-    # capture tools.
+    # Replays a dump bundle's stages: facts through the interpreter (the
+    # journal for comparison), the daemon core from its checkpoint over its
+    # store, records through the session model, state through the views; and
+    # provider recordings for the capture tools.
     "replay-support": {
-        "core-ring", "interpret", "journal", "redaction", "ui-state", "ui-view", "wire",
+        "core-ring", "daemon-core", "interpret", "journal", "redaction", "store", "ui-state",
+        "ui-view", "wire",
     },
     # The bounded ring of a core's inputs since its last checkpoint, in
     # segments named as the journal's are.

@@ -114,6 +114,10 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         Lifecycle::Exited as i32
     );
 
+    // A checkpoint now: the core's part then carries a store holding the
+    // prompts' rows, and the inputs after it.
+    runtime.checkpoint().await.unwrap();
+
     // An input sent after start goes to the provider, and into the live
     // agent's facts ring, as bytes.
     let answer = runtime
@@ -184,6 +188,46 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             "{id}'s journal tail"
         );
     }
+    // The core's part: its checkpoint, the inputs since and the store as
+    // of that checkpoint, each redacted, and the store alone, with no WAL
+    // or rollback journal beside it.
+    for name in ["checkpoint", "inputs", "store.sqlite"] {
+        has(format!("core/{name}"));
+    }
+    assert!(
+        !names
+            .iter()
+            .any(|name| name.starts_with("core/store.sqlite-")),
+        "{names:?}"
+    );
+    let checkpoint = daemon_core::Checkpoint::from_bytes(
+        &std::fs::read(bundle.join("core/checkpoint")).unwrap(),
+    )
+    .expect("the core's checkpoint reads");
+    let lines: Vec<daemon_core::Recorded> =
+        core_ring::inputs(&std::fs::read(bundle.join("core/inputs")).unwrap());
+    let reads = lines
+        .iter()
+        .filter(|line| matches!(line, daemon_core::Recorded::Read { .. }))
+        .count();
+    assert!(
+        reads > 0,
+        "the ring says how far each ingest read: {} lines",
+        lines.len()
+    );
+    let scratch = tempfile::tempdir().unwrap();
+    let copy = scratch.path().join("store.sqlite");
+    std::fs::copy(bundle.join("core/store.sqlite"), &copy).unwrap();
+    let copy = store::Sqlite::open(&copy, runtime.host().as_bytes().to_vec())
+        .expect("the store copy opens");
+    assert_eq!(
+        copy.agents().unwrap().len(),
+        2,
+        "the store as of the checkpoint holds both agents"
+    );
+    let restored = daemon_core::Daemon::restore(checkpoint, copy);
+    assert!(restored.is_ok(), "the core restores from its part");
+
     let live_part: Vec<&&str> = names
         .iter()
         .filter(|name| name.starts_with(&format!("agents/{live}/part/facts/")))
@@ -196,6 +240,7 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(bundle.join(MANIFEST)).unwrap()).unwrap();
     let errors = manifest["errors"].as_array().unwrap();
+    assert_eq!(manifest["core"]["reads"].as_u64(), Some(reads as u64));
     assert!(
         errors
             .iter()
@@ -231,6 +276,12 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
             assert!(!holds(&bytes, secret), "{name} still holds {secret}");
         }
     }
+    // The core's part is not clean for want of anything to redact: the
+    // ring it was taken from holds the prompt's secret.
+    let ring_holds = std::fs::read_dir(runtime.dir().join("core-ring"))
+        .unwrap()
+        .any(|entry| holds(&std::fs::read(entry.unwrap().path()).unwrap(), KEY));
+    assert!(ring_holds, "the live ring holds {KEY}");
     transcript.push(format!(
         "planted {} secrets in the prompt, a later input, the model's reply, the provider's \
          environment, the dump reason and the daemon log; none is in any file of the bundle, \

@@ -42,7 +42,7 @@ use daemon_core::payload::{
 };
 use daemon_core::{
     CallId, ChannelId, Daemon, DrainReport, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
-    Output, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
+    Output, Recorded, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
 };
 pub(crate) use links::{CoreLinks, core_error};
 use store::Sqlite;
@@ -133,6 +133,13 @@ pub(crate) enum Fed {
     },
     /// A look at what the core decided, between steps.
     Look(Box<dyn FnOnce(&Daemon) + Send>),
+    /// The core as a dump carries it, between steps: its newest checkpoint
+    /// and the ring's lines since, with the store's main file copied to
+    /// `store`.
+    Capture {
+        store: PathBuf,
+        done: oneshot::Sender<Result<Captured, String>>,
+    },
     /// Reports are queued.
     Wake,
     /// The profile is gone.
@@ -209,6 +216,11 @@ impl Driver {
             .ok();
         let trust = Arc::new(std::sync::RwLock::new(read.clone().unwrap_or_default()));
         let daemon = Daemon::new(store, options);
+        // The ring's first checkpoint is the core as it starts, beside a
+        // main file holding every commit so far.
+        let store_at_checkpoint = Sqlite::checkpoint_wal(&dir.join(STORE))
+            .inspect_err(|error| tracing::warn!(%error, "moving the store's WAL at start failed"))
+            .is_ok();
         let ring = Ring::open(
             dir.join(CORE_RING),
             RING_BYTES,
@@ -219,6 +231,7 @@ impl Driver {
         let core = CoreThread {
             daemon,
             ring,
+            store_at_checkpoint,
             checkpointing: None,
             checkpoint_waiting: Vec::new(),
             checkpoint_again: false,
@@ -364,6 +377,23 @@ impl Driver {
             .unwrap_or_else(|_| Err("the profile is no longer running".to_owned()))
     }
 
+    /// The core as a dump carries it, read between steps, with the store's
+    /// main file copied to `store`; or why it cannot be.
+    pub(crate) async fn capture(&self, store: PathBuf) -> Result<Captured, String> {
+        let (done, captured) = oneshot::channel();
+        if self
+            .inputs
+            .send(Fed::Capture { store, done })
+            .await
+            .is_err()
+        {
+            return Err("the profile is no longer running".to_owned());
+        }
+        captured
+            .await
+            .unwrap_or_else(|_| Err("the profile is no longer running".to_owned()))
+    }
+
     /// Asks the core for a checkpoint and waits until it is on the drive,
     /// or says why it is not.
     pub(crate) async fn checkpoint(&self) -> Result<(), String> {
@@ -497,6 +527,12 @@ enum Arriving {
     Peer(HostId, CallId, Box<PeerRequest>),
 }
 
+/// The core's newest checkpoint and the ring's lines since, as written.
+pub(crate) struct Captured {
+    pub(crate) checkpoint: Vec<u8>,
+    pub(crate) lines: Vec<u8>,
+}
+
 /// Someone waiting for an agent's journal to be read to its end.
 struct Waiting {
     frames: u64,
@@ -506,8 +542,13 @@ struct Waiting {
 /// A profile's core and what its thread keeps.
 pub(crate) struct CoreThread {
     daemon: Daemon,
-    /// Every input stepped since the last checkpoint, when the ring opened.
-    ring: Option<Ring<Input>>,
+    /// Every input stepped since the last checkpoint, and what each ingest
+    /// read, when the ring opened.
+    ring: Option<Ring<Recorded>>,
+    /// The store's main file holds what the ring's newest checkpoint was
+    /// taken beside: the WAL was moved into it whole, and no move has
+    /// started since.
+    store_at_checkpoint: bool,
     /// The checkpoint's job in flight: its WAL job, then its write job.
     checkpointing: Option<JobId>,
     /// Whoever waits for the next checkpoint to be on the drive.
@@ -611,6 +652,10 @@ impl CoreThread {
                         write(self.daemon.store_beneath());
                         continue;
                     }
+                    Some(Fed::Capture { store, done }) => {
+                        let _ = done.send(self.capture(&store));
+                        continue;
+                    }
                     Some(fed) => fed,
                 },
             };
@@ -707,7 +752,8 @@ impl CoreThread {
                 | Fed::Forward { .. }
                 | Fed::Look(_)
                 | Fed::Read(_)
-                | Fed::Beneath(_) => None,
+                | Fed::Beneath(_)
+                | Fed::Capture { .. } => None,
             };
             let launch = runtime.launch();
             let settings = Settings {
@@ -809,7 +855,7 @@ impl CoreThread {
         let Some(ring) = self.ring.as_mut() else {
             return;
         };
-        if let Err(error) = ring.append(input) {
+        if let Err(error) = ring.append_as(&Recorded::input(input)) {
             tracing::warn!(%error, "recording an input in the core's ring failed");
         }
         if ring.full() && self.checkpointing.is_none() {
@@ -817,6 +863,26 @@ impl CoreThread {
                 id: TimerId::Checkpoint,
             });
         }
+    }
+
+    /// The core's newest checkpoint and the ring's lines since, with the
+    /// store's main file as of that checkpoint copied to `store`. Refused
+    /// while the main file is not that store: a WAL move under way, or one
+    /// that failed since.
+    fn capture(&self, store: &Path) -> Result<Captured, String> {
+        let runtime = self.runtime.upgrade().ok_or("the profile is stopping")?;
+        if self.ring.is_none() {
+            return Err("the core's input ring did not open".to_owned());
+        }
+        if !self.store_at_checkpoint {
+            return Err("the store's main file is not the checkpoint's".to_owned());
+        }
+        let (checkpoint, lines) = core_ring::newest(&runtime.dir().join(CORE_RING))
+            .map_err(|error| format!("the core's input ring: {error}"))?
+            .ok_or("the core's input ring holds no checkpoint")?;
+        std::fs::copy(runtime.dir().join(STORE), store)
+            .map_err(|error| format!("copying the store's main file: {error}"))?;
+        Ok(Captured { checkpoint, lines })
     }
 
     /// Carries out one output.
@@ -835,6 +901,11 @@ impl CoreThread {
             Output::EndCall { call, status } => self.calls.end(call, status),
             Output::Shell(work) => self.shell_work(runtime, work),
             Output::Ingested { agent, report } => {
+                if let Some(ring) = self.ring.as_mut()
+                    && let Err(error) = ring.append(&Recorded::read(agent, &report))
+                {
+                    tracing::warn!(%error, "recording what ingest read in the core's ring failed");
+                }
                 runtime.ingested(&report);
                 self.ingested(agent, report);
             }
@@ -928,6 +999,8 @@ impl CoreThread {
                 {
                     tracing::warn!(%error, "rotating the core's input ring failed");
                 }
+                // Its WAL job moved every commit into the main file.
+                self.store_at_checkpoint = true;
                 self.checkpointing = Some(id);
                 tokio::spawn(run_job(
                     Arc::downgrade(runtime),
@@ -940,6 +1013,7 @@ impl CoreThread {
                 id,
                 op: Job::CheckpointWal,
             } => {
+                self.store_at_checkpoint = false;
                 self.checkpointing = Some(id);
                 tokio::spawn(run_job(
                     Arc::downgrade(runtime),

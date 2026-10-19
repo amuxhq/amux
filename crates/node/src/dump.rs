@@ -20,13 +20,23 @@
 //!     store.pb               the store slice: one wire.Step holding the
 //!                            snapshot and the newest rows, oldest first, with
 //!                            their orders and revisions
-//!     journal/<segment>      the last two journal segments, whole frames only,
-//!                            each frame redacted (own agents)
+//!     journal/<segment>      the journal from the segment holding the core's
+//!                            checkpoint's cursor on, at least the last two
+//!                            segments; each frame redacted and written to
+//!                            its original length, so every offset holds,
+//!                            and a torn tail kept as its length alone
+//!                            (own agents)
 //!     part/...               the agent process's part, as it sent it:
 //!                            facts/<segment>, facts/<segment>.checkpoint,
 //!                            spec.<n>, and dump-errors when it had any. An
 //!                            agent with no process has only its specs here,
 //!                            redacted by the daemon
+//!   core/                    the daemon core, for a replay of it:
+//!     checkpoint             its newest checkpoint, redacted
+//!     inputs                 every input stepped since, and what each
+//!                            ingest read of a journal, one JSON line each
+//!                            (daemon_core::Recorded), redacted
+//!     store.sqlite           the store as of that checkpoint, redacted
 //! ```
 //!
 //! An agent another host runs has only its row and store slice here; the
@@ -58,6 +68,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
+use daemon_core::Recorded;
 use interpret::RedactTarget;
 use prost::Message as _;
 use store::AgentRow;
@@ -66,14 +77,24 @@ use uuid::Uuid;
 use wire::{AgentDumpRequest, CtlFrame, DumpFile, DumpPart, DumpRequest, Kind, Step, ctl_frame};
 
 use crate::blobs::hex;
+use crate::driver::Captured;
 use crate::runtime::{ProfileRuntime, to_wire};
 
 /// The rows of each agent a dump carries: the newest, which is where a
 /// problem being reported lives.
 pub const DUMP_ROWS: u32 = 1_000;
-/// The journal segments a dump carries: the daemon keeps the last two
-/// ingested ones for exactly this.
+/// The journal segments a dump carries at least: the daemon keeps the last
+/// two ingested ones for exactly this.
 pub const DUMP_SEGMENTS: usize = 2;
+/// Where the core's part of a bundle lives, and its files.
+pub const CORE: &str = "core";
+pub const CORE_CHECKPOINT: &str = "checkpoint";
+pub const CORE_INPUTS: &str = "inputs";
+pub const CORE_STORE: &str = "store.sqlite";
+/// How often, and how far apart, a dump asks for the core again while its
+/// store's main file is being checkpointed.
+const CAPTURE_TRIES: u32 = 30;
+const CAPTURE_APART: Duration = Duration::from_millis(100);
 /// How much of the daemon's log a dump carries, from its end.
 pub const DUMP_LOG_BYTES: u64 = 4 << 20;
 /// How long an agent process has to send its part.
@@ -169,8 +190,20 @@ impl ProfileRuntime {
         std::fs::create_dir_all(&partial)?;
         let mut errors = Vec::new();
         let mut agents = Vec::new();
+        // The core first: its store copy names the cursor each journal
+        // must reach back to.
+        let core = match asker {
+            Asker::Local => self.dump_core(&partial, &mut errors).await?,
+            Asker::Peer => None,
+        };
+        let cursors = core.as_ref().map(|core| &core.cursors);
         for row in &rows {
-            let (entry, mut failed) = self.dump_agent(row, dump_id.as_bytes(), &partial).await?;
+            // An agent the checkpoint's store does not hold was made since:
+            // all of its journal came after.
+            let cursor = cursors.map(|cursors| cursors.get(&row.agent.agent).copied().unwrap_or(0));
+            let (entry, mut failed) = self
+                .dump_agent(row, dump_id.as_bytes(), &partial, cursor)
+                .await?;
             agents.push(entry);
             errors.append(&mut failed);
         }
@@ -193,6 +226,11 @@ impl ProfileRuntime {
             "generation": self.generation(),
             "daemon_version": crate::version(),
             "agents": agents,
+            "core": core.map(|core| serde_json::json!({
+                "schema": core.schema,
+                "inputs": core.inputs,
+                "reads": core.reads,
+            })),
             "errors": errors,
         });
         std::fs::write(
@@ -269,13 +307,62 @@ impl ProfileRuntime {
         .await?
     }
 
-    /// One agent's directory in the bundle. Returns its manifest entry and
-    /// what could not be gathered.
+    /// The core's part of the bundle: its newest checkpoint, the ring's
+    /// lines since and the store as of that checkpoint, each redacted.
+    /// None, with the reason in `errors`, when it cannot be had.
+    async fn dump_core(
+        &self,
+        bundle: &Path,
+        errors: &mut Vec<String>,
+    ) -> Result<Option<CoreDumped>, DumpError> {
+        // The copy waits beside the live store, which holds the same rows,
+        // until it is redacted: never unredacted under reports/.
+        let scratch = self
+            .dir()
+            .join(format!(".dump-{}.sqlite", Uuid::new_v4().simple()));
+        let mut tries = 0;
+        let captured = loop {
+            match self.driver().capture(scratch.clone()).await {
+                Ok(captured) => break captured,
+                Err(why) if tries + 1 < CAPTURE_TRIES => {
+                    tracing::debug!(%why, "the core is not ready to be dumped; asking again");
+                    tries += 1;
+                    tokio::time::sleep(CAPTURE_APART).await;
+                }
+                Err(why) => {
+                    errors.push(format!("{CORE}: {why}"));
+                    let _ = std::fs::remove_file(&scratch);
+                    return Ok(None);
+                }
+            }
+        };
+        let out = bundle.join(CORE);
+        std::fs::create_dir_all(&out)?;
+        let written = tokio::task::spawn_blocking(move || {
+            let written = write_core(&captured, &scratch, &out);
+            let _ = std::fs::remove_file(&scratch);
+            written
+        })
+        .await
+        .map_err(io::Error::other)?;
+        match written {
+            Ok(core) => Ok(Some(core)),
+            Err(why) => {
+                errors.push(format!("{CORE}: {why}"));
+                Ok(None)
+            }
+        }
+    }
+
+    /// One agent's directory in the bundle, its journal reaching back to
+    /// `cursor` when the core's part names one. Returns its manifest entry
+    /// and what could not be gathered.
     async fn dump_agent(
         &self,
         row: &AgentRow,
         dump_id: &[u8],
         bundle: &Path,
+        cursor: Option<u64>,
     ) -> Result<(serde_json::Value, Vec<String>), DumpError> {
         let id = Uuid::from_slice(&row.agent.agent).unwrap_or_default();
         let kind = Kind::try_from(row.kind).unwrap_or(Kind::Unspecified);
@@ -308,7 +395,7 @@ impl ProfileRuntime {
         let mut part_files = Vec::new();
         if own {
             let dir = self.agent_dir(id);
-            match journal_tail(&dir.join(agent_dir::JOURNAL), kind) {
+            match journal_tail(&dir.join(agent_dir::JOURNAL), kind, cursor) {
                 Ok(segments) => {
                     for (name, bytes) in segments {
                         write_under(&out.join("journal"), &name, &bytes)?;
@@ -491,26 +578,149 @@ fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
     }
 }
 
-/// The last journal segments, each re-framed with every whole frame
-/// redacted. A torn frame at the end, a write still under way, is left out.
-fn journal_tail(dir: &Path, kind: Kind) -> io::Result<Vec<(String, Vec<u8>)>> {
+/// The journal segments from the one holding `cursor` on, and at least
+/// the last [`DUMP_SEGMENTS`], each whole frame redacted and written to its
+/// original length so every offset in the journal holds. A torn tail, a
+/// write still under way, keeps its length prefix and loses its bytes.
+fn journal_tail(dir: &Path, kind: Kind, cursor: Option<u64>) -> io::Result<Vec<(String, Vec<u8>)>> {
     let starts = journal::segments(dir)?;
+    let last_few = starts.len().saturating_sub(DUMP_SEGMENTS);
+    let from = cursor
+        .and_then(|cursor| starts.iter().rposition(|&start| start <= cursor))
+        .map_or(last_few, |holding| holding.min(last_few));
     let mut out = Vec::new();
-    for &start in starts.iter().rev().take(DUMP_SEGMENTS).rev() {
+    for &start in &starts[from..] {
         let bytes = std::fs::read(journal::segment_path(dir, start))?;
-        let mut framed = Vec::new();
+        let mut framed = Vec::with_capacity(bytes.len());
         let mut at = 0;
         while let journal::Frame::Whole(step, len) = journal::decode_frame(&bytes[at..]) {
-            let step = redacted(kind, RedactTarget::Step(step.encode_to_vec()));
-            let step = Step::decode(step.as_slice()).unwrap_or_default();
-            if step.encoded_len() > 0 {
-                framed.extend(journal::encode_frame(&step));
-            }
+            framed.extend(fitted(kind, &step, len));
             at += len;
         }
+        let tail = &bytes[at..];
+        let prefix = tail
+            .iter()
+            .position(|byte| byte & 0x80 == 0)
+            .map_or(tail.len(), |last| last + 1);
+        framed.extend_from_slice(&tail[..prefix]);
+        framed.resize(bytes.len(), 0);
         out.push((journal::segment_name(start), framed));
     }
     Ok(out)
+}
+
+/// A journal frame redacted, as a frame of `len` bytes: the redacted step,
+/// else that step without its texts and bodies, else an empty step.
+fn fitted(kind: Kind, step: &Step, len: usize) -> Vec<u8> {
+    let redacted = redacted(kind, RedactTarget::Step(step.encode_to_vec()));
+    let mut step = Step::decode(redacted.as_slice()).unwrap_or_default();
+    if let Some(frame) = journal::encode_frame_exact(&step, len) {
+        return frame;
+    }
+    for item in &mut step.items {
+        item.text.clear();
+        item.body.clear();
+        item.attachments.clear();
+    }
+    for append in &mut step.appends {
+        append.text.clear();
+    }
+    if let Some(snapshot) = &mut step.snapshot {
+        snapshot.body.clear();
+        snapshot.working_on = None;
+        snapshot.git = None;
+    }
+    journal::encode_frame_exact(&step, len)
+        .or_else(|| journal::encode_frame_exact(&Step::default(), len))
+        .unwrap_or_else(|| vec![0; len])
+}
+
+/// What the core's part of a bundle holds, for the manifest.
+struct CoreDumped {
+    schema: u32,
+    /// Inputs, and lines saying what an ingest read.
+    inputs: usize,
+    reads: usize,
+    /// Each agent's ingest cursor as of the checkpoint, by agent id.
+    cursors: BTreeMap<Vec<u8>, u64>,
+}
+
+/// Writes the core's part from what the core thread handed over: the
+/// checkpoint and ring lines redacted as the core's values, the store copy
+/// at `scratch` redacted in place and moved in.
+fn write_core(captured: &Captured, scratch: &Path, out: &Path) -> Result<CoreDumped, String> {
+    let checkpoint = daemon_core::Checkpoint::from_bytes(&captured.checkpoint)
+        .and_then(|checkpoint| checkpoint.redacted(&Redact))
+        .map_err(|error| format!("the checkpoint: {error}"))?;
+    let cursors = store::redact::redact_file(scratch, &Redact)
+        .map_err(|error| format!("redacting the store: {error}"))?;
+    let mut lines = Vec::new();
+    let (mut inputs, mut reads) = (0, 0);
+    for line in captured.lines.split(|byte| *byte == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
+        // A line this build cannot read ends what it can replay, as it ends
+        // a resume.
+        let Ok(recorded) = serde_json::from_slice::<Recorded>(line) else {
+            break;
+        };
+        match recorded {
+            Recorded::Input(_) => inputs += 1,
+            Recorded::Read { .. } => reads += 1,
+        }
+        lines.extend(serde_json::to_vec(&recorded.redacted(&Redact)).expect("a line writes"));
+        lines.push(b'\n');
+    }
+    let write = |name: &str, bytes: &[u8]| {
+        std::fs::write(out.join(name), bytes).map_err(|error| format!("writing {name}: {error}"))
+    };
+    write(CORE_CHECKPOINT, &checkpoint.to_bytes())?;
+    write(CORE_INPUTS, &lines)?;
+    std::fs::copy(scratch, out.join(CORE_STORE))
+        .map_err(|error| format!("writing {CORE_STORE}: {error}"))?;
+    Ok(CoreDumped {
+        schema: checkpoint.schema,
+        inputs,
+        reads,
+        cursors: cursors
+            .into_iter()
+            .map(|(key, cursor)| (key.agent, cursor))
+            .collect(),
+    })
+}
+
+/// The redactor the core's values and the store copy go through: protocol
+/// messages by descriptor, free text by the shared rules, an agent's rows
+/// and items by its kind's own redactor.
+struct Redact;
+
+impl daemon_core::Redactor for Redact {
+    fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8> {
+        interpret::redact_message(name, bytes)
+    }
+
+    fn text(&self, text: &str) -> String {
+        interpret::redact_text(text)
+    }
+}
+
+impl store::redact::Redactor for Redact {
+    fn text(&self, text: &str) -> String {
+        interpret::redact_text(text)
+    }
+
+    fn agent(&self, kind: i32, agent: wire::Agent) -> wire::Agent {
+        let kind = Kind::try_from(kind).unwrap_or(Kind::Unspecified);
+        wire::Agent::decode(redacted(kind, RedactTarget::Agent(agent.encode_to_vec())).as_slice())
+            .unwrap_or_default()
+    }
+
+    fn step(&self, kind: i32, step: Step) -> Step {
+        let kind = Kind::try_from(kind).unwrap_or(Kind::Unspecified);
+        Step::decode(redacted(kind, RedactTarget::Step(step.encode_to_vec())).as_slice())
+            .unwrap_or_default()
+    }
 }
 
 /// Every `spec.<n>` in an agent directory, by number.

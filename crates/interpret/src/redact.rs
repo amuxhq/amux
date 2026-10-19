@@ -107,6 +107,15 @@ pub fn redact_text(text: &str) -> String {
     Scrubber::default().twice(|s| s.text(text))
 }
 
+/// Redacts an encoded protocol message of the named type (`amux.v1.Item`)
+/// that belongs to no one kind, such as one the daemon's core was fed:
+/// walked by descriptor as every target is, with per-kind bodies, which no
+/// kind is there to decode, emptied.
+pub fn redact_message(name: &str, bytes: &[u8]) -> Vec<u8> {
+    let name = format!(".{name}");
+    Scrubber::default().twice(|s| s.message(&name, bytes))
+}
+
 /// The per-kind redactor: `Item` and `Snapshot` bodies of this kind, the
 /// input body a person's input carries for it, and the state its checkpoint
 /// holds.

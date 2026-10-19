@@ -1665,10 +1665,31 @@ async fn every_input_is_recorded_and_the_ring_starts_again_at_each_checkpoint() 
     let nudge = daemon_core::Input::Nudge {
         agent: daemon_core::AgentId(*agent.id.as_bytes()),
     };
+    // The ring's checkpoint and the inputs since; each nudge's line is
+    // followed by what its ingest read.
     let saved = || {
-        core_ring::saved::<daemon_core::Input>(&ring)
+        let saved = core_ring::saved::<daemon_core::Recorded>(&ring)
             .unwrap()
-            .unwrap()
+            .unwrap();
+        let mut inputs = Vec::new();
+        let mut lines = saved.inputs.iter().peekable();
+        while let Some(line) = lines.next() {
+            let daemon_core::Recorded::Input(input) = line else {
+                continue;
+            };
+            if **input == nudge {
+                assert!(
+                    matches!(lines.peek(), Some(daemon_core::Recorded::Read { .. })),
+                    "a nudge's read follows it: {:?}",
+                    saved.inputs
+                );
+            }
+            inputs.push((**input).clone());
+        }
+        core_ring::Saved {
+            checkpoint: saved.checkpoint,
+            inputs,
+        }
     };
 
     let nudges = |inputs: &[daemon_core::Input]| inputs.iter().filter(|i| **i == nudge).count();

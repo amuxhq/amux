@@ -161,7 +161,7 @@ pub enum Input {
     },
     /// This host's own entry as the driver describes it now: its name,
     /// sign-in, version, capabilities, platform and providers.
-    OwnHost(#[serde(with = "codec::message")] Box<wire::HostEntry>),
+    OwnHost(#[serde(with = "codec::boxed")] Box<wire::HostEntry>),
     /// Every machine discovery holds in this profile's scope now, newest
     /// first.
     Candidates {
@@ -234,6 +234,7 @@ pub enum Input {
     Configure(Settings),
     /// The drafts file as the driver read it at start.
     Drafts {
+        #[serde(with = "codec::drafts::list")]
         drafts: Vec<(Vec<u8>, Vec<u8>)>,
     },
     /// What the profile's shell changed outside a step, for the core's
@@ -541,6 +542,54 @@ pub struct Ingested {
     /// The agent's kind, as the wire numbers it.
     pub kind: i32,
     pub end: IngestEnd,
+    /// How far the step found the agent's journal, as a global offset:
+    /// the journal cut here reads as the step read it.
+    pub seen: u64,
+}
+
+/// One line of a driver's record of what its core was fed: an input, or
+/// what the step of the input before it found of the world it reads
+/// inline. Ingest reads an agent's journal and commits to the drive inside
+/// the step, so replaying a step needs each journal as far as that step
+/// found it, and whether the drive refused its commit; one step may read
+/// several agents' journals, each its own line.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Recorded {
+    /// An input, written before the core stepped it.
+    Input(Box<Input>),
+    /// The step of the input recorded before this line read the agent's
+    /// journal up to `seen`, and committed nothing when it `failed`, in its
+    /// own words.
+    Read {
+        agent: AgentId,
+        seen: u64,
+        failed: Option<String>,
+    },
+}
+
+impl Recorded {
+    /// The line [`Recorded::Input`] writes, for an input held borrowed.
+    pub fn input(input: &Input) -> impl Serialize + '_ {
+        struct Line<'a>(&'a Input);
+        impl Serialize for Line<'_> {
+            fn serialize<S: serde::Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+                to.serialize_newtype_variant("Recorded", 0, "Input", self.0)
+            }
+        }
+        Line(input)
+    }
+
+    /// What an ingest step's report says of the world it read.
+    pub fn read(agent: AgentId, report: &Ingested) -> Recorded {
+        Recorded::Read {
+            agent,
+            seen: report.seen,
+            failed: match &report.end {
+                IngestEnd::Failed(why) => Some(why.clone()),
+                IngestEnd::More | IngestEnd::Read => None,
+            },
+        }
+    }
 }
 
 /// Where an ingest step left the journal.

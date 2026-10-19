@@ -81,11 +81,17 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
 
     let ring = laptop.profile_dir().join(node::CORE_RING);
     let inputs = || {
-        core_ring::saved::<Input>(&ring)
+        core_ring::saved::<daemon_core::Recorded>(&ring)
             .ok()
             .flatten()
             .map(|saved| saved.inputs)
             .unwrap_or_default()
+            .into_iter()
+            .filter_map(|line| match line {
+                daemon_core::Recorded::Input(input) => Some(*input),
+                daemon_core::Recorded::Read { .. } => None,
+            })
+            .collect::<Vec<_>>()
     };
     until("the laptop's core to hear a channel to the desk opened", || {
         let inputs = inputs();

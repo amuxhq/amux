@@ -6,10 +6,12 @@
 //! stages; an interpreter bug from the first, compared with the journal the
 //! bundle also carries.
 //!
-//! The layout is the daemon's (see `node::dump`): `manifest.json`, and per
+//! The layout is the daemon's (see `node::dump`): `manifest.json`, per
 //! agent `agents/<id>/row.pb`, `store.pb`, `journal/<segment>` and the
 //! agent's own part under `part/`, with `facts/<segment>` and
-//! `facts/<segment>.checkpoint`.
+//! `facts/<segment>.checkpoint`; and the daemon core's part under `core/`:
+//! its `checkpoint`, the `inputs` since and the `store.sqlite` as of that
+//! checkpoint.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -23,6 +25,12 @@ use interpret::ring::Entry;
 use ui_state::{Msg, SessionState};
 use ui_view::{ChatOptions, Row};
 use wire::{Agent, CaughtUp, Item, Kind, SessionEvent, Step, session_event};
+
+/// The core's part of a bundle, and its files.
+pub const CORE: &str = "core";
+pub const CORE_CHECKPOINT: &str = "checkpoint";
+pub const CORE_INPUTS: &str = "inputs";
+pub const CORE_STORE: &str = "store.sqlite";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BundleError {
@@ -70,10 +78,23 @@ pub struct AgentDump {
     pub facts: Vec<FactsSegment>,
 }
 
+/// The daemon core's part of a bundle: its newest checkpoint, every line
+/// its driver recorded since (each input, and how far each ingest read a
+/// journal), and the store as of that checkpoint.
+#[derive(Clone, Debug)]
+pub struct CoreDump {
+    pub checkpoint: Vec<u8>,
+    pub inputs: Vec<daemon_core::Recorded>,
+    pub store: PathBuf,
+}
+
 #[derive(Clone, Debug)]
 pub struct Bundle {
     pub dir: PathBuf,
     pub agents: Vec<AgentDump>,
+    /// None for a bundle taken without the core's part: from a peer, or
+    /// when the core could not be had, as its manifest says.
+    pub core: Option<CoreDump>,
 }
 
 pub(crate) fn read(path: &Path) -> Result<Vec<u8>, BundleError> {
@@ -186,9 +207,20 @@ impl Bundle {
                 id,
             });
         }
+        let core_dir = dir.join(CORE);
+        let core = if core_dir.join(CORE_CHECKPOINT).is_file() {
+            Some(CoreDump {
+                checkpoint: read(&core_dir.join(CORE_CHECKPOINT))?,
+                inputs: core_ring::inputs(&read(&core_dir.join(CORE_INPUTS))?),
+                store: core_dir.join(CORE_STORE),
+            })
+        } else {
+            None
+        };
         Ok(Bundle {
             dir: dir.to_owned(),
             agents,
+            core,
         })
     }
 }

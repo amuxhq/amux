@@ -21,7 +21,10 @@ use interpret::codex::Codex;
 use serde_json::Value;
 use wire::{Agent, AgentSpec, Item, Kind, Step};
 
-use crate::bundle::{AgentDump, Bundle, BundleError, decode, read, segments};
+use crate::bundle::{
+    AgentDump, Bundle, BundleError, CORE, CORE_CHECKPOINT, CORE_INPUTS, CORE_STORE, CoreDump,
+    decode, read, segments,
+};
 
 /// The largest file of no known shape printed whole; anything larger is
 /// named with its path for the reader to open.
@@ -85,6 +88,9 @@ pub fn show(dir: &Path, agent: Option<&str>) -> Result<String, ShowError> {
             .as_array()
             .and_then(|agents| agents.iter().find(|entry| entry["agent_id"] == *dump.id));
         agent_section(&mut out, &mut shown, dir, dump, entry)?;
+    }
+    if let Some(core) = &bundle.core {
+        core_section(&mut out, &mut shown, dir, core, &manifest["core"])?;
     }
 
     // What no section above showed, so nothing in the bundle is invisible:
@@ -179,6 +185,94 @@ fn summary(out: &mut String, manifest: &Value) {
         "agents {}",
         manifest["agents"].as_array().map_or(0, Vec::len)
     );
+}
+
+/// The daemon core's part: its checkpoint, every recorded line as written,
+/// and each agent row of the store as of the checkpoint, with how far its
+/// journal was committed.
+fn core_section(
+    out: &mut String,
+    shown: &mut BTreeSet<PathBuf>,
+    dir: &Path,
+    core: &CoreDump,
+    entry: &Value,
+) -> Result<(), BundleError> {
+    let at = dir.join(CORE);
+    let _ = writeln!(out, "\n== daemon core ==");
+    if !entry.is_null() {
+        let _ = writeln!(out, "manifest {entry}");
+    }
+    let _ = match daemon_core::Checkpoint::from_bytes(&core.checkpoint) {
+        Ok(checkpoint) => writeln!(
+            out,
+            "-- checkpoint (schema {}, {} bytes of state) --",
+            checkpoint.schema,
+            checkpoint.state.len()
+        ),
+        Err(error) => writeln!(out, "-- checkpoint ({error}) --"),
+    };
+    shown.insert(at.join(CORE_CHECKPOINT));
+
+    // The lines as written, as the facts are: what this build cannot read
+    // is still shown.
+    let text = String::from_utf8_lossy(&read(&at.join(CORE_INPUTS))?).into_owned();
+    let lines: Vec<&str> = text.lines().filter(|line| !line.is_empty()).collect();
+    let reads = core
+        .inputs
+        .iter()
+        .filter(|line| matches!(line, daemon_core::Recorded::Read { .. }))
+        .count();
+    let _ = writeln!(
+        out,
+        "-- inputs ({} inputs, {reads} journal reads) --",
+        core.inputs.len() - reads
+    );
+    for line in &lines {
+        let _ = writeln!(out, "{line}");
+    }
+    if lines.len() > core.inputs.len() {
+        let _ = writeln!(
+            out,
+            "this build reads the first {} lines only",
+            core.inputs.len()
+        );
+    }
+    shown.insert(at.join(CORE_INPUTS));
+
+    let _ = writeln!(out, "-- store as of the checkpoint --");
+    match core_store_rows(&core.store) {
+        Ok(rows) => {
+            for row in rows {
+                let _ = writeln!(
+                    out,
+                    "agent {} {} host {} lifecycle {} ingest_cursor={} next_revision={} \
+                     source_cursor={}",
+                    id(&row.agent.agent),
+                    Value::String(row.name.clone()),
+                    id(&row.agent.host),
+                    row.lifecycle,
+                    row.ingest_cursor,
+                    row.next_revision,
+                    row.source_cursor
+                );
+            }
+        }
+        Err(error) => {
+            let _ = writeln!(out, "not read: {error}");
+        }
+    }
+    shown.insert(at.join(CORE_STORE));
+    Ok(())
+}
+
+/// The agent rows of a store file, read from a copy so the bundle is left
+/// as it was.
+fn core_store_rows(path: &Path) -> Result<Vec<store::AgentRow>, String> {
+    let scratch = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let copy = scratch.path().join(CORE_STORE);
+    std::fs::copy(path, &copy).map_err(|error| error.to_string())?;
+    let store = store::Sqlite::open(&copy, Vec::new()).map_err(|error| error.to_string())?;
+    store.agents().map_err(|error| error.to_string())
 }
 
 fn agent_section(

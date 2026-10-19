@@ -1,12 +1,16 @@
 //! How an input's protocol messages are written where inputs are recorded:
 //! as their protobuf encoding, in hex, so a recorded input is one line of
-//! text and reads back as the same message.
+//! text and reads back as the same message. Each hex string is marked as
+//! what it is on its way out, so a dump's redaction redacts a message as
+//! that message and leaves an id alone.
 
 use std::sync::Arc;
 
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use store::AgentKey;
+
+use crate::redact::{Opaque, write_opaque};
 
 fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -35,8 +39,35 @@ fn unhex<E: serde::de::Error>(text: &str) -> Result<Vec<u8>, E> {
         .collect()
 }
 
-fn encode<T: prost::Message>(message: &T) -> String {
-    hex(&message.encode_to_vec())
+/// A message as its marked hex.
+struct Encoded<'a, T>(&'a T);
+
+impl<T: prost::Message + prost::Name> Serialize for Encoded<'_, T> {
+    fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+        write_opaque(
+            Opaque::Message(T::PACKAGE, T::NAME),
+            &hex(&self.0.encode_to_vec()),
+            to,
+        )
+    }
+}
+
+/// An already encoded message of type `T`, as its marked hex.
+struct EncodedAs<'a, T>(&'a [u8], std::marker::PhantomData<T>);
+
+impl<T: prost::Name> Serialize for EncodedAs<'_, T> {
+    fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+        write_opaque(Opaque::Message(T::PACKAGE, T::NAME), &hex(self.0), to)
+    }
+}
+
+/// An id's hex, marked to be kept as it is.
+struct Id(String);
+
+impl Serialize for Id {
+    fn serialize<S: Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
+        write_opaque(Opaque::Verbatim, &self.0, to)
+    }
 }
 
 fn decode<'de, T: prost::Message + Default, D: Deserializer<'de>>(
@@ -49,11 +80,11 @@ fn decode<'de, T: prost::Message + Default, D: Deserializer<'de>>(
 pub(crate) mod message {
     use super::*;
 
-    pub(crate) fn serialize<T: prost::Message, S: Serializer>(
+    pub(crate) fn serialize<T: prost::Message + prost::Name, S: Serializer>(
         message: &T,
         to: S,
     ) -> Result<S::Ok, S::Error> {
-        encode(message).serialize(to)
+        Encoded(message).serialize(to)
     }
 
     pub(crate) fn deserialize<'de, T: prost::Message + Default, D: Deserializer<'de>>(
@@ -63,15 +94,54 @@ pub(crate) mod message {
     }
 }
 
+/// One message, boxed.
+pub(crate) mod boxed {
+    use super::*;
+
+    #[expect(clippy::borrowed_box, reason = "serde hands the field over as it is")]
+    pub(crate) fn serialize<T: prost::Message + prost::Name, S: Serializer>(
+        message: &Box<T>,
+        to: S,
+    ) -> Result<S::Ok, S::Error> {
+        Encoded(message.as_ref()).serialize(to)
+    }
+
+    pub(crate) fn deserialize<'de, T: prost::Message + Default, D: Deserializer<'de>>(
+        from: D,
+    ) -> Result<Box<T>, D::Error> {
+        decode::<T, D>(&String::deserialize(from)?).map(Box::new)
+    }
+}
+
+/// A boxed message, or none.
+pub(crate) mod optional_boxed {
+    use super::*;
+
+    pub(crate) fn serialize<T: prost::Message + prost::Name, S: Serializer>(
+        message: &Option<Box<T>>,
+        to: S,
+    ) -> Result<S::Ok, S::Error> {
+        message.as_deref().map(Encoded).serialize(to)
+    }
+
+    pub(crate) fn deserialize<'de, T: prost::Message + Default, D: Deserializer<'de>>(
+        from: D,
+    ) -> Result<Option<Box<T>>, D::Error> {
+        Option::<String>::deserialize(from)?
+            .map(|text| decode::<T, D>(&text).map(Box::new))
+            .transpose()
+    }
+}
+
 /// One message shared between the subscribers it goes to.
 pub(crate) mod shared {
     use super::*;
 
-    pub(crate) fn serialize<T: prost::Message, S: Serializer>(
+    pub(crate) fn serialize<T: prost::Message + prost::Name, S: Serializer>(
         message: &Arc<T>,
         to: S,
     ) -> Result<S::Ok, S::Error> {
-        encode(message.as_ref()).serialize(to)
+        Encoded(message.as_ref()).serialize(to)
     }
 
     pub(crate) fn deserialize<'de, T: prost::Message + Default, D: Deserializer<'de>>(
@@ -85,11 +155,11 @@ pub(crate) mod shared {
 pub(crate) mod optional {
     use super::*;
 
-    pub(crate) fn serialize<T: prost::Message, S: Serializer>(
+    pub(crate) fn serialize<T: prost::Message + prost::Name, S: Serializer>(
         message: &Option<T>,
         to: S,
     ) -> Result<S::Ok, S::Error> {
-        message.as_ref().map(encode).serialize(to)
+        message.as_ref().map(Encoded).serialize(to)
     }
 
     pub(crate) fn deserialize<'de, T: prost::Message + Default, D: Deserializer<'de>>(
@@ -105,11 +175,11 @@ pub(crate) mod optional {
 pub(crate) mod messages {
     use super::*;
 
-    pub(crate) fn serialize<T: prost::Message, S: Serializer>(
+    pub(crate) fn serialize<T: prost::Message + prost::Name, S: Serializer>(
         messages: &[T],
         to: S,
     ) -> Result<S::Ok, S::Error> {
-        to.collect_seq(messages.iter().map(encode))
+        to.collect_seq(messages.iter().map(Encoded))
     }
 
     pub(crate) fn deserialize<'de, T: prost::Message + Default, D: Deserializer<'de>>(
@@ -146,7 +216,7 @@ pub(crate) mod agent_key {
     use super::*;
 
     pub(crate) fn serialize<S: Serializer>(key: &AgentKey, to: S) -> Result<S::Ok, S::Error> {
-        (hex(&key.host), hex(&key.agent)).serialize(to)
+        (Id(hex(&key.host)), Id(hex(&key.agent))).serialize(to)
     }
 
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<AgentKey, D::Error> {
@@ -174,7 +244,10 @@ pub(crate) mod last_used {
             .map(|(key, at)| (hex(&key.host), hex(&key.agent), *at))
             .collect();
         rows.sort();
-        rows.serialize(to)
+        to.collect_seq(
+            rows.into_iter()
+                .map(|(host, agent, at)| (Id(host), Id(agent), at)),
+        )
     }
 
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
@@ -189,5 +262,65 @@ pub(crate) mod last_used {
                 ))
             })
             .collect()
+    }
+}
+
+/// Each agent's composer draft, encoded, by agent id: written as the id's
+/// hex and the draft's, so a dump redacts the draft as the message it is.
+pub(crate) mod drafts {
+    use std::collections::BTreeMap;
+    use std::marker::PhantomData;
+
+    use super::*;
+
+    type Line = (String, String);
+
+    fn line<'a>(
+        (agent, draft): (&'a Vec<u8>, &'a Vec<u8>),
+    ) -> (Id, EncodedAs<'a, wire::ComposerDraft>) {
+        (Id(hex(agent)), EncodedAs(draft, PhantomData))
+    }
+
+    fn read<'de, D: Deserializer<'de>>(from: D) -> Result<crate::drafts::DraftList, D::Error> {
+        Vec::<Line>::deserialize(from)?
+            .iter()
+            .map(|(agent, draft)| Ok((unhex::<D::Error>(agent)?, unhex::<D::Error>(draft)?)))
+            .collect()
+    }
+
+    /// The core's map of drafts.
+    pub(crate) mod map {
+        use super::*;
+
+        pub(crate) fn serialize<S: Serializer>(
+            drafts: &BTreeMap<Vec<u8>, Vec<u8>>,
+            to: S,
+        ) -> Result<S::Ok, S::Error> {
+            to.collect_seq(drafts.iter().map(line))
+        }
+
+        pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+            from: D,
+        ) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, D::Error> {
+            Ok(read(from)?.into_iter().collect())
+        }
+    }
+
+    /// The drafts as the file holds them, in its order.
+    pub(crate) mod list {
+        use super::*;
+
+        pub(crate) fn serialize<S: Serializer>(
+            drafts: &[(Vec<u8>, Vec<u8>)],
+            to: S,
+        ) -> Result<S::Ok, S::Error> {
+            to.collect_seq(drafts.iter().map(|(agent, draft)| line((agent, draft))))
+        }
+
+        pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+            from: D,
+        ) -> Result<crate::drafts::DraftList, D::Error> {
+            read(from)
+        }
     }
 }

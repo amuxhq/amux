@@ -27,6 +27,7 @@ pub type DraftList = Vec<(Vec<u8>, Vec<u8>)>;
 /// Each agent's draft, encoded, by agent id.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Drafts {
+    #[serde(with = "crate::codec::drafts::map")]
     by_agent: BTreeMap<Vec<u8>, Vec<u8>>,
     /// The write of the file under way.
     writing: Option<JobId>,

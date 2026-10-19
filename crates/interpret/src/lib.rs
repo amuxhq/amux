@@ -32,7 +32,7 @@ pub use golden::{
     check_invariants, claude_pty_input, claude_sdk_input, codex_input, fixture_script, render_item,
     render_steps, replay, run_golden, run_until,
 };
-pub use redact::{redact, redact_text};
+pub use redact::{redact, redact_message, redact_text};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 pub use serde_pb::{from_hex, to_hex};

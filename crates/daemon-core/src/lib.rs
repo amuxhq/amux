@@ -37,6 +37,7 @@ pub mod pairing;
 pub mod payload;
 mod peers;
 pub mod presence;
+pub mod redact;
 pub mod retention;
 pub mod serve;
 pub mod sources;
@@ -51,13 +52,14 @@ pub use fingerprint::Fingerprint;
 pub use ids::{AccountId, AgentId, CallId, ChannelId, HostId, JobId, LinkId, PairingId, TimerId};
 pub use ingest::Journals;
 pub use io::{
-    FromShell, IngestEnd, Ingested, Input, Job, Output, ParentSays, Settings, ShellWork,
+    FromShell, IngestEnd, Ingested, Input, Job, Output, ParentSays, Recorded, Settings, ShellWork,
     SourcePolicy,
 };
 pub use links::LinkRegistry;
 pub use notifications::Notifications;
 pub use pairing::PairingState;
 pub use presence::{HostView, Presence, PresenceState, Route, Tried};
+pub use redact::Redactor;
 pub use retention::{Retain, Retained};
 pub use serve::Answers;
 pub use sources::{Sources, Standing, from_wire};
@@ -500,12 +502,6 @@ impl Daemon {
     /// Rebuilds a core from a checkpoint and the store it was taken beside.
     /// A checkpoint under another schema is refused, never half applied.
     pub fn restore(checkpoint: Checkpoint, store: Sqlite) -> Result<Daemon, RestoreError> {
-        if checkpoint.schema != CHECKPOINT_SCHEMA {
-            return Err(RestoreError::Schema {
-                found: checkpoint.schema,
-                expected: CHECKPOINT_SCHEMA,
-            });
-        }
         let (
             routing,
             presence,
@@ -523,8 +519,7 @@ impl Daemon {
             pending,
             settings,
             options,
-        ) = postcard::from_bytes(&checkpoint.state)
-            .map_err(|error| RestoreError::Corrupt(error.to_string()))?;
+        ) = checkpoint_parts(&checkpoint)?;
         Ok(Daemon {
             routing,
             presence,
@@ -792,6 +787,39 @@ impl Checkpoint {
     pub fn from_bytes(bytes: &[u8]) -> Result<Checkpoint, RestoreError> {
         postcard::from_bytes(bytes).map_err(|error| RestoreError::Corrupt(error.to_string()))
     }
+}
+
+/// The core's state as a checkpoint holds it, in the order
+/// [`Daemon::checkpoint`] writes it.
+type Parts = (
+    RoutingState,
+    PresenceState,
+    Sources,
+    FamilyState,
+    (PairingState, trust::Trust),
+    (Answers, host_set::HostSet),
+    Journals,
+    Checkpoints,
+    Notifications,
+    Blobs,
+    Drafts,
+    Deliveries,
+    Timers,
+    Pending,
+    Settings,
+    StartOptions,
+);
+
+/// A checkpoint's state read back; one under another schema is refused.
+fn checkpoint_parts(checkpoint: &Checkpoint) -> Result<Parts, RestoreError> {
+    if checkpoint.schema != CHECKPOINT_SCHEMA {
+        return Err(RestoreError::Schema {
+            found: checkpoint.schema,
+            expected: CHECKPOINT_SCHEMA,
+        });
+    }
+    postcard::from_bytes(&checkpoint.state)
+        .map_err(|error| RestoreError::Corrupt(error.to_string()))
 }
 
 /// Why a checkpoint could not be restored.

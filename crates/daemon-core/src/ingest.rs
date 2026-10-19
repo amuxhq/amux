@@ -78,11 +78,12 @@ impl Daemon {
     pub(crate) fn ingest(&mut self, agent: AgentId, out: &mut Vec<Output>) {
         let report = self
             .ingest_batch(agent, out)
-            .unwrap_or_else(|error| Ingested {
+            .unwrap_or_else(|(error, seen)| Ingested {
                 frames: 0,
                 turn_ends: 0,
                 kind: 0,
                 end: IngestEnd::Failed(error.to_string()),
+                seen,
             });
         if report.end == IngestEnd::More {
             self.journals.more.insert(agent);
@@ -107,9 +108,21 @@ impl Daemon {
         self.ingest(agent, out);
     }
 
+    /// One batch, and how far the journal was seen when it failed.
     fn ingest_batch(
         &mut self,
         agent: AgentId,
+        out: &mut Vec<Output>,
+    ) -> Result<Ingested, (IngestError, u64)> {
+        let mut seen = 0;
+        self.read_and_commit(agent, &mut seen, out)
+            .map_err(|error| (error, seen))
+    }
+
+    fn read_and_commit(
+        &mut self,
+        agent: AgentId,
+        seen: &mut u64,
         out: &mut Vec<Output>,
     ) -> Result<Ingested, IngestError> {
         let key = AgentKey::new(self.store.own_host(), agent.0);
@@ -117,6 +130,7 @@ impl Daemon {
         let cursor = self.store.cursor(&key)?;
         let mut reader = journal::Reader::new(&dir, cursor);
         let mut batch = reader.read_up_to(INGEST_BATCH)?;
+        *seen = batch.seen;
         if batch.frames.is_empty() {
             // Nothing past the cursor may mean the cursor is past the
             // journal: the store reached the drive after committing frames
@@ -136,6 +150,7 @@ impl Daemon {
                 self.rewound(agent, end);
                 reader.seek(end);
                 batch = reader.read_up_to(INGEST_BATCH)?;
+                *seen = (*seen).max(end).max(batch.seen);
             }
         }
         // A torn frame in the newest segment is a write still under way:
@@ -151,6 +166,7 @@ impl Daemon {
             } else {
                 IngestEnd::Read
             },
+            seen: *seen,
         };
         if !batch.frames.is_empty() {
             let clock = CommitClock {
@@ -363,6 +379,8 @@ mod tests {
             id: TimerId::Ingest(AGENT),
             at_ms: 0,
         }));
+        // The batch stops at its limit, but the read saw the whole journal.
+        let end = journal::end(&rig.daemon.journal_dir(AGENT)).unwrap();
         assert!(first.contains(&Output::Ingested {
             agent: AGENT,
             report: Ingested {
@@ -370,6 +388,7 @@ mod tests {
                 turn_ends: 0,
                 kind: 0,
                 end: IngestEnd::More,
+                seen: end,
             },
         }));
 

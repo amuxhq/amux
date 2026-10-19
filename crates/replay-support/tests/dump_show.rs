@@ -5,8 +5,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use daemon_core::{Daemon, Input, Recorded, StartOptions};
 use replay_support::bundle::Bundle;
 use replay_support::show::{self, ShowError};
+use store::{AgentKey, AgentRow, Sqlite};
 
 const AGENT: &str = "d6832ca2-2f0a-4307-9cf6-5a0e13e937cc";
 
@@ -114,6 +116,76 @@ fn the_rest_of_a_bundle_prints_and_an_unreadable_fact_hides_nothing() {
         "{\"event\":\"tick\",\"at_ms\":1791271650055}\n{\"event\":\"unreadable\"}\n\
          {\"event\":\"tick\",\"at_ms\":1791271650067}\n",
         "{\"event\":\"tick\",\"at_ms\":1791271653120}\n{\"event\":\"git\"}\n",
+    ] {
+        assert!(text.contains(expected), "missing {expected:?} in\n{text}");
+    }
+}
+
+/// The daemon core's part: a checkpoint, the lines its driver recorded
+/// since and the store as of the checkpoint, each printed, and each counted
+/// as shown.
+#[test]
+fn the_daemon_cores_part_prints_its_checkpoint_inputs_and_store() {
+    let dir = tempfile::tempdir().unwrap();
+    copy(&fixture(), dir.path());
+    let core = dir.path().join("core");
+    std::fs::create_dir_all(&core).unwrap();
+
+    let own = [0x11; 16].to_vec();
+    let agent = AgentKey::new(own.clone(), [0x22; 16].to_vec());
+    let path = core.join("store.sqlite");
+    let mut store = Sqlite::open(&path, own).unwrap();
+    let mut row = AgentRow::new(agent.clone(), wire::Kind::ClaudeSdk, "/src/amux");
+    row.name = "worker".into();
+    store.put_agent(&row).unwrap();
+    let step = wire::Step {
+        items: vec![wire::Item {
+            key: "k".into(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let clock = store::CommitClock {
+        now_ms: 0,
+        notify_delay_ms: 0,
+    };
+    store.commit(&agent, &[(57, step)], clock).unwrap();
+    let daemon = Daemon::new(store, StartOptions::default());
+    std::fs::write(core.join("checkpoint"), daemon.checkpoint().to_bytes()).unwrap();
+    drop(daemon);
+
+    let id = daemon_core::AgentId([0x22; 16]);
+    let lines = [
+        Recorded::Input(Box::new(Input::Nudge { agent: id })),
+        Recorded::Read {
+            agent: id,
+            seen: 57,
+            failed: None,
+        },
+    ];
+    let mut written = String::new();
+    for line in &lines {
+        written.push_str(&serde_json::to_string(line).unwrap());
+        written.push('\n');
+    }
+    std::fs::write(core.join("inputs"), &written).unwrap();
+
+    let bundle = Bundle::open(dir.path()).expect("the bundle opens");
+    let read = bundle
+        .core
+        .as_ref()
+        .expect("the bundle has the core's part");
+    assert_eq!(read.inputs, lines);
+
+    let text = show::show(dir.path(), None).expect("the bundle prints");
+    for expected in [
+        "\n== daemon core ==\n-- checkpoint (schema 1, ",
+        "-- inputs (1 inputs, 1 journal reads) --\n",
+        &written,
+        "-- store as of the checkpoint --\nagent 22222222-2222-2222-2222-222222222222 \
+         \"worker\" host 11111111-1111-1111-1111-111111111111 lifecycle 1 ingest_cursor=57 ",
+        "== other files (0) ==\n",
     ] {
         assert!(text.contains(expected), "missing {expected:?} in\n{text}");
     }

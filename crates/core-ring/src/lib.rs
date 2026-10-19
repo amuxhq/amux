@@ -87,6 +87,12 @@ impl<T: Serialize + DeserializeOwned> Ring<T> {
     /// Appends one input. A failed write leaves the ring as it was, since a
     /// torn line would hide every input written after it from a resume.
     pub fn append(&mut self, input: &T) -> io::Result<()> {
+        self.append_as(input)
+    }
+
+    /// Appends one line that reads back as a `T`, for a writer that holds
+    /// what it records borrowed. Fails as [`Ring::append`] does.
+    pub fn append_as<U: Serialize + ?Sized>(&mut self, input: &U) -> io::Result<()> {
         let mut line = serde_json::to_vec(input).map_err(io::Error::other)?;
         line.push(b'\n');
         if let Err(error) = self.segment.1.write_all(&line) {
@@ -129,6 +135,15 @@ impl<T: Serialize + DeserializeOwned> Ring<T> {
 /// ring holds none. A torn last line, from a process that died mid-write, is
 /// cut.
 pub fn saved<T: DeserializeOwned>(dir: &Path) -> io::Result<Option<Saved<T>>> {
+    Ok(newest(dir)?.map(|(checkpoint, segment)| Saved {
+        checkpoint,
+        inputs: inputs(&segment),
+    }))
+}
+
+/// The newest checkpoint in `dir` and its segment's bytes as written,
+/// unread; None when the ring holds none.
+pub fn newest(dir: &Path) -> io::Result<Option<(Vec<u8>, Vec<u8>)>> {
     for start in journal::segments(dir)?.into_iter().rev() {
         let checkpoint = match fs::read(checkpoint_path(dir, start)) {
             Ok(checkpoint) => checkpoint,
@@ -136,10 +151,7 @@ pub fn saved<T: DeserializeOwned>(dir: &Path) -> io::Result<Option<Saved<T>>> {
             Err(error) => return Err(error),
         };
         let bytes = fs::read(journal::segment_path(dir, start))?;
-        return Ok(Some(Saved {
-            checkpoint,
-            inputs: inputs(&bytes),
-        }));
+        return Ok(Some((checkpoint, bytes)));
     }
     Ok(None)
 }

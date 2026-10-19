@@ -130,22 +130,30 @@ reports/dump-<unix ms>-<id>/
     row.pb                      the inventory row (a wire.Agent)
     store.pb                    the store slice: one wire.Step holding the snapshot and the newest
                                 1,000 rows, oldest first, with their orders and revisions
-    journal/<segment>           the last two journal segments, whole frames only (own agents)
+    journal/<segment>           the journal from the segment holding the core's checkpoint's cursor
+                                on, at least the last two segments (own agents)
     part/facts/<segment>        the agent process's facts ring, redacted line by line
     part/facts/<segment>.checkpoint
     part/spec.<n>               the spec of each incarnation
     part/dump-errors            anything the agent process could not read
     host/row.pb, host/store.pb  for another host's agent: that host's row and slice
   hosts/<host id>/manifest.json that host's own manifest
+  core/checkpoint               the daemon core's newest checkpoint
+  core/inputs                   every input the core stepped since, and how far each ingest read
+                                an agent's journal, one JSON line each
+  core/store.sqlite             the profile's store as of that checkpoint
   client/fleet/state.txt        a client's part, when the client adds one:
   client/fleet/trace.txt        the structure of its state and its driver trace,
   client/sessions/<agent>/…     with no names, paths or message text
 ```
 
-Each agent's manifest entry names its kind, whether it is this host's own, its lifecycle and incarnation, how
-many rows the slice holds, and the files its process sent. An agent with no running process has only its specs in
-`part/`, and its entry in `errors` says its facts ring was not gathered. Protobuf files are encoded without a
-length prefix; journal segments keep the journal's own framing. The facts lines are plain JSON and the checkpoints
+Each agent's manifest entry names its kind, whether it is this host's own, its lifecycle and incarnation, how many
+rows the slice holds, and the files its process sent. The manifest's `core` entry counts the core's inputs and
+journal reads; when the core's part could not be had, it is null and `errors` says why. An agent with no running
+process has only its specs in `part/`, and its entry in `errors` says its facts ring was not gathered. Protobuf
+files are encoded without a length prefix; journal segments keep the journal's own framing, and every frame keeps
+its length, so an offset in the store or in `core/inputs` names the same frame in the bundle. A frame still being
+written when the dump was taken keeps only its length prefix. The facts lines are plain JSON and the checkpoints
 are JSON, so both can be read directly.
 
 The client parts come from the app runtime, which adds the fleet's and every open chat's part to the bundle the
@@ -157,7 +165,11 @@ Everything in a dump is redacted before it is written, and before it leaves the 
 interpreter can decode its kind's item and snapshot bodies, so the redactor is per kind, in `crates/interpret`:
 the agent process applies it to its facts ring, checkpoints and specs when the dump asks, and the daemon applies it
 to every row, store slice and journal frame it writes (the one place the daemon uses per-kind code). Free text
-such as the daemon's log goes through the shared rules in `crates/redaction`.
+such as the daemon's log goes through the shared rules in `crates/redaction`. The core's part is redacted as the
+core's own values, so it still restores and replays: each protocol message in its checkpoint and inputs is walked
+as that message (an agent's opaque bodies inside them, which no kind is there to decode, are emptied), every other
+text goes through the shared rules, and ids and numbers are kept; its store copy has each row and item redacted by
+its agent's kind and is rebuilt, so nothing the redactor replaced stays in a free page.
 
 The redactor keeps structure and removes secrets: values under secret-named keys, environment values, tokens with
 known credential prefixes, secret assignments in text, machine paths, email addresses, the local user and host
@@ -177,6 +189,11 @@ for agent in &bundle.agents {
     let rows = AgentDump::rows(&state);        // that state through the chat view
 }
 ```
+
+`bundle.core`, when the bundle carries the core's part, holds the core's checkpoint, every recorded line since
+(`daemon_core::Recorded`: an input, or how far the ingest of the input before it read an agent's journal) and the
+path of the store copy. A replay of the core restores the checkpoint over a copy of that store and steps each
+input with each journal it reads cut to where the live step found it.
 
 `final_texts(steps)` reduces a sequence of steps to each item key's final text, which is how two sequences are
 compared when their revisions differ. The simplest way to work on a bundle is a scratch test beside

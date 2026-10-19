@@ -106,6 +106,54 @@ pub fn encode_frame(step: &Step) -> Vec<u8> {
     step.encode_length_delimited_to_vec()
 }
 
+/// Encodes one frame of exactly `len` bytes, so a step written over
+/// another keeps every later frame at its offset: the length prefix is
+/// written wider than it needs to be, and an unknown field no reader keeps
+/// pads the step. None when the step does not fit.
+pub fn encode_frame_exact(step: &Step, len: usize) -> Option<Vec<u8>> {
+    /// A field number the step does not use, so a reader skips it.
+    const PADDING_FIELD: u64 = 2047;
+    let body = step.encode_to_vec();
+    let room = len.checked_sub(body.len())?;
+    // The prefix may take from one to ten bytes; whatever it leaves is the
+    // padding field, which needs its key, its length and its bytes.
+    for prefix in 1..=10usize.min(room) {
+        let mut padding = Vec::new();
+        let pad = room - prefix;
+        if pad > 0 {
+            let key = (PADDING_FIELD << 3) | 2;
+            let key_len = prost::encoding::encoded_len_varint(key);
+            let Some(rest) = pad.checked_sub(key_len) else {
+                continue;
+            };
+            // The padding's length prefix and its bytes share what is left.
+            let Some(filler) = (0..=rest).rev().find(|filler| {
+                prost::encoding::encoded_len_varint(*filler as u64) + filler == rest
+            }) else {
+                continue;
+            };
+            prost::encoding::encode_varint(key, &mut padding);
+            prost::encoding::encode_varint(filler as u64, &mut padding);
+            padding.resize(padding.len() + filler, 0);
+        }
+        let length = (body.len() + padding.len()) as u64;
+        if prost::encoding::encoded_len_varint(length) > prefix {
+            continue;
+        }
+        let mut frame = Vec::with_capacity(len);
+        // A varint written wider than it needs: continuation bits on the
+        // leading bytes, zero groups after the value runs out.
+        for at in 0..prefix {
+            let group = ((length >> (7 * at)) & 0x7f) as u8;
+            frame.push(if at + 1 < prefix { group | 0x80 } else { group });
+        }
+        frame.extend_from_slice(&body);
+        frame.extend_from_slice(&padding);
+        return Some(frame);
+    }
+    None
+}
+
 /// What decoding the front of a buffer found.
 #[derive(Debug, PartialEq)]
 pub enum Frame {
@@ -300,6 +348,10 @@ pub struct Batch {
     pub torn: Option<Torn>,
     /// The read stopped at its frame limit with more whole frames after.
     pub more: bool,
+    /// The global offset just past the last byte the read found, whole
+    /// frame or not: the journal as this read saw it ends here, so a
+    /// journal cut at this offset reads the same again.
+    pub seen: u64,
 }
 
 /// Reads whole frames from a cursor onwards.
@@ -365,6 +417,7 @@ impl Reader {
             file.seek(SeekFrom::Start(self.cursor - start))?;
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes)?;
+            batch.seen = batch.seen.max(self.cursor + bytes.len() as u64);
             let mut at = 0;
             while let Frame::Whole(step, len) = decode_frame(&bytes[at..]) {
                 if batch.frames.len() == limit {

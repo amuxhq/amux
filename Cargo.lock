@@ -3840,6 +3840,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "core-ring",
+ "daemon-core",
  "interpret",
  "journal",
  "prost",
@@ -3848,6 +3849,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "store",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",

@@ -194,7 +194,7 @@ under `just test`.
 | Model | CI bounds | States | 12 threads | 4 threads | Four-core runner | Budget | Nightly bounds | Nightly, 12 threads |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Replication | 3 keys, cap 2, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 207,443 | 37 s | 66 s | 274 s | 600 s | revisions up to 5, 3 in flight | 333 s |
-| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 254,451 | 61 s | 96 s | 199 s | 420 s | 2 crashes, power losses or reboots | 252 s |
+| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag | 207,594 | 51 s | 68 s | not yet measured (199 s before the checkpoint's WAL job) | 600 s | 2 crashes, power losses or reboots, 1 refused commit | 527 s |
 | Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 391,552 | 39 s | 71 s | 161 s | 360 s | the child's spontaneous exit too, 2 links down, 2 waits | 740 s |
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 1,134,868 | 31 s | 68 s | not yet measured (134 s at 859,652 states) | 600 s | 4 up, 3 down, 3 failures | 431 s |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,275,996 and 71,250 | 8 s | 17 s | 44 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |

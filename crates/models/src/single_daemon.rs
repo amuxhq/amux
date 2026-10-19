@@ -80,7 +80,8 @@ pub struct SingleDaemon {
 impl SingleDaemon {
     /// The bounds `just test` explores exhaustively: enough frames that a
     /// checkpoint reclaims a segment past the ones kept for dumps, and one
-    /// crash, power loss or reboot.
+    /// crash, power loss or reboot. A refused commit is left to the nightly
+    /// bounds, which keeps the run inside its CI budget.
     pub const fn ci() -> Self {
         Self {
             frames: 4,
@@ -88,15 +89,16 @@ impl SingleDaemon {
             downs: 1,
             opens: 1,
             lags: 1,
-            refusals: 1,
+            refusals: 0,
         }
     }
 
     /// The larger bounds a nightly run explores: two crashes, power losses
-    /// or reboots, in any order.
+    /// or reboots, in any order, and a commit the drive refuses.
     pub const fn nightly() -> Self {
         Self {
             downs: 2,
+            refusals: 1,
             ..Self::ci()
         }
     }

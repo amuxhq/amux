@@ -4,7 +4,8 @@
 //! [`SimNet`] starts a [`Topology`] as the composed-net model's state,
 //! [`models::net::Net`]: every host's real daemon core over an in-memory
 //! store and every agent's real agent core over the test kind's
-//! interpreter, playing its script through a simulated provider, with the
+//! interpreter, playing its script through a simulated provider or writing
+//! a recorded headless Claude journal as its own, with the
 //! links, jobs, clock and processes between them in memory. A simulated
 //! net is that model walked by seed: each step makes the delivery the seed
 //! picks among those waiting, and the story's verbs are the model's other
@@ -355,7 +356,12 @@ impl SimNet {
             new_worktree: false,
             spec,
         };
-        sim.net.add_agent(agent, &decl.name, &steps);
+        match &decl.journal {
+            Some(name) => sim
+                .net
+                .add_agent_playing(agent, &decl.name, journal_fixture(name)?),
+            None => sim.net.add_agent(agent, &decl.name, &steps),
+        }
         let call = sim
             .net
             .client_call(h, ClientRequest::CreateAgent(Box::new(create)));
@@ -956,5 +962,48 @@ fn refuse_agent(agent: &AgentDecl) -> Result<(), NetError> {
             "script files, repositories and branches in a simulated net",
         ));
     }
+    if agent.journal.is_some() && agent.script.is_some() {
+        return Err(NetError::Unsupported(
+            "a script and a recorded journal for one agent",
+        ));
+    }
     Ok(())
+}
+
+/// The steps of the named journal fixture, from its initial snapshot on.
+/// Its agent is created as headless Claude, so the journal must be one.
+fn journal_fixture(name: &str) -> Result<Vec<wire::Step>, NetError> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/journals")
+        .join(format!("{name}.frames"));
+    let bytes = std::fs::read(&path)?;
+    let mut steps = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        match journal::decode_frame(&bytes[at..]) {
+            journal::Frame::Whole(step, length) => {
+                steps.push(*step);
+                at += length;
+            }
+            other => {
+                return Err(NetError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "{}: byte {at} is not a whole frame: {other:?}",
+                        path.display()
+                    ),
+                )));
+            }
+        }
+    }
+    let kind = steps
+        .first()
+        .and_then(|step| step.snapshot.as_ref())
+        .map(|snapshot| snapshot.kind);
+    if kind != Some(FakeKind::ClaudeSdk.wire() as i32) {
+        return Err(NetError::Unsupported(
+            "a recorded journal of another kind than headless Claude",
+        ));
+    }
+    Ok(steps)
 }

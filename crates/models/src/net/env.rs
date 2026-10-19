@@ -192,6 +192,14 @@ fn judge_step(
     None
 }
 
+/// Whether the process plays a recorded journal with steps still to write.
+fn plays_on(plan: &Plan, w: &World, p: usize) -> bool {
+    let agent = w.processes[p].agent;
+    plan.recorded
+        .get(&agent)
+        .is_some_and(|journal| w.played.get(&agent).copied().unwrap_or(0) < journal.len())
+}
+
 /// The incarnation end the journal's newest step records, if it records
 /// one: its cause and detail.
 fn last_end(journal: &Journal) -> Option<(i32, Option<String>)> {
@@ -234,12 +242,15 @@ impl fmt::Display for Failure {
 }
 
 /// What does not change as a net runs: who its hosts are, and its agents'
-/// names and scripts.
+/// names and scripts, or the recorded journals they play.
 #[derive(Clone, Debug, Default)]
 struct Plan {
     hosts: Vec<HostPlan>,
     names: BTreeMap<AgentId, String>,
     scripts: BTreeMap<AgentId, Vec<Step>>,
+    /// The steps of a recorded journal an agent's process writes as its
+    /// own, one at a time, in place of its core's.
+    recorded: BTreeMap<AgentId, Vec<wire::Step>>,
     /// Whether deliveries are written down as they are made.
     tracing: bool,
 }
@@ -434,6 +445,9 @@ struct World {
     /// agent, and when its patience runs out.
     unlocking: Vec<(usize, JobId, AgentId, u64)>,
     gates: BTreeSet<String>,
+    /// How many steps of its recorded journal each agent playing one has
+    /// written, in any of its processes.
+    played: BTreeMap<AgentId, usize>,
     failure: Option<Failure>,
 }
 
@@ -469,6 +483,7 @@ struct Canon<'a> {
     clients: &'a BTreeMap<(usize, CallId), ClientCall>,
     unlocking: Vec<(usize, JobId, AgentId, u64)>,
     gates: &'a BTreeSet<String>,
+    played: &'a BTreeMap<AgentId, usize>,
     failure: &'a Option<Failure>,
 }
 
@@ -615,6 +630,7 @@ impl World {
                 .map(|&(h, j, agent, until)| (h, job(h, j), agent, until))
                 .collect(),
             gates: &self.gates,
+            played: &self.played,
             failure: &self.failure,
         }
     }
@@ -698,6 +714,7 @@ impl Net {
                 running: BTreeMap::new(),
                 specs: BTreeMap::new(),
                 resumes: BTreeMap::new(),
+                played: BTreeMap::new(),
                 lanes: BTreeMap::new(),
                 outgoing: BTreeMap::new(),
                 served: BTreeMap::new(),
@@ -754,6 +771,18 @@ impl Net {
         let plan = Arc::make_mut(&mut self.plan);
         plan.names.insert(agent, name.to_owned());
         plan.scripts.insert(agent, flatten(script));
+    }
+
+    /// Names an agent whose process plays a recorded journal: on its
+    /// provider's lane it writes the journal's next step and nudges its
+    /// daemon, as a process whose provider said that much would, while its
+    /// core keeps the control protocol and writes nothing of its own. The
+    /// steps are the journal's from its initial snapshot on; its daemon
+    /// reads them as the agent's whatever its core has heard.
+    pub fn add_agent_playing(&mut self, agent: AgentId, name: &str, journal: Vec<wire::Step>) {
+        let plan = Arc::make_mut(&mut self.plan);
+        plan.names.insert(agent, name.to_owned());
+        plan.recorded.insert(agent, journal);
     }
 
     pub fn hosts(&self) -> usize {
@@ -957,7 +986,11 @@ impl Net {
     pub fn deliverable(&self) -> Vec<Lane> {
         let mut lanes: Vec<Lane> = self.w.lanes.keys().copied().collect();
         for (p, process) in self.w.processes.iter().enumerate() {
-            if process.running && process.provider.can_say(&self.w.gates) {
+            let says = match self.plan.recorded.contains_key(&process.agent) {
+                true => plays_on(&self.plan, &self.w, p),
+                false => process.provider.can_say(&self.w.gates),
+            };
+            if process.running && says {
                 lanes.push(Lane::Provider(p));
             }
         }
@@ -1193,6 +1226,11 @@ impl Transition<'_> {
     }
 
     fn deliver(&mut self, lane: Lane) -> bool {
+        if let Lane::Provider(p) = lane
+            && self.plan.recorded.contains_key(&self.w.processes[p].agent)
+        {
+            return self.play(p);
+        }
         if let Lane::Provider(p) = lane {
             let process = &mut self.w.processes[p];
             if !process.running {
@@ -1256,6 +1294,35 @@ impl Transition<'_> {
                     self.feed(h, Input::ControlClosed { agent, ended });
                 }
             }
+        }
+        true
+    }
+
+    /// A process playing a recorded journal writes its next step, and
+    /// nudges its daemon if it is connected, as its core does after a step
+    /// that wrote something.
+    fn play(&mut self, p: usize) -> bool {
+        if !self.w.processes[p].running || !plays_on(self.plan, self.w, p) {
+            return false;
+        }
+        let process = &self.w.processes[p];
+        let (h, agent_id, conn) = (process.host, process.agent, process.conn);
+        let played = self.w.played.entry(agent_id).or_default();
+        let step = &self.plan.recorded[&agent_id][*played];
+        *played += 1;
+        append(self.w.hosts[h].journals.entry(agent_id).or_default(), step);
+        if self.plan.tracing {
+            let line = format!("{} plays its journal", self.agent_name(p));
+            self.trace.push(line);
+        }
+        if let Some(connection) = conn {
+            let nudge = CtlFrame {
+                of: Some(ctl_frame::Of::Nudge(wire::Nudge::default())),
+            };
+            self.push(
+                Lane::FromAgent(p, connection),
+                Delivery::Frame(p, connection, Dbg(nudge)),
+            );
         }
         true
     }
@@ -2135,6 +2202,9 @@ impl Transition<'_> {
             match output {
                 // Nothing reads back the facts ring or the blobs.
                 Out::Record(_) | Out::WriteBlob { .. } => {}
+                // A process playing a recorded journal writes that instead.
+                Out::AppendJournal(_)
+                    if self.plan.recorded.contains_key(&self.w.processes[p].agent) => {}
                 Out::AppendJournal(step) => {
                     let process = &self.w.processes[p];
                     let journal = self.w.hosts[process.host]
@@ -2196,7 +2266,9 @@ impl Transition<'_> {
                     let process = &self.w.processes[p];
                     let journal = self.w.hosts[process.host].journals.get(&process.agent);
                     let end = journal.and_then(last_end);
-                    if !cause_on_last_step(&cause, end.as_ref()) {
+                    // A recorded journal is not the core's to end.
+                    let own = !self.plan.recorded.contains_key(&process.agent);
+                    if own && !cause_on_last_step(&cause, end.as_ref()) {
                         let what = format!(
                             "{} exited {cause:?}, its journal's newest step recording {end:?}",
                             self.agent_name(p)

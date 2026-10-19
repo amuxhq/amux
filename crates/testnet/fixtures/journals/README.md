@@ -20,6 +20,17 @@ script it came from, what it reaches and what its end leaves on purpose.
   open, a follow-up queued during a turn, a one-shot child's follow-up
   before its exit, a drained stop and a provider dying mid-turn.
 
+## Playing one
+
+A simulated net's agent declared with a journal (`AgentDecl::journal`, or
+`"journal": "<name>"` in a topology file) plays it as what its process
+writes: each delivery on its provider's lane appends the journal's next
+step and nudges its daemon, which ingests it as it would any agent's
+journal, while the agent's core keeps the control protocol and writes
+nothing of its own. Agents are created as headless Claude, so only a
+`claude_sdk` journal plays; a real net refuses the field. `sim_harness`
+plays `claude_sdk-multi_turn` and reads its items at the far host.
+
 ## They compare, never regenerate
 
 The files are fixed inputs: tests and simulated stories read them as they

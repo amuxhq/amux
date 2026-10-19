@@ -1,4 +1,5 @@
-//! The journal fixtures the simulated net's in-process agents play: every
+//! The journal fixtures the simulated net's in-process agents play (an
+//! agent declared with `AgentDecl::journal` writes one as its own): every
 //! file listed, every frame whole, every journal obeying the interpreter's
 //! invariants and reaching what its listing says it reaches.
 //!

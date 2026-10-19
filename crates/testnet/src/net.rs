@@ -943,6 +943,11 @@ impl Net {
         if self.agents.contains_key(&decl.name) {
             return Err(NetError::AgentExists(decl.name));
         }
+        if decl.journal.is_some() {
+            return Err(NetError::Unsupported(
+                "a recorded journal on a real net, whose agents' providers write their own",
+            ));
+        }
         let host = self.host(&decl.host)?.clone();
         let parent = match &decl.parent {
             Some(parent) => Some(self.agent(parent)?.parent()),

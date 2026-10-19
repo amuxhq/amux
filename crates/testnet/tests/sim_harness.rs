@@ -140,3 +140,68 @@ async fn a_lost_message_breaks_its_call_and_the_replica_still_catches_up() {
         assert!(lost.get() > 0, "the faults lost something under some seed");
     }
 }
+
+/// The steps of a journal fixture, as its file holds them.
+fn fixture(name: &str) -> Vec<wire::Step> {
+    let path = format!(
+        "{}/fixtures/journals/{name}.frames",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let bytes = std::fs::read(&path).unwrap();
+    let mut steps = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let journal::Frame::Whole(step, length) = journal::decode_frame(&bytes[at..]) else {
+            panic!("{path}: byte {at} is not a whole frame");
+        };
+        steps.push(*step);
+        at += length;
+    }
+    steps
+}
+
+#[tokio::test]
+async fn an_agent_playing_a_recorded_claude_journal_reaches_the_far_host_turn_by_turn() {
+    const JOURNAL: &str = "claude_sdk-multi_turn";
+    let steps = fixture(JOURNAL);
+    let turns = steps.iter().filter(|step| step.turn_end.is_some()).count();
+    let mut keys: Vec<String> = steps
+        .iter()
+        .flat_map(|step| step.items.iter().map(|item| item.key.clone()))
+        .collect();
+    keys.sort();
+    keys.dedup();
+    assert!(turns > 0 && !keys.is_empty(), "{JOURNAL} ends a turn");
+    println!(
+        "{JOURNAL}: {} steps, {turns} turns, items {keys:?}",
+        steps.len()
+    );
+    walk_seeds(|seed| {
+        let keys = keys.clone();
+        async move {
+            let topology = Topology::new()
+                .host("desk")
+                .host("laptop")
+                .link("desk", "laptop")
+                .agent(AgentDecl::new("player", "desk").journal(JOURNAL));
+            let net = SimNet::start(topology, seed).unwrap();
+            let last = net.turn_ended("player", turns).await.unwrap();
+            net.fence("laptop", "player", last).await.unwrap();
+            let key = net.agent("player").unwrap().key();
+            let mut held: Vec<String> = net
+                .read_store("laptop", move |store| store.rows(&key).unwrap())
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|item| item.key)
+                .collect();
+            held.sort();
+            assert_eq!(
+                held, keys,
+                "seed {seed}: the far host holds every item the journal wrote"
+            );
+            net.shutdown().await.unwrap();
+        }
+    })
+    .await;
+}

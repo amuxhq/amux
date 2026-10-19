@@ -705,14 +705,14 @@ cargo = [{ package = "testnet", targets = ["harness_stories"], features = [] }]
 
 [[suite]]
 name = "simulated-net-harness"
-contract = "The simulated net makes one schedule of one seed and another of another, replays a seed's schedule line for line, reports a failing seed that fails again the same way on demand and shrinks it to a shorter run by seed search and ring cut, moves time only when the story advances it, lets an agent outlive its daemon for exactly its grace, breaks a call whose message it loses and still brings the replica current, and fails a wait as soon as nothing is left to deliver, under every seed it walks."
+contract = "The simulated net makes one schedule of one seed and another of another, replays a seed's schedule line for line, reports a failing seed that fails again the same way on demand and shrinks it to a shorter run by seed search and ring cut, moves time only when the story advances it, lets an agent outlive its daemon for exactly its grace, breaks a call whose message it loses and still brings the replica current, carries a recorded Claude journal an agent plays turn by turn to the far host, and fails a wait as soon as nothing is left to deliver, under every seed it walks."
 paths = ["crates/testnet/src/sim", "crates/testnet/tests/sim_harness.rs", "crates/testnet/tests/sim_seeds.rs"]
 recipe = "just test -- --test sim_harness --test sim_seeds"
 modes = ["simulated"]
 boundary = "Many daemons"
 oracle = "The stories' observations and fences, the delivery trace of each seed, and the virtual clock."
-real = ["daemon cores", "agent cores", "the test kind's interpreter", "in-memory stores", "journal files"]
-substituted = ["transport by in-memory links", "providers by a scripted provider", "agent processes by their cores in process", "wall clock by the virtual clock", "jobs by fakes"]
+real = ["daemon cores", "agent cores", "the test kind's interpreter", "in-memory stores", "journal files", "recorded Claude journals"]
+substituted = ["transport by in-memory links", "providers by a scripted provider or a recorded journal", "agent processes by their cores in process", "wall clock by the virtual clock", "jobs by fakes"]
 time = "driven"
 capabilities = ["Rust toolchain"]
 lane = "fast"

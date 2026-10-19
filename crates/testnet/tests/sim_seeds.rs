@@ -136,3 +136,39 @@ async fn a_failing_seed_reproduces_its_failure_on_demand_and_shrinks() {
     );
     println!("the shrunk ring fails again on replay");
 }
+
+#[tokio::test]
+async fn a_net_that_fails_to_start_fails_its_seed_and_the_other_seeds_still_run() {
+    let ran = std::sync::atomic::AtomicU64::new(0);
+    // The net starts as the closure makes the seed's run, before the run
+    // is awaited; under seed 2 its topology names a host twice.
+    let failing = walk(0..4, |seed| {
+        let mut topology = topology();
+        if seed == 2 {
+            topology.hosts.push(topology.hosts[0].clone());
+        }
+        let net = SimNet::start(topology, seed)
+            .unwrap_or_else(|error| panic!("seed {seed}: the net starts: {error}"));
+        let ran = &ran;
+        async move {
+            replicate_a_turn(net).await;
+            ran.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    })
+    .await;
+    println!("failing seeds: {failing:?}");
+    assert_eq!(
+        failing.iter().map(|(seed, _)| *seed).collect::<Vec<_>>(),
+        [2],
+        "{failing:?}"
+    );
+    assert!(
+        failing[0].1.starts_with("seed 2: the net starts:"),
+        "{failing:?}"
+    );
+    assert_eq!(
+        ran.load(std::sync::atomic::Ordering::Relaxed),
+        3,
+        "every other seed ran its story"
+    );
+}

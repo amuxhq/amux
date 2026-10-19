@@ -102,10 +102,13 @@ pub async fn run_story<R, S>(
             real(net).await;
         }
         Mode::Simulated => {
-            walk_seeds(|seed| {
+            // The net starts inside the seed's run, so a start that fails
+            // is that seed's failure and the walk goes on.
+            let simulated = &simulated;
+            walk_seeds(|seed| async move {
                 let net = SimNet::start(topology(), seed)
                     .unwrap_or_else(|error| panic!("seed {seed}: the net starts: {error}"));
-                simulated(net)
+                simulated(net).await;
             })
             .await;
         }
@@ -150,14 +153,15 @@ where
 }
 
 /// Runs `story` under each of `seeds` and returns the seeds whose run
-/// failed, each with what it failed on, without failing itself.
+/// failed, each with what it failed on, without failing itself. A seed
+/// fails as well when making its run panics, before the run is awaited.
 pub async fn walk<S>(seeds: Range<u64>, story: impl Fn(u64) -> S) -> Vec<(u64, String)>
 where
     S: Future<Output = ()>,
 {
     let mut failing = Vec::new();
     for seed in seeds {
-        if let Err(failure) = attempt(story(seed)).await {
+        if let Err(failure) = attempt(async { story(seed).await }).await {
             failing.push((seed, failure));
         }
     }

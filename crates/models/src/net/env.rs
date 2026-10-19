@@ -2078,13 +2078,19 @@ impl Transition<'_> {
         }
         let (h, agent_id) = (process.host, process.agent);
         match frame.of {
-            Some(ctl_frame::Of::Hello(hello)) => self.feed(
-                h,
-                Input::AgentHello {
-                    agent: agent_id,
-                    hello,
-                },
-            ),
+            // As the daemon's driver does, a Hello is followed by a read of
+            // the journal: what the process wrote before it dialled was
+            // nudged to nobody.
+            Some(ctl_frame::Of::Hello(hello)) => {
+                self.feed(
+                    h,
+                    Input::AgentHello {
+                        agent: agent_id,
+                        hello,
+                    },
+                );
+                self.feed(h, Input::Nudge { agent: agent_id });
+            }
             Some(ctl_frame::Of::Nudge(_)) => self.feed(h, Input::Nudge { agent: agent_id }),
             Some(ctl_frame::Of::Reply(wire::Verdict { id, verdict })) => {
                 if let Some(waiting) = process.relayed.get_mut(&id) {

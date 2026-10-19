@@ -180,7 +180,7 @@ impl ComposedNet {
     }
 
     /// The origin reboots uncleanly, resetting the replica, while the link
-    /// may be severed and restored around it: 48,869 states in 3 s on 12
+    /// may be severed and restored around it: 54,661 states in 3 s on 12
     /// threads of an M-series Mac.
     pub fn reset_while_flipping() -> Self {
         Self {
@@ -191,7 +191,7 @@ impl ComposedNet {
     }
 
     /// A call's message lost, a delivery out of the net's order, and the
-    /// clock moved on to the backoffs: 7,242 states in 2 s on 12 threads.
+    /// clock moved on to the backoffs: 8,618 states in 3 s on 12 threads.
     pub fn lost_messages() -> Self {
         Self {
             reorders: 1,
@@ -202,7 +202,7 @@ impl ComposedNet {
     }
 
     /// A person sends a prompt and asks for a stop while either daemon may
-    /// be killed and started again: 183,118 states in 17 s on 12 threads.
+    /// be killed and started again: 194,762 states in 19 s on 12 threads.
     pub fn calls_through_a_crash() -> Self {
         Self {
             kills: 1,
@@ -225,9 +225,9 @@ impl ComposedNet {
     }
 
     /// The larger configurations a nightly run explores: every fault but a
-    /// kill with a reordering (2,039,352 states in 122 s on 12 threads), and
-    /// the person's calls through a crash with a lost message (1,217,996
-    /// states in 105 s).
+    /// kill with a reordering (2,364,835 states in 145 s on 12 threads), and
+    /// the person's calls through a crash with a lost message (1,393,898
+    /// states in 123 s).
     pub fn nightly() -> [(&'static str, Self); 2] {
         [
             (

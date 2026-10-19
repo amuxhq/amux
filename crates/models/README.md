@@ -150,6 +150,37 @@ the binary at the path while its daemons exit with their pipe. Both swap
 orders are checked: the binary renamed over while the daemon runs, and the
 daemon stopped first. The properties are in `src/supervisor.rs`.
 
+## The composed net
+
+`ComposedNet` takes a topology (hosts, the links between them and the
+agents each starts with) and runs it whole: every host's real daemon core
+over its own in-memory store and its agents' journals, every agent's real
+agent core around the test kind's interpreter with a scripted fake
+provider, and the drivers' glue between them, so a call, its answer, a job
+and its result are each a delivery waiting in a lane. Its initial state is
+the topology started with its agents created. Its actions are the
+environment's and a person's: a lane's next delivery (or a later one, within
+a bound on reorderings), a call's message lost, a link severed and restored
+once both ends have heard it go, a daemon killed and started again or
+rebooted uncleanly under its next generation, the clock moved on to the
+next timer, a prompt sent to the agent and a stop asked of its host. Its
+properties are the promises of every machine above that a net of two hosts
+and one agent can break, judged over the same stores (no core asks for a
+dump, replication's four promises over the block, hosts on a working link
+read each other online, an accepted input keeps its row), beside the ones
+that hold only between machines: a reset arriving while presence flips
+still leaves the replica current under the newest generation, and the
+listing a far host's family acts on never reads an agent exited before
+the agent's own host does. Two nets are one when the cores' fingerprints,
+the stores, the journals, the timers and what waits in each lane match,
+with the calls and jobs a core numbered ranked as its fingerprint ranks
+them; the ranking is not exact, so on several threads the count may differ
+by a few dozen states between runs while the verdict does not. The
+checked topology is two linked hosts and one agent whose one turn writes
+three items, explored under three sets of faults. Walked one seeded
+delivery at a time, the same model is the testnet's simulated mode. The
+properties are in `src/net/mod.rs`.
+
 ## Cost, bounds and budget
 
 A model explores real stores, so a state costs a store transaction or two
@@ -166,6 +197,7 @@ under `just test`.
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 1,134,868 | 31 s | 68 s | not yet measured (134 s at 859,652 states) | 600 s | 4 up, 3 down, 3 failures | 431 s |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,275,996 and 71,250 | 8 s | 17 s | 44 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both swap orders | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 4,189,038 and 4,449,354 | 5 s | 11 s | not yet measured | 120 s each | 3 releases, 2 failed starts, 6 timers firing | 77 s |
+| Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 48,869, 7,242 and 183,118 | 22 s | 42 s | not yet measured | 360 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 232 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), with the development profile, which optimises SQLite, the store and

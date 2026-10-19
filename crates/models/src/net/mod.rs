@@ -180,7 +180,7 @@ impl ComposedNet {
     }
 
     /// The origin reboots uncleanly, resetting the replica, while the link
-    /// may be severed and restored around it: 48,869 states in 4 s on 8
+    /// may be severed and restored around it: 48,869 states in 3 s on 12
     /// threads of an M-series Mac.
     pub fn reset_while_flipping() -> Self {
         Self {
@@ -191,7 +191,7 @@ impl ComposedNet {
     }
 
     /// A call's message lost, a delivery out of the net's order, and the
-    /// clock moved on to the backoffs: 7,420 states in 2 s on 8 threads.
+    /// clock moved on to the backoffs: 7,242 states in 2 s on 12 threads.
     pub fn lost_messages() -> Self {
         Self {
             reorders: 1,
@@ -202,7 +202,7 @@ impl ComposedNet {
     }
 
     /// A person sends a prompt and asks for a stop while either daemon may
-    /// be killed and started again: 183,118 states in 21 s on 8 threads.
+    /// be killed and started again: 183,118 states in 17 s on 12 threads.
     pub fn calls_through_a_crash() -> Self {
         Self {
             kills: 1,
@@ -225,9 +225,9 @@ impl ComposedNet {
     }
 
     /// The larger configurations a nightly run explores: every fault but a
-    /// kill with a reordering (2,038,368 states in 140 s on 8 threads), and
-    /// the person's calls through a crash with a lost message (1,217,913
-    /// states in 122 s).
+    /// kill with a reordering (2,039,352 states in 122 s on 12 threads), and
+    /// the person's calls through a crash with a lost message (1,217,996
+    /// states in 105 s).
     pub fn nightly() -> [(&'static str, Self); 2] {
         [
             (
@@ -629,8 +629,8 @@ impl Machine for ComposedNet {
             Property::always(NO_OTHER_GENERATION, |_, s: &State| s.judged.block[2]),
             Property::always(CURSOR_COMPLETE, |_, s: &State| s.judged.block[3]),
             Property::always(
-                "the listing follows the origin: a replica reads an agent exited only once the \
-                 agent's own host does",
+                "the listing a far host's family acts on follows replication's order: a replica \
+                 reads an agent exited only once the agent's own host does",
                 |_, s: &State| !s.seen.exited_early,
             ),
             Property::eventually(

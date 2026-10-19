@@ -509,46 +509,6 @@ impl World {
     }
 }
 
-impl Net {
-    #[doc(hidden)]
-    pub fn identity_parts(&self) -> Vec<(String, u64)> {
-        fn h<T: Hash>(t: &T) -> u64 {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            t.hash(&mut hasher);
-            hasher.finish()
-        }
-        let c = self.w.canon();
-        let mut out = vec![("now".to_owned(), h(&c.now_ms))];
-        for (i, host) in c.hosts.iter().enumerate() {
-            out.push((format!("host{i}.print"), h(&host.print)));
-            out.push((format!("host{i}.store"), h(&host.store)));
-            out.push((format!("host{i}.rest"), h(&(host.up, host.generation, host.ticked, host.timers))));
-            out.push((format!("host{i}.journals"), h(&host.journals)));
-        }
-        out.push(("links".into(), h(&c.links)));
-        for (i, p) in c.processes.iter().enumerate() {
-            out.push((format!("proc{i}.core"), h(&p.core)));
-            out.push((format!("proc{i}.provider"), h(&p.provider)));
-            out.push((format!("proc{i}.rest"), h(&(p.running, p.conn, p.written, p.relayed, p.timers))));
-        }
-        out.push(("specs".into(), h(&c.specs)));
-        out.push(("resumes".into(), h(&c.resumes)));
-        for (lane, q) in &c.lanes {
-            out.push((format!("lane {lane:?} {q:?}"), h(q)));
-        }
-        out.push(("outgoing".into(), h(&c.outgoing)));
-        out.push(("served".into(), h(&c.served)));
-        out.push(("clients".into(), h(&c.clients)));
-        out.push(("rest".into(), h(&(&c.unlocking, c.gates, c.failure))));
-        out
-    }
-
-    #[doc(hidden)]
-    pub fn print_of(&self, h: usize) -> String {
-        format!("{:?}", self.w.hosts[h].print.as_ref().map(|p| String::from_utf8_lossy(&p.state).into_owned()))
-    }
-}
-
 impl PartialEq for Net {
     fn eq(&self, other: &Self) -> bool {
         self.w.canon() == other.w.canon()

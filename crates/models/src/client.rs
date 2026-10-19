@@ -126,14 +126,14 @@ struct Daemon {
     generation: u64,
     /// The revision of the newest snapshot written, which is what an
     /// opening carries: later writes revise items, not the snapshot.
-    snapshot_revision: u64,
+    newest_snapshot: u64,
 }
 
 impl Daemon {
     fn snapshot(&self) -> Snapshot {
         Snapshot {
             agent_id: AGENT_ID.to_vec(),
-            revision: self.snapshot_revision,
+            revision: self.newest_snapshot,
             kind: KIND as i32,
             phase: self.phase as i32,
             ..Snapshot::default()
@@ -492,7 +492,7 @@ impl Machine for ClientModel {
             items,
             phase: Phase::Working,
             generation: 1,
-            snapshot_revision: OPENING_ITEMS,
+            newest_snapshot: OPENING_ITEMS,
         };
         let client = SessionState::new(agent(), 200);
         let mut whole = client.clone();
@@ -625,7 +625,7 @@ impl Machine for ClientModel {
                 next.written(event(session_event::Of::Item(item)));
             }
             Action::Snapshot => {
-                next.daemon.snapshot_revision = next.revise();
+                next.daemon.newest_snapshot = next.revise();
                 next.daemon.phase = match next.daemon.phase {
                     Phase::Working => Phase::Idle,
                     _ => Phase::Working,
@@ -684,7 +684,7 @@ impl Machine for ClientModel {
                     item.revision = revision;
                     item.text = format!("g{revision}");
                 }
-                next.daemon.snapshot_revision = next.daemon.revision;
+                next.daemon.newest_snapshot = next.daemon.revision;
                 for msg in next.daemon.reset(usize::MAX) {
                     next.whole.update(msg);
                 }

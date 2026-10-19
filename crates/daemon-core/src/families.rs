@@ -1701,7 +1701,7 @@ mod tests {
     /// parent whose turn ends between the two would otherwise exit without
     /// waiting for it.
     #[test]
-    fn a_parent_hears_of_a_far_child_when_its_forwarded_create_is_answered() {
+    fn a_parent_hears_of_a_far_child_when_the_create_it_forwarded_is_answered() {
         const FAR: HostId = HostId(*b"far-host-0000000");
         let mut rig = rig();
         rig.live(PARENT, "lead", None);

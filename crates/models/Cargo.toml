@@ -7,10 +7,13 @@ description = "The protocol's promises as properties a checker explores over the
 publish = false
 
 [dependencies]
+agent-core = { workspace = true }
 daemon-core = { workspace = true }
+interpret = { workspace = true, features = ["testkind"] }
 journal = { workspace = true }
 prost = { workspace = true }
 rusqlite = { workspace = true }
+serde_json = { workspace = true }
 stateright = { workspace = true }
 store = { workspace = true }
 tempfile = { workspace = true }

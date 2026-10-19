@@ -399,6 +399,12 @@ pub struct Shared<A: OpenAsk> {
     /// stopped, however the provider words its end.
     #[serde(default)]
     stopping: bool,
+    /// The incarnation is on its way out, stopped or with its daemon lost:
+    /// nothing more is handed to the provider from the queue, so what waits
+    /// there stays for the next incarnation rather than going to a
+    /// provider about to be closed.
+    #[serde(default)]
+    leaving: bool,
 }
 
 impl<A: OpenAsk> Shared<A> {
@@ -428,6 +434,7 @@ impl<A: OpenAsk> Shared<A> {
             catalogue: None,
             turn_on_reflection: false,
             stopping: false,
+            leaving: false,
         };
         if let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) {
             shared.prompted(&entry.text);
@@ -442,6 +449,7 @@ impl<A: OpenAsk> Shared<A> {
     pub fn reincarnate(&mut self, spec: &AgentSpec, producer_version: &str) {
         self.producer_version = producer_version.to_owned();
         self.stopping = false;
+        self.leaving = false;
         // A new provider process runs nothing in the background yet.
         self.set_jobs(Vec::new());
         self.now_ms = self.now_ms.max(spec.created_at_ms);
@@ -692,6 +700,7 @@ impl<A: OpenAsk> Shared<A> {
     /// it as one prompt).
     fn ready(&self) -> bool {
         self.started
+            && !self.leaving
             && !self.busy
             && self.asks.is_empty()
             && !self.queue.has_steered()
@@ -979,6 +988,15 @@ impl<A: OpenAsk> Shared<A> {
     /// transcript row, which may come after the stop.
     pub fn stop_requested(&mut self) {
         self.stopping = true;
+        self.leaving();
+    }
+
+    /// The incarnation is on its way out: the daemon stopped it, or was
+    /// lost past the grace. The turn running may finish, but nothing more
+    /// is handed from the queue: the provider is closed at that turn's end,
+    /// and an input handed to it then would be lost with it.
+    pub fn leaving(&mut self) {
+        self.leaving = true;
     }
 
     /// What began as a turn was a local command (terminal Claude's

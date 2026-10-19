@@ -514,6 +514,103 @@ impl<I: Interpreter> Agent<I> {
         self.exited.as_ref()
     }
 
+    /// Why the incarnation ends, once the lifecycle has decided it does:
+    /// from the decision until the process exits.
+    pub fn exiting(&self) -> Option<&ExitCause> {
+        match &self.mode {
+            Mode::Exiting { cause, .. } => Some(cause),
+            Mode::Running | Mode::Draining(_) => None,
+        }
+    }
+
+    /// The whole core between steps as a value, which a model clones,
+    /// hashes and compares: the interpreter's state as its checkpoint
+    /// bytes, beside the lifecycle.
+    pub fn value(&self) -> AgentValue {
+        let Self {
+            interpreter,
+            incarnation,
+            params,
+            now_ms,
+            ticked,
+            connection,
+            grace,
+            mode,
+            pending,
+            ask,
+            turn,
+            awaited,
+            asked_to_exit,
+            git,
+            next_job,
+            exited,
+            budget: _,
+            touched: _,
+        } = self;
+        AgentValue {
+            interpreter: interpret::encode_checkpoint(interpreter),
+            incarnation: *incarnation,
+            params: params.clone(),
+            now_ms: *now_ms,
+            ticked: *ticked,
+            connection: *connection,
+            grace: *grace,
+            mode: mode.clone(),
+            pending: pending.clone(),
+            ask: *ask,
+            turn: *turn,
+            awaited: awaited.clone(),
+            asked_to_exit: asked_to_exit.clone(),
+            git: *git,
+            next_job: *next_job,
+            exited: exited.clone(),
+        }
+    }
+
+    /// The core a [`value`](Self::value) was taken of, ready for its next
+    /// step.
+    pub fn from_value(value: &AgentValue) -> Result<Self, RestoreError> {
+        let AgentValue {
+            interpreter,
+            incarnation,
+            params,
+            now_ms,
+            ticked,
+            connection,
+            grace,
+            mode,
+            pending,
+            ask,
+            turn,
+            awaited,
+            asked_to_exit,
+            git,
+            next_job,
+            exited,
+        } = value;
+        Ok(Self {
+            interpreter: interpret::decode_checkpoint(interpreter)
+                .map_err(|error| RestoreError::Corrupt(error.to_string()))?,
+            incarnation: *incarnation,
+            params: params.clone(),
+            now_ms: *now_ms,
+            ticked: *ticked,
+            connection: *connection,
+            grace: *grace,
+            mode: mode.clone(),
+            pending: pending.clone(),
+            ask: *ask,
+            turn: *turn,
+            awaited: awaited.clone(),
+            asked_to_exit: asked_to_exit.clone(),
+            git: *git,
+            next_job: *next_job,
+            exited: exited.clone(),
+            budget: StepBudget::AGENT,
+            touched: Touched::default(),
+        })
+    }
+
     /// The cheap predicates checked after every step, each in constant time
     /// per input taken or decision made:
     ///
@@ -1041,6 +1138,47 @@ impl<I: Interpreter> Agent<I> {
                 frame: CtlFrame { of: Some(of) },
             });
         }
+    }
+}
+
+/// An [`Agent`] between steps as a value: equal values step alike. What a
+/// step did is not part of it, nor is the step budget, which is the
+/// driver's.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct AgentValue {
+    interpreter: Vec<u8>,
+    incarnation: u32,
+    params: Params,
+    now_ms: u64,
+    ticked: Option<u64>,
+    connection: Option<ConnId>,
+    grace: Option<u64>,
+    mode: Mode,
+    pending: Pending,
+    ask: Option<OpenAsk>,
+    turn: Turn,
+    awaited: Awaited,
+    asked_to_exit: Option<ExitCause>,
+    git: GitReads,
+    next_job: u64,
+    exited: Option<ExitCause>,
+}
+
+impl fmt::Debug for AgentValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AgentValue")
+            .field("incarnation", &self.incarnation)
+            .field("now_ms", &self.now_ms)
+            .field("connection", &self.connection)
+            .field("grace", &self.grace)
+            .field("mode", &self.mode)
+            .field("pending", &self.pending)
+            .field("ask", &self.ask)
+            .field("turn", &self.turn)
+            .field("awaited", &self.awaited)
+            .field("exited", &self.exited)
+            .field("interpreter", &String::from_utf8_lossy(&self.interpreter))
+            .finish_non_exhaustive()
     }
 }
 

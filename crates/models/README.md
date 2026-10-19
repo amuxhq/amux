@@ -114,6 +114,23 @@ eventually is judged where the world rests with no timer still armed; a
 path the bound on waits cut short is not judged. The properties are in
 `src/family.rs`.
 
+## Agent lifecycle
+
+`AgentLifecycle` runs the real agent core around the test kind's
+interpreter, held between steps as its value. A fake provider records a
+prompt it is handed and runs a turn on it, takes an injected message at
+once, and ends its turn, opens an ask or exits when the model chooses; a
+stop cancels its turn, ask and all. The daemon dials in, a new connection
+may replace an old one before it closes, connections close, and the daemon
+hands a person's input or an agent message, stops or kills the agent, and
+resumes it with a parent's message it refused while exiting, again after
+every incarnation that exits before its journal records the message taken,
+as the daemon's message lane does. The resume replays the facts ring the
+last incarnation recorded, as the driver does. Time moves only when the
+grace or drain timer fires. Two configurations are checked: a one-shot
+child started on its spawn prompt, and an agent without a parent. The
+properties are in `src/lifecycle.rs`.
+
 ## Cost, bounds and budget
 
 A model explores real stores, so a state costs a store transaction or two
@@ -128,6 +145,7 @@ under `just test`.
 | Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag, 1 refused commit | 254,451 | 61 s | 96 s | 300 s | 2 crashes, power losses or reboots | 252 s |
 | Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 391,552 | 39 s | 71 s | 240 s | the child's spontaneous exit too, 2 links down, 2 waits | 740 s |
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 859,652 | 24 s | 52 s | 180 s | 4 up, 3 down, 3 failures | 319 s |
+| Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,275,996 and 71,250 | 8 s | 17 s | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), with the development profile, which optimises SQLite, the store and

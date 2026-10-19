@@ -330,6 +330,42 @@ fn a_lost_daemon_drains_the_running_turn_and_exits_at_its_end() {
 }
 
 #[test]
+fn a_drain_leaves_queued_input_for_the_next_incarnation() {
+    let mut run = Run::start(&spec(false, None));
+    run.on(Input::DaemonDials { connection: DAEMON });
+    run.fact(json!({"type": "ready"}));
+    run.prompt("p1", "hello");
+    run.reflect("p1");
+    run.prompt("p2", "and then this");
+    run.on(Input::DaemonGone { connection: DAEMON });
+    run.at(run.now_ms + GRACE_MS, Input::Timer(TimerId::Grace));
+
+    let out = run.turn_end();
+    assert!(closes(&out), "the drain ends at the turn end");
+    assert_eq!(
+        provider_writes(&out),
+        Vec::<String>::new(),
+        "nothing more goes to a provider being closed"
+    );
+    let queued: Vec<Vec<u8>> = run
+        .journal()
+        .iter()
+        .rev()
+        .find_map(|step| step.snapshot.as_ref())
+        .expect("a snapshot")
+        .queue
+        .iter()
+        .map(|queued| queued.input_id.clone())
+        .collect();
+    assert_eq!(
+        queued,
+        vec![b"p2".to_vec()],
+        "the follow-up waits in the queue"
+    );
+    assert_eq!(provider_exits(&mut run), Some(ExitCause::DaemonLost));
+}
+
+#[test]
 fn a_daemon_back_within_the_grace_keeps_the_agent() {
     let mut run = Run::start(&spec(false, None));
     run.on(Input::DaemonDials { connection: DAEMON });
@@ -587,6 +623,25 @@ fn a_lifecycle_exit_decided_mid_turn_is_a_violation() {
         run.agent.check_step_invariants().map_err(|v| v.invariant),
         Err("an agent exits only at a turn end or a drain deadline")
     );
+}
+
+#[test]
+fn an_agent_restored_from_its_value_steps_as_the_original_does() {
+    let mut run = one_shot_working();
+    let value = run.agent.value();
+    let mut restored = Agent::<Kind>::from_value(&value).expect("the value restores");
+    assert_eq!(restored.value(), value);
+
+    let input = Input::Provider(Fact {
+        channel: Channel::Stream,
+        payload: serde_json::to_vec(&json!({"type": "turn_end"})).expect("json"),
+    });
+    let mut original = Vec::new();
+    run.agent.step(input.clone(), &mut original);
+    let mut again = Vec::new();
+    restored.step(input, &mut again);
+    assert_eq!(again, original);
+    assert_eq!(restored.value(), run.agent.value());
 }
 
 #[test]

@@ -2482,10 +2482,13 @@ dependencies = [
 name = "models"
 version = "0.1.0"
 dependencies = [
+ "agent-core",
  "daemon-core",
+ "interpret",
  "journal",
  "prost",
  "rusqlite",
+ "serde_json",
  "stateright",
  "store",
  "tempfile",

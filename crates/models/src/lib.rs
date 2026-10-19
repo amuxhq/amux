@@ -16,10 +16,12 @@ use stateright::{Checker, Chooser, UniformChooser};
 
 pub mod family;
 mod held;
+pub mod lifecycle;
 pub mod presence;
 pub mod replication;
 pub mod single_daemon;
 pub use family::FamilyDeliveries;
+pub use lifecycle::AgentLifecycle;
 pub use presence::PresenceRouting;
 pub use replication::Replication;
 pub use single_daemon::SingleDaemon;
@@ -74,6 +76,7 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
     parked.extend(of("single daemon", &SingleDaemon::ci()));
     parked.extend(of("presence and routing", &PresenceRouting::ci()));
     parked.extend(of("family and deliveries", &FamilyDeliveries::ci()));
+    parked.extend(of("agent lifecycle", &AgentLifecycle::ci()));
     parked
 }
 

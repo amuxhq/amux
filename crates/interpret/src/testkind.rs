@@ -331,7 +331,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
                 state.shared.provider_exited();
                 emit.end_incarnation(end);
             }
-            Event::DaemonLost | Event::StopRequested => {}
+            Event::DaemonLost | Event::StopRequested => state.shared.leaving(),
             Event::Git(git) => state.shared.set_git(git),
         }
         if let Some(entry) = state.shared.next_queued() {

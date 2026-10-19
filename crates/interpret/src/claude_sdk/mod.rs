@@ -1315,6 +1315,7 @@ impl Interpreter for ClaudeSdk {
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
             Event::Exiting(exiting) => state.exited(&mut emit, exiting),
             Event::DaemonLost => {
+                state.shared.leaving();
                 state.boundary(
                     &mut emit,
                     wire::BoundaryKind::DaemonLost,

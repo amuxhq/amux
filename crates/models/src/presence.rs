@@ -198,8 +198,9 @@ pub struct State {
     /// The world has stopped changing.
     rested: bool,
     used: Used,
-    /// The relay refused an attempt on the target for the plan, and no
-    /// attempt on it opened a channel since.
+    /// The relay refused an attempt on the target for the plan, and since
+    /// then no attempt on it opened a channel and none on its preferred
+    /// route failed for another reason.
     refused_for_plan: bool,
     /// Calls to the target failed, and since then no channel to it opened
     /// and the relay refused none for the plan.
@@ -220,12 +221,26 @@ pub struct State {
 
 impl State {
     /// Counts what a concluded attempt or channel used of the bounds.
-    fn count(&mut self, concluded: Concluded) {
+    fn count(&mut self, route: Route, concluded: Concluded) {
+        self.hear(route, concluded);
+        if matches!(concluded, Concluded::Refused | Concluded::Timeout) {
+            self.used.faults += 1;
+        }
+    }
+
+    /// What an attempt on `route` concluding says of the relay's word on
+    /// the plan: a channel opening overrides it, and so does a failure for
+    /// any other reason on the route the target is preferred on, which is
+    /// the newer word on how the target is reached.
+    fn hear(&mut self, route: Route, concluded: Concluded) {
+        let preferred = self.view.routes.first() == Some(&route);
         match concluded {
             Concluded::Ok => self.refused_for_plan = false,
             Concluded::Payment => self.refused_for_plan = true,
-            Concluded::Refused | Concluded::Timeout => self.used.faults += 1,
-            Concluded::Gone => {}
+            Concluded::Refused | Concluded::Timeout if preferred => {
+                self.refused_for_plan = false;
+            }
+            Concluded::Refused | Concluded::Timeout | Concluded::Gone => {}
         }
     }
 
@@ -406,7 +421,7 @@ impl Machine for PresenceRouting {
             }
             Action::AttemptConcluded(route, concluded) => {
                 next.attempts.remove(&route);
-                next.count(concluded);
+                next.count(route, concluded);
                 let tried = match failure(concluded) {
                     None => Tried::Opened,
                     Some(error) => Tried::Failed(error),
@@ -454,11 +469,7 @@ impl Machine for PresenceRouting {
                             } else {
                                 Concluded::Timeout
                             };
-                            match concluded {
-                                Concluded::Ok => next.refused_for_plan = false,
-                                Concluded::Payment => next.refused_for_plan = true,
-                                _ => {}
-                            }
+                            next.hear(again, concluded);
                             let channel = self.want(&mut next, again);
                             self.conclude(&mut next, channel, again, concluded);
                         }
@@ -470,7 +481,7 @@ impl Machine for PresenceRouting {
                         }
                     }
                 } else {
-                    next.count(concluded);
+                    next.count(route, concluded);
                     self.conclude(&mut next, channel, route, concluded);
                 }
                 self.judge(s, &mut next, action);
@@ -745,7 +756,8 @@ pub(crate) const CHANGES_ON_A_CONCLUDED_ATTEMPT: &str = "presence changes only o
      on the route carrying its traffic, or else the first listed, as the attempt leaves them, when a call \
      finds no channel on the route calls take, or when no route lists it";
 pub(crate) const AWAY_ONLY_ON_PAYMENT_REFUSAL: &str = "Away only on payment refusal: a host reads away \
-     only once the relay refused a channel to it for the account's plan, and no channel to it opened since";
+     only once the relay refused a channel to it for the account's plan, and since then no channel to it \
+     opened and no attempt on its preferred route failed for another reason";
 pub(crate) const ONE_ATTEMPT_IN_FLIGHT: &str =
     "at most one attempt the core asked for is in flight per host and route";
 

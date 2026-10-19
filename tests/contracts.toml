@@ -1222,7 +1222,7 @@ tests = [
 [[contract]]
 id = "presence-away-only-on-payment-refusal"
 source = "model"
-property = { crate = "models", machine = "presence and routing", sentence = "Away only on payment refusal: a host reads away only once the relay refused a channel to it for the account's plan, and no channel to it opened since" }
+property = { crate = "models", machine = "presence and routing", sentence = "Away only on payment refusal: a host reads away only once the relay refused a channel to it for the account's plan, and since then no channel to it opened and no attempt on its preferred route failed for another reason" }
 checker = "models/presence::every_presence_promise_holds_at_ci_bounds"
 tests = [
   "testnet/spec_network::a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro",

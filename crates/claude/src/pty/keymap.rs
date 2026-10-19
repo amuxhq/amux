@@ -1520,7 +1520,6 @@ impl Interpreter<'_, '_> {
 mod format {
     use super::*;
 
-    const BAKED_ORIGIN: &str = "keymaps/claude-2.1.toml";
     const BAKED: &str = include_str!("../../keymaps/claude-2.1.toml");
 
     fn user_source() -> KeymapSource {

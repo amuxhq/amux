@@ -231,7 +231,7 @@ pub fn forward(_stdin: &[u8], _socket: &Path) -> Result<(), std::io::Error> {
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -246,7 +246,6 @@ mod tests {
         .unwrap()
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn receiver_keeps_messaging_credentials_out_of_the_payload() {
         let dir = tempfile::Builder::new()

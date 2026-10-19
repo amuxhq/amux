@@ -1,7 +1,7 @@
 //! One open chat's state: the agent's entry and snapshot, the transcript
 //! window, and this client's inputs.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub use model::{Activity, ActivityKind, BlobStatus, Composer, Connection, PhaseView, Waiting};
 use wire::{Agent, HostEntry, Input, Item, Kind, QueuedInput, SessionEvent, session_event};
@@ -125,7 +125,7 @@ pub struct SessionState {
     /// and each CaughtUp. A held input goes at the first one after it left.
     reach: u64,
     epoch: u64,
-    blobs: HashMap<Vec<u8>, BlobStatus>,
+    blobs: BTreeMap<Vec<u8>, BlobStatus>,
     /// The most rows the window keeps while the reader follows.
     cap: usize,
     /// The reader is at the newest row, as the client last said.
@@ -145,7 +145,7 @@ pub struct SessionState {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Arrivals {
     rows: BTreeMap<u64, Held>,
-    by_key: HashMap<Key, u64>,
+    by_key: BTreeMap<Key, u64>,
     moved_on: bool,
     /// Counts every change, so an update can say the activity line and the
     /// affordance, which read these rows, may have moved.
@@ -246,7 +246,7 @@ impl SessionState {
             exited_under: None,
             reach: 0,
             epoch: 0,
-            blobs: HashMap::new(),
+            blobs: BTreeMap::new(),
             cap: cap.max(1),
             following: true,
             arrivals: Arrivals::default(),

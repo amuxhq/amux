@@ -1,6 +1,6 @@
 //! The transcript window and its run index.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
 
 use wire::{Append, Item, Kind};
@@ -37,8 +37,10 @@ impl Held {
 pub struct Transcript {
     kind: Kind,
     items: BTreeMap<u64, Held>,
-    by_key: HashMap<Key, u64>,
-    by_input: HashMap<Vec<u8>, Key>,
+    /// Ordered, like every map a session holds, so two equal sessions
+    /// print alike: the client model tells states apart by their print.
+    by_key: BTreeMap<Key, u64>,
+    by_input: BTreeMap<Vec<u8>, Key>,
     exhausted: bool,
     runs: RunIndex,
 }
@@ -62,8 +64,8 @@ impl Transcript {
         Transcript {
             kind,
             items: BTreeMap::new(),
-            by_key: HashMap::new(),
-            by_input: HashMap::new(),
+            by_key: BTreeMap::new(),
+            by_input: BTreeMap::new(),
             exhausted: false,
             runs: RunIndex::default(),
         }

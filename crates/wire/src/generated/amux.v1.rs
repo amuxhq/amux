@@ -5752,7 +5752,9 @@ impl ::prost::Name for SessionEvent {
 }
 /// The first event of every stream: the origin generation its rows and
 /// revisions belong to. A peer source stores it on the block it takes and
-/// names it with its cursor when it resumes; clients ignore it.
+/// names it with its cursor when it resumes; a client that reopens a stream
+/// under another generation rebuilds as at a Reset, which the gap may have
+/// carried.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Opening {
     #[prost(uint64, tag = "1")]

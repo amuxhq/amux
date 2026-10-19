@@ -168,7 +168,7 @@ A stream is `SessionEvent`s:
 
 | Event | Meaning |
 | --- | --- |
-| `Opening` | The origin generation the stream's rows belong to. Always first; clients ignore it. |
+| `Opening` | The origin generation the stream's rows belong to. Always first; a client that reopens under another generation rebuilds as at a `Reset`. |
 | `Snapshot` | Everything needed to draw the agent without items. Second. |
 | `Item` | One item, full state at its revision |
 | `Append` | Text added to an item the client holds |
@@ -231,8 +231,11 @@ it in at the next `CaughtUp`.
 
 `Opening` carries the origin's generation: its own for an agent the host
 runs, and for a replica the one its source last caught up under. A peer
-source stores it beside its cursor and sends both back in `after`; a client
-never needs it, because a client resumes with a tail.
+source stores it beside its cursor and sends both back in `after`. A client
+resumes with a tail, and needs it only to notice a `Reset` it missed: a
+stream that lagged or dropped may have carried one, so a reopened stream
+under another generation than the window was built under is treated as a
+`Reset`, built apart and swapped in at `CaughtUp`.
 
 `Lagged` means the stream fell more than the fan-out ring's capacity behind
 the agent's broadcast. The stream closes; the client subscribes again with a

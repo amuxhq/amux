@@ -112,6 +112,9 @@ pub struct SessionState {
     /// The stream was reopened; a tail that leaves a gap above the head
     /// builds a pending transcript instead of appending.
     retail: bool,
+    /// The origin generation the window's rows belong to, from the first
+    /// stream's Opening.
+    generation: Option<u64>,
     inputs: Inputs,
     caught_up: bool,
     detached: bool,
@@ -235,6 +238,7 @@ impl SessionState {
             transcript: Transcript::new(kind),
             pending: None,
             retail: false,
+            generation: None,
             inputs: Inputs::default(),
             caught_up: false,
             detached: false,
@@ -770,9 +774,18 @@ impl SessionState {
                 self.detached = true;
                 outcome.session = true;
             }
-            // The origin's generation is a peer source's concern: it
-            // resumes by revision, a client re-tails.
-            Of::Opening(_) => {}
+            // A stream reopened under another generation follows a Reset
+            // the gap in the stream may have carried: the rows held are of
+            // a history the origin no longer has, so the tail is built
+            // apart and swapped in at CaughtUp.
+            Of::Opening(opening) => {
+                let known = self.generation.replace(opening.generation);
+                if known.is_some_and(|known| known != opening.generation) {
+                    self.caught_up = false;
+                    self.pending = Some(Transcript::new(self.kind()));
+                    outcome.session = true;
+                }
+            }
         }
     }
 

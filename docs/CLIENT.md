@@ -555,7 +555,10 @@ A Reset means the origin's history changed under the chat (a rewind, for example
 screen and builds a fresh transcript from the events that follow; at the next CaughtUp it swaps the fresh one in
 and reports `reloaded`, one of the two times a client reloads its whole list; the other is the reload of a head
 that moved on while the reader was in history. A re-tail after a reconnect whose rows do not meet the held
-window is handled the same way while the reader follows; in history it only marks the head as moved on. Detached
+window is handled the same way while the reader follows; in history it only marks the head as moved on. So is a
+re-tail whose `Opening` names another generation than the window was built under, since the gap may have
+carried a Reset; and a transcript being built apart starts over when the stream reopens, the re-tail being its
+whole. Detached
 clears `caught_up`; the rows stay.
 
 ## The two draw loops

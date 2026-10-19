@@ -234,6 +234,12 @@ sim *ARGS:
 nightly *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 14400 scripts/py scripts/sim.py nightly "$@"
 
+# Run every workspace test under cargo-llvm-cov with the desktop features and
+# write line coverage per crate, with the commit it measured, to
+# tests/coverage.md.
+coverage:
+    {{bounded}} 3600 scripts/py scripts/coverage.py
+
 # Fail when a contract in tests/contracts.toml names no test, or a test or a
 # model property that does not exist; `--table PATH` also writes the coverage
 # table as Markdown.

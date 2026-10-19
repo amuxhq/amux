@@ -109,7 +109,13 @@ just ios journey                           # the shared stories on the phone; `-
 just live claude_sdk all                   # live compatibility for one kind (qualification)
 just live codex attach                     # Codex's own app co-driving a fresh agent; capture in target/live/codex-attach
 just perf                                  # performance qualification (see Performance)
+just coverage                              # every workspace test under cargo-llvm-cov; line coverage per crate
 ```
+
+`just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
+count whichever tests ran them, so a core's figure includes what the models and the testnet reach. It is a reading
+aid for judging which tests earn their keep, not a gate. It needs `cargo install cargo-llvm-cov` and the
+`llvm-tools-preview` rustup component.
 
 `just tests-list` gives the focused recipe for every suite. Recipes carry outer timeouts; a timeout that fires is a
 hang to diagnose, not a limit to raise. On macOS a freshly built test binary can stall before its first

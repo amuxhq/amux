@@ -405,7 +405,7 @@ source = "invariant"
 section = "Runtime"
 claim = "One source per agent."
 tests = [
-  "testnet/spec_replication::on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close",
+  "testnet/replication_stories::on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close",
   "testnet/replication_stories::switching_to_on_demand_closes_every_source_no_client_watches",
 ]
 

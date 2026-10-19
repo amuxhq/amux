@@ -17,12 +17,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use node::{Launch, SourcePolicy, SourceVerdict};
+use node::{Launch, SourceVerdict};
 use prost::Message as _;
 use provider_fakes::script::{Ask, Question, Step};
 use store::{AgentKey, CommitClock, Marker, PageEnd};
 use testnet::observe::{self, Mark, marks};
-use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, holds_for, until};
+use testnet::{AgentDecl, JournalCut, Net, NetOptions, PATIENCE, Topology, until};
 use wire::client_service_server::ClientService as _;
 use wire::{FetchRequest, InventoryEvent, Item, SessionEvent, inventory_event, session_event};
 
@@ -733,145 +733,6 @@ async fn trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_
     net.assert_block_invariant("laptop", "worker")
         .await
         .unwrap();
-    net.shutdown().await.unwrap();
-}
-
-/// Under OnDemand no agent gets a source until a client subscribes, and
-/// then only that one: a background wake warms one chat. Switching to
-/// Listed sweeps every other agent current. A source for an agent that
-/// exits closes once its catch-up has landed, and opens again when its
-/// origin resumes it.
-#[tokio::test(flavor = "multi_thread")]
-async fn on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close() {
-    const K: u32 = 6;
-    let topology = desk_and_laptop()
-        .agent(
-            AgentDecl::new("named", "desk")
-                .steps(turns(4, 1))
-                .prompt("go"),
-        )
-        .agent(
-            AgentDecl::new("quiet", "desk")
-                .steps(turns(4, 1))
-                .prompt("go"),
-        );
-    let mut net = Net::start_with(topology, options(K, |_, _| {}))
-        .await
-        .unwrap();
-    let named = net.agent("named").unwrap().key();
-    let quiet = net.agent("quiet").unwrap().key();
-    for agent in ["named", "quiet"] {
-        wait_origin_says(&net, agent, "t0-0").await;
-        net.current("laptop", agent).await.unwrap();
-    }
-    let laptop = net.runtime("laptop").unwrap();
-    assert_eq!(laptop.open_sources(), {
-        let mut both = vec![named.clone(), quiet.clone()];
-        both.sort();
-        both
-    });
-
-    // The phone asleep: the link goes, work happens, the app wakes OnDemand.
-    laptop.set_source_policy(SourcePolicy::OnDemand);
-    drop(laptop);
-    sever(&mut net).await;
-    for agent in ["named", "quiet"] {
-        net.send(agent, "two").await.unwrap();
-        wait_origin_says(&net, agent, "t1-0").await;
-    }
-    restore(&mut net).await;
-    let laptop = net.runtime("laptop").unwrap();
-    until("the laptop's inventory to catch up", || async {
-        laptop
-            .host_ready(net.host("desk").unwrap().host_id)
-            .then_some(())
-            .ok_or("desk not ready at the laptop")
-    })
-    .await
-    .unwrap();
-    // A window: nothing the test controls gates a source that the policy
-    // must not open.
-    holds_for(
-        "no source opens by itself",
-        Duration::from_millis(300),
-        || {
-            let open = laptop.open_sources();
-            async move { open.is_empty() }
-        },
-    )
-    .await
-    .unwrap();
-
-    // The notification names one chat; opening it brings that one current.
-    let mut chat = net.observe("laptop", "named", 10).await.unwrap();
-    chat.observe_until(
-        |events| {
-            since_last_detached(events)
-                .iter()
-                .any(|m| matches!(m, Mark::CaughtUp(_)))
-        },
-        PATIENCE,
-    )
-    .await
-    .unwrap();
-    net.current("laptop", "named").await.unwrap();
-    assert_eq!(laptop.open_sources(), vec![named.clone()]);
-    let stale = replica_state(&net, "laptop", "quiet").await.unwrap();
-    assert!(
-        stale.0 < origin_revision(&net, "quiet").await,
-        "quiet was left alone"
-    );
-
-    // Foreground: every listed agent gets a source.
-    laptop.set_source_policy(SourcePolicy::Listed);
-    net.current("laptop", "quiet").await.unwrap();
-
-    // An agent that exits: its source closes once its catch-up has landed.
-    let quiet_id = net.agent("quiet").unwrap().id;
-    net.runtime("desk").unwrap().stop(quiet_id).await.unwrap();
-    until("quiet's source to close", || async {
-        let open = laptop.open_sources();
-        (!open.contains(&quiet))
-            .then_some(())
-            .ok_or_else(|| format!("open sources: {open:?}"))
-    })
-    .await
-    .unwrap();
-    net.current("laptop", "quiet").await.unwrap();
-    let row = {
-        let quiet = quiet.clone();
-        laptop
-            .read_store(move |store| store.agent(&quiet).unwrap().unwrap())
-            .await
-            .unwrap()
-    };
-    assert_eq!(row.lifecycle, wire::Lifecycle::Exited as i32);
-    assert_eq!(laptop.open_sources(), vec![named]);
-
-    // Resumed by its origin, it is followed again.
-    net.resume("quiet", Some("again")).await.unwrap();
-    until("quiet's source to reopen", || async {
-        let open = laptop.open_sources();
-        open.contains(&quiet)
-            .then_some(())
-            .ok_or_else(|| format!("open sources: {open:?}"))
-    })
-    .await
-    .unwrap();
-    wait_origin_says(&net, "quiet", "t0-0").await;
-    net.current("laptop", "quiet").await.unwrap();
-    let row = {
-        let quiet = quiet.clone();
-        laptop
-            .read_store(move |store| store.agent(&quiet).unwrap().unwrap())
-            .await
-            .unwrap()
-    };
-    assert_eq!(
-        (row.lifecycle, row.incarnation),
-        (wire::Lifecycle::Live as i32, 2)
-    );
-    drop(laptop);
     net.shutdown().await.unwrap();
 }
 

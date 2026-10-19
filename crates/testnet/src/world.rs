@@ -60,6 +60,14 @@ pub trait World {
         input: wire::Input,
     ) -> Result<wire::SendInputResponse, NetError>;
 
+    /// Stops the agent on its own host, as a client does there, and waits
+    /// until it has exited.
+    async fn stop(&self, agent: &str) -> Result<Ack, NetError>;
+    /// Starts an exited agent's next incarnation on its own host, as a
+    /// client does there, seeded with `prompt`; its process plays the same
+    /// script again.
+    async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError>;
+
     /// Opens a Subscribe stream on the agent at the host and records it.
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError>;
     /// Opens a SubscribeInventory stream on the host and records it.
@@ -191,6 +199,14 @@ impl World for Net {
         input: wire::Input,
     ) -> Result<wire::SendInputResponse, NetError> {
         Net::input(self, agent, input).await
+    }
+
+    async fn stop(&self, agent: &str) -> Result<Ack, NetError> {
+        Net::stop(self, agent).await
+    }
+
+    async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError> {
+        Net::resume(self, agent, prompt).await
     }
 
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {

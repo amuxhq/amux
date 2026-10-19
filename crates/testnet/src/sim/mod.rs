@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use daemon_core::payload::{ClientRequest, Response};
-use daemon_core::{AgentId, CallId, Create, HostId, Input};
+use daemon_core::{AgentId, CallId, Create, HostId, Input, Resume};
 use models::net::Net;
 use rng::Rng;
 pub use shrink::{Reproduction, same_failure, shrink};
@@ -371,30 +371,13 @@ impl SimNet {
                 .add_agent_playing(agent, &decl.name, journal_fixture(name)?),
             None => sim.net.add_agent(agent, &decl.name, &steps),
         }
-        let call = sim
-            .net
-            .client_call(h, ClientRequest::CreateAgent(Box::new(create)));
         let what = format!("{} to start on {}", decl.name, decl.host);
-        let ended = wait(&mut sim, &what, |sim| {
-            sim.net
-                .client(h, call)
-                .and_then(|client| client.ended().cloned())
-                .ok_or_else(|| "not yet answered".to_owned())
-        })?;
-        let client = sim.net.take_client(h, call).expect("the create's call");
-        let row = client.responses().find_map(|response| match response {
-            Response::Agent(row) => Some((**row).clone()),
-            _ => None,
-        });
-        let row = match (ended, row) {
-            (daemon_core::payload::Status::Ok, Some(row)) => row,
-            (status, _) => {
-                return Err(NetError::Host {
-                    host: decl.host.clone(),
-                    error: format!("the create ended {status:?}"),
-                });
-            }
-        };
+        let row = registry_call(
+            &mut sim,
+            h,
+            &what,
+            ClientRequest::CreateAgent(Box::new(create)),
+        )?;
         drop(sim);
         self.agents.insert(
             decl.name.clone(),
@@ -688,6 +671,46 @@ impl World for SimNet {
         Ok(verdict)
     }
 
+    async fn stop(&self, agent: &str) -> Result<Ack, NetError> {
+        let at = self.agent_named(agent)?;
+        let h = self.host_index(&at.host)?;
+        let id = AgentId(at.id.into_bytes());
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if !sim.is_up(h) {
+            return Err(NetError::Down(at.host.clone()));
+        }
+        let what = format!("{agent} to stop");
+        registry_call(&mut sim, h, &what, ClientRequest::StopAgent { agent: id })?;
+        drop(sim);
+        Ok(self.ack(format!("{agent} stopped")))
+    }
+
+    async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError> {
+        let at = self.agent_named(agent)?;
+        let h = self.host_index(&at.host)?;
+        let id = AgentId(at.id.into_bytes());
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if !sim.is_up(h) {
+            return Err(NetError::Down(at.host.clone()));
+        }
+        let input_id = sim.ids.bytes::<16>();
+        let bootstrap = prompt.map(|text| wire::Bootstrap {
+            of: Some(wire::bootstrap::Of::Prompt(submission(&input_id, text))),
+        });
+        let what = format!("{agent} to resume");
+        registry_call(
+            &mut sim,
+            h,
+            &what,
+            ClientRequest::ResumeAgent(Box::new(Resume {
+                agent: id,
+                bootstrap,
+            })),
+        )
+    }
+
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {
         let id = self.agent_named(agent)?.id;
         self.observe_call(
@@ -972,6 +995,35 @@ fn wait<T>(
         }
     }
     Err(hung(what))
+}
+
+/// Makes a registry call on the host as a client does, waits until it
+/// ends, and returns the agent's row it was answered with.
+fn registry_call(
+    sim: &mut Sim,
+    h: usize,
+    what: &str,
+    request: ClientRequest,
+) -> Result<wire::Agent, NetError> {
+    let call = sim.net.client_call(h, request);
+    let ended = wait(sim, what, |sim| {
+        sim.net
+            .client(h, call)
+            .and_then(|client| client.ended().cloned())
+            .ok_or_else(|| "not yet answered".to_owned())
+    })?;
+    let client = sim.net.take_client(h, call).expect("the registry call");
+    let row = client.responses().find_map(|response| match response {
+        Response::Agent(row) => Some((**row).clone()),
+        _ => None,
+    });
+    match (ended, row) {
+        (daemon_core::payload::Status::Ok, Some(row)) => Ok(row),
+        (status, _) => Err(NetError::Host {
+            host: sim.net.host_name(h).to_owned(),
+            error: format!("{what}: the call ended {status:?}"),
+        }),
+    }
 }
 
 /// What a wait reports when nothing is left to deliver and its condition

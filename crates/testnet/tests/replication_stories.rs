@@ -1,7 +1,8 @@
 //! Replication's stories that hold on either net: a replica's tail, live
 //! records, delta and Reset with their markers in sequence, pages served
-//! from the block and from the origin, and the source policy closing what
-//! no client watches. Each runs on the real net by default, and under
+//! from the block and from the origin, the source policy closing what no
+//! client watches, and an exited agent's source closing and reopening on
+//! its resume. Each runs on the real net by default, and under
 //! `TESTNET_MODE=simulated` on the simulated one by seed (`just sim`).
 
 #![cfg(unix)]
@@ -34,6 +35,16 @@ async fn switching_to_on_demand_closes_every_source_no_client_watches() {
         stories::two_agents_topology,
         stories::switching_to_on_demand_closes_every_source_no_client_watches,
         stories::switching_to_on_demand_closes_every_source_no_client_watches,
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close() {
+    run_story(
+        stories::two_agents_topology,
+        stories::on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close,
+        stories::on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close,
     )
     .await;
 }
@@ -487,5 +498,133 @@ mod stories {
         net.current("laptop", "quiet").await.unwrap();
         drop(chat);
         net.shutdown().await.unwrap();
+    }
+
+    /// Under OnDemand no agent gets a source until a client subscribes, and
+    /// then only that one: a background wake warms one chat. Switching to
+    /// Listed sweeps every other agent current. A source for an agent that
+    /// exits closes once its catch-up has landed, and opens again when its
+    /// origin resumes it.
+    pub async fn on_demand_warms_one_chat_listed_sweeps_the_rest_and_exited_agents_close(
+        mut net: impl World,
+    ) {
+        let named = net.agent("named").unwrap().key();
+        let quiet = net.agent("quiet").unwrap().key();
+        for agent in ["named", "quiet"] {
+            wait_origin_says(&net, agent, "t0-0").await;
+            net.current("laptop", agent).await.unwrap();
+        }
+        sources_are(
+            &net,
+            "laptop",
+            "both sources open",
+            &[named.clone(), quiet.clone()],
+        )
+        .await;
+
+        // The phone asleep: the link goes, work happens, the app wakes OnDemand.
+        net.set_source_policy("laptop", SourcePolicy::OnDemand)
+            .unwrap();
+        sever(&mut net).await;
+        for agent in ["named", "quiet"] {
+            net.send(agent, "two").await.unwrap();
+            wait_origin_says(&net, agent, "t1-0").await;
+        }
+        restore(&mut net).await;
+        net.until("the laptop's inventory to catch up", || async {
+            net.host_ready("laptop", "desk")
+                .await
+                .map_err(|error| error.to_string())?
+                .then_some(())
+                .ok_or_else(|| "desk not ready at the laptop".to_owned())
+        })
+        .await
+        .unwrap();
+        // A window: nothing the test controls gates a source that the policy
+        // must not open.
+        net.holds_for(
+            "no source opens by itself",
+            Duration::from_millis(300),
+            || async {
+                net.open_sources("laptop")
+                    .await
+                    .is_ok_and(|open| open.is_empty())
+            },
+        )
+        .await
+        .unwrap();
+
+        // The notification names one chat; opening it brings that one current.
+        let mut chat = net.observe("laptop", "named", 10).await.unwrap();
+        chat.observe_until(caught_up_since_detached, PATIENCE)
+            .await
+            .unwrap();
+        net.current("laptop", "named").await.unwrap();
+        assert_eq!(
+            net.open_sources("laptop").await.unwrap(),
+            vec![named.clone()]
+        );
+        let stale = replica_state(&net, "laptop", "quiet").await.unwrap();
+        assert!(
+            stale.0 < origin_revision(&net, "quiet").await,
+            "quiet was left alone"
+        );
+
+        // Foreground: every listed agent gets a source.
+        net.set_source_policy("laptop", SourcePolicy::Listed)
+            .unwrap();
+        net.current("laptop", "quiet").await.unwrap();
+
+        // An agent that exits: its source closes once its catch-up has landed.
+        net.stop("quiet").await.unwrap();
+        net.until("quiet's source to close", || async {
+            let open = net
+                .open_sources("laptop")
+                .await
+                .map_err(|e| e.to_string())?;
+            (!open.contains(&quiet))
+                .then_some(())
+                .ok_or_else(|| format!("open sources: {open:?}"))
+        })
+        .await
+        .unwrap();
+        net.current("laptop", "quiet").await.unwrap();
+        let row = replica_row(&net, "laptop", "quiet").await;
+        assert_eq!(row.lifecycle, wire::Lifecycle::Exited as i32);
+        assert_eq!(
+            net.open_sources("laptop").await.unwrap(),
+            vec![named.clone()]
+        );
+
+        // Resumed by its origin, it is followed again.
+        net.resume("quiet", Some("again")).await.unwrap();
+        net.until("quiet's source to reopen", || async {
+            let open = net
+                .open_sources("laptop")
+                .await
+                .map_err(|e| e.to_string())?;
+            open.contains(&quiet)
+                .then_some(())
+                .ok_or_else(|| format!("open sources: {open:?}"))
+        })
+        .await
+        .unwrap();
+        wait_origin_says(&net, "quiet", "t0-0").await;
+        net.current("laptop", "quiet").await.unwrap();
+        let row = replica_row(&net, "laptop", "quiet").await;
+        assert_eq!(
+            (row.lifecycle, row.incarnation),
+            (wire::Lifecycle::Live as i32, 2)
+        );
+        drop(chat);
+        net.shutdown().await.unwrap();
+    }
+
+    /// The agent's row as `host` holds it.
+    async fn replica_row(net: &impl World, host: &str, agent: &str) -> store::AgentRow {
+        let key = net.agent(agent).unwrap().key();
+        net.read_store(host, move |store| store.agent(&key).unwrap().unwrap())
+            .await
+            .unwrap()
     }
 }

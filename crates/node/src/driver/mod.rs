@@ -53,7 +53,7 @@ use tokio::task::AbortHandle;
 use wire::{FetchRequest, GetRequest};
 
 use crate::connection::ConnectionManager;
-use crate::install::{CORE_CHECKPOINT, CORE_RING, write_durably};
+use crate::install::{CORE_CHECKPOINT, CORE_RING, STORE, write_durably};
 use crate::runtime::ProfileRuntime;
 
 /// How the reason of a dump the core asked for begins.
@@ -220,6 +220,7 @@ impl Driver {
             ring,
             checkpointing: None,
             checkpoint_waiting: Vec::new(),
+            checkpoint_again: false,
             drain_waiting: Vec::new(),
             retain_reply: None,
             fed,
@@ -505,10 +506,13 @@ pub(crate) struct CoreThread {
     daemon: Daemon,
     /// Every input stepped since the last checkpoint, when the ring opened.
     ring: Option<Ring<Input>>,
-    /// The checkpoint job in flight.
+    /// The checkpoint's job in flight: its WAL job, then its write job.
     checkpointing: Option<JobId>,
     /// Whoever waits for the next checkpoint to be on the drive.
     checkpoint_waiting: Vec<oneshot::Sender<Result<(), String>>>,
+    /// A waiter came after the checkpoint in flight cut the store's main
+    /// file, so another is taken once it ends.
+    checkpoint_again: bool,
     /// Whoever waits for a drain pass, with the first pass whose report
     /// answers them.
     drain_waiting: Vec<(u64, oneshot::Sender<DrainReport>)>,
@@ -646,10 +650,15 @@ impl CoreThread {
                 }
                 Fed::Checkpoint { done } => {
                     self.checkpoint_waiting.push(done);
-                    // One in flight already covers every commit its waiter
-                    // has seen: commits wait for it.
                     match self.checkpointing {
-                        Some(_) => None,
+                        // One still moving its WAL covers every commit its
+                        // waiter has seen: commits wait for it.
+                        Some(_) if self.daemon.checkpoints().holding() => None,
+                        // One past that does not, so another follows it.
+                        Some(_) => {
+                            self.checkpoint_again = true;
+                            None
+                        }
                         None => Some(Input::Timer {
                             id: TimerId::Checkpoint,
                         }),
@@ -729,6 +738,8 @@ impl CoreThread {
             Input::ClientCall { call, .. } | Input::AnswerLagged { call } => Some(*call),
             _ => None,
         };
+        // A checkpoint's WAL job done starts its write job; either job's
+        // end with no job after it ends the checkpoint.
         let checkpointed = match &input {
             Input::JobDone { job, result } if Some(*job) == self.checkpointing => {
                 self.checkpointing = None;
@@ -752,9 +763,17 @@ impl CoreThread {
         for output in outputs {
             self.execute(runtime, output, replying);
         }
-        if let Some(outcome) = checkpointed {
-            for waiter in self.checkpoint_waiting.drain(..) {
-                let _ = waiter.send(outcome.clone());
+        if let Some(outcome) = checkpointed
+            && self.checkpointing.is_none()
+        {
+            if std::mem::take(&mut self.checkpoint_again) {
+                self.again.push_back(Input::Timer {
+                    id: TimerId::Checkpoint,
+                });
+            } else {
+                for waiter in self.checkpoint_waiting.drain(..) {
+                    let _ = waiter.send(outcome.clone());
+                }
             }
         }
     }
@@ -890,6 +909,18 @@ impl CoreThread {
                     Arc::downgrade(runtime),
                     id,
                     Job::Checkpoint { state },
+                    self.inputs.clone(),
+                ));
+            }
+            Output::Job {
+                id,
+                op: Job::CheckpointWal,
+            } => {
+                self.checkpointing = Some(id);
+                tokio::spawn(run_job(
+                    Arc::downgrade(runtime),
+                    id,
+                    Job::CheckpointWal,
                     self.inputs.clone(),
                 ));
             }
@@ -1168,6 +1199,15 @@ async fn run_job(
             }
             JobResult::Done
         }
+        Job::CheckpointWal => {
+            let Some(dir) = runtime.upgrade().map(|runtime| runtime.dir().to_path_buf()) else {
+                return;
+            };
+            blocking(move || {
+                Sqlite::checkpoint_wal(&dir.join(STORE)).map_err(std::io::Error::other)
+            })
+            .await
+        }
         Job::Checkpoint { state } => {
             let Some(dir) = runtime.upgrade().map(|runtime| runtime.dir().to_path_buf()) else {
                 return;
@@ -1351,10 +1391,10 @@ pub(crate) async fn fsync(path: PathBuf, bytes: Vec<u8>) -> JobResult {
     blocking(move || write_durably(&path, &bytes)).await
 }
 
-/// The checkpoint job: the core's state as of the step that took it,
-/// beside the store's main file, which that step brought up to it. A crash
-/// before the write leaves the previous checkpoint, which the main file is
-/// past.
+/// The checkpoint job: the core's state as of the step that heard its WAL
+/// job was done, beside the store's main file, which that job brought up to
+/// it. A crash before the write leaves the previous checkpoint, which the
+/// main file is past.
 fn checkpoint(dir: &Path, state: &[u8]) -> std::io::Result<()> {
     write_durably(&dir.join(CORE_CHECKPOINT), state)
 }

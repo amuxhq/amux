@@ -622,6 +622,10 @@ pub enum Job {
     TeardownHost {
         host: HostId,
     },
+    /// Run a passive WAL checkpoint on a connection to the profile store
+    /// of the job's own, so the store's main file holds every commit; one
+    /// that cannot move the whole WAL fails.
+    CheckpointWal,
     /// Write the serialized core beside the store's passive WAL checkpoint.
     Checkpoint {
         state: Vec<u8>,

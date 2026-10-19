@@ -60,13 +60,15 @@ are in `src/replication.rs`, each a sentence over the two stores.
 `SingleDaemon` runs the real daemon core over a real in-memory store and one
 agent's journal laid out as files, and holds the core as the checkpoint it
 takes of itself. The agent writes frames and nudges; a client subscribes
-and may fall behind its queue; the checkpoint timer fires and the
-checkpoint job writes, finishes or fails; the page cache writes the journal
-back; the drive may refuse a commit; and the daemon crashes, loses power or
-reboots cleanly, then starts again under the generation the installation
-decides. What the drive holds is kept apart from what the process sees: a
-power loss takes the store back to its last passive WAL checkpoint and the
-journal back to its last writeback.
+and may fall behind its queue; the checkpoint timer fires, the WAL job
+moves the WAL into the store's main file or finds it busy while inputs go on
+arriving and the core holds those that would write, and the checkpoint job
+writes, finishes or fails; the page cache writes the journal back; the
+drive may refuse a commit; and the daemon crashes, loses power or reboots
+cleanly at any point between, then starts again under the generation the
+installation decides. What the drive holds is kept apart from what the
+process sees: a power loss takes the store back to its last passive WAL
+checkpoint and the journal back to its last writeback.
 
 Every step is also replayed the way a dump will be: the core restored from
 the newest checkpoint the driver's input ring holds, over the store it was

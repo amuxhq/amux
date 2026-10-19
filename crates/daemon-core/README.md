@@ -40,6 +40,7 @@ constant time per row it touched:
 - an agent's journal is reclaimed only below the cursor of the newest
   checkpoint on the drive;
 - the generation this host's streams open under only ever rises;
+- nothing is committed while a checkpoint moves the WAL into the main file;
 - at most one attempt the core asked for is in flight per host and route;
 - a host reads away only while the relay's refusal for the account's plan is
   recorded;

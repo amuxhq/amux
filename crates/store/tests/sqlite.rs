@@ -333,7 +333,8 @@ fn a_passive_checkpoint_puts_every_commit_before_it_in_the_main_file_and_none_af
         .unwrap();
     let changes = store.changes();
 
-    store.checkpoint_wal().unwrap();
+    // On a connection of its own, the store staying open on this one.
+    Sqlite::checkpoint_wal(&path).unwrap();
     store.commit(&key, &[(20, step(&["c"]))], CLOCK).unwrap();
     assert!(store.changes() > changes, "a commit moves the count");
 
@@ -344,9 +345,4 @@ fn a_passive_checkpoint_puts_every_commit_before_it_in_the_main_file_and_none_af
     assert!(copied.get(&key, "b").unwrap().is_some());
     assert!(copied.get(&key, "c").unwrap().is_none());
     assert_eq!(copied.cursor(&key).unwrap(), 10);
-
-    let memory = Sqlite::open_in_memory(OWN).unwrap();
-    memory
-        .checkpoint_wal()
-        .expect("a store in memory has nothing to move");
 }

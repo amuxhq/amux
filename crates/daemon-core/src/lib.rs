@@ -153,6 +153,49 @@ impl Daemon {
         let started = Instant::now();
         let kind = input.kind();
         self.touched = Touched::default();
+        // What waited out a WAL checkpoint that has ended goes first, so
+        // writes land in the order they came.
+        self.release_held(out);
+        if let Some(input) = self.checkpoints.hold(input) {
+            self.dispatch(input, out);
+        }
+        // A failed WAL checkpoint lets go of what waited at once; one that
+        // is done serialized the core with it waiting, so it waits for the
+        // next step.
+        if !self.touched.serialized {
+            self.release_held(out);
+        }
+        self.settle_deliveries(out);
+        self.tell_presence();
+        self.publish_host_set(out);
+        self.follow_touched(out);
+        self.arm_on_commit(out);
+        if let Err(violation) = self.check_step_invariants() {
+            tracing::error!(%violation, input = kind, "a daemon core step broke an invariant");
+            out.push(Output::Dump {
+                reason: DumpReason::Violation(violation),
+            });
+        }
+        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+        if micros > self.options.budget.micros {
+            tracing::warn!(
+                micros,
+                budget = self.options.budget.micros,
+                input = kind,
+                "a daemon core step ran over its budget"
+            );
+            out.push(Output::Dump {
+                reason: DumpReason::OverBudget {
+                    micros,
+                    budget: self.options.budget,
+                },
+            });
+        }
+    }
+
+    /// Steps one input: the work of [`Daemon::step`] between the hold and
+    /// the checks.
+    fn dispatch(&mut self, input: Input, out: &mut Vec<Output>) {
         match input {
             Input::Tick { now_ms } => self.timers.now_ms = now_ms,
             Input::ClientCall { call, request } => self.client_call(call, request, out),
@@ -283,32 +326,6 @@ impl Daemon {
             Input::Candidates { found } => self.candidates_found(found),
             Input::DialError { host, error } => self.dial_error(host, error),
         }
-        self.settle_deliveries(out);
-        self.tell_presence();
-        self.publish_host_set(out);
-        self.follow_touched(out);
-        self.arm_on_commit(out);
-        if let Err(violation) = self.check_step_invariants() {
-            tracing::error!(%violation, input = kind, "a daemon core step broke an invariant");
-            out.push(Output::Dump {
-                reason: DumpReason::Violation(violation),
-            });
-        }
-        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        if micros > self.options.budget.micros {
-            tracing::warn!(
-                micros,
-                budget = self.options.budget.micros,
-                input = kind,
-                "a daemon core step ran over its budget"
-            );
-            out.push(Output::Dump {
-                reason: DumpReason::OverBudget {
-                    micros,
-                    budget: self.options.budget,
-                },
-            });
-        }
     }
 
     /// The cheap predicates production checks after every step, at the
@@ -434,6 +451,15 @@ impl Daemon {
                 ),
             });
         }
+        if self.touched.committed_while_held {
+            return Err(Violation {
+                invariant: NO_COMMIT_WHILE_HELD,
+                detail: format!(
+                    "the store committed while its WAL was being moved, {} inputs waiting",
+                    self.checkpoints.held()
+                ),
+            });
+        }
         Ok(())
     }
 
@@ -444,7 +470,8 @@ impl Daemon {
     }
 
     /// The core as of this step. With the store's main file after a passive
-    /// WAL checkpoint taken at the same step, it is the daemon exactly.
+    /// WAL checkpoint that no commit has followed, it is the daemon
+    /// exactly.
     pub fn checkpoint(&self) -> Checkpoint {
         let core = (
             &self.routing,
@@ -563,6 +590,12 @@ pub const RECLAIMED_ABOVE_CHECKPOINT: &str =
     "an agent's journal is reclaimed only below the cursor of the newest checkpoint on the drive";
 pub const GENERATION_FELL: &str = "the generation this host's streams open under only ever rises";
 
+/// No store commit lands while a checkpoint's WAL job moves the WAL into
+/// the main file, so the main file then holds exactly what the checkpoint
+/// serializes beside it.
+pub const NO_COMMIT_WHILE_HELD: &str =
+    "nothing is committed while a checkpoint moves the WAL into the main file";
+
 /// The sources' and families' cheap invariants.
 pub const PAGE_OFF_THE_BOUNDARY: &str =
     "a page from the origin joins a replica's block only at the block's lower boundary";
@@ -623,6 +656,12 @@ struct Touched {
     /// Each report handed to its parent, by envelope id, and whether one
     /// with that id was already in hand.
     handed: Vec<(Vec<u8>, bool)>,
+    /// The step began moving the WAL into the main file.
+    hold_began: bool,
+    /// The step serialized the core for a checkpoint.
+    serialized: bool,
+    /// The store committed while the WAL was being moved.
+    committed_while_held: bool,
 }
 
 impl Touched {
@@ -816,7 +855,7 @@ mod tests {
     }
 
     #[test]
-    fn the_state_a_checkpoint_job_writes_is_the_core_after_the_step_that_took_it() {
+    fn the_state_a_checkpoint_job_writes_is_the_core_after_the_step_that_serialized_it() {
         let mut daemon = daemon();
         let mut out = Vec::new();
         daemon.step(
@@ -826,11 +865,25 @@ mod tests {
             &mut out,
         );
         let Some(Output::Job {
+            id: wal,
+            op: Job::CheckpointWal,
+        }) = out.pop()
+        else {
+            panic!("the timer starts the checkpoint's WAL job");
+        };
+        daemon.step(
+            Input::JobDone {
+                job: wal,
+                result: payload::JobResult::Done,
+            },
+            &mut out,
+        );
+        let Some(Output::Job {
             id,
             op: Job::Checkpoint { state },
         }) = out.pop()
         else {
-            panic!("the timer takes a checkpoint");
+            panic!("the WAL job's end serializes the core");
         };
         let store = Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens");
         let mut restored =

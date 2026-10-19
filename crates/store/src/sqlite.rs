@@ -54,6 +54,10 @@ impl std::fmt::Debug for Sqlite {
     }
 }
 
+/// How long a clean shutdown's flush waits out a checkpoint another
+/// connection is taking.
+const FLUSH_PATIENCE: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl Sqlite {
     /// Opens or creates the profile store at `path` for the host whose own
     /// rows it holds, applying any migrations it lacks. A store whose
@@ -103,14 +107,26 @@ impl Sqlite {
     /// file and flushes it to the drive itself (fullfsync, which macOS
     /// needs for a flush to pass the drive's cache). Commits are otherwise
     /// not synced, so this is what a clean shutdown promises before it
-    /// marks the installation clean.
+    /// marks the installation clean. A checkpoint on another connection
+    /// (the owner's passive one, running as a job) holds the checkpoint
+    /// lock while it copies, so a busy checkpoint is tried again for up to
+    /// two seconds.
     pub fn flush_to_drive(&self) -> Result<(), rusqlite::Error> {
         self.conn.pragma_update(None, "fullfsync", true)?;
-        let checkpoint = self
-            .conn
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
-                row.get::<_, i64>(0)
-            });
+        let started = std::time::Instant::now();
+        let checkpoint = loop {
+            let checkpoint = self
+                .conn
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                    row.get::<_, i64>(0)
+                });
+            match checkpoint {
+                Ok(busy) if busy != 0 && started.elapsed() < FLUSH_PATIENCE => {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                checkpoint => break checkpoint,
+            }
+        };
         let restored = self.conn.pragma_update(None, "fullfsync", false);
         match checkpoint? {
             0 => restored,
@@ -121,19 +137,22 @@ impl Sqlite {
         }
     }
 
-    /// Moves every transaction committed to the WAL into the main file on
-    /// this store's own connection, without waiting for a writer: the
-    /// passive checkpoint. Under synchronous=NORMAL the main file is synced
-    /// once the checkpoint completes, so on success it holds exactly what
-    /// was committed before the call; with SQLite's own checkpoints left to
-    /// the owner, it changes again only at the owner's next one. A store
-    /// in memory has no WAL and nothing to move.
-    pub fn checkpoint_wal(&self) -> Result<(), rusqlite::Error> {
-        let (log, checkpointed) =
-            self.conn
-                .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
-                    Ok((row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
-                })?;
+    /// Moves every transaction committed to the WAL of the store at `path`
+    /// into its main file, on a connection of its own and without waiting
+    /// for a writer: the passive checkpoint, which the store's owner runs
+    /// off its own thread while the store stays open there. The main file
+    /// is synced once the checkpoint completes, so on success it holds
+    /// exactly what was committed before the call; with SQLite's own
+    /// checkpoints left to the owner, it changes again only at the owner's
+    /// next one. One that cannot move the whole WAL fails as busy.
+    pub fn checkpoint_wal(path: &Path) -> Result<(), rusqlite::Error> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        let (log, checkpointed) = conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
+            Ok((row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+        })?;
         if checkpointed < log {
             return Err(rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),

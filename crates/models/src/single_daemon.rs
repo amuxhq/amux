@@ -13,8 +13,9 @@
 //!
 //! What the drive holds is tracked apart from what the running process
 //! sees. Store commits are not synced one by one, so the drive has the
-//! store as of its last passive WAL checkpoint, which the step taking a
-//! checkpoint runs, or of its last clean shutdown. The agent's journal is written with
+//! store as of its last passive WAL checkpoint, the first of a checkpoint's
+//! two jobs, or of its last clean shutdown. Inputs go on arriving while
+//! that job runs, and the core holds those that would write until it ends. The agent's journal is written with
 //! plain writes, so the drive has it as of the page cache's last writeback.
 //! A power loss takes both back to what the drive has; a crash loses
 //! neither. The generation record is written durably at each start and
@@ -118,12 +119,16 @@ struct Record {
     counter: u64,
 }
 
-/// The checkpoint job the driver runs for the core.
+/// The checkpoint's job the driver runs for the core: first the passive
+/// WAL checkpoint, then the write of the core's state.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct CheckpointJob {
-    id: JobId,
-    /// The core's state is on the drive beside the store's main file.
-    written: bool,
+enum CheckpointJob {
+    Copying(JobId),
+    Writing {
+        id: JobId,
+        /// The core's state is on the drive beside the store's main file.
+        written: bool,
+    },
 }
 
 /// A client's Subscribe stream on the agent, as the client reads it.
@@ -156,6 +161,8 @@ struct Run {
     /// since the run before this one started.
     owed: bool,
     job: Option<CheckpointJob>,
+    /// Inputs the core holds until its WAL checkpoint ends.
+    held: usize,
     /// The timer for the agent's next ingest batch is armed.
     ingest_armed: bool,
     subscriber: Option<Subscriber>,
@@ -292,8 +299,14 @@ pub enum Action {
     IngestAgain,
     /// The checkpoint timer fires, or someone asks for a checkpoint.
     Checkpoint,
+    /// The driver's WAL job moves the WAL into the store's main file,
+    /// syncs it and reports it is done; the core is serialized.
+    WalDone,
+    /// The WAL job could not move the whole WAL: a reader held it, or the
+    /// drive refused.
+    WalBusy,
     /// The driver's checkpoint job puts the core's state on the drive,
-    /// beside the store's main file the step that took it synced.
+    /// beside the store's main file the WAL job synced.
     CheckpointWritten,
     /// The checkpoint job reports it is done, and the core lets go of the
     /// journal below it.
@@ -382,11 +395,15 @@ impl Machine for SingleDaemon {
         match &run.job {
             None if s.used.checkpoints < self.checkpoints => out.push(Action::Checkpoint),
             None => {}
-            Some(CheckpointJob { written: false, .. }) => {
+            Some(CheckpointJob::Copying(_)) => {
+                out.push(Action::WalDone);
+                out.push(Action::WalBusy);
+            }
+            Some(CheckpointJob::Writing { written: false, .. }) => {
                 out.push(Action::CheckpointWritten);
                 out.push(Action::CheckpointFails);
             }
-            Some(CheckpointJob { written: true, .. }) => out.push(Action::Reclaim),
+            Some(CheckpointJob::Writing { written: true, .. }) => out.push(Action::Reclaim),
         }
         match &run.subscriber {
             Some(subscriber) if subscriber.open() => {
@@ -447,26 +464,31 @@ impl Machine for SingleDaemon {
                     .run
                     .as_mut()
                     .expect("a job runs only while the daemon does");
-                run.job.as_mut().expect("a job to write").written = true;
+                let Some(CheckpointJob::Writing { written, .. }) = run.job.as_mut() else {
+                    unreachable!("a checkpoint to write");
+                };
+                *written = true;
             }
-            Action::Reclaim | Action::CheckpointFails => {
+            Action::WalDone | Action::WalBusy | Action::Reclaim | Action::CheckpointFails => {
+                if *action == Action::WalDone {
+                    // The core holds every write while the job runs, so the
+                    // store the process has is what was committed before it.
+                    next.durable = next.store.clone();
+                    next.durable_cursor = next.cursor;
+                }
                 let run = next
                     .run
                     .as_mut()
                     .expect("a job runs only while the daemon does");
-                let job = run.job.take().expect("a job to end");
+                let job = match run.job.take().expect("a job to end") {
+                    CheckpointJob::Copying(id) | CheckpointJob::Writing { id, .. } => id,
+                };
                 let result = match action {
-                    Action::Reclaim => JobResult::Done,
+                    Action::WalDone | Action::Reclaim => JobResult::Done,
+                    Action::WalBusy => JobResult::Failed("the WAL was busy".into()),
                     _ => JobResult::Failed(REFUSAL.into()),
                 };
-                self.step(
-                    &mut next,
-                    Input::JobDone {
-                        job: job.id,
-                        result,
-                    },
-                    false,
-                );
+                self.step(&mut next, Input::JobDone { job, result }, false);
             }
             Action::SubscriberOpen => {
                 next.used.opens += 1;
@@ -619,6 +641,10 @@ impl Machine for SingleDaemon {
                         })
                 },
             ),
+            Property::sometimes(
+                "a write waits out a checkpoint's WAL job",
+                |_, s: &State| s.run.as_ref().is_some_and(|run| run.held > 0),
+            ),
             Property::sometimes("a checkpoint reclaims a journal segment", |_, s: &State| {
                 s.journal
                     .first_key_value()
@@ -647,6 +673,7 @@ impl SingleDaemon {
             let mut daemon = scratch.daemon(&run.core, &next.store, &next.journal);
             let mut out = Vec::new();
             stepped(&mut daemon, input.clone(), refuse, &mut out);
+            run.held = daemon.checkpoints().held();
             // Each row a step answered, and whether the store holds it.
             let held: Vec<bool> = answered(&out)
                 .map(|(_, key, revision)| {
@@ -709,13 +736,13 @@ impl SingleDaemon {
                 } => run.ingest_armed = false,
                 Output::Job {
                     id,
+                    op: Job::CheckpointWal,
+                } => run.job = Some(CheckpointJob::Copying(id)),
+                Output::Job {
+                    id,
                     op: Job::Checkpoint { state },
                 } => {
-                    run.job = Some(CheckpointJob { id, written: false });
-                    // The step ran the passive WAL checkpoint: the main file
-                    // on the drive is the store as of it.
-                    next.durable = next.store.clone();
-                    next.durable_cursor = next.cursor;
+                    run.job = Some(CheckpointJob::Writing { id, written: false });
                     // The driver's ring starts again at this checkpoint.
                     next.ring = Ring {
                         base: Some((state, next.store.clone(), next.journal.clone())),
@@ -805,6 +832,7 @@ fn start(next: &mut State) {
         previous: next.last_generation,
         owed: next.owed,
         job: None,
+        held: 0,
         ingest_armed: false,
         subscriber: None,
         calls: 0,

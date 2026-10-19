@@ -565,7 +565,7 @@ mod tests {
         assert_eq!(dumps_in(&out), Vec::<&crate::DumpReason>::new());
     }
 
-    /// The checkpoint job a step asked for.
+    /// The checkpoint's write job a step asked for.
     fn checkpoint_job(out: &[Output]) -> Option<crate::JobId> {
         out.iter().find_map(|output| match output {
             Output::Job {
@@ -574,6 +574,36 @@ mod tests {
             } => Some(*id),
             _ => None,
         })
+    }
+
+    /// The checkpoint's WAL job a step asked for.
+    fn wal_job(out: &[Output]) -> Option<crate::JobId> {
+        out.iter().find_map(|output| match output {
+            Output::Job {
+                id,
+                op: crate::Job::CheckpointWal,
+            } => Some(*id),
+            _ => None,
+        })
+    }
+
+    /// Fires the checkpoint timer and ends its WAL job as done, returning
+    /// the checkpoint's write job.
+    fn take_checkpoint(daemon: &mut Daemon) -> crate::JobId {
+        let started = step(
+            daemon,
+            Input::Timer {
+                id: TimerId::Checkpoint,
+            },
+        );
+        let copied = step(
+            daemon,
+            Input::JobDone {
+                job: wal_job(&started).expect("the timer starts the WAL job"),
+                result: crate::payload::JobResult::Done,
+            },
+        );
+        checkpoint_job(&copied).expect("the WAL job's end serializes the core")
     }
 
     fn subscribed(daemon: &mut Daemon, call: CallId) {
@@ -590,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn commits_go_ahead_while_a_checkpoint_is_taken_and_make_the_next_one_due() {
+    fn an_ingest_waits_out_the_wal_job_and_commits_go_ahead_while_the_state_is_written() {
         let mut rig = rig();
         let call = CallId(1);
         subscribed(&mut rig.daemon, call);
@@ -608,40 +638,59 @@ mod tests {
             "a commit makes the next checkpoint due an interval on"
         );
 
-        let taken = step(
+        let started = step(
             &mut rig.daemon,
             Input::Timer {
                 id: TimerId::Checkpoint,
             },
         );
-        let job = checkpoint_job(&taken).expect("the timer takes a checkpoint");
-        assert!(rig.daemon.checkpoints().taking());
+        let wal = wal_job(&started).expect("the timer starts the WAL job");
+        assert!(rig.daemon.checkpoints().holding());
 
-        // The main file already holds the store as of the step that took
-        // the checkpoint, so what is committed now waits in the WAL.
+        // While the WAL moves into the main file, the nudge waits.
         rig.journal
             .append(&item(1))
             .expect("the journal takes a step");
-        let during = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
-        assert_eq!(answered(&during, call), vec!["k001"]);
-        assert!(
-            during.contains(&Output::ArmTimer {
-                id: TimerId::Checkpoint,
-                at_ms: interval,
-            }),
-            "the commit makes the next checkpoint due: {during:?}"
+        let held = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        assert_eq!(answered(&held, call), Vec::<String>::new());
+        assert_eq!(rig.daemon.checkpoints().held(), 1);
+        let copied = step(
+            &mut rig.daemon,
+            Input::JobDone {
+                job: wal,
+                result: crate::payload::JobResult::Done,
+            },
         );
+        let job = checkpoint_job(&copied).expect("the WAL job's end serializes the core");
+        assert_eq!(answered(&copied, call), Vec::<String>::new());
+
+        // It lands at the next step, and commits go ahead while the state
+        // is written, making the next checkpoint due.
+        let landed = step(&mut rig.daemon, Input::Tick { now_ms: 1 });
+        assert_eq!(answered(&landed, call), vec!["k001"]);
+        assert!(
+            landed.contains(&Output::ArmTimer {
+                id: TimerId::Checkpoint,
+                at_ms: 1 + interval,
+            }),
+            "the commit makes the next checkpoint due: {landed:?}"
+        );
+        rig.journal
+            .append(&item(2))
+            .expect("the journal takes a step");
+        let during = step(&mut rig.daemon, Input::Nudge { agent: AGENT });
+        assert_eq!(answered(&during, call), vec!["k002"]);
         let again = step(
             &mut rig.daemon,
             Input::Timer {
                 id: TimerId::Checkpoint,
             },
         );
-        assert_eq!(checkpoint_job(&again), None, "one checkpoint at a time");
+        assert_eq!(wal_job(&again), None, "one checkpoint at a time");
         assert!(
             again.contains(&Output::ArmTimer {
                 id: TimerId::Checkpoint,
-                at_ms: interval,
+                at_ms: 1 + interval,
             }),
             "the next waits an interval on: {again:?}"
         );
@@ -654,6 +703,7 @@ mod tests {
             },
         );
         assert!(!rig.daemon.checkpoints().taking());
+        assert_eq!(dumps_in(&during), Vec::<&crate::DumpReason>::new());
     }
 
     #[test]
@@ -673,16 +723,11 @@ mod tests {
         let checkpointed = rig.daemon.store.cursor(&key).unwrap();
 
         // A checkpoint that failed vouches for nothing.
-        let taken = step(
-            &mut rig.daemon,
-            Input::Timer {
-                id: TimerId::Checkpoint,
-            },
-        );
+        let taken = take_checkpoint(&mut rig.daemon);
         let failed = step(
             &mut rig.daemon,
             Input::JobDone {
-                job: checkpoint_job(&taken).unwrap(),
+                job: taken,
                 result: crate::payload::JobResult::Failed("the drive is full".into()),
             },
         );
@@ -702,12 +747,7 @@ mod tests {
             "the next is tried an interval on"
         );
 
-        let taken = step(
-            &mut rig.daemon,
-            Input::Timer {
-                id: TimerId::Checkpoint,
-            },
-        );
+        let taken = take_checkpoint(&mut rig.daemon);
         // Committed after the checkpoint was taken, so not on the drive by it.
         for n in 8..16 {
             rig.journal
@@ -718,7 +758,7 @@ mod tests {
         step(
             &mut rig.daemon,
             Input::JobDone {
-                job: checkpoint_job(&taken).unwrap(),
+                job: taken,
                 result: crate::payload::JobResult::Done,
             },
         );

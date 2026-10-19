@@ -234,19 +234,28 @@ once per incarnation.
 
 The profile's core checkpoints an interval (`Launch.checkpoint_interval_ms`,
 a minute) after any commit to the store, and when its input ring fills
-first. At that step it runs a passive WAL checkpoint on its own connection
-(`Sqlite::checkpoint_wal`), which SQLite syncs, reads the cursor of every
-agent committed since the last checkpoint, serializes its own state, and
-asks for a checkpoint job, which writes the state durably to
-`core.checkpoint` beside the store. Every write to the store is the core's,
-and SQLite's own automatic checkpoints are off (`wal_autocheckpoint=0`): the
-checkpoint's step and the clean shutdown's flush are the only times the WAL
-reaches the main file. So whatever the core commits while the job runs stays
-in the WAL, and the main file and the state are the daemon as of that step.
-The
-driver records every input the core steps in `core-ring/`
-before stepping it, and starts a new ring segment at each checkpoint: the
-newest checkpoint and the inputs since rebuild the core.
+first. A checkpoint is two jobs. The step that takes it reads the cursor of
+every agent committed since the last checkpoint and asks for a WAL job: a
+passive WAL checkpoint on a connection to the store of the job's own
+(`Sqlite::checkpoint_wal`), which SQLite syncs, run off the core's thread
+because moving the WAL can take tens of milliseconds. Until that job ends,
+every input that may write (ingest, the registry, deliveries, trust,
+drafts, blobs, replica absorbs) waits in the core in the order it came;
+reads, subscriptions, presence, routing and peers' reads step on. The step
+that hears the WAL job is done serializes the core, with what waits still
+waiting, and asks for a checkpoint job that writes the state durably to
+`core.checkpoint` beside the store; the next step lets what waited through.
+A WAL job that cannot move the whole WAL (a reader held it) lets go of what
+waited at once, and the next checkpoint is tried an interval on.
+
+Every write to the store is the core's, and SQLite's own automatic
+checkpoints are off (`wal_autocheckpoint=0`): the WAL job and the clean
+shutdown's flush are the only times the WAL reaches the main file. So the
+main file holds exactly what was committed before the hold, whatever the
+core commits after it stays in the WAL, and the main file and the state are
+the daemon as of one step. The driver records every input the core steps in
+`core-ring/` before stepping it, and starts a new ring segment at each
+checkpoint: the newest checkpoint and the inputs since rebuild the core.
 
 A segment is deleted only when it lies entirely below an agent's cursor as of
 the last checkpoint that reached the drive, so the journal is never the only

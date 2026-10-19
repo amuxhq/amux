@@ -142,9 +142,9 @@ impl Installation {
             profiles::host_id(&dir).map_err(|error| StartError::Profile { profile, error })?;
         let store = store::Sqlite::open(&dir.join(STORE), host.as_bytes().to_vec())
             .map_err(|error| StartError::Store { profile, error })?;
-        // Every write is the core's, whose checkpoint job holds its commits
-        // while it runs; that job and the clean shutdown's flush are the
-        // only checkpoints.
+        // Every write is the core's, which holds its commits while its
+        // checkpoint's WAL job runs; that job and the clean shutdown's
+        // flush are the only checkpoints.
         store
             .leave_checkpoints_to_owner()
             .map_err(|error| StartError::Store {

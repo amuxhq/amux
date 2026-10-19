@@ -1803,9 +1803,10 @@ impl Transition<'_> {
             Job::Compare { .. } => JobResult::CompareFailed(GitRefusal::NotARepository),
             Job::MakeWorktree { .. } => JobResult::Failed("no repository here".to_owned()),
             // Nothing reads back what these write: the trust file, the
-            // core's checkpoint, blobs and drafts.
+            // store's main file, the core's checkpoint, blobs and drafts.
             Job::Fsync { .. }
             | Job::WriteBlob { .. }
+            | Job::CheckpointWal
             | Job::Checkpoint { .. }
             | Job::TeardownHost { .. }
             | Job::RefreshToken { .. }
@@ -2339,6 +2340,7 @@ fn job_kind(job: &Job) -> &'static str {
     match job {
         Job::Fsync { .. } => "Fsync",
         Job::TeardownHost { .. } => "TeardownHost",
+        Job::CheckpointWal => "CheckpointWal",
         Job::Checkpoint { .. } => "Checkpoint",
         Job::WriteBlob { .. } => "WriteBlob",
         Job::RefreshToken { .. } => "RefreshToken",

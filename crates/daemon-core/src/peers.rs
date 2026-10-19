@@ -19,7 +19,9 @@ use wire::peer_subscribe_request;
 
 use crate::ids::{CallId, HostId};
 use crate::io::Output;
-use crate::payload::{Answer, CallError, Opening, PeerFailure, PeerRequest, Response, Status};
+use crate::payload::{
+    Answer, CallError, Opening, PeerFailure, PeerReply, PeerRequest, Response, Status,
+};
 use crate::serve::{Key, answered};
 use crate::{Daemon, Pending, codec};
 
@@ -235,7 +237,12 @@ impl Daemon {
                     return;
                 }
                 match answer {
-                    Answer::Reply(reply) => answered(call, Response::Peer(reply), out),
+                    Answer::Reply(reply) => {
+                        if let PeerReply::Agent(agent) = &*reply {
+                            self.forwarded_agent(agent, out);
+                        }
+                        answered(call, Response::Peer(reply), out)
+                    }
                     Answer::Failed(failure) => out.push(Output::EndCall {
                         call,
                         status: Status::Failed(CallError::Peer(failure)),

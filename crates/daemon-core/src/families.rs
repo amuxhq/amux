@@ -117,6 +117,9 @@ struct Process {
     leaving: bool,
     /// Its live direct children with their incarnations, as last told.
     told: Vec<(Vec<u8>, u32)>,
+    /// Children on other hosts this host forwarded its creates for, by
+    /// agent id with their incarnations, until their hosts list them.
+    forwarded: BTreeMap<Vec<u8>, u32>,
     /// It is gone, and how the driver knows; its exit is recorded once its
     /// journal has been read to the end.
     ended: Option<Ended>,
@@ -1357,6 +1360,33 @@ impl Daemon {
         Ok(())
     }
 
+    /// A call this host forwarded to another host was answered with an
+    /// agent: the one a create made, or a resume or rename touched. When
+    /// that agent is a live child of one of this host's running agents,
+    /// the parent hears of it now: its host lists it only later, and a
+    /// one-shot parent whose turn ends in between would exit without
+    /// waiting for it.
+    pub(crate) fn forwarded_agent(&mut self, child: &Agent, out: &mut Vec<Output>) {
+        let Some(parent) = &child.parent else {
+            return;
+        };
+        if parent.host_id != self.store.own_host() || child.lifecycle != Lifecycle::Live as i32 {
+            return;
+        }
+        let Some(parent) = AgentId::from_slice(&parent.agent_id) else {
+            return;
+        };
+        let Some(process) = self.families.processes.get_mut(&parent) else {
+            return;
+        };
+        process
+            .forwarded
+            .insert(child.agent_id.clone(), child.incarnation);
+        if let Err(error) = self.tell_children(parent, out) {
+            tracing::warn!(%error, "telling a parent of its forwarded child failed");
+        }
+    }
+
     /// Tells a running agent which agents directly below it are now live,
     /// when that changed: a one-shot agent waits for the last report of
     /// every child incarnation it was told of.
@@ -1383,15 +1413,27 @@ impl Daemon {
 
     /// The live agents directly below `agent` on any host with their
     /// incarnations, in agent id order so two lists compare equal when
-    /// nothing changed.
-    fn children_of(&self, agent: AgentId) -> Result<Vec<(Vec<u8>, u32)>, StoreError> {
-        let mut children: Vec<(Vec<u8>, u32)> = self
-            .store
-            .agents_of_parent(&self.own_key(agent))?
-            .into_iter()
+    /// nothing changed: what the store holds, and the children its creates
+    /// were forwarded for that their hosts have not listed yet. A listed
+    /// child is the store's to say from then on.
+    fn children_of(&mut self, agent: AgentId) -> Result<Vec<(Vec<u8>, u32)>, StoreError> {
+        let rows = self.store.agents_of_parent(&self.own_key(agent))?;
+        let mut children: Vec<(Vec<u8>, u32)> = rows
+            .iter()
             .filter(|row| row.lifecycle == Lifecycle::Live as i32)
-            .map(|row| (row.agent.agent, row.incarnation))
+            .map(|row| (row.agent.agent.clone(), row.incarnation))
             .collect();
+        if let Some(process) = self.families.processes.get_mut(&agent) {
+            process
+                .forwarded
+                .retain(|child, _| !rows.iter().any(|row| row.agent.agent == *child));
+            children.extend(
+                process
+                    .forwarded
+                    .iter()
+                    .map(|(child, incarnation)| (child.clone(), *incarnation)),
+            );
+        }
         children.sort();
         Ok(children)
     }
@@ -1424,8 +1466,8 @@ mod tests {
     use store::Sqlite;
 
     use super::*;
-    use crate::payload::ClientRequest;
-    use crate::{Input, StartOptions};
+    use crate::payload::{Answer, ClientRequest, PeerReply, PeerRequest};
+    use crate::{HostId, Input, StartOptions};
 
     const OWN: [u8; 16] = *b"own-host-0000000";
     const PARENT: AgentId = AgentId(*b"parent-000000000");
@@ -1702,6 +1744,97 @@ mod tests {
         assert_eq!(answered.lifecycle, Lifecycle::Exited as i32);
         assert_eq!(answered.exit_cause, ExitCause::Killed as i32);
         assert!(gone.contains(&Output::ForgetAgent { agent: PARENT }));
+    }
+
+    fn children_told(out: &[Output], agent: AgentId) -> Option<Vec<Vec<u8>>> {
+        out.iter().find_map(|output| match output {
+            Output::WriteControl {
+                agent: to,
+                frame:
+                    CtlFrame {
+                        of: Some(ctl_frame::Of::Children(children)),
+                    },
+            } if *to == agent => Some(
+                children
+                    .children
+                    .iter()
+                    .map(|child| child.agent_id.clone())
+                    .collect(),
+            ),
+            _ => None,
+        })
+    }
+
+    /// A running agent's create of a child on another host is forwarded to
+    /// that host; its answer is the child's row. The parent hears of the
+    /// child then, not only once the child's host lists it: a one-shot
+    /// parent whose turn ends between the two would otherwise exit without
+    /// waiting for it.
+    #[test]
+    fn a_parent_hears_of_a_far_child_when_its_forwarded_create_is_answered() {
+        const FAR: HostId = HostId(*b"far-host-0000000");
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        let request = wire::CreateAgentRequest {
+            agent_id: CHILD.0.to_vec(),
+            parent: Some(wire::AgentRef {
+                host_id: OWN.to_vec(),
+                agent_id: PARENT.0.to_vec(),
+            }),
+            ..Default::default()
+        };
+        let (_, out) = rig.call(ClientRequest::Forward {
+            host: FAR,
+            request: Box::new(PeerRequest::CreateAgent(request)),
+        });
+        let made = out
+            .iter()
+            .find_map(|output| match output {
+                Output::Call { call, host, .. } if *host == FAR => Some(*call),
+                _ => None,
+            })
+            .expect("the create is made of the child's host");
+        let child = Agent {
+            agent_id: CHILD.0.to_vec(),
+            host_id: FAR.0.to_vec(),
+            parent: Some(wire::AgentRef {
+                host_id: OWN.to_vec(),
+                agent_id: PARENT.0.to_vec(),
+            }),
+            lifecycle: Lifecycle::Live as i32,
+            incarnation: 1,
+            ..Agent::default()
+        };
+        let answered = rig.step(Input::PeerAnswer {
+            call: made,
+            answer: Answer::Reply(Box::new(PeerReply::Agent(child.clone()))),
+        });
+        assert_eq!(
+            children_told(&answered, PARENT),
+            Some(vec![CHILD.0.to_vec()]),
+            "{answered:?}"
+        );
+
+        // The child's host lists it, live: nothing new to tell. Listed as
+        // exited, the parent hears it has no live child.
+        let mut row = AgentRow::new(AgentKey::new(FAR.0, CHILD.0), wire::Kind::Codex, "/src");
+        row.parent = Some(rig.daemon.own_key(PARENT));
+        rig.daemon.store.put_agent(&row).unwrap();
+        let mut listed = Vec::new();
+        let parent = Some(rig.daemon.own_key(PARENT));
+        rig.daemon
+            .recount_from(parent.clone(), &mut listed)
+            .unwrap();
+        assert_eq!(children_told(&listed, PARENT), None, "{listed:?}");
+        row.lifecycle = Lifecycle::Exited as i32;
+        rig.daemon.store.put_agent(&row).unwrap();
+        let mut exited = Vec::new();
+        rig.daemon.recount_from(parent, &mut exited).unwrap();
+        assert_eq!(
+            children_told(&exited, PARENT),
+            Some(Vec::new()),
+            "{exited:?}"
+        );
     }
 
     #[test]

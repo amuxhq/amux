@@ -124,16 +124,12 @@ mod stories {
             .agent(lead())
     }
 
-    /// Desk and server, the lead on desk taking its child's report as a
-    /// turn that ends.
     pub fn desk_and_server() -> Topology {
-        let mut steps = says("I will have a helper on the server run the suite.");
-        steps.extend(says("Noted."));
         Topology::new()
             .host("desk")
             .host("server")
             .link("desk", "server")
-            .agent(lead().steps(steps))
+            .agent(lead())
     }
 
     pub fn three_hosts() -> Topology {
@@ -222,25 +218,6 @@ mod stories {
 
     async fn until_live(net: &impl World, host: &str, agent: &str) {
         until_lifecycle(net, host, agent, Lifecycle::Live).await;
-    }
-
-    /// Waits until `child` is live on its own host and on `parent_host`
-    /// too, and the net has carried what followed. A parent's host hears of
-    /// a child on another host only from that host's listing, and tells
-    /// the running parent which children to wait for in a frame of its
-    /// own: a parent whose turn ends before that frame reaches it has no
-    /// child to wait for.
-    async fn until_its_parent_hears(net: &impl World, parent_host: &str, child: &str) {
-        let own = net.agent(child).unwrap().host.clone();
-        until_live(net, &own, child).await;
-        until_live(net, parent_host, child).await;
-        net.holds_for(
-            &format!("{child} to stay live on {parent_host}"),
-            Duration::from_millis(300),
-            || async { lifecycle(net, parent_host, child).await == Some(Lifecycle::Live) },
-        )
-        .await
-        .unwrap();
     }
 
     /// Waits until the lead has received a message carrying `wanted`.
@@ -448,7 +425,6 @@ mod stories {
         )
         .await
         .unwrap();
-        until_its_parent_hears(&net, "server", "scout").await;
         net.open_gate("mid-go").unwrap();
         net.turn_ended("mid", 1).await.unwrap();
         net.open_gate("scout-go").unwrap();
@@ -523,8 +499,6 @@ mod stories {
         )
         .await
         .unwrap();
-        until_its_parent_hears(&net, "server", "mid").await;
-        until_its_parent_hears(&net, "phone", "scout").await;
         net.open_gate("planner-go").unwrap();
         net.turn_ended("planner", 1).await.unwrap();
         net.open_gate("mid-go").unwrap();
@@ -574,7 +548,6 @@ mod stories {
         )
         .await
         .unwrap();
-        until_its_parent_hears(&net, "server", "scout").await;
         net.open_gate("mid-go").unwrap();
         net.turn_ended("mid", 1).await.unwrap();
         net.stop("mid").await.unwrap();
@@ -628,7 +601,6 @@ mod stories {
         let got = received(&net, "lead").await;
         assert_eq!(got.len(), 1, "one finished message: {got:?}");
         println!("desk back: lead received {:?}", got[0].text);
-        net.turn_ended("lead", 2).await.unwrap();
 
         // A second child finishes while the parent's host is away, and the
         // parent is resumed there meanwhile: the row is for an incarnation

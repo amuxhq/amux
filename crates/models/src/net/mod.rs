@@ -128,7 +128,7 @@ pub fn prompt(input_id: &[u8], text: &str) -> wire::Input {
 }
 
 /// How long an agent outlives its daemon, in the composed net.
-const AGENT_GRACE_MS: u32 = 20_000;
+pub(crate) const AGENT_GRACE_MS: u32 = 20_000;
 /// Deliveries a start may take to settle before the model gives up on it.
 const MOST_SETTLING: usize = 100_000;
 

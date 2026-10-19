@@ -33,9 +33,9 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use daemon_core::payload::{ClientRequest, Response};
+use daemon_core::payload::{ClientRequest, PeerReply, PeerRequest, Response};
 use daemon_core::{AgentId, CallId, Create, HostId, Input, Resume};
-use models::net::Net;
+use models::net::{Lane, Net};
 use rng::Rng;
 pub use shrink::{Reproduction, same_failure, shrink};
 use uuid::Uuid;
@@ -326,6 +326,17 @@ impl SimNet {
             Some(parent) => Some(self.agent_named(parent)?.parent()),
             None => None,
         };
+        let parent_id = parent
+            .as_ref()
+            .and_then(|parent| AgentId::from_slice(&parent.agent_id));
+        // A parent on another host makes its child as node does: its own
+        // host forwards the create to the child's.
+        let forwarded_by = match &decl.parent {
+            Some(parent) if self.agent_named(parent)?.host != decl.host => {
+                Some(self.host_index(&self.agent_named(parent)?.host.clone())?)
+            }
+            _ => None,
+        };
         let steps = decl
             .script
             .as_ref()
@@ -382,12 +393,47 @@ impl SimNet {
             None => sim.net.add_agent(agent, &decl.name, &steps),
         }
         let what = format!("{} to start on {}", decl.name, decl.host);
-        let row = registry_call(
-            &mut sim,
-            h,
-            &what,
-            ClientRequest::CreateAgent(Box::new(create)),
-        )?
+        let row = match forwarded_by {
+            Some(from) => {
+                let request = wire::CreateAgentRequest {
+                    agent_id: agent.0.to_vec(),
+                    name: create.given,
+                    parent: create.spec.parent,
+                    cwd: create.cwd,
+                    initial_prompt: decl
+                        .prompt
+                        .as_deref()
+                        .map(|text| submission(b"testnet-first", text)),
+                    ..wire::CreateAgentRequest::default()
+                };
+                let forward = ClientRequest::Forward {
+                    host: host_id,
+                    request: Box::new(PeerRequest::CreateAgent(request)),
+                };
+                let row = registry_call(&mut sim, from, &what, forward)?;
+                // The answer reaches the parent's provider through its
+                // tools, after the frames its daemon wrote to its process
+                // in the same step: those arrive before the provider can
+                // go on.
+                if let Some(p) = parent_id.and_then(|parent| sim.net.process_of(parent)) {
+                    while let Some(lane) = sim
+                        .net
+                        .deliverable()
+                        .into_iter()
+                        .find(|lane| matches!(lane, Lane::ToAgent(to, _) if *to == p))
+                    {
+                        sim.net.deliver(lane);
+                    }
+                }
+                row
+            }
+            None => registry_call(
+                &mut sim,
+                h,
+                &what,
+                ClientRequest::CreateAgent(Box::new(create)),
+            )?,
+        }
         .ok_or_else(|| answered_without_row(&decl.host, &what))?;
         drop(sim);
         self.agents.insert(
@@ -1085,6 +1131,10 @@ fn registry_call(
     let client = sim.net.take_client(h, call).expect("the registry call");
     let row = client.responses().find_map(|response| match response {
         Response::Agent(row) => Some((**row).clone()),
+        Response::Peer(reply) => match &**reply {
+            PeerReply::Agent(row) => Some(row.clone()),
+            _ => None,
+        },
         _ => None,
     });
     match ended {

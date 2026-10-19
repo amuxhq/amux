@@ -1251,7 +1251,9 @@ fn a_reset_keeps_the_rows_until_caught_up_then_shows_the_newest() {
     view.key(&state, key(KeyCode::PageUp), theme());
     let (before, _) = feed(&mut view, &state);
 
-    state.update(event(session_event::Of::Reset(wire::Reset {})));
+    state.update(event(session_event::Of::Reset(wire::Reset {
+        generation: 1,
+    })));
     state.update(snapshot(Phase::Idle, vec![], vec![]));
     for order in 200..=210 {
         let mut fresh = item(order, None);

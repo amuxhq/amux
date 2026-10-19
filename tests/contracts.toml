@@ -1466,3 +1466,13 @@ tests = [
   "testnet/family_stories::stopping_a_parent_stops_every_descendant_on_every_host",
   "testnet/family_stories::a_far_child_whose_parent_stopped_while_its_host_was_away_stops_on_return",
 ]
+
+[[contract]]
+id = "client-generation-known"
+source = "model"
+property = { crate = "models", machine = "client", sentence = "a caught-up client knows the generation it holds: once caught up with nothing on its way, the client holds the generation of the daemon's rows, so a stream it reopens under that generation continues its window rather than rebuilding it" }
+checker = "models/client::every_client_promise_holds_at_ci_bounds"
+tests = [
+  "ui-state/spec::open::a_reopen_under_the_generation_a_live_reset_named_continues_the_window",
+  "daemon-core/lib::sources::tests::a_catch_up_is_absorbed_whole_at_its_caught_up_and_only_then_answered",
+]

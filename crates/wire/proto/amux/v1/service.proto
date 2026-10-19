@@ -308,8 +308,8 @@ message SessionEvent {
 // The first event of every stream: the origin generation its rows and
 // revisions belong to. A peer source stores it on the block it takes and
 // names it with its cursor when it resumes; a client that reopens a stream
-// under another generation rebuilds as at a Reset, which the gap may have
-// carried.
+// under another generation than its last Opening or Reset named rebuilds as
+// at a Reset, which the gap may have carried.
 message Opening {
   uint64 generation = 1;
 }
@@ -324,8 +324,14 @@ message CaughtUp {
 // The stream closes after this; the client re-tails.
 message Lagged {}
 
-// Forget the transcript; a fresh tail follows, then CaughtUp.
-message Reset {}
+// Forget the transcript; a fresh tail of the block under `generation`, the
+// origin generation its rows and revisions belong to, follows, then
+// CaughtUp. A replica sends one live when it takes a new block (its first,
+// or one replacing what it held); a client holds `generation` from here as
+// it would from an Opening.
+message Reset {
+  uint64 generation = 1;
+}
 
 // The origin is not being followed; rows may be stale.
 message Detached {}

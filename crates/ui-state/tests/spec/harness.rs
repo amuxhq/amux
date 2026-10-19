@@ -368,8 +368,12 @@ pub fn caught_up(revision: u64) -> Msg {
     event(session_event::Of::CaughtUp(wire::CaughtUp { revision }))
 }
 
-pub fn reset() -> Msg {
-    event(session_event::Of::Reset(wire::Reset {}))
+pub fn opening(generation: u64) -> Msg {
+    event(session_event::Of::Opening(wire::Opening { generation }))
+}
+
+pub fn reset(generation: u64) -> Msg {
+    event(session_event::Of::Reset(wire::Reset { generation }))
 }
 
 pub fn detached() -> Msg {

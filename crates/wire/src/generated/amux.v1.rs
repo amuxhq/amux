@@ -5753,8 +5753,8 @@ impl ::prost::Name for SessionEvent {
 /// The first event of every stream: the origin generation its rows and
 /// revisions belong to. A peer source stores it on the block it takes and
 /// names it with its cursor when it resumes; a client that reopens a stream
-/// under another generation rebuilds as at a Reset, which the gap may have
-/// carried.
+/// under another generation than its last Opening or Reset named rebuilds as
+/// at a Reset, which the gap may have carried.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Opening {
     #[prost(uint64, tag = "1")]
@@ -5801,9 +5801,16 @@ impl ::prost::Name for Lagged {
         "/amux.v1.Lagged".into()
     }
 }
-/// Forget the transcript; a fresh tail follows, then CaughtUp.
+/// Forget the transcript; a fresh tail of the block under `generation`, the
+/// origin generation its rows and revisions belong to, follows, then
+/// CaughtUp. A replica sends one live when it takes a new block (its first,
+/// or one replacing what it held); a client holds `generation` from here as
+/// it would from an Opening.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Reset {}
+pub struct Reset {
+    #[prost(uint64, tag = "1")]
+    pub generation: u64,
+}
 impl ::prost::Name for Reset {
     const NAME: &'static str = "Reset";
     const PACKAGE: &'static str = "amux.v1";

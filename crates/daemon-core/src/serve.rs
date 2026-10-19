@@ -285,7 +285,7 @@ impl Daemon {
             self.answers.opened_under = self.answers.opened_under.max(generation);
         }
         if reset {
-            answer(session_event::Of::Reset(wire::Reset {}));
+            answer(session_event::Of::Reset(wire::Reset { generation }));
         }
         let snapshot = cut.snapshot.unwrap_or_else(|| Snapshot {
             // Nothing emitted yet: the kind tag and an empty body.

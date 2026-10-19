@@ -1320,9 +1320,15 @@ impl Daemon {
                     )?
                     .stored
             };
-            // Forget the transcript; the fresh tail follows, as the store
-            // now holds it.
-            publish(self, out, session_event::Of::Reset(wire::Reset {}));
+            // Forget the transcript; the fresh tail of the block under the
+            // origin's generation follows, as the store now holds it. A
+            // subscriber learns the generation here: its stream opened under
+            // the block this one replaces, or under none.
+            publish(
+                self,
+                out,
+                session_event::Of::Reset(wire::Reset { generation }),
+            );
             let held = self.store.agent(key)?.unwrap_or(row);
             if let Some(snapshot) = held.snapshot {
                 publish(self, out, session_event::Of::Snapshot(snapshot));
@@ -2075,6 +2081,13 @@ mod tests {
                 .any(|of| matches!(of, session_event::Of::Detached(_))),
             "a followed replica is not served as detached: {opened:?}"
         );
+        assert!(
+            matches!(
+                answered_to_watching(&opened).first(),
+                Some(session_event::Of::Opening(Opening { generation: 0 }))
+            ),
+            "a replica no source caught up yet opens under no generation: {opened:?}"
+        );
 
         step(
             &mut daemon,
@@ -2103,13 +2116,14 @@ mod tests {
             matches!(
                 told.as_slice(),
                 [
-                    session_event::Of::Reset(_),
+                    session_event::Of::Reset(wire::Reset { generation: 3 }),
                     session_event::Of::Snapshot(_),
                     session_event::Of::Item(_),
                     session_event::Of::CaughtUp(CaughtUp { revision: 1 }),
                 ]
             ),
-            "a tail replaces the block, then reads as the store holds it: {told:?}"
+            "a tail replaces the block under the origin's generation, then reads as the store \
+             holds it: {told:?}"
         );
         assert!(landed.contains(&Output::Shell(ShellWork::Wrote)));
         let row = daemon.store.agent(&key()).unwrap().unwrap();
@@ -2405,7 +2419,7 @@ mod tests {
         };
         for of in [
             session_event::Of::Opening(Opening { generation: 3 }),
-            session_event::Of::Reset(wire::Reset {}),
+            session_event::Of::Reset(wire::Reset { generation: 3 }),
             session_event::Of::Item(item("e", 5, 7)),
             session_event::Of::CaughtUp(CaughtUp { revision: 7 }),
         ] {

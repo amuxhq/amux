@@ -197,7 +197,7 @@ fn a_prompt_withdrawn_before_a_reset_is_never_shown_as_queued() {
         let mut ever_queued = false;
         for msg in [
             ev_snapshot(snapshot(kind, 6, Phase::Working, &[], &[(b"W", false)])),
-            reset(),
+            reset(1),
             ev_snapshot(snapshot(kind, 3, Phase::Idle, &[], &[])),
             ev_item(text(kind, 1, 1, "rebuilt")),
             caught_up(3),

@@ -112,8 +112,9 @@ pub struct SessionState {
     /// The stream was reopened; a tail that leaves a gap above the head
     /// builds a pending transcript instead of appending.
     retail: bool,
-    /// The origin generation the window's rows belong to, from the first
-    /// stream's Opening.
+    /// The origin generation the window's rows belong to, or the pending
+    /// transcript's while one builds: from the first stream's Opening, then
+    /// from each Reset, which names the block it replaces the rows with.
     generation: Option<u64>,
     inputs: Inputs,
     caught_up: bool,
@@ -361,6 +362,11 @@ impl SessionState {
 
     pub fn caught_up(&self) -> bool {
         self.caught_up
+    }
+
+    /// The origin generation the rows belong to, once a stream named one.
+    pub fn generation(&self) -> Option<u64> {
+        self.generation
     }
 
     pub fn connection(&self) -> Connection {
@@ -764,8 +770,9 @@ impl SessionState {
                 self.reopened();
                 outcome.session = true;
             }
-            Of::Reset(_) => {
+            Of::Reset(reset) => {
                 self.caught_up = false;
+                self.generation = Some(reset.generation);
                 self.pending = Some(Transcript::new(self.kind()));
                 outcome.session = true;
             }

@@ -168,13 +168,13 @@ A stream is `SessionEvent`s:
 
 | Event | Meaning |
 | --- | --- |
-| `Opening` | The origin generation the stream's rows belong to. Always first; a client that reopens under another generation rebuilds as at a `Reset`. |
+| `Opening` | The origin generation the stream's rows belong to. Always first; a client that reopens under another generation than its last `Opening` or `Reset` named rebuilds as at a `Reset`. |
 | `Snapshot` | Everything needed to draw the agent without items. Second. |
 | `Item` | One item, full state at its revision |
 | `Append` | Text added to an item the client holds |
 | `CaughtUp` | You hold what the origin holds as of now |
 | `Detached` | The origin is not being followed; rows may be stale |
-| `Reset` | Forget the transcript; a fresh tail follows, then `CaughtUp` |
+| `Reset` | Forget the transcript; a fresh tail of the block under its `generation` follows, then `CaughtUp` |
 | `Lagged` | This stream fell behind and closes after this event; subscribe again |
 
 ### What a stream carries
@@ -225,9 +225,13 @@ are served as they stand, stale and honestly, until the source reconnects and
 `Reset` comes from a replica's source when the origin answered with a fresh
 tail rather than a delta: the source's cursor was too far behind for the
 cap, or was taken under a generation the origin no longer runs (an unclean
-reboot mints the same revisions again for different content). The client
-keeps drawing what it has, builds the fresh transcript beside it, and swaps
-it in at the next `CaughtUp`.
+reboot mints the same revisions again for different content). A replica's
+first catch-up is one too: it takes a tail into an empty block. `Reset` names
+the generation the fresh block belongs to, so a client whose stream opened
+under the old block, or under none (`0`, a replica no source had caught up
+yet), holds the new generation from here and a later reopen under it
+continues the window. The client keeps drawing what it has, builds the fresh
+transcript beside it, and swaps it in at the next `CaughtUp`.
 
 `Opening` carries the origin's generation: its own for an agent the host
 runs, and for a replica the one its source last caught up under. A peer
@@ -779,7 +783,8 @@ A checklist for a client against `ClientService`:
    merge items by key, keep the highest revision, sort by order.
 3. Apply appends only on a matching base; `Get` an item held at another
    revision; drop an append for a key you hold nothing for.
-4. On `Reset`, build a fresh transcript and swap it in at `CaughtUp`. On
+4. On `Reset`, build a fresh transcript and swap it in at `CaughtUp`, and
+   hold its generation as the window's. On
    `Lagged`, re-tail at once: subscribe again with a tail. On a dropped
    stream, subscribe again with a tail and back off between attempts.
 5. Page older history with `Fetch` below the oldest held order until

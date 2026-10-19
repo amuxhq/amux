@@ -99,8 +99,9 @@ pub enum Action {
     /// it.
     Lagged,
     /// The origin's generation changes: the daemon's newest item is gone
-    /// and every other is revised; the stream carries Reset, a snapshot
-    /// and the fresh tail.
+    /// and every other is revised; the stream carries what a replica
+    /// publishes for the new block: Reset naming its generation, a snapshot,
+    /// the fresh tail and CaughtUp.
     Reset,
     /// The client asks for the page below its oldest held order.
     AskPage,
@@ -139,8 +140,8 @@ impl Daemon {
         }
     }
 
-    /// What a subscription opens with: the snapshot, the newest `tail`
-    /// items by order, then CaughtUp.
+    /// What a subscription opens with: the Opening naming the generation,
+    /// the snapshot, the newest `tail` items by order, then CaughtUp.
     fn opening(&self, tail: usize) -> Vec<Msg> {
         let mut msgs = vec![
             event(session_event::Of::Opening(wire::Opening {
@@ -155,6 +156,17 @@ impl Daemon {
                 .map(|item| event(session_event::Of::Item(item.clone()))),
         );
         msgs.push(caught_up(self.revision));
+        msgs
+    }
+
+    /// What a replica publishes to its subscribers when it takes the block
+    /// of a new generation: Reset naming the generation, the snapshot, the
+    /// newest `tail` items by order, then CaughtUp, with no Opening.
+    fn reset(&self, tail: usize) -> Vec<Msg> {
+        let mut msgs = self.opening(tail);
+        msgs[0] = event(session_event::Of::Reset(wire::Reset {
+            generation: self.generation,
+        }));
         msgs
     }
 
@@ -458,6 +470,9 @@ pub(crate) const CATCH_UP_PLUS_LIVE: &str = "catch-up plus live equals uninterru
      cut: once caught up with nothing on its way, the client's rows from the oldest order its stream \
      opened with up and its agent state read as those of a client that received every event \
      uninterrupted";
+pub(crate) const GENERATION_KNOWN: &str = "a caught-up client knows the generation it holds: once \
+     caught up with nothing on its way, the client holds the generation of the daemon's rows, so a \
+     stream it reopens under that generation continues its window rather than rebuilding it";
 pub(crate) const REPLAY: &str = "replay from any checkpoint equals the whole: the session at a \
      checkpoint, fed every message since, is the live session";
 pub(crate) const UNCERTAIN_LEFT: &str = "an uncertain input absent at CaughtUp is left with resend and \
@@ -670,14 +685,12 @@ impl Machine for ClientModel {
                     item.text = format!("g{revision}");
                 }
                 next.daemon.snapshot_revision = next.daemon.revision;
-                let reset = event(session_event::Of::Reset(wire::Reset {}));
-                next.whole.update(reset.clone());
-                for msg in next.daemon.opening(usize::MAX) {
+                for msg in next.daemon.reset(usize::MAX) {
                     next.whole.update(msg);
                 }
                 if next.open {
-                    next.stream.push_back(reset);
-                    next.reopen(self.tail);
+                    next.opened_from = next.daemon.opened_from(self.tail);
+                    next.stream.extend(next.daemon.reset(self.tail));
                 }
             }
             Action::AskPage => {
@@ -776,6 +789,9 @@ impl Machine for ClientModel {
                 s.seen.resolved_without_evidence.is_none()
                     && (s.client.input_state(INPUT) != Some(InputState::Settled)
                         || s.seen.reflected)
+            }),
+            Property::always(GENERATION_KNOWN, |_, s: &State| {
+                !s.at_rest() || s.client.generation() == Some(s.daemon.generation)
             }),
             Property::always(
                 "the window is one block: the rows a client holds have contiguous orders and every \

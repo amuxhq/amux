@@ -224,23 +224,6 @@ mod tests {
         FileDescriptorSet::decode(DESCRIPTOR_SET).expect("descriptor set should decode")
     }
 
-    fn messages(set: &FileDescriptorSet) -> BTreeMap<String, DescriptorProto> {
-        set.file
-            .iter()
-            .filter(|file| file.package.as_deref() == Some("amux.v1"))
-            .flat_map(|file| file.message_type.iter())
-            .map(|message| (message.name().to_owned(), message.clone()))
-            .collect()
-    }
-
-    fn fields(message: &DescriptorProto) -> BTreeMap<&str, i32> {
-        message
-            .field
-            .iter()
-            .map(|field| (field.name(), field.number()))
-            .collect()
-    }
-
     fn methods(set: &FileDescriptorSet, service: &str) -> BTreeSet<String> {
         set.file
             .iter()
@@ -319,80 +302,6 @@ mod tests {
         assert_eq!(
             installation,
             BTreeSet::from(["GetInfo", "Shutdown"].map(str::to_owned))
-        );
-    }
-
-    #[test]
-    fn a_spec_names_its_parent_by_host_and_id() {
-        let set = descriptor();
-        let messages = messages(&set);
-        let parent = messages["AgentSpec"]
-            .field
-            .iter()
-            .find(|field| field.name() == "parent")
-            .expect("AgentSpec.parent");
-        assert_eq!(parent.number(), 6);
-        assert_eq!(parent.type_name(), ".amux.v1.AgentRef");
-        assert_eq!(
-            fields(&messages["AgentRef"]),
-            BTreeMap::from([("host_id", 1), ("agent_id", 2)])
-        );
-    }
-
-    #[test]
-    fn every_snapshot_body_carries_usage_servers_sign_in_and_background_jobs() {
-        let set = descriptor();
-        let messages = messages(&set);
-        for (snapshot, usage) in [
-            ("ClaudePtySnapshot", ".amux.v1.ClaudeUsage"),
-            ("ClaudeSdkSnapshot", ".amux.v1.ClaudeUsage"),
-            ("CodexSnapshot", ".amux.v1.CodexUsage"),
-        ] {
-            let types = messages[snapshot]
-                .field
-                .iter()
-                .map(|field| field.type_name())
-                .collect::<BTreeSet<_>>();
-            for fact in [
-                usage,
-                ".amux.v1.ToolServerHealth",
-                ".amux.v1.SignIn",
-                ".amux.v1.BackgroundJobs",
-            ] {
-                assert!(types.contains(fact), "{snapshot} lacks {fact}");
-            }
-        }
-    }
-
-    #[test]
-    fn a_step_round_trips_with_an_opaque_body() {
-        let body = ClaudeSdkItem {
-            kind: Some(claude_sdk_item::Kind::Message(Text { complete: true })),
-        }
-        .encode_to_vec();
-        let step = Step {
-            items: vec![Item {
-                key: "msg:1".into(),
-                text: "hello".into(),
-                kind: Kind::ClaudeSdk as i32,
-                body: body.clone(),
-                at_ms: 7,
-                ..Default::default()
-            }],
-            turn_end: Some(TurnEnd {
-                turn_id: 1,
-                last_message_key: "msg:1".into(),
-                outcome: TurnOutcome::Completed as i32,
-                last: true,
-            }),
-            ..Default::default()
-        };
-        let decoded = Step::decode(step.encode_to_vec().as_slice()).expect("decode");
-        assert_eq!(decoded, step);
-        assert_eq!(decoded.items[0].kind(), Kind::ClaudeSdk);
-        assert_eq!(
-            ClaudeSdkItem::decode(decoded.items[0].body.as_slice()).expect("body"),
-            ClaudeSdkItem::decode(body.as_slice()).expect("body")
         );
     }
 

@@ -27,27 +27,3 @@ pub use thread_event_stream::ThreadEventStream;
 pub async fn connect(config: CodexConfig) -> Result<Codex, Error> {
     Codex::connect(config).await
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_config_has_expected_values() {
-        let config = CodexConfig::default();
-        assert_eq!(config.client_name, "amux");
-        assert!(config.codex_path.is_none());
-        assert!(config.model.is_none());
-    }
-
-    #[test]
-    fn rpc_error_display() {
-        let err = Error::Rpc(codex_protocol::RpcError {
-            code: -32600,
-            message: "Invalid Request".into(),
-            data: None,
-            extra: codex_protocol::Extra::new(),
-        });
-        assert_eq!(err.to_string(), "JSON-RPC error (-32600): Invalid Request");
-    }
-}

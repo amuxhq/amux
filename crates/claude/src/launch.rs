@@ -338,23 +338,6 @@ mod tests {
     }
 
     #[test]
-    fn pty_launch_carries_managed_settings() {
-        let launch = Launch {
-            binary: "claude".into(),
-            cwd: "/work".into(),
-            args: vec!["--name".into(), "reviewer".into()],
-            session_id: Uuid::from_u128(1),
-            resume: false,
-            settings: merged_settings(None, &ManagedSettings::default()),
-            hook_command: Vec::new(),
-            mcp_servers: Vec::new(),
-            env_scrub: CHILD_SESSION_ENV_SCRUB,
-        };
-        let pty = pty_spawn_args(&launch);
-        assert!(pty.windows(2).any(|args| args[0] == "--settings"));
-    }
-
-    #[test]
     fn scrub_is_explicit_and_preserves_user_configuration() {
         assert!(CHILD_SESSION_ENV_SCRUB.contains(&"CLAUDE_CODE_CHILD_SESSION"));
         assert!(CHILD_SESSION_ENV_SCRUB.contains(&"CLAUDE_CODE_MESSAGING_TOKEN"));

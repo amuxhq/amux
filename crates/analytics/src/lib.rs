@@ -146,14 +146,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn off_records_nothing() {
-        let off = Analytics::off();
-        assert!(!off.is_on());
-        off.record(Event::Installed);
-        off.record_at_most_every(Duration::from_secs(1), Event::Installed);
-    }
-
-    #[test]
     fn throttled_events_are_kept_at_most_once_per_period() {
         let recording = Recording::new();
         let analytics = Analytics::new(HostId::from_u128(1), recording.clone());

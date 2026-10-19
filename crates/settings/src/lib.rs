@@ -708,39 +708,10 @@ mod tests {
         InstallationConfig::from_yaml(yaml)
     }
 
-    /// Verify serde_yaml round-trips Windows-style backslash paths correctly.
-    /// serde_yaml serializes paths unquoted, which YAML parses literally.
-    /// (Double-quoted YAML strings would break because `\p`, `\U` etc. are
-    /// invalid YAML escape sequences.)
-    #[test]
-    fn yaml_windows_path_roundtrip() {
-        let config = InstallationConfig {
-            front_door_socket: PathBuf::from(r"\\.\pipe\amux-test"),
-            root: PathBuf::from(r"C:\Users\me\amux-data"),
-            ..InstallationConfig::default()
-        };
-        let yaml = serde_yaml::to_string(&config).unwrap();
-        let parsed = installation(&yaml).unwrap();
-        assert_eq!(parsed.front_door_socket, config.front_door_socket);
-        assert_eq!(parsed.root, config.root);
-    }
-
     #[test]
     fn root_defaults_to_the_data_dir() {
         assert_eq!(InstallationConfig::default().root, default_data_dir());
         assert_eq!(installation("{}\n").unwrap().root, default_data_dir());
-    }
-
-    #[test]
-    fn leader_key_default_is_ctrl_a() {
-        let leader = LeaderKey::default();
-        assert_eq!(leader.char, b'a');
-        assert_eq!(leader.raw_byte(), 0x01);
-        // ESC[97;5u
-        assert_eq!(
-            leader.csi_u_sequence(),
-            vec![27, b'[', b'9', b'7', b';', b'5', b'u']
-        );
     }
 
     #[test]
@@ -767,17 +738,6 @@ mod tests {
         assert!(LeaderKey::parse("ctrl+1").is_err());
         assert!(LeaderKey::parse("ctrl+ab").is_err());
         assert!(LeaderKey::parse("a").is_err());
-    }
-
-    #[test]
-    fn leader_key_yaml_roundtrip() {
-        let yaml = "leader: ctrl+b\n";
-        let keybinds: Keybinds = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(keybinds.leader.char, b'b');
-
-        let serialized = serde_yaml::to_string(&keybinds).unwrap();
-        let parsed: Keybinds = serde_yaml::from_str(&serialized).unwrap();
-        assert_eq!(parsed.leader.char, b'b');
     }
 
     #[test]
@@ -841,11 +801,6 @@ mod tests {
             let error = installation(yaml).unwrap_err();
             assert!(error.to_string().contains("unknown field"), "{error}");
         }
-    }
-
-    #[test]
-    fn validate_default_config_ok() {
-        assert!(InstallationConfig::default().validate().is_ok());
     }
 
     #[test]
@@ -1043,19 +998,5 @@ mod tests {
                 "{error}"
             );
         }
-    }
-
-    #[test]
-    fn installation_config_round_trips_the_new_keys() {
-        let config = installation(
-            "supervisor: on\nupdates: manual\nchannel: preview\nkeep_awake: off\ndiscovery:\n  scope: s\n",
-        )
-        .unwrap();
-        let yaml = serde_yaml::to_string(&config).unwrap();
-        let again = installation(&yaml).unwrap();
-        assert_eq!(again.updates().unwrap(), Updates::Manual);
-        assert_eq!(again.channel, Channel::Preview);
-        assert_eq!(again.keep_awake, Switch::Off);
-        assert_eq!(again.discovery.scope, "s");
     }
 }

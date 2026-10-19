@@ -14,6 +14,7 @@ use std::time::Instant;
 
 use stateright::{Checker, Chooser, UniformChooser};
 
+pub mod client;
 pub mod family;
 mod held;
 pub mod lifecycle;
@@ -22,6 +23,7 @@ pub mod presence;
 pub mod replication;
 pub mod single_daemon;
 pub mod supervisor;
+pub use client::ClientModel;
 pub use family::FamilyDeliveries;
 pub use lifecycle::AgentLifecycle;
 pub use net::ComposedNet;
@@ -98,6 +100,7 @@ pub fn properties() -> Vec<Listed> {
     listed.extend(of("family and deliveries", &FamilyDeliveries::ci()));
     listed.extend(of("agent lifecycle", &AgentLifecycle::ci()));
     listed.extend(of("supervisor update", &SupervisorUpdate::ci()));
+    listed.extend(of("client", &ClientModel::ci()));
     for (_, model) in ComposedNet::ci() {
         for property in of("composed net", &model) {
             if !listed.contains(&property) {

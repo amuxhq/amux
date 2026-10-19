@@ -152,9 +152,9 @@ SUPPORT_ALLOWED_LOCAL = {
     # client on it, or draws it headlessly through `shot`.
     "tui-set": {"agent-dir", "client", "settings", "shot", "tui", "ui-runtime", "wire"},
     # The protocol's properties, explored over the real code: the store, the
-    # journal and the message types today, and each state-machine core as it
-    # lands.
-    "models": {"agent-core", "daemon-core", "interpret", "journal", "provider-fakes", "release", "store", "supervisor-core", "wire"},
+    # journal and the message types, each state-machine core, and the
+    # clients' session state.
+    "models": {"agent-core", "daemon-core", "interpret", "journal", "provider-fakes", "release", "store", "supervisor-core", "ui-state", "wire"},
 }
 
 def local_edges(package: dict[str, object]) -> set[str]:

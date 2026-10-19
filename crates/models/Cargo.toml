@@ -20,6 +20,7 @@ stateright = { workspace = true }
 store = { workspace = true }
 supervisor-core = { workspace = true }
 tempfile = { workspace = true }
+ui-state = { workspace = true }
 wire = { workspace = true }
 
 [[bin]]

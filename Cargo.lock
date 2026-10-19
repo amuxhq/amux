@@ -2495,6 +2495,7 @@ dependencies = [
  "store",
  "supervisor-core",
  "tempfile",
+ "ui-state",
  "wire",
 ]
 

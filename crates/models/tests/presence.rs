@@ -4,9 +4,12 @@
 use models::{Bounds, PresenceRouting, check, walk};
 
 /// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: twice the run's measured time there (134 s), rounded up to
-/// a whole minute. A run past it says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 300.0;
+/// four-core runner, where it has not been measured since a property added
+/// states: twice its time on four of the enrolled Mac's threads (68 s) times
+/// 4.2, the slowest runner-to-Mac ratio measured, rounded up to a whole minute
+/// and capped at 600 s. A run past it says the bounds have outgrown their
+/// place.
+const BUDGET_SECONDS: f64 = 600.0;
 
 #[test]
 fn every_presence_promise_holds_at_ci_bounds() {
@@ -49,8 +52,8 @@ fn one_seed_walks_one_presence_schedule() {
     );
 }
 
-/// The nightly bounds, run by hand or by the nightly recipe: about nine
-/// million states, five minutes on the enrolled Mac's cores.
+/// The nightly bounds, run by hand or by the nightly recipe: about
+/// thirteen million states, seven minutes on the enrolled Mac's cores.
 #[test]
 #[ignore = "nightly bounds: minutes on every core"]
 fn every_presence_promise_holds_at_nightly_bounds() {

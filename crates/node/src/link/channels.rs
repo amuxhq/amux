@@ -297,8 +297,8 @@ impl ChannelPool {
     }
 
     /// From now on every channel to `peer` is refused while `refuse`
-    /// holds, as a far end refusing every stream would refuse it, and no
-    /// cached one is handed out.
+    /// holds, as a far end refusing every stream would refuse it, those
+    /// already opening included, and no cached one is handed out.
     pub(crate) fn refuse(&self, peer: HostId, refuse: bool) {
         let mut refused = self
             .refused
@@ -450,6 +450,14 @@ impl ChannelPool {
             .map(|channel| (channel, handshake))
         }
         .await;
+        // A refusal set while the channel was opening holds for it too, so
+        // no channel opens once it is set.
+        let secured = match secured {
+            Ok(_) if self.refuses(key.peer) => {
+                Err(ChannelError::Refused(pb::StreamRefusal::NoRoute))
+            }
+            secured => secured,
+        };
         if let Some(telling) = telling {
             match &secured {
                 Ok(_) => {

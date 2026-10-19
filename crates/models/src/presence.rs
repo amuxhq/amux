@@ -201,6 +201,9 @@ pub struct State {
     /// The relay refused an attempt on the target for the plan, and no
     /// attempt on it opened a channel since.
     refused_for_plan: bool,
+    /// Calls to the target failed, and since then no channel to it opened
+    /// and the relay refused none for the plan.
+    calls_failed: bool,
     /// What the core last told about the target.
     view: HostView,
     /// The first time the target's presence changed other than on a
@@ -288,6 +291,7 @@ impl Machine for PresenceRouting {
             rested: false,
             used: Used::default(),
             refused_for_plan: false,
+            calls_failed: false,
             view: HostView::default(),
             unprompted: None,
             flapped: None,
@@ -474,6 +478,7 @@ impl Machine for PresenceRouting {
             }
             Action::CallsFailed => {
                 next.used.faults += 1;
+                next.calls_failed = true;
                 Input::CallsFailed {
                     host: TARGET,
                     error: ChannelError::Handshake("no channel opened in time".into()),
@@ -513,6 +518,12 @@ impl Machine for PresenceRouting {
                 "Away only on payment refusal: a host reads away only once the relay refused a \
                  channel to it for the account's plan, and no channel to it opened since",
                 |_, s: &State| s.view.presence != Presence::Away || s.refused_for_plan,
+            ),
+            Property::always(
+                "offline after failed calls until a channel opens: once calls to a host have \
+                 failed, it reads offline until a channel to it opens or the relay refuses one \
+                 for the account's plan, whatever routes come, go or are listed again meanwhile",
+                |_, s: &State| !s.calls_failed || s.view.presence == Presence::Offline,
             ),
             Property::always(
                 "no flap while another route carries traffic: while a route that stays listed \
@@ -642,6 +653,24 @@ impl PresenceRouting {
     /// what it asked for of the shell and the timers; what is left is the
     /// caller's.
     fn step(&self, next: &mut State, input: Input) -> Vec<Output> {
+        let heard = match &input {
+            Input::ChannelOpened { .. }
+            | Input::AttemptConcluded {
+                tried: Tried::Opened,
+                ..
+            } => true,
+            Input::AttemptConcluded {
+                tried: Tried::Failed(error),
+                ..
+            }
+            | Input::ChannelClosed { reason: error, .. } => {
+                *error == ChannelError::Refused(StreamRefusal::PaymentRequired)
+            }
+            _ => false,
+        };
+        if heard {
+            next.calls_failed = false;
+        }
         let mut daemon = restore(&next.core);
         let mut out = Vec::new();
         daemon.step(input, &mut out);

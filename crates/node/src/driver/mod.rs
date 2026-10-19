@@ -58,6 +58,10 @@ use crate::runtime::ProfileRuntime;
 
 /// How the reason of a dump the core asked for begins.
 pub const CORE_DUMP: &str = "the daemon core: ";
+/// How the reason of a dump the core asked for because one of its
+/// invariants failed begins, so a reader tells a broken invariant from a
+/// slow step without reading the sentence after it.
+pub const CORE_VIOLATION_DUMP: &str = "the daemon core: an invariant failed: ";
 /// Inputs waiting for the core. A full channel holds its senders back
 /// rather than growing.
 const INPUT_ROOM: usize = 1024;
@@ -900,6 +904,12 @@ impl CoreThread {
             Output::Dump { reason } => {
                 // The core logged why. The bundle is written off this
                 // thread, reading the store between later steps.
+                let reason = match &reason {
+                    daemon_core::DumpReason::Violation(violation) => {
+                        format!("{CORE_VIOLATION_DUMP}{violation}")
+                    }
+                    daemon_core::DumpReason::OverBudget { .. } => format!("{CORE_DUMP}{reason}"),
+                };
                 let weak = Arc::downgrade(runtime);
                 let task = tokio::spawn(async move {
                     let Some(runtime) = weak.upgrade() else {
@@ -907,7 +917,7 @@ impl CoreThread {
                     };
                     let request = wire::DumpRequest {
                         agent_ids: Vec::new(),
-                        reason: format!("{CORE_DUMP}{reason}"),
+                        reason,
                         automatic: true,
                     };
                     match runtime.dump(request).await {
@@ -1388,5 +1398,26 @@ impl ProfileRuntime {
         if let Some(hook) = hook {
             Handle::current().block_on(hook());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use daemon_core::{DumpReason, StepBudget, Violation};
+
+    use super::{CORE_DUMP, CORE_VIOLATION_DUMP};
+
+    #[test]
+    fn only_a_broken_invariants_dump_reason_begins_as_a_violation() {
+        let violation = DumpReason::Violation(Violation {
+            invariant: "every answer names a committed revision",
+            detail: "revision 4 of 3".to_owned(),
+        });
+        let slow = DumpReason::OverBudget {
+            micros: 120_000,
+            budget: StepBudget::DAEMON,
+        };
+        assert!(format!("{CORE_DUMP}{violation}").starts_with(CORE_VIOLATION_DUMP));
+        assert!(!format!("{CORE_DUMP}{slow}").starts_with(CORE_VIOLATION_DUMP));
     }
 }

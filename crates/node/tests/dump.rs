@@ -377,8 +377,9 @@ async fn a_peers_dump_answer_carries_no_daemon_log() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dump_the_daemon_core_asks_for_is_written_with_its_reason() {
+    // Not told to expect dumps: a step over its budget is tolerated at
+    // teardown, only a broken invariant fails it.
     let install = Install::new();
-    install.expect_core_dumps();
     // Every step that takes any time at all runs over this.
     let launch = node::Launch {
         step_budget: daemon_core::StepBudget { micros: 0 },

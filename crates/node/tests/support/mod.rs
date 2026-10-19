@@ -180,18 +180,28 @@ impl Install {
 }
 
 impl Drop for Install {
-    /// No test leaves a dump the daemon core asked for: production asserts
-    /// the core's cheap invariants and its step budget, so a dump here is a
-    /// broken invariant or a step that ran long. A test that makes the
-    /// core ask for one on purpose says so first.
+    /// No test leaves a dump the daemon core asked for because one of its
+    /// invariants failed: production asserts them, so such a dump is a bug.
+    /// A test that breaks one on purpose says so first. Dumps for a step
+    /// over its budget are printed and tolerated: an overrun on a loaded
+    /// machine is time the core thread was not running, not work inside the
+    /// step (measured under the desktop flood: step CPU at most 14 ms
+    /// against 100 to 833 ms wall), and a parallel debug-build run on a
+    /// four-core CI runner is exactly that machine.
     fn drop(&mut self) {
         if std::thread::panicking() || *self.core_dumps_expected.get_mut() {
             return;
         }
-        let dumps = self.core_dumps();
+        let (violations, slow): (Vec<_>, Vec<_>) = self
+            .core_dumps()
+            .into_iter()
+            .partition(|reason| reason.starts_with(node::CORE_VIOLATION_DUMP));
+        for reason in &slow {
+            println!("tolerated a dump the daemon core asked for: {reason}");
+        }
         assert!(
-            dumps.is_empty(),
-            "the daemon core asked for dumps: {dumps:#?}"
+            violations.is_empty(),
+            "the daemon core asked for dumps for broken invariants: {violations:#?}"
         );
     }
 }

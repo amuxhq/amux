@@ -101,61 +101,6 @@ async fn the_snapshot_carries_the_folders_git_facts_from_start_and_after_each_tu
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_orphan_finishes_its_turn_before_it_exits() {
-    let agent = Agent::start(Setup {
-        steps: vec![
-            text("working"),
-            Step::WaitFor {
-                path: agent_release(),
-            },
-            text("done"),
-            Step::TurnEnd,
-        ],
-        ..Setup::sdk()
-    })
-    .await;
-    let mut daemon = agent.dial().await;
-    agent.ready().await;
-    assert_eq!(daemon.prompt(b"p1", "start").await, Verdict::Accepted);
-    assert!(daemon.nudges > 0, "the journal grew before the verdict");
-    agent
-        .wait("the turn is under way", |log| log.has_text("working"))
-        .await;
-    drop(daemon);
-
-    agent.clock.armed(T0 + GRACE).await;
-    agent.clock.set(T0 + GRACE);
-    agent
-        .wait("the daemon-lost boundary", |log| {
-            log.boundaries().contains(&"DAEMON_LOST".to_owned())
-        })
-        .await;
-    // A window: an exit that must not happen leaves no mark to wait on.
-    holds_for(
-        "the orphan to live on",
-        Duration::from_millis(200),
-        || async { !agent.finished() && agent.log().turn_ends() == 0 },
-    )
-    .await
-    .expect("an orphan lives as long as its turn");
-
-    agent.release();
-    assert_eq!(agent.exit().await, ExitCause::DaemonLost);
-    let log = agent.log();
-    assert!(log.has_text("done"), "the turn ran to its end");
-    assert_eq!(
-        log.sequence(),
-        vec![
-            "boundary STARTED".to_owned(),
-            "boundary DAEMON_LOST".to_owned(),
-            "turn end".to_owned(),
-            "boundary EXITED DAEMON_LOST".to_owned()
-        ]
-    );
-    agent.assert_released();
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn a_daemon_dialling_back_in_cancels_the_grace() {
     let agent = Agent::start(Setup::sdk()).await;
     agent.ready().await;
@@ -185,40 +130,6 @@ async fn a_daemon_dialling_back_in_cancels_the_grace() {
 
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn an_ask_nobody_can_answer_exits_at_the_drain_deadline() {
-    let agent = Agent::start(Setup {
-        steps: vec![permission(), text("never"), Step::TurnEnd],
-        ..Setup::sdk()
-    })
-    .await;
-    let mut daemon = agent.dial().await;
-    agent.ready().await;
-    assert_eq!(daemon.prompt(b"p1", "clean up").await, Verdict::Accepted);
-    agent
-        .wait("the ask is open", |log| {
-            log.phase() == Some(Phase::NeedsYou)
-        })
-        .await;
-    drop(daemon);
-
-    agent.clock.armed(T0 + GRACE).await;
-    agent.clock.set(T0 + GRACE);
-    agent.clock.armed(T0 + GRACE + DRAIN).await;
-    assert!(!agent.finished(), "the ask gets the drain deadline");
-    agent.clock.set(T0 + GRACE + DRAIN);
-    assert_eq!(agent.exit().await, ExitCause::Orphaned);
-
-    let log = agent.log();
-    assert_eq!(
-        log.boundaries().last().map(String::as_str),
-        Some("EXITED ORPHANED")
-    );
-    assert_eq!(log.open_asks(), 0, "the final snapshot closes the ask");
-    assert!(!log.has_text("never"));
-    agent.assert_released();
 }
 
 /// A stop ends the agent now, even one waiting on the person: the person
@@ -288,52 +199,6 @@ async fn kill_ends_the_process_group_at_once_and_writes_nothing() {
         .until("the provider is gone", || !running(&marker))
         .await;
     assert_eq!(agent.log().boundaries(), vec!["STARTED".to_owned()]);
-    agent.assert_released();
-}
-
-// The provider held past its exit is a POSIX shell wrapper.
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread")]
-async fn a_one_shot_child_runs_its_queued_follow_up_then_exits_and_refuses_late_input() {
-    let agent = Agent::start(Setup {
-        parent: true,
-        initial_prompt: Some("first"),
-        hold: true,
-        steps: vec![
-            text("one"),
-            Step::WaitFor {
-                path: agent_release(),
-            },
-            Step::TurnEnd,
-            text("two"),
-            Step::TurnEnd,
-        ],
-        ..Setup::sdk()
-    })
-    .await;
-    let mut daemon = agent.dial().await;
-    agent
-        .wait("the first turn is under way", |log| log.has_text("one"))
-        .await;
-    assert_eq!(daemon.prompt(b"p2", "second").await, Verdict::Queued);
-
-    agent.release();
-    agent
-        .wait("the one-shot exit", |log| {
-            log.boundaries().last().map(String::as_str) == Some("EXITED FINISHED")
-        })
-        .await;
-    let log = agent.log();
-    assert_eq!(log.turn_ends(), 2, "the queued follow-up ran first");
-    assert!(log.has_text("two"));
-    assert!(!agent.finished(), "the provider is still shutting down");
-
-    assert_eq!(
-        daemon.prompt(b"p3", "too late").await,
-        Verdict::Rejected(wire::Refusal::Exiting)
-    );
-    agent.unhold();
-    assert_eq!(agent.exit().await, ExitCause::Finished);
     agent.assert_released();
 }
 

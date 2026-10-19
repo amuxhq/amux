@@ -81,7 +81,6 @@ source = "worked failure"
 section = "Agent messaging"
 claim = "A parent's follow-up lands as a one-shot child's turn ends: the provider accepts it, the pending set holds its envelope id so the child does not exit, the next turn starts (Claude from its own queue, Codex kicked by the interpreter), and the child exits after that turn; a message arriving after the exit decision is answered exiting and resumes the child with it as the prompt."
 tests = [
-  "agent/lifecycle::a_one_shot_child_runs_its_queued_follow_up_then_exits_and_refuses_late_input",
   "interpret/lib::shared::tests::a_one_shot_agent_is_quiet_only_with_nothing_queued_running_or_pending",
   "interpret/lib::testkind::tests::agent_messages_stay_pending_until_consumed",
   "interpret/claude_pty::agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model",
@@ -124,7 +123,6 @@ tests = [
   "node/messaging::a_child_finishing_while_the_daemon_is_down_reaches_its_parent_once",
   "node/messaging::a_child_gone_without_a_turn_end_tells_its_parent_it_failed",
   "agent/lifecycle::with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_grace",
-  "agent/lifecycle::an_orphan_finishes_its_turn_before_it_exits",
 ]
 
 [[contract]]
@@ -189,7 +187,6 @@ claim = "The daemon restarts under an agent mid-turn with an open ask: the agent
 tests = [
   "testnet/spec_replication::an_ask_open_across_a_daemon_restart_is_the_same_ask_and_is_answered_after_it",
   "agent/lifecycle::a_daemon_dialling_back_in_cancels_the_grace",
-  "agent/lifecycle::an_ask_nobody_can_answer_exits_at_the_drain_deadline",
   "amux/overlap::agents_of_the_previous_build_work_on_after_an_update",
   "amux/system_journeys::survive_daemon",
 ]
@@ -584,7 +581,6 @@ source = "invariant"
 section = "Agent and supervisor"
 claim = "A one-shot child exits only after a turn ends, with an empty queue and an empty pending set."
 tests = [
-  "agent/lifecycle::a_one_shot_child_runs_its_queued_follow_up_then_exits_and_refuses_late_input",
   "interpret/lib::shared::tests::a_one_shot_agent_is_quiet_only_with_nothing_queued_running_or_pending",
 ]
 
@@ -1290,4 +1286,23 @@ property = { crate = "models", machine = "presence and routing", sentence = "a h
 checker = "models/presence::every_presence_promise_holds_at_ci_bounds"
 tests = [
   "testnet/spec_network::a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in",
+]
+
+[[contract]]
+id = "lifecycle-exits-at-turn-end"
+source = "model"
+property = { crate = "models", machine = "agent lifecycle", sentence = "an agent exits only at a turn end or a drain deadline: the lifecycle decides to end an incarnation only as a turn ends, while no turn runs, or as its drain deadline passes" }
+checker = "models/lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
+tests = [
+  "agent/lifecycle::with_no_daemon_the_agent_runs_its_first_prompt_then_drains_after_the_grace",
+  "agent/lifecycle::a_stop_cancels_the_turn_under_an_open_ask_and_exits_stopped",
+]
+
+[[contract]]
+id = "lifecycle-one-shot-runs-its-follow-up"
+source = "model"
+property = { crate = "models", machine = "agent lifecycle", sentence = "a one-shot child runs a queued follow-up before exiting: when it decides it has finished, every input and message it accepted has been taken" }
+checker = "models/lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
+tests = [
+  "agent/lifecycle::a_one_shot_terminal_child_runs_the_follow_up_it_typed_as_its_turn_ended",
 ]

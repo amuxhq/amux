@@ -77,7 +77,7 @@ claim = "A parent's follow-up lands as a one-shot child's turn ends: the provide
 tests = [
   "agent/lifecycle::a_one_shot_child_runs_its_queued_follow_up_then_exits_and_refuses_late_input",
   "interpret/lib::shared::tests::a_one_shot_agent_is_quiet_only_with_nothing_queued_running_or_pending",
-  "interpret/lib::testkind::agent_messages_stay_pending_until_consumed",
+  "interpret/lib::testkind::tests::agent_messages_stay_pending_until_consumed",
   "interpret/claude_pty::agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model",
   "interpret/codex::an_idle_inject_is_kicked_under_either_arm",
   "interpret/codex::the_parked_arm_kicks_an_empty_turn_and_consumes_at_its_acknowledgement",
@@ -196,8 +196,8 @@ source = "invariant"
 section = "Interpreter"
 claim = "Keys are unique per agent."
 tests = [
-  "interpret/lib::testkind::invariants::keys_are_unique_in_a_step_and_never_change_arm",
-  "interpret/lib::testkind::invariants::a_clean_run_has_no_violations",
+  "interpret/lib::testkind::tests::invariants::keys_are_unique_in_a_step_and_never_change_arm",
+  "interpret/lib::testkind::tests::invariants::a_clean_run_has_no_violations",
 ]
 
 [[contract]]
@@ -206,7 +206,7 @@ source = "invariant"
 section = "Interpreter"
 claim = "An ask opens on a fact and closes on a fact."
 tests = [
-  "interpret/lib::testkind::asks_open_and_close_only_on_facts",
+  "interpret/lib::testkind::tests::asks_open_and_close_only_on_facts",
   "interpret/claude_pty::asks_open_on_the_hook_and_close_only_on_facts",
   "interpret/claude_sdk::a_stopped_question_is_dismissed",
 ]
@@ -226,7 +226,7 @@ id = "first-frame-is-a-snapshot"
 source = "invariant"
 section = "Interpreter"
 claim = "The first frame is a Snapshot."
-tests = ["interpret/lib::testkind::invariants::the_first_frame_must_be_a_starting_snapshot_at_its_unknowns"]
+tests = ["interpret/lib::testkind::tests::invariants::the_first_frame_must_be_a_starting_snapshot_at_its_unknowns"]
 
 [[contract]]
 id = "no-append-after-final"
@@ -234,8 +234,8 @@ source = "invariant"
 section = "Interpreter"
 claim = "No append after a final."
 tests = [
-  "interpret/lib::testkind::invariants::appends_go_to_any_open_item_and_never_after_its_final",
-  "interpret/lib::testkind::invariants::a_reopened_final_item_is_a_violation",
+  "interpret/lib::testkind::tests::invariants::appends_go_to_any_open_item_and_never_after_its_final",
+  "interpret/lib::testkind::tests::invariants::a_reopened_final_item_is_a_violation",
 ]
 
 [[contract]]
@@ -243,7 +243,7 @@ id = "every-open-ask-has-an-item"
 source = "invariant"
 section = "Interpreter"
 claim = "Every open ask has an item."
-tests = ["interpret/lib::testkind::invariants::every_open_ask_has_an_item"]
+tests = ["interpret/lib::testkind::tests::invariants::every_open_ask_has_an_item"]
 
 [[contract]]
 id = "queue-drains"
@@ -251,8 +251,8 @@ source = "invariant"
 section = "Interpreter"
 claim = "The queue drains."
 tests = [
-  "interpret/lib::testkind::invariants::the_queue_drains_and_streams_end_unless_the_fixture_says_otherwise",
-  "interpret/lib::testkind::queue_submits_when_idle_and_drains_in_order",
+  "interpret/lib::testkind::tests::invariants::the_queue_drains_and_streams_end_unless_the_fixture_says_otherwise",
+  "interpret/lib::testkind::tests::queue_submits_when_idle_and_drains_in_order",
 ]
 
 [[contract]]
@@ -533,7 +533,7 @@ section = "Session state"
 claim = "Appends touch only items still open, not only the newest."
 tests = [
   "ui-state/spec::window::a_live_append_extends_the_held_text",
-  "interpret/lib::testkind::invariants::appends_go_to_any_open_item_and_never_after_its_final",
+  "interpret/lib::testkind::tests::invariants::appends_go_to_any_open_item_and_never_after_its_final",
 ]
 
 [[contract]]
@@ -632,8 +632,8 @@ source = "testing page"
 section = "Boundaries"
 claim = "Interpreter, per driver: a step yields keyed items, appends, snapshots and effects with no hidden IO, time or randomness; a checkpoint at every prefix resumes identically."
 tests = [
-  "interpret/lib::testkind::the_checkpoint_property_catches_state_a_resume_loses",
-  "interpret/lib::testkind::streams_end_full_and_resume_re_emits_open_items",
+  "interpret/lib::testkind::tests::the_checkpoint_property_catches_state_a_resume_loses",
+  "interpret/lib::testkind::tests::streams_end_full_and_resume_re_emits_open_items",
   "interpret/claude_pty::a_prompt_row_behind_its_hooks_still_comes_first",
   "interpret/claude_sdk::split_and_coalesced_stream_events_yield_the_same_final_items",
   "interpret/codex::asks_cover_every_request_codex_makes",
@@ -922,7 +922,7 @@ source = "testing page"
 section = "Contracts from the CI repair"
 claim = "An ask opens on a fact and closes on a fact; no timer, quiet period or catch-up signal touches it."
 tests = [
-  "interpret/lib::testkind::asks_open_and_close_only_on_facts",
+  "interpret/lib::testkind::tests::asks_open_and_close_only_on_facts",
   "ui-state/spec::asks::ask_closes_on_fact",
   "ui-state/spec::asks::an_ask_is_drawn_before_caught_up_only_when_the_entry_says_needs_you",
 ]

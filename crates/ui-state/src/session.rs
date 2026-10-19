@@ -601,7 +601,7 @@ impl SessionState {
                 self.connection = connection;
                 if connection == Connection::Reconnecting {
                     self.caught_up = false;
-                    self.retail = true;
+                    self.reopened();
                 }
                 outcome.session = true;
             }
@@ -757,7 +757,7 @@ impl SessionState {
             }
             Of::Lagged(_) => {
                 self.caught_up = false;
-                self.retail = true;
+                self.reopened();
                 outcome.session = true;
             }
             Of::Reset(_) => {
@@ -816,6 +816,17 @@ impl SessionState {
         self.transcript.upsert(item, changed);
         self.trim(changed);
         true
+    }
+
+    /// The stream ended and the driver opens it again with a fresh tail. A
+    /// transcript being built apart starts over: the tail that follows is
+    /// its whole, and what it held may not meet it.
+    fn reopened(&mut self) {
+        self.retail = true;
+        let kind = self.kind();
+        if let Some(pending) = &mut self.pending {
+            *pending = Transcript::new(kind);
+        }
     }
 
     /// While the reader follows, the window keeps only the newest rows.

@@ -59,7 +59,8 @@ pub(crate) enum Waiting {
 
 /// A client's Fetch that went below a replica's block: the call it
 /// answers, where the origin's page joins the block, the host session it
-/// was asked under, and the held items that lead the origin's.
+/// was asked under, the held items that lead the origin's, and whether a
+/// Reset has replaced the block since.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Page {
     pub(crate) call: CallId,
@@ -68,6 +69,7 @@ pub(crate) struct Page {
     pub(crate) session: u64,
     #[serde(with = "codec::messages")]
     pub(crate) held: Vec<wire::Item>,
+    pub(crate) replaced: bool,
 }
 
 impl PeerCalls {
@@ -82,6 +84,21 @@ impl PeerCalls {
             Waiting::Page(page) => Some(page.session),
             _ => None,
         }));
+    }
+
+    /// A Reset replaced the agent's block. A page asked below the old one
+    /// may still meet the new one at the same order, but the origin read it
+    /// before the rows the Reset's cursor now vouches for, and a row it
+    /// revised since lies below the new tail, where no stream sends it
+    /// again: such a page is answered and never absorbed.
+    pub(crate) fn block_replaced(&mut self, agent: &Key) {
+        for waiting in self.waiting.values_mut() {
+            if let Waiting::Page(page) = waiting
+                && page.agent == *agent
+            {
+                page.replaced = true;
+            }
+        }
     }
 
     /// The calls waiting under their canonical ids, with no count of the

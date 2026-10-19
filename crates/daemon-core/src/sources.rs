@@ -1306,6 +1306,7 @@ impl Daemon {
                     generation,
                 },
             )?;
+            self.pending.peers.block_replaced(&Key::from(key));
             let absorbed_rest = if rest.is_empty() {
                 Vec::new()
             } else {
@@ -1417,6 +1418,7 @@ impl Daemon {
             before_order,
             session,
             held,
+            replaced: false,
         };
         let made = self.pending.peers.mint();
         self.pending
@@ -1453,7 +1455,7 @@ impl Daemon {
             let current = HostId::from_slice(&agent.host)
                 .is_some_and(|host| self.sources.is_current(host, page.session));
             let row = self.store.agent(&agent).ok().flatten();
-            if current && row.is_some() {
+            if current && row.is_some() && !page.replaced {
                 let absorbed = self.store.absorb(
                     &agent,
                     Absorb::Page {
@@ -2344,6 +2346,106 @@ mod tests {
                 .complete_from_order,
             Some(3)
         );
+    }
+
+    /// A page asked below the block, then a Reset whose tail starts at the
+    /// same order: the page meets the new block, but the origin read it
+    /// before the rows the Reset's cursor vouches for, so it is answered
+    /// and never absorbed.
+    #[test]
+    fn a_page_asked_before_a_reset_is_answered_and_not_absorbed() {
+        let mut daemon = daemon();
+        let (_, source) = sourced(&mut daemon);
+        for of in [
+            session_event::Of::Opening(Opening { generation: 3 }),
+            session_event::Of::Item(item("e", 5, 4)),
+            session_event::Of::CaughtUp(CaughtUp { revision: 4 }),
+        ] {
+            step(&mut daemon, session(source, of));
+        }
+        let asked = step(
+            &mut daemon,
+            Input::ClientCall {
+                call: CallId(60),
+                request: ClientRequest::Fetch(wire::FetchRequest {
+                    agent_id: THEIRS.to_vec(),
+                    before_order: None,
+                    limit: 10,
+                }),
+            },
+        );
+        let page = match calls(&asked).as_slice() {
+            [(page, PeerRequest::Fetch(_))] => *page,
+            other => panic!("the origin is asked below the block: {other:?}"),
+        };
+
+        // The stream ends, and the source's next stream opens with a Reset
+        // whose tail starts where the old block did.
+        let ended = step(
+            &mut daemon,
+            Input::PeerAnswer {
+                call: source,
+                answer: Answer::Ended,
+            },
+        );
+        let timer = ended
+            .iter()
+            .find_map(|output| match output {
+                Output::ArmTimer {
+                    id: id @ TimerId::Source(..),
+                    ..
+                } => Some(*id),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("the source opens again: {ended:?}"));
+        let opened = step(&mut daemon, Input::Timer { id: timer });
+        let again = match calls(&opened).as_slice() {
+            [(call, PeerRequest::Subscribe(_))] => *call,
+            other => panic!("the source asks again: {other:?}"),
+        };
+        for of in [
+            session_event::Of::Opening(Opening { generation: 3 }),
+            session_event::Of::Reset(wire::Reset {}),
+            session_event::Of::Item(item("e", 5, 7)),
+            session_event::Of::CaughtUp(CaughtUp { revision: 7 }),
+        ] {
+            step(&mut daemon, session(again, of));
+        }
+        let floor = |daemon: &Daemon| {
+            daemon
+                .store
+                .agent(&key())
+                .unwrap()
+                .unwrap()
+                .complete_from_order
+        };
+        assert_eq!(floor(&daemon), Some(5));
+
+        let answered = step(
+            &mut daemon,
+            Input::PeerAnswer {
+                call: page,
+                answer: Answer::Reply(Box::new(PeerReply::Fetched(wire::FetchResponse {
+                    items: vec![item("c", 3, 2)],
+                    exhausted: false,
+                }))),
+            },
+        );
+        assert!(
+            !answered
+                .iter()
+                .any(|output| matches!(output, Output::Dump { .. } | Output::Shell(_))),
+            "the page writes nothing: {answered:?}"
+        );
+        assert!(
+            answered.contains(&Output::EndCall {
+                call: CallId(60),
+                status: Status::Ok,
+            }),
+            "the client is still answered: {answered:?}"
+        );
+        assert!(daemon.store.get(&key(), "c").unwrap().is_none());
+        assert_eq!(floor(&daemon), Some(5));
     }
 
     #[test]

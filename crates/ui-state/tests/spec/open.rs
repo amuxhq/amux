@@ -222,3 +222,30 @@ fn nothing_is_kept_between_opens() {
         assert!(!reopened.has_snapshot());
     }
 }
+
+#[test]
+fn a_transcript_that_fails_its_check_says_so_at_caught_up_and_at_reset() {
+    for kind in KINDS {
+        let mut state = SessionState::new(agent(kind), 10);
+        state.update(ev_snapshot(snapshot(kind, 1, Phase::Working, &[], &[])));
+        // An origin skipping an order breaks the block the client holds.
+        state.update(ev_item(text(kind, 1, 1, "one")));
+        state.update(ev_item(text(kind, 3, 3, "three")));
+        let outcome = state.update(caught_up(3));
+        let broken = outcome.broken.expect("a gap is a broken transcript");
+        assert!(broken.contains("between 1 and 3"), "{broken}");
+        let outcome = state.update(reset(2));
+        assert!(outcome.broken.is_some(), "{outcome:?}");
+
+        let mut state = SessionState::new(agent(kind), 10);
+        apply_block(
+            &mut state,
+            ev_snapshot(snapshot(kind, 1, Phase::Working, &[], &[])),
+        );
+        for order in 1..=3 {
+            apply_block(&mut state, ev_item(text(kind, order, order, "held")));
+        }
+        assert_eq!(apply_block(&mut state, caught_up(3)).broken, None);
+        assert_eq!(apply_block(&mut state, reset(2)).broken, None);
+    }
+}

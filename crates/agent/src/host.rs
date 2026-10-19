@@ -23,7 +23,7 @@ use std::sync::Arc;
 use agent_core::{
     Agent, AgentJob, ConnId, DumpReason, Input, JobId, JobResult, Output, Resumed, TimerId,
 };
-use core_ring::Ring;
+use core_ring::{DumpKind, DumpLimit, Ring};
 use interpret::Interpreter;
 use interpret::ring::Entry;
 use tokio::io::AsyncReadExt;
@@ -73,6 +73,8 @@ pub(crate) struct Driver<I: Interpreter> {
     jobs: mpsc::UnboundedSender<(JobId, JobResult)>,
     /// The core's word that the process exits, and why.
     exit: Option<ExitCause>,
+    /// The dumps the core asked for that were reported, by kind.
+    dumps: DumpLimit,
 }
 
 /// Everything the driver listens to.
@@ -189,6 +191,7 @@ pub(crate) async fn run<I: Interpreter>(
         timers: BTreeMap::new(),
         jobs: jobs_tx,
         exit: None,
+        dumps: DumpLimit::default(),
     };
     // An incarnation that cannot write its first steps does not start.
     driver
@@ -507,7 +510,10 @@ impl<I: Interpreter> Driver<I> {
                     Ok(())
                 }
                 Output::Dump { reason } => {
-                    eprintln!("amux agent: {AGENT_CORE_DUMP}{}", dump_reason(&reason));
+                    let now = now_ms(self.clock.as_ref());
+                    if let Some(reason) = limited_dump_reason(&mut self.dumps, &reason, now) {
+                        eprintln!("amux agent: {reason}");
+                    }
                     Ok(())
                 }
             };
@@ -553,14 +559,28 @@ fn write_failed(why: String) -> Input {
     Input::WriteFailed { why }
 }
 
-fn dump_reason(reason: &DumpReason) -> String {
-    match reason {
-        DumpReason::Violation(violation) => violation.to_string(),
-        DumpReason::OverBudget { micros, budget } => format!(
-            "a step took {micros} µs against its budget of {} µs",
-            budget.micros
+/// The reason to report for a dump the core asked for at `now_ms`, or
+/// `None` when the limit holds it back: a provider stuck in a loop meets
+/// the same broken invariant with every event.
+fn limited_dump_reason(limit: &mut DumpLimit, reason: &DumpReason, now_ms: u64) -> Option<String> {
+    let (kind, why) = match reason {
+        DumpReason::Violation(violation) => (
+            DumpKind::Violation(violation.invariant),
+            violation.to_string(),
         ),
-    }
+        DumpReason::OverBudget { micros, budget } => (
+            DumpKind::OverBudget,
+            format!(
+                "a step took {micros} µs against its budget of {} µs",
+                budget.micros
+            ),
+        ),
+    };
+    let suppressed = limit.admit(kind, now_ms)?;
+    Some(core_ring::with_suppressed(
+        format!("{AGENT_CORE_DUMP}{why}"),
+        suppressed,
+    ))
 }
 
 /// The clock, as the core counts it: milliseconds, never before the epoch.
@@ -603,5 +623,29 @@ async fn hook_payloads(mut listener: LocalListener, events: mpsc::Sender<Provide
         if events.send(ProviderEvent::Fact(fact)).await.is_err() {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_violation_the_agent_core_repeats_is_reported_once_per_interval() {
+        let broke = DumpReason::Violation(agent_core::Violation {
+            invariant: "one open ask at most",
+            detail: "two asks open".into(),
+        });
+        let mut limit = DumpLimit::default();
+        let first = limited_dump_reason(&mut limit, &broke, 0).unwrap();
+        assert!(first.starts_with(AGENT_CORE_DUMP), "{first}");
+        for at in [1, DumpLimit::INTERVAL_MS - 1] {
+            assert_eq!(limited_dump_reason(&mut limit, &broke, at), None);
+        }
+        let second = limited_dump_reason(&mut limit, &broke, DumpLimit::INTERVAL_MS).unwrap();
+        assert!(
+            second.ends_with("(2 more like it were not dumped since the last)"),
+            "{second}"
+        );
     }
 }

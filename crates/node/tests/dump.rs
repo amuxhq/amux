@@ -375,8 +375,24 @@ async fn a_peers_dump_answer_carries_no_daemon_log() {
     daemon.shutdown().await.unwrap();
 }
 
+/// Waits for the installation to hold `count` bundles the daemon core asked
+/// for, and returns their reasons.
+async fn core_dumps(install: &Install, count: usize) -> Vec<String> {
+    until("the bundles the core asked for", || {
+        let dumps = install.core_dumps();
+        async move {
+            match dumps.len() >= count {
+                true => Ok(dumps),
+                false => Err("too few bundles yet"),
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn a_dump_the_daemon_core_asks_for_is_written_with_its_reason() {
+async fn steps_over_their_budget_are_one_dump_within_the_interval() {
     // Not told to expect dumps: a step over its budget is tolerated at
     // teardown, only a broken invariant fails it.
     let install = Install::new();
@@ -391,26 +407,92 @@ async fn a_dump_the_daemon_core_asks_for_is_written_with_its_reason() {
     agent.register(&install, &runtime).await;
     agent.append(&support::synthetic::item("a", "hello"));
     runtime.ingest(agent.id).await.unwrap();
-
-    let reasons = until("a bundle the core asked for", || {
-        let dumps = install.core_dumps();
-        async move {
-            match dumps.is_empty() {
-                true => Err("no bundle yet"),
-                false => Ok(dumps),
-            }
-        }
-    })
-    .await
-    .unwrap();
-    for reason in &reasons {
-        assert!(
-            reason.starts_with(node::CORE_DUMP) && reason.contains("over its budget of 0 µs"),
-            "{reason}"
-        );
+    let first = core_dumps(&install, 1).await;
+    assert!(
+        first[0].starts_with(node::CORE_DUMP) && first[0].contains("over its budget of 0 µs"),
+        "{first:?}"
+    );
+    // Many more steps, every one over its budget.
+    for n in 0..20 {
+        agent.append(&support::synthetic::item(&format!("more-{n}"), "again"));
+        runtime.ingest(agent.id).await.unwrap();
     }
+    runtime.checkpoint().await.unwrap();
+    drop(runtime);
+    // A clean shutdown waits for every dump under way.
+    daemon.shutdown().await.unwrap();
+    assert_eq!(install.core_dumps(), first);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn steps_over_their_budget_dump_again_after_the_interval_counting_the_rest() {
+    let install = Install::new();
+    const INTERVAL_MS: u64 = 1_500;
+    let launch = node::Launch {
+        step_budget: daemon_core::StepBudget { micros: 0 },
+        dump_interval_ms: INTERVAL_MS,
+        ..support::synthetic::quiet_launch()
+    };
+    let daemon = install.start("boot-1", launch).await;
+    let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
+    let mut agent = support::synthetic::SyntheticAgent::new(&install, "one", 1 << 20);
+    agent.register(&install, &runtime).await;
+    agent.append(&support::synthetic::item("a", "hello"));
+    runtime.ingest(agent.id).await.unwrap();
+    core_dumps(&install, 1).await;
+    // Steps keep coming, each over its budget, until the interval is past.
+    let started = std::time::Instant::now();
+    let mut n = 0;
+    while install.core_dumps().len() < 2 {
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "no second bundle after the interval: {:?}",
+            install.core_dumps()
+        );
+        n += 1;
+        agent.append(&support::synthetic::item(&format!("more-{n}"), "again"));
+        runtime.ingest(agent.id).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let bundles = bundles_by_time(&install);
+    assert_eq!(bundles.len(), 2, "{bundles:?}");
+    let (first_ms, first) = &bundles[0];
+    let (second_ms, second) = &bundles[1];
+    assert!(!first.contains("not dumped"), "{first}");
+    assert!(
+        second.contains("over its budget of 0 µs")
+            && second.contains("more like it were not dumped since the last"),
+        "{second}"
+    );
+    // A bundle is stamped as it is written, a moment after the dump was
+    // let through.
+    assert!(
+        second_ms + 500 >= first_ms + INTERVAL_MS,
+        "{first_ms} then {second_ms}"
+    );
     drop(runtime);
     daemon.shutdown().await.unwrap();
+}
+
+/// The bundles the daemon core asked for, oldest first, with when each was
+/// made.
+fn bundles_by_time(install: &Install) -> Vec<(u64, String)> {
+    let mut bundles: Vec<(u64, String)> = std::fs::read_dir(install.data_dir.join(node::REPORTS))
+        .unwrap()
+        .filter_map(|bundle| {
+            let manifest = std::fs::read(bundle.ok()?.path().join(MANIFEST)).ok()?;
+            let manifest: serde_json::Value = serde_json::from_slice(&manifest).ok()?;
+            let reason = manifest["reason"].as_str()?;
+            reason.starts_with(node::CORE_DUMP).then(|| {
+                (
+                    manifest["created_at_ms"].as_u64().unwrap(),
+                    reason.to_owned(),
+                )
+            })
+        })
+        .collect();
+    bundles.sort();
+    bundles
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
@@ -22,12 +23,16 @@ use ui_state::{
 };
 use ui_view::SessionLine;
 use wire::{
-    Agent, BlobRef, DumpFile, DumpPart, ErrorCode, FetchRequest, GetBlobRequest, GetRequest,
-    HostEntry, Input, PromptSubmission, PutBlobRequest, ResumeAgentRequest, SendInputRequest,
-    SendInputResponse, SessionEvent, SubscribeRequest, send_input_response, session_event,
+    Agent, BlobRef, DumpFile, DumpPart, DumpRequest, ErrorCode, FetchRequest, GetBlobRequest,
+    GetRequest, HostEntry, Input, PromptSubmission, PutBlobRequest, ResumeAgentRequest,
+    SendInputRequest, SendInputResponse, SessionEvent, SubscribeRequest, send_input_response,
+    session_event,
 };
 
 use crate::trace::{DriverEvent, DriverTrace, Ring, Structure as _, TraceEvent};
+
+/// Prefixes the reason of a dump a chat's transcript asked for.
+pub const TRANSCRIPT_DUMP: &str = "the client's transcript: ";
 use crate::{Backoff, inputs};
 
 /// What became of a send.
@@ -143,6 +148,8 @@ pub(crate) struct Inner {
     /// The model asked for a reload: the pump reopens the stream.
     reload: Notify,
     closed: AtomicBool,
+    /// The transcript failed its check and a dump was asked for.
+    dumped: AtomicBool,
     catalogues: Arc<Catalogues>,
     /// The catalogue hash last fetched for; asked again only when a chat
     /// opens anew.
@@ -241,6 +248,9 @@ impl Inner {
             self.want_catalogue();
         }
         self.resend(outcome.resend.clone());
+        if let Some(why) = &outcome.broken {
+            self.dump_broken(why);
+        }
         if let Some(key) = &outcome.need_get {
             self.note(DriverEvent::Get { key: key.clone() });
             let request = GetRequest {
@@ -260,6 +270,58 @@ impl Inner {
             }
         }
         outcome
+    }
+
+    /// Asks the runtime for a dump of the profile and writes this session's
+    /// part into it: a transcript that fails its own check is a client bug
+    /// the bundle should show as it stood. Once per session, since the same
+    /// transcript fails again at the next CaughtUp.
+    fn dump_broken(self: &Arc<Self>, why: &str) {
+        if self.dumped.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        self.note(DriverEvent::Broken {
+            why: why.to_owned(),
+        });
+        let request = DumpRequest {
+            agent_ids: vec![self.agent_id.clone()],
+            reason: format!("{TRANSCRIPT_DUMP}{why}"),
+            automatic: true,
+        };
+        let inner = self.clone();
+        tokio::spawn(async move {
+            let written = match inner.client.dump(request).await {
+                Ok(report) => crate::write_part(Path::new(&report.report_path), &inner.dump_part())
+                    .map_err(|error| error.to_string()),
+                Err(error) => Err(error.to_string()),
+            };
+            if let Err(error) = written {
+                inner.note(DriverEvent::DumpFailed { error });
+            }
+        });
+    }
+
+    /// This session's part of a dump bundle: the structure of its state and
+    /// its trace, with no content (see `dump`).
+    fn dump_part(&self) -> DumpPart {
+        let (state, trace) = {
+            let model = self.model();
+            (model.state.structure(), model.trace.trace())
+        };
+        let dir = format!("client/sessions/{}", hex(&self.agent_id));
+        DumpPart {
+            dump_id: Vec::new(),
+            files: vec![
+                DumpFile {
+                    name: format!("{dir}/state.txt"),
+                    contents: state.into_bytes(),
+                },
+                DumpFile {
+                    name: format!("{dir}/trace.txt"),
+                    contents: trace.render().into_bytes(),
+                },
+            ],
+        }
     }
 
     /// On screen, fetches the catalogue the newest snapshot names unless
@@ -520,6 +582,7 @@ impl Session {
             gathering: AtomicBool::new(on_screen),
             reload: Notify::new(),
             closed: AtomicBool::new(false),
+            dumped: AtomicBool::new(false),
             catalogues,
             asked: Mutex::new(None),
         });
@@ -948,24 +1011,7 @@ impl Session {
     /// This session's part of a dump bundle: the structure of its state and
     /// its trace, with no content (see `dump`).
     pub fn dump_part(&self) -> DumpPart {
-        let (state, trace) = {
-            let model = self.inner.model();
-            (model.state.structure(), model.trace.trace())
-        };
-        let dir = format!("client/sessions/{}", hex(&self.inner.agent_id));
-        DumpPart {
-            dump_id: Vec::new(),
-            files: vec![
-                DumpFile {
-                    name: format!("{dir}/state.txt"),
-                    contents: state.into_bytes(),
-                },
-                DumpFile {
-                    name: format!("{dir}/trace.txt"),
-                    contents: trace.render().into_bytes(),
-                },
-            ],
-        }
+        self.inner.dump_part()
     }
 
     /// Drops the stream. Nothing is flushed: nothing was kept. Results of

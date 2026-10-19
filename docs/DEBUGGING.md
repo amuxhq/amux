@@ -111,6 +111,14 @@ A host that cannot be reached is named in `errors`; the local rows and store sli
 On the phone, reporting a problem takes a dump of the profile at the moment the screen freezes (see [A report
 from the phone](#a-report-from-the-phone)).
 
+Some dumps nobody asks for. When the daemon's core breaks one of its cheap invariants, or a step runs over its
+budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
+A chat whose transcript fails its own check when the stream catches up or resets asks for one too, with the
+reason starting `the client's transcript: ` and that chat's part inside. The relay, the agent process and the
+supervisor log the same kind of reason: `the relay core: ` and `the supervisor core: ` in the daemon's log,
+`the agent core: ` in the agent's stderr. Each process reports one per kind of reason (one per broken invariant,
+one for steps over budget) every ten minutes; the next one of that kind says how many were held back since.
+
 ## Reading a dump
 
 ```text

@@ -151,6 +151,9 @@ pub struct Launch {
     /// How long one step of the profile's core may take before it is
     /// reported with a dump.
     pub step_budget: daemon_core::StepBudget,
+    /// How long after a dump the profile's core asked for another of the
+    /// same kind is held back, and counted in the next.
+    pub dump_interval_ms: u64,
 }
 
 impl Default for Launch {
@@ -186,6 +189,7 @@ impl Default for Launch {
             catalogue_recheck_ms: 60_000,
             checkpoint_interval_ms: 60_000,
             step_budget: daemon_core::StepBudget::DAEMON,
+            dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
         }
     }
 }
@@ -657,8 +661,13 @@ impl ProfileRuntime {
             generation,
             clock,
             driver: {
-                let (driver, thread) =
-                    crate::driver::Driver::new(me.clone(), store, dir.clone(), options);
+                let (driver, thread) = crate::driver::Driver::new(
+                    me.clone(),
+                    store,
+                    dir.clone(),
+                    options,
+                    launch.dump_interval_ms,
+                );
                 core = Some(thread);
                 driver
             },

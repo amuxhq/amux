@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use client::{ManualClock, RpcError};
 use support::*;
-use ui_runtime::{DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TraceEvent};
+use ui_runtime::{
+    DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TRANSCRIPT_DUMP, TraceEvent,
+};
 use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, RefusalReason, Waiting};
 use wire::{
     ErrorCode, FetchResponse, GetBlobResponse, Input, Kind, SendInputRequest, claude_pty_input,
@@ -966,4 +968,62 @@ async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_agai
         }
         drop(feed);
     }
+}
+
+#[tokio::test]
+async fn a_transcript_that_fails_its_check_asks_for_a_dump_with_the_sessions_part() {
+    let (client, mut calls) = runtime();
+    let open = tokio::spawn(Session::open(
+        client,
+        agent(KIND),
+        40,
+        CAP,
+        ManualClock::new(0),
+    ));
+    let (_, feed) = calls.subscribe().await;
+    feed.send(snapshot(KIND, 3, &[]));
+    // An origin skipping an order breaks the block the client holds.
+    feed.send(ev(text_item(KIND, 1, 1, "one")));
+    feed.send(ev(text_item(KIND, 3, 3, "three")));
+    let _session = open.await.unwrap().expect("the session opens");
+    feed.send(caught_up(3));
+    let Call::Dump(request, reply) = calls.next().await else {
+        panic!("the driver asked for no dump");
+    };
+    assert!(request.automatic);
+    assert_eq!(request.agent_ids, vec![agent(KIND).agent_id]);
+    assert!(
+        request.reason.starts_with(TRANSCRIPT_DUMP) && request.reason.contains("between 1 and 3"),
+        "{}",
+        request.reason
+    );
+    let bundle = tempfile::tempdir().unwrap();
+    reply
+        .send(Ok(wire::DumpReport {
+            report_path: bundle.path().display().to_string(),
+        }))
+        .unwrap();
+    // The part is written off the stream, with nothing on it to wait for.
+    let sessions = bundle.path().join("client/sessions");
+    let trace = tokio::time::timeout(PATIENCE, async {
+        loop {
+            let written = std::fs::read_dir(&sessions)
+                .ok()
+                .and_then(|mut dirs| dirs.next()?.ok())
+                .and_then(|dir| std::fs::read_to_string(dir.path().join("trace.txt")).ok());
+            if let Some(trace) = written {
+                return trace;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the session's part is written into the bundle");
+    assert!(trace.contains("Broken"), "{trace}");
+
+    // The same transcript fails again at the next CaughtUp: one dump is
+    // enough for the session.
+    feed.send(caught_up(3));
+    feed.send(lagged());
+    let (_, _feed) = calls.subscribe().await;
 }

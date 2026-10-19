@@ -81,6 +81,9 @@ pub struct Outcome {
     /// Held inputs the host can be reached for again: each is `Sent` from
     /// now, and the driver sends it under its own id.
     pub resend: Vec<Input>,
+    /// The transcript failed its own check at a Reset or a CaughtUp, saying
+    /// how: the driver asks for a dump.
+    pub broken: Option<String>,
 }
 
 /// A queued prompt as the composer draws it.
@@ -764,6 +767,7 @@ impl SessionState {
                 self.reach += 1;
                 outcome.resend = self.release_held();
                 outcome.session = true;
+                outcome.broken = self.transcript.check().err();
             }
             Of::Lagged(_) => {
                 self.caught_up = false;
@@ -771,6 +775,9 @@ impl SessionState {
                 outcome.session = true;
             }
             Of::Reset(reset) => {
+                // The transcript as it stood before the origin's history
+                // changed under it.
+                outcome.broken = self.transcript.check().err();
                 self.caught_up = false;
                 self.generation = Some(reset.generation);
                 self.pending = Some(Transcript::new(self.kind()));

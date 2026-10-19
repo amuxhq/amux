@@ -10,11 +10,14 @@
 //! segment's inputs fed through the core again. An input is one JSON line,
 //! so recording one costs one bounded write.
 
+mod limit;
+
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write as _};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+pub use limit::{DumpKind, DumpLimit, with_suppressed};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 

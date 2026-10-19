@@ -48,6 +48,7 @@ use child::Child;
 pub use child::Inherited;
 use control::Asked;
 pub use control::{Request, SUPERVISOR_SOCKET, ask};
+use core_ring::{DumpKind, DumpLimit};
 pub use files::{FileId, Files, SUPERVISOR_LOCK};
 pub use keep_awake::{KeepAwake, REASON as KEEP_AWAKE_REASON};
 use semver::Version;
@@ -239,6 +240,7 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         next_ask: 0,
         jobs,
         pending: VecDeque::new(),
+        dumps: Dumps::default(),
     };
     if driver.execute(out)?.is_some() {
         return Ok(());
@@ -269,6 +271,41 @@ struct Driver {
     jobs: mpsc::UnboundedSender<(JobId, JobResult)>,
     /// What executing outputs produced, stepped before anything new.
     pending: VecDeque<core::Input>,
+    dumps: Dumps,
+}
+
+/// Prefixes the reason the supervisor core asked for a dump.
+pub const SUPERVISOR_CORE_DUMP: &str = "the supervisor core: ";
+
+/// The dumps the supervisor core asked for, reported once per kind in each
+/// interval: a daemon restarting in a loop meets the same broken invariant
+/// at every restart.
+#[derive(Debug, Default)]
+struct Dumps(DumpLimit);
+
+impl Dumps {
+    /// The reason to report for `reason` asked for at `now_ms`, or `None`
+    /// when it is held back.
+    fn reason(&mut self, reason: &core::DumpReason, now_ms: u64) -> Option<String> {
+        let (kind, why) = match reason {
+            core::DumpReason::Violation(violation) => (
+                DumpKind::Violation(violation.invariant),
+                format!("an invariant failed: {violation}"),
+            ),
+            core::DumpReason::OverBudget { micros, budget } => (
+                DumpKind::OverBudget,
+                format!(
+                    "a step took {micros} µs, over its budget of {} µs",
+                    budget.micros
+                ),
+            ),
+        };
+        let suppressed = self.0.admit(kind, now_ms)?;
+        Some(core_ring::with_suppressed(
+            format!("{SUPERVISOR_CORE_DUMP}{why}"),
+            suppressed,
+        ))
+    }
 }
 
 /// The supervisor is done.
@@ -462,7 +499,10 @@ impl Driver {
                     });
                 }
                 Output::Dump { reason } => {
-                    tracing::error!(?reason, "the supervisor core asked for a dump");
+                    let now_ms = millis_now(&*self.clock);
+                    if let Some(reason) = self.dumps.reason(&reason, now_ms) {
+                        tracing::error!(%reason, "the supervisor core asked for a dump");
+                    }
                 }
             }
         }
@@ -806,6 +846,23 @@ fn sync_parent(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_violation_the_supervisor_core_repeats_is_reported_once_per_interval() {
+        let broke = core::DumpReason::Violation(core::Violation {
+            invariant: "at most one daemon is serving",
+            detail: "two serve".into(),
+        });
+        let mut dumps = Dumps::default();
+        let first = dumps.reason(&broke, 0).unwrap();
+        assert!(first.starts_with(SUPERVISOR_CORE_DUMP), "{first}");
+        assert_eq!(dumps.reason(&broke, DumpLimit::INTERVAL_MS - 1), None);
+        let second = dumps.reason(&broke, DumpLimit::INTERVAL_MS).unwrap();
+        assert!(
+            second.ends_with("(1 more like it was not dumped since the last)"),
+            "{second}"
+        );
+    }
 
     /// Serves one response to one connection.
     async fn serve(head: &'static str, body: Vec<u8>) -> String {

@@ -13,6 +13,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
+use core_ring::{DumpKind, DumpLimit};
+use daemon_core::DumpReason;
 use relay_core::{Input, Output, Relay, StreamId};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::task::{AbortHandle, JoinHandle};
@@ -37,6 +39,29 @@ pub(crate) struct Relaying {
 struct Inner {
     relay: Relay,
     pipes: HashMap<StreamId, Pipe>,
+    dumps: Dumps,
+}
+
+/// The dumps the relay core asked for, reported once per kind in each
+/// interval: on a busy relay one broken invariant or slow step comes again
+/// with every stream.
+#[derive(Debug, Default)]
+struct Dumps(DumpLimit);
+
+impl Dumps {
+    /// The reason to report for `reason` asked for at `now_ms`, or `None`
+    /// when it is held back.
+    fn reason(&mut self, reason: &DumpReason, now_ms: u64) -> Option<String> {
+        let kind = match reason {
+            DumpReason::Violation(violation) => DumpKind::Violation(violation.invariant),
+            DumpReason::OverBudget { .. } => DumpKind::OverBudget,
+        };
+        let suppressed = self.0.admit(kind, now_ms)?;
+        Some(core_ring::with_suppressed(
+            format!("{RELAY_CORE_DUMP}{reason}"),
+            suppressed,
+        ))
+    }
 }
 
 /// A spliced stream as the driver holds it.
@@ -55,6 +80,7 @@ impl Relaying {
             inner: std::sync::Mutex::new(Inner {
                 relay: Relay::new(daemon_core::HostId(own.into_bytes())),
                 pipes: HashMap::new(),
+                dumps: Dumps::default(),
             }),
             epoch: Instant::now(),
             next_stream: AtomicU64::new(1),
@@ -72,7 +98,9 @@ impl Relaying {
     /// as opening, a dump is reported. Refusals and splices are returned
     /// for the caller to act on.
     pub(crate) fn step(&self, inputs: impl IntoIterator<Item = Input>) -> Vec<Output> {
+        let now_ms = self.now_ms();
         let mut inner = self.inner();
+        let inner = &mut *inner;
         let mut out = Vec::new();
         for input in inputs {
             inner.relay.step(input, &mut out);
@@ -94,7 +122,9 @@ impl Relaying {
                 true
             }
             Output::Dump { reason } => {
-                tracing::error!(reason = %format_args!("{RELAY_CORE_DUMP}{reason}"), "the relay core asked for a dump");
+                if let Some(reason) = inner.dumps.reason(reason, now_ms) {
+                    tracing::error!(%reason, "the relay core asked for a dump");
+                }
                 false
             }
             Output::Refuse { .. }
@@ -690,5 +720,26 @@ mod tests {
         .await
         .expect("the far end sees the stream end")
         .ok();
+    }
+
+    #[test]
+    fn a_violation_the_relay_core_repeats_is_reported_once_per_interval() {
+        let broke = DumpReason::Violation(daemon_core::Violation {
+            invariant: "a splice only joins two live links",
+            detail: "link 9 is down".into(),
+        });
+        let mut dumps = Dumps::default();
+        let first = dumps.reason(&broke, 1_000).unwrap();
+        assert!(first.starts_with(RELAY_CORE_DUMP), "{first}");
+        for at in [1_001, 2_000, 1_000 + DumpLimit::INTERVAL_MS - 1] {
+            assert_eq!(dumps.reason(&broke, at), None);
+        }
+        let second = dumps
+            .reason(&broke, 1_000 + DumpLimit::INTERVAL_MS)
+            .unwrap();
+        assert!(
+            second.ends_with("(3 more like it were not dumped since the last)"),
+            "{second}"
+        );
     }
 }

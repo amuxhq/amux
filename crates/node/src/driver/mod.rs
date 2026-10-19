@@ -35,7 +35,7 @@ use std::time::Duration;
 
 pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
-use core_ring::Ring;
+use core_ring::{DumpKind, DumpLimit, Ring};
 use daemon_core::payload::{
     Answer, BlobRefusal, CallError, ChannelClass, ChannelError, ClientRequest, JobResult,
     PeerFailure, PeerReply, PeerRequest, PublicKey, Response, Status,
@@ -193,6 +193,7 @@ impl Driver {
         store: Sqlite,
         dir: PathBuf,
         options: StartOptions,
+        dump_interval_ms: u64,
     ) -> (Self, CoreThread) {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
         let calls = Arc::new(CallTable::default());
@@ -246,6 +247,7 @@ impl Driver {
             timers: HashMap::new(),
             waiting: HashMap::new(),
             ticked: None,
+            dumps: DumpLimit::new(dump_interval_ms),
             settings: None,
             trust: trust.clone(),
             window: window.clone(),
@@ -537,11 +539,33 @@ pub(crate) struct CoreThread {
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clock as last told to the core.
     ticked: Option<u64>,
+    /// The dumps the core asked for that were written, by kind.
+    dumps: DumpLimit,
     /// The settings as last told to the core.
     settings: Option<Settings>,
     trust: crate::trust::SharedTrustStore,
     window: Arc<pairing::PairWindow>,
     pairings: Arc<pairing::Carriers>,
+}
+
+/// The reason a bundle the core asked for at `now_ms` is written with, or
+/// `None` when the limit holds it back.
+fn limited_dump_reason(
+    limit: &mut DumpLimit,
+    reason: &daemon_core::DumpReason,
+    now_ms: u64,
+) -> Option<String> {
+    let (kind, why) = match reason {
+        daemon_core::DumpReason::Violation(violation) => (
+            DumpKind::Violation(violation.invariant),
+            format!("{CORE_VIOLATION_DUMP}{violation}"),
+        ),
+        daemon_core::DumpReason::OverBudget { .. } => {
+            (DumpKind::OverBudget, format!("{CORE_DUMP}{reason}"))
+        }
+    };
+    let suppressed = limit.admit(kind, now_ms)?;
+    Some(core_ring::with_suppressed(why, suppressed))
 }
 
 /// Fresh randomness for the core to draw from.
@@ -934,12 +958,11 @@ impl CoreThread {
             }
             Output::Dump { reason } => {
                 // The core logged why. The bundle is written off this
-                // thread, reading the store between later steps.
-                let reason = match &reason {
-                    daemon_core::DumpReason::Violation(violation) => {
-                        format!("{CORE_VIOLATION_DUMP}{violation}")
-                    }
-                    daemon_core::DumpReason::OverBudget { .. } => format!("{CORE_DUMP}{reason}"),
+                // thread, reading the store between later steps, so a burst
+                // of the same reason is one bundle.
+                let now = runtime.clock_now().max(0) as u64;
+                let Some(reason) = limited_dump_reason(&mut self.dumps, &reason, now) else {
+                    return;
                 };
                 let mut dumps = runtime.core_dumps.lock().unwrap();
                 // A profile shutting down has stopped waiting for dumps: one
@@ -1444,5 +1467,37 @@ impl ProfileRuntime {
         if let Some(hook) = hook {
             Handle::current().block_on(hook());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_violation_the_daemon_core_repeats_is_one_bundle_per_interval() {
+        let broke = daemon_core::DumpReason::Violation(daemon_core::Violation {
+            invariant: "the generation only ever rises",
+            detail: "3 then 2".into(),
+        });
+        let mut limit = DumpLimit::default();
+        let first = limited_dump_reason(&mut limit, &broke, 0).unwrap();
+        assert!(first.starts_with(CORE_VIOLATION_DUMP), "{first}");
+        for at in [1, DumpLimit::INTERVAL_MS - 1] {
+            assert_eq!(limited_dump_reason(&mut limit, &broke, at), None);
+        }
+        // A step over its budget is news beside it.
+        let slow = daemon_core::DumpReason::OverBudget {
+            micros: 250_000,
+            budget: daemon_core::StepBudget::DAEMON,
+        };
+        let slow = limited_dump_reason(&mut limit, &slow, 2).unwrap();
+        assert!(slow.contains("250000 µs"), "{slow}");
+        let second = limited_dump_reason(&mut limit, &broke, DumpLimit::INTERVAL_MS).unwrap();
+        assert!(
+            second.starts_with(CORE_VIOLATION_DUMP)
+                && second.ends_with("(2 more like it were not dumped since the last)"),
+            "{second}"
+        );
     }
 }

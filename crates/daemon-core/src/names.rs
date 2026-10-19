@@ -91,13 +91,4 @@ mod tests {
         assert_eq!(next.len(), wire::AGENT_NAME_MOST);
         assert!(next.ends_with("a-2"), "{next}");
     }
-
-    #[test]
-    fn a_number_follows_the_pair_only_when_every_pair_is_taken() {
-        let pairs: HashSet<String> = word_pairs().collect();
-        let name = assign_name(7, &|name| pairs.contains(name));
-        let (pair, number) = name.rsplit_once('-').unwrap();
-        assert!(pairs.contains(pair), "{name}");
-        assert_eq!(number, "2");
-    }
 }

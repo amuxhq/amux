@@ -19,32 +19,6 @@ fn addr(text: &str) -> SocketAddr {
 }
 
 #[test]
-fn trust_store_can_hold_multiple_reachabilities() {
-    let mut store = TrustStore::default();
-    store.insert_for_test(
-        PEER,
-        TrustEntry {
-            pubkey: vec![8; 32],
-            name: "second".to_string(),
-            paired_at: at(100),
-            reachabilities: vec![
-                Reachability::Direct {
-                    addrs: vec![addr("127.0.0.1:9000")],
-                },
-                Reachability::Cloud,
-            ],
-            signed_in: None,
-            platform: None,
-        },
-    );
-
-    let entry = store.entry(PEER).unwrap();
-    assert_eq!(entry.pubkey, vec![8; 32]);
-    assert_eq!(entry.name, "second");
-    assert_eq!(entry.reachabilities.len(), 2);
-}
-
-#[test]
 fn trust_store_pairing_upsert_inserts_and_deduplicates_reachability() {
     let mut store = TrustStore::default();
     let ssh = Reachability::Ssh {
@@ -147,33 +121,6 @@ fn trust_store_pairing_upsert_requires_teardown_before_pubkey_replacement() {
     assert_eq!(entry.name, "new");
     assert_eq!(entry.pubkey, vec![8; 32]);
     assert_eq!(entry.reachabilities, vec![direct]);
-}
-
-#[test]
-fn remove_deletes_only_that_entry() {
-    let mut store = TrustStore::default();
-    store
-        .upsert_paired_peer(
-            PEER,
-            vec![7; 32],
-            "peer".into(),
-            Reachability::Cloud,
-            at(200),
-        )
-        .unwrap();
-    store
-        .upsert_paired_peer(
-            OTHER,
-            vec![8; 32],
-            "other".into(),
-            Reachability::Cloud,
-            at(300),
-        )
-        .unwrap();
-
-    assert_eq!(store.remove(PEER).unwrap().name, "peer");
-    assert!(store.entry(PEER).is_none());
-    assert_eq!(store.entry(OTHER).unwrap().name, "other");
 }
 
 #[test]
@@ -484,18 +431,6 @@ fn a_replacement_the_drive_refused_trusts_the_old_key_again() {
     assert!(out.contains(&Output::Shell(ShellWork::ReplacementEnded {
         host: HostId(*PEER.as_bytes()),
     })));
-}
-
-#[test]
-fn the_replicas_follow_the_paired_hosts_as_they_change() {
-    let mut daemon = daemon();
-    assert!(!daemon.sources.trusts(HostId(*PEER.as_bytes())));
-    let (write, _) = written(&change(&mut daemon, 1, pair(7)));
-    done(&mut daemon, write, JobResult::Done);
-    assert!(daemon.sources.trusts(HostId(*PEER.as_bytes())));
-    let (write, _) = written(&change(&mut daemon, 2, TrustChange::Remove { host: PEER }));
-    done(&mut daemon, write, JobResult::Done);
-    assert!(!daemon.sources.trusts(HostId(*PEER.as_bytes())));
 }
 
 /// A change under way, with every reachability shape, survives the

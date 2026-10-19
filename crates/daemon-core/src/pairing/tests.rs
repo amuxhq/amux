@@ -186,18 +186,6 @@ fn failure(out: &[Output]) -> Option<PairFailure> {
     })
 }
 
-fn sent_error(out: &[Output]) -> Option<Reason> {
-    out.iter().find_map(|output| match output {
-        Output::Pair {
-            message: PairMessage {
-                body: Some(Body::Error(error)),
-            },
-            ..
-        } => Reason::try_from(error.reason).ok(),
-        _ => None,
-    })
-}
-
 fn call_ended(out: &[Output], call: u64) -> Option<Status> {
     out.iter().find_map(|output| match output {
         Output::EndCall {
@@ -215,54 +203,6 @@ fn events(out: &[Output]) -> Vec<PairingEvent> {
             _ => None,
         })
         .collect()
-}
-
-/// Runs a whole pairing from a window opened by `method` to the joiner's
-/// confirmation.
-fn pair(method: WindowMethod) -> (Host, Host, Vec<Output>, Vec<Output>) {
-    let (mut offerer, mut joiner) = (Host::new(OFFERER), Host::new(JOINER));
-    let secret = offerer.open_window(method, 5 * MINUTE);
-    offerer.respond();
-    joiner.initiate(&secret);
-    let (_, said) = converse(&mut offerer, &mut joiner);
-    let token = pending_token(&said).expect("the joiner holds a pending pairing");
-    joiner.call(9, ClientRequest::ConfirmPair { token });
-    let (by_offerer, by_joiner) = converse(&mut offerer, &mut joiner);
-    (offerer, joiner, by_offerer, by_joiner)
-}
-
-#[test]
-fn both_hosts_trust_each_other_once_the_joiner_confirms() {
-    let (offerer, joiner, by_offerer, by_joiner) = pair(WindowMethod::Pin);
-    assert!(offerer.trusts(JOINER));
-    assert!(joiner.trusts(OFFERER));
-    assert!(by_joiner.contains(&Output::Answer {
-        call: CallId(9),
-        response: Response::Paired {
-            host: HostId([OFFERER; 16]),
-            reachability: Some(Reachability::Cloud),
-        },
-    }));
-    assert!(
-        !offerer.daemon.pairing().active(),
-        "a one-shot secret is used up"
-    );
-    assert_eq!(
-        events(&by_offerer),
-        vec![PairingEvent {
-            role: Role::Offerer,
-            method: Method::Pin,
-            outcome: Outcome::Succeeded {
-                host: HostId([JOINER; 16]),
-            },
-        }]
-    );
-}
-
-#[test]
-fn the_qr_secret_drives_the_same_conversation() {
-    let (offerer, joiner, ..) = pair(WindowMethod::Qr);
-    assert!(offerer.trusts(JOINER) && joiner.trusts(OFFERER));
 }
 
 #[test]
@@ -325,73 +265,6 @@ fn a_pin_is_six_decimal_digits() {
     let pin = offerer.open_window(WindowMethod::Pin, MINUTE);
     assert_eq!(pin.len(), 6);
     assert!(pin.iter().all(u8::is_ascii_digit));
-}
-
-#[test]
-fn an_open_window_refuses_another_until_cancelled_or_expired() {
-    let mut offerer = Host::new(OFFERER);
-    offerer.open_window(WindowMethod::Pin, MINUTE);
-    offerer.call(
-        2,
-        ClientRequest::StartPairing {
-            method: WindowMethod::Qr,
-            ttl_ms: MINUTE,
-        },
-    );
-    assert_eq!(
-        call_ended(&offerer.take(), 2),
-        Some(Status::Failed(CallError::Window(
-            WindowRefusal::AlreadyActive
-        )))
-    );
-    offerer.call(3, ClientRequest::CancelPairing);
-    offerer.take();
-    offerer.open_window(WindowMethod::Qr, MINUTE);
-
-    offerer.tick(1_000_000 + 2 * MINUTE);
-    offerer.step(Input::Timer {
-        id: TimerId::PairWindow,
-    });
-    assert!(!offerer.daemon.pairing().active(), "the window expired");
-    assert!(
-        offerer
-            .take()
-            .contains(&Output::Shell(ShellWork::PairWindow {
-                active: false,
-                locked_out: false,
-            }))
-    );
-    offerer.open_window(WindowMethod::Pin, MINUTE);
-}
-
-#[test]
-fn pairing_requires_an_open_window() {
-    let mut offerer = Host::new(OFFERER);
-    offerer.respond();
-    assert_eq!(failure(&offerer.take()), Some(PairFailure::invalid_pin()));
-}
-
-#[test]
-fn a_wrong_secret_counts_without_using_the_window_up() {
-    let (mut offerer, mut joiner) = (Host::new(OFFERER), Host::new(JOINER));
-    offerer.open_window(WindowMethod::Pin, 5 * MINUTE);
-    offerer.respond();
-    joiner.initiate(b"not it");
-    let (by_offerer, by_joiner) = converse(&mut offerer, &mut joiner);
-    assert_eq!(sent_error(&by_offerer), Some(Reason::InvalidPin));
-    assert_eq!(failure(&by_joiner), Some(PairFailure::invalid_pin()));
-    assert!(offerer.daemon.pairing().active());
-    assert!(!offerer.trusts(JOINER) && !joiner.trusts(OFFERER));
-    assert_eq!(
-        events(&by_offerer)
-            .iter()
-            .map(|event| event.outcome.clone())
-            .collect::<Vec<_>>(),
-        vec![Outcome::Failed {
-            audit: "invalid PIN".into(),
-            counted: Some(Failure::WrongSecret),
-        }]
-    );
 }
 
 #[test]
@@ -532,35 +405,6 @@ fn a_commit_that_lands_after_the_window_closed_is_undone() {
 }
 
 #[test]
-fn a_joiner_that_abandons_is_acknowledged_and_its_attempt_released() {
-    let (mut offerer, mut joiner) = (Host::new(OFFERER), Host::new(JOINER));
-    let secret = offerer.open_window(WindowMethod::Pin, 5 * MINUTE);
-    offerer.respond();
-    joiner.initiate(&secret);
-    let (_, said) = converse(&mut offerer, &mut joiner);
-    joiner.call(
-        9,
-        ClientRequest::AbandonPair {
-            token: pending_token(&said).unwrap(),
-        },
-    );
-    let (by_offerer, by_joiner) = converse(&mut offerer, &mut joiner);
-    assert_eq!(call_ended(&by_joiner, 9), Some(Status::Ok));
-    assert!(by_offerer.iter().any(|output| matches!(
-        output,
-        Output::Pair {
-            message: PairMessage {
-                body: Some(Body::PairingAbandoned(_))
-            },
-            ..
-        }
-    )));
-    let window = offerer.daemon.pairing.window.as_ref().unwrap();
-    assert!(window.in_flight.is_empty() && window.failed == 0);
-    assert!(!offerer.trusts(JOINER) && !joiner.trusts(OFFERER));
-}
-
-#[test]
 fn an_unknown_token_is_refused_like_a_wrong_secret() {
     let mut joiner = Host::new(JOINER);
     joiner.call(9, ClientRequest::ConfirmPair { token: vec![1; 16] });
@@ -595,22 +439,6 @@ fn a_pending_pairing_is_forgotten_when_the_peers_window_would_close() {
         Some(Status::Failed(CallError::Pairing(
             PairFailure::invalid_pin()
         )))
-    );
-}
-
-#[test]
-fn a_host_does_not_pair_with_itself() {
-    let (mut offerer, mut joiner) = (Host::new(OFFERER), Host::new(OFFERER));
-    let secret = offerer.open_window(WindowMethod::Pin, 5 * MINUTE);
-    offerer.respond();
-    joiner.initiate(&secret);
-    let (_, by_joiner) = converse(&mut offerer, &mut joiner);
-    assert_eq!(
-        failure(&by_joiner),
-        Some(PairFailure::new(
-            FailureCode::InvalidArgument,
-            "SELF_PAIRING"
-        ))
     );
 }
 

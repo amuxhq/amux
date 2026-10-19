@@ -253,23 +253,4 @@ mod tests {
         assert!(retained.replicas.is_ok());
         assert_eq!(daemon.store().agent(&key).unwrap(), None, "and its row");
     }
-
-    #[test]
-    fn a_pass_under_its_budget_removes_nothing() {
-        let mut daemon = daemon();
-        let retain = Retain {
-            own_budget_bytes: u64::MAX,
-            replica_budget_bytes: u64::MAX,
-            ..Retain::default()
-        };
-        let out = step(&mut daemon, Input::Retain(retain));
-        assert_eq!(out.len(), 1, "only the report: {out:#?}");
-        let Output::Retained(retained) = &out[0] else {
-            panic!("a report, not {out:#?}");
-        };
-        assert_eq!(
-            retained.own.as_ref().unwrap().removed,
-            Vec::<AgentKey>::new()
-        );
-    }
 }

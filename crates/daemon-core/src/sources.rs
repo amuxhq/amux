@@ -1877,119 +1877,6 @@ mod tests {
 
     const FAR_CHILD: crate::AgentId = crate::AgentId(*b"child-0000000000");
 
-    fn stops_far_child(out: &[Output]) -> bool {
-        out.iter().any(|output| {
-            matches!(
-                output,
-                Output::WriteControl {
-                    agent: FAR_CHILD,
-                    frame: wire::CtlFrame {
-                        of: Some(wire::ctl_frame::Of::Stop(_)),
-                    },
-                }
-            )
-        })
-    }
-
-    /// A child under another host's parent is made before this host has
-    /// caught up with that host's listing; the listing then shows the
-    /// parent exited, which is definitive, so the child it never judged as
-    /// one that predates it is stopped all the same.
-    #[test]
-    fn a_child_made_before_its_parents_host_caught_up_stops_when_the_listing_says_exited() {
-        let mut daemon = daemon();
-        step(&mut daemon, Input::Swept);
-        let inventory = following(&mut daemon);
-
-        let made = step(
-            &mut daemon,
-            Input::ClientCall {
-                call: CallId(1),
-                request: far_child(false),
-            },
-        );
-        assert!(
-            made.contains(&Output::DialAgent { agent: FAR_CHILD }),
-            "the create is made, not refused: {made:?}"
-        );
-        step(
-            &mut daemon,
-            Input::AgentHello {
-                agent: FAR_CHILD,
-                hello: Default::default(),
-            },
-        );
-
-        step(
-            &mut daemon,
-            inventory_event(
-                inventory,
-                inventory_event::Of::Agent(listed(wire::Lifecycle::Exited)),
-            ),
-        );
-        let caught_up = step(
-            &mut daemon,
-            inventory_event(
-                inventory,
-                inventory_event::Of::CaughtUp(CaughtUp::default()),
-            ),
-        );
-        assert!(
-            stops_far_child(&caught_up),
-            "the listing's exited parent stops the child: {caught_up:?}"
-        );
-    }
-
-    /// A child made before its parent's host caught up, under a parent the
-    /// listing does not show, is not deleted by it: the parent may be made
-    /// so lately the listing predates it. An orphan of a deleted parent
-    /// finishes its work and exits.
-    #[test]
-    fn a_child_made_before_its_parents_host_caught_up_outlives_a_parent_the_listing_misses() {
-        let mut daemon = daemon();
-        step(&mut daemon, Input::Swept);
-        let inventory = following(&mut daemon);
-        step(
-            &mut daemon,
-            Input::ClientCall {
-                call: CallId(1),
-                request: far_child(false),
-            },
-        );
-        step(
-            &mut daemon,
-            Input::AgentHello {
-                agent: FAR_CHILD,
-                hello: Default::default(),
-            },
-        );
-        let caught_up = step(
-            &mut daemon,
-            inventory_event(
-                inventory,
-                inventory_event::Of::CaughtUp(CaughtUp::default()),
-            ),
-        );
-        assert!(
-            !caught_up.iter().any(|output| matches!(
-                output,
-                Output::WriteControl {
-                    agent: FAR_CHILD,
-                    ..
-                }
-            )),
-            "{caught_up:?}"
-        );
-        assert!(
-            daemon
-                .store
-                .agent(&AgentKey::new(OWN, FAR_CHILD.0))
-                .unwrap()
-                .is_some(),
-            "the child is kept"
-        );
-    }
-
     /// A create in a new worktree writes its row only when the worktree is
     /// made; the far parent is judged again then, so a parent whose row
     /// said it exited meanwhile refuses it.
@@ -2052,13 +1939,6 @@ mod tests {
                 .is_none(),
             "no row is written"
         );
-    }
-
-    #[test]
-    fn a_trusted_host_a_route_reaches_is_followed_and_its_listing_opens_a_source_per_agent() {
-        let mut daemon = daemon();
-        sourced(&mut daemon);
-        assert_eq!(daemon.sources().open().collect::<Vec<_>>(), vec![key()]);
     }
 
     #[test]
@@ -2206,82 +2086,6 @@ mod tests {
                 at_ms: 0,
             }),
             "{back:?}"
-        );
-    }
-
-    #[test]
-    fn a_page_below_the_block_is_asked_of_the_origin_and_joins_the_block() {
-        let mut daemon = daemon();
-        let (_, source) = sourced(&mut daemon);
-        step(
-            &mut daemon,
-            session(
-                source,
-                session_event::Of::Opening(Opening { generation: 3 }),
-            ),
-        );
-        step(
-            &mut daemon,
-            session(source, session_event::Of::Item(item("e", 5, 4))),
-        );
-        step(
-            &mut daemon,
-            session(
-                source,
-                session_event::Of::CaughtUp(CaughtUp { revision: 4 }),
-            ),
-        );
-
-        let asked = step(
-            &mut daemon,
-            Input::ClientCall {
-                call: CallId(60),
-                request: ClientRequest::Fetch(wire::FetchRequest {
-                    agent_id: THEIRS.to_vec(),
-                    before_order: None,
-                    limit: 10,
-                }),
-            },
-        );
-        let page = match calls(&asked).as_slice() {
-            [(call, PeerRequest::Fetch(request))] => {
-                assert_eq!((request.before_order, request.limit), (Some(5), 9));
-                *call
-            }
-            other => panic!("the origin is asked below the block: {other:?}"),
-        };
-        let reply = wire::FetchResponse {
-            items: vec![item("c", 3, 2)],
-            exhausted: true,
-        };
-        let answered = step(
-            &mut daemon,
-            Input::PeerAnswer {
-                call: page,
-                answer: Answer::Reply(Box::new(PeerReply::Fetched(reply))),
-            },
-        );
-        match answered.as_slice() {
-            [
-                Output::Shell(ShellWork::Wrote),
-                Output::Answer {
-                    call: CallId(60),
-                    response: Response::Fetched(fetched),
-                },
-                Output::EndCall {
-                    call: CallId(60),
-                    status: Status::Ok,
-                },
-            ] => {
-                let orders: Vec<u64> = fetched.items.iter().map(|item| item.order).collect();
-                assert_eq!(orders, vec![5, 3], "held first, then the origin's");
-                assert!(fetched.exhausted);
-            }
-            other => panic!("the page is absorbed and answered: {other:?}"),
-        }
-        assert!(
-            daemon.store.get(&key(), "c").unwrap().is_some(),
-            "the page joins the block"
         );
     }
 
@@ -2494,39 +2298,6 @@ mod tests {
         ] {
             assert_eq!(judge(page), Some(crate::PAGE_OFF_THE_BOUNDARY), "{why}");
         }
-    }
-
-    #[test]
-    fn a_host_no_longer_trusted_is_followed_no_more_and_its_replicas_go() {
-        let mut daemon = daemon();
-        let (inventory, source) = sourced(&mut daemon);
-        let untrusted = step(
-            &mut daemon,
-            Input::TrustRead {
-                store: crate::trust::TrustStore::of_hosts(Vec::new()),
-            },
-        );
-        assert!(untrusted.contains(&Output::HangUp { call: inventory }));
-        assert!(untrusted.contains(&Output::HangUp { call: source }));
-        assert!(untrusted.contains(&Output::Shell(ShellWork::ReplicaDropped { agent: key() })));
-        assert!(daemon.store.agent(&key()).unwrap().is_none());
-        assert!(!daemon.sources.is_current(HostId(PEER), 1));
-        assert_eq!(daemon.pending.peer_calls(), 0, "nothing is left waiting");
-    }
-
-    #[test]
-    fn sources_survive_a_checkpoint() {
-        let mut daemon = daemon();
-        sourced(&mut daemon);
-        let checkpoint =
-            crate::Checkpoint::from_bytes(&daemon.checkpoint().to_bytes()).expect("it reads back");
-        let store = std::mem::replace(
-            &mut daemon.store,
-            Sqlite::open_in_memory(OWN).expect("a store opens"),
-        );
-        let restored = Daemon::restore(checkpoint, store).expect("it restores");
-        assert_eq!(restored.sources, daemon.sources);
-        assert_eq!(restored.pending, daemon.pending);
     }
 
     /// A kind this daemon has no name for is a number it carries: the

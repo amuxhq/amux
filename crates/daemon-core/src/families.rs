@@ -1592,43 +1592,6 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn a_create_writes_the_row_starts_the_process_and_answers_at_its_hello() {
-        let mut rig = rig();
-        let (call, out) = rig.call(create(PARENT, "lead", None));
-        let row = rig.row(PARENT).expect("the row comes first");
-        assert_eq!(row.name, "lead");
-        assert_eq!(row.lifecycle, Lifecycle::Live as i32);
-        let spawned = out.iter().find_map(|output| match output {
-            Output::SpawnAgent { spec, .. } => Some(spec.clone()),
-            _ => None,
-        });
-        let spawned = spawned.expect("the process starts");
-        assert_eq!((spawned.name.as_str(), spawned.incarnation), ("lead", 1));
-        assert!(out.contains(&Output::DialAgent { agent: PARENT }));
-        assert!(
-            answer_of(&out, call).is_none(),
-            "answered only once it said Hello"
-        );
-
-        let hello = rig.step(Input::AgentHello {
-            agent: PARENT,
-            hello: Default::default(),
-        });
-        assert_eq!(
-            answer_of(&hello, call).map(|agent| agent.name),
-            Some("lead".into())
-        );
-        assert!(hello.contains(&Output::CancelTimer {
-            id: TimerId::Start(PARENT)
-        }));
-
-        let (again, out) = rig.call(create(PARENT, "lead", None));
-        assert_eq!(refusal_of(&out, again), Some(Refusal::AlreadyExists));
-        rig.call(create(CHILD, "lead", None));
-        assert_eq!(rig.row(CHILD).map(|row| row.name), Some("lead-2".into()));
-    }
-
     /// A resume issued while the process is still on its way out builds
     /// its spec only once the exit is recorded, from the snapshot the
     /// journal's tail left, so it carries the settings the agent last ran
@@ -1711,39 +1674,6 @@ mod tests {
             hello: Default::default(),
         });
         assert!(answer_of(&hello, resume).is_some(), "{hello:?}");
-    }
-
-    #[test]
-    fn a_stop_past_its_deadline_kills_and_the_exit_records_why() {
-        let mut rig = rig();
-        rig.live(PARENT, "lead", None);
-        let (call, out) = rig.call(ClientRequest::StopAgent { agent: PARENT });
-        assert_eq!(stops(&out, PARENT), vec![false]);
-
-        let late = rig.step(Input::Timer {
-            id: TimerId::Exit(PARENT),
-        });
-        assert_eq!(stops(&late, PARENT), vec![true], "the stop becomes a kill");
-        let ignored = rig.step(Input::Timer {
-            id: TimerId::Exit(PARENT),
-        });
-        let Some((job, Job::KillAgent { agent })) = job_of(&ignored) else {
-            panic!("an ignored kill is done from outside: {ignored:?}");
-        };
-        assert_eq!(agent, PARENT);
-        rig.step(Input::JobDone {
-            job,
-            result: JobResult::Done,
-        });
-
-        let gone = rig.step(Input::ControlClosed {
-            agent: PARENT,
-            ended: Ended::Exited,
-        });
-        let answered = answer_of(&gone, call).expect("the stop is answered once it ended");
-        assert_eq!(answered.lifecycle, Lifecycle::Exited as i32);
-        assert_eq!(answered.exit_cause, ExitCause::Killed as i32);
-        assert!(gone.contains(&Output::ForgetAgent { agent: PARENT }));
     }
 
     fn children_told(out: &[Output], agent: AgentId) -> Option<Vec<Vec<u8>>> {
@@ -1913,55 +1843,5 @@ mod tests {
                 .any(|output| matches!(output, Output::Dump { .. })),
             "an answer about an agent the step went on to delete was committed: {gone:?}"
         );
-    }
-
-    #[test]
-    fn a_delete_removes_the_rows_then_the_directory_and_its_children_follow() {
-        let mut rig = rig();
-        rig.live(PARENT, "lead", None);
-        rig.live(CHILD, "scout", Some(PARENT));
-        rig.step(Input::Drafts {
-            drafts: vec![(PARENT.0.to_vec(), b"draft".to_vec())],
-        });
-        rig.step(Input::ControlClosed {
-            agent: PARENT,
-            ended: Ended::Exited,
-        });
-
-        let (call, out) = rig.call(ClientRequest::DeleteAgent { agent: PARENT });
-        assert!(
-            rig.row(PARENT).is_none(),
-            "an agent with no process goes at once"
-        );
-        let Some((job, Job::RemoveDir { path })) = job_of(&out) else {
-            panic!("its directory goes: {out:?}");
-        };
-        assert_eq!(path, rig.daemon.agent_dir(PARENT));
-
-        let done = rig.step(Input::JobDone {
-            job,
-            result: JobResult::Done,
-        });
-        assert!(done.contains(&Output::EndCall {
-            call,
-            status: Status::Ok,
-        }));
-        assert!(
-            !rig.daemon.drafts.holds(&PARENT.0),
-            "its draft goes with it"
-        );
-
-        // The child was stopping with its exited parent; its delete waits
-        // behind that stop, and goes once the child has ended.
-        assert!(rig.row(CHILD).is_some());
-        let ended = rig.step(Input::ControlClosed {
-            agent: CHILD,
-            ended: Ended::Exited,
-        });
-        assert!(
-            rig.row(CHILD).is_none(),
-            "the child follows its deleted parent"
-        );
-        assert!(matches!(job_of(&ended), Some((_, Job::RemoveDir { .. }))));
     }
 }

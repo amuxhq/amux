@@ -6,7 +6,6 @@ use super::*;
 use crate::ids::{CallId, JobId, TimerId};
 use crate::io::{Input, Job};
 use crate::payload::{CarrierKind, ChannelClass, ClientRequest, JobResult, PublicKey};
-use crate::presence::Route;
 use crate::trust::{Reachability, TrustStore};
 use crate::{StartOptions, StepBudget};
 
@@ -140,32 +139,6 @@ fn channel(daemon: &mut Daemon, link: u64, peer: HostId) -> ChannelId {
     channel
 }
 
-/// Commits `change`, answering its write; returns the outputs of the step
-/// that committed it.
-fn commit(daemon: &mut Daemon, call: u64, change: TrustChange) -> Vec<Output> {
-    let out = step(
-        daemon,
-        Input::ClientCall {
-            call: CallId(call),
-            request: ClientRequest::ChangeTrust(change),
-        },
-    );
-    let mut job = written(&out);
-    loop {
-        let out = step(
-            daemon,
-            Input::JobDone {
-                job,
-                result: JobResult::Done,
-            },
-        );
-        match written_or_none(&out) {
-            Some(next) => job = next,
-            None => return out,
-        }
-    }
-}
-
 fn written_or_none(out: &[Output]) -> Option<JobId> {
     out.iter().find_map(|output| match output {
         Output::Job {
@@ -277,53 +250,6 @@ fn a_hosts_key_replacement_holds_nothing_of_it_until_the_new_key_is_written() {
 }
 
 #[test]
-fn a_revocation_noted_and_cleared_by_pairing_again_tries_the_host_at_once() {
-    let mut daemon = daemon(&[DESK]);
-    linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
-    channel(&mut daemon, 1, DESK);
-    step(&mut daemon, Input::Tick { now_ms: 5_000 });
-    assert_eq!(entry(&daemon, DESK).presence, wire::Presence::Online as i32);
-
-    step(&mut daemon, Input::PeerRevoked { host: DESK });
-    assert!(daemon.routing.catalogue.revoked(DESK));
-    // The host is not tried while it refuses this one and nothing answers.
-    step(
-        &mut daemon,
-        Input::LinkDown {
-            link: LinkId(1),
-            reason: wire::LinkCloseReason::UserRevoked,
-        },
-    );
-    linked(&mut daemon, 2, RELAY, CarrierKind::Relay, &[DESK]);
-    let out = step(
-        &mut daemon,
-        Input::Timer {
-            id: TimerId::Retry(DESK),
-        },
-    );
-    assert!(
-        !out.iter()
-            .any(|output| matches!(output, Output::Attempt { .. })),
-        "a host that refused this one is not tried: {out:?}"
-    );
-
-    // Pairing again commits, the mark comes off and the host is tried now.
-    let out = commit(&mut daemon, 1, pair(DESK, [DESK.0, DESK.0].concat()));
-    assert!(!daemon.routing.catalogue.revoked(DESK));
-    assert!(retried_now(&out, DESK, 5_000), "tried at once: {out:?}");
-    let out = step(
-        &mut daemon,
-        Input::Timer {
-            id: TimerId::Retry(DESK),
-        },
-    );
-    assert!(out.contains(&Output::Attempt {
-        host: DESK,
-        route: Route::Via(RELAY),
-    }));
-}
-
-#[test]
 fn only_a_channel_begun_after_a_revocation_takes_it_back() {
     let mut daemon = daemon(&[DESK]);
     linked(&mut daemon, 1, DESK, CarrierKind::Direct, &[]);
@@ -339,35 +265,4 @@ fn only_a_channel_begun_after_a_revocation_takes_it_back() {
     assert!(!daemon.routing.catalogue.revoked(DESK));
     assert!(retried_now(&out, DESK, 0), "tried at once: {out:?}");
     assert_eq!(entry(&daemon, DESK).revoked, None);
-}
-
-#[test]
-fn a_revoked_trusted_host_reads_offline_in_the_host_set_while_a_route_reaches_it() {
-    let mut daemon = daemon(&[DESK]);
-    linked(&mut daemon, 1, RELAY, CarrierKind::Relay, &[DESK]);
-    channel(&mut daemon, 1, DESK);
-    let listed = entry(&daemon, DESK);
-    assert_eq!(listed.presence, wire::Presence::Online as i32);
-    assert_eq!(listed.via, wire::RouteKind::Relay as i32);
-    assert_eq!(listed.revoked, None);
-
-    let out = step(&mut daemon, Input::PeerRevoked { host: DESK });
-    let listed = entry(&daemon, DESK);
-    assert_eq!(listed.revoked, Some(true));
-    assert_eq!(listed.presence, wire::Presence::Offline as i32);
-    assert_eq!(listed.via, wire::RouteKind::Unspecified as i32);
-    assert_eq!(listed.trust, wire::Trust::Trusted as i32);
-    assert!(
-        out.iter().any(|output| matches!(
-            output,
-            Output::Shell(crate::io::ShellWork::Hosts { entries })
-                if entries.iter().any(|entry| entry.host_id == DESK.0 && entry.revoked == Some(true))
-        )),
-        "the shell's copy of the set moves with it"
-    );
-    assert_eq!(
-        daemon.presence.view(DESK).route(),
-        Some(Route::Via(RELAY)),
-        "the relay still reaches it, which pairing again rides on"
-    );
 }

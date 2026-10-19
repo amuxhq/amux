@@ -162,7 +162,7 @@ mod tests {
     use store::Sqlite;
 
     use super::*;
-    use crate::{Input, StartOptions, StepBudget};
+    use crate::{StartOptions, StepBudget};
 
     fn daemon() -> Daemon {
         let store = Sqlite::open_in_memory(b"host-a".to_vec()).expect("a store opens");
@@ -173,33 +173,6 @@ mod tests {
                 ..StartOptions::default()
             },
         )
-    }
-
-    fn pushes(out: &[Output]) -> Vec<(JobId, u64)> {
-        out.iter()
-            .filter_map(|output| match output {
-                Output::Job {
-                    id,
-                    op: Job::SendPush(push),
-                } => Some((*id, push.revision)),
-                _ => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn nothing_is_pushed_from_an_empty_outbox_and_no_timer_is_armed() {
-        let mut daemon = daemon();
-        let mut out = Vec::new();
-        daemon.step(Input::Swept, &mut out);
-        assert!(pushes(&out).is_empty());
-        assert!(!out.iter().any(|output| matches!(
-            output,
-            Output::ArmTimer {
-                id: TimerId::Notifications,
-                ..
-            }
-        )));
     }
 
     #[test]

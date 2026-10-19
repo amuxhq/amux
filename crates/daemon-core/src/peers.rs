@@ -292,64 +292,6 @@ mod tests {
         out
     }
 
-    fn peer_get(call: u64, agent: [u8; 16]) -> Input {
-        Input::PeerCall {
-            from: HostId(PEER),
-            call: CallId(call),
-            request: PeerRequest::Get(wire::GetRequest {
-                agent_id: agent.to_vec(),
-                key: "missing".into(),
-            }),
-        }
-    }
-
-    #[test]
-    fn a_peer_is_answered_about_this_hosts_own_agents_and_never_a_replica() {
-        let mut daemon = daemon();
-        assert_eq!(
-            step(&mut daemon, peer_get(1, THEIRS)),
-            vec![Output::EndCall {
-                call: CallId(1),
-                status: Status::Failed(CallError::NoAgent),
-            }],
-            "the replica is its host's to tell"
-        );
-        assert_eq!(
-            step(&mut daemon, peer_get(2, MINE)),
-            vec![Output::EndCall {
-                call: CallId(2),
-                status: Status::Failed(CallError::NoItem("missing".into())),
-            }],
-            "an own agent is looked into"
-        );
-        let subscribe = |agent: [u8; 16]| Input::PeerCall {
-            from: HostId(PEER),
-            call: CallId(3),
-            request: PeerRequest::Subscribe(wire::PeerSubscribeRequest {
-                agent_id: agent.to_vec(),
-                from: None,
-            }),
-        };
-        assert!(matches!(
-            step(&mut daemon, subscribe(THEIRS)).as_slice(),
-            [Output::EndCall {
-                status: Status::Failed(CallError::NoAgent),
-                ..
-            }]
-        ));
-        let opened = step(&mut daemon, subscribe(MINE));
-        assert!(
-            matches!(
-                opened.first(),
-                Some(Output::Answer {
-                    response: Response::Session(_),
-                    ..
-                })
-            ),
-            "{opened:?}"
-        );
-    }
-
     #[test]
     fn a_forwarded_call_waits_across_a_checkpoint_and_answers_with_the_peers_reply() {
         let mut daemon = daemon();

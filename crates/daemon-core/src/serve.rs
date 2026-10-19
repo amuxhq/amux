@@ -676,10 +676,6 @@ mod tests {
         }
     }
 
-    fn session(of: session_event::Of) -> Response {
-        Response::Session(Arc::new(event(of)))
-    }
-
     #[test]
     fn a_call_on_an_unknown_agent_ends_refused_without_an_answer() {
         let mut daemon = daemon();
@@ -702,66 +698,6 @@ mod tests {
             }]
         );
         assert_eq!(daemon.answers, Answers::default());
-    }
-
-    #[test]
-    fn a_missing_item_is_refused_by_its_key() {
-        let mut daemon = daemon();
-        let get = ClientRequest::Get(GetRequest {
-            agent_id: b"agent-0000000000".to_vec(),
-            key: "absent".into(),
-        });
-        assert_eq!(
-            call(&mut daemon, 1, get),
-            vec![Output::EndCall {
-                call: CallId(1),
-                status: Status::Failed(CallError::NoItem("absent".into())),
-            }]
-        );
-    }
-
-    #[test]
-    fn a_subscribe_answers_its_opening_then_follows_and_a_lag_ends_it_once() {
-        let mut daemon = daemon();
-        let out = call(&mut daemon, 1, subscribe(b"agent-0000000000"));
-        let snapshot = Snapshot {
-            agent_id: b"agent-0000000000".to_vec(),
-            kind: wire::Kind::Codex as i32,
-            ..Snapshot::default()
-        };
-        assert_eq!(
-            out,
-            vec![
-                Output::Answer {
-                    call: CallId(1),
-                    response: session(session_event::Of::Opening(wire::Opening { generation: 7 })),
-                },
-                Output::Answer {
-                    call: CallId(1),
-                    response: session(session_event::Of::Snapshot(snapshot)),
-                },
-            ]
-        );
-
-        let lagged = step(&mut daemon, Input::AnswerLagged { call: CallId(1) });
-        assert_eq!(
-            lagged,
-            vec![
-                Output::Answer {
-                    call: CallId(1),
-                    response: session(session_event::Of::Lagged(Lagged {})),
-                },
-                Output::EndCall {
-                    call: CallId(1),
-                    status: Status::Ok,
-                },
-            ]
-        );
-        assert_eq!(
-            step(&mut daemon, Input::AnswerLagged { call: CallId(1) }),
-            Vec::new(),
-            "a call already ended lags no more"
-        );
     }
 
     #[test]

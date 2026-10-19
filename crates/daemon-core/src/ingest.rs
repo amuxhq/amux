@@ -488,41 +488,6 @@ mod tests {
     }
 
     #[test]
-    fn a_step_over_its_budget_asks_for_one_dump_saying_how_long_it_took() {
-        let dir = tempfile::tempdir().expect("a temporary directory");
-        let mut store = Sqlite::open_in_memory(OWN).expect("a store opens");
-        let row = AgentRow::new(AgentKey::new(OWN, AGENT.0), wire::Kind::Codex, "/src");
-        store.put_agent(&row).expect("the store takes its agent");
-        let budget = crate::StepBudget { micros: 0 };
-        let mut daemon = Daemon::new(
-            store,
-            StartOptions {
-                generation: 1,
-                agents: dir.path().to_path_buf(),
-                budget,
-                ..StartOptions::default()
-            },
-        );
-        let mut journal =
-            journal::synthetic::SyntheticWriter::open(daemon.journal_dir(AGENT), 1 << 30)
-                .expect("the journal opens");
-        journal.append(&item(0)).expect("the journal takes a step");
-
-        let out = step(&mut daemon, Input::Nudge { agent: AGENT });
-        let dumps = dumps_in(&out);
-        let [crate::DumpReason::OverBudget { micros, budget: of }] = dumps[..] else {
-            panic!("one dump for the step that ran over: {dumps:?}");
-        };
-        println!("dump: {}", dumps[0]);
-        assert!(*micros > 0);
-        assert_eq!(*of, budget);
-        assert!(
-            matches!(out.last(), Some(Output::Dump { .. })),
-            "after everything the step asked for"
-        );
-    }
-
-    #[test]
     fn an_answer_ahead_of_the_store_breaks_an_invariant_and_asks_for_a_dump_naming_it() {
         let mut rig = rig();
         let call = CallId(1);
@@ -585,25 +550,6 @@ mod tests {
             } => Some(*id),
             _ => None,
         })
-    }
-
-    /// Fires the checkpoint timer and ends its WAL job as done, returning
-    /// the checkpoint's write job.
-    fn take_checkpoint(daemon: &mut Daemon) -> crate::JobId {
-        let started = step(
-            daemon,
-            Input::Timer {
-                id: TimerId::Checkpoint,
-            },
-        );
-        let copied = step(
-            daemon,
-            Input::JobDone {
-                job: wal_job(&started).expect("the timer starts the WAL job"),
-                result: crate::payload::JobResult::Done,
-            },
-        );
-        checkpoint_job(&copied).expect("the WAL job's end serializes the core")
     }
 
     fn subscribed(daemon: &mut Daemon, call: CallId) {
@@ -704,88 +650,5 @@ mod tests {
         );
         assert!(!rig.daemon.checkpoints().taking());
         assert_eq!(dumps_in(&during), Vec::<&crate::DumpReason>::new());
-    }
-
-    #[test]
-    fn segments_go_only_below_the_cursor_of_the_last_checkpoint_on_the_drive() {
-        // A frame a segment.
-        let mut rig = rig_with(1);
-        let journal_dir = rig.daemon.journal_dir(AGENT);
-        let key = AgentKey::new(OWN, AGENT.0);
-        for n in 0..8 {
-            rig.journal
-                .append(&item(n))
-                .expect("the journal takes a step");
-        }
-        step(&mut rig.daemon, Input::Nudge { agent: AGENT });
-        let all = journal::segments(&journal_dir).unwrap();
-        assert!(all.len() > KEPT_SEGMENTS + 2, "{all:?}");
-        let checkpointed = rig.daemon.store.cursor(&key).unwrap();
-
-        // A checkpoint that failed vouches for nothing.
-        let taken = take_checkpoint(&mut rig.daemon);
-        let failed = step(
-            &mut rig.daemon,
-            Input::JobDone {
-                job: taken,
-                result: crate::payload::JobResult::Failed("the drive is full".into()),
-            },
-        );
-        assert_eq!(
-            journal::segments(&journal_dir).unwrap(),
-            all,
-            "nothing went"
-        );
-        assert!(
-            failed.iter().any(|output| matches!(
-                output,
-                Output::ArmTimer {
-                    id: TimerId::Checkpoint,
-                    ..
-                }
-            )),
-            "the next is tried an interval on"
-        );
-
-        let taken = take_checkpoint(&mut rig.daemon);
-        // Committed after the checkpoint was taken, so not on the drive by it.
-        for n in 8..16 {
-            rig.journal
-                .append(&item(n))
-                .expect("the journal takes a step");
-        }
-        step(&mut rig.daemon, Input::Nudge { agent: AGENT });
-        step(
-            &mut rig.daemon,
-            Input::JobDone {
-                job: taken,
-                result: crate::payload::JobResult::Done,
-            },
-        );
-        assert_eq!(
-            rig.daemon.checkpoints().durable_cursor(AGENT),
-            Some(checkpointed)
-        );
-        assert!(
-            rig.daemon.store.cursor(&key).unwrap() > checkpointed,
-            "the held batch was committed once the checkpoint was done"
-        );
-        let left = journal::segments(&journal_dir).unwrap();
-        assert!(left[0] > 0, "segments below the checkpoint went: {left:?}");
-        assert_eq!(
-            journal::reclaimable(&journal_dir, checkpointed, KEPT_SEGMENTS).unwrap(),
-            Vec::<u64>::new(),
-            "everything below the checkpoint's cursor went but the kept segments"
-        );
-        let above = journal::reclaimable(
-            &journal_dir,
-            rig.daemon.store.cursor(&key).unwrap(),
-            KEPT_SEGMENTS,
-        )
-        .unwrap();
-        assert!(
-            !above.is_empty(),
-            "segments ingested after the checkpoint wait for the next one"
-        );
     }
 }

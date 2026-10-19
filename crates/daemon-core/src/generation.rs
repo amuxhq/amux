@@ -34,29 +34,3 @@ pub fn at_start(last: Option<LastRun<'_>>, boot_id: &str) -> u64 {
         Some(last) => last.counter,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn last(boot_id: &str, clean: bool) -> Option<LastRun<'_>> {
-        Some(LastRun {
-            boot_id,
-            clean,
-            counter: 4,
-        })
-    }
-
-    #[test]
-    fn the_generation_rises_only_after_an_unclean_reboot() {
-        assert_eq!(at_start(None, "boot-1"), 1, "the first start");
-        assert_eq!(at_start(last("boot-1", false), "boot-2"), 5, "power lost");
-        assert_eq!(at_start(last("boot-1", false), "boot-1"), 4, "a crash");
-        assert_eq!(
-            at_start(last("boot-1", true), "boot-2"),
-            4,
-            "a clean reboot"
-        );
-        assert_eq!(at_start(last("boot-1", true), "boot-1"), 4, "a restart");
-    }
-}

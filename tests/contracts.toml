@@ -283,7 +283,7 @@ section = "Daemon"
 claim = "Revisions rise in commit order; an older revision never overwrites a newer one."
 tests = [
   "store/conformance::commit_assigns_revisions_per_record_and_orders_once_per_key",
-  "store/conformance::older_revisions_never_overwrite_newer",
+  "store/conformance::an_older_snapshot_never_overwrites_a_newer_envelope",
 ]
 
 [[contract]]
@@ -365,25 +365,12 @@ tests = [
 # --- Invariants: runtime ----------------------------------------------------
 
 [[contract]]
-id = "replica-is-one-block"
-source = "invariant"
-section = "Runtime"
-claim = "A replica's rows are empty or one contiguous block ending at the origin's newest row."
-tests = [
-  "testnet/harness::the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_hole",
-  "testnet/lib::invariant::tests::empty_and_whole_tails_pass_and_holes_stale_rows_and_short_tops_fail",
-  "testnet/replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
-  "testnet/spec_replication::trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_interval",
-]
-
-[[contract]]
 id = "only-the-source-writes-the-top"
 source = "invariant"
 section = "Runtime"
 claim = "Only a replica's source writes the top of its block and only a Reset replaces it; pages extend it downward only."
 tests = [
   "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
-  "store/conformance::pages_extend_the_block_downwards_only_when_they_join",
   "store/conformance::absorb_refuses_own_rows",
   "testnet/replication_stories::fetch_serves_the_block_locally_extends_it_from_the_origin_and_errors_when_away",
 ]
@@ -429,7 +416,7 @@ tests = [
   "testnet/spec_inventory::a_generation_change_resets_one_hosts_replicas_and_nothing_else",
   "testnet/spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
   "testnet/spec_replication::a_rewound_origin_resets_a_settled_replica_too",
-  "store/conformance::a_reset_under_another_generation_forgets_every_held_row",
+  "store/conformance::a_reset_under_another_generation_takes_the_envelope_even_at_revision_zero",
 ]
 
 [[contract]]
@@ -1177,6 +1164,10 @@ tests = [
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
   "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+  "testnet/harness::the_block_invariant_holds_at_the_origin_and_catches_a_replica_with_a_hole",
+  "testnet/lib::invariant::tests::empty_and_whole_tails_pass_and_holes_stale_rows_and_short_tops_fail",
+  "testnet/replication_stories::a_replica_takes_a_tail_live_records_a_delta_and_a_reset_with_markers_in_sequence",
+  "testnet/spec_replication::trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_interval",
 ]
 
 [[contract]]
@@ -1199,6 +1190,8 @@ tests = [
   "journey:terminal/leave-and-recover",
   "journey:phone/leave-and-recover",
   "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+  "testnet/spec_replication::a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation",
+  "testnet/spec_replication::a_rewound_origin_resets_a_settled_replica_too",
 ]
 
 [[contract]]

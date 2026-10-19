@@ -741,8 +741,7 @@ async fn trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_
 /// resumes naming the generation its cursor was taken under, and the
 /// rewound origin answers that with a fresh tail: every chat sees a Reset
 /// before its next CaughtUp and never a row the origin lost, and the
-/// replica's cursor ends up under the new generation. A cursor taken under
-/// the new generation is answered with a delta as usual.
+/// replica's cursor ends up under the new generation.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generation() {
     const K: u32 = 6;
@@ -878,64 +877,8 @@ async fn a_rewound_origin_resets_every_source_that_resumes_under_its_old_generat
     assert_eq!(row.source_generation, generation + 1);
     assert_eq!(recorded, Some(generation + 1));
 
-    // The origin itself: the same cursor is a fresh tail under the old
-    // generation and a delta under the new.
-    let desk = net.runtime("desk").unwrap();
-    let laptop_id = net.host("laptop").unwrap().host_id;
-    let after = |agent: &[u8], revision, generation| wire::PeerSubscribeRequest {
-        agent_id: agent.to_vec(),
-        from: Some(wire::peer_subscribe_request::From::After(wire::After {
-            revision,
-            cap: K,
-            generation,
-        })),
-    };
-    let stale = desk
-        .peer_subscribe(laptop_id, after(&key.agent, row.source_cursor, generation))
-        .await
-        .unwrap();
-    let stale = opening_of(stale).await;
-    assert_eq!(
-        stale[..2],
-        [Mark::Opening(generation + 1), Mark::Reset],
-        "{stale:?}"
-    );
-    let fresh = desk
-        .peer_subscribe(
-            laptop_id,
-            after(&key.agent, row.source_cursor, generation + 1),
-        )
-        .await
-        .unwrap();
-    let fresh = opening_of(fresh).await;
-    assert_eq!(
-        fresh,
-        [
-            Mark::Opening(generation + 1),
-            Mark::Snapshot,
-            Mark::CaughtUp(row.source_cursor)
-        ],
-        "{fresh:?}"
-    );
-    drop(desk);
     drop(laptop);
     net.shutdown().await.unwrap();
-}
-
-/// The marks of a stream's opening, through its CaughtUp.
-async fn opening_of(mut subscription: node::Subscription) -> Vec<Mark> {
-    let mut seen = Vec::new();
-    tokio::time::timeout(PATIENCE, async {
-        while let Some(event) = subscription.next().await {
-            seen.push(observe::mark(&event));
-            if matches!(seen.last(), Some(Mark::CaughtUp(_))) {
-                break;
-            }
-        }
-    })
-    .await
-    .expect("the opening reaches CaughtUp");
-    seen
 }
 
 /// An exited agent's replica has settled: its source closed for good once

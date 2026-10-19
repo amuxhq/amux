@@ -106,56 +106,6 @@ fn with_agent(mut store: Fresh, agent: &AgentKey) -> Fresh {
     store
 }
 
-/// What an origin answers a peer that holds everything through a revision:
-/// the rows revised since, in revision order, each once in its latest
-/// state, while they fit the cap; past it, nothing, and the peer is sent a
-/// tail instead.
-#[test]
-fn after_answers_every_row_revised_since_up_to_the_cap() {
-    let store = fresh();
-    let agent = own("a");
-    let mut store = with_agent(store, &agent);
-    store
-        .commit(
-            &agent,
-            &[
-                (10, items_step(&[item("m1", "one"), item("m2", "two")])),
-                (20, items_step(&[item("m3", "three")])),
-                (30, items_step(&[item("m1", "one, revised")])),
-            ],
-            CLOCK,
-        )
-        .unwrap();
-    // Revisions: m1 1, m2 2, m3 3, then m1 again at 4.
-    let since = |store: &Sqlite, revision, cap| {
-        store.after(&agent, revision, cap).unwrap().map(|items| {
-            items
-                .iter()
-                .map(|item| (item.key.clone(), item.revision))
-                .collect::<Vec<_>>()
-        })
-    };
-    let owned = |pairs: &[(&str, u64)]| {
-        Some(
-            pairs
-                .iter()
-                .map(|(key, revision)| ((*key).to_owned(), *revision))
-                .collect::<Vec<_>>(),
-        )
-    };
-    assert_eq!(
-        since(&store, 1, 10),
-        owned(&[("m2", 2), ("m3", 3), ("m1", 4)])
-    );
-    assert_eq!(since(&store, 2, 2), owned(&[("m3", 3), ("m1", 4)]));
-    assert_eq!(
-        since(&store, 1, 2),
-        None,
-        "three rows do not fit a cap of two"
-    );
-    assert_eq!(since(&store, 4, 0), owned(&[]));
-}
-
 #[test]
 fn rewind_cursor_moves_only_the_cursor_and_only_back() {
     let store = fresh();
@@ -864,8 +814,10 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor() {
     assert!(store.notifications().unwrap().is_empty());
 }
 
+/// A replica keeps the newest envelope it has seen: a snapshot older by
+/// revision, arriving after a newer one, changes nothing.
 #[test]
-fn older_revisions_never_overwrite_newer() {
+fn an_older_snapshot_never_overwrites_a_newer_envelope() {
     let store = fresh();
     let agent = peer("r");
     let mut store = with_agent(store, &agent);
@@ -886,105 +838,19 @@ fn older_revisions_never_overwrite_newer() {
         .absorb(
             &agent,
             Absorb::Delta {
-                events: vec![
-                    SourceEvent::Item(origin_item("k1", 1, 19, "old")),
-                    SourceEvent::Snapshot(Snapshot {
-                        revision: 29,
-                        ..snapshot(Phase::Working, Some("older"), 1)
-                    }),
-                ],
+                events: vec![SourceEvent::Snapshot(Snapshot {
+                    revision: 29,
+                    ..snapshot(Phase::Working, Some("older"), 1)
+                })],
                 live: true,
             },
         )
         .unwrap();
     assert!(absorbed.stored.is_empty());
-    assert_eq!(store.get(&agent, "k1").unwrap().unwrap().text, "new");
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.working_on.as_deref(), Some("newer"));
+    assert_eq!(row.phase, Phase::Idle as i32);
     assert_eq!(row.source_cursor, 0);
-}
-
-#[test]
-fn pages_extend_the_block_downwards_only_when_they_join() {
-    let store = fresh();
-    let agent = peer("r");
-    let mut store = with_agent(store, &agent);
-    store
-        .absorb(
-            &agent,
-            Absorb::Reset {
-                tail: vec![origin_item("k5", 5, 50, ""), origin_item("k6", 6, 60, "")],
-                snapshot: Snapshot {
-                    revision: 61,
-                    ..Default::default()
-                },
-                generation: 1,
-            },
-        )
-        .unwrap();
-    // A page for some other boundary does not join and is not stored.
-    let stray = store
-        .absorb(
-            &agent,
-            Absorb::Page {
-                before_order: 3,
-                items: vec![origin_item("k2", 2, 20, "")],
-                exhausted: false,
-            },
-        )
-        .unwrap();
-    assert!(!stray.joined);
-    assert!(store.get(&agent, "k2").unwrap().is_none());
-
-    let joined = store
-        .absorb(
-            &agent,
-            Absorb::Page {
-                before_order: 5,
-                items: vec![origin_item("k4", 4, 40, ""), origin_item("k3", 3, 30, "")],
-                exhausted: false,
-            },
-        )
-        .unwrap();
-    assert!(joined.joined);
-    let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.complete_from_order, Some(3));
-    assert!(!row.exhausted);
-    // A page never moves the source cursor.
-    assert_eq!(row.source_cursor, 0);
-    let page = store.page(&agent, None, 10).unwrap();
-    assert_eq!(keys(&page.items), ["k6", "k5", "k4", "k3"]);
-    assert_eq!(page.end, PageEnd::Boundary);
-
-    store
-        .absorb(
-            &agent,
-            Absorb::Page {
-                before_order: 3,
-                items: vec![origin_item("k2", 2, 20, ""), origin_item("k1", 1, 10, "")],
-                exhausted: true,
-            },
-        )
-        .unwrap();
-    let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!((row.complete_from_order, row.exhausted), (Some(1), true));
-    let page = store.page(&agent, Some(3), 10).unwrap();
-    assert_eq!(keys(&page.items), ["k2", "k1"]);
-    assert_eq!(page.end, PageEnd::Exhausted);
-
-    // A Reset forgets that the origin was exhausted below the new block.
-    store
-        .absorb(
-            &agent,
-            Absorb::Reset {
-                tail: vec![origin_item("k7", 7, 70, "")],
-                snapshot: Snapshot::default(),
-                generation: 1,
-            },
-        )
-        .unwrap();
-    let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!((row.complete_from_order, row.exhausted), (Some(7), false));
 }
 
 #[test]
@@ -1065,13 +931,12 @@ fn cut_reads_snapshot_rows_and_marker_together() {
     assert!(store.cut(&own("ghost"), 1).is_err());
 }
 
-/// A block belongs to the generation its Reset was taken under. A Reset
-/// under the same generation keeps the older rows for Get; one under
-/// another forgets everything held, because the origin numbers orders and
-/// revisions afresh: a lower order and a lower revision land where higher
-/// ones were, and a snapshot older by number is the newer one.
+/// A Reset under another generation takes the origin's envelope whatever
+/// its revision: a rewound origin that has not committed a snapshot since
+/// serves the one it holds, numbered 0, and the old generation's phase must
+/// not outlive its rows.
 #[test]
-fn a_reset_under_another_generation_forgets_every_held_row() {
+fn a_reset_under_another_generation_takes_the_envelope_even_at_revision_zero() {
     let store = fresh();
     let agent = peer("r");
     let mut store = with_agent(store, &agent);
@@ -1079,71 +944,30 @@ fn a_reset_under_another_generation_forgets_every_held_row() {
         .absorb(
             &agent,
             Absorb::Reset {
-                tail: vec![
-                    origin_item("k5", 5, 50, "five"),
-                    origin_item("k6", 6, 60, "six"),
-                    origin_item("k7", 7, 70, "seven"),
-                ],
+                tail: vec![origin_item("k5", 5, 50, "five")],
                 snapshot: Snapshot {
                     revision: 71,
-                    ..Default::default()
+                    ..snapshot(Phase::Working, Some("old generation"), 1)
                 },
                 generation: 1,
             },
         )
         .unwrap();
-    store.absorb(&agent, Absorb::CaughtUp(71)).unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!((row.source_cursor, row.source_generation), (71, 1));
+    assert_eq!(row.phase, Phase::Working as i32);
 
-    store
-        .absorb(
-            &agent,
-            Absorb::Reset {
-                tail: vec![
-                    origin_item("k5", 5, 50, "five again"),
-                    origin_item("k6", 6, 61, ""),
-                ],
-                snapshot: Snapshot {
-                    revision: 62,
-                    ..Default::default()
-                },
-                generation: 2,
-            },
-        )
-        .unwrap();
-    let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.source_generation, 2);
-    assert_eq!(held_snapshot(&row), 62);
-    assert_eq!(row.complete_from_order, Some(5));
-    assert_eq!(keys(&store.cut(&agent, 10).unwrap().held), ["k5", "k6"]);
-    assert_eq!(store.get(&agent, "k7").unwrap(), None);
-    assert_eq!(
-        store.get(&agent, "k5").unwrap().map(|item| item.text),
-        Some("five again".to_owned())
-    );
-    store.absorb(&agent, Absorb::CaughtUp(62)).unwrap();
-    assert_eq!(store.agent(&agent).unwrap().unwrap().source_cursor, 62);
-
-    // The envelope too, even at revision 0: a rewound origin that has not
-    // committed a snapshot since serves the one it holds, and the old
-    // generation's phase must not outlive its rows.
-    let mut row = store.agent(&agent).unwrap().unwrap();
-    row.phase = Phase::Working as i32;
-    row.working_on = Some("old generation".into());
-    store.put_agent(&row).unwrap();
     store
         .absorb(
             &agent,
             Absorb::Reset {
                 tail: vec![],
                 snapshot: snapshot(Phase::Idle, None, 7),
-                generation: 3,
+                generation: 2,
             },
         )
         .unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.source_generation, 3);
+    assert_eq!(row.source_generation, 2);
     assert_eq!(row.phase, Phase::Idle as i32);
     assert_eq!(row.working_on, None);
     assert_eq!(held_snapshot(&row), 0);

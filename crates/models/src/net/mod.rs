@@ -191,7 +191,7 @@ impl ComposedNet {
     }
 
     /// A call's message lost, a delivery out of the net's order, and the
-    /// clock moved on to the backoffs: 8,618 states in 3 s on 12 threads.
+    /// clock moved on to the backoffs: 9,559 states in 2 s on 12 threads.
     pub fn lost_messages() -> Self {
         Self {
             reorders: 1,
@@ -225,9 +225,9 @@ impl ComposedNet {
     }
 
     /// The larger configurations a nightly run explores: every fault but a
-    /// kill with a reordering (2,364,835 states in 145 s on 12 threads), and
-    /// the person's calls through a crash with a lost message (1,393,898
-    /// states in 123 s).
+    /// kill with a reordering (2,365,233 states in 145 s on 12 threads), and
+    /// the person's calls through a crash with a lost message (1,394,624
+    /// states in 125 s).
     pub fn nightly() -> [(&'static str, Self); 2] {
         [
             (
@@ -387,20 +387,18 @@ impl State {
         self.net.deliverable().is_empty()
     }
 
-    /// The path ended before the world could settle: a timer is still
-    /// armed that no advance is left to fire, a daemon is down, or a link
-    /// is severed. A host's checkpoint timer alone does not hold the world
-    /// back: what it does is write the drive, which no promise here reads.
-    fn cut_short(&self, model: &ComposedNet) -> bool {
-        (self.net.waits_on_time() && self.used.advances >= model.advances)
-            || (0..self.net.hosts()).any(|h| !self.net.is_up(h))
-            || (0..self.net.links()).any(|l| self.net.is_severed(l))
-    }
-
-    /// The world has settled: nothing is left to deliver and the path was
-    /// not cut short.
-    fn at_rest(&self, model: &ComposedNet) -> bool {
-        self.quiet() && !self.cut_short(model)
+    /// The world has settled on its own: nothing is left to deliver, no
+    /// timer but a host's checkpoint is armed, every daemon is up and every
+    /// link is whole, so nothing more happens until a fault or a person
+    /// acts. A host's checkpoint timer alone does not hold the world back:
+    /// what it does is write the drive, which no promise here reads. A path
+    /// that ends with a timer the bound on advances will not let fire, a
+    /// daemon down or a link severed was cut short and is not judged.
+    fn at_rest(&self) -> bool {
+        self.quiet()
+            && !self.net.waits_on_time()
+            && (0..self.net.hosts()).all(|h| self.net.is_up(h))
+            && (0..self.net.links()).all(|l| !self.net.is_severed(l))
     }
 
     /// The person's inputs the agent accepted.
@@ -633,29 +631,28 @@ impl Machine for ComposedNet {
                  reads an agent exited only once the agent's own host does",
                 |_, s: &State| !s.seen.exited_early,
             ),
-            Property::eventually(
+            // What must hold once the world rests is judged at every state
+            // where it has: an eventually would be discharged by the first
+            // state on a path where its predicate held, before any fault.
+            Property::always(
                 "a replica whose origin and link fall quiet becomes current",
-                |model: &Self, s: &State| {
-                    !s.at_rest(model) || s.judged.current || s.judged.origin_row.is_none()
-                },
+                |_, s: &State| !s.at_rest() || s.judged.current || s.judged.origin_row.is_none(),
             ),
-            Property::eventually(
+            Property::always(
                 "hosts on a working link read each other online over it once the world rests",
-                |model: &Self, s: &State| !s.at_rest(model) || s.judged.online,
+                |_, s: &State| !s.at_rest() || s.judged.online,
             ),
-            Property::eventually(
+            Property::always(
                 "a reset arriving while presence flips still leaves the replica current under \
                  the origin's newest generation once the world rests",
-                |model: &Self, s: &State| {
-                    !s.seen.reset_while_flipping || !s.at_rest(model) || s.judged.current
-                },
+                |_, s: &State| !s.seen.reset_while_flipping || !s.at_rest() || s.judged.current,
             ),
-            Property::eventually(
+            Property::always(
                 "an accepted input is never lost: once the world rests, every prompt the agent \
                  accepted has a row on its host, unless the agent has exited and it waits for \
                  the next incarnation",
-                |model: &Self, s: &State| {
-                    !s.at_rest(model)
+                |_, s: &State| {
+                    !s.at_rest()
                         || s.judged.origin_row != Some(Lifecycle::Live as i32)
                         || !s.judged.unrowed_input
                 },
@@ -675,21 +672,19 @@ impl Machine for ComposedNet {
         if self.reboots > 0 && self.severs > 0 {
             properties.push(Property::sometimes(
                 "a reset arrives while presence flips, and the world comes to rest after",
-                |model: &Self, s: &State| s.seen.reset_while_flipping && s.at_rest(model),
+                |_, s: &State| s.seen.reset_while_flipping && s.at_rest(),
             ));
         }
         if self.losses > 0 {
             properties.push(Property::sometimes(
                 "the world comes to rest after a call's message is lost",
-                |model: &Self, s: &State| s.used.losses > 0 && s.at_rest(model),
+                |_, s: &State| s.used.losses > 0 && s.at_rest(),
             ));
         }
         if self.sends > 0 {
             properties.push(Property::sometimes(
                 "a person's prompt is accepted and has its row once the world rests",
-                |model: &Self, s: &State| {
-                    s.judged.accepted > 0 && !s.judged.unrowed_input && s.at_rest(model)
-                },
+                |_, s: &State| s.judged.accepted > 0 && !s.judged.unrowed_input && s.at_rest(),
             ));
         }
         if self.stops > 0 {
@@ -705,7 +700,7 @@ impl Machine for ComposedNet {
             properties.push(Property::sometimes(
                 "a daemon killed and started again leaves the replica current once the world \
                  rests",
-                |model: &Self, s: &State| s.used.kills > 0 && s.at_rest(model) && s.judged.current,
+                |_, s: &State| s.used.kills > 0 && s.at_rest() && s.judged.current,
             ));
         }
         properties

@@ -249,7 +249,7 @@ stopping at the first failure:
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
 | `test` | Every workspace test target |
-| `contracts-check` | Every design contract in [`tests/contracts.toml`](../tests/contracts.toml) names at least one test, and every test it names exists |
+| `contracts-check` | Every design contract in [`tests/contracts.toml`](../tests/contracts.toml) names at least one test, and every test and model property it names exists |
 | `doctest` | Documentation tests |
 | `release-check` | The shipping binary builds and passes the release policy check |
 | `embedded-check`, `embedded-test` | The provider-free client graph and the embedded owner and client boundary |

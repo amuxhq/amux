@@ -65,27 +65,57 @@ pub struct MsgIndex(pub usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Host(pub u8);
 
+/// One property of the protocol's models, as [`properties`] lists it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Listed {
+    /// The model's name: "replication", "single daemon", "composed net", ...
+    pub model: &'static str,
+    pub kind: PropertyKind,
+    pub sentence: &'static str,
+    pub parked: Option<Parked>,
+}
+
+/// Every property of the protocol's models at the bounds `just test` runs,
+/// each once: the composed net's topologies share one list. The contracts
+/// check names a model's property by its model and sentence, read from
+/// here by the `properties` binary.
+pub fn properties() -> Vec<Listed> {
+    fn of<M: Machine>(model: &'static str, machine: &M) -> Vec<Listed> {
+        machine
+            .properties()
+            .into_iter()
+            .map(|property| Listed {
+                model,
+                kind: property.kind,
+                sentence: property.sentence,
+                parked: property.parked,
+            })
+            .collect()
+    }
+    let mut listed = of("replication", &Replication::ci());
+    listed.extend(of("single daemon", &SingleDaemon::ci()));
+    listed.extend(of("presence and routing", &PresenceRouting::ci()));
+    listed.extend(of("family and deliveries", &FamilyDeliveries::ci()));
+    listed.extend(of("agent lifecycle", &AgentLifecycle::ci()));
+    listed.extend(of("supervisor update", &SupervisorUpdate::ci()));
+    for (_, model) in ComposedNet::ci() {
+        for property in of("composed net", &model) {
+            if !listed.contains(&property) {
+                listed.push(property);
+            }
+        }
+    }
+    listed
+}
+
 /// Every parked property of the protocol's models: the model, the
 /// property's sentence and why it is parked. The landing gate,
 /// `just parked-check`, fails while this is not empty.
 pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
-    fn of<M: Machine>(name: &'static str, model: &M) -> Vec<(&'static str, &'static str, Parked)> {
-        model
-            .properties()
-            .into_iter()
-            .filter_map(|property| Some((name, property.sentence, property.parked?)))
-            .collect()
-    }
-    let mut parked = of("replication", &Replication::ci());
-    parked.extend(of("single daemon", &SingleDaemon::ci()));
-    parked.extend(of("presence and routing", &PresenceRouting::ci()));
-    parked.extend(of("family and deliveries", &FamilyDeliveries::ci()));
-    parked.extend(of("agent lifecycle", &AgentLifecycle::ci()));
-    parked.extend(of("supervisor update", &SupervisorUpdate::ci()));
-    for (_, model) in ComposedNet::ci() {
-        parked.extend(of("composed net", &model));
-    }
-    parked
+    properties()
+        .into_iter()
+        .filter_map(|listed| Some((listed.model, listed.sentence, listed.parked?)))
+        .collect()
 }
 
 /// How many threads a model's test explores with: `MODELS_THREADS` when

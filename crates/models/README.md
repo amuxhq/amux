@@ -40,6 +40,14 @@ instead of exploring it, so `just test` stays green meanwhile, and
 `just parked-check` lists every parked property and fails while any
 remains, so nothing lands with one.
 
+## Naming a property elsewhere
+
+`cargo run -p models --bin properties` lists every property of every model
+as JSON lines (machine, kind, sentence), each once. A `model` contract in
+`tests/contracts.toml` names a property by its machine and sentence, and
+`just contracts-check` fails when that list does not hold it, so rewording a
+sentence means updating its contract.
+
 ## Replication
 
 `Replication` follows one agent from its origin to one replica, both real

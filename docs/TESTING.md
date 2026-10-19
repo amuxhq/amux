@@ -77,13 +77,15 @@ just tests-check   # fail on a missing recipe, target, feature, journey or basel
 ```
 
 `tests/contracts.toml` lists every promise the design makes that a test must hold, grouped by source (a worked
-failure, an invariant, or a suite contract), each with the tests that hold it. A test is named as
+failure, an invariant, a suite contract, or a model property), each with the tests that hold it. A test is named as
 `<package>/<target>::<test path>` for Cargo (`<target>` is a test target, `lib`, or `bin:<name>`),
 `swift:<Target>/<Class>/<method>` for XCTest, or `journey:<client>/<story>` for a story in
-`journeys/manifest.json`.
+`journeys/manifest.json`. A model property is named by its crate, machine and sentence, which must be one the
+crate's `properties` binary lists (`cargo run -p models --bin properties`), with the checker test that explores
+it and the real-mode stories that demonstrate it.
 
 ```sh
-just contracts-check                      # fail when a contract names no test or a test that does not exist
+just contracts-check                      # fail when a contract names no test, a test or a property that does not exist
 just contracts-check --table coverage.md  # also write the contract-to-test table as Markdown
 ```
 

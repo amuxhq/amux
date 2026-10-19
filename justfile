@@ -234,8 +234,9 @@ sim *ARGS:
 nightly *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 14400 scripts/py scripts/sim.py nightly "$@"
 
-# Fail when a contract in tests/contracts.toml names no test or a test that
-# does not exist; `--table PATH` also writes the coverage table as Markdown.
+# Fail when a contract in tests/contracts.toml names no test, or a test or a
+# model property that does not exist; `--table PATH` also writes the coverage
+# table as Markdown.
 contracts-check *ARGS:
     {{bounded}} 300 scripts/python -B scripts/contracts-check.py "$@"
 

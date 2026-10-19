@@ -17,6 +17,12 @@ contract names a test that run executes, and after that run nothing is
 compiled again. The check runs on macOS, where every named test builds:
 some are Unix-only and one is macOS-only. XCTest names are read from the test bundles' sources,
 since building the bundles needs Xcode and a simulator.
+
+A `model` contract is a property of a protocol model: it names the property
+by its crate, machine and sentence, the checker test that explores it, and
+the real-mode stories that demonstrate it (`tests`). The property must be
+one the crate's `properties` binary lists, the checker a test of that crate
+and no story one of its tests.
 """
 
 from __future__ import annotations
@@ -37,7 +43,15 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = ROOT / "tests" / "contracts.toml"
 CATALOG = ROOT / "tests" / "catalog.toml"
 MANIFEST = ROOT / "journeys" / "manifest.json"
-SOURCES = {"worked failure", "invariant", "testing page"}
+SOURCES = {"worked failure", "invariant", "testing page", "model"}
+HEADINGS = {
+    "worked failure": "Worked failures",
+    "invariant": "Invariants",
+    "testing page": "Testing page",
+    "model": "Models",
+}
+# The binary of a property crate that lists its properties as JSON lines.
+PROPERTIES_BINARY = "properties"
 JOURNEY_CLIENTS = {"terminal", "phone", "system"}
 
 
@@ -73,8 +87,9 @@ def cargo_listing(
     wanted: set[tuple[str, str, str]],
     catalogued: set[tuple[str, str, str]],
     errors: list[str],
-) -> dict[tuple[str, str, str], set[str]]:
-    """List the tests each wanted binary of the workspace test build holds."""
+) -> tuple[dict[tuple[str, str, str], set[str]], dict[str, Path]]:
+    """List the tests each wanted binary of the workspace test build holds,
+    and find each package's `properties` binary the same build made."""
     for key in sorted(wanted - catalogued):
         errors.append(f"Cargo target {key[0]}/{key[1]}:{key[2]} is not in tests/catalog.toml")
     environment = dict(os.environ, AMUX_TEST_DISCOVERY_MODE="disabled")
@@ -90,7 +105,7 @@ def cargo_listing(
     )
     if built.returncode != 0:
         errors.append(f"building the workspace tests failed:\n{built.stderr[-4000:]}")
-        return {}
+        return {}, {}
     packages = {
         package["id"]: package["name"]
         for package in json.loads(
@@ -101,6 +116,7 @@ def cargo_listing(
         )["packages"]
     }
     listing: dict[tuple[str, str, str], set[str]] = {}
+    properties: dict[str, Path] = {}
     for line in built.stdout.splitlines():
         if not line.startswith("{"):
             continue
@@ -108,6 +124,8 @@ def cargo_listing(
         if message.get("reason") != "compiler-artifact" or not message.get("executable"):
             continue
         if not message["profile"]["test"]:
+            if message["target"]["name"] == PROPERTIES_BINARY and "bin" in message["target"]["kind"]:
+                properties[packages.get(message["package_id"], "")] = Path(message["executable"])
             continue
         target = message["target"]
         kinds = set(target["kind"])
@@ -133,7 +151,22 @@ def cargo_listing(
     for package, kind, target in sorted(wanted):
         if (package, kind, target) not in listing:
             errors.append(f"the workspace test build made no test binary for {package}/{kind}:{target}")
-    return listing
+    return listing, properties
+
+
+def property_listing(crate: str, binary: Path | None, errors: list[str]) -> set[tuple[str, str]] | None:
+    """Every (machine, sentence) the crate's `properties` binary lists."""
+    if binary is None:
+        errors.append(f"the workspace test build made no {PROPERTIES_BINARY} binary for {crate}")
+        return None
+    listed = subprocess.run([str(binary)], cwd=ROOT, text=True, capture_output=True)
+    if listed.returncode != 0:
+        errors.append(f"listing the properties of {crate} failed:\n{listed.stderr[-2000:]}")
+        return None
+    return {
+        (entry["machine"], entry["sentence"])
+        for entry in map(json.loads, listed.stdout.splitlines())
+    }
 
 
 def swift_listing() -> set[str]:
@@ -174,21 +207,46 @@ def journey_listing() -> set[str]:
 def check(contracts: list[dict[str, Any]], errors: list[str]) -> None:
     seen: set[str] = set()
     cargo: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    properties: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
     parsed: list[tuple[str, str, Any]] = []
     for index, contract in enumerate(contracts, 1):
         label = str(contract.get("id", f"entry {index}"))
         if label in seen:
             errors.append(f"{label}: duplicate contract id")
         seen.add(label)
-        if contract.get("source") not in SOURCES:
+        source = contract.get("source")
+        if source not in SOURCES:
             errors.append(f"{label}: source must be one of {', '.join(sorted(SOURCES))}")
-        for field in ("section", "claim"):
-            if not isinstance(contract.get(field), str) or not contract[field].strip():
-                errors.append(f"{label}: {field} must be a non-empty string")
         tests = contract.get("tests")
         if not isinstance(tests, list) or not tests:
             errors.append(f"{label}: names no test")
             continue
+        if source == "model":
+            prop = contract.get("property")
+            if not isinstance(prop, dict) or not all(
+                isinstance(prop.get(field), str) and prop[field].strip()
+                for field in ("crate", "machine", "sentence")
+            ):
+                errors.append(f"{label}: property must name its crate, machine and sentence")
+                continue
+            crate = prop["crate"]
+            properties[crate].add((label, prop["machine"], prop["sentence"]))
+            checker = contract.get("checker")
+            split = parse_cargo(checker) if isinstance(checker, str) else None
+            if split is None:
+                errors.append(f"{label}: checker must name the Cargo test that runs the property")
+            elif split[0] != crate:
+                errors.append(f"{label}: checker {checker} is not a test of {crate}")
+            else:
+                cargo[split[0:3]].add(split[3])
+                parsed.append((label, "cargo", split))
+            for test in tests:
+                if test.startswith(f"{crate}/"):
+                    errors.append(f"{label}: {test} is a test of {crate}, not a story demonstrating the property")
+        else:
+            for field in ("section", "claim"):
+                if not isinstance(contract.get(field), str) or not contract[field].strip():
+                    errors.append(f"{label}: {field} must be a non-empty string")
         for test in tests:
             if test.startswith("swift:"):
                 parsed.append((label, "swift", test[len("swift:"):]))
@@ -203,7 +261,14 @@ def check(contracts: list[dict[str, Any]], errors: list[str]) -> None:
                 cargo[(package, kind, target)].add(path)
                 parsed.append((label, "cargo", split))
 
-    listing = cargo_listing(set(cargo), catalog_targets(), errors)
+    listing, binaries = cargo_listing(set(cargo), catalog_targets(), errors)
+    for crate, named in sorted(properties.items()):
+        listed = property_listing(crate, binaries.get(crate), errors)
+        if listed is None:
+            continue
+        for label, machine, sentence in sorted(named):
+            if (machine, sentence) not in listed:
+                errors.append(f"{label}: {crate} has no {machine} property {sentence!r}")
     swift = swift_listing()
     journeys = journey_listing()
     for label, kind, name in parsed:
@@ -226,17 +291,32 @@ def table(contracts: list[dict[str, Any]]) -> str:
     lines = [
         "# Contract coverage",
         "",
-        "Every contract the architecture and testing pages make, with the tests asserting it.",
+        "Every contract the architecture and testing pages make, with the tests asserting it,",
+        "and every model property entered, with its checker and the stories demonstrating it.",
         "Generated from tests/contracts.toml by `just contracts-check --table <path>`.",
         "",
     ]
-    for source in ("worked failure", "invariant", "testing page"):
+    for source, heading in HEADINGS.items():
         rows = [contract for contract in contracts if contract.get("source") == source]
-        heading = {"worked failure": "Worked failures", "invariant": "Invariants", "testing page": "Testing page"}
-        lines += [f"## {heading[source]} ({len(rows)})", "", "| Contract | Section | Tests |", "| --- | --- | --- |"]
+        if source == "model":
+            lines += [
+                f"## {heading} ({len(rows)})",
+                "",
+                "| Property | Machine | Checker | Evidence |",
+                "| --- | --- | --- | --- |",
+            ]
+        else:
+            lines += [f"## {heading} ({len(rows)})", "", "| Contract | Section | Tests |", "| --- | --- | --- |"]
         for contract in rows:
             tests = "<br>".join(f"`{test}`" for test in contract["tests"])
-            lines.append(f"| {cell(contract['claim'])} | {cell(contract['section'])} | {tests} |")
+            if source == "model":
+                prop = contract["property"]
+                lines.append(
+                    f"| {cell(prop['sentence'])} | {cell(prop['crate'] + ' ' + prop['machine'])} "
+                    f"| `{contract['checker']}` | {tests} |"
+                )
+            else:
+                lines.append(f"| {cell(contract['claim'])} | {cell(contract['section'])} | {tests} |")
         lines.append("")
     return "\n".join(lines)
 
@@ -261,7 +341,7 @@ def main() -> int:
     if arguments.table:
         arguments.table.parent.mkdir(parents=True, exist_ok=True)
         arguments.table.write_text(table(contracts))
-    tests = sum(len(contract["tests"]) for contract in contracts)
+    tests = sum(len(contract["tests"]) + ("checker" in contract) for contract in contracts)
     print(f"contracts: {len(contracts)} contracts, {tests} named tests, every one found")
     return 0
 

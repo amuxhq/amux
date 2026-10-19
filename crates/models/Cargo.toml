@@ -26,3 +26,8 @@ wire = { workspace = true }
 name = "parked-check"
 path = "src/bin/parked-check.rs"
 test = false
+
+[[bin]]
+name = "properties"
+path = "src/bin/properties.rs"
+test = false

@@ -1,6 +1,7 @@
 # Every promise the design makes that a test must hold, with the tests that
-# hold it. `just contracts-check` fails when a contract names no test or a
-# named test does not exist; `just contracts-check --table PATH` also writes
+# hold it. `just contracts-check` fails when a contract names no test, a
+# named test does not exist or a model property it names is not listed; `just
+# contracts-check --table PATH` also writes
 # this file as a Markdown table.
 #
 # source:
@@ -10,6 +11,11 @@
 #   testing page    a contract the testing strategy names: a boundary's
 #                   contract, a harness rule, a journey story or a contract
 #                   carried over from the CI repair
+#   model           a property of a protocol model in crates/models: instead
+#                   of section and claim it names the property by crate,
+#                   machine and sentence as the crate's `properties` binary
+#                   lists it, and the checker test that explores it; its
+#                   tests are the real-mode stories that demonstrate it
 #
 # tests, one of:
 #   <package>/<target>::<test path>   a Cargo test; <target> is the test
@@ -1189,3 +1195,81 @@ source = "testing page"
 section = "Time and absence"
 claim = "A terminal test whose wait fails ends instead of hanging."
 tests = ["amux/term_fails_fast::a_failing_terminal_wait_ends_its_test"]
+
+# --- Models ------------------------------------------------------------------
+
+[[contract]]
+id = "replication-store-never-refuses"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "the store never refuses a write" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "journey:terminal/leave-and-recover",
+  "journey:phone/leave-and-recover",
+]
+
+[[contract]]
+id = "replication-cores-never-dump"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "the cores never ask for a dump" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "testnet/spec_replication::blobs_and_diffs_of_a_peers_agent_are_made_at_its_origin_and_kept_by_the_reader",
+]
+
+[[contract]]
+id = "replication-block-contiguous"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "the block is contiguous: under the origin's generation, every row the origin holds between the block's oldest and newest rows is in the block" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "journey:terminal/leave-and-recover",
+  "journey:phone/leave-and-recover",
+  "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+]
+
+[[contract]]
+id = "replication-block-agrees"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "the block agrees with the origin: under the origin's generation, every row of the block the origin still holds is the origin's row at that order, or an older revision of it" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "journey:terminal/leave-and-recover",
+  "journey:phone/leave-and-recover",
+]
+
+[[contract]]
+id = "replication-no-other-generation"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "no row survives from another generation: under the origin's generation, every row the replica stores at an order the origin holds is that order's key, no newer than the origin's, and a key the origin has since moved to a later order is an older revision of it" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "journey:terminal/leave-and-recover",
+  "journey:phone/leave-and-recover",
+  "store/conformance::a_reset_replaces_the_block_and_keeps_older_rows_for_get",
+]
+
+[[contract]]
+id = "replication-cursor-complete"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "the cursor is complete: under the origin's generation, the replica holds every row of its block's range that the origin revised at or below the cursor" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "journey:terminal/leave-and-recover",
+  "journey:phone/leave-and-recover",
+]
+
+[[contract]]
+id = "replication-quiet-becomes-current"
+source = "model"
+property = { crate = "models", machine = "replication", sentence = "a replica whose origin and link fall quiet becomes current" }
+checker = "models/replication::every_replication_promise_holds_at_ci_bounds"
+tests = [
+  "testnet/spec_replication::a_replica_is_carried_compressed",
+  "journey:terminal/leave-and-recover",
+  "journey:phone/leave-and-recover",
+]

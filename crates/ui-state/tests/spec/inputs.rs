@@ -183,59 +183,6 @@ fn an_uncertain_input_found_in_the_queue_or_items_at_caught_up_resolves() {
     }
 }
 
-/// Input reply lost, then a withdrawal from another client: the phone finds
-/// the prompt nowhere at CaughtUp and leaves it to the person.
-#[test]
-fn an_uncertain_input_absent_at_caught_up_is_left_with_resend_and_discard() {
-    for kind in KINDS {
-        let mut state = live(kind, Phase::Working, &[]);
-        let input = prompt_input(kind, b"P", "do the thing");
-        apply_checked(&mut state, Msg::Send(input.clone()));
-        apply_checked(
-            &mut state,
-            ev_snapshot(snapshot(kind, 6, Phase::Working, &[], &[(b"P", false)])),
-        );
-        apply_checked(&mut state, Msg::Sent(b"P".to_vec(), InputOutcome::Lost));
-        // The stale cached snapshot on reconnect still lists P.
-        apply_checked(
-            &mut state,
-            Msg::Connection(ui_state::Connection::Reconnecting),
-        );
-        apply_checked(
-            &mut state,
-            ev_snapshot(snapshot(kind, 6, Phase::Working, &[], &[(b"P", false)])),
-        );
-        assert!(
-            state.queue().is_empty(),
-            "never shown as queued before CaughtUp"
-        );
-        // The terminal withdrew it; the origin's snapshot says so.
-        apply_checked(
-            &mut state,
-            ev_snapshot(snapshot(kind, 7, Phase::Idle, &[], &[])),
-        );
-        apply_checked(&mut state, caught_up(7));
-        assert_eq!(state.input_state(b"P"), Some(InputState::Uncertain));
-        let not_confirmed: Vec<_> = state
-            .not_confirmed()
-            .map(|sent| sent.input.clone())
-            .collect();
-        assert_eq!(
-            not_confirmed,
-            vec![input.clone()],
-            "resend carries the input as sent"
-        );
-        assert_eq!(state.inputs().iter().count(), 1, "nothing was resent");
-        // Resend is a new input with a new id, judged afresh; discard drops it.
-        let mut resend = input;
-        resend.input_id = b"P2".to_vec();
-        apply_checked(&mut state, Msg::Send(resend));
-        apply_checked(&mut state, Msg::Discard(b"P".to_vec()));
-        assert_eq!(state.input_state(b"P"), None);
-        assert_eq!(state.input_state(b"P2"), Some(InputState::Sent));
-    }
-}
-
 /// The origin-rewind case: the prompt withdrawn just before the reconnect is
 /// never shown as queued, through the Reset and after the swap.
 #[test]

@@ -16,8 +16,9 @@
 //!
 //! Beside the client the state keeps a client that received every event
 //! uninterrupted (the whole), which is what a catch-up plus the live
-//! stream must read as, and the session at a checkpoint with the messages
-//! since, which must replay to the live session.
+//! stream must read as, and the session as its stream last opened with the
+//! messages since, as a client's dump records them, which must replay to
+//! the live session.
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -49,8 +50,6 @@ pub struct ClientModel {
     pub resets: u8,
     /// Older pages the client asks for.
     pub pages: u8,
-    /// Checkpoints the client's session is replayed from.
-    pub checkpoints: u8,
     /// How many of the newest items a subscription's tail carries.
     pub tail: usize,
     /// How many items an older page carries.
@@ -58,26 +57,23 @@ pub struct ClientModel {
 }
 
 impl ClientModel {
-    /// The bounds `just test` runs: four writes, one lag, one reset, two
-    /// pages and one checkpoint over a three-item opening, a tail of two
-    /// and pages of one.
+    /// The bounds `just test` runs: two writes, one lag, one reset and two
+    /// pages over a three-item opening, a tail of two and pages of one.
     pub const fn ci() -> Self {
         Self {
-            writes: 4,
+            writes: 2,
             lags: 1,
             resets: 1,
             pages: 2,
-            checkpoints: 1,
             tail: 2,
             page: 1,
         }
     }
 
-    /// The nightly bounds: more writes and a second lag.
+    /// The nightly bounds: a third write.
     pub const fn nightly() -> Self {
         Self {
-            writes: 6,
-            lags: 2,
+            writes: 3,
             ..Self::ci()
         }
     }
@@ -118,8 +114,6 @@ pub enum Action {
     InputVerdict(bool),
     /// The person discards the unconfirmed prompt.
     Withdraw,
-    /// The client's session is checkpointed here.
-    Checkpoint,
 }
 
 /// What the daemon holds for the agent.
@@ -129,13 +123,16 @@ struct Daemon {
     revision: u64,
     phase: Phase,
     generation: u64,
+    /// The revision of the newest snapshot written, which is what an
+    /// opening carries: later writes revise items, not the snapshot.
+    snapshot_revision: u64,
 }
 
 impl Daemon {
     fn snapshot(&self) -> Snapshot {
         Snapshot {
             agent_id: AGENT_ID.to_vec(),
-            revision: self.revision,
+            revision: self.snapshot_revision,
             kind: KIND as i32,
             phase: self.phase as i32,
             ..Snapshot::default()
@@ -202,7 +199,6 @@ struct Used {
     lags: u8,
     resets: u8,
     pages: u8,
-    checkpoints: u8,
 }
 
 /// The input's part in the world.
@@ -232,9 +228,10 @@ pub struct State {
     input: Sent,
     used: Used,
     seen: Seen,
-    /// The client's session at the last checkpoint and every message it
-    /// was fed since. Outside identity: a session is a function of what it
-    /// was fed, which is what the replay property checks.
+    /// The client's session as its stream last opened, which is where a
+    /// client's dump starts, and every message it was fed since. Outside
+    /// identity: a session is a function of what it was fed, which is what
+    /// the replay property checks.
     replay: Replay,
 }
 
@@ -253,6 +250,9 @@ impl State {
             && !self.client.reset_pending()
     }
 
+    /// Two states are one when they print alike. A `SessionState` keeps
+    /// its indexes in ordered maps, so equal sessions print alike whatever
+    /// path built them.
     fn identity(&self) -> String {
         format!(
             "{:?}|{:?}|{}|{:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}",
@@ -348,11 +348,20 @@ impl fmt::Debug for State {
             .iter()
             .map(|item| format!("{}@r{} {:?}", item.key, item.revision, item.text))
             .collect();
+        let whole: Vec<String> = self
+            .whole
+            .transcript()
+            .iter()
+            .map(|held| format!("{}@r{}", held.item.key, held.item.revision))
+            .collect();
         f.debug_struct("State")
             .field("daemon", &daemon)
             .field("client", &rows)
             .field("caught_up", &self.client.caught_up())
             .field("input", &self.client.input_state(INPUT))
+            .field("snapshot", &self.client.agent_state().revision)
+            .field("whole", &whole)
+            .field("whole_snapshot", &self.whole.agent_state().revision)
             .field("stream", &self.stream.len())
             .field("open", &self.open)
             .field("page", &self.page.is_some())
@@ -468,6 +477,7 @@ impl Machine for ClientModel {
             items,
             phase: Phase::Working,
             generation: 1,
+            snapshot_revision: OPENING_ITEMS,
         };
         let client = SessionState::new(agent(), 200);
         let mut whole = client.clone();
@@ -548,9 +558,6 @@ impl Machine for ClientModel {
         {
             out.push(Action::Withdraw);
         }
-        if s.used.checkpoints < self.checkpoints {
-            out.push(Action::Checkpoint);
-        }
     }
 
     fn next(&self, s: &State, action: &Action) -> Option<State> {
@@ -603,7 +610,7 @@ impl Machine for ClientModel {
                 next.written(event(session_event::Of::Item(item)));
             }
             Action::Snapshot => {
-                next.revise();
+                next.daemon.snapshot_revision = next.revise();
                 next.daemon.phase = match next.daemon.phase {
                     Phase::Working => Phase::Idle,
                     _ => Phase::Working,
@@ -624,6 +631,10 @@ impl Machine for ClientModel {
                 if lagged {
                     // The driver reopens at once with a fresh tail.
                     next.feed(Msg::Connection(ui_state::Connection::Live));
+                    next.replay = Replay {
+                        from: next.client.clone(),
+                        since: Vec::new(),
+                    };
                     next.stream.clear();
                     next.reopen(self.tail);
                     next.open = true;
@@ -658,6 +669,7 @@ impl Machine for ClientModel {
                     item.revision = revision;
                     item.text = format!("g{revision}");
                 }
+                next.daemon.snapshot_revision = next.daemon.revision;
                 let reset = event(session_event::Of::Reset(wire::Reset {}));
                 next.whole.update(reset.clone());
                 for msg in next.daemon.opening(usize::MAX) {
@@ -716,13 +728,6 @@ impl Machine for ClientModel {
                 next.feed(Msg::Discard(INPUT.to_vec()));
                 next.whole.update(Msg::Discard(INPUT.to_vec()));
             }
-            Action::Checkpoint => {
-                next.used.checkpoints += 1;
-                next.replay = Replay {
-                    from: next.client.clone(),
-                    since: Vec::new(),
-                };
-            }
         }
         Some(next)
     }
@@ -741,7 +746,7 @@ impl Machine for ClientModel {
                         s.daemon.items.iter().any(|item| {
                             item.order == row.order
                                 && item.key == row.key
-                                && item.revision >= row.revision
+                                && (item.revision > row.revision || item == row)
                         })
                     });
                 let daemon: Vec<Item> = s

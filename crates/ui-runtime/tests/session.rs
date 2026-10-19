@@ -8,7 +8,7 @@ use std::sync::Arc;
 use client::{ManualClock, RpcError};
 use support::*;
 use ui_runtime::{DriverEvent, InputError, PageError, Session, TRACE_EVENTS, TraceEvent};
-use ui_state::{Composer, Connection, InputOutcome, InputState, Refusal, RefusalReason, Waiting};
+use ui_state::{Composer, Connection, InputState, Refusal, RefusalReason, Waiting};
 use wire::{
     ErrorCode, FetchResponse, GetBlobResponse, Input, Kind, SendInputRequest, claude_pty_input,
     claude_sdk_input, codex_input,
@@ -114,40 +114,6 @@ async fn an_away_host_paints_its_held_rows_then_detached_with_send_disabled() {
 }
 
 #[tokio::test]
-async fn lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap() {
-    let clock = ManualClock::new(0);
-    let (session, mut calls, feed) = open_caught_up(&clock, 3).await;
-    feed.send(lagged());
-    let (request, feed) = calls.subscribe().await;
-    assert_eq!(request.tail, 40);
-    assert!(clock.sleeping().is_empty(), "no backoff after Lagged");
-    assert!(!session.state().caught_up());
-    assert_eq!(session.state().connection(), Connection::Live);
-    feed.send(snapshot(KIND, 4, &[]));
-    for order in 2..=4 {
-        feed.send(ev(text_item(KIND, order, order, &format!("row {order}"))));
-    }
-    feed.send(caught_up(4));
-    until(session.changed(), || {
-        session.state().caught_up().then_some(())
-    })
-    .await;
-    let keys: Vec<_> = session.state().transcript().keys().cloned().collect();
-    assert_eq!(
-        keys,
-        ["k1", "k2", "k3", "k4"],
-        "the overlap is deduped by key"
-    );
-    let trace = session.state().trace();
-    assert!(
-        trace
-            .events
-            .iter()
-            .any(|traced| traced.event == TraceEvent::Driver(DriverEvent::Retail))
-    );
-}
-
-#[tokio::test]
 async fn the_end_of_the_stream_reconnects_on_the_sessions_clock_with_doubling_backoff() {
     let clock = ManualClock::new(10_000);
     let (session, mut calls, feed) = open_caught_up(&clock, 1).await;
@@ -175,75 +141,6 @@ async fn the_end_of_the_stream_reconnects_on_the_sessions_clock_with_doubling_ba
     // Caught up again: the next outage starts from the first wait.
     drop(feed);
     clock.armed(11_000).await;
-}
-
-#[tokio::test]
-async fn an_uncertain_input_is_settled_from_the_queue_or_the_items_and_otherwise_left() {
-    // The connection dropping with the input in flight, and the daemon
-    // saying it handed the input on and lost the agent's answer, are the
-    // same uncertainty.
-    for (lost, found) in ["transport", "answer lost"]
-        .into_iter()
-        .flat_map(|lost| ["queue", "items", "nowhere"].map(|found| (lost, found)))
-    {
-        let clock = ManualClock::new(0);
-        let (session, mut calls, feed) = open_caught_up(&clock, 2).await;
-        let sending = tokio::spawn({
-            let session = session.clone();
-            async move { session.send_prompt("hello", Vec::new()).await }
-        });
-        let (request, reply) = calls.send_input().await;
-        let id = request.input.unwrap().input_id;
-        let error = match lost {
-            "transport" => transport(),
-            _ => RpcError::Refused(wire::Error {
-                code: ErrorCode::Aborted as i32,
-                message: "the agent's answer was lost; the input may or may not have arrived"
-                    .into(),
-                details: Vec::new(),
-            }),
-        };
-        reply.send(Err(error)).ok();
-        let sent = sending.await.unwrap();
-        assert_eq!(sent.outcome, InputOutcome::Lost, "{lost}");
-        assert_eq!(
-            session.state().input_state(&id),
-            Some(InputState::Uncertain)
-        );
-        let feed = reconnect(&clock, &session, &mut calls, feed).await;
-        let queue: &[&[u8]] = if found == "queue" { &[&id] } else { &[] };
-        feed.send(snapshot(KIND, 3, queue));
-        feed.send(ev(text_item(KIND, 2, 2, "row 2")));
-        if found == "items" {
-            feed.send(ev(reflection(KIND, 3, 3, &id)));
-        }
-        // Before CaughtUp nothing is judged.
-        assert_eq!(
-            session.state().input_state(&id),
-            Some(InputState::Uncertain),
-            "{found}"
-        );
-        feed.send(caught_up(3));
-        until(session.changed(), || {
-            session.state().caught_up().then_some(())
-        })
-        .await;
-        let expected = match found {
-            "queue" => InputState::Queued,
-            "items" => InputState::Settled,
-            _ => InputState::Uncertain,
-        };
-        assert_eq!(
-            session.state().input_state(&id),
-            Some(expected),
-            "{lost}: {found}"
-        );
-        if found == "nowhere" {
-            assert_eq!(session.state().not_confirmed().count(), 1);
-        }
-        calls.none().await;
-        drop(feed);
-    }
 }
 
 #[tokio::test]

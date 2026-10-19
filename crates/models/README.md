@@ -160,6 +160,28 @@ the binary at the path while its daemons exit with their pipe. Both swap
 orders are checked: the binary renamed over while the daemon runs, and the
 daemon stopped first. The properties are in `src/supervisor.rs`.
 
+## One open chat
+
+`ClientModel` runs the real `ui_state::SessionState`, the session both
+clients reduce a chat's stream into, fed what its driver forwards. Around
+it, one agent's daemon writes new items, appends, whole revisions and
+snapshots; the stream carries each write in order behind an opening (the
+generation, the snapshot, a tail of the newest items and CaughtUp); the
+stream falls behind and is reopened at once with a fresh tail; the
+origin's generation changes (Reset, the newest item gone, every other
+revised, a fresh opening); the client asks for the page below its oldest
+row and the answer lands later, as the daemon read it when asked; and the
+person sends one prompt, which reaches the daemon or not, is answered
+accepted or lost, and may be discarded while unconfirmed. An append whose
+base the client does not hold is answered with Get before the next
+message, as the driver does. Beside the client the state keeps a client
+that received every write uninterrupted, which a catch-up plus the live
+stream must read as at rest, and the session as its stream last opened
+with every message since, which is what a client's dump records and must
+replay to the live session. Two states are one when they print alike, so
+the session keeps its indexes in ordered maps. The properties are in
+`src/client.rs`.
+
 ## The composed net
 
 `ComposedNet` takes a topology (hosts, the links between them and the
@@ -253,6 +275,7 @@ under `just test`.
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 1,134,868 | 31 s | 68 s | not yet measured (134 s at 859,652 states) | 600 s | 4 up, 3 down, 3 failures | 431 s |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,275,996 and 71,250 | 8 s | 17 s | 44 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both swap orders | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 4,189,038 and 4,449,354 | 5 s | 11 s | not yet measured | 120 s each | 3 releases, 2 failed starts, 6 timers firing | 77 s |
+| One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,288,196 | 11 s | 24 s | not yet measured | 240 s | 3 writes | 343 s |
 | Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 194,762 | 24 s | 46 s | not yet measured | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12

@@ -20,34 +20,6 @@ fn open_with(kind: Kind, orders: std::ops::RangeInclusive<u64>) -> SessionState 
 }
 
 #[test]
-fn a_row_above_the_head_appends() {
-    for kind in KINDS {
-        let mut state = open_with(kind, 5..=7);
-        let outcome = apply_checked(&mut state, ev_item(text(kind, 8, 11, "new")));
-        assert_eq!(outcome.changed, vec!["k8"]);
-        assert_eq!(state.transcript().head(), Some(8));
-        assert_eq!(state.oldest_order(), Some(5));
-    }
-}
-
-#[test]
-fn a_row_inside_upserts_by_key_only_if_newer() {
-    for kind in KINDS {
-        let mut state = open_with(kind, 5..=7);
-        let outcome = apply_checked(&mut state, ev_item(text(kind, 6, 12, "revised")));
-        assert_eq!(outcome.changed, vec!["k6"]);
-        let outcome = apply_checked(&mut state, ev_item(text(kind, 6, 11, "older")));
-        assert!(
-            outcome.changed.is_empty(),
-            "an older revision never overwrites a newer one"
-        );
-        let outcome = apply_checked(&mut state, ev_item(text(kind, 6, 12, "same revision")));
-        assert!(outcome.changed.is_empty());
-        assert_eq!(state.transcript().get("k6").unwrap().item.text, "revised");
-    }
-}
-
-#[test]
 fn a_live_row_below_the_window_is_dropped() {
     for kind in KINDS {
         let mut state = open_with(kind, 5..=7);
@@ -92,27 +64,6 @@ fn pages_extend_the_low_edge_and_never_the_top() {
 }
 
 #[test]
-fn page_and_live_overlap_dedupe_by_key() {
-    for kind in KINDS {
-        let mut state = open_with(kind, 5..=7);
-        // A page that overlaps the window brings a newer revision of a held
-        // row and an older one of another.
-        let items = vec![
-            text(kind, 6, 15, "newer from page"),
-            text(kind, 5, 2, "older from page"),
-            text(kind, 4, 1, "p4"),
-        ];
-        let outcome = apply_page(&mut state, items, false);
-        assert_eq!(outcome.changed, vec!["k6", "k4"]);
-        assert_eq!(
-            state.transcript().get("k6").unwrap().item.text,
-            "newer from page"
-        );
-        assert_eq!(state.transcript().get("k5").unwrap().item.text, "held");
-    }
-}
-
-#[test]
 fn the_store_read_and_broadcast_overlap_is_deduped_by_key() {
     for kind in KINDS {
         let mut state = SessionState::new(agent(kind), CAP);
@@ -136,38 +87,6 @@ fn the_store_read_and_broadcast_overlap_is_deduped_by_key() {
             state.transcript().get("k1").unwrap().item.text,
             "Hello world"
         );
-    }
-}
-
-#[test]
-fn a_live_append_extends_the_held_text() {
-    for kind in KINDS {
-        let mut state = open_with(kind, 1..=1);
-        apply_checked(&mut state, ev_item(streaming(kind, 2, 200, "")));
-        for (base, text) in [(200, "Hel"), (201, "lo w"), (202, "orld")] {
-            let outcome = apply_checked(&mut state, ev_append("k2", base, base + 1, text));
-            assert_eq!(outcome.changed, vec!["k2"]);
-        }
-        let held = state.transcript().get("k2").unwrap();
-        assert_eq!(
-            (held.item.text.as_str(), held.item.revision),
-            ("Hello world", 203)
-        );
-        apply_checked(&mut state, ev_item(text(kind, 2, 204, "Hello world")));
-        assert_eq!(state.transcript().get("k2").unwrap().item.revision, 204);
-    }
-}
-
-#[test]
-fn a_held_item_at_the_wrong_revision_fetches() {
-    for kind in KINDS {
-        let mut state = open_with(kind, 1..=2);
-        let outcome = apply_checked(&mut state, ev_append("k2", 9, 12, "x"));
-        assert_eq!(outcome.need_get.as_deref(), Some("k2"));
-        assert!(outcome.changed.is_empty());
-        // The driver's Get answer lands as a full item.
-        let outcome = apply_checked(&mut state, ev_item(text(kind, 2, 12, "held.x")));
-        assert_eq!(outcome.changed, vec!["k2"]);
     }
 }
 

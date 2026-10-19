@@ -7,7 +7,7 @@ use models::{Bounds, ClientModel, check, walk};
 /// four-core runner: not measured there yet, so twice the enrolled Mac's
 /// four-thread time times 4.2, rounded up to a whole minute. A run past it
 /// says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 600.0;
+const BUDGET_SECONDS: f64 = 240.0;
 
 #[test]
 fn every_client_promise_holds_at_ci_bounds() {

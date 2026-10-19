@@ -144,20 +144,29 @@ impl Sqlite {
     /// is synced once the checkpoint completes, so on success it holds
     /// exactly what was committed before the call; with SQLite's own
     /// checkpoints left to the owner, it changes again only at the owner's
-    /// next one. One that cannot move the whole WAL fails as busy.
+    /// next one. One that cannot move the whole WAL, or cannot run at all
+    /// because another connection is checkpointing, fails as busy.
     pub fn checkpoint_wal(path: &Path) -> Result<(), rusqlite::Error> {
         let conn = Connection::open_with_flags(
             path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
-        let (log, checkpointed) = conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
-            Ok((row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
-        })?;
-        if checkpointed < log {
+        // SQLite answers busy, the WAL's pages and the pages moved; a
+        // checkpoint that could not run at all, because another connection
+        // holds the checkpoint lock, answers busy with both counts -1.
+        let (busy, log, checkpointed) =
+            conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?;
+        if busy != 0 || log < 0 || checkpointed < log {
             return Err(rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
                 Some(format!(
-                    "the checkpoint moved {checkpointed} of the WAL's {log} pages"
+                    "the checkpoint moved {checkpointed} of the WAL's {log} pages (busy {busy})"
                 )),
             ));
         }

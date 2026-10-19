@@ -346,3 +346,57 @@ fn a_passive_checkpoint_puts_every_commit_before_it_in_the_main_file_and_none_af
     assert!(copied.get(&key, "c").unwrap().is_none());
     assert_eq!(copied.cursor(&key).unwrap(), 10);
 }
+
+#[test]
+fn a_passive_checkpoint_that_cannot_take_the_checkpoint_lock_fails_as_busy() {
+    use std::sync::Mutex;
+
+    /// The store the second checkpoint runs on, and what it returned.
+    static STORE: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+    static RETURNED: Mutex<Option<Result<(), rusqlite::Error>>> = Mutex::new(None);
+
+    /// Called while a full checkpoint holds SQLite's checkpoint lock and
+    /// waits for the writer: the passive one cannot run at all, and SQLite
+    /// says so as busy with no pages counted.
+    fn while_the_lock_is_held(_: i32) -> bool {
+        let path = STORE.lock().unwrap().clone().unwrap();
+        *RETURNED.lock().unwrap() = Some(Sqlite::checkpoint_wal(&path));
+        false
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.sqlite");
+    let mut store = open(&dir);
+    store.leave_checkpoints_to_owner().unwrap();
+    let key = AgentKey::new(OWN, *b"agent-0000000000");
+    store
+        .put_agent(&AgentRow::new(key.clone(), wire::Kind::Codex, "/src"))
+        .unwrap();
+    store
+        .commit(&key, &[(10, step(&["a", "b"]))], CLOCK)
+        .unwrap();
+    *STORE.lock().unwrap() = Some(path.clone());
+
+    // A writer holds the store, so a full checkpoint takes the checkpoint
+    // lock and then waits on it.
+    let writer = Connection::open(&path).unwrap();
+    writer.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let checkpointer = Connection::open(&path).unwrap();
+    checkpointer
+        .busy_handler(Some(while_the_lock_is_held))
+        .unwrap();
+    let _ = checkpointer.query_row("PRAGMA wal_checkpoint(FULL)", [], |_| Ok(()));
+    writer.execute_batch("ROLLBACK").unwrap();
+
+    let returned = RETURNED
+        .lock()
+        .unwrap()
+        .take()
+        .expect("the full checkpoint waited on the writer");
+    let error = returned.expect_err("a checkpoint that could not run reports it");
+    assert_eq!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy),
+        "{error}"
+    );
+}

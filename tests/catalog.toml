@@ -667,7 +667,7 @@ cargo = [
 [[suite]]
 name = "testnet-harness"
 contract = "The test network harness validates topologies, runs real agents on each fake provider, sleeps every daemon's policy timers on its driven clock, installs each fault, fails stuck observations, catches a broken replica, and serves a topology through its door."
-paths = ["crates/patience/src", "crates/testnet/src", "crates/testnet/tests/harness.rs"]
+paths = ["crates/patience/src", "crates/testnet/src", "crates/testnet/tests/harness.rs", "crates/testnet/tests/stories"]
 recipe = "just test -- --test harness"
 boundary = "Many daemons"
 oracle = "Harness values, event observations, observation deadlines, door replies and the capability map the crate docs list."
@@ -684,6 +684,22 @@ cargo = [
   { package = "testnet", kind = "bin", targets = ["testnet"], features = [] },
   { package = "testnet", targets = ["harness"], features = [] },
 ]
+
+[[suite]]
+name = "simulated-net-harness"
+contract = "The simulated net holds the harness's own stories under several seeds through the same verbs, fences and observations as the real net, makes one schedule of one seed and another of another, moves time only when the story advances it, breaks a call whose message it loses and still brings the replica current, and fails a wait as soon as nothing is left to deliver."
+paths = ["crates/testnet/src/sim", "crates/testnet/src/world.rs", "crates/testnet/src/probes.rs", "crates/testnet/tests/sim_harness.rs", "crates/testnet/tests/stories"]
+recipe = "just test -- --test sim_harness"
+boundary = "Many daemons"
+oracle = "The stories' observations and fences, the delivery trace of each seed, and the virtual clock."
+real = ["daemon cores", "agent cores", "the test kind's interpreter", "in-memory stores", "journal files"]
+substituted = ["transport by in-memory links", "providers by a scripted provider", "agent processes by their cores in process", "wall clock by the virtual clock", "jobs by fakes"]
+time = "driven"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [{ package = "testnet", targets = ["sim_harness"], features = [] }]
 
 [[suite]]
 name = "testnet-ctl"

@@ -1,0 +1,830 @@
+//! The simulated net: a topology's daemons and agents as cores in one
+//! process, driven by a seed, under the verbs a real net offers.
+//!
+//! [`SimNet`] starts a [`Topology`] with every host's real daemon core over
+//! an in-memory store and every agent's real agent core over the test
+//! kind's interpreter, playing its script through a simulated provider.
+//! The links, jobs, clock and processes between them are the environment
+//! (see the `env` module): in-memory, deterministic, and scheduled one
+//! delivery at a time by the seed. Nothing moves between a story's verbs;
+//! a wait moves the net until its condition holds, and fails at once when
+//! nothing is left to deliver, which on a real net is a deadline passing.
+//!
+//! One seed is one schedule: the same seed gives the same trace of
+//! deliveries, and a failure, an invariant broken after a store write or
+//! a core asking for a dump, is reported with the seed that reproduces it.
+//!
+//! What a simulated net does not have, it refuses at start rather than
+//! pretending: the relay, the LAN and discovery, process and supervised
+//! hosts, real providers, repositories, and agents of a kind other than
+//! headless Claude, whose bodies the test kind speaks.
+
+mod env;
+mod provider;
+mod rng;
+
+use std::collections::BTreeMap;
+use std::fmt::Display;
+use std::future::Future;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
+
+use daemon_core::payload::{ClientRequest, Response};
+use daemon_core::{AgentId, CallId, Create, HostId, Input};
+pub use env::Faults;
+use env::Sim;
+use uuid::Uuid;
+use wire::{InventoryEvent, Lifecycle, SessionEvent};
+
+use crate::net::{Ack, NetAgent, NetError, prompt, submission};
+use crate::observe::{Feed, InventoryObserver, Observer, ObserverOf, PATIENCE, Pumped, Stuck};
+use crate::topology::{AgentDecl, FakeKind, Provider, Topology, link_key};
+use crate::world::World;
+use crate::{invariant, probes};
+
+/// How many deliveries one wait may make before it calls the net hung:
+/// far more than any story needs, so only a livelock reaches it.
+const MOST_STEPS: u64 = 1_000_000;
+
+/// How long a simulated agent outlives its daemon, as on a real net.
+const AGENT_GRACE_MS: u32 = 20_000;
+
+/// What a simulated net runs under: its seed and its faults.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SimOptions {
+    pub seed: u64,
+    pub faults: Faults,
+}
+
+pub struct SimNet {
+    sim: Arc<Mutex<Sim>>,
+    /// Where the agents' directories and the hosts' files live.
+    _root: tempfile::TempDir,
+    root: std::path::PathBuf,
+    topology: Topology,
+    hosts: BTreeMap<String, usize>,
+    links: BTreeMap<(String, String), usize>,
+    agents: BTreeMap<String, NetAgent>,
+}
+
+impl SimNet {
+    /// Starts `topology` simulated under `seed`, with no faults.
+    pub fn start(topology: Topology, seed: u64) -> Result<Self, NetError> {
+        Self::start_with(
+            topology,
+            SimOptions {
+                seed,
+                ..SimOptions::default()
+            },
+        )
+    }
+
+    pub fn start_with(mut topology: Topology, options: SimOptions) -> Result<Self, NetError> {
+        topology.validate()?;
+        refuse(&topology)?;
+        let root = tempfile::tempdir()?;
+        let mut sim = Sim::new(options.seed, options.faults);
+        let ids: Vec<HostId> = topology
+            .hosts
+            .iter()
+            .map(|_| HostId(sim.rng.bytes()))
+            .collect();
+        let hosts: BTreeMap<String, usize> = topology
+            .hosts
+            .iter()
+            .enumerate()
+            .map(|(at, host)| (host.name.clone(), at))
+            .collect();
+        for (at, host) in topology.hosts.iter().enumerate() {
+            let trusted = topology
+                .links
+                .iter()
+                .filter_map(|link| {
+                    if link.a == host.name {
+                        Some(ids[hosts[&link.b]])
+                    } else if link.b == host.name {
+                        Some(ids[hosts[&link.a]])
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            sim.add_host(&host.name, ids[at], root.path().join(&host.name), trusted);
+        }
+        let mut links = BTreeMap::new();
+        for link in &topology.links {
+            let at = sim.add_link(hosts[&link.a], hosts[&link.b]);
+            links.insert(link_key(&link.a, &link.b), at);
+        }
+        for at in 0..topology.hosts.len() {
+            sim.start_host(at);
+        }
+        // As on a real net, the declared links are up at start: each end
+        // reads the other online.
+        for link in &topology.links {
+            let (a, b) = (hosts[&link.a], hosts[&link.b]);
+            let what = format!("link {} - {} up at start", link.a, link.b);
+            wait(&mut sim, &what, |sim| {
+                (sim.reads_direct(a, b) && sim.reads_direct(b, a))
+                    .then_some(())
+                    .ok_or_else(|| "not yet".to_owned())
+            })?;
+        }
+        let agents = std::mem::take(&mut topology.agents);
+        let path = root.path().to_path_buf();
+        let mut net = Self {
+            sim: Arc::new(Mutex::new(sim)),
+            _root: root,
+            root: path,
+            topology,
+            hosts,
+            links,
+            agents: BTreeMap::new(),
+        };
+        for agent in agents {
+            net.spawn(agent)?;
+        }
+        Ok(net)
+    }
+
+    /// The seed this net runs under.
+    pub fn seed(&self) -> u64 {
+        self.sim().seed
+    }
+
+    /// Every delivery made so far, one line each, by host and agent name:
+    /// the schedule the seed chose.
+    pub fn trace(&self) -> Vec<String> {
+        self.sim().trace.clone()
+    }
+
+    pub fn topology(&self) -> &Topology {
+        &self.topology
+    }
+
+    /// Creates an agent on its host, as a client does, and waits for its
+    /// process to say Hello.
+    pub fn spawn(&mut self, decl: AgentDecl) -> Result<wire::Agent, NetError> {
+        if self.agents.contains_key(&decl.name) {
+            return Err(NetError::AgentExists(decl.name));
+        }
+        refuse_agent(&decl)?;
+        let h = self.host_index(&decl.host)?;
+        let parent = match &decl.parent {
+            Some(parent) => Some(self.agent_named(parent)?.parent()),
+            None => None,
+        };
+        let steps = decl
+            .script
+            .as_ref()
+            .map(|script| script.steps.clone())
+            .unwrap_or_default();
+        let cwd = self
+            .root
+            .join(&decl.host)
+            .join("work")
+            .join(decl.cwd.as_deref().unwrap_or_default());
+        std::fs::create_dir_all(&cwd)?;
+        let cwd = cwd.to_string_lossy().into_owned();
+        let sim = self.sim.clone();
+        let mut sim = sim.lock().unwrap();
+        failed(&sim)?;
+        if sim.hosts[h].daemon.is_none() {
+            return Err(NetError::Down(decl.host.clone()));
+        }
+        let agent = AgentId(sim.rng.bytes());
+        let host_id = sim.hosts[h].id;
+        let spec = wire::AgentSpec {
+            agent_id: agent.0.to_vec(),
+            profile_id: host_id.0.to_vec(),
+            kind: FakeKind::ClaudeSdk.wire() as i32,
+            cwd: cwd.clone(),
+            parent,
+            config: Some(wire::EffectiveConfig {
+                grace_ms: AGENT_GRACE_MS,
+                ..wire::EffectiveConfig::default()
+            }),
+            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
+            created_at_ms: sim.now_ms as i64,
+            incarnation: 1,
+            bootstrap: decl.prompt.as_deref().map(|text| wire::Bootstrap {
+                of: Some(wire::bootstrap::Of::Prompt(submission(
+                    b"testnet-first",
+                    text,
+                ))),
+            }),
+            ..wire::AgentSpec::default()
+        };
+        let create = Create {
+            agent,
+            cwd,
+            given: Some(decl.name.clone()),
+            branches: Default::default(),
+            new_worktree: false,
+            spec,
+        };
+        sim.scripts.insert(agent, steps);
+        sim.names.insert(agent, decl.name.clone());
+        let call = sim.client_call(h, ClientRequest::CreateAgent(Box::new(create)));
+        let what = format!("{} to start on {}", decl.name, decl.host);
+        let ended = wait(&mut sim, &what, |sim| {
+            sim.clients[&(h, call)]
+                .ended
+                .clone()
+                .ok_or_else(|| "not yet answered".to_owned())
+        })?;
+        let client = sim.clients.remove(&(h, call)).expect("the create's call");
+        let row = client
+            .responses
+            .into_iter()
+            .find_map(|response| match response {
+                Response::Agent(row) => Some(*row),
+                _ => None,
+            });
+        let row = match (ended, row) {
+            (daemon_core::payload::Status::Ok, Some(row)) => row,
+            (status, _) => {
+                return Err(NetError::Host {
+                    host: decl.host.clone(),
+                    error: format!("the create ended {status:?}"),
+                });
+            }
+        };
+        drop(sim);
+        self.agents.insert(
+            decl.name.clone(),
+            NetAgent {
+                name: decl.name.clone(),
+                host: decl.host.clone(),
+                host_id: Uuid::from_bytes(host_id.0),
+                id: Uuid::from_bytes(agent.0),
+                kind: decl.kind,
+                provider: Provider::Fake,
+            },
+        );
+        self.topology.agents.push(decl);
+        Ok(row)
+    }
+
+    fn sim(&self) -> MutexGuard<'_, Sim> {
+        self.sim.lock().unwrap()
+    }
+
+    fn host_index(&self, host: &str) -> Result<usize, NetError> {
+        self.hosts
+            .get(host)
+            .copied()
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))
+    }
+
+    fn agent_named(&self, name: &str) -> Result<&NetAgent, NetError> {
+        self.agents
+            .get(name)
+            .ok_or_else(|| NetError::NoAgent(name.to_owned()))
+    }
+
+    fn link(&self, a: &str, b: &str) -> Result<usize, NetError> {
+        self.links
+            .get(&link_key(a, b))
+            .copied()
+            .ok_or_else(|| NetError::NoLink(a.to_owned(), b.to_owned()))
+    }
+
+    fn ack(&self, installed: String) -> Ack {
+        Ack {
+            installed,
+            at_ms: self.sim().now_ms as i64,
+        }
+    }
+
+    /// The host whose store fences on `agent` read, and the agent's key.
+    fn origin(&self, agent: &str) -> Result<(usize, store::AgentKey), NetError> {
+        let at = self.agent_named(agent)?;
+        Ok((self.host_index(&at.host)?, at.key()))
+    }
+
+    /// Waits on a host's store until `probe` answers what it found.
+    fn on_store<T>(
+        &self,
+        host: usize,
+        what: &str,
+        probe: impl Fn(&store::Sqlite) -> Result<T, String>,
+    ) -> Result<T, NetError> {
+        let mut sim = self.sim();
+        if sim.hosts[host].daemon.is_none() {
+            return Err(NetError::Down(sim.hosts[host].name.clone()));
+        }
+        wait(&mut sim, what, |sim| read(sim, host, &probe))
+    }
+
+    fn observe_call<E>(
+        &self,
+        host: &str,
+        what: String,
+        request: ClientRequest,
+        pick: fn(&Response) -> Option<E>,
+    ) -> Result<ObserverOf<E>, NetError>
+    where
+        E: crate::observe::Describe + Clone + Send + 'static,
+    {
+        let h = self.host_index(host)?;
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if sim.hosts[h].daemon.is_none() {
+            return Err(NetError::Down(host.to_owned()));
+        }
+        let call = sim.client_call(h, request);
+        drop(sim);
+        Ok(ObserverOf::simulated(
+            what,
+            Box::new(Stream {
+                sim: self.sim.clone(),
+                host: h,
+                call,
+                taken: 0,
+                pick,
+            }),
+        ))
+    }
+}
+
+impl World for SimNet {
+    fn agent(&self, name: &str) -> Result<&NetAgent, NetError> {
+        self.agent_named(name)
+    }
+
+    fn is_up(&self, host: &str) -> bool {
+        self.host_index(host)
+            .is_ok_and(|h| self.sim().hosts[h].daemon.is_some())
+    }
+
+    fn generation(&self, host: &str) -> Result<u64, NetError> {
+        let h = self.host_index(host)?;
+        Ok(self.sim().hosts[h].generation)
+    }
+
+    fn now_ms(&self) -> i64 {
+        self.sim().now_ms as i64
+    }
+
+    fn advance(&self, by: Duration) -> Result<Ack, NetError> {
+        self.sim().advance(by.as_millis() as u64);
+        Ok(self.ack(format!("policy time +{}ms", by.as_millis())))
+    }
+
+    fn open_gate(&self, name: &str) -> Result<Ack, NetError> {
+        self.sim().gates.insert(name.to_owned());
+        Ok(self.ack(format!("gate {name} open")))
+    }
+
+    fn journal_end(&self, agent: &str) -> Result<u64, NetError> {
+        let at = self.agent_named(agent)?;
+        let h = self.host_index(&at.host)?;
+        let dir = self.sim().hosts[h].agents_dir();
+        let journal = daemon_core::ingest::journal_dir(&dir, AgentId(at.id.into_bytes()));
+        Ok(journal::end(&journal)?)
+    }
+
+    fn sever_link(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
+        let l = self.link(a, b)?;
+        let mut sim = self.sim();
+        sim.links[l].severed = true;
+        sim.link_down(l);
+        drop(sim);
+        Ok(self.ack(format!("link {a} - {b} severed")))
+    }
+
+    async fn restore_link(&mut self, a: &str, b: &str) -> Result<Ack, NetError> {
+        let l = self.link(a, b)?;
+        let (ha, hb) = (self.host_index(a)?, self.host_index(b)?);
+        let mut sim = self.sim();
+        // As on a real net, a severed link comes back once both ends have
+        // seen it go.
+        if sim.links[l].severed {
+            let what = format!("the severed link {a} - {b} to go at both ends");
+            wait(&mut sim, &what, |sim| {
+                (!sim.reads_direct(ha, hb) && !sim.reads_direct(hb, ha))
+                    .then_some(())
+                    .ok_or_else(|| "an end still routes direct".to_owned())
+            })?;
+        }
+        sim.links[l].severed = false;
+        sim.link_up(l);
+        drop(sim);
+        Ok(self.ack(format!("link {a} - {b} restored")))
+    }
+
+    async fn link_up(&self, a: &str, b: &str) -> bool {
+        let (Ok(a), Ok(b)) = (self.host_index(a), self.host_index(b)) else {
+            return false;
+        };
+        let sim = self.sim();
+        sim.reads_direct(a, b) && sim.reads_direct(b, a)
+    }
+
+    async fn wait_link(&self, a: &str, b: &str, up: bool) -> Result<(), NetError> {
+        let (ha, hb) = (self.host_index(a)?, self.host_index(b)?);
+        let what = format!("link {a} - {b} {}", if up { "up" } else { "down" });
+        let mut sim = self.sim();
+        wait(&mut sim, &what, |sim| {
+            let (ab, ba) = if up {
+                (sim.reads_direct(ha, hb), sim.reads_direct(hb, ha))
+            } else {
+                (sim.reads_offline(ha, hb), sim.reads_offline(hb, ha))
+            };
+            (ab && ba)
+                .then_some(())
+                .ok_or_else(|| format!("{a} -> {b} {ab}, {b} -> {a} {ba}"))
+        })
+    }
+
+    async fn kill_daemon(&mut self, host: &str) -> Result<Ack, NetError> {
+        let h = self.host_index(host)?;
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if sim.hosts[h].daemon.is_none() {
+            return Err(NetError::Down(host.to_owned()));
+        }
+        sim.stop_host(h);
+        drop(sim);
+        Ok(self.ack(format!("{host}'s daemon killed")))
+    }
+
+    async fn stop_daemon(&mut self, host: &str) -> Result<Ack, NetError> {
+        let h = self.host_index(host)?;
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if sim.hosts[h].daemon.is_none() {
+            return Err(NetError::Down(host.to_owned()));
+        }
+        // In memory, what a clean stop flushes is already where a crash
+        // leaves it.
+        sim.stop_host(h);
+        drop(sim);
+        Ok(self.ack(format!("{host}'s daemon stopped")))
+    }
+
+    async fn restart_daemon(&mut self, host: &str) -> Result<Ack, NetError> {
+        let h = self.host_index(host)?;
+        let mut sim = self.sim();
+        failed(&sim)?;
+        if sim.hosts[h].daemon.is_some() {
+            return Err(NetError::Running(host.to_owned()));
+        }
+        sim.start_host(h);
+        failed(&sim)?;
+        drop(sim);
+        Ok(self.ack(format!("{host}'s daemon started")))
+    }
+
+    async fn send(&self, agent: &str, text: &str) -> Result<wire::SendInputResponse, NetError> {
+        let kind = self.agent_named(agent)?.kind;
+        let id = self.sim().rng.bytes::<16>();
+        self.input(agent, prompt(kind, &id, text)).await
+    }
+
+    async fn input(
+        &self,
+        agent: &str,
+        input: wire::Input,
+    ) -> Result<wire::SendInputResponse, NetError> {
+        let at = self.agent_named(agent)?.clone();
+        let h = self.host_index(&at.host)?;
+        let key = at.key();
+        let id = AgentId(at.id.into_bytes());
+        let mut sim = self.sim();
+        failed(&sim)?;
+        let exited = read(&sim, h, |store| {
+            Ok(store
+                .agent(&key)
+                .map_err(|error| error.to_string())?
+                .is_none_or(|row| row.lifecycle == Lifecycle::Exited as i32))
+        })
+        .map_err(|_| NetError::Down(at.host.clone()))?;
+        if exited {
+            return Ok(interpret::reply::rejected(wire::Refusal::Exited));
+        }
+        // The shell waits for the process's connection before it writes.
+        let what = format!("{agent}'s process to be connected");
+        let p = wait(&mut sim, &what, |sim| {
+            sim.process_of(id)
+                .filter(|&p| sim.processes[p].conn.is_some())
+                .ok_or_else(|| "not connected".to_owned())
+        })?;
+        let input_id = input.input_id.clone();
+        sim.relay(p, input).map_err(|error| NetError::Host {
+            host: at.host.clone(),
+            error,
+        })?;
+        let what = format!("{agent}'s verdict on its input");
+        let verdict = wait(&mut sim, &what, |sim| {
+            let process = &sim.processes[p];
+            if !process.running || process.conn.is_none() {
+                return Ok(None);
+            }
+            match process.relayed.get(&input_id) {
+                Some(Some(verdict)) => Ok(Some(verdict.clone())),
+                _ => Err("no verdict yet".to_owned()),
+            }
+        })?;
+        sim.processes[p].relayed.remove(&input_id);
+        let Some(verdict) = verdict else {
+            return Err(NetError::Host {
+                host: at.host,
+                error: "the agent's answer was lost with its connection".to_owned(),
+            });
+        };
+        if let Some(wire::send_input_response::Of::Rejected(rejected)) = &verdict.of
+            && rejected.refusal() == wire::Refusal::Exiting
+        {
+            sim.feed(h, Input::Exiting { agent: id });
+        }
+        failed(&sim)?;
+        Ok(verdict)
+    }
+
+    async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {
+        let id = self.agent_named(agent)?.id;
+        self.observe_call(
+            host,
+            format!("{agent} observed at {host}"),
+            ClientRequest::Subscribe {
+                agent_id: id.as_bytes().to_vec(),
+                tail,
+            },
+            |response| match response {
+                Response::Session(event) => Some(SessionEvent::clone(event)),
+                _ => None,
+            },
+        )
+    }
+
+    async fn observe_inventory(&self, host: &str) -> Result<InventoryObserver, NetError> {
+        self.observe_call(
+            host,
+            format!("inventory at {host}"),
+            ClientRequest::SubscribeInventory,
+            |response| match response {
+                Response::Inventory(event) => Some(InventoryEvent::clone(event)),
+                _ => None,
+            },
+        )
+    }
+
+    async fn fence(&self, host: &str, agent: &str, order: u64) -> Result<(), NetError> {
+        let (_, key) = self.origin(agent)?;
+        let what = format!("{host} to hold {agent}'s row at order {order}");
+        self.on_store(self.host_index(host)?, &what, |store| {
+            probes::holds_order(store, &key, order)
+        })
+    }
+
+    async fn current(&self, host: &str, agent: &str) -> Result<(), NetError> {
+        let (origin, key) = self.origin(agent)?;
+        let replica = self.host_index(host)?;
+        let what = format!("{agent}'s replica at {host} to be current");
+        let mut sim = self.sim();
+        wait(&mut sim, &what, |sim| {
+            let newest = read(sim, origin, |store| probes::origin_newest(store, &key))?;
+            read(sim, replica, |store| {
+                probes::replica_current(store, &key, newest)
+            })?;
+            let replica_block = read(sim, replica, |store| invariant::block(store, &key))?;
+            let origin_block = read(sim, origin, |store| invariant::block(store, &key))?;
+            invariant::check(&replica_block, &origin_block).map_err(|error| error.to_string())
+        })
+    }
+
+    async fn turn_ended(&self, agent: &str, k: usize) -> Result<u64, NetError> {
+        assert!(k >= 1, "turns count from one");
+        let (origin, key) = self.origin(agent)?;
+        let what = format!("{agent}'s turn {k} to end");
+        self.on_store(origin, &what, |store| probes::turn_end(store, &key, k))
+    }
+
+    async fn input_settled(&self, agent: &str, input_id: &[u8]) -> Result<u64, NetError> {
+        let (origin, key) = self.origin(agent)?;
+        let what = format!("{agent}'s input {} to settle", interpret::to_hex(input_id));
+        self.on_store(origin, &what, |store| {
+            probes::settled(store, &key, input_id)
+        })
+    }
+
+    async fn read_store<T: Send + 'static>(
+        &self,
+        host: &str,
+        read: impl FnOnce(&store::Sqlite) -> T + Send + 'static,
+    ) -> Result<T, NetError> {
+        let h = self.host_index(host)?;
+        let sim = self.sim();
+        failed(&sim)?;
+        match &sim.hosts[h].daemon {
+            Some(daemon) => Ok(read(daemon.store())),
+            None => Err(NetError::Down(host.to_owned())),
+        }
+    }
+
+    async fn until<T, E, F>(&self, what: &str, mut probe: impl FnMut() -> F) -> Result<T, NetError>
+    where
+        E: Display,
+        F: Future<Output = Result<T, E>>,
+    {
+        for _ in 0..MOST_STEPS {
+            let seen = match probe().await {
+                Ok(found) => return Ok(found),
+                Err(seen) => seen.to_string(),
+            };
+            let mut sim = self.sim();
+            failed(&sim)?;
+            if !sim.step() {
+                failed(&sim)?;
+                return Err(quiet(&sim, what, seen));
+            }
+        }
+        Err(hung(what))
+    }
+
+    async fn holds_for<F>(
+        &self,
+        what: &str,
+        window: Duration,
+        mut check: impl FnMut() -> F,
+    ) -> Result<(), NetError>
+    where
+        F: Future<Output = bool>,
+    {
+        for _ in 0..MOST_STEPS {
+            if !check().await {
+                return Err(Stuck::Broke {
+                    what: what.to_owned(),
+                    after: Duration::ZERO,
+                    window,
+                }
+                .into());
+            }
+            let mut sim = self.sim();
+            failed(&sim)?;
+            if !sim.step() {
+                return failed(&sim);
+            }
+        }
+        Ok(())
+    }
+
+    async fn shutdown(self) -> Result<(), NetError> {
+        failed(&self.sim())
+    }
+}
+
+/// A simulated Subscribe or SubscribeInventory stream: a client's call on
+/// a host, read as the net moves.
+struct Stream<E> {
+    sim: Arc<Mutex<Sim>>,
+    host: usize,
+    call: CallId,
+    taken: usize,
+    pick: fn(&Response) -> Option<E>,
+}
+
+impl<E: Send> Feed<E> for Stream<E> {
+    fn pump(&mut self, step: bool) -> Pumped<E> {
+        let mut sim = self.sim.lock().unwrap();
+        let quiet = step && !sim.step();
+        let failure = sim.failure.clone();
+        let Some(client) = sim.clients.get(&(self.host, self.call)) else {
+            return Pumped {
+                events: Vec::new(),
+                closed: true,
+                quiet,
+                failure,
+            };
+        };
+        let events = client.responses[self.taken..]
+            .iter()
+            .filter_map(self.pick)
+            .collect();
+        self.taken = client.responses.len();
+        Pumped {
+            events,
+            closed: client.ended.is_some(),
+            quiet,
+            failure,
+        }
+    }
+}
+
+impl<E> Drop for Stream<E> {
+    fn drop(&mut self) {
+        if let Ok(mut sim) = self.sim.lock() {
+            sim.cancel_client(self.host, self.call);
+        }
+    }
+}
+
+/// Moves the net until `probe` holds, failing as soon as nothing is left
+/// to deliver.
+fn wait<T>(
+    sim: &mut Sim,
+    what: &str,
+    mut probe: impl FnMut(&mut Sim) -> Result<T, String>,
+) -> Result<T, NetError> {
+    for _ in 0..MOST_STEPS {
+        failed(sim)?;
+        let seen = match probe(sim) {
+            Ok(found) => return Ok(found),
+            Err(seen) => seen,
+        };
+        if !sim.step() {
+            failed(sim)?;
+            return Err(quiet(sim, what, seen));
+        }
+    }
+    Err(hung(what))
+}
+
+/// What a wait reports when nothing is left to deliver and its condition
+/// does not hold: it never will, unless the story acts.
+fn quiet(sim: &Sim, what: &str, seen: String) -> NetError {
+    Stuck::Deadline {
+        what: format!(
+            "{what} (nothing left to deliver after {} steps under seed {})",
+            sim.steps, sim.seed
+        ),
+        waited: PATIENCE,
+        seen,
+    }
+    .into()
+}
+
+fn hung(what: &str) -> NetError {
+    Stuck::Hung {
+        what: format!("{what}: {MOST_STEPS} deliveries without an end"),
+        waited: PATIENCE,
+    }
+    .into()
+}
+
+fn failed(sim: &Sim) -> Result<(), NetError> {
+    match &sim.failure {
+        Some(failure) => Err(NetError::Simulated {
+            seed: sim.seed,
+            failure: failure.clone(),
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Reads a host's store, or says it is down.
+fn read<T>(
+    sim: &Sim,
+    host: usize,
+    probe: impl FnOnce(&store::Sqlite) -> Result<T, String>,
+) -> Result<T, String> {
+    match &sim.hosts[host].daemon {
+        Some(daemon) => probe(daemon.store()),
+        None => Err(format!("{} is down", sim.hosts[host].name)),
+    }
+}
+
+/// What a simulated net cannot hold, refused before anything starts.
+fn refuse(topology: &Topology) -> Result<(), NetError> {
+    if topology.relay.is_some() {
+        return Err(NetError::Unsupported("a relay in a simulated net"));
+    }
+    for host in &topology.hosts {
+        if host.lan || host.discovery || host.bonjour {
+            return Err(NetError::Unsupported(
+                "the LAN and discovery in a simulated net",
+            ));
+        }
+        if host.runs_as_process() {
+            return Err(NetError::Unsupported("a process host in a simulated net"));
+        }
+        if host.provider == Provider::Real {
+            return Err(NetError::Unsupported("a real provider in a simulated net"));
+        }
+        if host.account.is_some() || host.script.is_some() || !host.repositories.is_empty() {
+            return Err(NetError::Unsupported(
+                "accounts, host scripts and repositories in a simulated net",
+            ));
+        }
+    }
+    topology.agents.iter().try_for_each(refuse_agent)
+}
+
+fn refuse_agent(agent: &AgentDecl) -> Result<(), NetError> {
+    if agent.kind != FakeKind::ClaudeSdk {
+        return Err(NetError::Unsupported(
+            "agents other than headless Claude in a simulated net, whose agents speak the test kind",
+        ));
+    }
+    if agent.provider == Some(Provider::Real) {
+        return Err(NetError::Unsupported("a real provider in a simulated net"));
+    }
+    if agent.script_file.is_some() || agent.repository.is_some() || agent.branch.is_some() {
+        return Err(NetError::Unsupported(
+            "script files, repositories and branches in a simulated net",
+        ));
+    }
+    Ok(())
+}

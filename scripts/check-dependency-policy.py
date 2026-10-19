@@ -128,9 +128,11 @@ SUPPORT_ALLOWED_LOCAL = {
     "patience": set(),
     # The harness also signs release manifests with the test key for its
     # supervised hosts, and draws the terminal client's screens through shot.
+    # Its simulated mode holds every daemon and agent core in one process,
+    # the agents on the test kind's interpreter.
     "testnet": {
-        "agent-dir", "journal", "node", "patience", "provider-fakes", "release", "shot",
-        "store", "tui", "wire",
+        "agent-core", "agent-dir", "daemon-core", "interpret", "journal", "node", "patience",
+        "provider-fakes", "release", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it.

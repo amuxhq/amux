@@ -27,9 +27,37 @@ pub trait Describe {
 pub struct ObserverOf<E> {
     what: String,
     events: Vec<E>,
-    incoming: mpsc::UnboundedReceiver<E>,
+    source: Source<E>,
     closed: bool,
-    reader: JoinHandle<()>,
+}
+
+/// Where an observer's events come from.
+enum Source<E> {
+    /// A real net's stream, which a reader task forwards as it arrives.
+    Stream {
+        incoming: mpsc::UnboundedReceiver<E>,
+        reader: JoinHandle<()>,
+    },
+    /// A simulated net's stream, whose world moves only when a wait asks.
+    Simulated(Box<dyn Feed<E>>),
+}
+
+/// A simulated stream: what it carried, and a world that moves one
+/// delivery at a time when a wait asks it to.
+pub(crate) trait Feed<E>: Send {
+    /// What the stream carried since the last call and whether it ended;
+    /// with `step`, the world first moves one delivery on, or says that
+    /// nothing more can happen without the story acting.
+    fn pump(&mut self, step: bool) -> Pumped<E>;
+}
+
+pub(crate) struct Pumped<E> {
+    pub(crate) events: Vec<E>,
+    pub(crate) closed: bool,
+    /// Nothing moved: no delivery was waiting.
+    pub(crate) quiet: bool,
+    /// The simulated net failed, in its own words: the stream ends with it.
+    pub(crate) failure: Option<String>,
 }
 
 /// A Subscribe stream on one agent.
@@ -47,9 +75,47 @@ impl<E: Describe + Clone + Send + 'static> ObserverOf<E> {
         Self {
             what,
             events: Vec::new(),
-            incoming,
+            source: Source::Stream { incoming, reader },
             closed: false,
-            reader,
+        }
+    }
+
+    /// An observer over a simulated stream.
+    pub(crate) fn simulated(what: String, feed: Box<dyn Feed<E>>) -> Self {
+        Self {
+            what,
+            events: Vec::new(),
+            source: Source::Simulated(feed),
+            closed: false,
+        }
+    }
+
+    /// Takes everything already delivered, without waiting or moving a
+    /// simulated world.
+    fn take_delivered(&mut self) {
+        match &mut self.source {
+            Source::Stream { incoming, .. } => {
+                while let Ok(event) = incoming.try_recv() {
+                    self.events.push(event);
+                }
+            }
+            Source::Simulated(feed) => {
+                let pumped = feed.pump(false);
+                self.took(pumped);
+            }
+        }
+    }
+
+    /// Records what a simulated stream carried; a net that failed ends
+    /// the stream, and says why.
+    fn took(&mut self, pumped: Pumped<E>) {
+        self.events.extend(pumped.events);
+        self.closed |= pumped.closed;
+        if let Some(failure) = pumped.failure
+            && !self.closed
+        {
+            self.closed = true;
+            self.what = format!("{} (the simulated net failed: {failure})", self.what);
         }
     }
 
@@ -63,9 +129,7 @@ impl<E: Describe + Clone + Send + 'static> ObserverOf<E> {
         loop {
             // Take everything already delivered before judging, so the
             // predicate sees the stream as far as it has come.
-            while let Ok(event) = self.incoming.try_recv() {
-                self.events.push(event);
-            }
+            self.take_delivered();
             if pred(&self.events) {
                 return Ok(&self.events);
             }
@@ -75,16 +139,39 @@ impl<E: Describe + Clone + Send + 'static> ObserverOf<E> {
                     seen: self.transcript(),
                 });
             }
-            match tokio::time::timeout_at(until, self.incoming.recv()).await {
-                Ok(Some(event)) => self.events.push(event),
-                Ok(None) => self.closed = true,
-                Err(_) => {
-                    return Err(Stuck::Deadline {
-                        what: self.what.clone(),
-                        waited: deadline,
-                        seen: self.transcript(),
-                    });
+            let stuck = match &mut self.source {
+                Source::Stream { incoming, .. } => {
+                    match tokio::time::timeout_at(until, incoming.recv()).await {
+                        Ok(Some(event)) => {
+                            self.events.push(event);
+                            false
+                        }
+                        Ok(None) => {
+                            self.closed = true;
+                            false
+                        }
+                        Err(_) => true,
+                    }
                 }
+                // A simulated world that has nothing left to deliver has
+                // reached what the deadline stands for: nothing more comes
+                // unless the story acts.
+                Source::Simulated(feed) => {
+                    let pumped = feed.pump(true);
+                    let moved = !pumped.quiet
+                        || !pumped.events.is_empty()
+                        || pumped.closed
+                        || pumped.failure.is_some();
+                    self.took(pumped);
+                    !moved
+                }
+            };
+            if stuck {
+                return Err(Stuck::Deadline {
+                    what: self.what.clone(),
+                    waited: deadline,
+                    seen: self.transcript(),
+                });
             }
         }
     }
@@ -100,9 +187,7 @@ impl<E: Describe + Clone + Send + 'static> ObserverOf<E> {
 
     /// Everything seen so far, without waiting.
     pub fn events(&mut self) -> &[E] {
-        while let Ok(event) = self.incoming.try_recv() {
-            self.events.push(event);
-        }
+        self.take_delivered();
         &self.events
     }
 
@@ -123,7 +208,10 @@ impl<E: Describe + Clone + Send + 'static> ObserverOf<E> {
 
 impl<E> Drop for ObserverOf<E> {
     fn drop(&mut self) {
-        self.reader.abort();
+        // A simulated stream lets its call go as its feed drops.
+        if let Source::Stream { reader, .. } = &self.source {
+            reader.abort();
+        }
     }
 }
 

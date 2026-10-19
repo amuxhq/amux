@@ -4715,12 +4715,14 @@ dependencies = [
 name = "testnet"
 version = "0.1.0"
 dependencies = [
+ "agent-core",
  "agent-dir",
  "analytics",
  "anyhow",
  "bytes",
  "chrono",
  "clap",
+ "daemon-core",
  "http-body-util",
  "hyper",
  "hyper-util",

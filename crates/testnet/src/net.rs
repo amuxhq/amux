@@ -24,7 +24,7 @@ use node::{
 };
 use provider_fakes::script::{INPUT_LOG_ENV, SCRIPT_ENV, Script, Step};
 use serde::{Deserialize, Serialize};
-use store::{AgentKey, Marker};
+use store::AgentKey;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use wire::client_service_server::ClientService as _;
@@ -42,6 +42,7 @@ use crate::gate::{Faults, UdpGate};
 use crate::invariant::{self, BlockViolation};
 use crate::lan::{FrontAdvert, Gated, Lan};
 use crate::observe::{self, InventoryObserver, Observer, ObserverOf, PATIENCE, Stuck};
+use crate::probes;
 use crate::process::ProcessHost;
 use crate::providers::{self, Commands, RealTools, SMALL_CLAUDE, SMALL_CODEX};
 use crate::relay::Relay;
@@ -234,6 +235,10 @@ pub enum NetError {
     NoRelay,
     #[error("host {host:?} runs as a process: {why}")]
     Process { host: String, why: String },
+    /// The simulated net broke a rule: a core asked for a dump or an
+    /// invariant failed after a store write. The seed reproduces it.
+    #[error("the simulated net failed under seed {seed}: {failure}")]
+    Simulated { seed: u64, failure: String },
 }
 
 struct Host {
@@ -3008,16 +3013,7 @@ impl Net {
                 .await;
         }
         self.on_write(host, &what, patience, move |store| {
-            let newest = store
-                .last_n(&key, 1)
-                .map_err(|error| error.to_string())?
-                .pop()
-                .map(|item| item.order);
-            match newest {
-                Some(held) if held >= order => Ok(()),
-                Some(held) => Err(format!("newest order {held}")),
-                None => Err("no rows".to_owned()),
-            }
+            probes::holds_order(store, &key, order)
         })
         .await
     }
@@ -3047,18 +3043,7 @@ impl Net {
                 .await;
         }
         self.on_write(&at.host, &what, patience, move |store| {
-            let mut ends: Vec<u64> = store
-                .cut(&key, u32::MAX)
-                .map_err(|error| error.to_string())?
-                .held
-                .iter()
-                .filter(|item| item.key.starts_with("turn:"))
-                .map(|item| item.order)
-                .collect();
-            ends.sort_unstable();
-            ends.get(k - 1)
-                .copied()
-                .ok_or_else(|| format!("{} turns ended", ends.len()))
+            probes::turn_end(store, &key, k)
         })
         .await
     }
@@ -3100,11 +3085,7 @@ impl Net {
         }
         let input_id = input_id.to_vec();
         self.on_write(&at.host, &what, patience, move |store| {
-            store
-                .item_by_input(&key, &input_id)
-                .map_err(|error| error.to_string())?
-                .map(|item| item.order)
-                .ok_or_else(|| "no row carries it".to_owned())
+            probes::settled(store, &key, &input_id)
         })
         .await
     }
@@ -3122,35 +3103,17 @@ impl Net {
                 let runtime = self.runtime(&at.host).map_err(|error| error.to_string())?;
                 let key = key.clone();
                 runtime
-                    .read_store(move |store| store.agent(&key))
-                    .await
-                    .map_err(|error| error.to_string())?
-                    .map_err(|error| error.to_string())?
-                    .map(|row| row.next_revision - 1)
-                    .ok_or_else(|| "no origin row".to_owned())?
-            };
-            let (cursor, marker) = {
-                let runtime = self.runtime(host).map_err(|error| error.to_string())?;
-                let key = key.clone();
-                runtime
-                    .read_store(move |store| {
-                        let row = store
-                            .agent(&key)
-                            .map_err(|error| error.to_string())?
-                            .ok_or_else(|| format!("no replica row; origin newest {newest}"))?;
-                        let marker = store
-                            .cut(&key, 0)
-                            .map_err(|error| error.to_string())?
-                            .marker;
-                        Ok::<_, String>((row.source_cursor, marker))
-                    })
+                    .read_store(move |store| probes::origin_newest(store, &key))
                     .await
                     .map_err(|error| error.to_string())??
             };
-            if cursor != newest || marker != Some(Marker::CaughtUp) {
-                return Err(format!(
-                    "replica cursor {cursor}, marker {marker:?}; origin newest {newest}"
-                ));
+            {
+                let runtime = self.runtime(host).map_err(|error| error.to_string())?;
+                let key = key.clone();
+                runtime
+                    .read_store(move |store| probes::replica_current(store, &key, newest))
+                    .await
+                    .map_err(|error| error.to_string())??;
             }
             self.assert_block_invariant(host, agent)
                 .await

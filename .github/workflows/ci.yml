@@ -121,7 +121,7 @@ jobs:
       matrix:
         # Every protocol-models test target: `just tests-check` fails when
         # one is missing here.
-        target: [family, lifecycle, presence, replication, single_daemon, supervisor, switch]
+        target: [composed, family, lifecycle, presence, replication, single_daemon, supervisor, switch]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.98.0

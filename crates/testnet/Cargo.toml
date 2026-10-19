@@ -23,6 +23,7 @@ hyper = { workspace = true }
 hyper-util = { workspace = true }
 interpret = { workspace = true, features = ["testkind"] }
 journal = { workspace = true, features = ["synthetic"] }
+models = { workspace = true }
 node = { workspace = true }
 patience = { workspace = true }
 prost = { workspace = true }

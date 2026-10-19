@@ -17,12 +17,14 @@ use stateright::{Checker, Chooser, UniformChooser};
 pub mod family;
 mod held;
 pub mod lifecycle;
+pub mod net;
 pub mod presence;
 pub mod replication;
 pub mod single_daemon;
 pub mod supervisor;
 pub use family::FamilyDeliveries;
 pub use lifecycle::AgentLifecycle;
+pub use net::ComposedNet;
 pub use presence::PresenceRouting;
 pub use replication::Replication;
 pub use single_daemon::SingleDaemon;
@@ -80,6 +82,9 @@ pub fn parked() -> Vec<(&'static str, &'static str, Parked)> {
     parked.extend(of("family and deliveries", &FamilyDeliveries::ci()));
     parked.extend(of("agent lifecycle", &AgentLifecycle::ci()));
     parked.extend(of("supervisor update", &SupervisorUpdate::ci()));
+    for (_, model) in ComposedNet::ci() {
+        parked.extend(of("composed net", &model));
+    }
     parked
 }
 

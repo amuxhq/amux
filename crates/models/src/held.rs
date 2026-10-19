@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use daemon_core::{Checkpoint, Daemon, Input, Output};
+use daemon_core::{Checkpoint, Daemon, Fingerprint, Input, Output};
 use store::{AgentKey, Dump, Marker, Sqlite};
 
 /// One host: its core, as its checkpoint, and its store, as its dump.
@@ -120,6 +120,54 @@ impl Slot {
         let read = read(&daemon);
         self.put_back(held, daemon, Some(before));
         (out, read)
+    }
+
+    /// Restores the host's core, its agents' directories at `place`'s first
+    /// path, hands it to `f`, which may step it any number of times, and
+    /// takes it back; returns what `f` did and the core's fingerprint once
+    /// its directories name `place`'s second path again.
+    pub(crate) fn with_core<R>(
+        &mut self,
+        held: &mut Held,
+        place: (&Path, &Path),
+        f: impl FnOnce(&mut Daemon) -> R,
+    ) -> (R, Fingerprint) {
+        let before = Changes::of(self.load(&held.store));
+        let store = self.store.take().expect("the slot's store is home");
+        let checkpoint = Checkpoint::from_bytes(&held.core).expect("a checkpoint reads");
+        let daemon = Daemon::restore(checkpoint, store).expect("a checkpoint restores");
+        self.run(held, daemon, place, f, Some(before))
+    }
+
+    /// Builds the host's core over this slot's store as `held` holds it,
+    /// then goes on as [`Slot::with_core`] does.
+    pub(crate) fn start_with<R>(
+        &mut self,
+        held: &mut Held,
+        place: (&Path, &Path),
+        daemon: impl FnOnce(Sqlite) -> Daemon,
+        f: impl FnOnce(&mut Daemon) -> R,
+    ) -> (R, Fingerprint) {
+        self.load(&held.store);
+        let store = self.store.take().expect("the slot's store is home");
+        let daemon = daemon(store);
+        self.run(held, daemon, place, f, None)
+    }
+
+    fn run<R>(
+        &mut self,
+        held: &mut Held,
+        mut daemon: Daemon,
+        place: (&Path, &Path),
+        f: impl FnOnce(&mut Daemon) -> R,
+        before: Option<Changes>,
+    ) -> (R, Fingerprint) {
+        daemon.move_agents(place.0.to_path_buf());
+        let result = f(&mut daemon);
+        daemon.move_agents(place.1.to_path_buf());
+        let print = daemon.fingerprint();
+        self.put_back(held, daemon, before);
+        (result, print)
     }
 
     /// The store as this slot holds it now, for reading straight after a

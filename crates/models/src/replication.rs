@@ -444,85 +444,22 @@ impl Machine for Replication {
             Property::always("the cores never ask for a dump", |_, s: &State| {
                 s.dumped.is_none()
             }),
-            Property::always(
-                "the block is contiguous: under the origin's generation, every row the origin holds between \
-                 the block's oldest and newest rows is in the block",
-                |_, s: &State| {
-                    !s.same_generation()
-                        || s.view(|origin, replica| {
-                            let mine = replica.block(&agent()).unwrap();
-                            let (Some(oldest), Some(newest)) = (mine.first(), mine.last()) else {
-                                return true;
-                            };
-                            let from = common_floor(origin, replica).max(oldest.order);
-                            origin
-                                .suffix_from(&agent(), from)
-                                .unwrap()
-                                .iter()
-                                .filter(|theirs| theirs.order <= newest.order)
-                                .all(|theirs| mine.iter().any(|mine| mine.order == theirs.order))
-                        })
-                },
-            ),
-            Property::always(
-                "the block agrees with the origin: under the origin's generation, every row of the block the \
-                 origin still holds is the origin's row at that order, or an older revision of it",
-                |_, s: &State| {
-                    !s.same_generation()
-                        || s.view(|origin, replica| {
-                            let theirs = origin.suffix_from(&agent(), 0).unwrap();
-                            replica
-                                .suffix_from(&agent(), common_floor(origin, replica))
-                                .unwrap()
-                                .iter()
-                                .all(|mine| {
-                                    theirs
-                                        .iter()
-                                        .find(|theirs| theirs.order == mine.order)
-                                        .is_some_and(|theirs| no_newer(mine, theirs))
-                                })
-                        })
-                },
-            ),
-            Property::always(
-                "no row survives from another generation: under the origin's generation, every row the \
-                 replica stores at an order the origin holds is that order's key, no newer than the origin's, \
-                 and a key the origin has since moved to a later order is an older revision of it",
-                |_, s: &State| {
-                    !s.same_generation()
-                        || s.view(|origin, replica| {
-                            let theirs = origin.rows(&agent()).unwrap();
-                            replica.rows(&agent()).unwrap().iter().all(|mine| {
-                                theirs.iter().all(|theirs| {
-                                    if theirs.order == mine.order {
-                                        no_newer(mine, theirs)
-                                    } else if theirs.key == mine.key {
-                                        mine.order < theirs.order && mine.revision < theirs.revision
-                                    } else {
-                                        true
-                                    }
-                                })
-                            })
-                        })
-                },
-            ),
-            Property::always(
-                "the cursor is complete: under the origin's generation, the replica holds every row of its \
-                 block's range that the origin revised at or below the cursor",
-                |_, s: &State| {
-                    !s.same_generation()
-                        || s.view(|origin, replica| {
-                            let cursor = replica.source_cursor(&agent()).unwrap();
-                            let mine = replica.rows(&agent()).unwrap();
-                            origin
-                                .suffix_from(&agent(), common_floor(origin, replica))
-                                .unwrap()
-                                .iter()
-                                .filter(|theirs| theirs.revision <= cursor)
-                                .all(|theirs| mine.iter().any(|mine| mine == theirs))
-                        })
-                },
-            ),
+            Property::always(BLOCK_CONTIGUOUS, |_, s: &State| {
+                !s.same_generation()
+                    || s.view(|origin, replica| block_contiguous(origin, replica, &agent()))
+            }),
+            Property::always(BLOCK_AGREES, |_, s: &State| {
+                !s.same_generation()
+                    || s.view(|origin, replica| block_agrees(origin, replica, &agent()))
+            }),
+            Property::always(NO_OTHER_GENERATION, |_, s: &State| {
+                !s.same_generation()
+                    || s.view(|origin, replica| no_other_generation(origin, replica, &agent()))
+            }),
+            Property::always(CURSOR_COMPLETE, |_, s: &State| {
+                !s.same_generation()
+                    || s.view(|origin, replica| cursor_complete(origin, replica, &agent()))
+            }),
             Property::sometimes("the replica is current", |_, s: &State| s.current()),
             Property::sometimes("the block is non-empty after a reset", |_, s: &State| {
                 s.view(|_, replica| {
@@ -1035,8 +972,75 @@ impl fmt::Debug for State {
 /// The order the comparison of two blocks starts from: neither store's
 /// rows below it can be compared, the replica's because they are not its
 /// block, the origin's because it no longer holds them.
-fn common_floor(origin: &Sqlite, replica: &Sqlite) -> u64 {
-    let floor = |store: &Sqlite| store.block_orders(&agent()).unwrap().from.unwrap_or(0);
+/// The four promises a replica's block keeps of its origin's rows for one
+/// agent, judged under the origin's generation; the composed net judges
+/// them too.
+pub(crate) const BLOCK_CONTIGUOUS: &str = "the block is contiguous: under the origin's generation, every row the \
+     origin holds between the block's oldest and newest rows is in the block";
+pub(crate) const BLOCK_AGREES: &str = "the block agrees with the origin: under the origin's generation, every row \
+     of the block the origin still holds is the origin's row at that order, or an older revision of it";
+pub(crate) const NO_OTHER_GENERATION: &str = "no row survives from another generation: under the origin's \
+     generation, every row the replica stores at an order the origin holds is that order's key, no newer than \
+     the origin's, and a key the origin has since moved to a later order is an older revision of it";
+pub(crate) const CURSOR_COMPLETE: &str = "the cursor is complete: under the origin's generation, the replica \
+     holds every row of its block's range that the origin revised at or below the cursor";
+
+pub(crate) fn block_contiguous(origin: &Sqlite, replica: &Sqlite, agent: &AgentKey) -> bool {
+    let mine = replica.block(agent).unwrap();
+    let (Some(oldest), Some(newest)) = (mine.first(), mine.last()) else {
+        return true;
+    };
+    let from = common_floor(origin, replica, agent).max(oldest.order);
+    origin
+        .suffix_from(agent, from)
+        .unwrap()
+        .iter()
+        .filter(|theirs| theirs.order <= newest.order)
+        .all(|theirs| mine.iter().any(|mine| mine.order == theirs.order))
+}
+
+pub(crate) fn block_agrees(origin: &Sqlite, replica: &Sqlite, agent: &AgentKey) -> bool {
+    let theirs = origin.suffix_from(agent, 0).unwrap();
+    replica
+        .suffix_from(agent, common_floor(origin, replica, agent))
+        .unwrap()
+        .iter()
+        .all(|mine| {
+            theirs
+                .iter()
+                .find(|theirs| theirs.order == mine.order)
+                .is_some_and(|theirs| no_newer(mine, theirs))
+        })
+}
+
+pub(crate) fn no_other_generation(origin: &Sqlite, replica: &Sqlite, agent: &AgentKey) -> bool {
+    let theirs = origin.rows(agent).unwrap();
+    replica.rows(agent).unwrap().iter().all(|mine| {
+        theirs.iter().all(|theirs| {
+            if theirs.order == mine.order {
+                no_newer(mine, theirs)
+            } else if theirs.key == mine.key {
+                mine.order < theirs.order && mine.revision < theirs.revision
+            } else {
+                true
+            }
+        })
+    })
+}
+
+pub(crate) fn cursor_complete(origin: &Sqlite, replica: &Sqlite, agent: &AgentKey) -> bool {
+    let cursor = replica.source_cursor(agent).unwrap();
+    let mine = replica.rows(agent).unwrap();
+    origin
+        .suffix_from(agent, common_floor(origin, replica, agent))
+        .unwrap()
+        .iter()
+        .filter(|theirs| theirs.revision <= cursor)
+        .all(|theirs| mine.iter().any(|mine| mine == theirs))
+}
+
+fn common_floor(origin: &Sqlite, replica: &Sqlite, agent: &AgentKey) -> u64 {
+    let floor = |store: &Sqlite| store.block_orders(agent).unwrap().from.unwrap_or(0);
     floor(origin).max(floor(replica))
 }
 

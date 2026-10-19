@@ -131,8 +131,8 @@ SUPPORT_ALLOWED_LOCAL = {
     # Its simulated mode holds every daemon and agent core in one process,
     # the agents on the test kind's interpreter.
     "testnet": {
-        "agent-core", "agent-dir", "daemon-core", "interpret", "journal", "node", "patience",
-        "provider-fakes", "release", "shot", "store", "tui", "wire",
+        "agent-core", "agent-dir", "daemon-core", "interpret", "journal", "models", "node",
+        "patience", "provider-fakes", "release", "shot", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it.
@@ -154,7 +154,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types today, and each state-machine core as it
     # lands.
-    "models": {"agent-core", "daemon-core", "interpret", "journal", "release", "store", "supervisor-core", "wire"},
+    "models": {"agent-core", "daemon-core", "interpret", "journal", "provider-fakes", "release", "store", "supervisor-core", "wire"},
 }
 
 def local_edges(package: dict[str, object]) -> set[str]:

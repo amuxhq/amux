@@ -209,7 +209,7 @@ evidence = "the checker's printed verdict"
 update = ""
 cargo = [
   { package = "models", kind = "lib", targets = ["models"], features = [] },
-  { package = "models", targets = ["family", "lifecycle", "presence", "replication", "single_daemon", "supervisor", "switch"], features = [] },
+  { package = "models", targets = ["composed", "family", "lifecycle", "presence", "replication", "single_daemon", "supervisor", "switch"], features = [] },
 ]
 
 [[suite]]

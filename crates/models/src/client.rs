@@ -128,6 +128,7 @@ struct Daemon {
     items: Vec<Item>,
     revision: u64,
     phase: Phase,
+    generation: u64,
 }
 
 impl Daemon {
@@ -144,7 +145,12 @@ impl Daemon {
     /// What a subscription opens with: the snapshot, the newest `tail`
     /// items by order, then CaughtUp.
     fn opening(&self, tail: usize) -> Vec<Msg> {
-        let mut msgs = vec![event(session_event::Of::Snapshot(self.snapshot()))];
+        let mut msgs = vec![
+            event(session_event::Of::Opening(wire::Opening {
+                generation: self.generation,
+            })),
+            event(session_event::Of::Snapshot(self.snapshot())),
+        ];
         let from = self.items.len().saturating_sub(tail);
         msgs.extend(
             self.items[from..]
@@ -153,6 +159,16 @@ impl Daemon {
         );
         msgs.push(caught_up(self.revision));
         msgs
+    }
+
+    /// The oldest order an opening with this tail carries, or the next
+    /// order when it carries none.
+    fn opened_from(&self, tail: usize) -> u64 {
+        let from = self.items.len().saturating_sub(tail);
+        match self.items.get(from) {
+            Some(item) => item.order,
+            None => self.items.last().map_or(1, |item| item.order + 1),
+        }
     }
 
     fn get(&self, key: &str) -> Option<&Item> {
@@ -174,6 +190,9 @@ struct Seen {
     swapped: bool,
     /// A page landed in the window.
     paged: bool,
+    /// An item reflecting the input, or a queue listing it, reached the
+    /// client.
+    reflected: bool,
 }
 
 /// How much of the bounds a path has used.
@@ -203,6 +222,11 @@ pub struct State {
     open: bool,
     /// A page asked for and not yet arrived, as the daemon read it then.
     page: Option<Msg>,
+    /// The oldest order the stream's latest opening carried, or the next
+    /// order when it carried none. Rows below it reached the client before
+    /// a gap in the stream or on a page, and a revision the daemon made of
+    /// them meanwhile may not have.
+    opened_from: u64,
     client: SessionState,
     whole: SessionState,
     input: Sent,
@@ -231,11 +255,12 @@ impl State {
 
     fn identity(&self) -> String {
         format!(
-            "{:?}|{:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            "{:?}|{:?}|{}|{:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}",
             self.daemon,
             self.stream,
             self.open,
             self.page,
+            self.opened_from,
             self.client,
             self.whole,
             self.input,
@@ -248,6 +273,9 @@ impl State {
     /// replay, and an append whose base it does not hold answered with Get
     /// before anything else.
     fn feed(&mut self, msg: Msg) -> ui_state::Outcome {
+        if reflects(&msg) {
+            self.seen.reflected = true;
+        }
         self.replay.since.push(msg.clone());
         let outcome = self.client.update(msg);
         if let Some(key) = &outcome.need_get {
@@ -263,6 +291,12 @@ impl State {
             self.seen.swapped = true;
         }
         outcome
+    }
+
+    /// The stream opens again with a fresh tail behind whatever it holds.
+    fn reopen(&mut self, tail: usize) {
+        self.opened_from = self.daemon.opened_from(tail);
+        self.stream.extend(self.daemon.opening(tail));
     }
 
     /// The daemon wrote `msg`: the uninterrupted client reads it now, and
@@ -301,7 +335,12 @@ impl fmt::Debug for State {
             .client
             .transcript()
             .iter()
-            .map(|held| format!("{}@r{} {:?}", held.item.key, held.item.revision, held.item.text))
+            .map(|held| {
+                format!(
+                    "{}@r{} {:?}",
+                    held.item.key, held.item.revision, held.item.text
+                )
+            })
             .collect();
         let daemon: Vec<String> = self
             .daemon
@@ -376,6 +415,21 @@ fn rows_from(session: &SessionState, from: u64) -> Vec<Item> {
         .collect()
 }
 
+/// Whether a message says where the input went: an item reflecting it, or
+/// a snapshot whose queue lists it.
+fn reflects(msg: &Msg) -> bool {
+    match msg {
+        Msg::Event(SessionEvent {
+            of: Some(session_event::Of::Item(item)),
+        }) => item.input_id == INPUT,
+        Msg::Event(SessionEvent {
+            of: Some(session_event::Of::Snapshot(snapshot)),
+        }) => snapshot.queue.iter().any(|queued| queued.input_id == INPUT),
+        Msg::Page { items, .. } => items.iter().any(|item| item.input_id == INPUT),
+        _ => false,
+    }
+}
+
 /// Whether the client was shown anything that says where its input went:
 /// an item reflecting it, or a queue listing it.
 fn evidence(session: &SessionState) -> bool {
@@ -388,16 +442,18 @@ fn evidence(session: &SessionState) -> bool {
 }
 
 pub(crate) const ARRIVAL_ORDER: &str = "same state under any arrival order: once the client is caught \
-     up with nothing on its way to it, it holds every item the daemon holds from its oldest held order up, \
-     each at the daemon's newest revision, and nothing else";
+     up with nothing on its way to it, it holds every item the daemon holds from the oldest order its \
+     stream opened with up, each at the daemon's newest revision, and nothing else; a row below that is \
+     the daemon's row at its order, at the newest revision or an older one";
 pub(crate) const CATCH_UP_PLUS_LIVE: &str = "catch-up plus live equals uninterrupted delivery at every \
-     cut: once caught up with nothing on its way, the client's rows from its oldest held order up and its \
-     agent state read as those of a client that received every event uninterrupted";
+     cut: once caught up with nothing on its way, the client's rows from the oldest order its stream \
+     opened with up and its agent state read as those of a client that received every event \
+     uninterrupted";
 pub(crate) const REPLAY: &str = "replay from any checkpoint equals the whole: the session at a \
      checkpoint, fed every message since, is the live session";
 pub(crate) const UNCERTAIN_LEFT: &str = "an uncertain input absent at CaughtUp is left with resend and \
      discard: an input whose send was lost leaves uncertain only once an item reflecting it or a queue \
-     listing it reached the client, and settles only on an item the daemon holds";
+     listing it reached the client, and settles only on an item reflecting it";
 
 impl Machine for ClientModel {
     type State = State;
@@ -411,6 +467,7 @@ impl Machine for ClientModel {
             revision: OPENING_ITEMS,
             items,
             phase: Phase::Working,
+            generation: 1,
         };
         let client = SessionState::new(agent(), 200);
         let mut whole = client.clone();
@@ -421,6 +478,7 @@ impl Machine for ClientModel {
             stream: daemon.opening(self.tail).into(),
             open: true,
             page: None,
+            opened_from: daemon.opened_from(self.tail),
             replay: Replay {
                 from: client.clone(),
                 since: Vec::new(),
@@ -463,7 +521,10 @@ impl Machine for ClientModel {
         }
         if s.page.is_none()
             && s.used.pages < self.pages
-            && s.client.transcript().oldest_held().is_some_and(|oldest| oldest > 1)
+            && s.client
+                .transcript()
+                .oldest_held()
+                .is_some_and(|oldest| oldest > 1)
         {
             out.push(Action::AskPage);
         }
@@ -513,7 +574,11 @@ impl Machine for ClientModel {
             }
             Action::Append(order) => {
                 let revision = next.revise();
-                let item = next.daemon.items.iter_mut().find(|item| item.order == *order)?;
+                let item = next
+                    .daemon
+                    .items
+                    .iter_mut()
+                    .find(|item| item.order == *order)?;
                 let append = Append {
                     agent_id: AGENT_ID.to_vec(),
                     key: item.key.clone(),
@@ -527,7 +592,11 @@ impl Machine for ClientModel {
             }
             Action::Revise(order) => {
                 let revision = next.revise();
-                let item = next.daemon.items.iter_mut().find(|item| item.order == *order)?;
+                let item = next
+                    .daemon
+                    .items
+                    .iter_mut()
+                    .find(|item| item.order == *order)?;
                 item.revision = revision;
                 item.text = format!("r{revision}");
                 let item = item.clone();
@@ -555,7 +624,8 @@ impl Machine for ClientModel {
                 if lagged {
                     // The driver reopens at once with a fresh tail.
                     next.feed(Msg::Connection(ui_state::Connection::Live));
-                    next.stream = next.daemon.opening(self.tail).into();
+                    next.stream.clear();
+                    next.reopen(self.tail);
                     next.open = true;
                 }
                 if *action == Action::CaughtUp && uncertain {
@@ -579,6 +649,7 @@ impl Machine for ClientModel {
             }
             Action::Reset => {
                 next.used.resets += 1;
+                next.daemon.generation += 1;
                 next.daemon.items.pop();
                 for index in 0..next.daemon.items.len() {
                     next.daemon.revision += 1;
@@ -594,7 +665,7 @@ impl Machine for ClientModel {
                 }
                 if next.open {
                     next.stream.push_back(reset);
-                    next.stream.extend(next.daemon.opening(self.tail));
+                    next.reopen(self.tail);
                 }
             }
             Action::AskPage => {
@@ -662,24 +733,31 @@ impl Machine for ClientModel {
                 if !s.at_rest() {
                     return true;
                 }
-                let Some(oldest) = s.client.transcript().oldest_held() else {
-                    return s.daemon.items.is_empty();
-                };
+                let held = rows_from(&s.client, 0);
+                let below = held
+                    .iter()
+                    .filter(|row| row.order < s.opened_from)
+                    .all(|row| {
+                        s.daemon.items.iter().any(|item| {
+                            item.order == row.order
+                                && item.key == row.key
+                                && item.revision >= row.revision
+                        })
+                    });
                 let daemon: Vec<Item> = s
                     .daemon
                     .items
                     .iter()
-                    .filter(|item| item.order >= oldest)
+                    .filter(|item| item.order >= s.opened_from)
                     .cloned()
                     .collect();
-                rows_from(&s.client, oldest) == daemon
+                below && rows_from(&s.client, s.opened_from) == daemon
             }),
             Property::always(CATCH_UP_PLUS_LIVE, |_, s: &State| {
                 if !s.at_rest() {
                     return true;
                 }
-                let oldest = s.client.transcript().oldest_held().unwrap_or(0);
-                rows_from(&s.client, oldest) == rows_from(&s.whole, oldest)
+                rows_from(&s.client, s.opened_from) == rows_from(&s.whole, s.opened_from)
                     && s.client.agent_state() == s.whole.agent_state()
             }),
             Property::always(REPLAY, |_, s: &State| {
@@ -692,7 +770,7 @@ impl Machine for ClientModel {
             Property::always(UNCERTAIN_LEFT, |_, s: &State| {
                 s.seen.resolved_without_evidence.is_none()
                     && (s.client.input_state(INPUT) != Some(InputState::Settled)
-                        || s.daemon.items.iter().any(|item| item.input_id == INPUT))
+                        || s.seen.reflected)
             }),
             Property::always(
                 "the window is one block: the rows a client holds have contiguous orders and every \
@@ -707,12 +785,14 @@ impl Machine for ClientModel {
                 "an uncertain input sometimes stays uncertain past a CaughtUp",
                 |_, s: &State| s.seen.stayed_uncertain,
             ),
-            Property::sometimes("a Reset sometimes swaps a fresh transcript in", |_, s: &State| {
-                s.seen.swapped
-            }),
-            Property::sometimes("an older page sometimes extends the window", |_, s: &State| {
-                s.seen.paged
-            }),
+            Property::sometimes(
+                "a Reset sometimes swaps a fresh transcript in",
+                |_, s: &State| s.seen.swapped,
+            ),
+            Property::sometimes(
+                "an older page sometimes extends the window",
+                |_, s: &State| s.seen.paged,
+            ),
         ]
     }
 }

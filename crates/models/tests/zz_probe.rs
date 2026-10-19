@@ -3,7 +3,10 @@ use models::{Bounds, ClientModel, check};
 #[test]
 fn probe() {
     let env = |name: &str, default: u8| {
-        std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
     };
     let model = ClientModel {
         writes: env("WRITES", 2),

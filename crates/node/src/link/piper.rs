@@ -831,9 +831,21 @@ mod tests {
             text.contains("state at the window's start:\nRelay {"),
             "{text}"
         );
-        assert!(text.contains("\n1 Tick { now_ms: 1 }\n"), "{text}");
+        // Steps quicker than the clock's microsecond pass the budget, so
+        // the window may have moved on from the first tick: it holds an
+        // unbroken run of ticks ending with the one that asked.
+        let held: usize = text
+            .split_once("inputs since (")
+            .and_then(|(_, rest)| rest.split_once("):"))
+            .and_then(|(count, _)| count.parse().ok())
+            .expect("the dump counts its inputs");
+        let first = now_ms - held as u64 + 1;
         assert!(
-            text.contains(&format!("\n{now_ms} Tick {{ now_ms: {now_ms} }}\n")),
+            text.contains(&format!("\n1 Tick {{ now_ms: {first} }}\n")),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("\n{held} Tick {{ now_ms: {now_ms} }}\n")),
             "{text}"
         );
         assert!(text.contains("state now:\nRelay {"), "{text}");

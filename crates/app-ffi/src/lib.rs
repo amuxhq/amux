@@ -760,8 +760,14 @@ pub unsafe extern "C" fn amux_runtime_stop(runtime: *mut AmuxRuntime) {
     // SAFETY: the caller's contract.
     let mut runtime = unsafe { Box::from_raw(runtime) };
     guard((), || {
+        // The watch holds the installation until its task is dropped on the
+        // transport, and the phone shuts down only an installation nothing
+        // else holds: wait for the abort to land.
         if let Some(watch) = runtime.watch.take() {
             watch.abort();
+            let _ = runtime.shared.phone.wait(async move {
+                let _ = watch.await;
+            });
         }
         // A profile or chat left open holds the installation; it stops
         // once the last of them closes.

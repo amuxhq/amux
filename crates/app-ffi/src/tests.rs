@@ -1112,6 +1112,47 @@ mod confinement {
     }
 }
 
+/// A stop is a clean shutdown every time, not only when the profile-list
+/// watch happens to have let go of the installation first: the generation
+/// file says so, and the next start would otherwise read a crash.
+#[test]
+fn every_stop_leaves_the_installation_marked_clean() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path().join("data");
+    let config = c(&json!({
+        "data_dir": data_dir,
+        "device_name": "phone",
+        "log_path": null,
+        "discovery_scope": "",
+        "lan": false,
+        "lan_bind": null,
+        "relay_tcp": null,
+        "relay_quic": null,
+        "relay_root": null,
+        "tail": 50,
+        "telemetry": false,
+    })
+    .to_string());
+    for run in 1..=10 {
+        let mut error = std::ptr::null_mut();
+        // SAFETY: the strings live for the call.
+        let runtime = unsafe { amux_runtime_start(config.as_ptr(), &mut error) };
+        assert!(!runtime.is_null(), "run {run}: {:?}", {
+            // SAFETY: set by the failed start.
+            unsafe { CStr::from_ptr(error) }
+        });
+        // SAFETY: from `amux_runtime_start`, not used again.
+        unsafe { amux_runtime_stop(runtime) };
+        let generation: Value =
+            serde_json::from_slice(&std::fs::read(data_dir.join("generation")).unwrap()).unwrap();
+        assert_eq!(
+            generation["clean"],
+            json!(true),
+            "run {run} left {generation}"
+        );
+    }
+}
+
 #[test]
 fn a_name_field_hears_the_hosts_rule_while_it_is_typed() {
     let problem = |name: &str| {

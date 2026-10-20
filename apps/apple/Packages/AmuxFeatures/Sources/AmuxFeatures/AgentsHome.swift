@@ -561,7 +561,12 @@ public struct AgentsHome: View {
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.amuxControl)
+        // Nothing drawn under the thumb: the rows opening or closing beneath
+        // it are the answer to the press. A control's press would shrink this
+        // full-width line about its centre, sliding the heading inward and
+        // back on every tap, and a row's tint flashes a slab over a line that
+        // is mostly empty space.
+        .buttonStyle(.amuxPush)
         .padding(.top, Space.l)
         .accessibilityLabel("\(title), \(names)")
         .identified("home.fold.\(section.id)", label: "\(title), \(names)", value: names)

@@ -4,7 +4,7 @@
 use models::{Bounds, PresenceRouting, check, walk};
 
 /// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: twice the slowest of its measured times there (289 s;
+/// four-core runner: twice the slowest of its measured times there (290 s;
 /// the README lists them all), rounded up to a whole minute. The runner took
 /// 339.9 s at the bounds before the CI bounds allowed only one refusal for
 /// the plan in a row (1,233,958 states), and twice that passed the 600 s

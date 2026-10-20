@@ -46,8 +46,14 @@ impl CallTable {
     /// One answer from the core. A call the caller already dropped takes
     /// nothing.
     pub(crate) fn answer(&self, call: CallId, response: Response) {
+        self.answer_all(call, vec![response]);
+    }
+
+    /// The answers one step gave a call, queued together so a reader woken
+    /// by the first finds the rest.
+    pub(crate) fn answer_all(&self, call: CallId, responses: Vec<Response>) {
         if let Some(queue) = self.get(call) {
-            queue.answer(response);
+            queue.answer(responses);
         }
     }
 
@@ -126,15 +132,17 @@ impl AnswerQueue {
         self.call
     }
 
-    /// One of the call's own answers. Always taken: an opening is bounded
-    /// by what it reads, and the answer after a lag is what tells the
-    /// reader it lagged.
-    fn answer(&self, response: Response) {
+    /// The call's own answers from one step, queued at once. Always taken:
+    /// an opening is bounded by what it reads, and the answer after a lag
+    /// is what tells the reader it lagged.
+    fn answer(&self, responses: Vec<Response>) {
         let mut state = self.state.lock().unwrap();
         if state.end.is_some() {
             return;
         }
-        state.answers.push_back((response, false));
+        state
+            .answers
+            .extend(responses.into_iter().map(|response| (response, false)));
         drop(state);
         self.ready.notify_one();
     }

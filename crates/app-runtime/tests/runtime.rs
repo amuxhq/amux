@@ -381,6 +381,75 @@ async fn older_rows_arrive_below_the_oldest_the_host_holds() {
     net.shutdown().await.unwrap();
 }
 
+/// A chat resolves its opening only once the snapshot and the rows asked
+/// for are applied, so the host's first read is whole: here the chat of an
+/// exited agent, whose session goes with each chat and is opened anew.
+/// Opened again and again, every first read holds every row.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reopened_chat_of_an_exited_agent_holds_its_rows_at_once() {
+    // A turn of many rows, so an opening is many answers.
+    let steps = (0..60)
+        .flat_map(|row| {
+            let tool = Tool {
+                name: None,
+                class: ToolClass::Exploration,
+                input: None,
+                outcome: Default::default(),
+                wait_for: None,
+            };
+            [text(&format!("row {row}")), Step::Tool(tool)]
+        })
+        .chain([Step::TurnEnd])
+        .collect();
+    let topology = Topology::new().host("desk").agent(
+        AgentDecl::new("worker", "desk")
+            .kind(FakeKind::ClaudeSdk)
+            .steps(steps)
+            .prompt("go"),
+    );
+    let net = Net::start(topology).await.unwrap();
+    let (runtime, mut host) = open(&net).await;
+    let chat = runtime.open_chat(&worker(&net), 200).await.unwrap();
+    until(&mut host, &chat, "the turn to end", |chat| {
+        chat.frame().caught_up && says(chat, "row 59") && says(chat, "TurnEnd")
+    })
+    .await;
+    drop(chat);
+    runtime
+        .agent_act(&worker(&net), &AgentAct::Stop)
+        .await
+        .unwrap();
+    let mut changed = runtime.fleet().changed();
+    tokio::time::timeout(PATIENCE, async {
+        loop {
+            let exited = runtime
+                .fleet()
+                .state()
+                .agent(&worker(&net))
+                .is_some_and(|agent| agent.lifecycle() == wire::Lifecycle::Exited);
+            if exited {
+                return;
+            }
+            changed.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("the worker exits");
+    let chat = runtime.open_chat(&worker(&net), 200).await.unwrap();
+    until(&mut host, &chat, "the exit", |chat| chat.frame().caught_up).await;
+    let everything = chat.keys();
+    assert!(everything.len() > 100, "{}", everything.len());
+    drop(chat);
+
+    for opening in 0..100 {
+        assert!(runtime.fleet().session(&worker(&net)).is_none());
+        let chat = runtime.open_chat(&worker(&net), 200).await.unwrap();
+        assert_eq!(chat.keys(), everything, "opening {opening}");
+        drop(chat);
+    }
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dump_carries_the_fleet_and_every_open_chat() {
     let net = Net::start(topology()).await.unwrap();

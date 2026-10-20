@@ -491,9 +491,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     phone.started(unsafe {
         amux_profile_agent_act(phone.profile, agent_c.as_ptr(), rename.as_ptr())
     });
-    let r = phone.result();
-    eprintln!("RENAME GOT {r}");
-    assert!(r.get("Ok").is_some());
+    assert!(phone.result().get("Ok").is_some());
     phone.until(0, std::ptr::null(), "the name back", || {
         // SAFETY: the runtime is live; the string lives for the call.
         take(unsafe { amux_fleet_card(phone.profile, agent_c.as_ptr()) })["name"] == "worker"
@@ -613,9 +611,7 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     // SAFETY: the runtime is live; the strings live for the call.
     phone
         .started(unsafe { amux_profile_agent_act(phone.profile, agent_c.as_ptr(), stop.as_ptr()) });
-    let r = phone.result();
-    eprintln!("RENAME GOT {r}");
-    assert!(r.get("Ok").is_some());
+    assert!(phone.result().get("Ok").is_some());
     phone.until(0, std::ptr::null(), "the agent exited", || {
         // SAFETY: the runtime is live; the string lives for the call.
         let card = take(unsafe { amux_fleet_card(phone.profile, agent_c.as_ptr()) });
@@ -760,9 +756,7 @@ fn rename(phone: &Phone, agent: &CStr, chat: *const AmuxChat, name: &str) {
     let act = c(&json!({ "Rename": name }).to_string());
     // SAFETY: the runtime is live; the strings live for the call.
     phone.started(unsafe { amux_profile_agent_act(phone.profile, agent.as_ptr(), act.as_ptr()) });
-    let r = phone.result();
-    eprintln!("RENAME GOT {r}");
-    assert!(r.get("Ok").is_some());
+    assert!(phone.result().get("Ok").is_some());
     // SAFETY: the chat is open.
     let id = unsafe { amux_session_id(chat) };
     phone.until(id, chat, "the chat renamed", || {

@@ -965,11 +965,36 @@ impl CoreThread {
         }
         self.record(&input);
         self.daemon.step(input, out);
+        // The call's own answers reach its queue together, where the first
+        // of them stood, so a reader woken by one finds the step's rest: a
+        // Subscribe's opening rows are there with its Snapshot.
+        let mut own = Vec::new();
+        let mut first = None;
+        let mut outputs = Vec::with_capacity(out.len());
         // Carrying out an output may step another input, with outputs of
         // its own.
-        let outputs: Vec<Output> = std::mem::take(out);
-        for output in outputs {
+        for output in std::mem::take(out) {
+            match output {
+                Output::Answer { call, response } if replying == Some(call) => {
+                    first.get_or_insert(outputs.len());
+                    own.push(response);
+                }
+                output => outputs.push(output),
+            }
+        }
+        let mut own = Some(own);
+        for (at, output) in outputs.into_iter().enumerate() {
+            if first == Some(at)
+                && let (Some(call), Some(own)) = (replying, own.take())
+            {
+                self.calls.answer_all(call, own);
+            }
             self.execute(runtime, output, replying);
+        }
+        if let (Some(call), Some(own)) = (replying, own)
+            && first.is_some()
+        {
+            self.calls.answer_all(call, own);
         }
         if let Some(outcome) = checkpointed
             && self.checkpointing.is_none()

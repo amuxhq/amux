@@ -1747,3 +1747,45 @@ async fn the_store_leaves_every_checkpoint_to_the_core() {
     assert_eq!(pages, 0, "SQLite checkpoints nothing on its own");
     crash(daemon, runtime).await;
 }
+
+/// A Subscribe's opening (its Opening, Snapshot, tail rows and marker) is
+/// one step of the core's and reaches the stream together: a reader woken
+/// by its first event finds the rest already there, without waiting. A
+/// client's open relies on that to apply the rows it asked for before it
+/// resolves.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subscribes_opening_reaches_its_reader_whole() {
+    use futures_util::FutureExt as _;
+
+    const ROWS: u32 = 150;
+    let install = Install::new();
+    let mut agent = SyntheticAgent::new(&install, "many", BIG_SEGMENTS);
+    agent.register_offline(&install);
+    for row in 0..ROWS {
+        agent.append(&item(&format!("k{row}"), "a row"));
+    }
+    let launch = Launch {
+        tail_rows: ROWS,
+        ..quiet_launch()
+    };
+    let (daemon, runtime) = start(&install, "boot-1", launch).await;
+    runtime.ingest(agent.id).await.unwrap();
+    for opening in 0..20 {
+        let mut subscription = runtime.subscribe(agent.id.as_bytes(), ROWS).await.unwrap();
+        let mut seen = Vec::new();
+        while let Some(Some(event)) = subscription.next().now_or_never() {
+            seen.push((*event).clone());
+        }
+        let rows = seen
+            .iter()
+            .filter(|event| matches!(event.of, Some(wire::session_event::Of::Item(_))))
+            .count();
+        assert_eq!(
+            (rows, caught_ups(&seen)),
+            (ROWS as usize, 1),
+            "opening {opening} read without waiting: {:?}",
+            log(&seen).first()
+        );
+    }
+    crash(daemon, runtime).await;
+}

@@ -81,6 +81,8 @@ pub struct SyntheticAgent {
     /// Set while the agent holds every answer back.
     frozen: Arc<tokio::sync::watch::Sender<bool>>,
     cwd: PathBuf,
+    /// The directory's lock, taken before the agent answers dials.
+    held: Option<agent_dir::Lock>,
     live: Option<Live>,
 }
 
@@ -128,6 +130,7 @@ impl SyntheticAgent {
             wedged: Arc::new(tokio::sync::watch::Sender::new(false)),
             frozen: Arc::new(tokio::sync::watch::Sender::new(false)),
             cwd: install.work.clone(),
+            held: None,
             live: None,
         }
     }
@@ -235,13 +238,27 @@ impl SyntheticAgent {
         .unwrap();
     }
 
-    /// Takes the directory's lock and answers dials with a Hello, as a
-    /// running agent process does.
+    /// Takes the directory's lock without answering dials yet, as a
+    /// process that is still starting does.
+    pub fn hold_lock(&mut self) {
+        assert!(self.held.is_none() && self.live.is_none(), "already locked");
+        self.held = Some(
+            agent_dir::lock(&self.dir)
+                .unwrap()
+                .expect("nothing else holds the lock"),
+        );
+    }
+
+    /// Takes the directory's lock, unless it holds it already, and answers
+    /// dials with a Hello, as a running agent process does.
     pub fn go_live(&mut self) {
         assert!(self.live.is_none(), "already live");
-        let lock = agent_dir::lock(&self.dir)
-            .unwrap()
-            .expect("nothing else holds the lock");
+        let lock = match self.held.take() {
+            Some(lock) => lock,
+            None => agent_dir::lock(&self.dir)
+                .unwrap()
+                .expect("nothing else holds the lock"),
+        };
         let mut listener = LocalListener::bind(&self.dir.join(agent_dir::CTL_SOCK)).unwrap();
         let conn = Arc::new(tokio::sync::Mutex::new(None));
         let reading = Arc::new(Mutex::new(None));

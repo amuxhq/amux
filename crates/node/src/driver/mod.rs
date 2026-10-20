@@ -144,10 +144,38 @@ pub(crate) enum Fed {
         store: PathBuf,
         done: oneshot::Sender<Result<Captured, String>>,
     },
+    /// A timer the core armed fired.
+    Fired(Fired),
     /// Reports are queued.
     Wake,
     /// The profile is gone.
     Stop,
+}
+
+/// A timer's firing, with the arm it fired for. One whose arm the core
+/// cancelled or replaced while it waited to be stepped is dropped, so the
+/// core only hears of the arm it last asked for.
+#[derive(Debug)]
+pub(crate) struct Fired {
+    id: TimerId,
+    arm: u64,
+}
+
+/// What a link, channel or timer reported, stepped ahead of the shell's
+/// inputs.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "nearly every report is an input, which boxing would allocate for"
+)]
+pub(crate) enum Report {
+    Input(Input),
+    Fired(Fired),
+}
+
+/// A timer under way, by the arm it carries out.
+struct Armed {
+    arm: u64,
+    task: AbortHandle,
 }
 
 /// A client call as it arrives. What the request also carries from the
@@ -175,7 +203,7 @@ pub(crate) struct Opened {
 pub(crate) struct Driver {
     inputs: Feed,
     /// What links and channels reported, in the order they did.
-    reports: Arc<Mutex<VecDeque<Input>>>,
+    reports: Arc<Mutex<VecDeque<Report>>>,
     calls: Arc<CallTable>,
     /// Where what the core decides about hosts goes, once the profile's
     /// edge is up.
@@ -268,6 +296,7 @@ impl Driver {
             connections: connections.clone(),
             outgoing: outgoing.clone(),
             timers: HashMap::new(),
+            arms: 0,
             waiting: HashMap::new(),
             ticked: None,
             dumps: DumpLimit::new(dump_interval_ms),
@@ -300,7 +329,7 @@ impl Driver {
     /// Reports what a link or channel did. Never waits, so a stream can
     /// say it ended as it is dropped.
     pub(crate) fn report(&self, input: Input) {
-        self.reports.lock().unwrap().push_back(input);
+        self.reports.lock().unwrap().push_back(Report::Input(input));
         // A full channel wakes the core anyway.
         let _ = self.inputs.try_send(Fed::Wake);
     }
@@ -577,7 +606,7 @@ pub(crate) struct CoreThread {
     /// Whoever waits for the retention pass under way.
     retain_reply: Option<oneshot::Sender<Retained>>,
     fed: mpsc::Receiver<Fed>,
-    reports: Arc<Mutex<VecDeque<Input>>>,
+    reports: Arc<Mutex<VecDeque<Report>>>,
     /// Whoever waits for the core's word on the channel the step under way
     /// was asked for.
     channel_reply: Option<oneshot::Sender<Result<Opened, ChannelError>>>,
@@ -591,7 +620,9 @@ pub(crate) struct CoreThread {
     calls: Arc<CallTable>,
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
     outgoing: Outgoing,
-    timers: HashMap<TimerId, AbortHandle>,
+    timers: HashMap<TimerId, Armed>,
+    /// The arms given out so far.
+    arms: u64,
     waiting: HashMap<daemon_core::AgentId, Vec<Waiting>>,
     /// The clock as last told to the core.
     ticked: Option<u64>,
@@ -732,7 +763,13 @@ impl CoreThread {
         self.tick(&runtime, &mut out);
         let reports = std::mem::take(&mut *self.reports.lock().unwrap());
         for report in reports {
-            self.step(&runtime, report, &mut out);
+            let input = match report {
+                Report::Input(input) => Some(input),
+                Report::Fired(fired) => self.fired(fired),
+            };
+            if let Some(input) = input {
+                self.step(&runtime, input, &mut out);
+            }
         }
         let fed = match fed {
             Fed::Channel { want, reply } => {
@@ -763,8 +800,13 @@ impl CoreThread {
             fed => fed,
         };
         let mut call = None;
+        let mut fired = None;
         let input = match fed {
             Fed::Input(input) => Some(input),
+            Fed::Fired(firing) => {
+                fired = Some(firing);
+                None
+            }
             Fed::Call { call: id, ask } => {
                 call = Some(Arriving::Client(id, ask));
                 None
@@ -847,13 +889,26 @@ impl CoreThread {
                 call,
                 request: runtime.peer_request(*request),
             }),
-            None => input,
+            // Judged as it is stepped: a step before it may have cancelled
+            // or replaced its arm.
+            None => input.or_else(|| fired.and_then(|fired| self.fired(fired))),
         };
         if let Some(input) = input {
             self.step(&runtime, input, &mut out);
         }
         drop(runtime);
         true
+    }
+
+    /// The input a timer's firing is stepped as, or `None` when the core
+    /// cancelled or replaced its arm since.
+    fn fired(&mut self, fired: Fired) -> Option<Input> {
+        let armed = self.timers.get(&fired.id)?;
+        if armed.arm != fired.arm {
+            return None;
+        }
+        self.timers.remove(&fired.id);
+        Some(Input::Timer { id: fired.id })
     }
 
     /// Tells the core the time, when it moved.
@@ -1009,7 +1064,7 @@ impl CoreThread {
                 );
                 if sourcing && at_ms <= now {
                     if let Some(armed) = self.timers.remove(&id) {
-                        armed.abort();
+                        armed.task.abort();
                     }
                     self.again.push_back(Input::Timer { id });
                     return;
@@ -1028,29 +1083,36 @@ impl CoreThread {
                             .clock()
                             .sleep_until(at_ms.min(i64::MAX as u64) as i64)
                     });
+                self.arms += 1;
+                let arm = self.arms;
                 let task = tokio::spawn(async move {
                     match refresh {
                         Some(due) => due.await,
                         None => tokio::time::sleep(Duration::from_millis(wait)).await,
                     }
-                    let fired = Input::Timer { id };
+                    let fired = Fired { id, arm };
                     match reports {
                         Some(reports) => {
-                            reports.lock().unwrap().push_back(fired);
+                            reports.lock().unwrap().push_back(Report::Fired(fired));
                             if let Some(inputs) = inputs.upgrade() {
                                 let _ = inputs.try_send(Fed::Wake);
                             }
                         }
-                        None => feed(&inputs, fired).await,
+                        None => {
+                            if let Some(inputs) = inputs.upgrade() {
+                                let _ = inputs.send(Fed::Fired(fired)).await;
+                            }
+                        }
                     }
                 });
-                if let Some(armed) = self.timers.insert(id, task.abort_handle()) {
-                    armed.abort();
+                let task = task.abort_handle();
+                if let Some(armed) = self.timers.insert(id, Armed { arm, task }) {
+                    armed.task.abort();
                 }
             }
             Output::CancelTimer { id } => {
                 if let Some(armed) = self.timers.remove(&id) {
-                    armed.abort();
+                    armed.task.abort();
                 }
             }
             Output::Job {
@@ -1206,7 +1268,7 @@ impl CoreThread {
                         }
                         // A reply that is not absorbed reads nothing of the
                         // store: it waits on nobody's writes.
-                        reports.lock().unwrap().push_back(answered);
+                        reports.lock().unwrap().push_back(Report::Input(answered));
                         if let Some(inputs) = inputs.upgrade() {
                             let _ = inputs.try_send(Fed::Wake);
                         }

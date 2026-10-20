@@ -558,6 +558,74 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
     crash(daemon, runtime).await;
 }
 
+/// A message waits for its recipient to connect for at most the connect
+/// patience. When that patience runs out just as the recipient's Hello
+/// comes, the firing can wait behind the Hello, whose step writes the
+/// message and replaces the patience with the reply patience. The firing
+/// is of an arm the core replaced: the message is answered by its
+/// verdict, not concluded lost.
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message() {
+    let install = Install::new();
+    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
+    recipient.register_offline(&install);
+    // Running but not answering yet: the daemon keeps dialing it.
+    recipient.hold_lock();
+    let (daemon, runtime) = start(&install, "boot-1").await;
+    let envelope = SendMessageRequest {
+        id: b"envelope-1".to_vec(),
+        to: to(&recipient, &install),
+        text: "can you look at the build?".into(),
+        ..SendMessageRequest::default()
+    };
+    let sent = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { runtime.send_message(envelope, None).await }
+    });
+    // A read queued behind the call returns once the call is stepped and
+    // its connect patience armed.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    runtime.read_store(|_| ()).await.unwrap();
+    let armed = tokio::time::Instant::now();
+
+    // A read waiting on `release` holds the core while the Hello is
+    // queued and then the patience fires behind it.
+    let (release, gate) = std::sync::mpsc::channel::<()>();
+    let mut hold = Box::pin(runtime.read_store(move |_| gate.recv().is_ok()));
+    assert!(poll_once(&mut hold).await.is_pending());
+    recipient.go_live();
+    until("the recipient's Hello", || async {
+        (recipient.hellos() == 1)
+            .then_some(())
+            .ok_or("no Hello yet")
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        armed.elapsed() < Duration::from_millis(daemon_core::deliveries::CONNECT_PATIENCE_MS),
+        "the Hello was queued before the patience ran out"
+    );
+    tokio::time::sleep_until(
+        armed + Duration::from_millis(daemon_core::deliveries::CONNECT_PATIENCE_MS + 1_000),
+    )
+    .await;
+    release.send(()).unwrap();
+    assert!(hold.await.unwrap());
+
+    sent.await
+        .unwrap()
+        .expect("the message is accepted on its verdict, not concluded lost");
+    assert_eq!(recipient.inputs().len(), 1, "the message was written once");
+    crash(daemon, runtime).await;
+}
+
+/// Polls a future once, as far as it gets before it waits.
+async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> std::task::Poll<F::Output> {
+    std::future::poll_fn(|cx| std::task::Poll::Ready(std::pin::Pin::new(&mut *future).poll(cx)))
+        .await
+}
+
 /// A daemon that starts real agent processes on the fake provider, for
 /// resumes of synthetic agents.
 async fn start_resuming(install: &Install) -> (Daemon, Arc<ProfileRuntime>) {

@@ -1294,8 +1294,6 @@
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatComposer.swift": [
       {"literal": "\"chat.field\"", "context": ".identified(\"chat.field\", label: placeholder, value: model.draft)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"xmark.circle.fill\"", "context": "Image(systemName: \"xmark.circle.fill\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
-      {"literal": "\"chat.clear\"", "context": ".identified(\"chat.clear\", label: \"Clear\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"plus\"", "context": "Image(systemName: \"plus\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"chat.attach\"", "context": ".identified(\"chat.attach\", label: String(localized: \"Attach\"), value: plusOpen ? \"open\" : \"closed\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"closed\"", "context": ".identified(\"chat.attach\", label: String(localized: \"Attach\"), value: plusOpen ? \"open\" : \"closed\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

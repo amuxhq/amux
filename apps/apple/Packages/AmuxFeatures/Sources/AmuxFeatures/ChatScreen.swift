@@ -558,9 +558,11 @@ public struct ChatStanding: View {
             if subject.stopHeld { heldStop }
             if model.frame?.composer.switchedAway == true { switchedAway }
             if let notice = model.notice {
+                // Every notice is something that did not happen, so it reads in
+                // the failure ink rather than the accent kept for asks.
                 Text(notice)
                     .designFont(.detail, design)
-                    .foregroundStyle(design.accent.color)
+                    .foregroundStyle(design.removed.color)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 6)
                     .identified("chat.notice", label: notice)

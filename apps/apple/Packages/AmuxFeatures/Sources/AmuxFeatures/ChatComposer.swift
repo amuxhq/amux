@@ -46,32 +46,17 @@ struct ComposerBox: View {
             }
             if let sentence = model.dictation.sentence { dictationLine(sentence) }
             if !model.attachments.isEmpty || model.uploading > 0 { attachments }
-            HStack(alignment: .top, spacing: 8) {
-                TextField(placeholder, text: Binding(get: { model.draft }, set: { model.type($0) }), axis: .vertical)
-                    .lineLimit(1...8)
-                    .designFont(.body, design)
-                    .foregroundStyle(design.ink.color)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.sentences)
-                    .focused(focused)
-                    .padding(.vertical, 2)
-                    .identified("chat.field", label: placeholder, value: model.draft)
-                if !model.draft.isEmpty || !model.attachments.isEmpty {
-                    Button { model.clearDraft() } label: {
-                        // The glyph's own box can be a point short of 20 at
-                        // some text sizes; fixed, the target is 44 square.
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 17))
-                            .foregroundStyle(design.inkFaint.color)
-                            .frame(width: 20, height: 20)
-                            .thumbTarget(x: 12, y: 12)
-                    }
-                    .buttonStyle(.amuxControl)
-                    .accessibilityLabel("Clear")
-                    .identified("chat.clear", label: "Clear")
-                    .reclaimingThumbTarget(x: 12, y: 12)
-                }
-            }
+            // No clear button: chat apps keep none, and one beside the words
+            // wipes a long draft on a stray tap.
+            TextField(placeholder, text: Binding(get: { model.draft }, set: { model.type($0) }), axis: .vertical)
+                .lineLimit(1...8)
+                .designFont(.body, design)
+                .foregroundStyle(design.ink.color)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.sentences)
+                .focused(focused)
+                .padding(.vertical, 2)
+                .identified("chat.field", label: placeholder, value: model.draft)
             // At an accessibility text size the model's words get a line of
             // their own: beside the buttons there is room for a few letters.
             if typeSize.isAccessibilitySize, let controls = model.frame?.controls,
@@ -139,7 +124,7 @@ struct ComposerBox: View {
             Spacer(minLength: 8)
             if !host.isEmpty {
                 Text(verbatim: host)
-                    .designFont(.monoSmall, design)
+                    .designFont(.caption, design)
                     .foregroundStyle(design.inkFaint.color)
                     .lineLimit(1)
             }
@@ -149,7 +134,7 @@ struct ComposerBox: View {
     }
 
     /// The model and its effort, then a permission or mode other than the
-    /// normal one, as one mono pill. A permission that stops asking reads
+    /// normal one, as one pill. A permission that stops asking reads
     /// in red. A tap opens the settings card.
     private func modelChip(
         _ chip: (model: String, detail: String, unusual: [String]), warns: Bool
@@ -168,7 +153,7 @@ struct ComposerBox: View {
                     chipWords(
                         chip.model, detail: chip.detail, unusual: chip.unusual, warns: warns,
                         joint: "\u{00A0}· ")
-                        .designFont(.monoSmall, design)
+                        .designFont(.caption, design)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ViewThatFits(in: .horizontal) {
@@ -183,7 +168,7 @@ struct ComposerBox: View {
                                 .layoutPriority(1)
                         }
                     }
-                    .designFont(.monoSmall, design)
+                    .designFont(.caption, design)
                     .lineLimit(1)
                 }
                 Image(systemName: "chevron.down")
@@ -395,17 +380,20 @@ extension DraftAttachment {
     }
 }
 
-/// "Running cargo test · 12s" over a moving bar. It is not a row: it says
+/// "Running cargo test · 12s" over a moving line. It is not a row: it says
 /// what is happening now and goes when it stops. The words carry the subject
-/// in mono and the elapsed time at the right end; the bar slides along a
-/// track as wide as the composer, and stands still under reduced motion.
+/// in mono and the elapsed time at the right end.
+///
+/// The line has no track: one hairline segment travels the composer's width
+/// and stretches as it goes, its leading end pulling away before the trailing
+/// end catches up, both easing to rest at each turn before it heads back. A
+/// stretching segment reads as working where a fixed one only reads as
+/// moving, and a track that never fills would be a progress bar claiming to
+/// know progress no agent reports. It holds still, mid-stretch in the middle,
+/// in front of a camera and for a reader who asked for less motion.
 struct ActivityLine: View {
-    /// The bar's share of the track.
-    static let bar: CGFloat = 0.35
-    /// One pass of the bar along the track, in seconds.
-    static let pass: Double = 1.6
-    /// Where a still bar starts, as a share of the track.
-    static let still: CGFloat = 0.32
+    /// One leg of the segment's travel, one way across, in seconds.
+    static let leg: Double = 1.65
 
     @Environment(\.design) private var design
     @Environment(\.photographed) private var photographed
@@ -415,23 +403,18 @@ struct ActivityLine: View {
 
     var body: some View {
         if photographed {
-            line(elapsed: activity.elapsedMs, start: Self.still)
+            line(elapsed: activity.elapsedMs, segment: Self.still)
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reducesMotion)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: reducesMotion)) { context in
                 let seconds = context.date.timeIntervalSince1970
                 let now = Int64(seconds * 1_000)
                 let elapsed = activity.sinceMs > 0 ? max(0, now - activity.sinceMs) : activity.elapsedMs
-                line(
-                    elapsed: elapsed,
-                    start: reducesMotion
-                        ? Self.still
-                        : -Self.bar + (1 + Self.bar) * Self.ease(seconds.truncatingRemainder(dividingBy: Self.pass) / Self.pass))
+                line(elapsed: elapsed, segment: reducesMotion ? Self.still : Self.segment(at: seconds))
             }
         }
     }
 
-    /// `start` is where the bar's leading edge stands, as a share of the track.
-    private func line(elapsed: Int64, start: CGFloat) -> some View {
+    private func line(elapsed: Int64, segment: (start: CGFloat, end: CGFloat)) -> some View {
         let parts = ChatWords.activityParts(activity.kind, elapsedMs: elapsed, subject: subject)
         return VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -456,22 +439,46 @@ struct ActivityLine: View {
                         .layoutPriority(1)
                 }
             }
-            GeometryReader { geometry in
-                Capsule().fill(design.inkMuted.color)
-                    .frame(width: geometry.size.width * Self.bar, height: 2)
-                    .offset(x: geometry.size.width * start)
-            }
-            .frame(height: 2)
-            .clipped()
+            rule(segment)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(ChatWords.activity(activity.kind, elapsedMs: elapsed, subject: subject))
         .identified("chat.activity", label: ChatWords.activity(activity.kind, elapsedMs: 0, subject: subject))
     }
 
-    /// Ease in and out: the bar speeds up across the middle of the track.
-    private static func ease(_ t: Double) -> CGFloat {
-        CGFloat(t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2)
+    private func rule(_ segment: (start: CGFloat, end: CGFloat)) -> some View {
+        GeometryReader { geometry in
+            Capsule().fill(design.inkMuted.color.opacity(0.7))
+                .frame(width: geometry.size.width * (segment.end - segment.start), height: 1)
+                .offset(x: geometry.size.width * segment.start)
+        }
+        .frame(height: 1)
+        .clipped()
+    }
+
+    /// Mid-stretch across the middle.
+    static let still: (start: CGFloat, end: CGFloat) = (0.29, 0.71)
+
+    /// Where the segment's ends stand at `seconds`, as shares of the width.
+    /// The leading end starts first and the trailing end follows, so the
+    /// segment is long crossing the middle and short at the turns; every
+    /// other leg runs the other way.
+    static func segment(at seconds: Double) -> (start: CGFloat, end: CGFloat) {
+        let legs = seconds / leg
+        let progress = legs - floor(legs)
+        let leading = ease((progress - 0.04) / 0.74)
+        let trailing = ease((progress - 0.22) / 0.74)
+        // At each turn the segment's outer end meets the edge of the words
+        // above it: the first letter on the left, the last on the right.
+        let start = 0.87 * trailing
+        let end = 0.13 + 0.87 * leading
+        return Int(floor(legs)) % 2 == 0 ? (start, end) : (1 - end, 1 - start)
+    }
+
+    /// Smootherstep: at rest at both ends, quickest in the middle.
+    private static func ease(_ value: Double) -> CGFloat {
+        let t = min(1, max(0, value))
+        return CGFloat(t * t * t * (t * (t * 6 - 15) + 10))
     }
 }
 

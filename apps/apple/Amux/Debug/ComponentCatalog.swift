@@ -786,7 +786,7 @@ enum CatalogFixtures {
                 ModelChoice(value: "sonnet", displayName: "Sonnet", description: "Sonnet 5 · Best for everyday tasks", efforts: efforts, current: false, unlisted: false, defaultEffort: "high"),
                 ModelChoice(value: "haiku", displayName: "Haiku", description: "Haiku 4.5 · Fastest for quick answers", efforts: [], current: false, unlisted: false, defaultEffort: nil),
             ],
-            efforts: [EffortChoice(value: "low", current: true, default: false, unlisted: false)],
+            efforts: efforts.map { EffortChoice(value: $0, current: $0 == "high", default: $0 == "high", unlisted: false) },
             permissions: claudeModes.map {
                 PermissionChoice(
                     value: $0, displayName: claudeModeNames[$0] ?? $0, custom: false, current: $0 == mode,

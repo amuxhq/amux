@@ -89,7 +89,8 @@ struct SettingsCard: View {
 
     // MARK: - Effort
 
-    private var picksEffort: Bool { view.changeable.effort == .pick }
+    /// A track needs somewhere to move to: one effort is stated, not picked.
+    private var picksEffort: Bool { view.changeable.effort == .pick && view.efforts.count > 1 }
 
     @ViewBuilder
     private var efforts: some View {

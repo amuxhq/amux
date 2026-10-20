@@ -114,20 +114,32 @@ jobs:
         # journey are ordinary test targets, compiled out on Windows. The
         # protocol models run in the models job instead, on Linux only.
         run: just test -- --no-fail-fast --exclude models
+
+  platform-free:
+    name: Simulated stories, doctests and contracts
+    # What reads the same on every platform runs once, on Linux, rather than
+    # in each test job, as the models do.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+      - uses: extractions/setup-just@v2
       - name: Walk the simulated stories by seed
         # The same stories under TESTNET_MODE=simulated, a few seeds each;
         # a failure prints the seed and the `just sim --seed` that reruns
-        # it. The recipe's scripts need a Unix shell.
-        if: runner.os != 'Windows'
+        # it. It builds what the workspace test run builds.
         run: just sim
+      - name: Check every design contract names tests that exist
+        # Lists the binaries of the same build, so it compiles nothing more.
+        # The contracts name tests of Unix processes, PTYs and sockets, which
+        # Windows does not build.
+        run: just contracts-check
       - name: Run doctests
         run: just doctest
-      - name: Check every design contract names tests that exist
-        # The contracts name tests of Unix processes, PTYs and sockets that
-        # Windows does not build, and the check is the one `just ci` runs on
-        # a Mac, so it runs where that listing matches.
-        if: runner.os == 'macOS'
-        run: just contracts-check
 
   models:
     name: Models (${{ matrix.target }})

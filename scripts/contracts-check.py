@@ -14,8 +14,8 @@ tests asserting it:
 Cargo names are checked against the listing of the test binaries the
 workspace test run builds (`just test`, the same Cargo arguments), so a
 contract names a test that run executes, and after that run nothing is
-compiled again. The check runs on macOS, where every named test builds:
-some are Unix-only and one is macOS-only. XCTest names are read from the test bundles' sources,
+compiled again. The check runs on a Unix, where every named test builds:
+some are Unix-only. XCTest names are read from the test bundles' sources,
 since building the bundles needs Xcode and a simulator.
 
 A `model` contract is a property of a protocol model: it names the property

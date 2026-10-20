@@ -601,23 +601,17 @@ impl Daemon {
         }
         let hosted = std::mem::take(&mut *self.installation.hosted.lock().unwrap());
         for hosted in hosted.values() {
-            eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "stop_edge");
             hosted
                 .runtime
                 .stop_edge(wire::LinkCloseReason::UserShutdown)
                 .await;
-            eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "stop_edge done");
         }
         for hosted in hosted.values() {
             // Before the watchers stop: a dump in flight still gets its
             // agents' parts until its time is up.
-            eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "dumps");
             hosted.runtime.finish_dumps().await;
-            eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "bg");
             hosted.runtime.stop_background().await;
-            eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "watch");
             hosted.runtime.stop_watching().await;
-            eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "watch done");
         }
         for hosted in hosted.values() {
             hosted
@@ -627,7 +621,6 @@ impl Daemon {
                 .map_err(io::Error::other)?
                 .map_err(io::Error::other)?;
         }
-        eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "mark_clean");
         self.generation
             .mark_clean(&self.installation.data_dir)
             .await?;

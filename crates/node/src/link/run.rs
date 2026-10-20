@@ -720,9 +720,7 @@ async fn run_established(
             }
             _ = wait_for_connector_shutdown(&mut shutdown_rx) => {
                 let message = link_close(wire::pb::LinkCloseReason::UserShutdown);
-                eprintln!("HUNTX {:?} link shutdown write {:?}", std::time::Instant::now(), link);
                 let _ = write_message(&mut sink, &message).await;
-                eprintln!("HUNTX {:?} link shutdown written {:?}", std::time::Instant::now(), link);
                 close_reason = wire::pb::LinkCloseReason::UserShutdown;
                 break;
             }
@@ -743,7 +741,6 @@ async fn run_established(
     // its close message was read first, the connection's end was seen
     // first, or the control stream simply ended with it. This side has not
     // closed the carrier yet, so any reason it gives is the peer's.
-    eprintln!("HUNTX {:?} link loop ended {:?} {:?}", std::time::Instant::now(), link, close_reason);
     if carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) {
         ctx.report(daemon_core::Input::PeerRevoked {
             host: core_host(peer_host.id),
@@ -754,9 +751,7 @@ async fn run_established(
     while let Ok(message) = out_rx.try_recv() {
         let _ = write_message(&mut sink, &message).await;
     }
-    eprintln!("HUNTX {:?} link drained {:?}", std::time::Instant::now(), link);
     cleanup_link(&ctx, link, close_reason).await;
-    eprintln!("HUNTX {:?} link cleaned {:?}", std::time::Instant::now(), link);
     carrier.close(close_reason);
     match close_status {
         Some(status) => Err(status.into()),

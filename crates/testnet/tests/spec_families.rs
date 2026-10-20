@@ -1295,38 +1295,24 @@ async fn an_agents_stop_tool_stops_its_child_and_the_childs_descendants() {
     )
     .await
     .unwrap();
-    eprintln!("HUNTX STOPTOOL step 1 done");
     net.settle("lead").await.unwrap();
-    eprintln!("HUNTX STOPTOOL step 2 done");
     let busy = || vec![waits("release"), text("Done."), Step::TurnEnd];
-    eprintln!("HUNTX STOPTOOL step 3 done");
     net.spawn_child("lead", child("helper", "server", busy()))
         .await
         .unwrap();
-    eprintln!("HUNTX STOPTOOL step 4 done");
     net.spawn_child("helper", child("scout", "phone", busy()))
         .await
         .unwrap();
-    eprintln!("HUNTX STOPTOOL step 5 done");
     until_live(&net, "server", "helper").await;
-    eprintln!("HUNTX STOPTOOL step 6 done");
     until_live(&net, "phone", "scout").await;
-    eprintln!("HUNTX STOPTOOL step 7 done");
     net.send("lead", "Stop the helper.").await.unwrap();
-    eprintln!("HUNTX STOPTOOL step 8 done");
     net.turn_ended("lead", 2).await.unwrap();
-    eprintln!("HUNTX STOPTOOL step 9 done");
     until_exited(&net, "server", "helper").await;
-    eprintln!("HUNTX STOPTOOL step 10 done");
     // Scout's host stops it once it sees helper's exit.
     until_exited(&net, "phone", "scout").await;
-    eprintln!("HUNTX STOPTOOL step 11 done");
     let helper = row(&net, "server", "helper").await.unwrap();
-    eprintln!("HUNTX STOPTOOL step 12 done");
     let scout = row(&net, "phone", "scout").await.unwrap();
-    eprintln!("HUNTX STOPTOOL step 13 done");
     net.shutdown().await.unwrap();
-    eprintln!("HUNTX STOPTOOL step 14 done");
     let ended = [
         (
             "helper",

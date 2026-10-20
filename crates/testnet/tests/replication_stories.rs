@@ -157,6 +157,39 @@ mod stories {
         all[from..].to_vec()
     }
 
+    /// The catch-up after the last `Detached` (or from the start): its marks
+    /// up to and including its first CaughtUp. The observer hands over
+    /// everything already delivered, so live records may follow; each must be
+    /// a record revised after that CaughtUp, never a second opening.
+    fn catch_up_since_detached(events: &[SessionEvent]) -> Vec<Mark> {
+        let from = events
+            .iter()
+            .rposition(|event| matches!(event.of, Some(session_event::Of::Detached(_))))
+            .map_or(0, |at| at + 1);
+        let events = &events[from..];
+        let end = events
+            .iter()
+            .position(|event| matches!(event.of, Some(session_event::Of::CaughtUp(_))))
+            .unwrap_or_else(|| panic!("no CaughtUp: {:?}", marks(events)));
+        let Some(session_event::Of::CaughtUp(caught_up)) = &events[end].of else {
+            unreachable!()
+        };
+        for event in &events[end + 1..] {
+            let revision = match &event.of {
+                Some(session_event::Of::Item(item)) => item.revision,
+                Some(session_event::Of::Append(append)) => append.revision,
+                _ => 0,
+            };
+            assert!(
+                revision > caught_up.revision,
+                "only records revised after CaughtUp({}) follow it: {:?}",
+                caught_up.revision,
+                marks(events)
+            );
+        }
+        marks(&events[..=end])
+    }
+
     fn count_caught_up(events: &[SessionEvent]) -> usize {
         marks(events)
             .iter()
@@ -243,14 +276,15 @@ mod stories {
                 .observe_until(observe::caught_up, PATIENCE)
                 .await
                 .unwrap();
-            let held = marks(opening)
+            let opening = catch_up_since_detached(opening);
+            let held = opening
                 .iter()
                 .filter(|mark| matches!(mark, Mark::Item(_)))
                 .count();
             assert_eq!(held, K as usize, "{host}: {}", wide.transcript());
             assert!(origin_rows(&net, "worker").await.len() > K as usize);
             assert!(
-                matches!(marks(opening)[..], [Mark::Opening(_), Mark::Snapshot, ..]),
+                matches!(opening[..], [Mark::Opening(_), Mark::Snapshot, ..]),
                 "{host}: {}",
                 wide.transcript()
             );
@@ -285,7 +319,7 @@ mod stories {
             .observe_until(caught_up_since_detached, PATIENCE)
             .await
             .unwrap();
-        let delta = since_last_detached(events);
+        let delta = catch_up_since_detached(events);
         assert!(
             !delta.contains(&Mark::Reset),
             "a delta, not a Reset: {delta:?}"
@@ -294,7 +328,6 @@ mod stories {
             delta.iter().any(|mark| matches!(mark, Mark::Item(_))),
             "the missed rows arrive before CaughtUp: {delta:?}"
         );
-        assert!(matches!(delta.last(), Some(Mark::CaughtUp(_))), "{delta:?}");
         net.current("laptop", "worker").await.unwrap();
 
         // A break beyond the cap: Reset, the Snapshot, a fresh tail of K, then
@@ -315,7 +348,7 @@ mod stories {
             .observe_until(caught_up_since_detached, PATIENCE)
             .await
             .unwrap();
-        let reset = since_last_detached(events);
+        let reset = catch_up_since_detached(events);
         assert_eq!(reset.first(), Some(&Mark::Reset), "{reset:?}");
         assert_eq!(reset.get(1), Some(&Mark::Snapshot), "{reset:?}");
         let tail = reset
@@ -323,7 +356,6 @@ mod stories {
             .filter(|mark| matches!(mark, Mark::Item(_)))
             .count();
         assert_eq!(tail, K as usize, "{reset:?}");
-        assert!(matches!(reset.last(), Some(Mark::CaughtUp(_))), "{reset:?}");
         net.current("laptop", "worker").await.unwrap();
         println!(
             "the laptop's chat on the desk's worker, K = {K}:\n{}",

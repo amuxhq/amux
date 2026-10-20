@@ -432,6 +432,7 @@ mod tests {
                 link: LinkId(1),
                 peer: HostId(PEER),
                 kind: CarrierKind::Direct,
+                resumed: None,
             },
         );
         let out = step(&mut daemon, found(PEER, true));

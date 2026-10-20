@@ -69,6 +69,7 @@ fn linked(daemon: &mut Daemon, link: u64, peer: HostId, kind: CarrierKind, reach
             link: LinkId(link),
             peer,
             kind,
+            resumed: None,
         },
     );
     step(

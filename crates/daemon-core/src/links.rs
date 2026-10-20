@@ -8,10 +8,18 @@
 //!
 //! The routes to a host are read off the links: its own links, newest
 //! first, then each peer whose link claims to reach it.
+//!
+//! A resumed link is decided here before anything rides it: its ticket
+//! names a key, and a key no longer pinned for the peer is refused. The
+//! control frames also carry where each trusted host can be reached, the
+//! address the relay sees this host at, and the forwards a relay or a
+//! daemon refused, which presence reads.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use wire::message::Body;
 use wire::{HelloAck, hello_ack};
 
@@ -135,13 +143,34 @@ impl Daemon {
         &self.routing.links
     }
 
+    /// The addresses each trusted host last listed for itself, in its order.
+    pub fn peer_addresses(&self) -> &BTreeMap<HostId, Vec<SocketAddr>> {
+        &self.routing.addresses
+    }
+
+    /// The address the relay last saw this host's packets come from.
+    pub fn observed_address(&self) -> Option<SocketAddr> {
+        self.routing.observed
+    }
+
+    /// A link came up. A resumed one whose ticket names a key not pinned
+    /// for its peer is refused, and is never taken up: no route lists it,
+    /// so nothing the peer sent early is served.
     pub(crate) fn link_up(
         &mut self,
         link: LinkId,
         peer: HostId,
         kind: CarrierKind,
+        resumed: Option<&PublicKey>,
         out: &mut Vec<Output>,
     ) {
+        if let Some(key) = resumed {
+            let pinned = self.trust().pubkey_for_host(Uuid::from_bytes(peer.0));
+            if pinned != Some(key.0.as_slice()) {
+                out.push(Output::RefuseResumed { link });
+                return;
+            }
+        }
         let before = self.routes_before([peer]);
         self.routing.links.links.insert(
             link,
@@ -228,9 +257,10 @@ impl Daemon {
         let Some(entry) = self.routing.links.links.get(&link) else {
             return;
         };
-        let peer = entry.peer;
+        let (peer, kind) = (entry.peer, entry.kind);
         if let Some(body) = &frame.body {
             self.catalogue_frame(link, peer, body, out);
+            self.addressed(link, peer, kind, body, out);
         }
         let Some(entry) = self.routing.links.links.get(&link) else {
             return;
@@ -277,6 +307,79 @@ impl Daemon {
             entry.claims = claims;
         }
         self.routes_moved(before, out);
+    }
+
+    /// What a control frame says of addresses and refused forwards: a
+    /// trusted peer's own list, on its hello, its acceptance or a later
+    /// `Addresses`; the relay's sight of this host, on its acceptance or a
+    /// later `ObservedAddress`; and a forward the peer refused.
+    fn addressed(
+        &mut self,
+        link: LinkId,
+        peer: HostId,
+        kind: CarrierKind,
+        body: &Body,
+        out: &mut Vec<Output>,
+    ) {
+        let relay = kind == CarrierKind::Relay;
+        match body {
+            Body::Hello(hello) => self.peer_listed(peer, &hello.addrs, out),
+            Body::HelloAck(HelloAck {
+                outcome: Some(hello_ack::Outcome::Accepted(accepted)),
+            }) => {
+                self.peer_listed(peer, &accepted.addrs, out);
+                if relay && let Some(addr) = &accepted.observed_addr {
+                    self.observed(addr, out);
+                }
+            }
+            Body::Addresses(addresses) => self.peer_listed(peer, &addresses.addrs, out),
+            Body::ObservedAddress(observed) if relay => self.observed(&observed.addr, out),
+            Body::ForwardRefused(refused) => {
+                if let Some(dst) = HostId::from_slice(&refused.dst) {
+                    self.forward_refused(link, dst, refused.reason(), out);
+                }
+            }
+            Body::HelloAck(_)
+            | Body::ObservedAddress(_)
+            | Body::NeighborUp(_)
+            | Body::NeighborDown(_)
+            | Body::Reauth(_)
+            | Body::LinkClose(_) => {}
+        }
+    }
+
+    /// A peer listed where it can be reached. Only a trusted host's list is
+    /// kept, and an address that does not read as one is passed over.
+    fn peer_listed(&mut self, peer: HostId, listed: &[String], out: &mut Vec<Output>) {
+        if self.trust().entry(Uuid::from_bytes(peer.0)).is_none() {
+            return;
+        }
+        let addrs: Vec<SocketAddr> = listed.iter().filter_map(|addr| addr.parse().ok()).collect();
+        let known = self.routing.addresses.get(&peer).map(Vec::as_slice);
+        if known.unwrap_or_default() == addrs.as_slice() {
+            return;
+        }
+        if addrs.is_empty() {
+            self.routing.addresses.remove(&peer);
+        } else {
+            self.routing.addresses.insert(peer, addrs.clone());
+        }
+        out.push(Output::PeerAddresses { host: peer, addrs });
+    }
+
+    fn observed(&mut self, addr: &str, out: &mut Vec<Output>) {
+        let Ok(addr) = addr.parse::<SocketAddr>() else {
+            return;
+        };
+        if self.routing.observed != Some(addr) {
+            self.routing.observed = Some(addr);
+            out.push(Output::ObservedAddress { addr });
+        }
+    }
+
+    /// A host's trust ended: what it listed for itself goes with it.
+    pub(crate) fn forget_addresses(&mut self, host: HostId) {
+        self.routing.addresses.remove(&host);
     }
 
     /// The shell wants a channel: opened over a link that is up, to a peer
@@ -415,6 +518,7 @@ mod tests {
                 link: LINK,
                 peer: PEER,
                 kind: CarrierKind::Direct,
+                resumed: None,
             },
         );
     }
@@ -558,6 +662,223 @@ mod tests {
         );
         assert!(daemon.links().link(LINK).is_none());
         assert_eq!(daemon.links().channels().count(), 0);
+    }
+
+    /// A daemon trusting `PEER` under the key [`TrustStore::of_hosts`]
+    /// makes for it.
+    fn trusting() -> (Daemon, PublicKey) {
+        let mut daemon = daemon();
+        let store = crate::trust::TrustStore::of_hosts([PEER]);
+        let key = store
+            .pubkey_for_host(Uuid::from_bytes(PEER.0))
+            .expect("the peer is pinned")
+            .to_vec();
+        step(&mut daemon, Input::TrustRead { store });
+        (daemon, PublicKey(key))
+    }
+
+    fn resumed(daemon: &mut Daemon, peer: HostId, key: PublicKey) -> Vec<Output> {
+        step(
+            daemon,
+            Input::LinkUp {
+                link: LINK,
+                peer,
+                kind: CarrierKind::Direct,
+                resumed: Some(key),
+            },
+        )
+    }
+
+    #[test]
+    fn a_resumed_link_naming_the_key_pinned_for_its_peer_comes_up() {
+        let (mut daemon, key) = trusting();
+        let out = resumed(&mut daemon, PEER, key);
+        assert!(
+            !out.contains(&Output::RefuseResumed { link: LINK }),
+            "{out:?}"
+        );
+        assert!(daemon.links().link(LINK).is_some());
+        assert_eq!(daemon.links().routes_to(PEER), vec![Route::Direct(LINK)]);
+    }
+
+    #[test]
+    fn a_resumed_link_naming_a_key_not_pinned_is_refused_before_anything_rides_it() {
+        let (mut daemon, _) = trusting();
+        for (peer, key) in [
+            (PEER, PublicKey(vec![3; 32])),
+            (HostId([5; 16]), PublicKey(vec![5; 32])),
+        ] {
+            let out = resumed(&mut daemon, peer, key);
+            assert_eq!(out, vec![Output::RefuseResumed { link: LINK }]);
+            assert!(daemon.links().link(LINK).is_none());
+            assert!(daemon.links().routes_to(peer).is_empty());
+        }
+
+        // A host whose pin was removed is refused with its old key.
+        let (mut daemon, key) = trusting();
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::default(),
+            },
+        );
+        assert_eq!(
+            resumed(&mut daemon, PEER, key),
+            vec![Output::RefuseResumed { link: LINK }]
+        );
+    }
+
+    fn listed(daemon: &mut Daemon, body: Body) -> Vec<Output> {
+        step(
+            daemon,
+            Input::LinkControl {
+                link: LINK,
+                frame: Message { body: Some(body) },
+            },
+        )
+        .into_iter()
+        .filter(|output| {
+            matches!(
+                output,
+                Output::PeerAddresses { .. } | Output::ObservedAddress { .. }
+            )
+        })
+        .collect()
+    }
+
+    fn addrs(addrs: &[&str]) -> Vec<String> {
+        addrs.iter().map(|addr| addr.to_string()).collect()
+    }
+
+    #[test]
+    fn a_trusted_hosts_latest_address_list_is_kept_and_told() {
+        let (mut daemon, _) = trusting();
+        up(&mut daemon);
+        let hello = Body::Hello(Hello {
+            addrs: addrs(&["192.168.1.4:7000", "not an address", "[2001:db8::4]:7000"]),
+            ..Default::default()
+        });
+        let first: Vec<SocketAddr> = vec![
+            "192.168.1.4:7000".parse().unwrap(),
+            "[2001:db8::4]:7000".parse().unwrap(),
+        ];
+        assert_eq!(
+            listed(&mut daemon, hello),
+            vec![Output::PeerAddresses {
+                host: PEER,
+                addrs: first.clone(),
+            }]
+        );
+        assert_eq!(daemon.peer_addresses().get(&PEER), Some(&first));
+
+        let same = Body::Addresses(wire::Addresses {
+            addrs: addrs(&["192.168.1.4:7000", "[2001:db8::4]:7000"]),
+        });
+        assert_eq!(listed(&mut daemon, same), Vec::new(), "nothing moved");
+
+        let moved = Body::Addresses(wire::Addresses {
+            addrs: addrs(&["10.0.0.9:7000"]),
+        });
+        let now: Vec<SocketAddr> = vec!["10.0.0.9:7000".parse().unwrap()];
+        assert_eq!(
+            listed(&mut daemon, moved),
+            vec![Output::PeerAddresses {
+                host: PEER,
+                addrs: now.clone(),
+            }]
+        );
+        assert_eq!(daemon.peer_addresses().get(&PEER), Some(&now));
+
+        let accepted = Body::HelloAck(HelloAck {
+            outcome: Some(hello_ack::Outcome::Accepted(wire::HelloAccepted {
+                addrs: Vec::new(),
+                ..Default::default()
+            })),
+        });
+        assert_eq!(
+            listed(&mut daemon, accepted),
+            vec![Output::PeerAddresses {
+                host: PEER,
+                addrs: Vec::new(),
+            }]
+        );
+        assert_eq!(daemon.peer_addresses().get(&PEER), None);
+
+        // Forgetting the host forgets what it listed.
+        let again = Body::Addresses(wire::Addresses {
+            addrs: addrs(&["10.0.0.9:7000"]),
+        });
+        listed(&mut daemon, again);
+        step(&mut daemon, Input::HostForgotten { host: PEER });
+        assert_eq!(daemon.peer_addresses().get(&PEER), None);
+    }
+
+    #[test]
+    fn a_host_not_trusted_lists_nothing_kept() {
+        let mut daemon = daemon();
+        up(&mut daemon);
+        let hello = Body::Addresses(wire::Addresses {
+            addrs: addrs(&["192.168.1.4:7000"]),
+        });
+        assert_eq!(listed(&mut daemon, hello), Vec::new());
+        assert!(daemon.peer_addresses().is_empty());
+    }
+
+    #[test]
+    fn the_relay_tells_this_host_the_address_it_sees_it_at_and_a_peer_does_not() {
+        let mut daemon = daemon();
+        up(&mut daemon);
+        let observed = |addr: &str| {
+            Body::ObservedAddress(wire::ObservedAddress {
+                addr: addr.to_string(),
+            })
+        };
+        assert_eq!(
+            listed(&mut daemon, observed("203.0.113.7:4433")),
+            Vec::new(),
+            "a peer's link is no relay"
+        );
+
+        let relay_link = LinkId(8);
+        step(
+            &mut daemon,
+            Input::LinkUp {
+                link: relay_link,
+                peer: HostId([9; 16]),
+                kind: CarrierKind::Relay,
+                resumed: None,
+            },
+        );
+        let on_relay = |daemon: &mut Daemon, body| {
+            step(
+                daemon,
+                Input::LinkControl {
+                    link: relay_link,
+                    frame: Message { body: Some(body) },
+                },
+            )
+        };
+        let accepted = Body::HelloAck(HelloAck {
+            outcome: Some(hello_ack::Outcome::Accepted(wire::HelloAccepted {
+                observed_addr: Some("203.0.113.7:4433".to_string()),
+                ..Default::default()
+            })),
+        });
+        let first: SocketAddr = "203.0.113.7:4433".parse().unwrap();
+        assert!(on_relay(&mut daemon, accepted).contains(&Output::ObservedAddress { addr: first }));
+        assert_eq!(daemon.observed_address(), Some(first));
+        assert!(
+            !on_relay(&mut daemon, observed("203.0.113.7:4433"))
+                .iter()
+                .any(|output| matches!(output, Output::ObservedAddress { .. })),
+            "the same address is not news"
+        );
+        let moved: SocketAddr = "203.0.113.7:5000".parse().unwrap();
+        assert!(
+            on_relay(&mut daemon, observed("203.0.113.7:5000"))
+                .contains(&Output::ObservedAddress { addr: moved })
+        );
+        assert_eq!(daemon.observed_address(), Some(moved));
     }
 
     #[test]

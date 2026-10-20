@@ -1352,7 +1352,12 @@ impl CoreThread {
                 peer,
             } => self.pairings.pending(session, token, peer),
             Output::PairEnded { session, failure } => self.pairings.end(session, failure),
-            output @ (Output::CloseChannel { .. } | Output::LinkControl { .. }) => {
+            // Links carry no address lists and no resumed handshakes yet:
+            // nothing reads what a peer listed until paths do.
+            Output::PeerAddresses { .. } | Output::ObservedAddress { .. } => {}
+            output @ (Output::CloseChannel { .. }
+            | Output::LinkControl { .. }
+            | Output::RefuseResumed { .. }) => {
                 tracing::error!(
                     ?output,
                     "the daemon core asked for what this driver does not carry out yet"

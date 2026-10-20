@@ -109,7 +109,9 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
     .unwrap();
     let seen = inputs();
     let Some(up) = seen.iter().find_map(|input| match input {
-        Input::LinkUp { link, peer, kind } if *peer == desk_host => Some((*link, *kind)),
+        Input::LinkUp {
+            link, peer, kind, ..
+        } if *peer == desk_host => Some((*link, *kind)),
         _ => None,
     }) else {
         panic!("the link coming up reached the core: {seen:?}");

@@ -354,6 +354,7 @@ impl Machine for Replication {
                 link: LINK,
                 peer: ORIGIN,
                 kind: CarrierKind::Direct,
+                resumed: None,
             });
             // The replica follows the origin's inventory, and at its
             // CaughtUp opens the agent's source.

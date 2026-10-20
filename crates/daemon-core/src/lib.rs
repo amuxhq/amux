@@ -271,7 +271,12 @@ impl Daemon {
             Input::Configure(settings) => self.settings = settings,
             Input::Drafts { drafts } => self.drafts_read(drafts),
             Input::FromShell(change) => self.shell_changed(change, out),
-            Input::LinkUp { link, peer, kind } => self.link_up(link, peer, kind, out),
+            Input::LinkUp {
+                link,
+                peer,
+                kind,
+                resumed,
+            } => self.link_up(link, peer, kind, resumed.as_ref(), out),
             Input::LinkDown { link, .. } => self.link_down(link, out),
             Input::LinkControl { link, frame } => self.link_control(link, frame, out),
             Input::Credential {
@@ -308,7 +313,10 @@ impl Daemon {
             Input::TrustRead { store } => self.trust_read(store, out),
             Input::ChangeTrust(change) => self.change_trust(change, None, out),
             Input::Policy(policy) => self.set_policy(policy, out),
-            Input::HostForgotten { host } => self.forget_host(host, out),
+            Input::HostForgotten { host } => {
+                self.forget_addresses(host);
+                self.forget_host(host, out)
+            }
             Input::Discovered { found } => self.discovered(found, out),
             Input::PairingOpened { session, opened } => self.pairing_opened(session, opened, out),
             Input::PairingMessage { session, message } => {
@@ -689,6 +697,10 @@ pub struct RoutingState {
     catalogue: catalogue::Catalogue,
     /// Each attempt under way, by host and route, counted.
     attempts: std::collections::BTreeMap<(HostId, Route), u32>,
+    /// The addresses each trusted host last listed for itself.
+    addresses: std::collections::BTreeMap<HostId, Vec<std::net::SocketAddr>>,
+    /// The address the relay last saw this host's packets come from.
+    observed: Option<std::net::SocketAddr>,
 }
 
 /// The clock as last told and the timers armed.

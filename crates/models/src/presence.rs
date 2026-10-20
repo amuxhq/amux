@@ -284,7 +284,15 @@ impl Machine for PresenceRouting {
             (RELAY_LINK, RELAY, CarrierKind::Relay),
             (PEER_LINK, PEER, CarrierKind::Direct),
         ] {
-            daemon.step(Input::LinkUp { link, peer, kind }, &mut out);
+            daemon.step(
+                Input::LinkUp {
+                    link,
+                    peer,
+                    kind,
+                    resumed: None,
+                },
+                &mut out,
+            );
         }
         daemon.step(
             Input::AttemptConcluded {
@@ -384,6 +392,7 @@ impl Machine for PresenceRouting {
                     link,
                     peer: TARGET,
                     kind: CarrierKind::Direct,
+                    resumed: None,
                 }
             }
             Action::DirectDown(link) => {

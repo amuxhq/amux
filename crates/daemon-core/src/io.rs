@@ -1,5 +1,6 @@
 //! The daemon's inputs, outputs and jobs.
 
+use std::net::SocketAddr;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -29,10 +30,14 @@ pub enum Input {
     Timer {
         id: TimerId,
     },
+    /// A link came up. `resumed` is the key a resumed handshake's ticket
+    /// names, which no certificate proved this time: the core decides it
+    /// before the driver serves any call the peer sent early.
     LinkUp {
         link: LinkId,
         peer: HostId,
         kind: CarrierKind,
+        resumed: Option<PublicKey>,
     },
     LinkDown {
         link: LinkId,
@@ -375,6 +380,23 @@ pub enum FromShell {
 /// spawns and writes; it decides nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Output {
+    /// Refuse the resumed link with the revocation alert: its ticket names
+    /// a key no longer pinned for its peer. The driver resets the streams
+    /// it held back; the core never took the link up.
+    RefuseResumed {
+        link: LinkId,
+    },
+    /// The addresses a trusted host last listed for itself changed: every
+    /// one it can be reached at, in its order.
+    PeerAddresses {
+        host: HostId,
+        addrs: Vec<SocketAddr>,
+    },
+    /// The relay saw this host's packets come from a new address, which
+    /// this host lists for itself from now on.
+    ObservedAddress {
+        addr: SocketAddr,
+    },
     ArmTimer {
         id: TimerId,
         at_ms: u64,
@@ -756,6 +778,7 @@ mod tests {
                 link: LinkId(1),
                 peer: HostId([1; 16]),
                 kind: CarrierKind::Direct,
+                resumed: Some(PublicKey(vec![7; 32])),
             },
             Input::LinkControl {
                 link: LinkId(1),

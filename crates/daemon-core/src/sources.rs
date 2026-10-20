@@ -1780,6 +1780,7 @@ mod tests {
                 link: LinkId(1),
                 peer: HostId(PEER),
                 kind: CarrierKind::Direct,
+                resumed: None,
             },
         );
         assert!(
@@ -2078,6 +2079,7 @@ mod tests {
                 link: LinkId(2),
                 peer: HostId(PEER),
                 kind: CarrierKind::Direct,
+                resumed: None,
             },
         );
         assert!(

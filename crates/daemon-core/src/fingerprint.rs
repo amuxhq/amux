@@ -142,6 +142,7 @@ mod tests {
                 link: LinkId(1),
                 peer: PEER,
                 kind: CarrierKind::Direct,
+                resumed: None,
             },
             &mut out,
         );

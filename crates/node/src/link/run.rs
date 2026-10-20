@@ -590,6 +590,7 @@ async fn run_established(
             (LinkRole::Peer, RoutingCarrier::Ssh) => daemon_core::payload::CarrierKind::Ssh,
             (LinkRole::Peer, RoutingCarrier::Direct) => daemon_core::payload::CarrierKind::Direct,
         },
+        resumed: None,
     });
     if let Some(frame) = peer_frame {
         ctx.report_frame(link, frame);

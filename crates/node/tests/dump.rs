@@ -647,16 +647,14 @@ fn bundles_by_time(install: &Install) -> Vec<(u64, String)> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
     let install = Install::new();
-    // A live agent that takes the dump request and never answers it: the
-    // dump waits on its part, holding the runtime.
+    // A live agent that never reads the dump request, so never answers it:
+    // the dump waits on its part, holding the runtime.
     let mut silent = support::synthetic::SyntheticAgent::new(&install, "silent", 1 << 20);
     silent.register_offline(&install);
     silent.go_live();
-    let launch = node::Launch {
-        step_budget: daemon_core::StepBudget { micros: 0 },
-        ..support::synthetic::quiet_launch()
-    };
-    let daemon = install.start("boot-1", launch).await;
+    let daemon = install
+        .start("boot-1", support::synthetic::quiet_launch())
+        .await;
     let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
     until("the daemon to connect to the agent", || {
         let hellos = silent.hellos();
@@ -664,8 +662,11 @@ async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
     })
     .await
     .unwrap();
-    silent.append(&support::synthetic::item("a", "hello"));
-    runtime.ingest(silent.id).await.unwrap();
+    silent.stop_reading();
+    // The agent asks once it is connected, so the dump asks it for its part:
+    // one started before the connection would skip the part and finish at
+    // once.
+    silent.ask_for_dump("a step ran long", "").await;
     let reports = install.data_dir.join(node::REPORTS);
     until("a dump under way", || {
         let partial = std::fs::read_dir(&reports)

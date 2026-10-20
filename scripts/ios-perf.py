@@ -98,10 +98,14 @@ BUDGETS: dict[str, tuple[str, str, float, float | None, int | None]] = {
     "reconciliation at 0 ms": ("ms", "reconciliation", 250, None, 15),
     "reconciliation at 100 ms": ("ms", "reconciliation", 1000, None, 15),
     # Away from home a phone reaches its machines through the relay, every
-    # stream handshaking end to end inside; a person on mobile data accepts
-    # about a second and a half to see a current fleet. The figure is
-    # provisional: see SET_FROM_FIRST_MEASUREMENT.
-    "reconciliation through the relay at 100 ms": ("ms", "reconciliation", 1500, None, 15),
+    # stream handshaking end to end inside. With the phone's way to the
+    # relay and each machine's both held 100 ms, the pinned Mac measured
+    # medians of 1,608 and 1,649 ms; the budget leaves about the quarter of
+    # room the same-network figure has over its 775 ms. A person on mobile
+    # data accepts about a second and a half to see a current fleet, which
+    # fewer round trips through the relay should reach; the budget cannot
+    # ask for it before then.
+    "reconciliation through the relay at 100 ms": ("ms", "reconciliation", 2000, None, 15),
     "streaming hitch time": ("ms/s", "streaming", 5, None, None),
     "streaming main-thread CPU": ("%", "streaming", 60, None, 15),
     # What keeps the app resident when it is put away, rather than what
@@ -115,10 +119,8 @@ BUDGETS: dict[str, tuple[str, str, float, float | None, int | None]] = {
 # to be set from the first run under the new definition: each is measured and
 # reported, but neither its budget nor a baseline recorded under the old
 # definition can fail a run. A metric leaves this set in the commit that
-# writes its measured budget and baseline. The relay launch was gated on the
-# phone's hop alone; it now gates every machine's hop to the relay as well,
-# which a relayed launch crosses on every round trip.
-SET_FROM_FIRST_MEASUREMENT = {"reconciliation through the relay at 100 ms"}
+# writes its measured budget and baseline.
+SET_FROM_FIRST_MEASUREMENT: set[str] = set()
 
 
 class Refusal(Exception):

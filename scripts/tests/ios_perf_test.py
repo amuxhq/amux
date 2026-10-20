@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -151,10 +152,14 @@ class TheJudge(unittest.TestCase):
         self.assertIn("tolerance", past["results"][0]["note"])
 
     def test_a_budget_still_to_be_measured_is_reported_but_not_judged(self):
+        # The path is kept for the next metric whose measurement is
+        # redefined; the relay launch stands in for it.
         name = "reconciliation through the relay at 100 ms"
-        self.assertIn(name, perf.SET_FROM_FIRST_MEASUREMENT)
-        baseline = {name: 1000.0}
-        verdict = perf.judge(self.samples(**{name: [1700, 1700, 1700, 1700, 1700]}), baseline)
+        budget = perf.BUDGETS[name][2]
+        baseline = {name: budget / 2}
+        over = [budget * 1.2] * 5
+        with mock.patch.object(perf, "SET_FROM_FIRST_MEASUREMENT", {name}):
+            verdict = perf.judge(self.samples(**{name: over}), baseline)
         self.assertTrue(verdict["passed"])
         result = verdict["results"][0]
         self.assertTrue(result["provisional"])

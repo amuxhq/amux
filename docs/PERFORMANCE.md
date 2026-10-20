@@ -226,7 +226,7 @@ the phone, rather than reporting a number about an idle screen.
 | `cold fleet render` | cold | From the fleet on screen having caught up with its store to the first presented frame carrying its rows: building the home from what the store held | 100 ms | | 15% |
 | `reconciliation at 0 ms` | reconciliation | From that point to the first presented frame after every trusted machine's agents were current with the machine, over loopback | 250 ms | | 15% |
 | `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 1,000 ms | | 15% |
-| `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and every way to the relay, the phone's and each machine's, holding each packet 100 ms. Budget and baseline to be set from the first measurement under these gates; until then measured and reported, not judged | 1,500 ms | | 15% |
+| `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and every way to the relay, the phone's and each machine's, holding each packet 100 ms | 2,000 ms | | 15% |
 | `streaming hitch time` | streaming | Missed frame time per second while fifty rows a second arrive for twenty seconds into the conversation on screen, resting at its tail | 5 ms/s | | ceiling only |
 | `streaming main-thread CPU` | streaming | The main thread's share of one core over the same stream | 60 % | | 15% |
 | `streaming footprint` | streaming | The process's footprint at the end of the stream | 120 MB | | 10% |
@@ -268,9 +268,9 @@ costing a round trip a household network never does.
 
 The relay launch was first gated on the phone's hop alone, which measured about 1,007 ms on the pinned Mac while
 leaving the relay's leg to each machine free; a relayed round trip crosses both legs, so the gate now holds both.
-The 1,500 ms figure in the table is what a person on mobile data accepts, written before any measurement under the
-new gates; the runner lists the metric in `SET_FROM_FIRST_MEASUREMENT`, reports it without judging its budget or
-an older baseline, and the commit that records its first baseline writes its budget and takes it off that list.
+Under both gates the pinned Mac measured medians of 1,608 and 1,649 ms, and the 2,000 ms budget leaves about the
+room the same-network figure has. A person on mobile data accepts about a second and a half to see a current fleet;
+that is a figure for fewer round trips through the relay to reach, not one the budget can ask for yet.
 
 `--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run.
 `--describe` says which enrolled machine this is and whether its baseline exists without building or launching

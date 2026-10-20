@@ -60,7 +60,7 @@ pub struct JobRow {
     pub command: String,
     pub started_at_ms: i64,
     /// What the job is, so a client can tell a command from the provider's
-    /// own sub-agent or monitor, whose `command` is a description.
+    /// own subagent or monitor, whose `command` is a description.
     pub kind: BackgroundKind,
 }
 

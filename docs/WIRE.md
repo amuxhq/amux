@@ -431,12 +431,12 @@ the child incarnation it is from (`from_incarnation`). Its end is one of two:
   `last` says the turn was the incarnation's last (the step's `TurnEnd` was
   marked `last`: the child exits after that turn).
 - `Exited`: the child's incarnation ended without a turn end marked last
-  (its turn open, or ended idle, as a stopped sub-agent waiting on its own
+  (its turn open, or ended idle, as a stopped subagent waiting on its own
   child is). It carries how as `ended` (an `IncarnationEnd`: the `ExitCause`
   and its own words), which the parent's interpreter words for its provider,
   and it is always the incarnation's last report.
 
-Each child incarnation ends with exactly one last report. A sub-agent waiting
+Each child incarnation ends with exactly one last report. A subagent waiting
 on its children waits for each incarnation's last report, matching reports to
 incarnations by `from_incarnation`, so it does not matter whether a report or
 its daemon's word that the incarnation is live comes first. The recipient's

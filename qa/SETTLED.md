@@ -62,10 +62,10 @@ you are testing still behaves otherwise, that difference is a finding.
 ## Interrupt, stop and delete
 
 - **Interrupt** ends the turn. The agent stays live, and its background work
-  (shells, sub-agents) keeps running.
+  (shells, subagents) keeps running.
 - **Stop** ends the agent and all of its work, now. It is then exited and can
   be resumed. When the agent is working, or has background jobs or
-  sub-agents, the confirmation names what will be cut.
+  subagents, the confirmation names what will be cut.
 - **Delete** removes an exited agent for good. The clients offer Delete only
   on an exited agent: the phone's menu says Stop Agent for a live one, and the
   terminal's `[x]` stops a live agent and deletes an exited one, each with a

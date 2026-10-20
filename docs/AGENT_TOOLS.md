@@ -278,7 +278,7 @@ queued, nothing running, no accepted message still pending, no prompt typed
 into terminal Claude still waiting for Claude to record it, and no child of
 its still to send its last report; its exit cause is `FINISHED`, which its
 journal's last step records, and that turn's report is marked `last`. A
-sub-agent whose own child still works therefore stays: each report the
+subagent whose own child still works therefore stays: each report the
 child sends starts its next turn, and it reports up as usual. Its daemon
 tells it which of its own children are live, in which incarnation (the
 `children` control frame), and it waits for each incarnation's last report:
@@ -340,7 +340,7 @@ A parent hears one thing per event, from the daemon, through an outbox: the
   stop, a child that never came up) the daemon writes an exit report's row
   carrying how the incarnation ended as data, the cause and its own words
   when it has any. So does a child whose process ends idle without having
-  marked a turn its last, as a sub-agent stopped while it waits for its own
+  marked a turn its last, as a subagent stopped while it waits for its own
   child does. A one-shot exit after a turn marked last sends nothing more:
   each child incarnation sends exactly one last report, the finished turn's
   report marked `last` or the exit report, which always is.

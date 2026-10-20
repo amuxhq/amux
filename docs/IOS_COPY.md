@@ -53,7 +53,7 @@ away, and never offer a subscription merely because a host is offline.
 A live agent's menu offers **Stop Agent** and never **Delete Agent**; only an
 exited agent is deleted. The square button under a working turn and the ask
 card's way out of the turn read **Interrupt**. A stop confirm names what the
-stop cuts, "desk-1 is working and has 2 background jobs and 1 sub-agent. Stop
+stop cuts, "desk-1 is working and has 2 background jobs and 1 subagent. Stop
 anyway?", and asks plainly when it cuts nothing under way.
 
 Something sent while the host cannot be reached is **held**, never refused,

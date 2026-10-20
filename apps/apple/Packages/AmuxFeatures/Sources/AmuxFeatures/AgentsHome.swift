@@ -505,7 +505,7 @@ public struct AgentsHome: View {
         ) {
             parts.append(second.text)
         }
-        if row.speaksForAMember { parts.append("an agent it started needs you") }
+        if row.speaksForAMember { parts.append("a subagent needs you") }
         parts.append([PlaceNames.host(row.hostName), row.workingDirectory]
             .joined(separator: ", "))
         parts.append(row.age(at: model.orderedAt) + " ago")

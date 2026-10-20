@@ -1815,9 +1815,9 @@ impl Home {
 }
 
 /// What the stop window asks: what a stop cuts when the agent is working,
-/// has background jobs or has sub-agents ("desk-1 is working and has 2
-/// background jobs and 1 sub-agent. Stop anyway?"), else the plain
-/// question. Sub-agents are the live descendants the agent's host counts,
+/// has background jobs or has subagents ("desk-1 is working and has 2
+/// background jobs and 1 subagent. Stop anyway?"), else the plain
+/// question. Subagents are the live descendants the agent's host counts,
 /// or those this fleet sees when it sees more.
 fn stop_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
     let Some(entry) = fleet.agent(agent) else {
@@ -1833,7 +1833,7 @@ fn stop_sentence(fleet: &FleetState, agent: &AgentKey, name: &str) -> String {
         has.push(count(jobs, "background job"));
     }
     if subs > 0 {
-        has.push(count(subs, "sub-agent"));
+        has.push(count(subs, "subagent"));
     }
     let has = has.join(" and ");
     match (working, has.is_empty()) {

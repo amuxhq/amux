@@ -2253,7 +2253,7 @@ impl ProfileRuntime {
     /// unsent notifications go, since no push may name an agent that is
     /// gone, and a child whose incarnation ended without sending its last
     /// report tells its parent it failed: its turn was open, or it ended
-    /// idle, as a sub-agent stopped while it waits for its own child does.
+    /// idle, as a subagent stopped while it waits for its own child does.
     /// A turn end marked last already told it.
     ///
     /// The row keeps the cause its journal's last step put there at commit;

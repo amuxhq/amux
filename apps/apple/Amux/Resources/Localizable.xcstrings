@@ -805,14 +805,14 @@
         }
       }
     },
-    "%@ sub-agents": {
+    "%@ subagents": {
       "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ sub-agents"
+            "value": "%@ subagents"
           }
         }
       }
@@ -1345,14 +1345,14 @@
         }
       }
     },
-    "1 sub-agent": {
+    "1 subagent": {
       "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "1 sub-agent"
+            "value": "1 subagent"
           }
         }
       }
@@ -3709,14 +3709,14 @@
         }
       }
     },
-    "Its %@ child agents are deleted too.": {
+    "Its %@ subagents are deleted too.": {
       "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Its %@ child agents are deleted too."
+            "value": "Its %@ subagents are deleted too."
           }
         }
       }
@@ -3745,14 +3745,14 @@
         }
       }
     },
-    "Its child agent is deleted too.": {
+    "Its subagent is deleted too.": {
       "comment": "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatScreen.swift.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Its child agent is deleted too."
+            "value": "Its subagent is deleted too."
           }
         }
       }
@@ -8221,14 +8221,14 @@
         }
       }
     },
-    "an agent it started needs you": {
+    "a subagent needs you": {
       "comment": "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "an agent it started needs you"
+            "value": "a subagent needs you"
           }
         }
       }

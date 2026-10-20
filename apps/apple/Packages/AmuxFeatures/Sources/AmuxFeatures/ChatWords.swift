@@ -567,7 +567,7 @@ public enum ChatWords {
     }
 
     /// What stopping an agent cuts, as the stop confirm asks it: "desk-1 is
-    /// working and has 2 background jobs and 1 sub-agent. Stop anyway?" Nil
+    /// working and has 2 background jobs and 1 subagent. Stop anyway?" Nil
     /// when a stop cuts nothing under way, for the plain confirm.
     public static func stopCuts(name: String, phase: PhaseView?, jobs: Int, subAgents: Int) -> String? {
         var held: [String] = []
@@ -575,7 +575,7 @@ public enum ChatWords {
             held.append(jobs == 1 ? String(localized: "1 background job") : String(localized: "\(jobs) background jobs"))
         }
         if subAgents > 0 {
-            held.append(subAgents == 1 ? String(localized: "1 sub-agent") : String(localized: "\(subAgents) sub-agents"))
+            held.append(subAgents == 1 ? String(localized: "1 subagent") : String(localized: "\(subAgents) subagents"))
         }
         let has = held.joined(separator: String(localized: " and "))
         switch phase {

@@ -1603,7 +1603,7 @@ async fn a_name_on_two_hosts_resolves_as_name_at_host_and_the_refusal_offers_tho
     assert_eq!(picked.agent_id, other.as_bytes().to_vec());
 }
 
-/// A one-shot sub-agent exits only once its turn has ended, its queue is
+/// A one-shot subagent exits only once its turn has ended, its queue is
 /// empty and no child it spawned is still running. Here the middle agent
 /// ends its first turn while its scout still works; it stays, the scout's
 /// report starts its next turn, and it reports up to the lead. QA: the
@@ -1671,9 +1671,9 @@ async fn a_sub_agent_waits_for_its_running_child_and_reports_its_result_up() {
     );
 }
 
-/// A one-shot sub-agent waits for its child's last report, not its first.
+/// A one-shot subagent waits for its child's last report, not its first.
 /// Its child reports mid-way (it started a scout of its own) and again when
-/// the scout's result is in; the sub-agent takes the mid-way report as a
+/// the scout's result is in; the subagent takes the mid-way report as a
 /// turn of its own and stays, and reports up only once the child's last
 /// report has come. Every hop crosses hosts.
 #[tokio::test(flavor = "multi_thread")]
@@ -1756,7 +1756,7 @@ async fn a_sub_agent_waits_for_its_childs_last_report_not_its_mid_way_one() {
     reached.expect("the planner never reported mid's last result to the lead");
 }
 
-/// Every child incarnation ends with a last report. A sub-agent stopped
+/// Every child incarnation ends with a last report. A subagent stopped
 /// while it waits idle for its own child has no turn to cut short, yet its
 /// parent still hears that it stopped: a parent waiting on it would
 /// otherwise wait for good.
@@ -1871,7 +1871,7 @@ async fn a_child_deleted_mid_turn_tells_its_parent_it_was_stopped() {
 /// The fleet's agent row counts what a stop would cut: live descendants
 /// on every host the agent's host knows, and background jobs. Both
 /// clients' stop and delete confirms name them ("lead is working and has
-/// 1 background job and 2 sub-agents. Stop anyway?"); the phone, which
+/// 1 background job and 2 subagents. Stop anyway?"); the phone, which
 /// sees only its paired host's agents, cannot count them itself. QA: a
 /// delete removed a child on another host and nothing said so.
 #[tokio::test(flavor = "multi_thread")]
@@ -1942,7 +1942,7 @@ async fn the_agent_row_counts_live_descendants_and_background_jobs() {
     println!("lead's row: {shown}");
     assert!(
         shown.contains("descendants: 2"),
-        "lead's row does not count its two live sub-agents: {shown}"
+        "lead's row does not count its two live subagents: {shown}"
     );
     assert!(
         shown.contains("background_jobs: 1"),

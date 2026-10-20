@@ -648,7 +648,7 @@ enum BackgroundKind {
   BACKGROUND_KIND_UNSPECIFIED = 0;
   // A shell command.
   BACKGROUND_KIND_SHELL = 1;
-  // A sub-agent the provider runs itself.
+  // A subagent the provider runs itself.
   BACKGROUND_KIND_SUBAGENT = 2;
   // A watch the provider keeps on something.
   BACKGROUND_KIND_MONITOR = 3;

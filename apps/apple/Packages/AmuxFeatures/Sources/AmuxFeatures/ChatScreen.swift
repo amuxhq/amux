@@ -844,7 +844,7 @@ private struct RenameCard: View {
 }
 
 /// Stopping the agent: a stop is always now, so when it cuts a turn,
-/// background jobs or sub-agents the confirm says which, and otherwise asks
+/// background jobs or subagents the confirm says which, and otherwise asks
 /// plainly.
 private struct StopCard: View {
     @Environment(\.design) private var design
@@ -895,9 +895,9 @@ private struct DeleteCard: View {
             Consequence("checkmark", kept: true, String(localized: "Its edits stay. Nothing is reverted."))
             Consequence("xmark", kept: false, String(localized: "The chat is deleted on every device."))
             if descendants == 1 {
-                Consequence("xmark", kept: false, String(localized: "Its child agent is deleted too."))
+                Consequence("xmark", kept: false, String(localized: "Its subagent is deleted too."))
             } else if descendants > 1 {
-                Consequence("xmark", kept: false, String(localized: "Its \(descendants) child agents are deleted too."))
+                Consequence("xmark", kept: false, String(localized: "Its \(descendants) subagents are deleted too."))
             }
             ButtonPair {
                 choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.delete.cancel", action: cancel)

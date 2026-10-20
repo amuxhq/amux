@@ -3873,7 +3873,7 @@ pub enum BackgroundKind {
     Unspecified = 0,
     /// A shell command.
     Shell = 1,
-    /// A sub-agent the provider runs itself.
+    /// A subagent the provider runs itself.
     Subagent = 2,
     /// A watch the provider keeps on something.
     Monitor = 3,

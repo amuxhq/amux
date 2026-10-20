@@ -566,7 +566,7 @@
     },
     {
       "id": "chat.stop-cuts",
-      "shows": "Stopping a working agent with background jobs and a child: the confirm names the turn, the jobs and the sub-agents the stop cuts."
+      "shows": "Stopping a working agent with background jobs and a child: the confirm names the turn, the jobs and the subagents the stop cuts."
     },
     {
       "id": "chat.delete",
@@ -574,7 +574,7 @@
     },
     {
       "id": "chat.delete-family",
-      "shows": "Deleting an exited agent that started others: the card counts the child agents deleted with it."
+      "shows": "Deleting an exited agent that started others: the card counts the subagents deleted with it."
     },
     {
       "id": "chat.settings",

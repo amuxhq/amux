@@ -1,0 +1,64 @@
+# Fuzz targets for the code that reads bytes amux did not write: the
+# provider decoders, the journal reader and redaction. A workspace of its
+# own, because the targets build only on the pinned nightly with the
+# fuzzer's instrumentation; `just fuzz-smoke` runs each for a bounded time.
+[package]
+name = "amux-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+claude-protocol = { path = "../crates/claude-protocol" }
+codex-protocol = { path = "../crates/codex-protocol" }
+journal = { path = "../crates/journal" }
+redaction = { path = "../crates/redaction" }
+serde_json = "1"
+
+[[bin]]
+name = "claude_decode"
+path = "fuzz_targets/claude_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codex_decode"
+path = "fuzz_targets/codex_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "journal_frame"
+path = "fuzz_targets/journal_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "journal_reader"
+path = "fuzz_targets/journal_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "redact_value"
+path = "fuzz_targets/redact_value.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "redact_text"
+path = "fuzz_targets/redact_text.rs"
+test = false
+doc = false
+bench = false

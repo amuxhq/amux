@@ -190,6 +190,14 @@ tui-set NAME *ARGS:
     *) exec target/debug/tui-set "$@" ;;
     esac
 
+# Fuzz the code that reads bytes amux did not write (the Claude and Codex
+# decoders, the journal's frames and reader, redaction) for 30 seconds a
+# target on the pinned nightly, seeded from the recorded fixtures; fails on a
+# crash and prints the command that replays it. `--seconds N` and target
+# names (`just fuzz-smoke journal_reader`) change the run. Needs cargo-fuzz.
+fuzz-smoke *ARGS:
+    {{bounded}} 1500 scripts/py scripts/fuzz-smoke.py "$@"
+
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
 cores-check:

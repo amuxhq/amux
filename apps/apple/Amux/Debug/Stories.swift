@@ -207,24 +207,29 @@ struct StoryApp: View {
     ///   - chatOpen: opens the first agent's chat, as a person who had just
     ///     tapped it would see it.
     ///   - settingsOpen: raises the settings sheet over the list.
+    ///   - reviewOpen: opens the first agent's chat and its review over it.
     init(
         chatOpen: Bool = false,
         settingsOpen: Bool = false,
+        reviewOpen: Bool = false,
         _ fleet: @escaping @MainActor () -> StoryFleet.Stores = { StoryFleet.busy() }
     ) {
         let invented = fleet()
         let router = Router()
-        if chatOpen, let first = invented.view.sections.first?.rows.first {
+        if chatOpen || reviewOpen, let first = invented.view.sections.first?.rows.first {
             router.open(.conversation(first.card.agent))
+            if reviewOpen { router.open(.changes(first.card.agent)) }
         }
         if settingsOpen { router.select(.you) }
         _router = State(initialValue: router)
         let bundle = StoreBundle(
             account: AccountId("ada"), clock: { StoryFleet.now },
             opener: { _ in
-                ScriptedChat(
+                let chat = ScriptedChat(
                     rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .idle),
-                    strip: ScriptedChat.strip(model: "opus 4.6"))
+                    strip: ScriptedChat.strip(model: "opus 4.6", git: CatalogFixtures.git))
+                chat.working = CatalogFixtures.review
+                return chat
             })
         bundle.fleet.show(invented.view, hosts: invented.hostViews)
         bundle.hosts.show(invented.hostViews)
@@ -259,6 +264,7 @@ extension ScriptedChat: OpenChat {
 #Preview("App") { StoryApp() }
 #Preview("App · chat open") { StoryApp(chatOpen: true) }
 #Preview("App · settings open") { StoryApp(settingsOpen: true) }
+#Preview("App · review open") { StoryApp(reviewOpen: true) }
 
 #Preview("Fleet · busy") { StoryScreen("fleet.busy") }
 #Preview("Fleet · stopped open") { StoryScreen("fleet.stopped-open") }
@@ -274,6 +280,12 @@ extension ScriptedChat: OpenChat {
 #Preview("Chat · run open") { StoryScreen("chat.run-open") }
 #Preview("Chat · asking") { StoryScreen("chat.asking") }
 #Preview("Chat · plan") { StoryScreen("chat.plan") }
+
+#Preview("Review · page") { StoryScreen("review.page") }
+#Preview("Review · selecting") { StoryScreen("review.selection") }
+#Preview("Review · writing") { StoryScreen("review.comment") }
+#Preview("Review · editing") { StoryScreen("review.editing") }
+#Preview("Review · folded") { StoryScreen("review.folded") }
 
 #Preview("Asks") { StoryGallery(.asks) }
 #Preview("Chat states") { StoryGallery(.chat) }

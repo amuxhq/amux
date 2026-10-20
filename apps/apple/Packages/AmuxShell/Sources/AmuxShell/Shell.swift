@@ -298,7 +298,7 @@ private struct ChangesPage: View {
     var body: some View {
         Group {
             if let chat, let review {
-                ReviewPage(model: review, agent: name(chat), against: against) { action in
+                ReviewPage(model: review, against: against) { action in
                     switch action {
                     case .back: router.pop()
                     case .attach:
@@ -309,16 +309,19 @@ private struct ChangesPage: View {
             } else {
                 ZStack(alignment: .topLeading) {
                     Ground()
-                    VStack(alignment: .leading, spacing: 14) {
-                        BackLink(String(localized: "Chat"), identifier: "review.back") { router.pop() }
-                        if let missing {
-                            Explain(missing).identified("review.empty")
-                        }
+                    if let missing {
+                        Explain(missing)
+                            .identified("review.empty")
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
                 }
-                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarBackButtonHidden(true)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        BarBack(identifier: "review.back") { router.pop() }
+                    }
+                }
             }
         }
         .task {
@@ -334,10 +337,6 @@ private struct ChangesPage: View {
             case .failure(let failure): missing = failure.description
             }
         }
-    }
-
-    private func name(_ chat: ChatModel) -> String {
-        stores.fleet.row(agent)?.name ?? chat.frame?.name ?? agent.description
     }
 }
 

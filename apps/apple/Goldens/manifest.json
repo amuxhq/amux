@@ -597,8 +597,8 @@
       "shows": "The review page with its files folded."
     },
     {
-      "id": "review.files",
-      "shows": "The list of files a review covers."
+      "id": "review.editing",
+      "shows": "Editing a comment already written, with the way to delete it."
     },
     {
       "id": "new-agent.codex",

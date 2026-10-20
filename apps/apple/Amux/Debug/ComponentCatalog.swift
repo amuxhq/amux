@@ -702,15 +702,20 @@ extension ComponentCatalog {
     // MARK: - Review
 
     private static func review(
-        _ id: String, height: CGFloat = 844, writing: Bool = false, settlesLate: Bool = false,
+        _ id: String, height: CGFloat = 844, writing: Bool = false, editing: Int? = nil,
         setUp: @escaping @MainActor (ReviewModel) -> Void = { _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "review.\(id)", family: .review, canvas: CGSize(width: 390, height: height),
-            settlesLate: settlesLate
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
         ) {
-            CatalogReview(setUp: setUp) { model in
-                ReviewPage(model: model, agent: "refactor-auth", against: "Uncommitted", writing: writing) { _ in }
+            // In a navigation stack, as the app pushes it, so its bar is the
+            // system's.
+            NavigationStack {
+                CatalogReview(setUp: setUp) { model in
+                    ReviewPage(model: model, against: "Uncommitted", writing: writing, editing: editing) { _ in }
+                }
             }
         }
     }
@@ -718,22 +723,20 @@ extension ComponentCatalog {
     fileprivate static let review: [ComponentExample] = {
         typealias F = CatalogFixtures
         return [
-            review("page", settlesLate: true) { F.comment($0) },
+            review("page") { F.comment($0) },
             review("selection") { model in
                 model.begin(at: ReviewLine(file: 0, hunk: 0, line: 2))
                 model.extend(to: ReviewLine(file: 0, hunk: 0, line: 4))
             },
-            review("comment", writing: true, settlesLate: true) { model in
+            review("comment", writing: true) { model in
                 model.begin(at: ReviewLine(file: 0, hunk: 0, line: 2))
                 model.extend(to: ReviewLine(file: 0, hunk: 0, line: 4))
             },
+            review("editing", editing: 0) { F.comment($0) },
             review("folded") { model in
                 F.comment(model)
                 model.toggle(file: 0)
                 model.toggle(file: 1)
-            },
-            ComponentExample(id: "review.files", family: .review, canvas: CGSize(width: 390, height: 420)) {
-                CatalogReview(setUp: F.comment) { model in ReviewFileList(model: model) { _ in } }
             },
         ]
     }()

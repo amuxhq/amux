@@ -224,18 +224,10 @@ public struct ChatScreen: View {
     @ToolbarContentBuilder
     private var bar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button {
+            BarBack(identifier: "chat.back") {
                 putDown += 1
                 actions(.back)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(design.ink.color)
-                    .frame(width: 36, height: 36)
-                    .barItemSurface()
             }
-            .accessibilityLabel("Back")
-            .identified("chat.back", label: "Back")
         }
         .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         // The way back is a circle of its own; the bar would otherwise set

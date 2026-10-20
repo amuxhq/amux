@@ -5,7 +5,9 @@ import UIKit
 /// One row of a ``MenuButton``'s menu.
 struct MenuItem {
     let title: String
-    let systemImage: String
+    var systemImage: String?
+    /// A second line under the title.
+    var subtitle: String?
     var destructive = false
     /// The current one of a set of choices, ticked.
     var chosen = false
@@ -108,11 +110,13 @@ private struct MenuTrigger: UIViewRepresentable {
         button.accessibilityLabel = name
         button.accessibilityIdentifier = identifier
         button.menu = UIMenu(children: items.map { item in
-            UIAction(
-                title: item.title, image: UIImage(systemName: item.systemImage),
+            let action = UIAction(
+                title: item.title, image: item.systemImage.flatMap { UIImage(systemName: $0) },
                 attributes: item.destructive ? .destructive : [],
                 state: item.chosen ? .on : .off
             ) { _ in item.action() }
+            action.subtitle = item.subtitle
+            return action
         })
     }
 }

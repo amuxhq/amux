@@ -21,6 +21,18 @@ public struct ReviewLine: Hashable, Comparable, Sendable {
     }
 }
 
+/// Where a comment is drawn: under one of a file's lines, or on the file
+/// itself when `line` is nil.
+public struct CommentPlace: Hashable, Sendable {
+    public var file: Int
+    public var line: ReviewLine?
+
+    public init(file: Int, line: ReviewLine?) {
+        self.file = file
+        self.line = line
+    }
+}
+
 /// One review page: an agent's working-tree diff frozen when the page
 /// opened, the comments written on it, and the lines selected for the next.
 ///
@@ -34,6 +46,9 @@ public final class ReviewModel {
     public let review: FrozenReview
     public private(set) var comments: [ReviewComment]
     public private(set) var doc: ReviewDoc
+    /// Where each comment is drawn, as indexes into `comments` in the order
+    /// the document places them.
+    public private(set) var placed: [CommentPlace: [Int]] = [:]
     /// Files folded to their heading, by index.
     public private(set) var folded: Set<Int> = []
     /// The line a selection started on and the line it reaches, in one file.
@@ -44,6 +59,7 @@ public final class ReviewModel {
         self.review = review
         self.comments = comments
         doc = Self.document(review, comments: comments)
+        placed = Self.places(comments, in: doc)
     }
 
     /// The runtime's document for a frozen diff with `comments` placed.
@@ -54,6 +70,31 @@ public final class ReviewModel {
             }
         }
         return parsed ?? ReviewDoc(base: "", head: review.diff.head, files: [], added: 0, removed: 0)
+    }
+
+    /// Where the runtime's document draws each comment: on the line it
+    /// names (the new side's, or a removed line's old one), else on its file.
+    static func places(_ comments: [ReviewComment], in doc: ReviewDoc) -> [CommentPlace: [Int]] {
+        var placed: [CommentPlace: [Int]] = [:]
+        for (index, comment) in comments.enumerated() {
+            guard let file = doc.files.firstIndex(where: { $0.path == comment.path }) else { continue }
+            var at: ReviewLine?
+            if comment.line > 0 || comment.oldLine > 0 {
+                search: for (hunk, lines) in doc.files[file].hunks.map(\.lines).enumerated() {
+                    for (line, diff) in lines.enumerated() {
+                        let hit = comment.line > 0
+                            ? diff.newLine == comment.line
+                            : diff.kind == .removed && diff.oldLine == comment.oldLine
+                        if hit {
+                            at = ReviewLine(file: file, hunk: hunk, line: line)
+                            break search
+                        }
+                    }
+                }
+            }
+            placed[CommentPlace(file: file, line: at), default: []].append(index)
+        }
+        return placed
     }
 
     // MARK: - Reading
@@ -143,9 +184,31 @@ public final class ReviewModel {
         case (nil, nil): (0, 0)
         }
         comments.append(ReviewComment(path: doc.files[last.file].path, line: new, oldLine: old, text: text))
-        doc = Self.document(review, comments: comments)
+        lay()
         clearSelection()
         return true
+    }
+
+    /// Places the comments again after they change.
+    private func lay() {
+        doc = Self.document(review, comments: comments)
+        placed = Self.places(comments, in: doc)
+    }
+
+    /// Rewrites a comment where it stands. Blank text changes nothing.
+    @discardableResult
+    public func rewrite(_ index: Int, as text: String) -> Bool {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, comments.indices.contains(index) else { return false }
+        comments[index].text = text
+        lay()
+        return true
+    }
+
+    public func remove(_ index: Int) {
+        guard comments.indices.contains(index) else { return }
+        comments.remove(at: index)
+        lay()
     }
 
     /// The draft's token for this review: the frozen diff and every comment.

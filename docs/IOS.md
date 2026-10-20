@@ -811,8 +811,8 @@ frames under a finger.
 
 ### Menus are presented by a UIKit button
 
-Every control that opens a menu, the chat's More and the ask card's More, is
-a `MenuButton`. SwiftUI's `Menu` presents through a UIKit button it lays over
+Every control that opens a menu, the chat's More, the ask card's More and the
+review page's file list, is a `MenuButton`. SwiftUI's `Menu` presents through a UIKit button it lays over
 its own label, and that button is what VoiceOver and XCUITest reach. The name
 and identifier given to the `Menu` stay on SwiftUI's side and never reach it,
 so the accessibility audit read those controls as buttons with nothing to

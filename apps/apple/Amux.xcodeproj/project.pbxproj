@@ -169,7 +169,6 @@
 		86121428B668E6D6F32E7AE8 /* components.chat-family-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 71A6007C075ED640DAE0FD1E /* components.chat-family-light.png */; };
 		862638906AAD2321A9D2AB6F /* ComponentSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69BAC2697858BF27BD8E5880 /* ComponentSnapshotTests.swift */; };
 		8674EA03DE58659FA64C01AE /* components.row-model-switch-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = B7F9C4696F53D68464B9FA20 /* components.row-model-switch-dark.png */; };
-		869E525834EB790DB761B4B6 /* components.review-files-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 3E1F9E7868C3E503E1BDF436 /* components.review-files-light.png */; };
 		86F63A7D1DF9068314ADDF3E /* components.composer-settings-claude-sdk-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = A953D216F54879B192713169 /* components.composer-settings-claude-sdk-dark.png */; };
 		8822EF1C095A129EA743FE5B /* components.ask-question-previews-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 295FB4FC0158A620234B9568 /* components.ask-question-previews-dark.png */; };
 		8829C33B884112BAABE512D0 /* components.row-agent-message-rejected-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 814326FADBA73ACF44C23D06 /* components.row-agent-message-rejected-light.png */; };
@@ -237,7 +236,6 @@
 		B9D528F839CD246D997A5707 /* components.ask-question-single-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 18096A2E886E40B8035EB575 /* components.ask-question-single-dark.png */; };
 		BA7B4364262972A2435595D7 /* components.ask-rejected-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 9A426466404241B11DC80F0C /* components.ask-rejected-dark.png */; };
 		BAED77CD2151147F26ABA239 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 7841E9EA7855115C8262F599 /* Localizable.xcstrings */; };
-		BC0409D284BEED82EB093D78 /* components.review-files-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = D1C2A077E4EBCFE86C97CED7 /* components.review-files-dark.png */; };
 		BC23FFD0FDD117F3F3D55ACE /* components.composer-sign-in-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 7E1C13AE584BFB9E9FC9FA43 /* components.composer-sign-in-light.png */; };
 		BC6CAADE595601BB87A31675 /* components.ask-question-other-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 487EECCEF2A57670F0A7C120 /* components.ask-question-other-light.png */; };
 		BCCBB0F34162B557F323066F /* components.composer-rejected-light.png in Resources */ = {isa = PBXBuildFile; fileRef = D7256236894E5942A208E8DA /* components.composer-rejected-light.png */; };
@@ -445,7 +443,6 @@
 		3C6C8784C0632DEFCA3AD0B1 /* components.composer-dictation-denied-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-dictation-denied-dark.png"; sourceTree = "<group>"; };
 		3C7A57BC248145D4441D9EAE /* components.ask-unanswerable-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-unanswerable-dark.png"; sourceTree = "<group>"; };
 		3C8BA47CCA06C0BC12FAD068 /* components.chat-family-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-family-dark.png"; sourceTree = "<group>"; };
-		3E1F9E7868C3E503E1BDF436 /* components.review-files-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.review-files-light.png"; sourceTree = "<group>"; };
 		3E6896EE7C64A0B526DE62BC /* components.composer-plus-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-plus-dark.png"; sourceTree = "<group>"; };
 		3F3D2E41272A87DCF5380C7F /* components.row-prompt-attachments-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-prompt-attachments-dark.png"; sourceTree = "<group>"; };
 		3F59FB509C9220ADFD2DF236 /* components.row-ask-grant-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-ask-grant-dark.png"; sourceTree = "<group>"; };
@@ -631,7 +628,6 @@
 		CE814F8D0A5B1ED26321E5FD /* components.row-ask-unanswerable-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-ask-unanswerable-dark.png"; sourceTree = "<group>"; };
 		CFBC562F89834BACC9F27F08 /* components.composer-draft-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-draft-light.png"; sourceTree = "<group>"; };
 		D048873439DA819CDC60DD71 /* components.row-boundary-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-boundary-dark.png"; sourceTree = "<group>"; };
-		D1C2A077E4EBCFE86C97CED7 /* components.review-files-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.review-files-dark.png"; sourceTree = "<group>"; };
 		D1DB4818849A191EE084960D /* components.composer-strip-trouble-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-strip-trouble-light.png"; sourceTree = "<group>"; };
 		D55A85D48914B5D3EB47DD08 /* components.row-ask-questions-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-ask-questions-light.png"; sourceTree = "<group>"; };
 		D571B8B0EF85F90BA6191E07 /* components.ask-codex-command-large-text-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-codex-command-large-text-light.png"; sourceTree = "<group>"; };
@@ -997,8 +993,6 @@
 				6B4A319C6619D7594CCDC509 /* components.overview-uncommitted-light.png */,
 				3F77082CBE6C09CB451E6807 /* components.review-comment-dark.png */,
 				24D850FF88E8405E812B186F /* components.review-comment-light.png */,
-				D1C2A077E4EBCFE86C97CED7 /* components.review-files-dark.png */,
-				3E1F9E7868C3E503E1BDF436 /* components.review-files-light.png */,
 				971BBE775770616DEE93C37C /* components.review-folded-dark.png */,
 				E32B3EBC99E143C2F8AF9920 /* components.review-folded-light.png */,
 				FB90548EDAB4865A5CDF71FC /* components.review-page-dark.png */,
@@ -1516,8 +1510,6 @@
 				A0A7787F927FB6B8F6844687 /* components.overview-uncommitted-light.png in Resources */,
 				CA11D57B3C1FEE2A9BB8DC5A /* components.review-comment-dark.png in Resources */,
 				3D33F386332339E9EC6274EC /* components.review-comment-light.png in Resources */,
-				BC0409D284BEED82EB093D78 /* components.review-files-dark.png in Resources */,
-				869E525834EB790DB761B4B6 /* components.review-files-light.png in Resources */,
 				DF327B1084DA57426995AF3A /* components.review-folded-dark.png in Resources */,
 				6D9A21635B9E0A9376F58940 /* components.review-folded-light.png in Resources */,
 				E00A58FED1BC795821023A20 /* components.review-page-dark.png in Resources */,

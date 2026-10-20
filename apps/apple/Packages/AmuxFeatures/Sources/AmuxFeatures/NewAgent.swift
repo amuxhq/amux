@@ -128,12 +128,8 @@ public struct NewAgent: View {
                 if !chips.isEmpty { recent }
             }
             if model.listing == .unavailable {
-                Explain("\(machineName) could not list its projects. Choose where its agents work, or type a path.")
+                Explain("\(machineName) could not list its repositories. Choose where its agents work, or type a path.")
                     .identified("new-agent.directory.unavailable")
-            }
-            if let failure = model.failure {
-                Refusal(text: failure)
-                    .identified("new-agent.refusal", value: failure)
             }
         }
     }
@@ -424,6 +420,18 @@ public struct NewAgent: View {
 
     private var foot: some View {
         BottomAction {
+            // Over the button that was pressed, in the machine's own words, as
+            // pairing's refusal is said beside the code it refused.
+            if let failure = model.failure {
+                Text(failure)
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.removed.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.xs)
+                    .padding(.bottom, 10)
+                    .identified("new-agent.refusal", value: failure)
+            }
             Button { actions(.start) } label: {
                 ActionLabel(
                     model.starting ? "Starting…" : "Start on \(machineName)", fill: true)
@@ -435,32 +443,6 @@ public struct NewAgent: View {
                 value: model.starting ? "starting" : "ready", enabled: model.ready)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footHeight = $0 }
-    }
-}
-
-/// Something the machine refused, in the machine's own words.
-private struct Refusal: View {
-    @Environment(\.design) private var design
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(design.inkMuted.color)
-            Text(text)
-                .designFont(.detail, design)
-                .foregroundStyle(design.ink.color)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous)
-                .fill(design.sunken.color)
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -554,7 +536,7 @@ public struct NewAgentDirectories: View {
                 Explain("Reading this host’s projects…")
                     .identified("new-agent.browse.reading")
             case .unavailable:
-                Explain("This host could not list its projects.")
+                Explain("This host could not list its repositories.")
                     .identified("new-agent.browse.unavailable")
             case .none, .ready:
                 if !model.found.isEmpty {

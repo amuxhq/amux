@@ -28,6 +28,14 @@ extension ComponentCatalog {
         fleet("two-accounts") { StoryFleet.busy(accounts: 2) },
         fleet("signed-out") { StoryFleet.busy(accounts: 0) },
         fleet("picture") { StoryFleet.busy(accounts: 2, picture: true) },
+        fleet("no-matches") {
+            // The runtime filters the rows; filtered to nothing, it lists none.
+            var stores = StoryFleet.busy()
+            stores.fleet.filter = FleetFilter(words: "kubernetes", only: nil)
+            stores.view = FleetView(sections: [], needYou: stores.view.needYou, working: stores.view.working)
+            stores.fleet.show(stores.view, hosts: stores.hostViews)
+            return stores
+        },
         ComponentExample(
             id: "fleet.chat-open", family: .fleet, canvas: CGSize(width: 390, height: 844),
             settlesLate: true

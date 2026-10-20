@@ -272,8 +272,8 @@ public struct HostsTab: View {
     /// back is the system's own settings.
     private var refusedNetwork: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("amux cannot see this network")
-                .designFont(.bodyEmphasis, design)
+            Text("amux can’t see this network")
+                .designFont(model.hosts.isEmpty ? .screenTitle : .bodyEmphasis, design)
                 .foregroundStyle(design.ink.color)
             Explain("""
                 Nobody let amux look at the network this phone is on, so no host on it \
@@ -286,7 +286,7 @@ public struct HostsTab: View {
             .identified("hosts.localNetwork.settings", label: "Open Settings")
         }
         .accessibilityElement(children: .contain)
-        .identified("hosts.localNetwork.refused", value: "amux cannot see this network")
+        .identified("hosts.localNetwork.refused", value: "amux can’t see this network")
     }
 
     /// Nothing paired and nothing found, drawn as the agent list's first run
@@ -294,18 +294,22 @@ public struct HostsTab: View {
     /// free on the network it is on, and what has not happened yet is a host
     /// running there.
     ///
-    /// The refused network is said above it when both are true: one says
-    /// there is nothing here, the other says why this app cannot tell.
+    /// When the network was refused, that is the headline instead: "no hosts
+    /// yet" would be a claim this app is in no position to make. Pairing from
+    /// a code shown on the computer still works either way.
     private var empty: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if model.localNetwork == .denied { refusedNetwork }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("No hosts yet")
-                        .designFont(.screenTitle, design)
-                        .foregroundStyle(design.ink.color)
-                        .identified("hosts.empty", value: "No hosts yet")
-                    Explain("A computer running amux on this network appears here, ready to pair.")
+                if model.localNetwork == .denied {
+                    refusedNetwork
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("No hosts yet")
+                            .designFont(.screenTitle, design)
+                            .foregroundStyle(design.ink.color)
+                            .identified("hosts.empty", value: "No hosts yet")
+                        Explain("A computer running amux on this network appears here, ready to pair.")
+                    }
                 }
                 PairingHint()
                     .identified("hosts.empty.howToPair")

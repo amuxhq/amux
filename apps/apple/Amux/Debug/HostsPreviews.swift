@@ -6,6 +6,7 @@ import SwiftUI
 
 #Preview("Hosts") { StoryScreen("hosts.list") }
 #Preview("Hosts · empty") { StoryScreen("hosts.empty") }
+#Preview("Hosts · network refused") { StoryScreen("hosts.network-refused") }
 
 #Preview("Host") { StoryScreen("host.page") }
 #Preview("Host · revoked") { StoryScreen("host.revoked") }

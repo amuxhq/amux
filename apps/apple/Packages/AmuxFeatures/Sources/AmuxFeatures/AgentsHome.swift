@@ -72,6 +72,10 @@ public struct AgentsHome: View {
         self.accounts = accounts
         self.hosts = hosts
         self.actions = actions
+        // Picked up from the fleet so the list comes back narrowed as it was
+        // left, rather than with an empty field over a filtered list.
+        _words = State(initialValue: model.filter.words)
+        _only = State(initialValue: model.filter.only)
     }
 
     public var body: some View {
@@ -276,7 +280,9 @@ public struct AgentsHome: View {
             let waiting = model.needYou
             return waiting == 0 ? entry.name : "\(entry.name) · \(waiting) need you"
         }
-        if !model.rows.isEmpty {
+        // Narrowed to nothing is still a fleet: the counts are the fleet's,
+        // not the filter's.
+        if !model.rows.isEmpty || filtering {
             return model.needYou == 0 ? "" : "\(model.needYou) need you"
         }
         if !model.loaded { return "" }
@@ -312,19 +318,12 @@ public struct AgentsHome: View {
             VStack(alignment: .leading, spacing: 0) {
                 chips
                     .padding(.bottom, Space.s)
-                if filtering && model.rows.isEmpty {
-                    Text("Nothing matches")
-                        .designFont(.detail, design)
-                        .foregroundStyle(design.inkMuted.color)
-                        .padding(.horizontal, Space.margin)
-                        .padding(.top, Space.xl)
-                        .identified("home.noMatches", label: "Nothing matches")
-                }
                 if !callouts.isEmpty {
                     CalloutStrip(callouts: callouts, act: actions)
                         .padding(.top, Space.xs)
                         .padding(.bottom, Space.s)
                 }
+                if filtering && model.rows.isEmpty { noMatches }
                 ForEach(Array(live.enumerated()), id: \.element.id) { index, row in
                     agentRow(row)
                     if index < live.count - 1 { rule(row) }
@@ -360,6 +359,30 @@ public struct AgentsHome: View {
     }
 
     // MARK: - Narrowing the list
+
+    /// Narrowed to nothing, said as the other empty states are, with the
+    /// way back beside it: the filter is the only thing hiding the fleet.
+    private var noMatches: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("No agents match")
+                    .designFont(.screenTitle, design)
+                    .foregroundStyle(design.ink.color)
+                    .identified("home.noMatches", label: "No agents match")
+                Explain("Try other words, or another chip.")
+            }
+            Button {
+                words = ""
+                only = nil
+            } label: {
+                ActionLabel("Clear", kind: .outline)
+            }
+            .buttonStyle(.amuxControl)
+            .identified("home.noMatches.clear", label: "Clear")
+        }
+        .padding(.horizontal, design.metrics.gutter)
+        .padding(.top, Space.xl)
+    }
 
     private var filter: FleetFilter { FleetFilter(words: words, only: only) }
 

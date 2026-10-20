@@ -17,6 +17,7 @@ import SwiftUI
 #Preview("Fleet · two accounts") { StoryScreen("fleet.two-accounts") }
 #Preview("Fleet · signed out") { StoryScreen("fleet.signed-out") }
 #Preview("Fleet · profile picture") { StoryScreen("fleet.picture") }
+#Preview("Fleet · no matches") { StoryScreen("fleet.no-matches") }
 
 #Preview("Foundation") { FoundationSheet() }
 

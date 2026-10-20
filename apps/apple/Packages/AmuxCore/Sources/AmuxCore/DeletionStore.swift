@@ -44,6 +44,13 @@ public final class DeletionStore {
         phase = .asking
     }
 
+    /// Asks the same question again after a refusal, keeping what was typed:
+    /// the person has gone to stop a renewal and will come back to delete.
+    public func askAgain() {
+        guard account != nil, !working else { return }
+        phase = .asking
+    }
+
     /// Puts the question away. Deleting is the one thing on this page that
     /// cannot be undone, so changing your mind costs nothing and leaves
     /// nothing behind.

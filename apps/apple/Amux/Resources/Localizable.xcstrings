@@ -229,18 +229,6 @@
         }
       }
     },
-    "%@ could not list its projects. Choose where its agents work, or type a path." : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ could not list its projects. Choose where its agents work, or type a path."
-          }
-        }
-      }
-    },
     "%@ could not say what %@ offers. The agent starts with the host’s defaults." : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
@@ -4465,18 +4453,6 @@
         }
       }
     },
-    "Nothing matches" : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nothing matches"
-          }
-        }
-      }
-    },
     "Nothing needs you · %@ working" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/FleetStore.swift.",
       "extractionState" : "manual",
@@ -6961,18 +6937,6 @@
         }
       }
     },
-    "This host could not list its projects." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This host could not list its projects."
-          }
-        }
-      }
-    },
     "This host is no longer paired with this phone." : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostPage.swift.",
       "extractionState" : "manual",
@@ -8049,18 +8013,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "amux"
-          }
-        }
-      }
-    },
-    "amux cannot see this network" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "amux cannot see this network"
           }
         }
       }
@@ -10737,6 +10689,114 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An account lets this phone reach your hosts from anywhere, and a subscription bought on %@ carries over."
+          }
+        }
+      }
+    },
+    "Couldn’t open this chat" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t open this chat"
+          }
+        }
+      }
+    },
+    "Reading the changes" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading the changes"
+          }
+        }
+      }
+    },
+    "No changes" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No changes"
+          }
+        }
+      }
+    },
+    "Couldn’t read the changes" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read the changes"
+          }
+        }
+      }
+    },
+    "No agents match" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No agents match"
+          }
+        }
+      }
+    },
+    "Try other words, or another chip." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try other words, or another chip."
+          }
+        }
+      }
+    },
+    "amux can’t see this network" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "amux can’t see this network"
+          }
+        }
+      }
+    },
+    "%@ could not list its repositories. Choose where its agents work, or type a path." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ could not list its repositories. Choose where its agents work, or type a path."
+          }
+        }
+      }
+    },
+    "This host could not list its repositories." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This host could not list its repositories."
           }
         }
       }

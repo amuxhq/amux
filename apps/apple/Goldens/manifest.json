@@ -701,6 +701,54 @@
       "shows": "An account subscribed through the App Store."
     },
     {
+      "id": "chat.opening",
+      "shows": "A chat on its way, before its first frame."
+    },
+    {
+      "id": "chat.not-opened",
+      "shows": "A chat that could not be opened, and why."
+    },
+    {
+      "id": "review.reading",
+      "shows": "The review page while the host reads the changes."
+    },
+    {
+      "id": "review.no-changes",
+      "shows": "The review page for an agent with nothing changed."
+    },
+    {
+      "id": "review.not-read",
+      "shows": "The review page when the host could not be asked for the changes."
+    },
+    {
+      "id": "fleet.no-matches",
+      "shows": "The agent list filtered down to nothing."
+    },
+    {
+      "id": "hosts.network-refused",
+      "shows": "Hosts with nothing found because this phone was refused the local network."
+    },
+    {
+      "id": "new-agent.refused",
+      "shows": "A host refusing to start the agent, and why."
+    },
+    {
+      "id": "new-agent.no-repositories",
+      "shows": "Choosing a directory on a host with no repositories."
+    },
+    {
+      "id": "new-agent.unlisted",
+      "shows": "Choosing a directory on a host that did not list its directories."
+    },
+    {
+      "id": "settings.delete-blocked",
+      "shows": "Deleting an account that an App Store subscription still renews."
+    },
+    {
+      "id": "settings.delete-failed",
+      "shows": "A deletion amux.sh did not answer."
+    },
+    {
       "id": "new-agent.claude",
       "shows": "Starting a Claude agent: the host, a recent directory, the name, the model and permission, and a new worktree."
     },

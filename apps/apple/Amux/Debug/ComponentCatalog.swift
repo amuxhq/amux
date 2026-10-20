@@ -665,8 +665,26 @@ enum ComponentCatalog {
                     strip: ScriptedChat.strip(model: "claude-sonnet-5", effort: "high", mode: "acceptEdits"),
                     settings: F.settingsClaudePty)
             }, showing: .settings),
+            placeholder("chat.opening", family: .chat, .waiting("Opening this chat"), identifier: "chat"),
+            placeholder(
+                "chat.not-opened", family: .chat,
+                .failed(title: "Couldn’t open this chat", reason: "desk did not answer"), identifier: "chat"),
         ]
     }()
+
+    /// A pushed page standing in for one that is not here, in a navigation
+    /// stack as the app pushes it, so its bar is the system's.
+    fileprivate static func placeholder(
+        _ id: String, family: ComponentExample.Family, _ showing: PagePlaceholder.Showing, identifier: String
+    ) -> ComponentExample {
+        ComponentExample(
+            id: id, family: family, canvas: CGSize(width: 390, height: 844),
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
+        ) {
+            NavigationStack { PagePlaceholder(showing, identifier: identifier) {} }
+        }
+    }
 }
 
 extension ComponentCatalog {
@@ -741,6 +759,15 @@ extension ComponentCatalog {
                 model.toggle(file: 0)
                 model.toggle(file: 1)
             },
+            placeholder("review.reading", family: .review, .waiting("Reading the changes"), identifier: "review"),
+            placeholder(
+                "review.no-changes", family: .review,
+                .empty(title: "No changes", detail: "This agent has no uncommitted changes."),
+                identifier: "review"),
+            placeholder(
+                "review.not-read", family: .review,
+                .failed(title: "Couldn’t read the changes", reason: "desk did not answer"),
+                identifier: "review"),
         ]
     }()
 }
@@ -1324,11 +1351,23 @@ extension ComponentCatalog {
         newAgent("browsing", provider: .claude, signedIn: true, browsing: true),
         newAgent("signed-out", provider: .claude, signedIn: false),
         newAgent("large-text", provider: .claude, signedIn: true, size: .accessibility3, height: 2400),
+        newAgent("refused", provider: .claude, signedIn: true) { store in
+            store.starts()
+            store.started(.failure(RuntimeFailure("desk refused: ~/src/amux is not a git repository")))
+        },
+        newAgent("no-repositories", provider: .claude, signedIn: true, browsing: true) { store in
+            store.listed(
+                .success(Directories(recent: [], repositories: [], roots: ["~/src"])), asked: store.asking())
+        },
+        newAgent("unlisted", provider: .claude, signedIn: true, browsing: true) { store in
+            store.listed(.failure(RuntimeFailure("desk did not answer")), asked: store.asking())
+        },
     ]
 
     private static func newAgent(
         _ id: String, provider: NewAgentStore.Provider, signedIn: Bool, browsing: Bool = false,
-        size: DynamicTypeSize = .large, height: CGFloat = 1100
+        size: DynamicTypeSize = .large, height: CGFloat = 1100,
+        setUp: @escaping @MainActor (NewAgentStore) -> Void = { _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "new-agent.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
@@ -1339,6 +1378,7 @@ extension ComponentCatalog {
             settlesLate: true
         ) {
             let (store, hosts) = CatalogFixtures.newAgent(provider: provider, signedIn: signedIn)
+            let _ = setUp(store)
             // The chooser is drawn on its own: a capture leaves out what the
             // screen presents, and the form under it is the other stories.
             if browsing {
@@ -1449,6 +1489,7 @@ extension ComponentCatalog {
     fileprivate static let hosts: [ComponentExample] = [
         hostsList("list") { _ in },
         hostsList("empty", hosts: []) { _ in },
+        hostsList("network-refused", hosts: []) { $0.sawLocalNetwork(.denied) },
         hostPage("page", host: CatalogFixtures.deskHost),
         hostPage("revoked", host: CatalogFixtures.oldLaptop),
     ]
@@ -1568,6 +1609,25 @@ extension ComponentCatalog {
             let stores = StoryFleet.busy()
             return DeleteAccountOverlay(
                 entry: stores.accounts.selectedAccount, model: DeletionStore(asking: AccountId("ada")),
+                actions: { _ in }
+            ) { YouScreen(accounts: stores.accounts) { _ in } }
+        },
+        sheet("delete-blocked") {
+            let stores = StoryFleet.busy()
+            return DeleteAccountOverlay(
+                entry: stores.accounts.selectedAccount,
+                model: DeletionStore(
+                    asking: AccountId("ada"), typed: "ada@example.com",
+                    phase: .blocked(source: .appStore, manageURL: AmuxCloudService.appStoreSubscriptions)),
+                actions: { _ in }
+            ) { YouScreen(accounts: stores.accounts) { _ in } }
+        },
+        sheet("delete-failed") {
+            let stores = StoryFleet.busy()
+            return DeleteAccountOverlay(
+                entry: stores.accounts.selectedAccount,
+                model: DeletionStore(
+                    asking: AccountId("ada"), typed: "ada@example.com", phase: .failed("amux.sh did not answer")),
                 actions: { _ in }
             ) { YouScreen(accounts: stores.accounts) { _ in } }
         },

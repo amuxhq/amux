@@ -9,6 +9,8 @@ import SwiftUI
 #Preview("Chat · run open") { StoryScreen("chat.run-open") }
 #Preview("Chat · asking") { StoryScreen("chat.asking") }
 #Preview("Chat · plan") { StoryScreen("chat.plan") }
+#Preview("Chat · opening") { StoryScreen("chat.opening") }
+#Preview("Chat · not opened") { StoryScreen("chat.not-opened") }
 
 #Preview("Asks") { StoryGallery(.asks) }
 

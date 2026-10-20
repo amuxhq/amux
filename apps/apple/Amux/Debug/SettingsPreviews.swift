@@ -17,6 +17,8 @@ import SwiftUI
     .environment(\.design, Design.app)
 }
 #Preview("Settings · delete account") { StoryScreen("settings.delete") }
+#Preview("Settings · delete blocked") { StoryScreen("settings.delete-blocked") }
+#Preview("Settings · delete failed") { StoryScreen("settings.delete-failed") }
 
 #Preview("Sign in") { StoryScreen("settings.sign-in") }
 #Preview("Sign in · waiting") { StoryScreen("settings.sign-in-waiting") }

@@ -43,7 +43,10 @@ struct DeleteAccountCard: View {
                 }
             }
             trouble
-            confirmation
+            // Blocked, the address and Delete would only be refused again;
+            // what there is to do is stop the renewal, and the question comes
+            // back, address kept, on the way out to do that.
+            if !blocked { confirmation }
             buttons
         }
         .padding(16)
@@ -100,8 +103,8 @@ struct DeleteAccountCard: View {
     /// A blocked deletion is not a failure and does not read as one: the
     /// account service will not delete an account while its subscription is
     /// still set to renew, and the one place that can be stopped is where it
-    /// was bought. So this says where to go, offers to go there, and leaves
-    /// the button below it to be pressed again on the way back.
+    /// was bought. So this says where to go and offers to go there, as the
+    /// one thing on the card to press.
     @ViewBuilder
     private var trouble: some View {
         switch model.phase {
@@ -111,21 +114,6 @@ struct DeleteAccountCard: View {
                     .designFont(.bodyEmphasis, design)
                     .foregroundStyle(design.ink.color)
                 Explain("Cancel renewal through \(source.place), then return to delete this account.")
-                Button { actions(.manageBilling(manageURL)) } label: {
-                    HStack(spacing: 5) {
-                        Text("Cancel Renewal in \(source.place)")
-                            .designFont(.bodyEmphasis, design)
-                        Image(systemName: "arrow.up.forward.square")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundStyle(design.accent.color)
-                    .thumbTarget(y: 13)
-                }
-                .buttonStyle(.amuxControl)
-                .identified(
-                    "delete.manage", label: "Cancel Renewal in \(source.place)",
-                    value: manageURL.absoluteString)
-                .reclaimingThumbTarget(y: 13)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
@@ -178,13 +166,27 @@ struct DeleteAccountCard: View {
         }
     }
 
+    private var blocked: Bool {
+        if case .blocked = model.phase { true } else { false }
+    }
+
     private var confirmed: Bool {
         model.confirms(entry.account.email) && !model.working
     }
 
     private var buttons: some View {
         ButtonPair {
-            choiceButton(String(localized: "Cancel"), kind: .outline, id: "delete.cancel") { actions(.cancel) }
+            // "Not Now" beside a renewal to cancel, so the two buttons do not
+            // both start with the same word for different things.
+            choiceButton(
+                blocked ? String(localized: "Not Now") : String(localized: "Cancel"),
+                kind: .outline, id: "delete.cancel"
+            ) { actions(.cancel) }
+            if case .blocked(let source, let manageURL) = model.phase {
+                choiceButton(
+                    String(localized: "Cancel Renewal in \(source.place)"), kind: .primary, id: "delete.manage"
+                ) { actions(.manageBilling(manageURL)) }
+            } else {
             // Until the address is this account's, the one press that cannot
             // be undone is not available at all — greyed rather than hidden,
             // so what the field is for is obvious from the button it unlocks.
@@ -192,6 +194,7 @@ struct DeleteAccountCard: View {
                 model.working ? String(localized: "Deleting…") : String(localized: "Delete"),
                 kind: .destructive, id: "delete.confirm", enabled: confirmed
             ) { actions(.confirm) }
+            }
         }
         .padding(.top, 2)
     }

@@ -300,7 +300,7 @@ private struct ChangesPage: View {
     /// What the review was frozen against, fixed as it opened.
     @State private var against: String?
     /// Why there is no review: nothing changed, or the host was not asked.
-    @State private var missing: String?
+    @State private var missing: PagePlaceholder.Showing?
 
     var body: some View {
         Group {
@@ -314,21 +314,10 @@ private struct ChangesPage: View {
                     }
                 }
             } else {
-                ZStack(alignment: .topLeading) {
-                    Ground()
-                    if let missing {
-                        Explain(missing)
-                            .identified("review.empty")
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                    }
-                }
-                .navigationBarBackButtonHidden(true)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        BarBack(identifier: "review.back") { router.pop() }
-                    }
-                }
+                PagePlaceholder(
+                    missing ?? .waiting(String(localized: "Reading the changes")),
+                    identifier: "review"
+                ) { router.pop() }
             }
         }
         .task {
@@ -338,10 +327,14 @@ private struct ChangesPage: View {
             switch await model.openReview() {
             case .success(let opened?): review = opened
             case .success(nil):
-                missing = model.comparison == .onBranch
-                    ? String(localized: "This agent has no changes on its branch.")
-                    : String(localized: "This agent has no uncommitted changes.")
-            case .failure(let failure): missing = failure.description
+                missing = .empty(
+                    title: String(localized: "No changes"),
+                    detail: model.comparison == .onBranch
+                        ? String(localized: "This agent has no changes on its branch.")
+                        : String(localized: "This agent has no uncommitted changes."))
+            case .failure(let failure):
+                missing = .failed(
+                    title: String(localized: "Couldn’t read the changes"), reason: failure.description)
             }
         }
     }
@@ -373,17 +366,11 @@ private struct ChatPage: View {
                     model: model, subject: subject, family: stores.profile?.family(agent),
                     actions: act)
             } else {
-                ZStack(alignment: .topLeading) {
-                    Ground()
-                    VStack(alignment: .leading, spacing: 14) {
-                        BackLink("Agents", identifier: "chat.back") { router.pop() }
-                        Explain(failure ?? String(localized: "Opening this chat"))
-                            .identified("chat.failure", value: failure ?? "")
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                }
-                .toolbar(.hidden, for: .navigationBar)
+                PagePlaceholder(
+                    failure.map { .failed(title: String(localized: "Couldn’t open this chat"), reason: $0) }
+                        ?? .waiting(String(localized: "Opening this chat")),
+                    identifier: "chat"
+                ) { router.pop() }
             }
         }
         .photosPicker(
@@ -884,7 +871,12 @@ private struct YouTabRoot: View {
                 // The only place a renewal can be stopped is where it was
                 // bought, which for an App Store subscription is a page of the
                 // system's rather than one this app or amux.sh owns.
-                case .manageBilling(let url): leave(for: url)
+                //
+                // The question is asked again on the way out, so that coming
+                // back finds the address still typed and Delete one press away.
+                case .manageBilling(let url):
+                    deletion.askAgain()
+                    leave(for: url)
                 }
             }
         ) {

@@ -254,6 +254,7 @@ dependencies = [
  "app-runtime",
  "cbindgen",
  "client",
+ "libc",
  "model",
  "node",
  "provider-fakes",

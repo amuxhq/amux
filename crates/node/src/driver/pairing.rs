@@ -19,7 +19,7 @@ use tokio::sync::{mpsc, oneshot};
 use tonic::Code;
 
 use super::calls::Delivered;
-use super::{Ask, Driver, Fed};
+use super::{Ask, Driver};
 use crate::trust::{Reachability, SharedTrustStore};
 
 /// Whether the pairing window is open, and whether too many wrong secrets
@@ -168,7 +168,7 @@ pub(crate) fn failure(status: &tonic::Status) -> PairFailure {
 
 /// Reads a pairing stream's messages into the core until it ends.
 fn read_into_core(
-    inputs: mpsc::WeakSender<Fed>,
+    inputs: super::WeakFeed,
     session: PairingId,
     mut inbound: tonic::Streaming<PairMessage>,
 ) {

@@ -7,9 +7,9 @@
 
 #![cfg(unix)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
-use app_embedded::{EdgeOverrides, EmbeddedRuntime, PairRequest, ProfileId, StartConfig};
+use app_embedded::{Cores, EdgeOverrides, EmbeddedRuntime, PairRequest, ProfileId, StartConfig};
 use app_runtime::values::{
     AccountBinding, BillingInterval, Draft, PaywallFrom, RelayLink, UsageEvent,
 };
@@ -56,6 +56,33 @@ fn config(dir: &std::path::Path) -> StartConfig {
         tail: 50,
         telemetry: true,
     }
+}
+
+/// The app's queue, as a thread of the test's: the cores step there,
+/// whenever they ring, and nowhere else.
+fn queue() -> Cores {
+    let rang = Arc::new((Mutex::new(false), Condvar::new()));
+    let ringing = rang.clone();
+    let cores = Cores::new(move || {
+        *ringing.0.lock().unwrap() = true;
+        ringing.1.notify_all();
+    });
+    let stepping = cores.clone();
+    std::thread::Builder::new()
+        .name("app-queue".to_owned())
+        .spawn(move || {
+            loop {
+                let mut rung = rang
+                    .1
+                    .wait_while(rang.0.lock().unwrap(), |rung| !*rung)
+                    .unwrap();
+                *rung = false;
+                drop(rung);
+                stepping.step();
+            }
+        })
+        .unwrap();
+    cores
 }
 
 fn loopback() -> EdgeOverrides {
@@ -164,10 +191,14 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
     .await
     .unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let embedded =
-        EmbeddedRuntime::start_with(&config(dir.path()), loopback(), Arc::new(SystemClock))
-            .await
-            .unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
     let phone = only_profile(&embedded).await;
 
     let desk = net.host("desk").unwrap();
@@ -333,10 +364,14 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
     .await
     .unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let embedded =
-        EmbeddedRuntime::start_with(&config(dir.path()), loopback(), Arc::new(SystemClock))
-            .await
-            .unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
     let phone = only_profile(&embedded).await;
     let desk = net.host("desk").unwrap().host_id;
     let (pin, addrs) = pairing_pin(&net).await;
@@ -430,6 +465,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
             ..loopback()
         },
         Arc::new(SystemClock),
+        queue(),
     )
     .await
     .unwrap();
@@ -525,6 +561,7 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
             ..loopback()
         },
         Arc::new(SystemClock),
+        queue(),
     )
     .await
     .unwrap();
@@ -598,6 +635,7 @@ async fn a_phone_dump_carries_the_runtimes_log_redacted() {
         },
         loopback(),
         Arc::new(SystemClock),
+        queue(),
     )
     .await
     .unwrap();
@@ -630,6 +668,7 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
             ..loopback()
         },
         Arc::new(SystemClock),
+        queue(),
     )
     .await
     .unwrap();

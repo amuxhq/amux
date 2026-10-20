@@ -9,10 +9,9 @@ use std::sync::Weak;
 use daemon_core::payload::{Answer, PeerFailure, PeerRequest};
 use daemon_core::{CallId, HostId, Input};
 use store::AgentKey;
-use tokio::sync::mpsc;
 use wire::Empty;
 
-use super::{Fed, feed};
+use super::feed;
 use crate::replicas::SourceVerdict;
 use crate::routing::host_from_core;
 use crate::runtime::ProfileRuntime;
@@ -24,7 +23,7 @@ pub(super) async fn stream(
     host: HostId,
     call: CallId,
     request: PeerRequest,
-    inputs: mpsc::WeakSender<Fed>,
+    inputs: super::WeakFeed,
 ) {
     let answer = |answer| feed(&inputs, Input::PeerAnswer { call, answer });
     let ended = match request {

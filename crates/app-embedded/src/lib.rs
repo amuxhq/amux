@@ -15,6 +15,7 @@
 //! chat asks for otherwise.
 
 mod log;
+mod phone;
 
 use std::io;
 use std::net::SocketAddr;
@@ -29,13 +30,14 @@ use app_runtime::values::{
     PendingPair, RelayLink, Roster,
 };
 pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent};
-use client::{Client, Clock, InProcess, SystemClock};
+use client::{Client, Clock, InProcess};
 use futures_util::{Stream, StreamExt};
-pub use node::ProfileId;
 use node::{
     ClientApi, CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, FrontDoor, LanOptions,
     ProfileRuntime, SourcePolicy, StartError, StartOptions,
 };
+pub use node::{Cores, ProfileId};
+pub use phone::Phone;
 use sha2::{Digest, Sha256};
 use tonic::Request;
 use wire::profile_service_server::ProfileService as _;
@@ -157,15 +159,13 @@ impl ProfileEvents {
 
 impl EmbeddedRuntime {
     /// Starts the installation under `config.data_dir`, creating its first
-    /// profile on first start.
-    pub async fn start(config: &StartConfig) -> Result<EmbeddedRuntime, EmbeddedError> {
-        Self::start_with(config, EdgeOverrides::default(), Arc::new(SystemClock)).await
-    }
-
+    /// profile on first start. Its profiles' cores have no threads: whoever
+    /// rings for `cores` steps them.
     pub async fn start_with(
         config: &StartConfig,
         overrides: EdgeOverrides,
         clock: Arc<dyn Clock>,
+        cores: Cores,
     ) -> Result<EmbeddedRuntime, EmbeddedError> {
         if let Some(path) = &config.log_path {
             // A log that cannot be opened costs the dump its log, never the
@@ -205,7 +205,10 @@ impl EmbeddedRuntime {
             data_dir: config.data_dir.clone(),
             // The phone has no boot id to read; each start is its own boot.
             boot_id: Some(uuid::Uuid::new_v4().to_string()),
-            launch: node::Launch::default(),
+            launch: node::Launch {
+                cores: Some(cores),
+                ..node::Launch::default()
+            },
             clock: clock.clone(),
             push: Arc::new(node::NoopSender),
             daemon_log: config.log_path.clone(),
@@ -450,6 +453,19 @@ impl EmbeddedRuntime {
     pub fn client(&self, profile: ProfileId) -> Result<Arc<dyn Client>, EmbeddedError> {
         let runtime = self.runtime(profile)?;
         Ok(Arc::new(InProcess::new(ClientApi::new(&runtime, None))))
+    }
+
+    /// Runs `work` where the profile's core steps, between two of its
+    /// steps: how a check finds out which queue that is.
+    pub async fn between_steps<T: Send + 'static>(
+        &self,
+        profile: ProfileId,
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Result<T, EmbeddedError> {
+        self.runtime(profile)?
+            .read_store(move |_| work())
+            .await
+            .map_err(|_| EmbeddedError::NoProfile(profile))
     }
 
     pub fn clock(&self) -> Arc<dyn Clock> {

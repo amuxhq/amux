@@ -23,9 +23,11 @@
 //! takes, so the newest checkpoint and the inputs since rebuild the core.
 
 mod calls;
+mod feed;
 mod links;
 mod origin;
 pub(crate) mod pairing;
+mod stepped;
 mod streams;
 
 use std::collections::{HashMap, VecDeque};
@@ -44,7 +46,9 @@ use daemon_core::{
     CallId, ChannelId, Daemon, DrainReport, HostId, IngestEnd, Ingested, Input, Job, JobId, LinkId,
     Output, Recorded, Retain, Retained, Settings, ShellWork, StartOptions, TimerId,
 };
+pub(crate) use feed::{Feed, WeakFeed};
 pub(crate) use links::{CoreLinks, core_error};
+pub use stepped::Cores;
 use store::Sqlite;
 pub use streams::{InventorySubscription, Subscription};
 use tokio::runtime::Handle;
@@ -169,7 +173,7 @@ pub(crate) struct Opened {
 
 /// A profile's core thread, from the shell's side.
 pub(crate) struct Driver {
-    inputs: mpsc::Sender<Fed>,
+    inputs: Feed,
     /// What links and channels reported, in the order they did.
     reports: Arc<Mutex<VecDeque<Input>>>,
     calls: Arc<CallTable>,
@@ -180,6 +184,10 @@ pub(crate) struct Driver {
     outgoing: Outgoing,
     /// The core thread, once started: the store closes when it ends.
     thread: std::sync::OnceLock<std::thread::JoinHandle<()>>,
+    /// Where the caller steps the core instead, when it has no thread.
+    cores: Option<Cores>,
+    /// The core as held for its caller to step, once started.
+    slot: std::sync::OnceLock<Arc<stepped::Slot>>,
     /// The trust store as the core last published it.
     trust: crate::trust::SharedTrustStore,
     /// The pairing window as the core last said.
@@ -201,8 +209,10 @@ impl Driver {
         dir: PathBuf,
         options: StartOptions,
         dump_interval_ms: u64,
+        cores: Option<Cores>,
     ) -> (Self, CoreThread) {
         let (inputs, fed) = mpsc::channel(INPUT_ROOM);
+        let inputs = Feed::new(inputs, cores.as_ref().map(Cores::bell));
         let calls = Arc::new(CallTable::default());
         let reports = Arc::new(Mutex::new(VecDeque::new()));
         let connections = Arc::new(Mutex::new(Weak::new()));
@@ -273,6 +283,8 @@ impl Driver {
             connections,
             outgoing,
             thread: std::sync::OnceLock::new(),
+            cores,
+            slot: std::sync::OnceLock::new(),
             trust,
             window,
             pairings,
@@ -518,6 +530,9 @@ impl Drop for Driver {
         {
             let _ = thread.join();
         }
+        if let Some(slot) = self.slot.get() {
+            slot.end();
+        }
     }
 }
 
@@ -571,7 +586,7 @@ pub(crate) struct CoreThread {
     /// Inputs the driver raised itself while carrying out a step, stepped
     /// before anything newer.
     again: VecDeque<Input>,
-    inputs: mpsc::WeakSender<Fed>,
+    inputs: WeakFeed,
     runtime: Weak<ProfileRuntime>,
     calls: Arc<CallTable>,
     connections: Arc<Mutex<Weak<ConnectionManager>>>,
@@ -620,8 +635,14 @@ fn entropy() -> [u8; 32] {
 }
 
 impl CoreThread {
-    /// Starts the thread for `driver`, on the runtime it is called from.
+    /// Starts the thread for `driver`, on the runtime it is called from,
+    /// or holds the core for its caller to step when the driver has no
+    /// thread for it.
     pub(crate) fn start(self, driver: &Driver) {
+        if let Some(cores) = &driver.cores {
+            let _ = driver.slot.set(cores.hold(self));
+            return;
+        }
         let handle = Handle::current();
         let thread = std::thread::Builder::new()
             .name("amux-core".to_owned())
@@ -634,161 +655,205 @@ impl CoreThread {
     }
 
     fn run(mut self) {
-        let mut out = Vec::new();
         loop {
             let fed = match self.again.pop_front() {
                 Some(input) => Fed::Input(input),
                 None => match self.fed.blocking_recv() {
-                    Some(Fed::Stop) | None => return,
-                    Some(Fed::Read(read)) => {
-                        read(self.daemon.store());
-                        continue;
-                    }
-                    Some(Fed::Look(look)) => {
-                        look(&self.daemon);
-                        continue;
-                    }
-                    Some(Fed::Beneath(write)) => {
-                        write(self.daemon.store_beneath());
-                        continue;
-                    }
-                    Some(Fed::Capture { store, done }) => {
-                        let _ = done.send(self.capture(&store));
-                        continue;
-                    }
                     Some(fed) => fed,
+                    None => return,
                 },
             };
-            let Some(runtime) = self.runtime.upgrade() else {
+            if !self.turn(fed) {
                 return;
-            };
-            // The clock first, so a timer the step arms counts from now;
-            // then links and channels.
-            self.tick(&runtime, &mut out);
-            let reports = std::mem::take(&mut *self.reports.lock().unwrap());
-            for report in reports {
-                self.step(&runtime, report, &mut out);
             }
-            let fed = match fed {
-                Fed::Channel { want, reply } => {
-                    self.channel_reply = Some(reply);
-                    self.step(&runtime, want, &mut out);
-                    self.channel_reply = None;
-                    continue;
-                }
-                Fed::Route { failed, reply } => {
-                    self.route_reply = Some(reply);
-                    self.step(&runtime, failed, &mut out);
-                    self.route_reply = None;
-                    continue;
-                }
-                Fed::Forward {
-                    call,
-                    host,
-                    request,
-                } => {
-                    let request = ClientRequest::Forward {
-                        host,
-                        request: Box::new(request),
-                    };
-                    self.step(&runtime, Input::ClientCall { call, request }, &mut out);
-                    continue;
-                }
-                Fed::Wake => continue,
-                fed => fed,
-            };
-            let mut call = None;
-            let input = match fed {
-                Fed::Input(input) => Some(input),
-                Fed::Call { call: id, ask } => {
-                    call = Some(Arriving::Client(id, ask));
-                    None
-                }
-                Fed::PeerCall {
-                    from,
-                    call: id,
-                    request,
-                } => {
-                    call = Some(Arriving::Peer(from, id, Box::new(request)));
-                    None
-                }
-                Fed::Ingest { agent, done } => {
-                    let waiting = Waiting { frames: 0, done };
-                    self.waiting.entry(agent).or_default().push(waiting);
-                    Some(Input::Nudge { agent })
-                }
-                Fed::Checkpoint { done } => {
-                    self.checkpoint_waiting.push(done);
-                    match self.checkpointing {
-                        // One still moving its WAL covers every commit its
-                        // waiter has seen: commits wait for it.
-                        Some(_) if self.daemon.checkpoints().holding() => None,
-                        // One past that does not, so another follows it.
-                        Some(_) => {
-                            self.checkpoint_again = true;
-                            None
-                        }
-                        None => Some(Input::Timer {
-                            id: TimerId::Checkpoint,
-                        }),
-                    }
-                }
-                Fed::Drain { done } => {
-                    // The timer begins a pass now unless one is under way.
-                    let pass = self.daemon.deliveries().answering_pass();
-                    self.drain_waiting.push((pass, done));
-                    Some(Input::Timer {
-                        id: TimerId::Deliveries,
-                    })
-                }
-                Fed::Retain { retain, done } => {
-                    self.retain_reply = Some(done);
-                    Some(Input::Retain(retain))
-                }
-                Fed::Wake
-                | Fed::Stop
-                | Fed::Channel { .. }
-                | Fed::Route { .. }
-                | Fed::Forward { .. }
-                | Fed::Look(_)
-                | Fed::Read(_)
-                | Fed::Beneath(_)
-                | Fed::Capture { .. } => None,
-            };
-            let launch = runtime.launch();
-            let settings = Settings {
-                notify_delay_ms: launch.notify_delay_ms,
-                push_retry_ms: launch.push_retry_ms.max(0) as u64,
-                checkpoint_interval_ms: launch.checkpoint_interval_ms.max(0) as u64,
-                tail_rows: launch.tail_rows,
-                source_backoff_ms: launch.source_backoff_ms.max(0) as u64,
-                source_backoff_max_ms: launch.source_backoff_max_ms.max(0) as u64,
-                start_deadline_ms: launch.start_deadline_ms.max(0) as u64,
-                stop_deadline_ms: launch.stop_deadline_ms.max(0) as u64,
-                delivery_retry_ms: launch.delivery_retry_ms.max(0) as u64,
-                reply_patience_ms: launch.reply_patience_ms.max(0) as u64,
-            };
-            if self.settings != Some(settings) {
-                self.settings = Some(settings);
-                self.step(&runtime, Input::Configure(settings), &mut out);
-            }
-            let input = match call {
-                Some(Arriving::Client(call, ask)) => Some(Input::ClientCall {
-                    call,
-                    request: runtime.client_request(self.daemon.store(), ask),
-                }),
-                Some(Arriving::Peer(from, call, request)) => Some(Input::PeerCall {
-                    from,
-                    call,
-                    request: runtime.peer_request(*request),
-                }),
-                None => input,
-            };
-            if let Some(input) = input {
-                self.step(&runtime, input, &mut out);
-            }
-            drop(runtime);
         }
+    }
+
+    /// Steps at most `most` of the inputs waiting, on the calling thread,
+    /// for a caller that steps the core instead of a thread of its own.
+    fn step_waiting(&mut self, most: usize) -> stepped::Turn {
+        let mut turn = stepped::Turn {
+            stepped: 0,
+            more: true,
+            ended: false,
+        };
+        while turn.stepped < most {
+            let fed = match self.again.pop_front() {
+                Some(input) => Fed::Input(input),
+                None => match self.fed.try_recv() {
+                    Ok(fed) => fed,
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        turn.more = false;
+                        return turn;
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        turn.ended = true;
+                        return turn;
+                    }
+                },
+            };
+            turn.stepped += 1;
+            if !self.turn(fed) {
+                turn.ended = true;
+                return turn;
+            }
+        }
+        turn
+    }
+
+    /// Takes one thing fed to the core; false once the core has ended.
+    fn turn(&mut self, fed: Fed) -> bool {
+        let mut out = Vec::new();
+        let fed = match fed {
+            Fed::Stop => return false,
+            Fed::Read(read) => {
+                read(self.daemon.store());
+                return true;
+            }
+            Fed::Look(look) => {
+                look(&self.daemon);
+                return true;
+            }
+            Fed::Beneath(write) => {
+                write(self.daemon.store_beneath());
+                return true;
+            }
+            Fed::Capture { store, done } => {
+                let _ = done.send(self.capture(&store));
+                return true;
+            }
+            fed => fed,
+        };
+        let Some(runtime) = self.runtime.upgrade() else {
+            return false;
+        };
+        // The clock first, so a timer the step arms counts from now;
+        // then links and channels.
+        self.tick(&runtime, &mut out);
+        let reports = std::mem::take(&mut *self.reports.lock().unwrap());
+        for report in reports {
+            self.step(&runtime, report, &mut out);
+        }
+        let fed = match fed {
+            Fed::Channel { want, reply } => {
+                self.channel_reply = Some(reply);
+                self.step(&runtime, want, &mut out);
+                self.channel_reply = None;
+                return true;
+            }
+            Fed::Route { failed, reply } => {
+                self.route_reply = Some(reply);
+                self.step(&runtime, failed, &mut out);
+                self.route_reply = None;
+                return true;
+            }
+            Fed::Forward {
+                call,
+                host,
+                request,
+            } => {
+                let request = ClientRequest::Forward {
+                    host,
+                    request: Box::new(request),
+                };
+                self.step(&runtime, Input::ClientCall { call, request }, &mut out);
+                return true;
+            }
+            Fed::Wake => return true,
+            fed => fed,
+        };
+        let mut call = None;
+        let input = match fed {
+            Fed::Input(input) => Some(input),
+            Fed::Call { call: id, ask } => {
+                call = Some(Arriving::Client(id, ask));
+                None
+            }
+            Fed::PeerCall {
+                from,
+                call: id,
+                request,
+            } => {
+                call = Some(Arriving::Peer(from, id, Box::new(request)));
+                None
+            }
+            Fed::Ingest { agent, done } => {
+                let waiting = Waiting { frames: 0, done };
+                self.waiting.entry(agent).or_default().push(waiting);
+                Some(Input::Nudge { agent })
+            }
+            Fed::Checkpoint { done } => {
+                self.checkpoint_waiting.push(done);
+                match self.checkpointing {
+                    // One still moving its WAL covers every commit its
+                    // waiter has seen: commits wait for it.
+                    Some(_) if self.daemon.checkpoints().holding() => None,
+                    // One past that does not, so another follows it.
+                    Some(_) => {
+                        self.checkpoint_again = true;
+                        None
+                    }
+                    None => Some(Input::Timer {
+                        id: TimerId::Checkpoint,
+                    }),
+                }
+            }
+            Fed::Drain { done } => {
+                // The timer begins a pass now unless one is under way.
+                let pass = self.daemon.deliveries().answering_pass();
+                self.drain_waiting.push((pass, done));
+                Some(Input::Timer {
+                    id: TimerId::Deliveries,
+                })
+            }
+            Fed::Retain { retain, done } => {
+                self.retain_reply = Some(done);
+                Some(Input::Retain(retain))
+            }
+            Fed::Wake
+            | Fed::Stop
+            | Fed::Channel { .. }
+            | Fed::Route { .. }
+            | Fed::Forward { .. }
+            | Fed::Look(_)
+            | Fed::Read(_)
+            | Fed::Beneath(_)
+            | Fed::Capture { .. } => None,
+        };
+        let launch = runtime.launch();
+        let settings = Settings {
+            notify_delay_ms: launch.notify_delay_ms,
+            push_retry_ms: launch.push_retry_ms.max(0) as u64,
+            checkpoint_interval_ms: launch.checkpoint_interval_ms.max(0) as u64,
+            tail_rows: launch.tail_rows,
+            source_backoff_ms: launch.source_backoff_ms.max(0) as u64,
+            source_backoff_max_ms: launch.source_backoff_max_ms.max(0) as u64,
+            start_deadline_ms: launch.start_deadline_ms.max(0) as u64,
+            stop_deadline_ms: launch.stop_deadline_ms.max(0) as u64,
+            delivery_retry_ms: launch.delivery_retry_ms.max(0) as u64,
+            reply_patience_ms: launch.reply_patience_ms.max(0) as u64,
+        };
+        if self.settings != Some(settings) {
+            self.settings = Some(settings);
+            self.step(&runtime, Input::Configure(settings), &mut out);
+        }
+        let input = match call {
+            Some(Arriving::Client(call, ask)) => Some(Input::ClientCall {
+                call,
+                request: runtime.client_request(self.daemon.store(), ask),
+            }),
+            Some(Arriving::Peer(from, call, request)) => Some(Input::PeerCall {
+                from,
+                call,
+                request: runtime.peer_request(*request),
+            }),
+            None => input,
+        };
+        if let Some(input) = input {
+            self.step(&runtime, input, &mut out);
+        }
+        drop(runtime);
+        true
     }
 
     /// Tells the core the time, when it moved.
@@ -1269,19 +1334,14 @@ impl CoreThread {
 
 /// Feeds the core an input from off its thread, unless the core has
 /// stopped.
-async fn feed(inputs: &mpsc::WeakSender<Fed>, input: Input) {
+async fn feed(inputs: &WeakFeed, input: Input) {
     if let Some(inputs) = inputs.upgrade() {
         let _ = inputs.send(Fed::Input(input)).await;
     }
 }
 
 /// Runs one job off the core thread and feeds its result back.
-async fn run_job(
-    runtime: Weak<ProfileRuntime>,
-    job: JobId,
-    op: Job,
-    inputs: mpsc::WeakSender<Fed>,
-) {
+async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: WeakFeed) {
     let result = match op {
         Job::Fsync { path, bytes } => fsync(path, bytes).await,
         Job::TeardownHost { host } => {

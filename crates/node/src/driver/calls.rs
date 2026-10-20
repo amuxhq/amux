@@ -203,17 +203,13 @@ impl AnswerQueue {
 pub(crate) struct Answers {
     queue: Arc<AnswerQueue>,
     calls: Arc<CallTable>,
-    inputs: mpsc::Sender<Fed>,
+    inputs: super::Feed,
     /// What [`Answers::opened`] took to see whether the call opened.
     first: Option<Delivered>,
 }
 
 impl Answers {
-    pub(crate) fn new(
-        queue: Arc<AnswerQueue>,
-        calls: Arc<CallTable>,
-        inputs: mpsc::Sender<Fed>,
-    ) -> Self {
+    pub(crate) fn new(queue: Arc<AnswerQueue>, calls: Arc<CallTable>, inputs: super::Feed) -> Self {
         Self {
             queue,
             calls,
@@ -275,6 +271,7 @@ mod tests {
     async fn a_call_dropped_before_its_end_is_reported_cancelled() {
         let calls = Arc::new(CallTable::default());
         let (inputs, mut fed) = mpsc::channel(4);
+        let inputs = super::super::Feed::new(inputs, None);
         let queue = calls.open(2);
         let call = queue.call();
         drop(Answers::new(queue.clone(), calls.clone(), inputs.clone()));

@@ -154,6 +154,9 @@ pub struct Launch {
     /// How long after a dump the profile's core asked for another of the
     /// same kind is held back, and counted in the next.
     pub dump_interval_ms: u64,
+    /// Where the profile's core is stepped by its caller; none gives it a
+    /// thread of its own.
+    pub cores: Option<crate::Cores>,
 }
 
 impl Default for Launch {
@@ -190,6 +193,7 @@ impl Default for Launch {
             checkpoint_interval_ms: 60_000,
             step_budget: daemon_core::StepBudget::DAEMON,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
+            cores: None,
         }
     }
 }
@@ -667,6 +671,7 @@ impl ProfileRuntime {
                     dir.clone(),
                     options,
                     launch.dump_interval_ms,
+                    launch.cores.clone(),
                 );
                 core = Some(thread);
                 driver
@@ -1278,7 +1283,7 @@ impl ProfileRuntime {
         &self,
         id: AgentId,
         frame: CtlFrame,
-        inputs: tokio::sync::mpsc::WeakSender<crate::driver::Fed>,
+        inputs: crate::driver::WeakFeed,
     ) {
         let agent = core_agent(id);
         let input_id = input_id_of(&frame);

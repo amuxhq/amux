@@ -9,8 +9,8 @@ app layer splits those into three crates:
 | Crate | Owns |
 | --- | --- |
 | `app-runtime` | The chats and fleet over a local runtime: session and fleet drivers, views asked for by row key, changes gathered until the host's next main-thread turn, and the values a host passes in and gets back |
-| `app-embedded` | The daemon hosted in the client's own process: one installation with one profile per account, each with its identity, trust, store of replica rows, pairing, direct links and relay link |
-| `app-ffi` | The C ABI over both: exported `amux_*` functions, JSON in and out, callbacks, opaque handles, the `staticlib`, and the header `cbindgen` generates |
+| `app-embedded` | The daemon hosted in the client's own process: one installation with one profile per account, each with its identity, trust, store of replica rows, pairing, direct links and relay link; and `Phone`, the driver that steps its cores on the client's queue and confines its transport to one thread |
+| `app-ffi` | The C ABI over both: exported `amux_*` functions, JSON in and out, a wake descriptor and a step, tickets for acts, opaque handles, the `staticlib`, and the header `cbindgen` generates |
 
 The iPhone app is the one client built on them. How the Swift side uses
 them is on [the iPhone page](IOS.md).
@@ -84,11 +84,33 @@ It reads the whole list again only when a change batch says it was reloaded,
 which a Reset does, and so does a return to the newest row after more arrived
 than the window holds.
 
-The host's wake is called on a worker thread with the fleet or a chat's id
-whenever that one moved, and at most once until the host takes its changes.
-However many updates land in between, the host takes every changed key
-together on its next turn (`Coalescer`, in `app-runtime/src/coalesce.rs`), so
-it reconfigures only the rows that changed.
+The host is told the fleet or a chat moved whenever it did, and at most once
+until it takes that one's changes. However many updates land in between, the
+host takes every changed key together on its next turn (`Coalescer`, in
+`app-runtime/src/coalesce.rs`), so it reconfigures only the rows that
+changed.
+
+## The loop
+
+The client owns the loop; Rust never calls into it. `Phone` in
+`app-embedded` starts the installation with its profiles' daemon cores held
+for stepping (`node::Cores`) rather than on threads of their own, and runs
+links, channels, gRPC and the client streams on one confined tokio thread.
+That thread posts what it decodes onto the cores' input queues, and every
+input posted, like every view that moved and every act that ended, makes a
+wake descriptor readable. The client watches the descriptor from one serial
+queue and calls `step` there, which reads the descriptor empty and steps
+every input waiting for every core, a batch per core at a time, on that
+queue. So a core steps one thing at a time on the client's queue and
+nowhere else, while its timers and jobs still run on the transport thread
+and come back as inputs.
+
+A call that waits for the cores to do something (starting, stopping, a
+profile or chat opening) runs its work on the transport thread and steps the
+cores on the calling thread meanwhile, so it never waits on a queue the
+calling thread holds. Through the C ABI a step answers JSON naming the
+fleets and chats to redraw, whether the profile list moved, and the results
+of acts, each under the ticket its act returned when it started.
 
 ## Profiles
 

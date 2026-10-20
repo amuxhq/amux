@@ -159,11 +159,21 @@ supervisor that inherits the serving daemon. The feed publishes newer
 releases, each good or bad (a daemon from a bad build never prepares); a
 daemon prepares, receives `go`, cannot be started, exits when asked or
 crashes; the start, stop and restart timers fire; `amux update` asks for a
-look; and the supervisor crashes, also before any file output of a step,
-so every prefix of a swap or a rollback is explored, and starts again from
-the binary at the path while its daemons exit with their pipe. Both swap
-orders are checked: the binary renamed over while the daemon runs, and the
-daemon stopped first. The properties are in `src/supervisor.rs`.
+look; and the supervisor crashes, also before any file output of a step
+and between the two moves of an install or a rollback, so every prefix of a
+swap or a rollback is explored, and starts again from the binary at the
+path while its daemons exit with their pipe. A crash or power loss is the
+same here: the daemons die with the supervisor. Both platforms' swaps are
+checked. Where a running binary can be renamed over, the daemon keeps
+running, an install links prev to the binary and renames the staged one
+over the path, and a supervisor that starts between the two finds prev is
+its own binary and removes it. Where it cannot (Windows), the daemon stops
+first, an install renames the binary to prev and the staged one into the
+empty path, and a rollback over the supervisor's own running image renames
+that aside before putting prev back. Between a Windows install's or
+rollback's two renames the path is empty, and a supervisor that dies there
+is not started again: the property that a binary can always start names
+that window as its exception. The properties are in `src/supervisor.rs`.
 
 ## One open chat
 
@@ -284,7 +294,7 @@ under `just test`.
 | Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 396,826 | 38 s | 74 s | 161 s and 299 s (the first at 391,552 states, before the first listing predated the parent) | 600 s | the child's spontaneous exit too, 2 links down, 2 waits | 757 s |
 | Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 1,233,958 | 41 s | 73 s | not yet measured (134 s at 859,652 states) | 600 s | 4 up, 3 down, 3 failures | 431 s |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 44 s for both (before a stop interrupted the test kind's turn) | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
-| Supervisor update, both swap orders | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 4,189,038 and 4,449,354 | 5 s | 11 s | not yet measured | 120 s each | 3 releases, 2 failed starts, 6 timers firing | 77 s |
+| Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | not yet measured | 120 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | not yet measured | 240 s | 3 writes | 343 s |
 | Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 216,320 | 27 s | 51 s | not yet measured | 480 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
 

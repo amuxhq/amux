@@ -11,9 +11,15 @@
 //! once, starts a daemon from whatever binary is at the path, kills a daemon
 //! at once, and when the core hands over, starts the installed binary as a
 //! supervisor that inherits the serving daemon. The supervisor may crash
-//! before any file output of a step is performed, so every prefix of a
-//! swap or a rollback is explored; launchd starts it again at once from the
-//! binary at the path, and its daemons exit as the activation pipe closes.
+//! before any file output of a step is performed, and between the two moves
+//! an install or a rollback makes, so every prefix of a swap or a rollback
+//! is explored; launchd starts it again at once from the binary at the
+//! path, and its daemons exit as the activation pipe closes. The moves are
+//! the platform's: where a running binary can be renamed over, an install
+//! links prev to the binary and renames the staged one over the path; where
+//! it cannot (Windows), it renames the binary to prev and the staged one
+//! into the empty path, and a rollback over its own running image renames
+//! that aside first.
 //! A release is good or bad: a daemon from a bad build never prepares. Time
 //! moves only when a timer the core armed fires, or the feed is looked at.
 
@@ -51,8 +57,8 @@ pub struct SupervisorUpdate {
 }
 
 impl SupervisorUpdate {
-    /// The bounds `just test` explores exhaustively: 4,189,038 states in
-    /// 5 s on 4 threads of an M-series Mac.
+    /// The bounds `just test` explores exhaustively: 5,819,060 states in
+    /// 8 s on 4 threads of an M-series Mac.
     pub const fn ci() -> Self {
         Self {
             releases: 2,
@@ -164,6 +170,12 @@ struct Daemon {
 struct World {
     path: Option<Build>,
     prev: Option<Build>,
+    /// prev is a hard link to the binary at the path: an install that
+    /// linked prev and has not renamed the staged binary over the path.
+    prev_linked: bool,
+    /// The path is empty between a Windows install's or rollback's two
+    /// renames.
+    renaming: bool,
     staged: Option<Build>,
     rejected: Option<Version>,
     /// What the feed publishes.
@@ -188,7 +200,13 @@ enum Pending {
     RetirePrev,
     WriteRejected(Version),
     RestorePrev,
+    /// A Windows rollback's second rename: prev into the path its own
+    /// image was renamed away from.
+    RestorePrevInto,
     InstallStaged,
+    /// An install's second move: the staged binary renamed over the path,
+    /// or into it where the first move emptied it.
+    InstallStagedOver,
     BecomeInstalled(DaemonId),
     Arm(TimerId, u64),
     Cancel(TimerId),
@@ -229,7 +247,9 @@ impl Pending {
                 | Pending::RetirePrev
                 | Pending::WriteRejected(_)
                 | Pending::RestorePrev
+                | Pending::RestorePrevInto
                 | Pending::InstallStaged
+                | Pending::InstallStagedOver
         )
     }
 }
@@ -248,6 +268,9 @@ struct Seen {
     /// update, or recorded another build as rejected.
     wrong_rollback: Option<String>,
     rolled_back: bool,
+    /// A supervisor started to find prev linked to its own binary, and
+    /// removed it.
+    removed_own_prev: bool,
     dumped: Option<String>,
 }
 
@@ -266,6 +289,11 @@ struct Used {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct State {
     supervisor: Supervisor,
+    /// The build the running supervisor was started from.
+    image: Build,
+    /// Nothing is at the path, so the supervisor could not be started
+    /// again: nothing runs.
+    stranded: bool,
     world: World,
     timers: BTreeMap<TimerId, u64>,
     now_ms: u64,
@@ -296,17 +324,18 @@ impl SupervisorUpdate {
         now_ms: u64,
     ) -> Option<(Supervisor, Vec<Output>)> {
         let running = world.path?.version();
+        let prev = match (world.prev, world.prev_linked) {
+            (None, _) => PrevFound::None,
+            (Some(_), true) => PrevFound::SameAsBinary,
+            (Some(_), false) => PrevFound::Other,
+        };
         let mut out = Vec::new();
         let supervisor = Supervisor::start(
             Start {
                 params: self.params(),
                 target: TARGET.to_owned(),
                 running,
-                prev: if world.prev.is_some() {
-                    PrevFound::Other
-                } else {
-                    PrevFound::None
-                },
+                prev,
                 rejected: world.rejected.clone(),
                 inherited,
                 now_ms,
@@ -317,13 +346,18 @@ impl SupervisorUpdate {
     }
 
     /// The supervisor's process is gone, and its daemons with their pipe;
-    /// launchd starts it again from the binary at the path.
+    /// launchd starts it again from the binary at the path, unless nothing
+    /// is there.
     fn restart(&self, state: &mut State) -> Option<()> {
         state.world.daemons.clear();
         state.timers.clear();
         state.pending.clear();
-        let (supervisor, out) = self.supervisor(&state.world, false, state.now_ms)?;
+        let Some((supervisor, out)) = self.supervisor(&state.world, false, state.now_ms) else {
+            state.stranded = true;
+            return Some(());
+        };
         state.supervisor = supervisor;
+        state.image = state.world.path?;
         state
             .pending
             .extend(out.into_iter().filter_map(Pending::of));
@@ -429,7 +463,13 @@ impl SupervisorUpdate {
                     },
                 );
             }
-            Pending::RemovePrev | Pending::RetirePrev => world.prev = None,
+            Pending::RemovePrev | Pending::RetirePrev => {
+                if world.prev_linked {
+                    state.seen.removed_own_prev = true;
+                }
+                world.prev = None;
+                world.prev_linked = false;
+            }
             Pending::WriteRejected(version) => {
                 if world.path.map(Build::version) != Some(version.clone()) {
                     state.seen.wrong_rollback.get_or_insert(format!(
@@ -439,7 +479,18 @@ impl SupervisorUpdate {
                 }
                 world.rejected = Some(version);
             }
-            Pending::RestorePrev => {
+            // Where the binary at the path is this supervisor's own running
+            // image and cannot be replaced, it is renamed aside first.
+            Pending::RestorePrev
+                if !self.replace_while_running && world.path == Some(state.image) =>
+            {
+                world.path = None;
+                world.renaming = true;
+                state.pending.push_front(Pending::RestorePrevInto);
+            }
+            Pending::RestorePrev | Pending::RestorePrevInto => {
+                world.renaming = false;
+                world.prev_linked = false;
                 if world.prev != world.before_update {
                     state.seen.wrong_rollback.get_or_insert(format!(
                         "put back {:?} where {:?} ran before the update",
@@ -459,6 +510,19 @@ impl SupervisorUpdate {
                 }
                 world.before_update = world.path;
                 world.prev = world.path;
+                if self.replace_while_running {
+                    // prev is a hard link to the binary at the path.
+                    world.prev_linked = true;
+                } else {
+                    // The binary is renamed to prev, emptying the path.
+                    world.path = None;
+                    world.renaming = true;
+                }
+                state.pending.push_front(Pending::InstallStagedOver);
+            }
+            Pending::InstallStagedOver => {
+                world.prev_linked = false;
+                world.renaming = false;
                 world.path = world.staged.take();
             }
             Pending::BecomeInstalled(daemon) => {
@@ -470,6 +534,7 @@ impl SupervisorUpdate {
                 state.pending.clear();
                 let (supervisor, out) = self.supervisor(&state.world, true, state.now_ms)?;
                 state.supervisor = supervisor;
+                state.image = state.world.path?;
                 state
                     .pending
                     .extend(out.into_iter().filter_map(Pending::of));
@@ -514,6 +579,8 @@ impl Machine for SupervisorUpdate {
         let world = World {
             path: Some(Build::FIRST),
             prev: None,
+            prev_linked: false,
+            renaming: false,
             staged: None,
             rejected: None,
             published: None,
@@ -525,6 +592,8 @@ impl Machine for SupervisorUpdate {
             .expect("the first binary is in place");
         let mut state = State {
             supervisor,
+            image: Build::FIRST,
+            stranded: false,
             world,
             timers: BTreeMap::new(),
             now_ms: START_MS,
@@ -537,6 +606,9 @@ impl Machine for SupervisorUpdate {
     }
 
     fn actions(&self, s: &State, out: &mut Vec<Action>) {
+        if s.stranded {
+            return;
+        }
         if s.used.supervisor_crashes < self.supervisor_crashes {
             out.push(Action::CrashSupervisor);
         }
@@ -662,11 +734,15 @@ impl Machine for SupervisorUpdate {
                 |_, s: &State| s.seen.dumped.is_none(),
             ),
             Property::always(
-                "there is always a binary that can start: the binary at the path is a build whose \
-                 daemon starts, or prev, which is, is kept beside it",
+                "there is always a binary that can start: something is at the path for the service \
+                 manager to start, and it is a build whose daemon starts, or prev, which is, is \
+                 kept beside it; except between the two renames of a Windows install or \
+                 rollback, which empty the path, so a crash or power loss there leaves nothing to \
+                 start",
                 |_, s: &State| {
                     let starts = |build: Option<Build>| build.is_some_and(|build| build.good);
-                    starts(s.world.path) || starts(s.world.prev)
+                    (s.world.path.is_some() || s.world.renaming)
+                        && (starts(s.world.path) || starts(s.world.prev))
                 },
             ),
             Property::always(
@@ -702,6 +778,11 @@ impl Machine for SupervisorUpdate {
                             .values()
                             .any(|daemon| daemon.activated && Some(daemon.build) == s.world.path)
                 },
+            ),
+            Property::sometimes(
+                "where an install links prev to the binary, a supervisor sometimes starts to find \
+                 prev is its own binary and removes it",
+                |model: &Self, s: &State| !model.replace_while_running || s.seen.removed_own_prev,
             ),
             Property::sometimes(
                 "a bad release is sometimes rolled back, and the first build serves again",

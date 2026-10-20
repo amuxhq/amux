@@ -1291,7 +1291,7 @@ tests = [
 [[contract]]
 id = "supervisor-always-a-binary-that-starts"
 source = "model"
-property = { crate = "models", machine = "supervisor update", sentence = "there is always a binary that can start: the binary at the path is a build whose daemon starts, or prev, which is, is kept beside it" }
+property = { crate = "models", machine = "supervisor update", sentence = "there is always a binary that can start: something is at the path for the service manager to start, and it is a build whose daemon starts, or prev, which is, is kept beside it; except between the two renames of a Windows install or rollback, which empty the path, so a crash or power loss there leaves nothing to start" }
 checker = "models/supervisor::every_update_promise_holds_where_a_running_binary_can_be_replaced"
 tests = [
   "node/supervisor::a_starting_supervisor_deletes_a_prev_that_is_the_binary",

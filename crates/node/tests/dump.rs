@@ -902,3 +902,58 @@ async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+/// An agent's core times its steps against the budget its spec carries: a
+/// real agent process on the fake provider, under a budget of one
+/// microsecond (zero is the agent's own), soon takes a step over it, and
+/// the daemon writes the bundle the agent asked for, of that agent.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_step_over_its_budget_leaves_a_bundle_of_that_agent() {
+    // Not told to expect dumps: a step over its budget is tolerated at
+    // teardown, only a broken invariant fails it.
+    let install = Install::new();
+    let launch = node::Launch {
+        agent_step_budget_micros: 1,
+        ..install.launch(
+            "slow",
+            vec![text("working on it"), provider_fakes::script::Step::TurnEnd],
+        )
+    };
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let id = id_of(
+        &runtime
+            .spawn(create(&install.work, "slow", Some("go")), None)
+            .await
+            .unwrap(),
+    );
+    let reasons = core_dumps(&install, 1).await;
+    let id_text = id.to_string();
+    assert!(
+        reasons
+            .iter()
+            .any(|reason| reason.starts_with(node::AGENT_DUMP)
+                && !reason.starts_with(node::AGENT_VIOLATION_DUMP)
+                && reason.contains(&id_text)
+                && reason.contains("against its budget of 1 µs")),
+        "{reasons:#?}"
+    );
+    let bundles: Vec<PathBuf> = std::fs::read_dir(install.data_dir.join(node::REPORTS))
+        .unwrap()
+        .map(|bundle| bundle.unwrap().path())
+        .collect();
+    assert_eq!(bundles.len(), 1, "{bundles:?}");
+    let agents: Vec<String> = std::fs::read_dir(bundles[0].join("agents"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(agents, vec![id_text], "the agent that asked");
+    println!(
+        "{}: {}",
+        bundles[0].file_name().unwrap().to_string_lossy(),
+        reasons[0]
+    );
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

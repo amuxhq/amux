@@ -39,6 +39,7 @@ mod start;
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::time::Instant;
 
 use interpret::ring::Entry;
 use interpret::{Effect, Event, Interpreter, Stepped, reply};
@@ -278,6 +279,8 @@ struct Params {
     one_shot: bool,
     grace_ms: u64,
     drain_ms: u64,
+    /// How long one step may take before it asks for a dump.
+    budget: StepBudget,
 }
 
 impl Params {
@@ -292,6 +295,10 @@ impl Params {
             one_shot: spec.parent.is_some(),
             grace_ms: ms(config.grace_ms, DEFAULT_GRACE_MS),
             drain_ms: ms(config.drain_ms, DEFAULT_DRAIN_MS),
+            budget: match config.step_budget_micros {
+                0 => StepBudget::AGENT,
+                micros => StepBudget { micros },
+            },
         }
     }
 }
@@ -425,11 +432,6 @@ pub struct Agent<I: Interpreter> {
     next_job: u64,
     /// The process exits: nothing more happens to this incarnation.
     exited: Option<ExitCause>,
-    #[expect(
-        dead_code,
-        reason = "the driver measures a step against it once it times steps"
-    )]
-    budget: StepBudget,
     touched: Touched,
 }
 
@@ -466,7 +468,6 @@ impl<I: Interpreter> Agent<I> {
             git: GitReads::default(),
             next_job: 0,
             exited: None,
-            budget: StepBudget::AGENT,
             touched: Touched::default(),
         };
         for step in first {
@@ -488,8 +489,12 @@ impl<I: Interpreter> Agent<I> {
     }
 
     /// One input in, outputs appended. Ends by checking the cheap
-    /// invariants; a violation appends [`Output::Dump`].
+    /// invariants; a violation appends [`Output::Dump`], and so does a step
+    /// that took longer than its budget.
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
+        // The step's own duration is the one reading of the world a core
+        // makes: it decides nothing but whether to ask for a dump.
+        let started = Instant::now();
         self.touched = Touched::default();
         if self.exited.is_none() {
             self.take_input(input, out);
@@ -500,6 +505,13 @@ impl<I: Interpreter> Agent<I> {
         if let Err(violation) = self.check_step_invariants() {
             out.push(Output::Dump {
                 reason: DumpReason::Violation(violation),
+            });
+        }
+        let budget = self.params.budget;
+        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+        if micros > budget.micros {
+            out.push(Output::Dump {
+                reason: DumpReason::OverBudget { micros, budget },
             });
         }
     }
@@ -544,7 +556,6 @@ impl<I: Interpreter> Agent<I> {
             git,
             next_job,
             exited,
-            budget: _,
             touched: _,
         } = self;
         AgentValue {
@@ -606,7 +617,6 @@ impl<I: Interpreter> Agent<I> {
             git: *git,
             next_job: *next_job,
             exited: exited.clone(),
-            budget: StepBudget::AGENT,
             touched: Touched::default(),
         })
     }
@@ -1142,8 +1152,7 @@ impl<I: Interpreter> Agent<I> {
 }
 
 /// An [`Agent`] between steps as a value: equal values step alike. What a
-/// step did is not part of it, nor is the step budget, which is the
-/// driver's.
+/// step did is not part of it.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct AgentValue {
     interpreter: Vec<u8>,
@@ -1200,6 +1209,9 @@ impl StepBudget {
     /// The agent process's: a step stands between the provider and its
     /// journal.
     pub const AGENT: StepBudget = StepBudget { micros: 10_000 };
+    /// A budget no step runs over, for a run that must be a function of
+    /// its inputs alone: a model's, or a simulated net's.
+    pub const UNLIMITED: StepBudget = StepBudget { micros: u64::MAX };
 }
 
 /// A cheap invariant that failed: which one, and what it saw.

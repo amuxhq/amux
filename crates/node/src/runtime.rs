@@ -151,6 +151,9 @@ pub struct Launch {
     /// How long one step of the profile's core may take before it is
     /// reported with a dump.
     pub step_budget: daemon_core::StepBudget,
+    /// How long one step of an agent's core may take before it asks for a
+    /// dump, in microseconds; 0 leaves the agent its own budget.
+    pub agent_step_budget_micros: u64,
     /// How long after a dump the profile's core asked for another of the
     /// same kind is held back, and counted in the next.
     pub dump_interval_ms: u64,
@@ -192,6 +195,7 @@ impl Default for Launch {
             catalogue_recheck_ms: 60_000,
             checkpoint_interval_ms: 60_000,
             step_budget: daemon_core::StepBudget::DAEMON,
+            agent_step_budget_micros: 0,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
             cores: None,
         }

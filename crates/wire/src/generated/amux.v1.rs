@@ -13171,6 +13171,10 @@ pub struct EffectiveConfig {
     /// The canonical install path the hook binary and tool server run from.
     #[prost(string, tag = "9")]
     pub install_path: ::prost::alloc::string::String,
+    /// How long one step of the agent's core may take before it asks for a
+    /// dump; 0 is the agent's own budget.
+    #[prost(uint64, tag = "10")]
+    pub step_budget_micros: u64,
 }
 impl ::prost::Name for EffectiveConfig {
     const NAME: &'static str = "EffectiveConfig";

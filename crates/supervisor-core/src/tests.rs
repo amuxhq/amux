@@ -14,6 +14,9 @@ fn params() -> Params {
         backoff_max_ms: 30_000,
         backoff_reset_ms: 60_000,
         replace_while_running: true,
+        // Outputs here are a function of the inputs alone; the budget has a
+        // test of its own.
+        step_budget: StepBudget::UNLIMITED,
     }
 }
 
@@ -181,6 +184,36 @@ fn swapped() -> Run {
         code: 0,
     });
     run
+}
+
+/// A step is timed against the budget in its parameters: any step takes
+/// longer than nothing, given a clock fine enough, so under a budget of
+/// zero a step is soon measured over it.
+#[test]
+fn a_step_over_its_budget_asks_for_a_dump() {
+    let over = Params {
+        step_budget: StepBudget { micros: 0 },
+        ..params()
+    };
+    let mut run = Run::with(over, PrevFound::None, None, false);
+    let mut out = Vec::new();
+    while out.is_empty() {
+        let now_ms = run.now_ms + 1;
+        out = dumps(&run.at(now_ms, Input::Tick { now_ms }))
+            .into_iter()
+            .cloned()
+            .collect();
+    }
+    assert!(
+        out.iter().all(|reason| matches!(
+            reason,
+            DumpReason::OverBudget {
+                micros,
+                budget: StepBudget { micros: 0 }
+            } if *micros > 0
+        )),
+        "{out:?}"
+    );
 }
 
 #[test]

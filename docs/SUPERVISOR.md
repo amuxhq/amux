@@ -188,7 +188,8 @@ they are compiled in and not read from the config. The rules above are
 decided by one state machine,
 [`crates/supervisor-core`](../crates/supervisor-core/src/lib.rs), which checks
 after every step that an installed binary able to start always exists and
-that at most one daemon serves, and asks for a dump if either fails;
+that at most one daemon serves, and asks for a dump if either fails or a
+step takes longer than its 10 ms budget (`Params.step_budget`);
 `node`'s supervisor module runs the processes, the pipe, the feed and the
 files for it. [Parameters](PARAMETERS.md)
 lists them with the rest.

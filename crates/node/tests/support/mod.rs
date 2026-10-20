@@ -96,6 +96,9 @@ impl Install {
             claude_command: binary("fake-claude-sdk").to_string_lossy().into_owned(),
             codex_command: binary("fake-codex").to_string_lossy().into_owned(),
             step_budget: daemon_core::StepBudget::TEST,
+            // An agent's core gets the daemon's test budget, for the same
+            // reason: a loaded debug-build run stretches ordinary steps.
+            agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
             ..Launch::default()
         };
         launch

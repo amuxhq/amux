@@ -30,6 +30,9 @@ pub fn quiet_launch() -> Launch {
     Launch {
         install_path: PathBuf::from("/nonexistent/amux"),
         step_budget: daemon_core::StepBudget::TEST,
+        // An agent's core gets the daemon's test budget, for the same
+        // reason: a loaded debug-build run stretches ordinary steps.
+        agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
         ..Launch::default()
     }
 }

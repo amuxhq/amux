@@ -83,6 +83,8 @@ pub fn agent_spec(
         parent,
         config: Some(wire::EffectiveConfig {
             grace_ms,
+            // The checker's verdict is a function of the model alone.
+            step_budget_micros: agent_core::StepBudget::UNLIMITED.micros,
             ..wire::EffectiveConfig::default()
         }),
         daemon_version: env!("CARGO_PKG_VERSION").to_owned(),

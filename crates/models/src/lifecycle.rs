@@ -106,6 +106,8 @@ impl AgentLifecycle {
             config: Some(wire::EffectiveConfig {
                 grace_ms: GRACE_MS as u32,
                 drain_ms: DRAIN_MS as u32,
+                // The checker's verdict is a function of the model alone.
+                step_budget_micros: agent_core::StepBudget::UNLIMITED.micros,
                 ..Default::default()
             }),
             bootstrap,

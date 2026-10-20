@@ -1480,6 +1480,9 @@ impl Net {
                 .to_string_lossy()
                 .into_owned(),
             step_budget: daemon_core::StepBudget::TEST,
+            // An agent's core gets the daemon's test budget, for the same
+            // reason: a loaded debug-build run stretches ordinary steps.
+            agent_step_budget_micros: daemon_core::StepBudget::TEST.micros,
             ..Launch::default()
         };
         let provider = agent.map_or(own.decl.provider, |(_, _, provider)| provider);

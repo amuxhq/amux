@@ -94,6 +94,9 @@ message EffectiveConfig {
   optional string effort = 8;
   // The canonical install path the hook binary and tool server run from.
   string install_path = 9;
+  // How long one step of the agent's core may take before it asks for a
+  // dump; 0 is the agent's own budget.
+  uint64 step_budget_micros = 10;
 }
 
 // ctl.sock frames, length-prefixed, no version integer.

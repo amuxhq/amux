@@ -229,6 +229,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> AgentSpec {
             mode: at.resolved.mode.clone(),
             effort: at.resolved.effort.clone(),
             install_path: launch.install_path.to_string_lossy().into_owned(),
+            step_budget_micros: launch.agent_step_budget_micros,
         }),
         daemon_version: crate::version().to_owned(),
         created_at_ms: at.created_at_ms,

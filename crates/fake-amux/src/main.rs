@@ -21,13 +21,29 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use node::supervisor::{Inherited, Params, SuperviseOptions, UpdatePolicy, UpdateSource};
+use node::supervisor::{
+    Inherited, Params, StepBudget, SuperviseOptions, UpdatePolicy, UpdateSource,
+};
 
 pub const DIR_ENV: &str = "FAKE_AMUX_DIR";
 pub const MANIFEST_ENV: &str = "FAKE_AMUX_MANIFEST";
+/// The supervisor core's step budget in microseconds, for a test of the
+/// budget itself.
+pub const STEP_BUDGET_ENV: &str = "FAKE_AMUX_STEP_BUDGET_MICROS";
 
 fn dir() -> PathBuf {
     PathBuf::from(std::env::var_os(DIR_ENV).expect("FAKE_AMUX_DIR is set"))
+}
+
+/// A second unless the test says otherwise: these are debug builds run
+/// beside every other test binary, where a step the shipped budget allows
+/// can wait past it for the processor, and a test of updates is not one of
+/// the budget.
+fn step_budget() -> StepBudget {
+    let micros = std::env::var(STEP_BUDGET_ENV)
+        .ok()
+        .map_or(1_000_000, |micros| micros.parse().expect("a number of µs"));
+    StepBudget { micros }
 }
 
 fn event(what: &str) {
@@ -201,6 +217,7 @@ fn supervise(inherited: Option<Inherited>) {
             backoff_first: Duration::from_millis(100),
             backoff_max: Duration::from_millis(800),
             backoff_reset: Duration::from_secs(5),
+            step_budget: step_budget(),
         },
         inherited,
     };

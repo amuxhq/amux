@@ -119,8 +119,8 @@ Some dumps nobody asks for. When the daemon's core breaks one of its cheap invar
 budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
 A chat whose transcript fails its own check when the stream catches up or resets asks for one too, with the
 reason starting `the client's transcript: ` and that chat's session inside, its trace cut at the message the check
-failed at. An agent process whose core breaks one of its invariants says so on its stderr (`the agent core: `) and
-asks its daemon for a dump of it over the control connection; the daemon writes the bundle, reason starting
+failed at. An agent process whose core breaks one of its invariants, or takes a step over its budget, says so on its
+stderr (`the agent core: `) and asks its daemon for a dump of it over the control connection; the daemon writes the bundle, reason starting
 `an agent's core: ` and naming the agent, with the agent's facts ring and checkpoints for the interpreter stage and
 the daemon's own parts for the core's. The relay and the supervisor log the same kind of reason (`the relay core: `,
 `the supervisor core: `) and write a text file beside it: the reason, the core's state when the driver's window began,
@@ -130,8 +130,8 @@ every input stepped since (at least the last 256) and the state now. The supervi
 installation's `reports/`. Neither core is a replay stage and nothing replays these files: they are what a person
 turns into a step test of that core by hand. Each process reports one per kind of reason (one per broken invariant,
 one for steps over budget) every ten minutes, and the daemon writes one agent-asked bundle per kind in the same
-interval, however many agents ask; the next one of that kind says how many were held back since. Only the daemon and
-relay cores time their steps, so only they ask for a dump of a step over its budget.
+interval, however many agents ask; the next one of that kind says how many were held back since. Every core times its
+steps against a budget of its own: the daemon's 100 ms, the relay's 1 ms, and the agent's and the supervisor's 10 ms.
 
 ## Reading a dump
 

@@ -53,6 +53,7 @@ pub use files::{FileId, Files, SUPERVISOR_LOCK};
 pub use keep_awake::{KeepAwake, REASON as KEEP_AWAKE_REASON};
 use semver::Version;
 use sha2::{Digest as _, Sha256};
+pub use supervisor_core::StepBudget;
 use supervisor_core::{
     self as core, AskId, DaemonId, INHERITED_DAEMON, JobId, JobResult, Listed, Output, PrevFound,
     Start, Supervisor, TimerId,
@@ -80,6 +81,9 @@ pub struct Params {
     pub backoff_max: Duration,
     /// A child up this long starts the backoff over.
     pub backoff_reset: Duration,
+    /// How long one step of the supervisor's core may take before it is
+    /// reported with a dump.
+    pub step_budget: StepBudget,
 }
 
 impl Default for Params {
@@ -93,6 +97,7 @@ impl Default for Params {
             backoff_first: Duration::from_secs(1),
             backoff_max: Duration::from_secs(30),
             backoff_reset: Duration::from_secs(60),
+            step_budget: StepBudget::SUPERVISOR,
         }
     }
 }
@@ -636,6 +641,7 @@ impl Params {
             backoff_reset_ms: ms(self.backoff_reset),
             // A running executable cannot be renamed over on Windows.
             replace_while_running: cfg!(unix),
+            step_budget: self.step_budget,
         }
     }
 }

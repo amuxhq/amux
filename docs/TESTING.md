@@ -221,7 +221,10 @@ testnet's real hosts) run under `StepBudget::TEST`, one second, not the daemon's
 four-core CI runner take 118 to 143 ms for such steps, and a dump for that overrun would land in `reports/` while
 a test may be reading it. Tests see the tripwire only where they set a budget themselves (node's dump tests set 0 µs;
 a testnet `NetOptions.launch` hook may set any), and `just perf` judges the real daemon at its own budget. A test
-installation's teardown prints any over-budget dump and fails only on a broken invariant's.
+installation's teardown prints any over-budget dump and fails only on a broken invariant's. The agents those
+installations start get the same one second (`Launch.agent_step_budget_micros`) for the same reason, and the
+supervisor tests' stand-in binary gives its supervisor one too; the models and the simulated net run every core
+under `StepBudget::UNLIMITED`, so a verdict is a function of its inputs alone.
 
 ## Fixtures and goldens
 

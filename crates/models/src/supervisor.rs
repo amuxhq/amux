@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, VecDeque};
 use release::{Manifest, Release};
 use supervisor_core::{
     DaemonId, INHERITED_DAEMON, Input, JobId, JobResult, Listed, Output, Params, PrevFound,
-    Request, Start, Supervisor, TimerId, Version,
+    Request, Start, StepBudget, Supervisor, TimerId, Version,
 };
 
 use crate::{Machine, Property};
@@ -103,6 +103,8 @@ impl SupervisorUpdate {
             backoff_max_ms: 4_000,
             backoff_reset_ms: 60_000,
             replace_while_running: self.replace_while_running,
+            // The checker's verdict is a function of the model alone.
+            step_budget: StepBudget::UNLIMITED,
         }
     }
 }

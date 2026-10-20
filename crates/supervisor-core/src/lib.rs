@@ -36,6 +36,7 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
+use std::time::Instant;
 
 use release::{Choice, Manifest, Release, Skip};
 pub use semver::Version;
@@ -107,6 +108,8 @@ pub struct Params {
     /// The binary a daemon runs may be renamed over while it runs (not on
     /// Windows, where the daemon stops before the swap).
     pub replace_while_running: bool,
+    /// How long one step may take before it asks for a dump.
+    pub step_budget: StepBudget,
 }
 
 /// How a supervisor starts.
@@ -379,8 +382,6 @@ pub struct Supervisor {
     exited: bool,
     now_ms: u64,
     next_id: u64,
-    /// Read by the driver once it times steps.
-    budget: StepBudget,
     touched: Touched,
 }
 
@@ -457,7 +458,6 @@ impl Supervisor {
             exited: false,
             now_ms,
             next_id: 0,
-            budget: StepBudget::SUPERVISOR,
             touched: Touched::default(),
             params,
         };
@@ -478,8 +478,12 @@ impl Supervisor {
     }
 
     /// One input in, outputs appended. Ends by checking the cheap
-    /// invariants; a violation appends [`Output::Dump`].
+    /// invariants; a violation appends [`Output::Dump`], and so does a step
+    /// that took longer than its budget.
     pub fn step(&mut self, input: Input, out: &mut Vec<Output>) {
+        // The step's own duration is the one reading of the world a core
+        // makes: it decides nothing but whether to ask for a dump.
+        let started = Instant::now();
         self.touched = Touched::default();
         if !self.exited {
             self.take(input, out);
@@ -493,6 +497,13 @@ impl Supervisor {
             });
         }
         self.touched = Touched::default();
+        let budget = self.params.step_budget;
+        let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+        if micros > budget.micros {
+            out.push(Output::Dump {
+                reason: DumpReason::OverBudget { micros, budget },
+            });
+        }
     }
 
     /// The cheap predicates checked after every step:
@@ -989,6 +1000,9 @@ pub struct StepBudget {
 impl StepBudget {
     /// The supervisor's: it decides rarely and never under load.
     pub const SUPERVISOR: StepBudget = StepBudget { micros: 10_000 };
+    /// A budget no step runs over, for a run that must be a function of
+    /// its inputs alone: a model's.
+    pub const UNLIMITED: StepBudget = StepBudget { micros: u64::MAX };
 }
 
 /// A cheap invariant that failed: which one, and what it saw.

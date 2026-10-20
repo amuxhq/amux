@@ -18,7 +18,8 @@ agent` processes, running the scripted fake providers from `crates/provider-fake
 links over loopback. A declared relay is the production relay server on loopback, beside a stand-in for the
 account service that signs accounts in and mints relay credentials.
 
-What is replaced: the providers (by the fakes, unless a host or agent asks for the real ones), the account service
+This is the real net; a [simulated net](#two-modes) runs the same stories with every core in memory, stepped by a
+seed. What is replaced on the real net: the providers (by the fakes, unless a host or agent asks for the real ones), the account service
 (by the stand-in), multicast discovery (by a scripted bus, unless a host asks for real mDNS), and, in a Rust test,
 policy time (by a driven clock).
 
@@ -32,6 +33,37 @@ On first use in a process, the harness builds `amux` and the fake providers with
 built the test, so agents always run the binary under test. With `TESTNET_BINARIES` naming a directory that
 already holds `amux`, the fakes and the probes, it builds nothing and uses those: a driver that built them once,
 with the features it chose, keeps every net it starts on that one build.
+
+## Two modes
+
+Everything above describes the real net. The same topology can also start as a simulated net (`SimNet`,
+`crates/testnet/src/sim`), and a story written against the `World` trait (`crates/testnet/src/world.rs`) runs
+unchanged on either:
+
+| | Real | Simulated |
+| --- | --- | --- |
+| A host | a production daemon runtime on loopback | its daemon core over an in-memory store |
+| An agent | an `amux agent` process on a fake provider | its agent core over the test kind's interpreter, playing the script or a recorded headless Claude journal |
+| Links, jobs, timers, processes | real sockets, files, tasks and the driven clock | values in memory, moved one delivery at a time |
+| Who picks what happens next | the operating system's scheduler | a seed: each step makes the delivery the seed picks among those waiting |
+| A wait that cannot come true | fails at its deadline | fails at once, when nothing is left to deliver without the story acting |
+| A failure is reported as | the assertion and the net's trace | the seed, the assertion and the trace of deliveries, with the command that reruns that seed |
+
+The simulated net is the composed-net model of `crates/models` walked by seed: the story's verbs are the model's
+actions, so the checker and the simulator explore one definition. After every step it checks each core's own
+invariants and every store's after a write, so a broken invariant fails the seed where it broke, not where a story
+later noticed. One seed is one schedule: the same seed gives the same trace on every run. `SimNet::ring` records the
+choices a run made, `SimNet::replay` replays any prefix of them, and `testnet::sim::shrink` looks for a shorter
+failing run, first among other seeds, then by cutting the ring.
+
+What a simulated net does not have it refuses at start rather than pretending: the relay, the LAN and discovery,
+process and supervised hosts, real providers, repositories, and agents of a kind other than headless Claude.
+Stories that need any of those run on the real net only.
+
+`testnet::modes::run_story(topology, real, simulated)` runs a story on the net `TESTNET_MODE` names: `real` (or
+nothing) once, `simulated` under each seed, a few by default, `TESTNET_SEEDS=N` for N of them, `TESTNET_SEED=N` for
+exactly one. `just sim` runs every story the catalogue gives a simulated mode, and `just nightly --seeds N` walks
+thousands of seeds per story and reports each failing one; see [Testing](TESTING.md#two-modes-of-the-many-daemons-harness).
 
 ## Topologies
 

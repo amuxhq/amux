@@ -48,6 +48,56 @@ appears in interpreter semantics, in Swift command dispatch and in one journey, 
 failure. Pair every replay or golden with explicit expected outcomes at the transitions that matter; a replay can
 reproduce its own mistake.
 
+## The Model boundary
+
+A promise the protocol makes is a property: a sentence a person would argue over, and a predicate over a core's
+state that says whether it holds. The properties live in [`crates/models`](../crates/models/README.md), one
+machine per slice of the protocol (the single daemon under crashes and power loss, replication between an origin
+and a replica, presence and routing, families and deliveries, an agent's lifecycle, the supervisor's update, the
+client model, and the composed net of several daemons and their agents; a lamp and its switch test the checker
+itself). A machine holds real state, calls the real cores, store and session model on small instances, and lists
+the faults its environment may inject. A checker explores every state the machine reaches within its bounds and judges every
+property in each: an always must hold everywhere, a sometimes must be reached, an eventually must hold on every
+path that ends. A failure prints the shortest path to the state that broke it.
+
+```sh
+just test-crate models                     # every machine at its CI bounds, within its budget
+just test-crate models -- --test family    # one machine
+just models-nightly [machine..]            # the larger nightly bounds, one machine after another
+cargo run -p models --bin properties       # every property's sentence, by machine
+```
+
+Each machine's CI bounds are sized to finish within a stated budget on a four-core runner, and its nightly bounds
+explore more keys, faults and steps. The Model boundary owns rules; the other boundaries own what the cores do not
+decide: a driver's sockets and deadlines, a real process, a provider's bytes, what a screen draws. A test that
+restates a rule a property holds is a second copy of the rule, so it goes.
+
+Properties over pure functions that are not protocol state (the client model taking items in any arrival order,
+its run index, the views' row ids) generate their cases rather than looping over seeds: each case is a value
+built from what can happen, and a failure is shrunk to the smallest case that still fails before it is reported.
+A fixed seed keeps a run repeatable.
+
+## One rule, one implementation
+
+No protocol rule is written twice. The rules live only in the cores' code; there is no abstract model of the
+protocol to keep in step with it and no conformance copy. A property states what must be true and the checker
+runs the real code to find out. The one second implementation is the phone's Swift chat model, which keeps its own
+rows for the platform's list view: it is held equal to the Rust client model by replaying the same traces.
+`just client-traces` writes traces of the client model's seeded schedules (what the runtime hands the phone at
+every wake), app-runtime's tests fail while the committed traces differ from the model, and the Swift
+`ChatModelTraceTests` replay each one and assert the same keys, rows and frame at every cut.
+
+## A plant round before deletion
+
+A suite's examples go only when a property is shown to catch what they caught. Before a machine's stories and
+example tests are deleted, bugs are planted in the code they guard (a broadcast before its commit, a segment
+reclaimed above the checkpoint's cursor, a stale listing deleting a child), each chosen to break a promise those
+tests were there for. The machine's checker must fail on every plant at its CI bounds, naming the property and
+the path; then the plants are reverted, and one commit deletes the tests the properties cover and names the
+plants and the counterexamples that caught them. A plant the checker misses means a property is weak or a model
+action hides an interleaving, and nothing is deleted until it is fixed. Tests that reach what no model holds (a
+real process, a real carrier, a file cut at a byte) stay.
+
 ## Lanes
 
 A lane says when and where a suite runs.
@@ -63,6 +113,30 @@ A lane says when and where a suite runs.
 Nothing in an ordinary push inherits credentials, spending or hardware. The live lane is the `live` feature of the
 qualification crate; `just test` and `just ci` never select it. `just ci` refuses to start when an `UPDATE_*`
 variable is set, so no asserted run can rewrite a golden.
+
+## Two modes of the many-daemons harness
+
+A [TestNet](TESTNET.md) story is written once against the harness's verbs and runs on either net:
+
+| Mode | What runs | What decides the order | A failure is |
+| --- | --- | --- | --- |
+| real | Production daemon runtimes in one process, real agent processes on the fake providers, real links over loopback | The operating system's scheduler and real time, bounded by deadlines | the story's assertion and the net's trace |
+| simulated | Every host's daemon core over an in-memory store and every agent's core over the test kind's interpreter, with links, jobs, clock and processes in memory | A seed: each delivery is the one the seed picks among those waiting | the seed that reproduces it, with the trace of deliveries |
+
+The simulated net is the composed-net machine walked by seed, so the checker and the simulator explore one
+definition; a story is decided entirely by its seed, runs in milliseconds, and checks the cores' invariants after
+every step. What it does not have (the relay, the LAN, process hosts, real providers) it refuses at start. Suites
+whose stories run in both modes say so in the catalogue's `modes`.
+
+```sh
+just sim                         # every simulated story, a few seeds each
+just sim --seeds 300 <name>      # 300 seeds of each story whose test name contains <name>
+just sim --seed 17 <name>        # exactly the failing seed, as a failure prints it
+just nightly --seeds 2000        # thousands of seeds per story, then the models at nightly bounds, as a report
+```
+
+Under `cargo test` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
+`TESTNET_SEED=N`.
 
 ## The catalogue and the contracts
 
@@ -109,14 +183,14 @@ just ios journey                           # the shared stories on the phone; `-
 just live claude_sdk all                   # live compatibility for one kind (qualification)
 just live codex attach                     # Codex's own app co-driving a fresh agent; capture in target/live/codex-attach
 just perf                                  # performance qualification (see Performance)
-just coverage                              # every workspace test under cargo-llvm-cov; line coverage per crate
+just coverage                              # every workspace test with line coverage per crate
 just fuzz-smoke                            # each fuzz target for 30 s; fails on a crash
 ```
 
 `just coverage` writes `tests/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
 count whichever tests ran them, so a core's figure includes what the models and the testnet reach. It is a reading
-aid for judging which tests earn their keep, not a gate. It needs `cargo install cargo-llvm-cov` and the
-`llvm-tools-preview` rustup component.
+aid for judging which tests earn their keep, not a gate. The recipe's comment names the coverage tool and the
+toolchain component it needs.
 
 `just fuzz-smoke` fuzzes the code that reads bytes amux did not write: the tolerant Claude and Codex decoders, the
 journal's frame decoder and its reader over segments cut anywhere, and redaction of JSON values and free text. The

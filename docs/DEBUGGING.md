@@ -84,8 +84,12 @@ incarnation starts a new segment from the state it resumed.
 For terminal Claude and Codex the provider's own transcript is also a complete record of what it said; the ring
 adds what that transcript lacks (hooks, inputs, ticks). For headless Claude the ring is the only record.
 
-**The daemon** keeps each agent's journal and its rows in the store. It keeps the last two ingested journal
-segments of every agent for dumps, so a dump always has the records behind the newest rows.
+**The daemon** keeps each agent's journal and its rows in the store. Each profile's core takes a checkpoint a
+minute after any step that changed a row: its state, written to `core.checkpoint` beside the store once the store's
+WAL is in its main file. Its driver records every input the core steps in `core-ring/` beside them, and starts the
+ring afresh at each checkpoint, so the checkpoint and the ring together are the core's state now. The daemon keeps
+every agent's journal from the newest checkpoint's cursor on, and at least the last two segments, so a dump always
+has the records behind the newest rows and every frame the recorded inputs read.
 
 **A client** keeps, in memory only, a driver trace per open chat and for the fleet: the session state as it stood
 when the trace's older segment began, then every message and driver event since (subscribed, stream ended,
@@ -120,6 +124,14 @@ supervisor log the same kind of reason: `the relay core: ` and `the supervisor c
 one for steps over budget) every ten minutes; the next one of that kind says how many were held back since.
 
 ## Reading a dump
+
+A dump is, for each stage, a checkpoint and the inputs since. For the interpreter it is the facts ring's
+checkpoint and every fact after it; for the daemon core, its checkpoint, every input it stepped since and the store
+as of that checkpoint; for the session, the store slice a Subscribe opening delivers, and the client's trace of
+the order it saw (a client keeps no checkpoint; its state is rebuilt from rows). Reading a dump is therefore
+running it: each stage is restored from its checkpoint and stepped through its inputs again, with the protocol's
+properties judged after every step, so the replay names the step that went wrong instead of leaving a reader to
+find it ([replaying a dump](#replaying-a-dump)). The files are laid out as:
 
 ```text
 reports/dump-<unix ms>-<id>/

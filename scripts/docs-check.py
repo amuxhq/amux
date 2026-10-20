@@ -12,6 +12,10 @@
 - The vocabulary PNGs match the hashes in their manifest, so a stale or
   hand-edited rendering is caught.
 - docs/README.md links every page in docs/ exactly once.
+- No page or figure names a system or tool the design drew on, or the
+  crate name of a tool amux runs: the docs describe amux in its own words,
+  and a tool's name belongs in the comment of the recipe that runs it. A
+  recipe invoked by name (`just miri`) is not a mention.
 """
 
 from __future__ import annotations
@@ -28,6 +32,19 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 FIGURES = DOCS / "figures"
 VOCABULARY = FIGURES / "vocabulary" / "manifest.json"
+
+# The systems and tools the design drew on, and the crate names of the tools
+# amux runs, matched as whole words in any case.
+VENDOR_NAMES = [
+    "Stateright", "TLA+", "TigerBeetle", "FoundationDB", "Antithesis", "Jepsen", "Loom",
+    "Shuttle", "Kani", "Verus", "Creusot", "Prusti", "Elle", "Maelstrom",
+    "proptest", "cargo-fuzz", "libFuzzer", "Miri", "cargo-llvm-cov", "llvm-cov",
+]
+VENDOR = re.compile(
+    r"(?<![\w-])(?:" + "|".join(re.escape(name) for name in VENDOR_NAMES) + r")(?![\w-])",
+    re.I,
+)
+RECIPE = re.compile(r"\bjust\s+[\w-]+")
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 INLINE_CODE = re.compile(r"`+[^`]*`+")
@@ -176,6 +193,15 @@ def check_readme(errors: list[str]) -> None:
             errors.append(f"docs/README.md links {page} {counts.get(page, 0)} times; it should link it once")
 
 
+def check_vendor_names(errors: list[str]) -> None:
+    for path in sorted([*DOCS.rglob("*.md"), *DOCS.rglob("*.svg")]):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for name in VENDOR.findall(RECIPE.sub("", line)):
+                errors.append(
+                    f"{path.relative_to(ROOT)}:{number}: names {name!r}; describe it in amux's own words"
+                )
+
+
 def main() -> int:
     errors: list[str] = []
     pages = sorted(DOCS.rglob("*.md"))
@@ -184,12 +210,13 @@ def main() -> int:
     check_svgs(errors)
     check_vocabulary(errors)
     check_readme(errors)
+    check_vendor_names(errors)
     for error in errors:
         print(error, file=sys.stderr)
     if errors:
         print(f"docs check: {len(errors)} problem(s)", file=sys.stderr)
         return 1
-    print(f"docs check: {len(pages)} pages, every link, figure and page accounted for")
+    print(f"docs check: {len(pages)} pages, every link, figure and page accounted for, no vendor named")
     return 0
 
 

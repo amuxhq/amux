@@ -157,6 +157,34 @@ like any other, with its own identity, trust and store of replica rows.
 Clients never talk to agent processes, and agent processes never talk to
 clients: the journal and the control socket are an agent's only interface.
 
+### Each process is a core and its driver
+
+Four of these processes decide what they do in a state-machine core, and
+everything else in them is the core's driver:
+
+| Process | Core | Driver | What the driver holds |
+|---|---|---|---|
+| daemon | [`daemon-core`](../crates/daemon-core/README.md), one per profile | [`node::driver`](../crates/node/src/driver/mod.rs) | the profile's sockets, links, channels and calls in flight, its timers and the jobs it runs |
+| relay | [`relay-core`](../crates/relay-core/README.md) | [`node`'s relay server](../crates/node/src/edge/relay_server.rs) and its splice | accepted links and the byte copies of spliced streams |
+| agent process | [`agent-core`](../crates/agent-core/README.md) | [`agent`](../crates/agent/src/lib.rs) | the provider child, the control socket, the journal writer and the hook and tool sockets |
+| supervisor | [`supervisor-core`](../crates/supervisor-core/README.md) | [`node::supervisor`](../crates/node/src/supervisor/mod.rs) | the daemon child, its readiness pipe and exit, the release feed and the binaries on disk |
+
+A driver turns what arrives (a socket's bytes, a process exiting, a timer
+firing, a job finishing) into one typed input, steps the core with it, and
+carries out the outputs the step appended: frames to write, timers to arm,
+jobs to run, calls to answer. Each core records every input it steps in a
+ring beside its newest checkpoint ([`core-ring`](../crates/core-ring/src/lib.rs)),
+which is what a dump carries and what a replay steps again.
+
+On a desktop the daemon steps each profile's core on a thread of its own.
+On the phone the app owns the loop: the profiles' cores step on the app's
+core queue whenever the library's wake descriptor turns readable, and the
+transport (links, channels, the client streams) runs on one thread of its
+own beside them; nothing in the library calls into the app. Suspending
+checkpoints every core so a kill after it loses nothing; a relaunch starts
+every core from its store and files, as every start does. See
+[embedding](EMBEDDED.md).
+
 ## Who dials the daemon
 
 ![Everyone who needs something from the daemon uses its amux protocol, the MCP server included; the agent process itself never dials it, because its directory and journal are its whole interface. ctl.sock and the journal remain the daemon's way in to an agent. Both surfaces live by the same field discipline; the only difference is that ctl.sock has no version integer at all.](figures/who-dials-daemon.svg)
@@ -186,7 +214,11 @@ One daemon process is one installation ([`node::start`](../crates/node/src/daemo
 It holds the installation lock, the profile registry, the generation file
 and the front door, and hosts one
 [`ProfileRuntime`](../crates/node/src/runtime.rs) per profile. A profile
-runtime is a complete amux with three groups of work:
+runtime is a complete amux: one daemon core, which owns the profile's store
+and decides everything the protocol promises (the registry, ingest,
+subscriptions, replication, families and deliveries, presence and routes,
+pairing and trust), and the driver around it. The driver's work falls in
+three groups:
 
 - **Edges** ([`node::edge`](../crates/node/src/edge/mod.rs)): the profile's
   local socket, its LAN listener, its links to paired hosts and to the
@@ -211,26 +243,31 @@ neither.
 [`runtime.rs`](../crates/node/src/runtime.rs)) exists for every agent whose
 process is live. It holds the agent's directory, the write half of the
 control connection, the inputs and dumps waiting for the agent's answer on
-that connection, the last Hello, and the stop the daemon asked for (which
-names the exit's cause). One watcher task per handle dials `ctl.sock`,
-ingests on every Nudge, and when the connection ends decides whether the
-process is gone (its lock is free: ingest the remainder, mark the row
-exited, remove `tools.sock`) or the connection merely dropped (dial again).
-The ingest cursor itself lives on the agent's store row, committed in the
-same transaction as the rows it produced.
+that connection, the last Hello, and the process ids. One watcher task per
+handle dials `ctl.sock` and feeds the core what it reads: the Hello, each
+Nudge, the connection ending. The core ingests the journal on a Nudge, and
+when the connection ends the driver tells it whether the process is gone
+(its lock is free: the core ingests the remainder and marks the row exited)
+or the connection merely dropped (dial again). The ingest cursor itself
+lives on the agent's store row, committed in the same transaction as the
+rows it produced.
 
-**The subscription handle** (`Subscription` in
-[`serve.rs`](../crates/node/src/serve.rs)) exists for every open Subscribe
-stream. It holds the opening read, taken by the core in the step that
-registered the stream, and a receiver on the agent's broadcast channel. Fan-out keeps one bounded
-channel per agent with a subscriber, plus one for the inventory; publishing
-never waits, and a subscriber that falls more than the channel's capacity
-behind is told it lagged and closed, and reads the store again at once: a
-chat with a fresh tail, a fleet with a fresh listing. The store is never a
-buffer for a live stream.
+**The call queue** (in [`driver/calls.rs`](../crates/node/src/driver/calls.rs))
+exists for every open call the core is answering, a Subscribe stream among
+them. The core cannot hold a response stream, so the driver holds it under
+a call id and the core's answers land in its queue. The core takes a
+stream's opening read in the step that registers it and appends each live
+answer in the step that commits the row it carries. A queue holds a bounded
+number of live answers; a stream that falls further behind is reported to
+the core as lagged, told so, and reads the store again at once: a chat with
+a fresh tail, a fleet with a fresh listing. The store is never a buffer for
+a live stream.
 
 After a restart both are rebuilt: agent handles from the directories on
-disk and the store's rows, subscription handles from clients reconnecting.
+disk and the store's rows, call queues from clients reconnecting. The core
+starts from the store, the drafts file, the trust store, the settings and
+the generation; its checkpoint (`core.checkpoint` beside the store) is what
+a dump and a replay start from.
 
 ## The agent directory is the contract
 
@@ -541,6 +578,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`replay-support`](../crates/replay-support/src/lib.rs) | Replays a debug bundle through its four stages with the protocol's properties judged at every step, and manages provider recordings for the capture tools. |
 | [`fake-amux`](../crates/fake-amux/src/main.rs) | A stand-in `amux` binary running the real supervisor over a scripted daemon. |
 | [`shot`](../crates/shot/README.md) | Deterministic PNG renderings of the terminal client's named states. |
+| [`tui-set`](../crates/tui-set/src/main.rs) | Serves a declared world on a test network and runs the terminal client on it, or draws it headlessly through `shot`. |
 | [`xtask`](../crates/xtask/src/main.rs) | Developer tasks: protobuf codegen, Swift type generation, re-stamping, iOS verification. |
 
 ## The dependency policy
@@ -557,31 +595,45 @@ workspace crates, and ignores dev-dependencies. Its rules:
    missing from the policy fails too.
 2. **Production never depends on test support.** `patience`, `testnet`,
    `qualification`, `claude-specs`, `codex-specs`, `provider-fakes`,
-   `fake-amux` and `shot` may be depended on only by each other.
+   `fake-amux`, `shot`, `tui-set`, `models` and `replay-support` may be
+   depended on only by each other.
 3. **The UI never reaches the daemon or a provider.** `model`, `client`,
    `ui-state`, `ui-view`, `ui-runtime`, `tui` and `app-runtime` may not
-   reach `node`, `store`, `interpret`, `agent`, `claude`, `codex` or
-   `pty-host`, directly or through any chain of dependencies.
+   reach `node`, `store`, `interpret`, `agent`, `claude`, `claude-protocol`,
+   `codex`, `codex-protocol` or `pty-host`, directly or through any chain of
+   dependencies.
+4. **A core reaches no runtime.** Each state-machine core's edges stay
+   within its listed set, an upper bound rather than an exact list, so a
+   core takes in its machines one at a time. `just cores-check` adds what
+   the dependency graph cannot say: no core, and not the ring they record
+   into, has tokio anywhere in its graph on any target, and none of their
+   sources holds a lock, spawns a task or awaits.
 
 The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `model`, `settings`, `redaction`, `release`, `version-stamp`, `analytics`, `codex`, `pty-host` | nothing in the workspace | leaves everything else builds on |
+| `wire`, `model`, `settings`, `redaction`, `release`, `version-stamp`, `analytics`, `git-facts`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code |
 | `journal`, `store`, `agent-dir`, `attachments` | `wire` | |
-| `interpret` | `wire`, `redaction` | the pure step and its body redactor |
-| `claude` | `pty-host` | |
-| `agent` | `agent-dir`, `attachments`, `claude`, `interpret`, `journal`, `pty-host`, `wire` | the agent process is the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `interpret`, `journal`, `release`, `settings`, `store`, `version-stamp`, `wire` | reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the debug bundle's per-kind redactor |
+| `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
+| `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `redaction`, `wire` | the pure step and its body redactor |
+| `claude` → `claude-protocol`, `pty-host`; `codex` → `codex-protocol` | | |
+| `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
+| `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
+| `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
+| `supervisor-core` | at most `release`, `version-stamp` | reads release manifests and version stamps |
+| `agent` | `agent-core`, `agent-dir`, `attachments`, `claude`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `pty-host`, `wire` | the agent core's driver, and the only production crate that reads a provider |
+| `node` | `agent-dir`, `analytics`, `core-ring`, `daemon-core`, `git-facts`, `interpret`, `journal`, `relay-core`, `release`, `settings`, `store`, `supervisor-core`, `version-stamp`, `wire` | the driver of the daemon, relay and supervisor cores; reaches agents only through the directory contract, never the `agent` crate, so the phone can host a runtime with no provider in its graph; `interpret` only for the dump's per-kind redactor |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
-| `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `wire` | | the view library |
+| `ui-state` → `model`, `wire`; `ui-view` → `attachments`, `ui-state`, `wire`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library |
 | `tui` | `attachments`, `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
 | `app-runtime` | `client`, `model`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `node`, `wire` | the daemon in the phone's process |
 | `app-ffi` | `app-embedded`, `app-runtime`, `client`, `model`, `node`, `ui-view` | the C ABI over both |
 | `amux` | `agent`, `agent-dir`, `analytics`, `claude`, `client`, `node`, `settings`, `store`, `tui`, `wire` | the one binary |
+| `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `provider-fakes`, `release`, `store`, `supervisor-core`, `ui-state`, `wire` | the properties, explored over the real cores, store and session state |
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `redaction`, `store`, `ui-state`, `ui-view`, `wire` | replays the four stages, judging the models' properties; a debugging tool nothing that ships links |
-| `xtask` | `app-runtime`, `model`, `release`, `ui-view`, `version-stamp` | generates the Swift mirrors; signs releases |
+| `xtask` | `app-runtime`, `model`, `release`, `ui-view`, `version-stamp`, `wire` | generates the Swift mirrors; signs releases |
 
 The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
 hosts the runtime in process. `just embedded-check` and `just mobile-check`

@@ -557,8 +557,20 @@ The budgets and K are listed in [parameters](PARAMETERS.md).
 
 ## Tests
 
-The claims on this page are held by named tests, mapped in
-[`tests/contracts.toml`](../tests/contracts.toml). The main ones:
+The rules on this page are promises of the daemon core, written once as
+properties in [`crates/models`](../crates/models/README.md) and checked by
+exploring the real core over a real store in memory, under crashes, power
+loss and unclean reboots:
+
+| Machine | Its promises about the journal and the store |
+| --- | --- |
+| single daemon | commit before broadcast; the open is one cut; a segment is reclaimed only below the last checkpoint's cursor; the generation bumps after an unclean reboot, and only then; a checkpoint plus the inputs since reproduces the state |
+| replication | a replica's block is contiguous and agrees with the origin; no row survives from another generation; the cursor is complete |
+
+`cargo run -p models --bin properties` prints each in full. What the models
+do not reach, the files themselves (a torn tail, a frame cut at a byte, a
+migration, the SQLite file on another platform), is held by named tests,
+mapped in [`tests/contracts.toml`](../tests/contracts.toml). The main ones:
 
 | Where | What it holds |
 | --- | --- |

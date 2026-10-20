@@ -8,7 +8,7 @@ The processes around it are described in [Architecture](ARCHITECTURE.md);
 the session stream a client reads is described in [the wire](WIRE.md); the
 user-facing behaviour is in [How amux works](HOW_IT_WORKS.md).
 
-The code lives in the `node` crate: `crates/node/src/link/` (carriers, link
+The driver's code lives in the `node` crate: `crates/node/src/link/` (carriers, link
 runtime, channel pool, relay forwarding), `crates/node/src/routing/`
 (adjacency and the routing table), `crates/node/src/pairing/` and
 `crates/node/src/services/pairing.rs` (pairing), `crates/node/src/discovery/`
@@ -20,6 +20,30 @@ services). The protobuf source is in
 [`link.proto`](../crates/wire/proto/amux/v1/link.proto), pairing in
 [`pairing.proto`](../crates/wire/proto/amux/v1/pairing.proto), the front door in
 [`front_door.proto`](../crates/wire/proto/amux/v1/front_door.proto).
+
+## The promises, as properties
+
+The decisions this page describes are made in two state-machine cores, and
+`node` is their driver: the daemon core
+([`crates/daemon-core`](../crates/daemon-core/README.md)) decides pairing and
+trust, presence and routes, replication, families and deliveries; the
+forwarding core ([`crates/relay-core`](../crates/relay-core/README.md))
+decides which streams a relay splices. The promises are written once, as
+properties the checker explores over those cores in
+[`crates/models`](../crates/models/README.md), and the sentences there are
+the specification; this page explains them. `cargo run -p models --bin
+properties` lists every one. The main machines:
+
+| Chapter | Machine | Some of its promises |
+| --- | --- | --- |
+| [Presence](#chapter-3-presence), [routing](#chapter-4-routing-and-failover) | presence and routing | presence changes only on a concluded attempt on the preferred route; Away only on payment refusal; offline after failed calls until a channel opens; no flap while another route carries traffic; a host with a working route eventually reads online |
+| [Replica rows](JOURNAL_AND_STORE.md#own-rows-and-replica-rows) | replication | the block is contiguous; the block agrees with the origin; no row survives from another generation; the cursor is complete; a replica whose origin and link fall quiet becomes current |
+| [The family rule](#the-family-rule) | family and deliveries | no child is deleted by a stale listing; an outbox row is deleted only on accept; each report reaches its parent exactly once; nothing is owed after unpair; every descendant of a stopped parent eventually stops on every reachable host |
+| All of them at once | composed net | several daemons and their agents, every machine's promises judged together under link, crash and loss faults |
+
+A test that restates one of these rules is a second copy and goes; what the
+models do not reach (a real carrier, a handshake, a relay's token check)
+keeps its tests, listed in [`tests/contracts.toml`](../tests/contracts.toml).
 
 ## The mental model
 

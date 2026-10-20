@@ -259,7 +259,8 @@ nightly *ARGS:
 
 # Run every workspace test under cargo-llvm-cov with the desktop features and
 # write line coverage per crate, with the commit it measured, to
-# tests/coverage.md.
+# tests/coverage.md. Needs `cargo install cargo-llvm-cov` and the
+# llvm-tools-preview rustup component.
 coverage:
     {{bounded}} 3600 scripts/py scripts/coverage.py
 

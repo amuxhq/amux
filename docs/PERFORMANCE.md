@@ -202,9 +202,11 @@ generates the topology; `scripts/ios-perf.py` runs the suite). The app is the `M
 the shipped build is, with the driving door kept in, because an unoptimised Swift build measures the compiler
 rather than the app. Every packet between the phone and a machine crosses a gate the run can delay (the served
 net's `LanGate` and `LanFaults` verbs), so reaching the fleet is measured over a household network's latency as
-well as over none; and once more with the phone away from home, signed in to the relay with every direct dial lost
-and a gate in front of the relay's QUIC carrier (`RelayGate` and `RelayFaults`), which is the path mobile data
-takes.
+well as over none; and once more with the phone away from home, signed in to the relay with every direct dial lost,
+which is the path mobile data takes. Away from home every way to the relay is gated: the phone dials a gate in front
+of the relay's QUIC carrier (`RelayGate`), each machine already reaches the relay through a gate of its own, and the
+net's `NetFaults` verb aimed at `relay` delays them all at once, so a relayed round trip pays the latency on both
+legs. The account service is not gated, since a launch reuses the phone's relay token rather than fetching one.
 
 Every number is taken by the app: the launch marks (`Signposts` in `AmuxCore`, emitted in every build) and the
 door's `measure` verb, which watches the display, the main thread and the footprint for a stretch while the run
@@ -219,7 +221,7 @@ the phone, rather than reporting a number about an idle screen.
 | `cold fleet render` | cold | From the fleet on screen having caught up with its store to the first presented frame carrying its rows: building the home from what the store held | 100 ms | | 15% |
 | `reconciliation at 0 ms` | reconciliation | From that point to the first presented frame after every trusted machine's agents were current with the machine, over loopback | 250 ms | | 15% |
 | `reconciliation at 100 ms` | reconciliation | The same, with every gate holding each packet 100 ms | 1,000 ms | | 15% |
-| `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and the gate in front of the relay holding each packet 100 ms | 1,500 ms | | 15% |
+| `reconciliation through the relay at 100 ms` | reconciliation | The same, the phone away from home: signed in to the machines' account at the served relay, every direct dial lost, and every way to the relay, the phone's and each machine's, holding each packet 100 ms. Budget and baseline to be set from the first measurement under these gates; until then measured and reported, not judged | 1,500 ms | | 15% |
 | `streaming hitch time` | streaming | Missed frame time per second while fifty rows a second arrive for twenty seconds into the conversation on screen, resting at its tail | 5 ms/s | | ceiling only |
 | `streaming main-thread CPU` | streaming | The main thread's share of one core over the same stream | 60 % | | 15% |
 | `streaming footprint` | streaming | The process's footprint at the end of the stream | 120 MB | | 10% |
@@ -258,6 +260,12 @@ Mac from 1,986 when each stream waited to be accepted and then handshook inside,
 its own. The test gate itself passes datagrams in the order they came: held each on its own timer, two sent in the
 same millisecond could swap places, and a packet overtaking the handshake it followed was dropped and counted lost,
 costing a round trip a household network never does.
+
+The relay launch was first gated on the phone's hop alone, which measured about 1,007 ms on the pinned Mac while
+leaving the relay's leg to each machine free; a relayed round trip crosses both legs, so the gate now holds both.
+The 1,500 ms figure in the table is what a person on mobile data accepts, written before any measurement under the
+new gates; the runner lists the metric in `SET_FROM_FIRST_MEASUREMENT`, reports it without judging its budget or
+an older baseline, and the commit that records its first baseline writes its budget and takes it off that list.
 
 `--only cold|reconciliation|streaming|idle` takes one group, for working on it; `--baseline` needs a whole run.
 `--describe` says which enrolled machine this is and whether its baseline exists without building or launching

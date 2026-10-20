@@ -1,7 +1,9 @@
 """The phone performance runner's contracts: the budgets and machines the
 performance page states are the ones the runner enforces, a pairing link is
-rewritten to a gate and nothing else, and the judge holds a sample to its
-budget, its worst-sample budget and its baseline."""
+rewritten to a gate and nothing else, a relay launch gates every way to the
+relay and not the account service, and the judge holds a sample to its
+budget, its worst-sample budget and its baseline unless its budget is still
+to be set from its first measurement."""
 
 import importlib.util
 import json
@@ -58,6 +60,13 @@ class ThePageStatesTheRunner(unittest.TestCase):
             stated[name] = (unit, group, budget_number, number(worst), drift)
         self.assertEqual(stated, perf.BUDGETS)
 
+    def test_a_budget_still_to_be_measured_says_so_on_the_page(self):
+        rows = table_rows(phone_section(), "| Metric | Group |")
+        provisional = {
+            row[0].strip("`") for row in rows if "set from the first measurement" in row[2]
+        }
+        self.assertEqual(provisional, perf.SET_FROM_FIRST_MEASUREMENT)
+
     def test_the_machine_table_matches_the_runners_machines(self):
         rows = table_rows(phone_section(), "| Machine | Model |")
         stated = {model.strip("`"): name.strip("`") for name, model in rows}
@@ -73,6 +82,40 @@ class ALinkIsRewrittenToItsGate(unittest.TestCase):
         self.assertEqual(prefix, "amux://pair?payload")
         decoded = json.loads(base64.urlsafe_b64decode(rewritten + "=" * (-len(rewritten) % 4)))
         self.assertEqual(decoded, {**payload, "addrs": ["127.0.0.1:6000"]})
+
+
+class ARecordingJourney:
+    def __init__(self):
+        self.requests = []
+        self.ready = {"agents": [], "cloud_url": "https://cloud"}
+
+    def request(self, body):
+        self.requests.append(body)
+        return {"addr": "127.0.0.1:7000"}
+
+    def app(self, body, timeout=None):
+        self.requests.append({"app": body})
+
+
+class ARelayLaunchGatesEveryWayToTheRelay(unittest.TestCase):
+    def test_the_phones_way_and_every_machines_way_are_held_and_the_account_service_is_not(self):
+        journey = ARecordingJourney()
+        run = perf.Run(journey, ["reconciliation"])
+        run.gate_the_relay()
+        run.leave_home()
+        run.relay_latency(100)
+        self.assertEqual(run.relay_gate, "127.0.0.1:7000")
+        held = [body for body in journey.requests if "NetFaults" in body]
+        # The net's faults aimed at the relay hold every gate in front of it:
+        # the one the phone dials and the one each machine reaches it through.
+        self.assertEqual(held, [{"NetFaults": {"target": "relay", "delay_ms": 100, "loss_percent": 0}}])
+        self.assertFalse([body for body in journey.requests if "RelayFaults" in body])
+        connect = [body["app"] for body in journey.requests if "app" in body]
+        self.assertEqual(connect[0]["relay"], "https://cloud")
+        run.come_home()
+        self.assertEqual(
+            journey.requests[-1], {"NetFaults": {"target": "relay", "delay_ms": 0, "loss_percent": 0}}
+        )
 
 
 class TheJudge(unittest.TestCase):
@@ -106,6 +149,21 @@ class TheJudge(unittest.TestCase):
         past = perf.judge(self.samples(**{"cold first frame": [350, 350, 350, 350, 350]}), baseline)
         self.assertFalse(past["passed"])
         self.assertIn("tolerance", past["results"][0]["note"])
+
+    def test_a_budget_still_to_be_measured_is_reported_but_not_judged(self):
+        name = "reconciliation through the relay at 100 ms"
+        self.assertIn(name, perf.SET_FROM_FIRST_MEASUREMENT)
+        baseline = {name: 1000.0}
+        verdict = perf.judge(self.samples(**{name: [1700, 1700, 1700, 1700, 1700]}), baseline)
+        self.assertTrue(verdict["passed"])
+        result = verdict["results"][0]
+        self.assertTrue(result["provisional"])
+        self.assertIsNone(result["baseline"])
+        self.assertIn("set from this measurement", result["note"])
+        text = perf.report(verdict, "pinned-mac", "Mac14,6", 1.0, [], ("1.00 2.00 3.00", "1.00 2.00 3.00"))
+        self.assertIn("to be set from this run", text)
+        self.assertIn("MEASURED", text)
+        self.assertNotIn("FAILED", perf.summary_line(result))
 
     def test_a_count_metric_has_no_slack(self):
         verdict = perf.judge(self.samples(**{"idle display ticks": [0, 0, 1, 0, 0]}), None)

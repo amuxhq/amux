@@ -151,7 +151,8 @@ loopback-smoke: tools
 
 # The optimised app on the enrolled Mac's simulator against the served
 # performance network: cold launch, store read, reconciliation at 0 and
-# 100 ms, streaming and idle; budgets and drift per docs/PERFORMANCE.md.
+# 100 ms and through the relay with every way to it gated at 100 ms,
+# streaming and idle; budgets and drift per docs/PERFORMANCE.md.
 # `--baseline` records this machine's medians; `--only GROUP` takes one
 # group; `--describe` says what would run without running it.
 # Measure the phone.

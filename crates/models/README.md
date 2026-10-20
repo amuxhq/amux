@@ -292,7 +292,7 @@ under `just test`.
 | Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 81,268 | 13 s | 25 s | not yet measured (274 s at 3 keys and cap 2, before a page's answer arrived on its own) | 240 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 493 s |
 | Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag | 207,594 | 51 s | 68 s | not yet measured (199 s before the checkpoint's WAL job) | 600 s | 2 crashes, power losses or reboots, 1 refused commit | 527 s |
 | Family and deliveries | 1 turn end, the parent's spontaneous exit, 1 link down, 1 crash, 1 wait | 396,826 | 38 s | 74 s | 161 s and 299 s (the first at 391,552 states, before the first listing predated the parent) | 600 s | the child's spontaneous exit too, 2 links down, 2 waits | 757 s |
-| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 2 refusals for the plan in a row | 1,233,958 | 41 s | 73 s | not yet measured (134 s at 859,652 states) | 600 s | 4 up, 3 down, 3 failures | 431 s |
+| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 1 refusal for the plan before anything else happens | 1,040,570 | 27 s | 61 s | 339.9 s at 1,233,958 states with 2 refusals for the plan in a row; about 287 s projected at these bounds from that run's 3,630 states per second | 600 s | 4 up, 3 down, 3 failures, 2 refusals for the plan in a row | 431 s |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 44 s for both (before a stop interrupted the test kind's turn) | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | not yet measured | 120 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | not yet measured | 240 s | 3 writes | 343 s |
@@ -312,16 +312,20 @@ the lifecycle figure is its test binary, both models together. The family
 model's second figure is from run
 [39215214763](https://github.com/jordanwebster/amux/actions/runs/39215214763)
 at the same bounds: the runner's speed varied 1.9 times between the two runs,
-and the budget is sized to the slower.
+and the budget is sized to the slower. The presence figure is from run
+[39409237111](https://github.com/jordanwebster/amux/actions/runs/39409237111),
+at bounds that allowed two refusals for the plan in a row: twice it passed
+600 s, so the CI bounds allow one and the second moved to the nightly bounds;
+the projection divides the state count at the new bounds by that run's rate.
 
 Each model runs in CI as a job of its own on that runner, and its budget is
 sized to it: **a model's budget is at least twice its measured time on the
 four-core runner at its CI bounds, rounded up to the next full minute, and no
 budget is above 600 s.** A model with no runner figure yet is sized from its
-four-thread Mac time times 4.2, the slowest runner-to-Mac ratio measured (the
-runner took 2.1 to 4.2 times the Mac's four-thread time; replication, the
-model heaviest on the store, was the slowest), doubled and rounded up the same
-way, until a CI run measures it. A model whose doubled runner time would pass
+four-thread Mac time times 4.7, the slowest runner-to-Mac ratio measured (the
+runner took 2.1 to 4.7 times the Mac's four-thread time; presence, at 339.9 s
+against 73 s on four of the Mac's threads at the same bounds, was the
+slowest), doubled and rounded up the same way, until a CI run measures it. A model whose doubled runner time would pass
 600 s has its CI bounds cut, and the bounds it loses move to its nightly
 test. The nightly bounds run daily in their own workflow, each model in a job
 of its own, and locally through `just models-nightly`.

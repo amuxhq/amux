@@ -78,7 +78,8 @@ impl PresenceRouting {
     /// The bounds `just test` explores exhaustively: three links or claims
     /// up and two down, so a route can carry traffic while another comes
     /// and goes; two failed attempts or calls; one call opening a channel;
-    /// the plan bought and lapsed again.
+    /// the plan bought and lapsed again; one refusal for the plan before
+    /// something else happens, which keeps the run inside its time budget.
     pub const fn ci() -> Self {
         Self {
             ups: 3,
@@ -86,16 +87,18 @@ impl PresenceRouting {
             faults: 2,
             calls: 1,
             plans: 2,
-            payments: 2,
+            payments: 1,
         }
     }
 
-    /// The larger bounds a nightly run explores.
+    /// The larger bounds a nightly run explores, the relay's retry refused
+    /// for the plan a second time in a row among them.
     pub const fn nightly() -> Self {
         Self {
             ups: 4,
             downs: 3,
             faults: 3,
+            payments: 2,
             ..Self::ci()
         }
     }

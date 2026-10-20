@@ -118,10 +118,11 @@ A model's budget is sized to that runner. CI run
 [39185561814](https://github.com/jordanwebster/amux/actions/runs/39185561814)
 measured the models there at their CI bounds: the runner took 2.1 to 4.2 times
 the enrolled Mac's four-thread time, and replication, the model heaviest on
-the store, was the slowest (274 s against 66 s). So a model's budget is at
-least twice its runner time, rounded up to a whole minute, and no budget is
-above 600 s; a model not yet measured there is sized from its four-thread Mac
-time times 4.2. The models' README records each model's times. The job
+the store, was the slowest (274 s against 66 s); a later run measured presence
+at 4.7 times (339.9 s against 73 s). So a model's budget is at least twice its
+runner time, rounded up to a whole minute, and no budget is above 600 s; a
+model whose doubled runner time would pass that has its CI bounds cut; a model
+not yet measured there is sized from its four-thread Mac time times 4.7. The models' README records each model's times. The job
 guard is 25 minutes.
 
 The Models at nightly bounds workflow runs each model's ignored nightly

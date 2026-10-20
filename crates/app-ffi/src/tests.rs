@@ -364,7 +364,8 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     let agent_c = c(&agent.to_string());
     phone.until(0, std::ptr::null(), "the desk's agent", || {
         // SAFETY: the runtime is live.
-        let view = take(unsafe { amux_fleet_view(phone.profile, std::ptr::null()) });
+        let view =
+            take(unsafe { amux_fleet_view(phone.profile, std::ptr::null(), std::ptr::null()) });
         view["sections"][0]["rows"]
             .as_array()
             .is_some_and(|rows| rows.len() == 1)
@@ -618,7 +619,8 @@ fn no_wake_reaches_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
     .to_string());
     phone.until(0, std::ptr::null(), "the desk's agent", || {
         // SAFETY: the runtime is live.
-        let view = take(unsafe { amux_fleet_view(phone.profile, std::ptr::null()) });
+        let view =
+            take(unsafe { amux_fleet_view(phone.profile, std::ptr::null(), std::ptr::null()) });
         view["sections"][0]["rows"]
             .as_array()
             .is_some_and(|rows| rows.len() == 1)
@@ -867,7 +869,9 @@ fn malformed_calls_are_refused_rather_than_crashing() {
     // SAFETY: null chats and runtimes read as nothing.
     assert!(unsafe { amux_session_keys(std::ptr::null()) }.is_null());
     // SAFETY: as above.
-    assert!(unsafe { amux_fleet_view(std::ptr::null(), std::ptr::null()) }.is_null());
+    assert!(
+        unsafe { amux_fleet_view(std::ptr::null(), std::ptr::null(), std::ptr::null()) }.is_null()
+    );
     // SAFETY: as above.
     assert!(unsafe { amux_session_keep_open_runs(std::ptr::null(), std::ptr::null()) }.is_null());
     // SAFETY: a null profile is ignored.

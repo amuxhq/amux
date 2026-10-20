@@ -100,6 +100,7 @@ public struct ChatScreen: View {
     @Environment(\.design) private var design
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
+    @Environment(\.reducesTransparency) private var reducesTransparency
     let model: ChatModel
     let subject: ChatSubject
     let family: FamilyHeader?
@@ -167,7 +168,14 @@ public struct ChatScreen: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            header.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+            Group {
+                if let parent = family?.parent {
+                    FamilyLine(parent: parent) { actions(.open($0)) }
+                        .padding(.horizontal, Space.margin)
+                        .padding(.bottom, Space.s)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ChatStanding(
@@ -177,7 +185,9 @@ public struct ChatScreen: View {
                 openOverview: { overviewOpen = true }, actions: actions)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar { bar }
         .accessibilityElement(children: .contain)
         .reported("chat", value: subject.name)
         .sheet(isPresented: $overviewOpen) {
@@ -213,126 +223,115 @@ public struct ChatScreen: View {
         return true
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
-                HStack(spacing: 8) {
-                    Button {
-                        putDown += 1
-                        actions(.back)
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(design.inkMuted.color)
-                            .thumbTarget(x: 15, y: 15)
-                    }
-                    .buttonStyle(.amuxControl)
-                    .accessibilityLabel("Back")
-                    .identified("chat.back", label: "Back")
-                    .reclaimingThumbTarget(x: 15, y: 15)
-                    Button {
-                        putDown += 1
-                        placeOpen = true
-                    } label: {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(subject.name)
-                                .designFont(.identifier, design)
-                                .foregroundStyle(design.ink.color)
-                                .lineLimit(1)
-                            HStack(spacing: 5) {
-                                if detached || !subject.reachable {
-                                    Image(systemName: "circle.dashed")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(design.inkFaint.color)
-                                }
-                                Text(placeLine)
-                                    .designFont(.monoSmall, design)
-                                    .foregroundStyle(design.inkFaint.color)
-                                    .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
-                                    .truncationMode(placeIsPath ? .middle : .tail)
-                            }
-                        }
-                    }
-                    .buttonStyle(.amuxControl)
-                    .accessibilityLabel("\(subject.name), \(placeLine)")
-                    .accessibilityHint("Shows the host, directory and address in full")
-                    .identified("chat.title", label: subject.name, value: subject.name)
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                // A bar over the chat, sized as the system sizes its own bars:
-                // past the largest ordinary size it stops growing, so at an
-                // accessibility size it does not cover the rows it heads.
-                // Tapping it shows the place in full at any size.
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                .frosted(Capsule(), as: .glass)
-                .identified(
-                    "chat.header", label: placeLine,
-                    value: detached ? "detached" : (subject.reachable ? "live" : "away"))
-                // The pill keeps its own width but may grow up to the buttons' ordinary
-                // spacing, so a long place line loses as little as it can.
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if let changes = model.changes {
-                    let against = model.comparison == .onBranch ? model.base : nil
-                    Button {
-                        putDown += 1
-                        actions(.review)
-                    } label: {
-                        HStack(spacing: 5) {
-                            if let against {
-                                Text(verbatim: ChatWords.comparison(.onBranch, base: against))
-                                    .foregroundStyle(design.inkMuted.color)
-                            }
-                            Text(verbatim: "+\(changes.added)").foregroundStyle(design.added.color)
-                            Text(verbatim: "\u{2212}\(changes.removed)").foregroundStyle(design.removed.color)
-                        }
-                        .designFont(.monoSmall, design)
-                        .padding(.horizontal, 12)
-                        .frame(height: 36)
-                        .frosted(Capsule(), as: .glass)
-                    }
-                    .buttonStyle(.amuxControl)
-                    .accessibilityLabel(ChatWords.changes(
-                        files: Int(changes.files), added: changes.added, removed: changes.removed))
-                    .accessibilityHint("Opens the review")
-                    .identified(
-                        "chat.changes", label: "+\(changes.added) \u{2212}\(changes.removed)",
-                        value: model.comparison.rawValue)
-                }
+    /// The system's bar, as Slack and Messages use it: the way back in a
+    /// circle, who the chat is with in a pill beside it, and the chat's own
+    /// actions — its changes when it has any, and the menu — sharing one
+    /// pill at the trailing edge. Every pill is the bar's height.
+    @ToolbarContentBuilder
+    private var bar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                putDown += 1
+                actions(.back)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(design.ink.color)
+                    .frame(width: 36, height: 36)
+                    .barItemSurface()
+            }
+            .accessibilityLabel("Back")
+            .identified("chat.back", label: "Back")
+        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        // The way back is a circle of its own; the bar would otherwise set
+        // it and the title on one piece of glass.
+        ToolbarSpacer(.fixed, placement: .topBarLeading)
+        ToolbarItem(placement: .topBarLeading) {
+            title
+        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+        ToolbarItem(placement: .topBarTrailing) {
+            HStack(spacing: 0) {
+                if let changes = model.changes { changesButton(changes) }
                 overflow
             }
-            if let parent = family?.parent {
-                FamilyLine(parent: parent) { actions(.open($0)) }
-            }
+            .barItemSurface()
         }
-        .padding(.horizontal, design.metrics.gutter)
-        .padding(.top, 2)
-        .padding(.bottom, Self.headerBelowPill)
-        // Rows scrolled up go under solid ground down to the pill's foot and fade into
-        // it from there, instead of showing crisp beside the pill. The pill's
-        // glass then always sits over the ground: over a row's large bright words, as at
-        // an accessibility text size, glass turns light in the dark appearance and its
-        // faint place line all but vanishes. A drawn fade rather than a safe-area bar's
-        // scroll edge effect: that blur is not drawn the same way twice.
-        .background {
-            // Negative padding carries the fade past the header's foot.
-            VStack(spacing: 0) {
-                design.ground.color
-                LinearGradient(
-                    colors: [design.ground.color, design.ground.color.opacity(0)],
-                    startPoint: .top, endPoint: .bottom)
-                .frame(height: Self.headerFade)
-            }
-            .padding(.bottom, Self.headerBelowPill - Self.headerFade)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-        }
+        .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
     }
 
-    /// The header's room under its pill, where the rows begin to fade.
-    static let headerBelowPill: CGFloat = 6
-    /// How far below the pill's foot the rows fade into the ground.
-    static let headerFade: CGFloat = 14
+    /// The agent's name over where it runs; tapping it shows the place in
+    /// full.
+    private var title: some View {
+        Button {
+            putDown += 1
+            placeOpen = true
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(subject.name)
+                    .designFont(.bodyEmphasis, design)
+                    .foregroundStyle(design.ink.color)
+                    .lineLimit(1)
+                HStack(spacing: Space.xs) {
+                    if detached || !subject.reachable {
+                        Image(systemName: "circle.dashed")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(design.inkFaint.color)
+                    }
+                    Text(placeLine)
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .lineLimit(1)
+                        .truncationMode(placeIsPath ? .middle : .tail)
+                }
+            }
+            // The bar does not grow with the text: past the largest ordinary
+            // size the pill would no longer fit it.
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
+            .padding(.horizontal, Space.m)
+            .frame(maxWidth: 220, alignment: .leading)
+            .frame(height: 36)
+            .barItemSurface()
+        }
+        .accessibilityLabel("\(subject.name), \(placeLine)")
+        .accessibilityHint("Shows the host, directory and address in full")
+        .identified("chat.title", label: subject.name, value: subject.name)
+        .identified(
+            "chat.header", label: placeLine,
+            value: detached ? "detached" : (subject.reachable ? "live" : "away"))
+    }
+
+    /// "+42 −7", which opens the review.
+    private func changesButton(_ changes: ChangeTotals) -> some View {
+        let against = model.comparison == .onBranch ? model.base : nil
+        return Button {
+            putDown += 1
+            actions(.review)
+        } label: {
+            HStack(spacing: Space.xs) {
+                if let against {
+                    Text(verbatim: ChatWords.comparison(.onBranch, base: against))
+                        .foregroundStyle(design.inkMuted.color)
+                }
+                Text(verbatim: "+\(changes.added)").foregroundStyle(design.added.color)
+                Text(verbatim: "\u{2212}\(changes.removed)").foregroundStyle(design.removed.color)
+            }
+            .designFont(.caption, design)
+            .monospacedDigit()
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
+            .padding(.leading, Space.m)
+            .padding(.trailing, Space.xs)
+            .frame(height: 36)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(ChatWords.changes(
+            files: Int(changes.files), added: changes.added, removed: changes.removed))
+        .accessibilityHint("Opens the review")
+        .identified(
+            "chat.changes", label: "+\(changes.added) \u{2212}\(changes.removed)",
+            value: model.comparison.rawValue)
+    }
 
     private var overflow: some View {
         let running = model.frame.map({ if case .exited = $0.phase { false } else { true } }) ?? false
@@ -364,10 +363,11 @@ public struct ChatScreen: View {
             name: String(localized: "More"), identifier: "chat.more", items: items,
             opened: { putDown += 1 }
         ) {
-            GlassIcon(glyph: "ellipsis", size: 36)
-                .thumbTarget(x: 4, y: 4)
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(design.ink.color)
+                .frame(width: 36, height: 36)
         }
-        .reclaimingThumbTarget(x: 4, y: 4)
     }
 
     // MARK: - The rows
@@ -746,7 +746,11 @@ struct RowCellView: View {
             ChatRowView(
                 row: row, expanded: model.isExpanded(row.id),
                 rail: RailJoin.of(row, next: model.row(below: row.id)),
-                bytes: model.bytes(of:), toggle: { model.toggle(row.id) })
+                placement: RunPlacement.of(
+                    row, open: row.run.map(model.isOpen) ?? false,
+                    counts: { row.run.flatMap(model.counts(of:)) }),
+                bytes: model.bytes(of:), toggle: { model.toggle(row.id) },
+                toggleRun: { if let run = row.run { model.toggleRun(run) } })
         } else {
             Color.clear.frame(height: 0)
         }

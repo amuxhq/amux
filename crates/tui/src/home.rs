@@ -23,7 +23,7 @@ use ui_view::{
     ActivityLine, AskSubject, AskSummary, ExitCause, FleetRow, FleetSection, FleetView, Offline,
     Reach, SecondLine, SectionKind, SessionLine, StuckReason,
 };
-use wire::{Agent, Kind, Lifecycle, SignInState, Trust};
+use wire::{Kind, Lifecycle, SignInState, Trust};
 
 use crate::chat::composer::editor_lines;
 use crate::editor::Editor;
@@ -208,24 +208,13 @@ enum Item {
     Note(&'static str),
 }
 
-/// The agent as a row names it: Claude chatted with here, Claude in its
-/// own terminal, or Codex.
-fn kind_word(kind: Kind) -> &'static str {
-    match kind {
-        Kind::ClaudeSdk => "Claude",
-        Kind::ClaudePty => "Claude (terminal)",
-        Kind::Codex => "Codex",
-        Kind::Unspecified => "",
-    }
-}
-
 /// Which agent it is and where it works, as faint words after its name:
 /// "Claude · ~/src/amux · laptop", the host only when not this machine.
 /// Short of room, the folder gives way first, cut from the left down to
 /// its last name, then the host, then the agent; the name and the age
 /// beside them always stay.
 fn where_it_runs(kind: Kind, cwd: &str, elsewhere: Option<&str>, room: usize) -> String {
-    let who = kind_word(kind);
+    let who = ui_view::kind_name(kind);
     let folder = text::tilde(cwd.trim_end_matches('/'));
     let folder = if folder.is_empty() {
         cwd.to_owned()
@@ -407,27 +396,6 @@ impl Home {
             .filter(|needle| !needle.is_empty())
     }
 
-    fn matches(fleet: &FleetState, agent: &Agent, needle: &str) -> bool {
-        let host = fleet.host(&agent.host_id).map(|host| host.name.as_str());
-        let branch = agent.git.as_ref().and_then(|git| git.branch.as_deref());
-        // The cause as the row words it, so the filter finds what it shows.
-        // Only an exited row shows one: a live row can briefly hold the
-        // cause its journal ended with, until the daemon marks it exited.
-        let cause = (agent.lifecycle() == Lifecycle::Exited)
-            .then(|| ui_state::exit_words(agent.exit_cause, agent.exit_detail.as_deref()));
-        [
-            Some(agent.name.as_str()),
-            branch,
-            Some(agent.cwd.as_str()),
-            host,
-            cause.as_deref(),
-            Some(kind_word(agent.kind())),
-        ]
-        .into_iter()
-        .flatten()
-        .any(|field| field.to_lowercase().contains(needle))
-    }
-
     /// Home's sections from the shared fleet view, filtered by the needle.
     /// `lines` says what each agent's session knows for its second line.
     fn view(
@@ -440,7 +408,7 @@ impl Home {
         ui_view::fleet_view(fleet, local_host, lines, &self.expanded, &|agent| {
             needle
                 .as_ref()
-                .is_none_or(|needle| Self::matches(fleet, agent, needle))
+                .is_none_or(|needle| ui_view::matches(fleet, agent, needle))
         })
     }
 
@@ -1299,7 +1267,7 @@ impl Home {
                 Some(needle) => {
                     let shown = fleet
                         .agents()
-                        .filter(|agent| Self::matches(fleet, agent, &needle))
+                        .filter(|agent| ui_view::matches(fleet, agent, &needle))
                         .count();
                     format!("{shown} match{}", if shown == 1 { "" } else { "es" })
                 }

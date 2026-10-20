@@ -134,8 +134,9 @@ impl AppRuntime {
     }
 
     /// Home's sections: families under their roots, expanded where
-    /// `expand` names the root's agent id, each row with its second line.
-    pub fn fleet_view(&self, expand: &[Vec<u8>]) -> FleetView {
+    /// `expand` names the root's agent id, each row with its second line,
+    /// listing the agents `filter` keeps.
+    pub fn fleet_view(&self, expand: &[Vec<u8>], filter: &ui_view::FleetFilter) -> FleetView {
         let expand = expand.iter().cloned().collect();
         let now_ms = self.clock.now_ms();
         // Each session is read on its own, before the fleet is.
@@ -151,13 +152,10 @@ impl AppRuntime {
                 )
             })
             .collect();
-        ui_view::fleet_view(
-            &self.fleet.state(),
-            &self.local_host,
-            &lines,
-            &expand,
-            &|_| true,
-        )
+        let fleet = self.fleet.state();
+        ui_view::fleet_view(&fleet, &self.local_host, &lines, &expand, &|agent| {
+            filter.keeps(&fleet, &self.local_host, agent)
+        })
     }
 
     pub fn fleet_card(&self, agent: &AgentKey) -> Option<FleetCard> {

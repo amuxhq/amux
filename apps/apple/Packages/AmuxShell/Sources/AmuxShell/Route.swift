@@ -1,7 +1,8 @@
 import AmuxCore
 import Foundation
 
-/// The three places the app is, as the tab bar names them.
+/// The three places the app is: the two tabs, and You, the settings sheet
+/// raised over them from the account disc on the Agents list.
 public enum Tab: String, Hashable, Sendable, CaseIterable, Codable {
     case agents
     case hosts
@@ -11,15 +12,15 @@ public enum Tab: String, Hashable, Sendable, CaseIterable, Codable {
         switch self {
         case .agents: "Agents"
         case .hosts: "Hosts"
-        case .you: "You"
+        case .you: "Settings"
         }
     }
 
     public var symbol: String {
         switch self {
-        case .agents: "square.stack.3d.up"
-        case .hosts: "externaldrive.connected.to.line.below"
-        case .you: "person.crop.circle"
+        case .agents: "terminal"
+        case .hosts: "server.rack"
+        case .you: "gearshape"
         }
     }
 }
@@ -44,8 +45,8 @@ public enum Route: Hashable, Sendable {
     /// abandoned. Arriving here pairs with nobody.
     case pairConfirmation(PairingInvitation)
     case host(HostId)
-    /// Signing in, pushed onto whichever stack asked for it. The empty Agents
-    /// home and the You tab both offer it, so where it was opened from is a
+    /// Signing in, pushed onto whichever stack asked for it. The Agents list
+    /// and the settings sheet both offer it, so where it was opened from is a
     /// fact about the push rather than about the screen — and it is what the
     /// back button is allowed to name.
     case signIn(Tab)

@@ -22,8 +22,6 @@ public enum AccountsAction: Equatable, Sendable {
     case report
     /// Write this phone's diagnostic dump and hand it to the share sheet.
     case exportDump
-    /// Put the switcher away without changing anything.
-    case dismiss
 }
 
 /// One account, as a row.
@@ -98,7 +96,9 @@ struct AccountRow: View {
     }
 }
 
-/// The two letters an account is recognised by before its name is read.
+/// What an account is recognised by before its name is read: its profile
+/// picture where it has one, and two letters until that arrives or where it
+/// has none.
 struct InitialsDisc: View {
     @Environment(\.design) private var design
     let entry: AccountEntry
@@ -106,11 +106,12 @@ struct InitialsDisc: View {
     var size: CGFloat = 30
 
     var body: some View {
-        Text(initials)
+        Text(Self.initials(of: entry.name))
             .font(.system(size: size * 0.36, weight: .semibold))
             .foregroundStyle(filled ? design.onAccent.color : design.inkMuted.color)
             .frame(width: size, height: size)
             .background(Circle().fill(filled ? design.accent.color : design.sunken.color))
+            .overlay { AccountPicture(url: entry.account.picture, size: size) }
             .opacity(entry.signedIn ? 1 : 0.5)
             .accessibilityHidden(true)
     }
@@ -118,8 +119,8 @@ struct InitialsDisc: View {
     /// Two letters, because one is not enough to tell two accounts apart at a
     /// glance and three stops reading as a monogram. A name of two words gives
     /// one letter from each; a single word gives its first two.
-    private var initials: String {
-        let words = entry.name.split(separator: " ").prefix(2)
+    static func initials(of name: String) -> String {
+        let words = name.split(separator: " ").prefix(2)
         guard let first = words.first else { return "?" }
         let letters = words.count > 1
             ? words.compactMap(\.first).map(String.init).joined()
@@ -128,93 +129,23 @@ struct InitialsDisc: View {
     }
 }
 
-/// The accounts this phone knows, as a panel under the title that named them.
-///
-/// It is a panel and not a system menu because the rows are not menu items:
-/// each carries what this phone knows about that account, and one of them
-/// offers to sign back in rather than to switch. A menu would flatten all of
-/// that into a list of words.
-public struct AccountSwitcher: View {
-    @Environment(\.design) private var design
-    private let accounts: AccountRegistry
-    private let actions: @MainActor (AccountsAction) -> Void
-
-    public init(
-        accounts: AccountRegistry, actions: @escaping @MainActor (AccountsAction) -> Void
-    ) {
-        self.accounts = accounts
-        self.actions = actions
-    }
-
-    public var body: some View {
-        VStack(spacing: 0) {
-            ForEach(accounts.accounts) { entry in
-                AccountRow(entry: entry, selected: entry.id == accounts.selected, actions: actions)
-                    .padding(.horizontal, 14)
-                Rectangle()
-                    .fill(design.hairline.color)
-                    .frame(height: design.metrics.hairline)
-                    .padding(.leading, 14)
-            }
-            Button { actions(.add) } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 30)
-                    Text("Add Account")
-                        .designFont(.body, design)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(design.accent.color)
-                .padding(.vertical, 13)
-                .padding(.horizontal, 14)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.amuxRow)
-            .identified("accounts.add", label: "Add Account")
-        }
-        .frosted(
-            RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous),
-            wash: 0.88)
-        .accessibilityElement(children: .contain)
-        .identified("accounts.switcher", value: accounts.selected?.value ?? "none")
-    }
-}
-
-/// The switcher over the screen it was opened from.
-///
-/// Drawn over the real screen rather than beside it: what it covers, what its
-/// edge uncovers and how the list behind it dims are facts about the screen
-/// underneath, so a capture is of both at once.
-struct SwitcherOverlay<Content: View>: View {
-    @Environment(\.design) private var design
-    @Binding var open: Bool
-    let accounts: AccountRegistry
-    let actions: @MainActor (AccountsAction) -> Void
-    @ViewBuilder let content: Content
+/// An account's profile picture as a circle, drawn over whatever stands in
+/// for it: nothing at all until it has loaded, or where it fails to.
+struct AccountPicture: View {
+    let url: URL?
+    let size: CGFloat
 
     var body: some View {
-        ZStack(alignment: .top) {
-            content
-            if open {
-                // Everything under the panel is dimmed and takes the tap that
-                // puts it away: a panel you have to aim at a close button to
-                // dismiss is a panel that traps a thumb.
-                Color.black.opacity(Glass.scrim)
-                    .padding(.top, 76)
-                    .ignoresSafeArea(edges: [.horizontal, .bottom])
-                    .onTapGesture { actions(.dismiss) }
-                    .accessibilityHidden(true)
-                AccountSwitcher(accounts: accounts, actions: actions)
-                    .frame(width: 300)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, design.metrics.gutter)
-                    // Under the title it hangs from, which is where the eye
-                    // already is after pressing it.
-                    .padding(.top, 76)
+        if let url {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                }
             }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .accessibilityHidden(true)
         }
-        .moving(value: open)
     }
 }
 
@@ -253,11 +184,6 @@ public struct YouScreen: View {
             Ground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("You")
-                        .designFont(.screenTitle, design)
-                        .foregroundStyle(design.ink.color)
-                        .padding(.top, 8)
-                        .identified("you.title", value: "You")
                     accountList
                     // Offered here and nowhere above it. A phone with nobody
                     // signed in is not a broken phone — it pairs and it runs

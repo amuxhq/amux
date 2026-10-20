@@ -91,7 +91,7 @@ Reads return at once: `amux_session_keys`, `amux_session_rows_for`,
 `amux_session_frame`, `amux_session_toggle_run` and
 `amux_session_keep_open_runs` (a folding view's open set, opened or closed on
 one run, and re-held on each open run's newest step before rows are read),
-`amux_fleet_view` (home's sections), `amux_fleet_card`, `amux_fleet_family`, `amux_fleet_hosts`,
+`amux_fleet_view` (home's sections, narrowed by a `FleetFilter`), `amux_fleet_card`, `amux_fleet_family`, `amux_fleet_hosts`,
 `amux_runtime_profiles`, `amux_runtime_source_policy_listed`. Some reads need
 no handle, because they are the shared rules applied to values the phone
 already holds: `amux_agent_name_problem` (why a name cannot name an agent),

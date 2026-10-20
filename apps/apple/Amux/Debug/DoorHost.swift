@@ -267,7 +267,7 @@ final class DoorHost {
             stores.hosts.stopReadingDevices()
             router.setPath([], for: .hosts)
             router.select(.hosts)
-        case "you": router.setPath([], for: .you); router.select(.you)
+        case "you", "settings": router.setPath([], for: .you); router.select(.you)
         case "devices":
             router.setPath([], for: .hosts)
             router.select(.hosts)

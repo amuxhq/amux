@@ -65,6 +65,10 @@ pub(crate) fn info(hosted: &Hosted) -> ProfileInfo {
             .as_ref()
             .map(|record| record.subject.clone())
             .unwrap_or_default(),
+        account_picture: record
+            .as_ref()
+            .and_then(|record| record.picture.clone())
+            .unwrap_or_default(),
         intent: edge
             .as_ref()
             .map_or(Intent::Unbound, |edge| edge.account().intent()) as i32,

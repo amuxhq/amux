@@ -595,6 +595,8 @@ pub struct AccountView {
     pub binding: AccountBinding,
     pub email: String,
     pub name: String,
+    /// The account's profile picture URL; empty when it has none.
+    pub picture: String,
     /// Whether the account buys the relay, as the relay link last heard.
     pub pro: Option<bool>,
     pub relay: RelayLink,

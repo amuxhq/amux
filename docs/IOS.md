@@ -26,7 +26,7 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | `AmuxCore/LaunchClock` | The one piece of C in the app: an image initialiser that marks the end of dynamic loading for the cold-start split |
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
-| `AmuxShell` | Tabs (Agents, Hosts, You), routes, deep links, web sign-in and speech dictation |
+| `AmuxShell` | Tabs (Agents, Hosts) and the Settings sheet, routes, deep links, web sign-in and speech dictation |
 | `AmuxTestSupport` | The driving door's protocol, scripted account, App Store and chat stand-ins, and the view-state trace |
 | `apps/apple/Amux` | The app target: entry point, `Composition` (which assembles every store and service), report capture, and under `Debug/` the door server and the component catalogue |
 
@@ -45,7 +45,7 @@ The shell draws the tab somebody is looking at. A tab is built when it is
 first reached for and kept from then on, so coming back finds it as it was
 left; the home's rows, grouped in `RowGroup`, are built as they come near
 the screen. Both are what a cold launch's first frame is made of, and
-building all three tabs and every row for a launch that showed one tab and
+building both tabs and every row for a launch that showed one tab and
 ten rows was most of its time.
 
 `Composition` builds one `RuntimeCoordinator` per process. The coordinator
@@ -150,8 +150,8 @@ profile registry creates, binds, signs out, pauses and deletes them.
   while the app is in the background, opens sources only for the chats that
   ask.
 
-Remove from This Phone (an account's section on You, or the menu on any
-account row) takes an account off the phone and leaves it on amux.sh. The
+Remove from This Phone (an account's section in Settings, or the menu on
+any account row) takes an account off the phone and leaves it on amux.sh. The
 registry deletes the account's profile: its key, its trust store, the hosts
 it paired and its store. The installation keeps at least one profile, so
 removing the last account first creates a fresh unbound one. The hosts keep
@@ -166,9 +166,16 @@ exist, their addresses and whether they are signed in are the registry's to
 say. A profile alone holds and spends its account's refresh token; the app
 borrows a bearer from it for its own calls to amux.sh.
 
+The account disc at the top left of the Agents list opens a menu of the
+accounts, Add Account and Settings, a sheet with its own navigation stack.
+The disc shows the account's profile picture: amux.sh names it in the
+`picture` claim of its userinfo answer, the daemon keeps it with the account
+when it binds the profile, and `ProfileInfo.account_picture` carries it to
+the app. Initials stand in until it loads, and where there is none.
+
 What the account buys changes away from the phone: bought on amux.sh,
 cancelled in the App Store, lapsed. `EntitlementWatch` asks amux.sh again as
-the app comes to the front and as You comes on screen, no more than once in
+the app comes to the front and as Settings opens, no more than once in
 any 30 seconds, and at once after a purchase. When the answer changed, or
 disagrees with what the relay link last said, the profile's relay link is
 asked to read it too, rather than carrying the old answer until its
@@ -229,7 +236,7 @@ runtime keeps and sends: coming to the front counts the app as opened (at
 most once an hour), and going to the back sends what is waiting before the
 system may suspend the app. The paywall opening and a purchase starting are
 seen only by the app, which records them on the account on screen
-(`RuntimeCoordinator.record`). **Share Usage** under **You** turns it off; the
+(`RuntimeCoordinator.record`). **Share Usage** in **Settings** turns it off; the
 choice is kept in the app's defaults and handed to the runtime at start and
 on every change. Only the App Store build sends.
 

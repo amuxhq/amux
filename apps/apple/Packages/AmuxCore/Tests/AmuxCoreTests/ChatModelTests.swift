@@ -938,7 +938,7 @@ final class ChatModelTests: XCTestCase {
         XCTAssertFalse(model.loadingHint)
     }
 
-    func testARunOpensAtItsFoldAndStaysOpenAsItGrows() {
+    func testARunOpensAsAWholeAndStaysOpenAsItGrows() {
         let run = Run(
             first: "a", last: "b", steps: 2, live: false, openBelow: false,
             unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 2, searches: 0, subagents: 0, other: 0),
@@ -947,8 +947,8 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         _ = model.cell(for: "a")
         _ = model.cell(for: "b")
-        model.toggle("b")
-        XCTAssertTrue(model.isExpanded("b"))
+        model.toggleRun(run)
+        XCTAssertTrue(model.isOpen(run))
         XCTAssertEqual(model.options, RowOptions(tools: .collapse(open: ["b"])))
         XCTAssertTrue(model.expanded.isEmpty, "a run is not a row's own detail")
 
@@ -962,10 +962,10 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(source.kept, [["b"]], "the open set is re-held before rows are read")
         XCTAssertEqual(model.options, RowOptions(tools: .collapse(open: ["c"])))
         _ = model.cell(for: "c")
-        XCTAssertTrue(model.isExpanded("c"), "the run's new fold is open")
+        XCTAssertTrue(model.isOpen(grown), "the grown run is still open")
         XCTAssertFalse(model.isExpanded("b"), "an earlier step is not opened by its run")
-        model.toggle("c")
-        XCTAssertFalse(model.isExpanded("c"))
+        model.toggleRun(grown)
+        XCTAssertFalse(model.isOpen(grown))
         XCTAssertEqual(model.options, RowOptions(tools: .collapse(open: [])))
     }
 

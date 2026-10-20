@@ -27,12 +27,12 @@ final class ChatWordsTests: XCTestCase {
             first: "a", last: "b", steps: 6, live: false, openBelow: false,
             unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0),
             recent: nil)
-        XCTAssertEqual(ChatWords.run(run), "4 reads · 2 searches")
+        XCTAssertEqual(ChatWords.run(run, counts: run.counts), "4 reads · 2 searches")
         let open = Run(
             first: "a", last: "b", steps: 41, live: false, openBelow: true,
             unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, subagents: 0, other: 1),
             recent: nil)
-        XCTAssertEqual(ChatWords.run(open), "40+ reads · 1+ more")
+        XCTAssertEqual(ChatWords.run(open, counts: open.counts), "40+ reads · 1+ call")
     }
 
     func testACallsVerbSaysWhetherItAsksRunsWasRefusedOrRan() {

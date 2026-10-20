@@ -148,7 +148,9 @@ public actor AmuxCloudService: CloudService {
         sessions[id] = Session(
             access: issued.access_token, refresh: issued.refresh_token,
             expiresAt: now().addingTimeInterval(TimeInterval(issued.expires_in ?? 3600)))
-        return SignedInAccount(id: id, email: who.email ?? "", displayName: who.name)
+        return SignedInAccount(
+            id: id, email: who.email ?? "", displayName: who.name,
+            picture: who.picture.flatMap(URL.init(string:)))
     }
 
     /// The URL the browser opens.
@@ -518,6 +520,7 @@ private struct Who: Decodable {
     let sub: String
     let email: String?
     let name: String?
+    let picture: String?
 }
 
 /// What a purchase is posted as. One field: the App Store's signed

@@ -18,6 +18,7 @@ struct ComponentExample: Identifiable {
         case composer = "Composer"
         case chat = "Chat"
         case review = "Review"
+        case fleet = "Fleet"
     }
 
     let id: String
@@ -31,7 +32,7 @@ struct ComponentExample: Identifiable {
     /// appearing), so its picture has to wait for the screen to stop
     /// changing. Every other example is final once it reports ready.
     let settlesLate: Bool
-    fileprivate let build: @MainActor () -> AnyView
+    let build: @MainActor () -> AnyView
 
     init(
         id: String,
@@ -58,7 +59,7 @@ struct ComponentExample: Identifiable {
 /// row kind, every ask card, the composer's states and the chat's own.
 @MainActor
 enum ComponentCatalog {
-    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent
+    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet
 
     static func example(id: String) -> ComponentExample? {
         examples.first { $0.id == id }
@@ -539,19 +540,24 @@ enum ComponentCatalog {
     private static func chat(
         _ id: String, height: CGFloat = 844, readiness: (String, String)? = nil,
         chat: @escaping @MainActor () -> ScriptedChat, subject: ChatSubject = CatalogFixtures.subject,
-        family: FamilyHeader? = nil, showing: ChatOverlay? = nil, settlesLate: Bool = false,
+        family: FamilyHeader? = nil, showing: ChatOverlay? = nil,
         size: DynamicTypeSize = .large,
         setUp: @escaping @MainActor (ChatModel, ScriptedChat) -> Void = { _, _ in }
     ) -> ComponentExample {
         ComponentExample(
             id: "chat.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
             dynamicTypeSize: size,
-            readinessIdentifier: readiness?.0, readinessValue: readiness?.1, settlesLate: settlesLate
+            // The system bar lays its items out a frame after the chat.
+            readinessIdentifier: readiness?.0, readinessValue: readiness?.1, settlesLate: true
         ) {
             let source = chat()
-            CatalogChat(source: source) { model in
-                ChatScreen(model: model, subject: subject, family: family, showing: showing) { _ in }
-                    .onAppear { setUp(model, source) }
+            // In a navigation stack, as the app pushes it, so its bar is the
+            // system's.
+            NavigationStack {
+                CatalogChat(source: source) { model in
+                    ChatScreen(model: model, subject: subject, family: family, showing: showing) { _ in }
+                        .onAppear { setUp(model, source) }
+                }
             }
         }
     }
@@ -560,6 +566,19 @@ enum ComponentCatalog {
         typealias F = CatalogFixtures
         return [
             chat("conversation", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6")) }),
+            chat("working", chat: {
+                ScriptedChat(
+                    rows: F.working,
+                    frame: ScriptedChat.frame(
+                        phase: .working,
+                        activity: Activity(kind: .running(key: "w06"), sinceMs: 0, elapsedMs: 33_000)),
+                    strip: ScriptedChat.strip(model: "opus 4.6"))
+            }),
+            chat("run-open", chat: {
+                ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .idle), strip: ScriptedChat.strip(model: "opus 4.6"))
+            }) { model, _ in
+                if let run = model.cell(for: "c14").row?.run { model.toggleRun(run) }
+            },
             // The header pill stops growing past the largest ordinary size;
             // the step rows stack their verb, file and counts.
             chat("conversation-large-text", chat: {
@@ -624,7 +643,7 @@ enum ComponentCatalog {
                     ]))
             }),
             chat("rename", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) },
-                 showing: .rename, settlesLate: true),
+                 showing: .rename),
             chat("stop", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) }, showing: .stop),
             chat("stop-cuts", chat: {
                 ScriptedChat(
@@ -1111,29 +1130,61 @@ enum CatalogFixtures {
         command: "cargo test -p amux-ui", state: .asking, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [],
         durationMs: nil, exitCode: nil), attention: true)
 
+    /// A finished turn: the prompt, one run of steps the agent took (a
+    /// failed check it fixed, a lint it left failing, a command the person
+    /// refused) and its answer.
     static let conversation: [Row] = {
         func r(
             _ id: String, _ order: UInt64, _ kind: RowKind, attention: Bool = false,
-            decision: Decision? = nil, run: Run? = nil, parent: String? = nil
+            decision: Decision? = nil
         ) -> Row {
-            ScriptedChat.row(id, order, kind, attention: attention, decision: decision, run: run, parent: parent)
+            ScriptedChat.row(id, order, kind, attention: attention, decision: decision)
+        }
+        func command(_ command: String, _ state: CallPhase, exit: Int32? = 0, ms: Int64? = nil, output: [String] = [], more: UInt = 0) -> RowKind {
+            .command(command: command, state: state, outputHead: output, moreLines: more, outputTrimmed: false, outputTail: [], durationMs: ms, exitCode: exit)
+        }
+        func edit(_ path: String, _ added: UInt32, _ removed: UInt32) -> RowKind {
+            .fileChange(files: [FileRow(path: path, change: .edited, added: added, removed: removed, line: nil)], state: .succeeded)
         }
         return [
             r("c01", 1, .boundary(kind: .started, cause: "")),
             r("c02", 2, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false)),
+        ] + ScriptedChat.run([
             r("c03", 3, .thinking(text: "", open: false, durationMs: 8_000)),
-            r("c04", 4, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""),
-              run: Run(first: "c04", last: "c04", steps: 6, live: false, openBelow: false, unresolvedFailure: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, subagents: 0, other: 0), recent: nil)),
-            r("c05", 5, .fileChange(files: [FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 9, removed: 14, line: nil)], state: .succeeded)),
-            r("c06", 6, .command(command: "cargo check -p amux-ui", state: .failed, outputHead: ["error[E0308]: mismatched types"], moreLines: 214, outputTrimmed: false, outputTail: [], durationMs: 4_200, exitCode: 101)),
-            r("c07", 7, .command(command: "cargo test -p amux-ui", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 12_000, exitCode: 0),
+            r("c04", 4, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: "")),
+            r("c05", 5, .explore(verb: .read, subject: "crates/wire/src/codes.rs", state: .succeeded, result: "")),
+            r("c06", 6, .explore(verb: .read, subject: "crates/amux-ui/src/pairing.rs", state: .succeeded, result: "")),
+            r("c07", 7, edit("crates/amux-ui/src/pairing.rs", 9, 14)),
+            r("c08", 8, command("cargo check -p amux-ui", .failed, exit: 101, ms: 4_200, output: ["error[E0308]: mismatched types"], more: 214)),
+            r("c09", 9, edit("crates/amux-ui/src/pairing.rs", 2, 1)),
+            r("c10", 10, command("cargo check -p amux-ui", .succeeded, ms: 3_900)),
+            r("c11", 11, .fileChange(files: [FileRow(path: "crates/amux-ui/tests/spec/pairing_copy.rs", change: .created(lines: 38), added: 38, removed: 0, line: nil)], state: .succeeded)),
+            r("c12", 12, command("cargo test -p amux-ui", .succeeded, ms: 12_000),
               decision: Decision(outcome: .allowed, elsewhere: false, granted: .session, note: nil)),
-            r("c08", 8, .fileChange(files: [FileRow(path: "crates/amux-ui/tests/spec/pairing_copy.rs", change: .created(lines: 38), added: 38, removed: 0, line: nil)], state: .succeeded)),
-            r("c09", 9, .command(command: "rm -rf target", state: .denied, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil, exitCode: nil),
+            r("c13", 13, command("cargo clippy -p amux-ui", .failed, exit: 1, ms: 6_100, output: ["warning: unused import: `PinError`"], more: 12)),
+            r("c14", 14, command("rm -rf target", .denied, exit: nil),
               decision: Decision(outcome: .denied, elsewhere: false, granted: nil, note: "Use cargo clean instead")),
-            r("c10", 10, .prose(text: [.text("Done. The three arms are one now, and the new test asserts on the single string.")], streaming: false, workingNote: false)),
-            r("c11", 11, .turnEnd(failed: false, costUsd: nil, durationMs: 102_000)),
+        ], failed: ["c13"]) + [
+            r("c15", 15, .prose(text: [.text("Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.")], streaming: false, workingNote: false)),
+            r("c16", 16, .turnEnd(failed: false, costUsd: nil, durationMs: 102_000)),
         ]
+    }()
+
+    /// The finished turn, then a second one the agent is still at: five
+    /// steps in, its newest running.
+    static let working: [Row] = {
+        func r(_ id: String, _ order: UInt64, _ kind: RowKind) -> Row {
+            ScriptedChat.row(id, order, kind)
+        }
+        return conversation + [
+            r("w01", 20, .prompt(text: [.text("Drop the unused import and run the whole suite.")], steered: false)),
+        ] + ScriptedChat.run([
+            r("w02", 21, .explore(verb: .read, subject: "crates/amux-ui/src/pairing.rs", state: .succeeded, result: "")),
+            r("w03", 22, .fileChange(files: [FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 0, removed: 1, line: nil)], state: .succeeded)),
+            r("w04", 23, .command(command: "cargo clippy -p amux-ui", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 5_800, exitCode: 0)),
+            r("w05", 24, .explore(verb: .search, subject: "pairing_copy", state: .succeeded, result: "")),
+            r("w06", 25, .command(command: "cargo test --workspace", state: .running, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: nil, exitCode: nil)),
+        ], live: true)
     }()
 
     static let pairingTasks = TasksView(
@@ -1190,7 +1241,7 @@ struct ComponentExampleView: View {
         ZStack {
             Ground()
             example.build()
-                .padding(example.family == .chat ? 0 : 18)
+                .padding(example.family == .chat || example.family == .fleet ? 0 : 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(width: example.canvas.width, height: example.canvas.height)

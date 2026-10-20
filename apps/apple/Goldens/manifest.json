@@ -493,6 +493,14 @@
       "shows": "A whole chat: rows, composer and strip."
     },
     {
+      "id": "chat.working",
+      "shows": "A turn under way: its run's newest three steps under how many came before, the newest running."
+    },
+    {
+      "id": "chat.run-open",
+      "shows": "A finished run opened: the line that folds it again, then every step on its own row."
+    },
+    {
       "id": "chat.conversation-large-text",
       "shows": "A chat at accessibility3: the header pill held at the largest ordinary size, and the step rows stacking verb, subject and counts."
     },
@@ -603,6 +611,54 @@
     {
       "id": "new-agent.large-text",
       "shows": "New Agent at accessibility3: the back link above the title, every field's value under its label, and the last row clear of the Start bar."
+    },
+    {
+      "id": "fleet.busy",
+      "shows": "The agent list with agents in every state on four machines: two that need you, three working (one heading a family), two idle, and two stopped agents folded away."
+    },
+    {
+      "id": "fleet.stopped-open",
+      "shows": "The same list with the stopped agents unfolded."
+    },
+    {
+      "id": "fleet.away",
+      "shows": "The same list with one machine away, so its agents read as out of reach."
+    },
+    {
+      "id": "fleet.no-agents",
+      "shows": "A phone paired with a machine that runs no agents yet."
+    },
+    {
+      "id": "fleet.first-run",
+      "shows": "A phone paired with nothing, with one machine found on its network."
+    },
+    {
+      "id": "fleet.busy-large-text",
+      "shows": "The busy list at the largest accessibility text size."
+    },
+    {
+      "id": "fleet.two-accounts",
+      "shows": "The busy list on a phone with two accounts: the account disc, the + button's twin, top left."
+    },
+    {
+      "id": "fleet.picture",
+      "shows": "The busy list for an account with a profile picture: the picture fills the account disc."
+    },
+    {
+      "id": "fleet.signed-out",
+      "shows": "The busy list on a phone with no account: a hollow person where the account disc would be."
+    },
+    {
+      "id": "fleet.chat-open",
+      "shows": "The whole app with an agent's chat pushed over the list: no tab bar under the composer."
+    },
+    {
+      "id": "fleet.app",
+      "shows": "The whole app on the list: the account disc top left, the + top right, and two tabs."
+    },
+    {
+      "id": "fleet.settings-open",
+      "shows": "The whole app with the settings sheet raised from the account disc."
     }
   ],
   "screens": [

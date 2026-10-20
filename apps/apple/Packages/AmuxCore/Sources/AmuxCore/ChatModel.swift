@@ -274,9 +274,12 @@ public final class ChatModel {
     }
 
     /// Whether a row draws: collapsed rows do not, except a subagent's steps
-    /// under a subagent the reader opened.
+    /// under a subagent the reader opened. Inside a run only its steps
+    /// draw, as in the terminal: the thinking and retries between them are
+    /// part of the run's work, not things to read.
     public func shows(_ row: Row) -> Bool {
-        !row.collapsed || row.parent.map(expanded.contains) == true
+        if row.run != nil, row.kind.passesThroughRuns { return false }
+        return !row.collapsed || row.parent.map(expanded.contains) == true
     }
 
     /// The nearest row below this one that draws: what decides whether its
@@ -301,13 +304,9 @@ public final class ChatModel {
         RowOptions(tools: .collapse(open: openRuns.sorted()))
     }
 
-    /// Opens or closes a row. At a run's fold point it is the run, by the
-    /// shared fold: open while the open set holds any of its steps.
-    /// Anywhere else it is the row's own detail or steps.
+    /// Opens or closes a row's own detail, or a subagent's steps.
     public func toggle(_ id: String) {
-        if let row = cells[id]?.row, Self.foldPoint(row) {
-            openRuns = Set(source.toggleRun(id, open: openRuns.sorted()))
-        } else if expanded.contains(id) {
+        if expanded.contains(id) {
             expanded.remove(id)
         } else {
             expanded.insert(id)
@@ -316,16 +315,23 @@ public final class ChatModel {
     }
 
     public func isExpanded(_ id: String) -> Bool {
-        if expanded.contains(id) { return true }
-        guard let row = cells[id]?.row, Self.foldPoint(row) else { return false }
-        return openRuns.contains(id)
+        expanded.contains(id)
     }
 
-    /// The row a run folds to, and opens from: its newest step, when it
-    /// has more than one.
-    private static func foldPoint(_ row: Row) -> Bool {
-        guard let run = row.run else { return false }
-        return row.id == run.last && run.steps > 1
+    /// Opens or closes a run, by the shared fold: open while the open set
+    /// holds any of its steps, which the session holds by its newest.
+    public func toggleRun(_ run: Run) {
+        openRuns = Set(source.toggleRun(run.last, open: openRuns.sorted()))
+        refresh(Array(cells.keys))
+    }
+
+    public func isOpen(_ run: Run) -> Bool {
+        openRuns.contains(run.last)
+    }
+
+    /// What a run's steps did: carried on its newest step's row only.
+    public func counts(of run: Run) -> RunCounts? {
+        cell(for: run.last).row?.run?.counts
     }
 
     /// An attachment's bytes where this phone holds them; asking starts the
@@ -592,7 +598,7 @@ public final class ChatModel {
     public var pageSize: UInt32 {
         let top = ids.lazy.compactMap { self.cell(for: $0).row }.first { self.shows($0) }
         guard let top, let run = top.run, run.openBelow, top.id == run.last,
-            !isExpanded(run.last)
+            !isOpen(run)
         else { return Self.pageRows }
         return min(max(run.steps, Self.pageRows), Self.largestPage)
     }
@@ -1235,5 +1241,30 @@ extension Draft {
             if case .attachment(let attachment) = part { attachment } else { nil }
         }
         return attached.isEmpty ? nil : attached
+    }
+}
+
+extension RowKind {
+    /// Inside a run of tool steps, this neither counts nor ends the run:
+    /// thinking, a retry notice, and what no client draws. Every other row
+    /// a run holds is one of its steps.
+    public var passesThroughRuns: Bool {
+        switch self {
+        case .thinking, .error, .hidden: true
+        default: false
+        }
+    }
+
+    /// A step the agent is still at: what a live run draws bright.
+    public var inFlight: Bool {
+        let phase: CallPhase? = switch self {
+        case .command(_, let state, _, _, _, _, _, _): state
+        case .explore(_, _, let state, _): state
+        case .fileChange(_, let state): state
+        case .toolCall(_, _, _, let state, _): state
+        case .subagent(_, let running, _, _, _, _): running ? .running : nil
+        default: nil
+        }
+        return phase == .pending || phase == .running
     }
 }

@@ -120,13 +120,6 @@ public struct Shell: View {
     /// the capture; the shell only knows where the row that asks for it is.
     private let report: @MainActor () -> Void
     private let actions: @MainActor (ShellAction) -> Void
-    /// The tabs somebody has left. A tab is built when it is first
-    /// reached for and kept from then on, so coming back finds it as it
-    /// was; building all three for a launch that shows one was a third of
-    /// the first frame's work. The tab on screen is reached without being
-    /// listed here: recording it as the shell appeared changed the shell's
-    /// state while it was first being built, and built the home twice.
-    @State private var visited: Set<Tab> = []
     @Environment(\.scenePhase) private var scenePhase
 
     public init(
@@ -142,6 +135,7 @@ public struct Shell: View {
         report: @escaping @MainActor () -> Void = {},
         actions: @escaping @MainActor (ShellAction) -> Void
     ) {
+        Design.app.dressNavigationBars()
         self.appearance = appearance
         self.shareUsage = shareUsage
         self.deletion = deletion
@@ -159,56 +153,47 @@ public struct Shell: View {
     private var coveredByASheet: Bool {
         switch router.tab {
         case .hosts: stores.hosts.readingDevices
-        case .you: removal.account != nil || deletion.account != nil
-        case .agents: false
+        // The settings sheet's own cards cover the sheet, not a tab.
+        case .agents, .you: false
         }
     }
 
     public var body: some View {
         @Bindable var router = router
-        ZStack(alignment: .bottom) {
-            ZStack {
-                if reached(.agents) {
-                    NavigationStack(path: $router.agentsPath) {
-                        AgentsTab(
-                            router: self.router, accounts: accounts, stores: stores,
-                            actions: actions)
-                            .navigationDestination(for: Route.self) { page($0) }
-                    }
-                    .tabSurface(selected: router.tab == .agents)
-                }
-
-                if reached(.hosts) {
-                    NavigationStack(path: $router.hostsPath) {
-                        HostsTabRoot(router: self.router, stores: stores)
-                            .navigationDestination(for: Route.self) { page($0) }
-                    }
-                    .tabSurface(selected: router.tab == .hosts)
-                }
-
-                if reached(.you) {
-                    NavigationStack(path: $router.youPath) {
-                        YouTabRoot(
-                            router: self.router, accounts: accounts, stores: stores,
-                            deletion: deletion, removal: removal, appearance: appearance,
-                            shareUsage: shareUsage, report: report, actions: actions)
-                            .navigationDestination(for: Route.self) { page($0) }
-                    }
-                    .tabSurface(selected: router.tab == .you)
+        // The system's tab bar, for the system's behaviour: it builds a tab
+        // when it is first reached and keeps it, and it hides under a pushed
+        // page so a conversation ends with its composer.
+        TabView(selection: Binding(get: { router.beneath }, set: { router.select($0) })) {
+            SwiftUI.Tab(Tab.agents.title, systemImage: Tab.agents.symbol, value: Tab.agents) {
+                NavigationStack(path: $router.agentsPath) {
+                    AgentsTab(
+                        router: self.router, accounts: accounts, stores: stores,
+                        actions: actions)
+                        .barUnderSheet(coveredByASheet)
+                        .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
                 }
             }
-
-            // A bottom sheet or card over a tab's root takes the tab bar's
-            // place: the bar drawn over it would cover its last row.
-            if router.path.isEmpty && !coveredByASheet {
-                ShellTabBar(selected: router.tab) { router.select($0) }
-                    .safeAreaPadding(.bottom, 6)
+            SwiftUI.Tab(Tab.hosts.title, systemImage: Tab.hosts.symbol, value: Tab.hosts) {
+                NavigationStack(path: $router.hostsPath) {
+                    HostsTabRoot(router: self.router, stores: stores)
+                        .barUnderSheet(coveredByASheet)
+                        .navigationDestination(for: Route.self) { page($0).toolbar(.hidden, for: .tabBar) }
+                }
             }
+        }
+        // Settings are a sheet raised from the account disc rather than a
+        // tab: somewhere visited now and then does not earn a place beside
+        // the two that are used all day. The sheet keeps a stack of its own,
+        // so signing in or subscribing from it pushes inside it.
+        .sheet(isPresented: Binding(
+            get: { router.tab == .you },
+            set: { shown in if !shown, router.tab == .you { router.select(router.beneath) } }
+        )) {
+            settings
         }
         .tint(design.accentColor)
         .reported("shell", value: router.tab.rawValue)
         .simultaneousGesture(backGesture)
-        .onChange(of: router.tab) { left, _ in visited.insert(left) }
         // What the account buys is read again as the app comes to the front
         // and as You comes on screen; the composition spaces the reads out.
         .onChange(of: scenePhase, initial: true) { _, phase in
@@ -219,10 +204,18 @@ public struct Shell: View {
         }
     }
 
-    /// Whether a tab has been reached for: the one on screen, or any that
-    /// was.
-    private func reached(_ tab: Tab) -> Bool {
-        tab == router.tab || visited.contains(tab)
+    /// The settings sheet's content: its page in a stack of its own. Public
+    /// so a picture of the sheet can be taken without presenting it.
+    public var settings: some View {
+        @Bindable var router = router
+        return NavigationStack(path: $router.youPath) {
+            YouTabRoot(
+                router: self.router, accounts: accounts, stores: stores,
+                deletion: deletion, removal: removal, appearance: appearance,
+                shareUsage: shareUsage, report: report, actions: actions)
+                .navigationDestination(for: Route.self) { page($0) }
+        }
+        .tint(design.accentColor)
     }
 
     /// Restores the platform's edge-to-pop interaction while the custom page
@@ -278,38 +271,12 @@ public struct Shell: View {
 }
 
 private extension View {
-    /// Retains every root screen and its navigation state while exposing only
-    /// the selected one to drawing, input, and accessibility.
-    func tabSurface(selected: Bool) -> some View {
-        opacity(selected ? 1 : 0)
-            .allowsHitTesting(selected)
-            .accessibilityHidden(!selected)
-    }
-}
-
-/// The app's three top-level places. It floats above root screens and leaves
-/// pushed work alone so a conversation ends with its composer.
-private struct ShellTabBar: View {
-    let selected: Tab
-    let select: (Tab) -> Void
-
-    var body: some View {
-        TabChrome {
-            ForEach(Tab.allCases, id: \.self) { item in
-                let isSelected = item == selected
-                Button { select(item) } label: {
-                    TabLabel(item.title, glyph: item.symbol, selected: isSelected)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.amuxControl)
-                .frame(maxWidth: .infinity)
-                .accessibilityLabel(item.title)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .identified(
-                    "tab.\(item.rawValue)", label: item.title,
-                    value: isSelected ? "selected" : "not selected")
-            }
-        }
+    /// A bottom sheet or card over a tab's root takes the tab bar's place:
+    /// the bar drawn over it would cover its last row. Uncovered, the root
+    /// leaves the bar to the system rather than asking for it, since a root
+    /// that asks for the bar outranks a pushed page that hides it.
+    func barUnderSheet(_ covered: Bool) -> some View {
+        toolbar(covered ? .hidden : .automatic, for: .tabBar)
     }
 }
 
@@ -539,6 +506,7 @@ private struct AgentsTab: View {
             case .signIn: actions(.signIn)
             case .signInAgain(let id): actions(.signInAgain(id))
             case .subscribe: actions(.subscribe)
+            case .openSettings: router.select(.you)
             // Pairing lives under Hosts wherever it is started from: the page
             // it opens is that tab's, and going back from it belongs there
             // rather than on a list of agents that has none.
@@ -549,10 +517,9 @@ private struct AgentsTab: View {
             // never reorders what a thumb is already travelling towards.
             case .refresh: stores.fleet.refreshOrder(now: stores.now())
             case .toggleFamily(let head): stores.toggleFamily(head)
+            case .filter(let filter): stores.filterFleet(filter)
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -855,7 +822,7 @@ struct LinkAsked {
     mutating func asked(_ current: AccountId) { account = current }
 }
 
-/// You.
+/// Settings, in the sheet raised from the account disc.
 ///
 /// The screen decides nothing: switching account, signing in and out, buying
 /// and deleting all leave here, because each of them either changes what the
@@ -898,8 +865,14 @@ private struct YouTabRoot: View {
                 you
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle(Tab.you.title)
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .close) { router.select(router.beneath) }
+                    .accessibilityIdentifier("you.close")
+            }
+        }
     }
 
     private var you: some View {
@@ -934,7 +907,6 @@ private struct YouTabRoot: View {
             // of the report rather than of what was wrong.
             case .report: report()
             case .exportDump: actions(.exportDump)
-            case .dismiss: break
             }
         }
     }

@@ -190,7 +190,7 @@ fn says(chat: &Chat, wanted: &str) -> bool {
 async fn changes_wait_for_the_hosts_turn_and_rows_are_read_by_key() {
     let net = Net::start(topology()).await.unwrap();
     let (runtime, mut host) = open(&net).await;
-    let fleet = runtime.fleet_view(&[]);
+    let fleet = runtime.fleet_view(&[], &ui_view::FleetFilter::default());
     assert_eq!(fleet.sections.len(), 1, "{fleet:?}");
     let rows = &fleet.sections[0].rows;
     assert_eq!(rows.len(), 1, "{fleet:?}");

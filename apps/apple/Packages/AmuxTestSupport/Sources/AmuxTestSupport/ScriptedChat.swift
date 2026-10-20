@@ -231,7 +231,54 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public func rows(for keys: [String], options: RowOptions?) -> [Row] {
         lock.withLock {
             let wanted = Set(keys)
-            return ordered.filter { wanted.contains($0.id) }
+            return ordered.filter { wanted.contains($0.id) }.map { Self.folding($0, options) }
+        }
+    }
+
+    /// A row as the shared fold leaves it for these options: a finished
+    /// run shows its newest step and the failures its turn left unfixed, a
+    /// live run its newest few, and an open run every step.
+    static func folding(_ row: Row, _ options: RowOptions?) -> Row {
+        guard case .collapse(let open)? = options?.tools, let run = row.run else { return row }
+        let shown = run.live
+            ? run.recent.map { $0 < 3 } ?? false
+            : run.recent == 0 || run.unresolvedFailure
+        var row = row
+        row.collapsed = row.collapsed || (!shown && !open.contains(run.last))
+        return row
+    }
+
+    /// Rows of one run of tool steps, with the run's fields filled in as
+    /// the shared fold fills them: every row carries the run, only its
+    /// newest three steps say how many follow, and only the newest carries
+    /// what the steps did. `failed` names steps the turn left unfixed.
+    public static func run(
+        _ rows: [Row], live: Bool = false, openBelow: Bool = false, failed: Set<String> = []
+    ) -> [Row] {
+        let steps = rows.filter { !$0.kind.passesThroughRuns }
+        guard let first = steps.first, let last = steps.last else { return rows }
+        var counts = RunCounts(commands: 0, edits: 0, reads: 0, searches: 0, subagents: 0, other: 0)
+        for step in steps {
+            switch step.kind {
+            case .command, .background: counts.commands += 1
+            case .fileChange(let files, _): counts.edits += UInt32(max(files.count, 1))
+            case .explore(.read, _, _, _): counts.reads += 1
+            case .explore(.search, _, _, _), .explore(.webSearch, _, _, _): counts.searches += 1
+            case .subagent: counts.subagents += 1
+            default: counts.other += 1
+            }
+        }
+        let total = UInt32(steps.count)
+        return rows.map { row in
+            var row = row
+            let index = steps.firstIndex { $0.id == row.id }
+            let after = index.map { total - 1 - UInt32($0) }
+            row.run = Run(
+                first: first.id, last: last.id, steps: total, live: live, openBelow: openBelow,
+                unresolvedFailure: failed.contains(row.id),
+                counts: row.id == last.id ? counts : nil,
+                recent: after.flatMap { $0 < 3 ? $0 : nil })
+            return row
         }
     }
 

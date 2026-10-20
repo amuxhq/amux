@@ -19,9 +19,13 @@ final class RoutePagesTests: XCTestCase {
         let agent = AgentKey(host: machine, agent: UUID())
         let invitation = PairingInvitation(
             host: machine, cloudURL: nil, addrs: ["192.168.1.2:4433"], secret: [1, 2, 3], payload: "{}")
+        // Signing in and subscribing are pushed from Agents here: pushed from
+        // Settings they open inside its sheet, a presentation of its own whose
+        // elements never reach the root this test reads. The pages are the
+        // same either way.
         let routes: [Route] = [
             .conversation(agent), .changes(agent), .newAgent, .pairByCode(machine),
-            .pairConfirmation(invitation), .host(machine), .signIn(.you), .paywall(.you),
+            .pairConfirmation(invitation), .host(machine), .signIn(.agents), .paywall(.agents),
         ]
         for route in routes {
             switch route {

@@ -25,9 +25,19 @@ public protocol RouteLoader: AnyObject {
 @MainActor
 @Observable
 public final class Router {
-    /// The tab on show. Each tab keeps its own stack, so coming back to one
+    /// The place on show. Each keeps its own stack, so coming back to one
     /// finds it where it was left.
-    public var tab: Tab = .agents { didSet { arrived?() } }
+    public var tab: Tab = .agents {
+        didSet {
+            if tab != .you { beneath = tab }
+            arrived?()
+        }
+    }
+
+    /// The tab the tab bar shows: the one on show, or, while the settings
+    /// sheet is up, the one it was raised over and that putting it away
+    /// returns to.
+    public private(set) var beneath: Tab = .agents
 
     /// Told after every arrival: a tab reached for, a page pushed, a page
     /// gone back from.

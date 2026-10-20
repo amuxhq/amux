@@ -31,6 +31,9 @@ pub(crate) struct AccountRecord {
     pub(crate) subject: String,
     pub(crate) name: Option<String>,
     pub(crate) email: Option<String>,
+    /// The profile picture's URL, as the service said at sign-in.
+    #[serde(default)]
+    pub(crate) picture: Option<String>,
     pub(crate) bound_at_ms: i64,
     /// Absent after a sign-out.
     pub(crate) refresh_token: Option<String>,
@@ -358,6 +361,7 @@ pub(crate) async fn bind(
         subject: info.sub,
         name: info.name,
         email: info.email,
+        picture: info.picture,
         bound_at_ms: existing.as_ref().map_or_else(
             || crate::link::run::system_time_ms(SystemTime::now()),
             |record| record.bound_at_ms,
@@ -474,6 +478,7 @@ mod tests {
             subject: "subject".into(),
             name: None,
             email: None,
+            picture: None,
             bound_at_ms: 1,
             refresh_token: Some("r1".into()),
             paused: false,

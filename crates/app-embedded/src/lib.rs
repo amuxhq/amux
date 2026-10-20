@@ -778,6 +778,7 @@ fn account_view(info: &ProfileInfo) -> AccountView {
         binding,
         email: info.email.clone(),
         name: info.account_name.clone(),
+        picture: info.account_picture.clone(),
         pro,
         relay,
     }

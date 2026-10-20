@@ -2,13 +2,13 @@ design Studio
 separation rule graduated false
 
 colour           light    dark
-ground          #EFF1F5  #0D1015
-raised          #FFFFFF  #272D37
-sunken          #E4E7ED  #181C23
-hairline        #D3D8E1  #3C4350
-ink             #06080B  #F7F8FA
-inkMuted        #575F6E  #949CAB
-inkFaint        #949CAB  #747D8D
+ground          #FFFFFF  #000000
+raised          #FFFFFF  #1C1C1E
+sunken          #F2F2F4  #161618
+hairline        #DCDCE0  #38383A
+ink             #1D1C1F  #F5F5F7
+inkMuted        #5E5E66  #98989F
+inkFaint        #8A8A93  #6E6E73
 accent          #0E5F6E  #4FBACD
 onAccent        #FFFFFF  #06080B
 added           #29854F  #70C78C
@@ -18,20 +18,20 @@ metric           value
 cardRadius      16
 controlRadius   12
 floatRadius     26
-rowPadding      14
-gutter          18
+rowPadding      12
+gutter          16
 feedGap         16
 hairline        0.5
 glassWash       0.78
 
 role             face                size  weight    scales with
 screenTitle     Instrument Sans     26    semibold  title  tracking -0.4
-sectionTitle    Geist Mono          11    medium    caption2  tracking 0.4
-identifier      Geist Mono          15.5  medium    subheadline
-identifierUnread Geist Mono          15.5  bold      subheadline
+sectionTitle    Instrument Sans     13    semibold  footnote
+identifier      Instrument Sans     17    semibold  subheadline
+identifierUnread Instrument Sans     17    heavy     subheadline
 body            Instrument Sans     16    regular   callout
 bodyEmphasis    Instrument Sans     16    semibold  callout
 detail          Instrument Sans     15    regular   subheadline
-caption         Geist Mono          11.5  medium    caption2
+caption         Instrument Sans     13    regular   footnote
 mono            Geist Mono          14    regular   footnote
 monoSmall       Geist Mono          12.5  regular   caption

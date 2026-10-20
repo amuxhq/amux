@@ -48,9 +48,13 @@ final class PhoneDecisionsTests: XCTestCase {
         _ source: ScriptedChat, family: FamilyHeader? = nil, size: DynamicTypeSize = .large
     ) async throws -> ChatModel {
         let model = ChatModel(source: source, loadingHintAfter: .zero)
+        // In a navigation stack, as the app pushes it: the chat's menu and
+        // title are the system bar's, which draws only inside one.
         try host(
-            ChatScreen(model: model, subject: CatalogFixtures.subject, family: family) { [unowned self] action in
-                acted.append(action)
+            NavigationStack {
+                ChatScreen(model: model, subject: CatalogFixtures.subject, family: family) { [unowned self] action in
+                    acted.append(action)
+                }
             }, size: size)
         await spin()
         return model

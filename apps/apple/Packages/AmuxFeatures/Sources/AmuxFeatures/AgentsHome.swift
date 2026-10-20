@@ -7,6 +7,8 @@ import SwiftUI
 /// where that leads.
 public enum HomeAction: Equatable, Sendable {
     case open(AgentKey)
+    /// List only the agents this keeps: typed words, a state or a host.
+    case filter(FleetFilter)
     /// Lists or folds away a family's members.
     case toggleFamily(AgentKey)
     case newAgent
@@ -16,6 +18,8 @@ public enum HomeAction: Equatable, Sendable {
     /// Sign back into one account this phone lists, from its row.
     case signInAgain(AccountId)
     case subscribe
+    /// Raise the settings sheet from the account menu.
+    case openSettings
     /// Pair with a machine this phone has found. There is no pairing without
     /// one: a code is typed for a particular machine, and a machine that has
     /// not been found is reached by scanning the code it prints instead.
@@ -32,14 +36,15 @@ public enum HomeAction: Equatable, Sendable {
 /// decides anything about an agent: a decision belongs to the conversation
 /// that owns it, not to a button on a list.
 ///
-/// The screen draws its own header rather than using the system navigation
-/// bar. The design's header is a large title with a live subtitle under it and
-/// round glass controls beside it, and a navigation bar cannot hold that
-/// without fighting it on every scroll.
+/// The title, its subtitle and the buttons beside it are the system
+/// navigation bar's: a large title that shrinks as the list scrolls, with
+/// glass buttons, the way a chat app's list reads.
 public struct AgentsHome: View {
     @Environment(\.design) private var design
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.photographed) private var photographed
+    @Environment(\.reducesMotion) private var reducesMotion
+    @Environment(\.reducesTransparency) private var reducesTransparency
     private let model: FleetStore
     private let accounts: AccountRegistry
     /// The machines, for the one thing this screen says about them: a phone
@@ -52,35 +57,31 @@ public struct AgentsHome: View {
     /// Whether the account switcher is out. View state for the same reason,
     /// and handed in only so a capture can ask for the panel: which accounts
     /// this phone has is a fact, having the list open is not.
-    @State private var switcherOpen: Bool
+    /// What the list is narrowed to: words typed into the search field, and
+    /// the chip chosen under it.
+    @State private var words = ""
+    @State private var only: FleetOnly?
 
     public init(
         model: FleetStore,
         accounts: AccountRegistry,
         hosts: HostsStore,
-        accountsOpen: Bool = false,
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.model = model
         self.accounts = accounts
         self.hosts = hosts
         self.actions = actions
-        _switcherOpen = State(initialValue: accountsOpen)
     }
 
     public var body: some View {
-        SwitcherOverlay(
-            open: $switcherOpen, accounts: accounts, actions: switcher
-        ) {
-            home
-        }
+        home
     }
 
     private var home: some View {
         ZStack {
             Ground()
             VStack(alignment: .leading, spacing: 0) {
-                header
                 // The list whenever there is one. An account is never what
                 // decides this: a phone that is signed out and paired with a
                 // machine on its own network has a fleet worth reading, and a
@@ -91,7 +92,7 @@ public struct AgentsHome: View {
                 // phone has a machine at all. One that has paired is not a
                 // phone with nothing paired, and offering to pair again there
                 // would say the pairing it just did never happened.
-                if !model.rows.isEmpty {
+                if !model.rows.isEmpty || filtering {
                     fleet
                 } else if !model.loaded {
                     // A reopened app draws before its saved hosts are read;
@@ -105,6 +106,47 @@ public struct AgentsHome: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .navigationTitle("Agents")
+        .navigationSubtitle(subtitle)
+        // Pulled down from under the title, as a chat app's search is. It
+        // matches what a row says, as the terminal's filter does.
+        .searchable(
+            text: $words, placement: .navigationBarDrawer(displayMode: .automatic),
+            prompt: Text("Search"))
+        .onChange(of: filter) { _, filter in actions(.filter(filter)) }
+        .toolbar {
+            // Under the large title the bar's own subtitle sits tight against
+            // the display face's short descenders; drawn here it takes the
+            // list's preview type and a breath of space from the title.
+            if !subtitle.isEmpty {
+                ToolbarItem(placement: .largeSubtitle) {
+                    Text(subtitle)
+                        .designFont(.detail, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .padding(.top, Space.xs)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                accountMenu
+            }
+            // The disc is its own glass, as the + is; the bar's ring
+            // around it would draw a second one.
+            .sharedBackgroundVisibility(
+                reducesTransparency || accounts.selectedAccount != nil ? .hidden : .automatic)
+            if canStartAnAgent {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { actions(.newAgent) } label: { Image(systemName: "plus") }
+                        .prominentBarButton()
+                        .tint(design.accent.color)
+                        .accessibilityLabel("New Agent")
+                        .accessibilityIdentifier("home.newAgent")
+                }
+                // The bar sets its buttons on glass of its own; with less
+                // transparency asked for, the button's own fill is enough.
+                .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+            }
         }
         .onAppear { actions(.refresh) }
         // Ages count while the list is on screen, as the terminal's do. A
@@ -131,188 +173,112 @@ public struct AgentsHome: View {
     /// In beside it is remembered, not signed in.
     private var signedIn: Bool { accounts.accounts.contains(where: \.signedIn) }
 
-    /// Whether there is an account question on this phone worth putting under
-    /// the title: another account to read, or nobody signed in at all.
-    private var switchable: Bool {
-        accounts.accounts.count > 1 || !signedIn
-    }
-
     /// Whether any machine would actually run something started now.
     private var canStartAnAgent: Bool {
         model.machines.contains(where: \.online)
     }
 
-    /// The account disc, the title and what the fleet holds, with New Agent
-    /// at the end of the line. At an accessibility text size the title and
-    /// its subtitle need the whole width, so the disc and New Agent sit on a
-    /// line of their own above them.
-    @ViewBuilder
-    private var header: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 6) {
-                    if switchable || canStartAnAgent {
-                        HStack(spacing: 10) {
-                            if switchable { accountDisc }
-                            Spacer(minLength: 0)
-                            newAgentButton
-                        }
-                    }
-                    title
-                    // One fact a line, so no line starts or ends on a
-                    // stranded "·".
-                    Text(subtitle.replacingOccurrences(of: " · ", with: "\n"))
-                        .designFont(.caption, design)
-                        .foregroundStyle(design.inkMuted.color)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .identified("home.subtitle", value: subtitle)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(alignment: .center, spacing: 10) {
-                    if switchable { accountDisc }
-                    VStack(alignment: .leading, spacing: 1) {
-                        title
-                        subtitleText
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    newAgentButton
-                }
-            }
-        }
-        .padding(.horizontal, design.metrics.gutter)
-        .padding(.vertical, 10)
-    }
-
-    private var subtitleText: some View {
-        Text(subtitle)
-            .designFont(.caption, design)
-            .foregroundStyle(design.inkMuted.color)
-            .identified("home.subtitle", value: subtitle)
-    }
-
-    // Starting an agent needs a machine something can be started on. Not an
-    // account — a phone paired with a host on its own network has one — and
-    // not a subscription, which buys the route to a machine rather than the
-    // right to use it. Without one the button would open onto a screen with
-    // nothing on it.
-    @ViewBuilder
-    private var newAgentButton: some View {
-        if canStartAnAgent {
-            Button { actions(.newAgent) } label: {
-                GlassIcon(glyph: "plus", prominent: true)
-                    .thumbTarget(x: 5, y: 5)
-            }
-            .buttonStyle(.amuxControl)
-            .accessibilityLabel("New Agent")
-            .identified("home.newAgent", label: "New Agent")
-            .reclaimingThumbTarget(x: 5, y: 5)
-        }
-    }
-
-    /// The title carries the account menu only when there is an account
-    /// question to answer — a second account to switch to, or no usable
-    /// account at all. On a working phone with one account, the title is a
-    /// title and the account lives under You.
-    @ViewBuilder
-    private var title: some View {
-        if switchable {
-            Button { switcherOpen.toggle() } label: {
-                HStack(spacing: 5) {
-                    Text("Agents")
-                        .designFont(.screenTitle, design)
-                        .foregroundStyle(design.ink.color)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(design.inkFaint.color)
-                }
-                .thumbTarget(y: 7)
-            }
-            .buttonStyle(.amuxControl)
-            .accessibilityLabel("Agents, switch account")
-            .identified(
-                "home.title", label: "Agents, switch account",
-                value: switcherOpen ? "open" : "Agents")
-            .reclaimingThumbTarget(y: 7)
-        } else {
-            Text("Agents")
-                .designFont(.screenTitle, design)
-                .foregroundStyle(design.ink.color)
-                .identified("home.title", value: "Agents")
-        }
-    }
-
     /// What the switcher asked for, in the words this screen speaks.
     ///
     /// Switching, adding and signing back in all leave the screen, because
-    /// none of them is something a list can do; putting the panel away is the
-    /// one thing this screen decides for itself.
+    /// none of them is something a list can do.
     private func switcher(_ action: AccountsAction) {
         switch action {
-        case .select(let id):
-            switcherOpen = false
-            actions(.switchAccount(id))
-        case .add:
-            switcherOpen = false
-            actions(.addAccount)
-        case .signIn(let id):
-            switcherOpen = false
-            actions(.signInAgain(id))
-        case .dismiss:
-            switcherOpen = false
-        // Nothing else the panel can say reaches this screen: the rest of an
-        // account's actions live under You, where there is room to state what
-        // they do.
-        case .signOut, .remove, .delete, .subscription, .appearance, .shareUsage, .identity,
-             .support, .report, .exportDump:
+        case .select(let id): actions(.switchAccount(id))
+        case .add: actions(.addAccount)
+        case .signIn(let id): actions(.signInAgain(id))
+        // Nothing else reaches this screen: the rest of an account's actions
+        // live under You, where there is room to state what they do.
+        case .signOut, .remove, .delete, .subscription, .appearance, .shareUsage,
+             .identity, .support, .report, .exportDump:
             break
         }
     }
 
-    /// Hollow rather than absent. An account is a thing this app has; not
-    /// having a usable one yet is a state, not a hole.
+    /// The accounts, in the system's own menu hung from the disc: each by
+    /// name with what this phone knows of it under, the one on screen
+    /// ticked, and a signed-out one offering to sign back in; then Settings.
+    /// Always there, since it is also the way to the settings.
+    ///
+    /// The disc is the bar's other circle: the account's initials on the same
+    /// accent glass as the + across from it, and the same size, so the two
+    /// read as a pair. With no account signed in there is nobody to name, so
+    /// it is a person on the bar's plain glass: hollow rather than absent,
+    /// because not having a usable account yet is a state, not a hole.
     @ViewBuilder
-    private var accountDisc: some View {
-        if let initials = accounts.selectedAccount.map(initials(of:)) {
-            Circle()
-                .fill(design.accent.color)
-                .frame(width: 32, height: 32)
-                .overlay(
-                    Text(initials)
-                        .font(.system(size: 32 * 0.36, weight: .semibold))
-                        .foregroundStyle(design.onAccent.color))
-                .accessibilityHidden(true)
+    private var accountMenu: some View {
+        if let entry = accounts.selectedAccount {
+            accountMenu {
+                Text(InitialsDisc.initials(of: entry.name))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(design.onAccent.color)
+                    .fixedSize()
+                    .frame(width: 30, height: 30)
+                    // The picture covers the whole button, glass and all:
+                    // a face in a teal ring would be a badge, not a person.
+                    .overlay { AccountPicture(url: entry.account.picture, size: Self.barButton) }
+            }
+            .menuStyle(.button)
+            .prominentBarButton()
+            .buttonBorderShape(.circle)
+            .tint(design.accent.color)
+            // The bar keeps room for the ring it would have drawn round a
+            // menu; without that ring the disc would sit this far in from the
+            // margin the + keeps on the other side.
+            .padding(.leading, -Space.s)
         } else {
-            Circle()
-                .strokeBorder(design.inkFaint.color, lineWidth: 1.5)
-                .frame(width: 32, height: 32)
-                .overlay(
-                    Image(systemName: "person")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(design.inkFaint.color))
-                .accessibilityHidden(true)
+            accountMenu { Image(systemName: "person") }
+                .barItemSurface()
         }
     }
 
-    private func initials(of entry: AccountEntry) -> String {
-        let source = entry.account.displayName ?? entry.account.email
-        let words = source.split(whereSeparator: { !$0.isLetter })
-        let letters = words.prefix(2).compactMap(\.first)
-        return letters.isEmpty ? "?" : String(letters).uppercased()
+    /// A bar button's size: the system draws its glass buttons this large.
+    static let barButton: CGFloat = 44
+
+    private func accountMenu(@ViewBuilder label: () -> some View) -> some View {
+        Menu {
+            Section {
+                ForEach(accounts.accounts) { entry in
+                    Button {
+                        switcher(entry.signedIn ? .select(entry.id) : .signIn(entry.id))
+                    } label: {
+                        Label {
+                            Text(entry.name)
+                            Text(entry.signedIn ? entry.line : String(localized: "Signed out · tap to sign in"))
+                        } icon: {
+                            if entry.id == accounts.selected { Image(systemName: "checkmark") }
+                        }
+                    }
+                    .identified("account.\(entry.account.email)", label: entry.name)
+                }
+            }
+            Button { switcher(.add) } label: { Label("Add Account", systemImage: "plus") }
+                .identified("accounts.add", label: "Add Account")
+            // Everything else about accounts and this phone, where there is
+            // room to say what each thing does.
+            Section {
+                Button { actions(.openSettings) } label: { Label("Settings", systemImage: "gearshape") }
+                    .identified("accounts.settings", label: "Settings")
+            }
+        } label: {
+            label()
+        }
+        .accessibilityLabel("Switch account")
+        .accessibilityIdentifier("home.accounts")
     }
 
-    /// The subtitle counts what is on the list whenever there is a list to
-    /// count. It only becomes the account's word when the account is the whole
-    /// screen, because otherwise the same fact would be said twice: once here
-    /// and once on the exceptions line above the rows.
+    /// Under the title, only what needs saying: whose fleet this is when the
+    /// phone holds more than one account, how many agents need the person,
+    /// and on an empty phone why it is empty. A calm fleet has no subtitle;
+    /// the list says the rest.
     private var subtitle: String {
         if accounts.accounts.count > 1, let entry = accounts.selectedAccount {
             let waiting = model.needYou
-            return waiting == 0
-                ? "\(entry.name) · nothing needs you"
-                : "\(entry.name) · \(waiting) need you"
+            return waiting == 0 ? entry.name : "\(entry.name) · \(waiting) need you"
         }
-        if !model.rows.isEmpty { return model.subtitle }
+        if !model.rows.isEmpty {
+            return model.needYou == 0 ? "" : "\(model.needYou) need you"
+        }
         if !model.loaded { return "" }
         if !model.machines.isEmpty {
             let count = model.machines.count
@@ -329,27 +295,57 @@ public struct AgentsHome: View {
 
     private var sections: [HomeSection] { model.sections }
 
+    /// The agents that are live, in one list, with the ones that need the
+    /// person at the top; the stopped ones folded away under it.
+    private var live: [AgentRow] {
+        sections.filter { $0.kind != .exited }.flatMap(\.rows)
+    }
+
+    private var stopped: HomeSection? { sections.first { $0.kind == .exited } }
+
+    /// Names a machine on a row only when there is more than one to tell
+    /// apart.
+    private var namesHosts: Bool { Set(model.rows.map(\.hostName)).count > 1 }
+
     private var fleet: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let exceptions {
-                    exceptionsLine(exceptions.text, exceptions.act)
+            VStack(alignment: .leading, spacing: 0) {
+                chips
+                    .padding(.bottom, Space.s)
+                if filtering && model.rows.isEmpty {
+                    Text("Nothing matches")
+                        .designFont(.detail, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .padding(.horizontal, Space.margin)
+                        .padding(.top, Space.xl)
+                        .identified("home.noMatches", label: "Nothing matches")
                 }
-                ForEach(sections) { section in
-                    VStack(alignment: .leading, spacing: 8) {
-                        if section.folded {
-                            fold(section)
-                        } else {
-                            SectionHead(title: Self.title(section.kind))
-                            RowGroup(items: section.rows, prominence: .subject) { row in
+                if !callouts.isEmpty {
+                    CalloutStrip(callouts: callouts, act: actions)
+                        .padding(.top, Space.xs)
+                        .padding(.bottom, Space.s)
+                }
+                ForEach(Array(live.enumerated()), id: \.element.id) { index, row in
+                    agentRow(row)
+                    if index < live.count - 1 { rule(row) }
+                }
+                if let stopped {
+                    stoppedFold(stopped)
+                    if !stopped.folded {
+                        // One block, so it fades and settles as a whole: it
+                        // comes down from under the line that opened it and
+                        // goes back up into it.
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(stopped.rows) { row in
                                 agentRow(row)
+                                rule(row)
                             }
                         }
+                        .transition(.opacity.combined(with: .offset(y: -Space.m)))
                     }
                 }
             }
-            .padding(.horizontal, design.metrics.gutter)
-            .padding(.top, 6)
+            .padding(.top, Space.xs)
             .padding(.bottom, 120)
             // Keyed on which rows are where and nothing else. A row is
             // equatable over its whole card, so animating on the sections
@@ -363,10 +359,75 @@ public struct AgentsHome: View {
         .refreshable { actions(.refresh) }
     }
 
+    // MARK: - Narrowing the list
+
+    private var filter: FleetFilter { FleetFilter(words: words, only: only) }
+
+    private var filtering: Bool {
+        !words.trimmingCharacters(in: .whitespaces).isEmpty || only != nil
+    }
+
+    /// One state or one machine at a time, as a chat app's folders are:
+    /// everything, what needs you, what is working, and each machine when
+    /// the list spans more than one.
+    private var chips: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: Space.s) {
+                chip(String(localized: "All"), nil, id: "all")
+                chip(
+                    model.needYou > 0
+                        ? String(localized: "Needs you \(model.needYou)") : String(localized: "Needs you"),
+                    .needsYou, id: "needsYou")
+                chip(String(localized: "Working"), .working, id: "working")
+                // Counted from the machines rather than the rows, so a list
+                // narrowed to one machine still offers the others.
+                if model.machines.count > 1 {
+                    ForEach(model.machines.sorted { $0.name < $1.name }, id: \.hostId) { host in
+                        chip(PlaceNames.host(host.name), .host(host: host.hostId), id: "host.\(host.name)")
+                    }
+                }
+            }
+            .padding(.horizontal, Space.margin)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func chip(_ title: String, _ narrowing: FleetOnly?, id: String) -> some View {
+        let on = only == narrowing
+        return Button { only = narrowing } label: {
+            Text(title)
+                .designFont(.caption, design)
+                .fontWeight(.medium)
+                .foregroundStyle(on ? design.ground.color : design.ink.color)
+                .padding(.horizontal, Space.m)
+                .frame(height: 32)
+                .background(Capsule().fill(on ? design.ink.color : design.sunken.color))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.amuxControl)
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .identified("home.chip.\(id)", label: title, value: on ? "on" : "off")
+    }
+
+    /// A hairline under a row, starting where its text does, as a system
+    /// list draws one.
+    private func rule(_ row: AgentRow) -> some View {
+        Rectangle()
+            .fill(design.hairline.color)
+            .frame(height: design.metrics.hairline)
+            .padding(.leading, Space.margin + AgentRowView.textInset + indent(row))
+            .accessibilityHidden(true)
+    }
+
+    /// Members sit under their head by one step of the mark's column, so a
+    /// member's mark lines up with its head's name.
+    private func indent(_ row: AgentRow) -> CGFloat { CGFloat(row.depth) * AgentRowView.textInset }
+
     /// A row, indented under its family's head, with the head's control for
-    /// listing its members beside it.
+    /// listing its members under its age.
     private func agentRow(_ row: AgentRow) -> some View {
         let state = RowState(row: row)
+        let heads = row.depth == 0 && row.children > 0
         // A stop that is held until the host is back says so before anything
         // else the row would say; the chat has its Cancel.
         let second = row.card.stopHeld
@@ -375,20 +436,14 @@ public struct AgentsHome: View {
                 row.secondLine, kind: row.card.kind, now: model.orderedAt,
                 backgroundJobs: row.card.backgroundJobs)
         let content = AgentRowView(
-            row: row, state: state, host: PlaceNames.host(row.hostName), now: model.orderedAt,
-            second: second)
-        return HStack(spacing: 0) {
-            if row.depth > 0 {
-                Rectangle()
-                    .fill(design.hairline.color)
-                    .frame(width: 1)
-                    .padding(.leading, CGFloat(row.depth) * 14)
-                    .padding(.vertical, 6)
-                    .accessibilityHidden(true)
+            row: row, state: state, host: namesHosts ? PlaceNames.host(row.hostName) : nil,
+            now: model.orderedAt, second: second, leavesRoomTrailing: heads)
+        return openable(row, state, content)
+            .overlay(alignment: .bottomTrailing) {
+                if heads { family(row) }
             }
-            openable(row, state, content)
-            if row.depth == 0 && row.children > 0 { family(row) }
-        }
+            .padding(.leading, Space.margin + indent(row))
+            .padding(.trailing, Space.margin)
     }
 
     // An agent of a kind this build has no chat for is listed and not
@@ -410,23 +465,26 @@ public struct AgentsHome: View {
         }
     }
 
-    /// How many agents a head started, and the control that lists them.
+    /// How many agents a head started, and the control that lists them, in
+    /// the row's trailing column under its age.
     private func family(_ row: AgentRow) -> some View {
         let said = row.expanded
             ? "Hide \(row.children) started by \(row.name)"
             : "Show \(row.children) started by \(row.name)"
         return Button { actions(.toggleFamily(row.id)) } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: Space.xs) {
                 if row.speaksForAMember { NeedsYouDot() }
                 Text("\(row.children)")
-                    .designFont(.monoSmall, design)
+                    .designFont(.caption, design)
                     .foregroundStyle(design.inkMuted.color)
-                Image(systemName: row.expanded ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(design.inkFaint.color)
+                    .rotationEffect(.degrees(row.expanded ? 180 : 0))
             }
-            .padding(.horizontal, 12)
-            .frame(minWidth: 44, minHeight: 44)
+            .padding(.leading, Space.m)
+            .padding(.vertical, Space.m)
+            .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
             .contentShape(Rectangle())
         }
         .buttonStyle(.amuxControl)
@@ -464,33 +522,47 @@ public struct AgentsHome: View {
         }
     }
 
-    private func fold(_ section: HomeSection) -> some View {
+    /// The stopped agents, folded into one quiet line: a hairline with the
+    /// section's name set into it where the rows' names start, closing the
+    /// live list the way the chat marks where its agent started.
+    ///
+    /// Opened and closed in one explicit animation rather than by watching
+    /// the fold, so the rows leave as smoothly as they arrive and nothing
+    /// else on the screen is swept along with them.
+    private func stoppedFold(_ section: HomeSection) -> some View {
         let names = section.rows.filter { $0.depth == 0 }.map(\.name).joined(separator: ", ")
         let title = "\(Self.title(section.kind)) · \(section.families)"
+        let hairline = Rectangle().fill(design.hairline.color).frame(height: design.metrics.hairline)
         return Button {
-            model.toggle(section.kind)
-        } label: {
-            Surface {
-                HStack(spacing: 10) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(design.inkFaint.color)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .designFont(.detail, design)
-                            .foregroundStyle(design.ink.color)
-                        Text(names)
-                            .designFont(.monoSmall, design)
-                            .foregroundStyle(design.inkFaint.color)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(13)
-                .frame(minHeight: 44)
+            withAnimation(photographed || reducesMotion ? nil : Motion.standard) {
+                model.toggle(section.kind)
             }
+        } label: {
+            HStack(spacing: Space.s) {
+                hairline
+                    .frame(width: AgentRowView.markColumn)
+                    .padding(.trailing, Space.m - Space.s)
+                Text(Self.title(section.kind))
+                    .designFont(.sectionTitle, design)
+                    .foregroundStyle(design.inkMuted.color)
+                    .layoutPriority(1)
+                Text("\(section.families)")
+                    .designFont(.caption, design)
+                    .foregroundStyle(design.inkFaint.color)
+                    .layoutPriority(1)
+                hairline
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(design.inkFaint.color)
+                    .rotationEffect(.degrees(section.folded ? 0 : 90))
+                    .frame(width: 16)
+            }
+            .padding(.horizontal, Space.margin)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.amuxRow(cornerRadius: design.metrics.cardRadius))
+        .buttonStyle(.amuxControl)
+        .padding(.top, Space.l)
         .accessibilityLabel("\(title), \(names)")
         .identified("home.fold.\(section.id)", label: "\(title), \(names)", value: names)
     }
@@ -521,39 +593,23 @@ public struct AgentsHome: View {
         return model.exceptions.map { ($0, .openExceptions) }
     }
 
-    private func exceptionsLine(_ text: String, _ act: HomeAction) -> some View {
-        Button {
-            actions(act)
-        } label: {
-            Surface {
-                HStack(spacing: 11) {
-                    Image(systemName: glyph(for: act))
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(design.inkMuted.color)
-                        .frame(width: 18)
-                    // One row when it fits, which is what an exceptions line
-                    // is for. At an accessibility size the sentence does not
-                    // fit on one, and a sentence about the one thing that is
-                    // wrong is worth more than the row it was promised, so it
-                    // wraps.
-                    Text(text)
-                        .designFont(.detail, design)
-                        .foregroundStyle(design.ink.color)
-                        .lineLimit(typeSize.isAccessibilitySize ? 4 : 1)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(design.inkFaint.color)
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 11)
-                .frame(minHeight: 44)
-            }
+    /// What the list asks of the person before its rows: pairing a machine
+    /// found nearby, then whatever stands between the phone and the fleet.
+    private var callouts: [Callout] {
+        var callouts = found.compactMap { host -> Callout? in
+            guard let id = host.id else { return nil }
+            return Callout(
+                id: "pair.\(host.name)", glyph: "plus.circle",
+                title: String(localized: "\(host.name) is nearby"),
+                detail: String(localized: "Pair it to see its agents here"),
+                button: String(localized: "Pair"), act: .pair(id))
         }
-        .buttonStyle(.amuxPush)
-        .accessibilityLabel(text)
-        .identified("home.exceptions", label: text, value: text)
+        if let exceptions {
+            callouts.append(Callout(
+                id: "exceptions", glyph: glyph(for: exceptions.act), title: exceptions.text,
+                detail: nil, button: nil, act: exceptions.act))
+        }
+        return callouts
     }
 
     /// What the line is about: a link that is down, or an account that would
@@ -610,14 +666,15 @@ public struct AgentsHome: View {
     ///
     /// The phone has done the part that needed doing, so the screen says what
     /// comes next rather than offering to pair again. Starting an agent is the
-    /// one action, and only where a machine would run it; the exceptions line
-    /// says why not otherwise.
+    /// one action, and only where a machine would run it; the callouts say
+    /// why not otherwise, as they do above a list.
     private var noAgentsYet: some View {
         ScrollView {
+            if !callouts.isEmpty {
+                CalloutStrip(callouts: callouts, act: actions)
+                    .padding(.top, Space.l)
+            }
             VStack(alignment: .leading, spacing: 18) {
-                if let exceptions {
-                    exceptionsLine(exceptions.text, exceptions.act)
-                }
                 // No headline of its own: the subtitle under the title already
                 // says there are no agents and how many hosts there are.
                 Explain("Start an agent on a host and it appears here.")
@@ -705,117 +762,127 @@ extension FleetGate {
     }
 }
 
-/// One agent, as a dense list row.
+/// One agent, as a list row: what state it is in, who it is, and what it
+/// last said or is asking.
 ///
-/// Three lines: who it is and how long ago, what it is doing in its own words,
-/// and where it runs. The state is said in words on the third line wherever a
-/// mark would have done the job badly.
+/// The leading mark is the agent's state, where a chat app puts a face: an
+/// agent has no face, and its state is what a person scans the list for. The
+/// mark is loud only when the agent needs the person. The words under the
+/// name are the agent's own, so the state is never spelled out as well
+/// unless there is nothing else to say.
 ///
-/// There is no mark in front of the name. A row that needs you carries the
-/// accent dot beside its age, where an unread conversation is marked in
-/// Messages, and its third line says "Needs you" in the accent colour. Rows
-/// that need nothing line up with it because nothing reserves a slot for a
-/// mark they do not have.
+/// Two columns: the name over its words, and a trailing column of facts
+/// about it (the machine and the age) on the name's baseline.
 struct AgentRowView: View {
     @Environment(\.design) private var design
     @Environment(\.dynamicTypeSize) private var typeSize
     let row: AgentRow
     let state: RowState
+    /// The machine, when the list spans more than one.
     let host: String?
     let now: Date
     /// What its state calls for, in words, when there is something to say.
     let second: (text: String, ink: FleetWords.Ink)?
+    /// Whether a control sits over the trailing end of the second line.
+    var leavesRoomTrailing = false
+
+    /// The mark's column and the gap after it: where the text starts, and
+    /// the rule under the row with it.
+    static let markColumn: CGFloat = Space.m
+    static let textInset: CGFloat = markColumn + Space.m
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(row.name)
-                    .designFont(row.unread ? .identifierUnread : .identifier, design)
-                    .foregroundStyle(design.ink.color)
-                    .layoutPriority(1)
-                if let branch = row.branch {
-                    Text(verbatim: branch)
-                        .designFont(.monoSmall, design)
-                        .foregroundStyle(design.inkMuted.color)
+        HStack(alignment: .firstTextBaseline, spacing: Space.m) {
+            StateMark(state: state)
+                .frame(width: Self.markColumn)
+                // Centred on the name's lowercase letters rather than sat on
+                // its baseline.
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.5 }
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    Text(row.name)
+                        .designFont(.identifier, design)
+                        .foregroundStyle(stopped ? design.inkMuted.color : design.ink.color)
                         .lineLimit(1)
-                        .truncationMode(.middle)
-                        .reported("home.row.\(row.id).branch", value: branch)
+                        .layoutPriority(1)
+                    Spacer(minLength: Space.xs)
+                    Text(facts)
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkFaint.color)
+                        .lineLimit(1)
+                        // An age moves with the clock: a compared screenshot masks it.
+                        .reported("home.row.\(row.id).age.volatile")
                 }
-                Spacer(minLength: 4)
-                Text(row.age(at: now))
-                    .designFont(.caption, design)
-                    .foregroundStyle(design.inkFaint.color)
-                    // An age moves with the clock: a compared screenshot masks it.
-                    .reported("home.row.\(row.id).age.volatile")
-                if state.needsYou { NeedsYouDot() }
+                if let preview {
+                    Text(withCode(preview.text))
+                        .designFont(.detail, design)
+                        .foregroundStyle(ink(preview.ink))
+                        // What an agent is asking is worth a second line; what
+                        // it is doing or last said is a glance.
+                        .lineLimit(state.needsYou || typeSize.isAccessibilitySize ? 2 : 1)
+                        .padding(.trailing, leavesRoomTrailing ? 40 : 0)
+                        .reported("home.row.\(row.id).second")
+                }
             }
-            if let second {
-                Text(verbatim: second.text)
-                    .designFont(.detail, design)
-                    .foregroundStyle(ink(second.ink))
-                    // Two lines at an accessibility size: enough to say what
-                    // the agent is on, while a screen still holds more than
-                    // two rows.
-                    .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
-                    .reported("home.row.\(row.id).second")
-            }
-            words
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, design.metrics.rowPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Space.m)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
-    /// The state, in words, wherever a mark was doing the work badly.
-    /// "Finished · 4 files · +118 −40" is both more precise than a tick and
-    /// readable without having learnt a vocabulary first. When the provider
-    /// never counted the changes the word stands alone: an absent count is not
-    /// a zero. A row that needs you reads "Needs you" in the one colour this
-    /// app keeps for that, on the same line as every other state.
-    private var words: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                // Three things competing for one line leave each of them a few
-                // characters and an ellipsis once the text is turned up —
-                // "Fini… · 1 fi… mini" says less than nothing. The same words
-                // stacked and allowed to wrap still say what happened.
-                // A place is a path, which wraps a letter at a time; it keeps
-                // one line of its own and loses its middle instead.
-                VStack(alignment: .leading, spacing: 2) {
-                    let head = [state.word, showsHost ? host : nil].compactMap { $0 }
-                    if !head.isEmpty {
-                        Text(head.joined(separator: " · "))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Text(detail)
-                        .lineLimit(state.word != nil && state.elaboration != nil ? 3 : 1)
-                        .truncationMode(state.word != nil && state.elaboration != nil ? .tail : .middle)
-                        .reported("home.row.\(row.id).detail.volatile")
-                }
-            } else {
-                HStack(spacing: 6) {
-                    if let word = state.word {
-                        Text(word)
-                        Text("·")
-                    }
-                    // A place loses its middle, where the parents are; what a
-                    // state has to say loses its end, as a sentence does.
-                    Text(detail)
-                        .truncationMode(state.word != nil && state.elaboration != nil
-                                        ? .tail : .middle)
-                        // Often a working directory, which a test network puts
-                        // under a scratch path: a compared screenshot masks it.
-                        .reported("home.row.\(row.id).detail.volatile")
-                    Spacer(minLength: 0)
-                    if let host, showsHost { Text(host) }
-                }
-                .lineLimit(1)
-            }
+    /// The machine and the age, as one quiet run of facts.
+    private var facts: String {
+        [host, row.age(at: now)].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private var stopped: Bool {
+        if case .exited = state { return true }
+        return false
+    }
+
+    /// The agent's own words, or the state's where it has none: a machine
+    /// that is out of reach says so first, and a stopped agent says how it
+    /// ended.
+    private var preview: (text: String, ink: FleetWords.Ink)? {
+        if state.namesTheHost, let word = state.word {
+            let rest = second?.text ?? state.elaboration
+            return ([word, rest].compactMap { $0 }.joined(separator: " · "), .quiet)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .designFont(.monoSmall, design)
-        .foregroundStyle(state.needsYou ? design.accent.color : design.inkFaint.color)
-        .padding(.top, 1)
+        if let second { return second }
+        switch state {
+        case .exited, .unsupported, .starting:
+            let words = [state.word, state.elaboration].compactMap { $0 }
+            return words.isEmpty ? nil : (words.joined(separator: " · "), .quiet)
+        default:
+            return nil
+        }
+    }
+
+    /// The preview with the command or path in it set in the code face, as
+    /// a terminal or an editor would show it, so it reads as something to
+    /// run or open and not as prose.
+    private func withCode(_ text: String) -> AttributedString {
+        var words = AttributedString(text)
+        if let code, !code.isEmpty, let range = words.range(of: code) {
+            words[range].font = design.font(.mono)
+        }
+        return words
+    }
+
+    /// The command or path the second line names, if it names one.
+    private var code: String? {
+        switch row.secondLine {
+        case .ask(let ask):
+            switch ask.subject {
+            case .command(let command): ChatWords.firstLine(command)
+            case .edit(let path, let files, _) where files <= 1: path
+            default: nil
+            }
+        case .step(let line):
+            if case .running = line.activity.kind, let step = line.step { ChatWords.firstLine(step) } else { nil }
+        default:
+            nil
+        }
     }
 
     private func ink(_ ink: FleetWords.Ink) -> Color {
@@ -826,19 +893,229 @@ struct AgentRowView: View {
         case .error: design.removed.color
         }
     }
+}
 
-    /// The machine goes on the trailing edge beside a state word, and into
-    /// the detail without one — except where the word has already named it,
-    /// which is what an offline machine's word is.
-    private var showsHost: Bool {
-        state.word != nil && !state.namesTheHost
+/// How a working agent's mark moves. Several, while one is chosen.
+public enum WorkingMark: String, CaseIterable, Sendable {
+    /// A dot that slowly swells and fades, like breathing.
+    case breathing
+    /// Three small dots that rise in turn, as a chat app shows typing.
+    case typing
+    /// A short arc travelling round a faint ring.
+    case orbit
+    /// A ring that fills and empties.
+    case filling
+}
+
+private struct WorkingMarkKey: EnvironmentKey {
+    static let defaultValue = WorkingMark.breathing
+}
+
+extension EnvironmentValues {
+    public var workingMark: WorkingMark {
+        get { self[WorkingMarkKey.self] }
+        set { self[WorkingMarkKey.self] = newValue }
+    }
+}
+
+/// A state's mark by the state's name, for a catalogue to show every mark.
+public struct StateMarkSample: View {
+    let state: String
+    public init(_ state: String) { self.state = state }
+    public var body: some View { StateMark(state: sampled) }
+
+    private var sampled: RowState {
+        switch state {
+        case "needs-you": .needsYou
+        case "working": .working
+        case "away": .hostAway("studio")
+        case "stopped": .exited(.finished)
+        default: .idle
+        }
+    }
+}
+
+/// An agent's state as a mark, in the column a chat list keeps for a face.
+///
+/// Needs you is the only filled, coloured mark on the screen. Working moves,
+/// so a list of agents at work is visibly alive; it holds still in front of
+/// a camera and for a reader who asked for less motion. Idle is an empty
+/// ring, and a machine out of reach or a stopped agent is fainter still.
+struct StateMark: View {
+    @Environment(\.design) private var design
+    @Environment(\.photographed) private var photographed
+    @Environment(\.reducesMotion) private var reducesMotion
+    @Environment(\.workingMark) private var working
+    let state: RowState
+
+    static let size: CGFloat = 10
+
+    var body: some View {
+        Group {
+            switch state {
+            case .needsYou:
+                Circle().fill(design.accent.color)
+            case .working, .starting:
+                Working(style: working, still: photographed || reducesMotion)
+            case .idle:
+                Circle().strokeBorder(design.inkFaint.color, lineWidth: 1.5)
+            case .hostAway, .hostOffline:
+                Circle().strokeBorder(
+                    design.inkFaint.color, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2.2]))
+            case .exited, .unsupported:
+                Circle().fill(design.hairline.color)
+            }
+        }
+        .frame(width: Self.size, height: Self.size)
+        .accessibilityHidden(true)
     }
 
-    /// Written by ``PlaceNames``, as every line that places an agent is.
-    private var detail: String {
-        guard state.word != nil else {
-            return PlaceNames.place(host: host, directory: row.workingDirectory)
+    private struct Working: View {
+        @Environment(\.design) private var design
+        let style: WorkingMark
+        let still: Bool
+
+        var body: some View {
+            TimelineView(.animation(paused: still)) { context in
+                let t = still ? 0.25 : context.date.timeIntervalSinceReferenceDate
+                switch style {
+                case .breathing:
+                    let phase = (sin(t * .pi / 1.1) + 1) / 2
+                    Circle()
+                        .fill(design.ink.color)
+                        .scaleEffect(0.55 + 0.45 * phase)
+                        .opacity(0.35 + 0.5 * phase)
+                case .typing:
+                    HStack(spacing: 1.5) {
+                        ForEach(0..<3) { i in
+                            let phase = (sin((t * 2.4 - Double(i) * 0.7) * .pi) + 1) / 2
+                            Circle()
+                                .fill(design.ink.color)
+                                .frame(width: 2.6, height: 2.6)
+                                .opacity(0.3 + 0.7 * phase)
+                                .offset(y: -1.5 * phase)
+                        }
+                    }
+                    .frame(width: 14)
+                case .orbit:
+                    ZStack {
+                        Circle().strokeBorder(design.hairline.color, lineWidth: 1.5)
+                        Circle()
+                            .trim(from: 0, to: 0.22)
+                            .stroke(design.ink.color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                            .padding(0.75)
+                            .rotationEffect(.radians(t.truncatingRemainder(dividingBy: 1.4) / 1.4 * 2 * .pi))
+                    }
+                case .filling:
+                    let phase = (t.truncatingRemainder(dividingBy: 2.4)) / 2.4
+                    let fill = phase < 0.5 ? phase * 2 : 1
+                    let start = phase < 0.5 ? 0 : (phase - 0.5) * 2
+                    ZStack {
+                        Circle().strokeBorder(design.hairline.color, lineWidth: 1.5)
+                        Circle()
+                            .trim(from: start, to: fill)
+                            .stroke(design.ink.color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                            .padding(0.75)
+                            .rotationEffect(.degrees(-90))
+                    }
+                }
+            }
         }
-        return state.elaboration ?? PlaceNames.directory(row.workingDirectory)
+    }
+}
+
+
+// MARK: - Callouts
+
+/// Something the list asks of the person, above its rows.
+struct Callout: Identifiable, Equatable {
+    let id: String
+    let glyph: String
+    let title: String
+    let detail: String?
+    /// The verb on its button, when it has one; otherwise the whole callout
+    /// is the button.
+    let button: String?
+    let act: HomeAction
+}
+
+/// The callouts: one takes the full width; more than one narrow so the next
+/// one shows at the edge, saying the strip slides.
+struct CalloutStrip: View {
+    let callouts: [Callout]
+    let act: (HomeAction) -> Void
+
+    var body: some View {
+        if callouts.count == 1, let only = callouts.first {
+            CalloutCard(callout: only, act: act).padding(.horizontal, Space.margin)
+        } else {
+            ScrollView(.horizontal) {
+                HStack(spacing: Space.s) {
+                    ForEach(callouts) { callout in
+                        CalloutCard(callout: callout, act: act)
+                            .containerRelativeFrame(.horizontal) { width, _ in
+                                (width - Space.margin * 2) * 0.86
+                            }
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .contentMargins(.horizontal, Space.margin, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollIndicators(.hidden)
+        }
+    }
+}
+
+/// A callout as a card: a quiet surface with its mark, its words and its
+/// button.
+private struct CalloutCard: View {
+    @Environment(\.design) private var design
+    let callout: Callout
+    let act: (HomeAction) -> Void
+
+    var body: some View {
+        Button { act(callout.act) } label: {
+            HStack(spacing: Space.m) {
+                Image(systemName: callout.glyph)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(design.inkMuted.color)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text(callout.title)
+                        .designFont(.bodyEmphasis, design)
+                        .foregroundStyle(design.ink.color)
+                        .lineLimit(1)
+                    if let detail = callout.detail {
+                        Text(detail)
+                            .designFont(.caption, design)
+                            .foregroundStyle(design.inkMuted.color)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: Space.s)
+                if let button = callout.button {
+                    Text(button)
+                        .designFont(.caption, design)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(design.onAccent.color)
+                        .padding(.horizontal, Space.m)
+                        .frame(height: 30)
+                        .background(Capsule().fill(design.accent.color))
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(design.inkFaint.color)
+                }
+            }
+            .padding(.horizontal, Space.m)
+            .frame(minHeight: 60)
+            .background(
+                RoundedRectangle(cornerRadius: design.metrics.controlRadius)
+                    .fill(design.sunken.color))
+            .contentShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius))
+        }
+        .buttonStyle(.amuxControl)
+        .identified("home.callout.\(callout.id)", label: callout.title)
     }
 }

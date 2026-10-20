@@ -18,18 +18,23 @@ public struct ChatRowView: View {
     let row: Row
     let expanded: Bool
     let rail: RailJoin
+    let placement: RunPlacement
     let bytes: (BlobRef) -> Data?
     let toggle: () -> Void
+    let toggleRun: () -> Void
 
     public init(
-        row: Row, expanded: Bool, rail: RailJoin = .none,
-        bytes: @escaping (BlobRef) -> Data? = { _ in nil }, toggle: @escaping () -> Void = {}
+        row: Row, expanded: Bool, rail: RailJoin = .none, placement: RunPlacement = .own,
+        bytes: @escaping (BlobRef) -> Data? = { _ in nil }, toggle: @escaping () -> Void = {},
+        toggleRun: @escaping () -> Void = {}
     ) {
         self.row = row
         self.expanded = expanded
         self.rail = rail
+        self.placement = placement
         self.bytes = bytes
         self.toggle = toggle
+        self.toggleRun = toggleRun
     }
 
     public var body: some View {
@@ -38,13 +43,37 @@ public struct ChatRowView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let run = row.run, run.folds(row), !expanded {
-            GridRow(
-                kind: "run", glyph: "magnifyingglass", rail: rail, verb: ChatWords.run(run),
-                subject: Self.anchor(row), truncation: .head, opens: true, open: false, toggle: toggle)
-        } else {
+        switch placement {
+        case .own:
             kindView
+        case .step(let header):
+            VStack(alignment: .leading, spacing: 0) {
+                runLine(header.words, open: header.open, rail: RailJoin(continues: true, nested: rail.nested))
+                kindView
+            }
+        case .folded(let words):
+            VStack(alignment: .leading, spacing: 0) {
+                runLine(
+                    words, open: false,
+                    rail: row.run?.unresolvedFailure == true
+                        ? RailJoin(continues: true, nested: rail.nested) : rail)
+                // The run's newest step failed and nothing fixed it: it
+                // stays in view under the line, where it ran.
+                if row.run?.unresolvedFailure == true {
+                    kindView.environment(\.unresolvedFailure, true)
+                }
+            }
+        case .failed:
+            kindView.environment(\.unresolvedFailure, true)
         }
+    }
+
+    /// A run's one line: folded to what its steps did, or the line above an
+    /// open or live run's steps that folds it again.
+    private func runLine(_ words: String, open: Bool, rail: RailJoin) -> some View {
+        GridRow(
+            kind: "run", glyph: open ? "chevron.down" : "chevron.right", rail: rail, verb: words,
+            quiet: true, opens: true, open: open, trailingChevron: false, toggle: toggleRun)
     }
 
     @ViewBuilder
@@ -66,7 +95,7 @@ public struct ChatRowView: View {
                 state, row, wants: String(localized: "Wants to use"),
                 doing: String(localized: "Using"), done: String(localized: "Used"))
             GridRow(
-                kind: "tool", glyph: glyph(state, "wrench.adjustable"), accented: accented(state),
+                kind: "tool", glyph: glyph(state, "wrench.adjustable"), accented: accented(state), failed: state == .failed,
                 rail: rail, verb: verb, subject: server.isEmpty ? tool : "\(server) · \(tool)",
                 meta: RowMeta(ChatWords.meta(
                     [fact, state == .failed ? String(localized: "failed") : ""], row,
@@ -83,26 +112,22 @@ public struct ChatRowView: View {
                 doing: String(localized: "Running"), done: String(localized: "Ran"))
             GridRow(
                 kind: "command", glyph: glyph(state, "chevron.left.forwardslash.chevron.right"),
-                accented: accented(state), rail: rail, verb: verb,
+                accented: accented(state), failed: state == .failed, rail: rail, verb: verb,
                 subject: ChatWords.firstLine(command),
                 meta: RowMeta(ChatWords.meta(
                     commandMeta(state, exitCode: exitCode, durationMs: durationMs), row,
                     verbPhase: state, note: false)),
                 quote: denialNote, output: outputHead, trimmed: outputTrimmed, more: moreLines)
         case .explore(let verb, let subject, let state, let result):
-            // A step that heads a folded run opens the run; any other opens
-            // what it found, which is kept even when the step failed.
-            let folds = row.run?.folds(row) == true
+            // It opens what it found, which is kept even when the step failed.
             GridRow(
-                kind: "explore", glyph: glyph(state, "magnifyingglass"), accented: accented(state),
+                kind: "explore", glyph: glyph(state, "magnifyingglass"), accented: accented(state), failed: state == .failed,
                 rail: rail, verb: ChatWords.explore(verb), subject: subject,
-                meta: RowMeta([ChatWords.meta(
-                        [ChatWords.state(state, decided: row.decision != nil) ?? ""], row, note: false),
-                       row.run.map { expanded && $0.folds(row) ? ChatWords.run($0) : "" } ?? ""]
-                    .filter { !$0.isEmpty }.joined(separator: " · ")),
+                meta: RowMeta(ChatWords.meta(
+                    [ChatWords.state(state, decided: row.decision != nil) ?? ""], row, note: false)),
                 truncation: .head, quote: denialNote,
-                detail: expanded && !folds && !result.isEmpty ? result : nil,
-                opens: folds || !result.isEmpty, open: expanded, toggle: toggle)
+                detail: expanded && !result.isEmpty ? result : nil,
+                opens: !result.isEmpty, open: expanded, toggle: toggle)
         case .subagent(let description, let running, let toolCount, let lastTool, let answer, let durationMs):
             GridRow(
                 kind: "subagent", glyph: "arrow.triangle.branch", rail: rail,
@@ -140,7 +165,7 @@ public struct ChatRowView: View {
             Footer(
                 kind: "turn-end",
                 text: ChatWords.turnEnd(durationMs: durationMs, costUsd: costUsd, failed: failed),
-                accented: failed)
+                failed: failed)
         case .stopped:
             GridRow(
                 kind: "stopped", glyph: "stop", rail: rail,
@@ -152,7 +177,7 @@ public struct ChatRowView: View {
         case .error(let errorKind, let message, let attempts, let gaveUp):
             let detailed = !errorKind.isEmpty && !message.isEmpty
             GridRow(
-                kind: "error", glyph: "exclamationmark.triangle", accented: true, rail: rail,
+                kind: "error", glyph: "exclamationmark.triangle", failed: true, rail: rail,
                 verb: errorKind.isEmpty ? ChatWords.firstLine(message) : errorKind,
                 meta: RowMeta(gaveUp && attempts > 1
                     ? String(localized: "gave up after \(attempts) tries") : ""),
@@ -169,7 +194,7 @@ public struct ChatRowView: View {
             GridRow(
                 kind: "agent-message",
                 glyph: to.isEmpty ? "arrow.turn.down.left" : "arrow.turn.up.right",
-                accented: sent == .rejected, rail: rail,
+                failed: sent == .rejected, rail: rail,
                 verb: to.isEmpty ? String(localized: "From") : String(localized: "To"),
                 subject: to.isEmpty ? from : to, meta: RowMeta(messageMeta(kind, sent, rejection)),
                 detail: ChatWords.text(of: text).trimmingCharacters(in: .whitespacesAndNewlines),
@@ -199,7 +224,7 @@ public struct ChatRowView: View {
         let tail = [ChatWords.state(state, decided: row.decision != nil) ?? ""]
         if files.isEmpty {
             GridRow(
-                kind: "file-change", glyph: glyph(state, "plusminus"), accented: accented(state),
+                kind: "file-change", glyph: glyph(state, "plusminus"), accented: accented(state), failed: state == .failed,
                 rail: rail, verb: String(localized: "Editing"),
                 meta: RowMeta(ChatWords.meta(tail, row, note: false)), quote: denialNote)
         }
@@ -210,24 +235,13 @@ public struct ChatRowView: View {
                 let words = Self.words(file)
                 GridRow(
                     kind: "file-change", glyph: glyph(state, words.glyph),
-                    accented: accented(state),
+                    accented: accented(state), failed: state == .failed,
                     rail: last ? rail : RailJoin(continues: true, nested: rail.nested),
                     verb: words.verb, subject: words.subject,
                     subjectFace: words.verb.isEmpty ? .path : .mono,
                     meta: words.meta.then(extra), truncation: .head,
                     quote: index == 0 ? denialNote : nil)
             }
-        }
-    }
-
-    /// What a folded run's line names: its newest step's subject.
-    private static func anchor(_ row: Row) -> String {
-        switch row.kind {
-        case .explore(_, let subject, _, _): subject
-        case .command(let command, _, _, _, _, _, _, _): ChatWords.firstLine(command)
-        case .toolCall(let server, let tool, _, _, _): server.isEmpty ? tool : "\(server) · \(tool)"
-        case .fileChange(let files, _): files.first?.path ?? ""
-        default: ""
         }
     }
 
@@ -260,8 +274,11 @@ public struct ChatRowView: View {
         }
     }
 
+    /// The accent is for what waits on the person: a step asking. A step
+    /// that failed says so in the removed ink instead, where its glyph is
+    /// drawn.
     private func accented(_ phase: CallPhase) -> Bool {
-        row.attention || phase == .failed || phase == .denied
+        row.attention && phase == .asking
     }
 
     /// What the person said when they refused, under the row in their words.
@@ -405,6 +422,8 @@ struct GridRow: View {
     let kind: String
     let glyph: String
     var accented = false
+    /// It went wrong: its glyph takes the removed ink.
+    var failed = false
     var rail = RailJoin.none
     var verb = ""
     /// A verb that reports rather than acts, drawn a step quieter.
@@ -428,7 +447,11 @@ struct GridRow: View {
     var below: AnyView?
     var opens = false
     var open = false
+    /// Whether an opening row says so at its trailing edge; a run's line
+    /// says it with its own mark instead.
+    var trailingChevron = true
     var toggle: () -> Void = {}
+    @Environment(\.unresolvedFailure) private var unresolvedFailure
 
     var body: some View {
         Group {
@@ -474,9 +497,9 @@ struct GridRow: View {
 
     private var layout: some View {
         HStack(alignment: .top, spacing: RowGrid.spacing) {
-            Image(systemName: glyph)
+            Image(systemName: unresolvedFailure ? "xmark" : glyph)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(accented ? design.accent.color : design.inkFaint.color)
+                .foregroundStyle(glyphInk)
                 .frame(width: RowGrid.cell, height: RowGrid.cell)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -494,7 +517,7 @@ struct GridRow: View {
                             if !meta.isEmpty { metaText.lineLimit(1).rowLine(.meta) }
                         }
                     }
-                    if opens {
+                    if opens && trailingChevron {
                         Image(systemName: open ? "chevron.up" : "chevron.down")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(design.inkFaint.color)
@@ -524,10 +547,17 @@ struct GridRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var glyphInk: Color {
+        if unresolvedFailure || failed { return design.removed.color }
+        return accented ? design.accent.color : design.inkFaint.color
+    }
+
     private var verbText: some View {
         Text(verb)
             .designFont(.detail, design)
-            .foregroundStyle(quiet ? design.inkMuted.color : design.ink.color)
+            .foregroundStyle(
+                unresolvedFailure ? design.removed.color
+                    : quiet ? design.inkMuted.color : design.ink.color)
     }
 
     private var subjectText: some View {
@@ -538,7 +568,7 @@ struct GridRow: View {
 
     private var metaText: some View {
         Text(meta.attributed(design))
-            .designFont(.monoSmall, design)
+            .designFont(.caption, design)
             // Usually a measured duration: a compared screenshot masks it.
             .reported("chat.row.meta.volatile")
     }
@@ -552,7 +582,7 @@ struct GridRow: View {
         }
         if let quote {
             Text("“\(quote)”")
-                .designFont(.monoSmall, design)
+                .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1115,7 +1145,7 @@ private struct Footer: View {
     @Environment(\.design) private var design
     let kind: String
     let text: String
-    var accented = false
+    var failed = false
 
     var body: some View {
         // Named on the text itself, so the surface a check masks as volatile
@@ -1123,7 +1153,7 @@ private struct Footer: View {
         // below pulls them above the padded frame.
         Text(text)
             .designFont(.caption, design)
-            .foregroundStyle(accented ? design.accent.color : design.inkFaint.color)
+            .foregroundStyle(failed ? design.removed.color : design.inkFaint.color)
             .identified("chat.row.\(kind)", label: text)
             .padding(.leading, RowGrid.text)
             .padding(.top, -4)
@@ -1347,8 +1377,53 @@ private struct AskRowView: View {
     }
 }
 
-extension Run {
-    /// Whether this row is where the run folds to one line: its newest
-    /// step, when it has more than one.
-    func folds(_ row: Row) -> Bool { row.id == last && steps > 1 }
+/// Where a row stands in its run of tool steps, placed as the terminal
+/// places it from the same shared fold.
+public enum RunPlacement: Equatable {
+    /// Outside a run, or a step of an opened run with no line above it:
+    /// drawn as itself.
+    case own
+    /// A step drawn as itself under its run's line: the opened run's first
+    /// step, or the oldest of a live run's newest steps.
+    case step(header: Header)
+    /// A finished run's newest step, which draws as the run's one line.
+    case folded(words: String)
+    /// A step a folded run keeps in view: a failure its turn never fixed.
+    case failed
+
+    public struct Header: Equatable {
+        public let words: String
+        public let open: Bool
+    }
+
+    /// The placement of a row the chat draws: `open` is whether its run is
+    /// open, `counts` what the run's steps did.
+    public static func of(_ row: Row, open: Bool, counts: () -> RunCounts?) -> RunPlacement {
+        guard let run = row.run else { return .own }
+        if open {
+            // Opened, a run lists every step on its own line, under the
+            // line that folds it again.
+            guard row.id == run.first else { return .own }
+            return .step(header: Header(words: ChatWords.run(run, counts: counts()), open: true))
+        }
+        if run.live {
+            // Under way: the newest few steps, with how many came before.
+            let shown = min(run.steps, liveSteps)
+            let earlier = run.steps - shown
+            guard earlier > 0, run.recent == shown - 1 else { return .own }
+            return .step(header: Header(words: ChatWords.earlier(earlier), open: false))
+        }
+        if run.recent == 0 { return .folded(words: ChatWords.run(run, counts: counts())) }
+        return .failed
+    }
+
+    /// While a run is under way, how many of its newest steps show: the
+    /// shared fold's own number.
+    static let liveSteps: UInt32 = 3
+}
+
+extension EnvironmentValues {
+    /// The step drawn is a failure its turn left unfixed, kept in view by a
+    /// folded run: its mark and verb take the removed ink.
+    @Entry var unresolvedFailure = false
 }

@@ -32,9 +32,10 @@ pub use composer::{
     queue_rows, refused_prompts, sends_to_feed, sign_in, switched_away, waiting,
 };
 pub use fleet::{
-    ActivityLine, AskSubject, AskSummary, ExitCause, FamilyHeader, FleetCard, FleetRow,
-    FleetSection, FleetView, LoudMember, Offline, Reach, SecondLine, SectionKind, SessionLine,
-    StuckReason, family_header, fleet_card, fleet_view, reach, session_line,
+    ActivityLine, AskSubject, AskSummary, ExitCause, FamilyHeader, FleetCard, FleetFilter,
+    FleetOnly, FleetRow, FleetSection, FleetView, LoudMember, Offline, Reach, SecondLine,
+    SectionKind, SessionLine, StuckReason, family_header, fleet_card, fleet_view, kind_name,
+    matches, reach, session_line,
 };
 pub use form::{
     FieldProblem, FormField, FormFieldKind, FormProblem, FormValue, form_answer, form_fields,

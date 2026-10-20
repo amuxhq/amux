@@ -1544,20 +1544,24 @@ unsafe fn fleet_read<T: Serialize>(
 }
 
 /// Home's `FleetView`: its sections, expanded under the roots whose agent
-/// ids `expand` lists (a JSON array of byte arrays, or null).
+/// ids `expand` lists (a JSON array of byte arrays, or null), listing the
+/// agents `filter` keeps (a JSON `FleetFilter`, or null for every agent).
 ///
 /// # Safety
-/// `profile` is from `amux_profile_open`; `expand` is null or a
-/// NUL-terminated string.
+/// `profile` is from `amux_profile_open`; `expand` and `filter` are null or
+/// NUL-terminated strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_fleet_view(
     profile: *const AmuxProfile,
     expand: *const c_char,
+    filter: *const c_char,
 ) -> *mut c_char {
     // SAFETY: the caller's contract.
     let expand: Vec<Vec<u8>> = unsafe { parse(expand) }.unwrap_or_default();
     // SAFETY: the caller's contract.
-    unsafe { fleet_read(profile, |app| app.fleet_view(&expand)) }
+    let filter: ui_view::FleetFilter = unsafe { parse(filter) }.unwrap_or_default();
+    // SAFETY: the caller's contract.
+    unsafe { fleet_read(profile, |app| app.fleet_view(&expand, &filter)) }
 }
 
 /// One agent's `FleetCard`, or null JSON when it is not listed.

@@ -9914,6 +9914,10 @@ pub struct ProfileInfo {
     /// sign-out; empty when unbound. What tells two profiles' accounts apart.
     #[prost(string, tag = "12")]
     pub account_subject: ::prost::alloc::string::String,
+    /// Where the bound account's profile picture is, as its service said at
+    /// sign-in; empty when it has none or the profile is unbound.
+    #[prost(string, tag = "13")]
+    pub account_picture: ::prost::alloc::string::String,
 }
 impl ::prost::Name for ProfileInfo {
     const NAME: &'static str = "ProfileInfo";

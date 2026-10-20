@@ -19,7 +19,7 @@ final class EntitlementWatchTests: XCTestCase {
             ProfileView(
                 id: "p1", label: "ada", subject: "ada",
                 account: AccountView(
-                    binding: .signedIn, email: "ada@example.com", name: "Ada", relay: .off, pro: nil)),
+                    binding: .signedIn, email: "ada@example.com", name: "Ada", picture: "", relay: .off, pro: nil)),
         ])
         registry.entitlement(entitlement, for: ada)
         return registry

@@ -130,7 +130,7 @@ private func smoke() throws {
     }
     let via = (host["reach"] as? [String: Any])?["Online"] ?? "none"
     let names = try until("\(agent) in the fleet") { () -> [String]? in
-        let view = try read(amux_fleet_view(profile, nil)) as? [String: Any] ?? [:]
+        let view = try read(amux_fleet_view(profile, nil, nil)) as? [String: Any] ?? [:]
         let sections = view["sections"] as? [[String: Any]] ?? []
         let rows = sections.flatMap { $0["rows"] as? [[String: Any]] ?? [] }
         let names = rows.compactMap { ($0["card"] as? [String: Any])?["name"] as? String }

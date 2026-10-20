@@ -137,10 +137,10 @@ final class RouterTests: XCTestCase {
         let router = Router()
         XCTAssertEqual(router.tab, .agents)
 
-        router.open(.pairByCode(machine))
+        router.open(.host(machine))
 
         XCTAssertEqual(router.tab, .hosts)
-        XCTAssertEqual(router.path, [.pairByCode(machine)])
+        XCTAssertEqual(router.path, [.host(machine)])
         // The tab that was on show is where it was left.
         XCTAssertEqual(router.path(.agents), [])
     }
@@ -181,7 +181,7 @@ final class RouterTests: XCTestCase {
         let router = Router()
         let agent = agent()
         router.open(.conversation(agent))
-        router.open(.pairByCode(machine))
+        router.open(.host(machine))
 
         router.popToRoot()
 
@@ -234,10 +234,37 @@ final class RouterTests: XCTestCase {
         XCTAssertFalse(router.composing)
     }
 
+    /// A code is for a machine one account found; a link names its machine
+    /// and is taken up by whichever account signs in for it.
+    func testLeavingAnAccountEndsACodeButKeepsALink() {
+        let router = Router()
+        router.pairing = .code(machine)
+        router.leaveAccount()
+        XCTAssertNil(router.pairing)
+
+        let invitation = PairingInvitation(
+            host: machine, cloudURL: nil, addrs: [], secret: [1, 2, 3], payload: "{}")
+        router.pairing = .link(invitation)
+        router.leaveAccount()
+        XCTAssertEqual(router.pairing, .link(invitation))
+    }
+
+    /// Signing in and subscribing are pages of the tab beneath, so the
+    /// pairing sheet steps aside for them and comes back as it was.
+    func testThePairingSheetStepsAsideForSigningIn() {
+        let router = Router()
+        router.pairing = .code(machine)
+        XCTAssertTrue(router.showsPairing)
+        router.open(.signIn(router.tab))
+        XCTAssertFalse(router.showsPairing)
+        router.pop()
+        XCTAssertTrue(router.showsPairing)
+        XCTAssertEqual(router.pairing, .code(machine))
+    }
+
     func testEveryRouteBelongsToOneTab() {
         XCTAssertEqual(Route.conversation(agent()).tab, .agents)
         XCTAssertEqual(Route.changes(agent()).tab, .agents)
-        XCTAssertEqual(Route.pairByCode(machine).tab, .hosts)
         XCTAssertEqual(Route.host(HostId(UUID())).tab, .hosts)
         XCTAssertEqual(Route.signIn(.you).tab, .you)
     }

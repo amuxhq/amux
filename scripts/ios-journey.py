@@ -87,28 +87,26 @@ def reach_host(journey: PhoneJourney) -> list[str]:
     journey.wait_for(f"hosts.pair.{desk}", f"hosts.pair.{desk}")
     journey.screen("found-not-paired")
 
-    # Six digits the desk printed, typed on the phone's keypad, reach the
+    # Six digits the desk printed, typed on the phone's number pad, reach the
     # desk's own name and key before anything is trusted.
     pairing = journey.amux("desk", "pair")
     pin = printed_pin(pairing)
     journey.tap(f"hosts.pair.{desk}")
-    journey.wait_for("pin.code", "pin.key.0")
-    for digit in pin:
-        journey.tap(f"pin.key.{digit}")
+    journey.wait_for("pin.code")
+    journey.type("pin.code", pin)
     card = journey.wait_for("pair-confirm.trust", "pair-confirm.fingerprint")
     if card["pair-confirm.name"].get("value") != "desk":
         raise RuntimeError(f"the code reached {card['pair-confirm.name']!r}, not the desk")
     journey.screen("pair-confirm", volatile=("pair-confirm.fingerprint", "pair-confirm.expiry"))
     journey.tap("pair-confirm.trust")
+    # Trusting closes the sheet, with the desk already in the list.
     drawn = journey.wait(
-        lambda drawn: f"hosts.row.{desk}" in drawn and "pair-confirm.done" in drawn, "the desk paired"
+        lambda drawn: f"hosts.row.{desk}" in drawn and "pair-confirm" not in drawn, "the desk paired"
     )
     trusted_as(drawn, desk, "desk")
     control = negative_control(trusted_as, drawn, desk, "laptop")
     pairing.wait(timeout=30)
     journey.screen("paired")
-    journey.tap("pair-confirm.done")
-    journey.wait(lambda drawn: "pair-confirm.done" not in drawn and "tab.agents" in drawn, "the hosts tab again")
 
     # The desk's agent is in the fleet; the phone opens it, writes, and the
     # desk holds the prompt once and answers.
@@ -178,14 +176,11 @@ def pair_by_code(journey: PhoneJourney, host: str) -> None:
     pairing = journey.amux(host, "pair")
     pin = printed_pin(pairing)
     journey.tap(f"hosts.pair.{host_id}")
-    journey.wait_for("pin.key.0")
-    for digit in pin:
-        journey.tap(f"pin.key.{digit}")
+    journey.wait_for("pin.code")
+    journey.type("pin.code", pin)
     journey.wait_for("pair-confirm.trust")
     journey.tap("pair-confirm.trust")
-    journey.wait_for("pair-confirm.done")
-    journey.tap("pair-confirm.done")
-    journey.wait(lambda drawn: f"hosts.row.{host_id}" in drawn and "tab.agents" in drawn, f"{host} paired")
+    journey.wait(lambda drawn: f"hosts.row.{host_id}" in drawn and "pair-confirm" not in drawn, f"{host} paired")
     pairing.wait(timeout=30)
 
 
@@ -1520,9 +1515,8 @@ def purchase_restore(journey: PhoneJourney) -> list[str]:
     # invitation, still offered by the desk, pairs it through the relay.
     pair_by_link(journey, link)
     pairing.wait(timeout=30)
-    journey.wait_for("pair-confirm.done")
+    journey.wait(lambda drawn: "pair-confirm" not in drawn, "the pairing sheet closed")
     journey.screen("paired")
-    journey.tap("pair-confirm.done")
     journey.wait_for("tab.hosts")
     journey.tap("tab.hosts")
     trusted_as(journey.wait_for(f"hosts.row.{desk}"), desk, "desk")
@@ -1695,8 +1689,7 @@ def local_network(journey: PhoneJourney) -> list[str]:
         raise RuntimeError(f"the link reached {card['pair-confirm.name']!r}, not the desk")
     journey.screen("link-confirm", volatile=("pair-confirm.fingerprint", "pair-confirm.expiry"))
     journey.tap("pair-confirm.trust")
-    journey.wait_for("pair-confirm.done")
-    journey.tap("pair-confirm.done")
+    journey.wait(lambda drawn: "pair-confirm" not in drawn, "the pairing sheet closed")
     pairing.wait(timeout=30)
     trusted_as(journey.wait_for(f"hosts.row.{desk}"), desk, "desk")
     round_trip(journey, "desk-work", "Hello from the phone.", "The desk is reachable.")

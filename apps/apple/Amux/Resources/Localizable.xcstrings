@@ -10512,6 +10512,162 @@
           }
         }
       }
+    },
+    "Pair a Host" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair a Host"
+          }
+        }
+      }
+    },
+    "Pair %@" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair %@"
+          }
+        }
+      }
+    },
+    "Run %@ on the host to get one." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run %@ on the host to get one."
+          }
+        }
+      }
+    },
+    "Run %@ on %@ to get one." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run %@ on %@ to get one."
+          }
+        }
+      }
+    },
+    "That code didn’t work. Get a new one from the host." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That code didn’t work. Get a new one from the host."
+          }
+        }
+      }
+    },
+    "That code didn’t work. Get a new one from %@." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That code didn’t work. Get a new one from %@."
+          }
+        }
+      }
+    },
+    "The code expires %@ after %@ prints it." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The code expires %@ after %@ prints it."
+          }
+        }
+      }
+    },
+    "Its agents will be on this phone, and you can start new ones on it. This invitation expires %@." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its agents will be on this phone, and you can start new ones on it. This invitation expires %@."
+          }
+        }
+      }
+    },
+    "on this network" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "on this network"
+          }
+        }
+      }
+    },
+    "through the relay" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "through the relay"
+          }
+        }
+      }
+    },
+    "over SSH" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "over SSH"
+          }
+        }
+      }
+    },
+    "That invitation didn’t work" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That invitation didn’t work"
+          }
+        }
+      }
+    },
+    "Get a new one from the host." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get a new one from the host."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -221,7 +221,16 @@ when it is away or offline, what that means for its agents; its platform,
 version, providers and addresses; that its last dial failed while it is
 offline (in words, not the dial's raw error); and its key's fingerprint in
 full. A host that no longer trusts this phone offers Pair Again, which opens
-pairing with that host. Revoking is the page's last row and asks first,
+pairing with that host.
+
+Pairing is a sheet raised over whichever tab asked for it. By code, it takes
+the six digits `amux pair` printed in the system's number pad (a code pasted
+as "418 207" fills all six) and tries them once the sixth lands; by link, it
+opens straight onto checking the invitation. Either way the machine's name
+and how it would be reached are shown before anything is trusted, with its
+key's fingerprint underneath, and the sheet closes itself once the machine
+is trusted. Signing in or subscribing from it opens on the tab beneath, and
+the sheet comes back with its pairing where it was when that is put away. Revoking is the page's last row and asks first,
 saying the phone stops reaching the machine and only pairing again brings it
 back. This phone's own name and fingerprint are in Settings, under This
 phone. Every route the shell can push has a built page; `RoutePagesTests`

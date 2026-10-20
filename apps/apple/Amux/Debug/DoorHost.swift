@@ -274,7 +274,7 @@ final class DoorHost {
             composition.handle(.subscribe)
         case "pin":
             guard let id = host?.id else { return .error("no host named \(subject ?? "")") }
-            router.open(.pairByCode(id))
+            router.pairing = .code(id)
         case "conversation":
             guard let agent else { return .error("no agent named \(subject ?? "")") }
             router.open(.conversation(agent.id))
@@ -605,8 +605,12 @@ final class DoorHost {
         let leaves = ([window] + DoorWindow.others).flatMap(VisibleTree.elements(of:))
             .filter { !named.contains($0.identifier) }
         return .state(VisibleState(
-            screen: composition.map { $0.router.composing ? "new-agent" : $0.router.top?.name ?? $0.router.tab.rawValue }
-                ?? "none",
+            screen: composition.map { shown in
+                let router = shown.router
+                if router.composing { return "new-agent" }
+                if router.showsPairing, let pairing = router.pairing { return pairing.name }
+                return router.top?.name ?? router.tab.rawValue
+            } ?? "none",
             typeSize: typeSize.doorName,
             voiceOver: UIAccessibility.isVoiceOverRunning,
             elements: declared + leaves,

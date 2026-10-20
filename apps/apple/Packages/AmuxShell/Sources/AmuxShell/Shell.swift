@@ -195,6 +195,17 @@ public struct Shell: View {
         .sheet(isPresented: $router.composing) {
             NewAgentPage(router: self.router, stores: stores)
         }
+        // Pairing is a short task with an end, so it is raised the same way.
+        // Putting it away by hand ends it; stepping aside for a sign-in or a
+        // subscription does not.
+        .sheet(isPresented: Binding(
+            get: { router.showsPairing },
+            set: { shown in if !shown, router.showsPairing { router.pairing = nil } }
+        )) {
+            if let pairing = router.pairing {
+                PairingSheet(pairing: pairing, router: router, stores: stores, actions: actions)
+            }
+        }
         .tint(design.accentColor)
         .reported("shell", value: router.tab.rawValue)
         .simultaneousGesture(backGesture)
@@ -245,11 +256,6 @@ public struct Shell: View {
             ChatPage(agent: agent, router: router, stores: stores)
         case .changes(let agent):
             ChangesPage(agent: agent, router: router, stores: stores)
-        case .pairByCode(let host):
-            PairByCodePage(host: host, router: router, stores: stores, actions: actions)
-        case .pairConfirmation(let invitation):
-            PairConfirmationPage(
-                invitation: invitation, router: router, stores: stores, actions: actions)
         case .signIn(let from):
             SignInPage(from: from, router: router, model: signIn, actions: actions)
         case .paywall(let from):
@@ -264,7 +270,7 @@ public struct Shell: View {
                     stores.revoke(host)
                     router.pop()
                 case .pairAgain(let host):
-                    router.open(.pairByCode(host))
+                    router.pairing = .code(host)
                 }
             }
         }
@@ -510,12 +516,7 @@ private struct AgentsTab: View {
             case .signInAgain(let id): actions(.signInAgain(id))
             case .subscribe: actions(.subscribe)
             case .openSettings: router.select(.you)
-            // Pairing lives under Hosts wherever it is started from: the page
-            // it opens is that tab's, and going back from it belongs there
-            // rather than on a list of agents that has none.
-            case .pair(let host):
-                router.select(.hosts)
-                router.open(.pairByCode(host))
+            case .pair(let host): router.pairing = .code(host)
             // The one place the list is allowed to regroup. Data arriving
             // never reorders what a thumb is already travelling towards.
             case .refresh: stores.fleet.refreshOrder(now: stores.now())
@@ -585,7 +586,7 @@ private struct HostsTabRoot: View {
         HostsTab(model: stores.hosts) { action in
             switch action {
             case .open(let host): router.open(.host(host))
-            case .pair(let host): router.open(.pairByCode(host))
+            case .pair(let host): router.pairing = .code(host)
             case .newAgent: router.composing = true
             // Revoking goes nowhere: the list it happens on is the list it
             // changes, and the machine leaves it when the runtime says so.
@@ -643,6 +644,39 @@ private struct NewAgentPage: View {
     }
 }
 
+/// Pairing, raised as a sheet: a code typed for one machine, or a link. It
+/// closes itself once the machine is trusted, with the machine already in
+/// the Hosts list and its agents on Agents, as a new contact lands in a list.
+private struct PairingSheet: View {
+    @Environment(\.design) private var design
+    let pairing: Pairing
+    let router: Router
+    let stores: StoreBundle
+    let actions: @MainActor (ShellAction) -> Void
+
+    var body: some View {
+        NavigationStack {
+            switch pairing {
+            case .code(let host):
+                PairByCodePage(host: host, router: router, stores: stores, actions: actions)
+            case .link(let invitation):
+                PairConfirmationPage(
+                    invitation: invitation, router: router, stores: stores, actions: actions)
+            }
+        }
+        .tint(design.accentColor)
+        .sensoryFeedback(.success, trigger: trusted)
+        .onChange(of: trusted) { _, trusted in
+            if trusted { router.pairing = nil }
+        }
+    }
+
+    private var trusted: Bool {
+        if case .trusted = stores.pairing.phase { return true }
+        return false
+    }
+}
+
 /// Typing a machine's six-digit code, and then deciding about the machine that
 /// answered it.
 ///
@@ -656,8 +690,7 @@ private struct NewAgentPage: View {
 /// machine made it — so the digits are never the end of it: what the machine
 /// said its name and its key are has to be read and agreed to before any trust
 /// is written. Keeping both halves here means the person who typed the code
-/// stays where they typed it, and going back from either is going back to
-/// Hosts.
+/// stays where they typed it, and closing either closes the sheet.
 private struct PairByCodePage: View {
     let host: HostId
     let router: Router
@@ -668,7 +701,6 @@ private struct PairByCodePage: View {
 
     var body: some View {
         page
-            .toolbar(.hidden, for: .navigationBar)
             .onAppear { stores.pairing.open(machine: stores.hosts.known(host)) }
     }
 
@@ -690,7 +722,7 @@ private struct PairByCodePage: View {
             // authenticates, and an account is not what a typed code needs.
             case .confirm, .abandon, .signIn: break
             case .subscribe: actions(.subscribe)
-            case .cancel: router.pop()
+            case .cancel: router.pairing = nil
             }
         }
     }
@@ -705,7 +737,7 @@ private struct PairByCodePage: View {
             // empty keypad, because the next thing somebody does after
             // refusing a machine is try the code for the right one.
             case .abandon(let peer): stores.abandonPairing(peer)
-            case .cancel: router.pop()
+            case .cancel: router.pairing = nil
             case .digits, .signIn, .subscribe: break
             }
         }
@@ -732,7 +764,6 @@ private struct PairConfirmationPage: View {
 
     var body: some View {
         page
-            .toolbar(.hidden, for: .navigationBar)
             .onAppear { ask() }
             .onChange(of: stores.account) { _, _ in ask() }
             .onChange(of: stores.fleet.relay) { _, _ in ask() }
@@ -751,7 +782,7 @@ private struct PairConfirmationPage: View {
             PairNeedsAnAccount { action in
                 switch action {
                 case .signIn: actions(.signIn)
-                case .cancel: router.pop()
+                case .cancel: router.pairing = nil
                 case .confirm, .abandon, .digits, .subscribe: break
                 }
             }
@@ -775,8 +806,8 @@ private struct PairConfirmationPage: View {
             // holding it open until it expires.
             case .abandon(let peer):
                 stores.abandonPairing(peer)
-                router.pop()
-            case .cancel: router.pop()
+                router.pairing = nil
+            case .cancel: router.pairing = nil
             case .digits, .signIn: break
             case .subscribe: actions(.subscribe)
             }

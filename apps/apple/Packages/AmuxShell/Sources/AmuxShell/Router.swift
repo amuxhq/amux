@@ -67,6 +67,20 @@ public final class Router {
     /// it away leaves everything beneath it where it was.
     public var composing = false { didSet { arrived?() } }
 
+    /// The pairing up, if one is: a sheet with an end, like New Agent.
+    public var pairing: Pairing? { didSet { arrived?() } }
+
+    /// Whether the pairing sheet is on screen. Signing in and subscribing are
+    /// pages of the tab beneath, so the sheet steps aside while one is open
+    /// and comes back, with its pairing where it was, when it is put away.
+    public var showsPairing: Bool {
+        guard pairing != nil else { return false }
+        switch top {
+        case .signIn, .paywall: return false
+        default: return true
+        }
+    }
+
     /// A link that is not navigation, kept until whatever it answers comes
     /// for it. A sign-in callback can arrive before the sign-in that started
     /// it is listening — during a cold start the system hands the link over
@@ -148,8 +162,13 @@ public final class Router {
     /// in is about the account arriving and the list of accounts about none,
     /// so those stay.
     public func leaveAccount() {
-        // New Agent offers one account's machines.
+        // New Agent offers one account's machines, and a code is for a
+        // machine one account found. A link names its machine itself and
+        // pairs it into whichever account is on screen, so it stays: signing
+        // in is how an invitation for a machine only the relay can reach is
+        // taken up.
         composing = false
+        if case .code = pairing { pairing = nil }
         for tab in Tab.allCases {
             setPath(path(tab).filter(\.outlivesAccount), for: tab)
         }
@@ -191,7 +210,7 @@ public final class Router {
         guard let link = DeepLink(url) else { return nil }
         switch link {
         case .pair(let invitation):
-            open(.pairConfirmation(invitation))
+            pairing = .link(invitation)
         case .signInCallback:
             held = link
         }

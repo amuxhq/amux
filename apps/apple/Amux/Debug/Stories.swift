@@ -305,6 +305,17 @@ extension ScriptedChat: OpenChat {
         .environment(\.design, Design.app)
 }
 
+#Preview("Pair · code") { StoryScreen("pair.code-empty") }
+#Preview("Pair · typing") { StoryScreen("pair.code-typing") }
+#Preview("Pair · checking") { StoryScreen("pair.code-checking") }
+#Preview("Pair · code refused") { StoryScreen("pair.code-refused") }
+#Preview("Pair · needs a subscription") { StoryScreen("pair.code-subscribe") }
+#Preview("Pair · confirm") { StoryScreen("pair.confirm") }
+#Preview("Pair · paired") { StoryScreen("pair.trusted") }
+#Preview("Pair · link checking") { StoryScreen("pair.link-checking") }
+#Preview("Pair · link refused") { StoryScreen("pair.link-refused") }
+#Preview("Pair · needs an account") { StoryScreen("pair.needs-account") }
+
 #Preview("Asks") { StoryGallery(.asks) }
 #Preview("Chat states") { StoryGallery(.chat) }
 #Preview("Composer") { StoryGallery(.composer) }
@@ -324,7 +335,7 @@ struct StoryScreen: View {
             ZStack {
                 Ground()
                 example.build()
-                    .padding([.chat, .fleet, .hosts].contains(example.family) ? 0 : 18)
+                    .padding([.chat, .fleet, .hosts, .pairing].contains(example.family) ? 0 : 18)
             }
             .environment(\.design, Design.app)
             .environment(\.dynamicTypeSize, example.dynamicTypeSize)

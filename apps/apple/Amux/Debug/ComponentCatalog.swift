@@ -20,6 +20,7 @@ struct ComponentExample: Identifiable {
         case review = "Review"
         case fleet = "Fleet"
         case hosts = "Hosts"
+        case pairing = "Pairing"
     }
 
     let id: String
@@ -60,7 +61,7 @@ struct ComponentExample: Identifiable {
 /// row kind, every ask card, the composer's states and the chat's own.
 @MainActor
 enum ComponentCatalog {
-    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet + hosts
+    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet + hosts + pairing
 
     static func example(id: String) -> ComponentExample? {
         examples.first { $0.id == id }
@@ -1245,7 +1246,7 @@ struct ComponentExampleView: View {
         ZStack {
             Ground()
             example.build()
-                .padding([.chat, .fleet, .hosts].contains(example.family) ? 0 : 18)
+                .padding([.chat, .fleet, .hosts, .pairing].contains(example.family) ? 0 : 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(width: example.canvas.width, height: example.canvas.height)
@@ -1481,6 +1482,89 @@ extension ComponentCatalog {
             ) { _ in }
         }
     }
+}
+
+extension ComponentCatalog {
+    // MARK: - Pairing
+
+    /// Pairing with the laptop found on this network by its six digits, from
+    /// an empty keypad to the machine's name and key and the pairing done; a
+    /// code that did not work, and one that reached a machine only the relay
+    /// can carry; then an invitation link waiting, refused, and naming a
+    /// machine that needs an account.
+    fileprivate static let pairing: [ComponentExample] = [
+        code("empty") { _ in },
+        code("typing") { $0.enter("418") },
+        code("checking") { store in
+            store.enter("418207")
+            _ = store.checking()
+        },
+        code("refused") { store in
+            store.enter("418207")
+            store.reached(.failure(RuntimeFailure("wrong secret")), attempt: store.checking())
+        },
+        code("subscribe", machine: CatalogFixtures.relayLaptop) { store in
+            store.enter("418207")
+            store.reached(.failure(RuntimeFailure("relay refused")), attempt: store.checking(), relayOnly: true)
+        },
+        confirm("confirm") { store in
+            store.enter("418207")
+            store.reached(.success(CatalogFixtures.pendingLaptop), attempt: store.checking())
+        },
+        confirm("trusted") { store in
+            store.enter("418207")
+            let attempt = store.checking()
+            store.reached(.success(CatalogFixtures.pendingLaptop), attempt: attempt)
+            store.paired(.success(CatalogFixtures.pairedLaptop), attempt: attempt)
+        },
+        confirm("link-checking", machine: nil) { _ = $0.checking() },
+        confirm("link-refused", machine: nil) { store in
+            store.reached(.failure(RuntimeFailure("expired")), attempt: store.checking())
+        },
+        ComponentExample(id: "pair.needs-account", family: .pairing, canvas: CGSize(width: 390, height: 844)) {
+            NavigationStack { PairNeedsAnAccount { _ in } }
+        },
+    ]
+
+    /// The keypad, as the hosts tab pushes it for one machine.
+    private static func code(
+        _ id: String, machine: HostView = CatalogFixtures.nearbyLaptop,
+        setUp: @escaping @MainActor (PairingStore) -> Void
+    ) -> ComponentExample {
+        ComponentExample(id: "pair.code-\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844)) {
+            let store = PairingStore(clock: { CatalogFixtures.now })
+            store.open(machine: machine)
+            setUp(store)
+            return NavigationStack { PairByCode(model: store) { _ in } }
+        }
+    }
+
+    /// The machine's answer, after a code or from a link.
+    private static func confirm(
+        _ id: String, machine: HostView? = CatalogFixtures.nearbyLaptop,
+        setUp: @escaping @MainActor (PairingStore) -> Void
+    ) -> ComponentExample {
+        ComponentExample(id: "pair.\(id)", family: .pairing, canvas: CGSize(width: 390, height: 844)) {
+            let store = PairingStore(clock: { CatalogFixtures.now })
+            store.open(machine: machine)
+            setUp(store)
+            return NavigationStack { PairConfirmation(model: store) { _ in } }
+        }
+    }
+}
+
+extension CatalogFixtures {
+    static let nearbyLaptop = machine(5, "laptop", platform: "MacBook Air", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: [])
+    static let relayLaptop = machine(5, "laptop", platform: "MacBook Air", reach: .online(.relay), trusted: false, candidate: true, version: nil, providers: [])
+    static let pendingLaptop = PendingPair(
+        token: [1, 2, 3], hostId: nearbyLaptop.hostId, name: "laptop", fingerprint: fingerprint(5),
+        expiresAtMs: Int64((now.timeIntervalSince1970 + 4 * 60 + 12) * 1000), via: .direct)
+    /// The runtime's answer to a confirmed pairing, which only it makes.
+    static let pairedLaptop = try! JSONDecoder().decode(
+        Paired.self,
+        from: JSONSerialization.data(withJSONObject: [
+            "host_id": nearbyLaptop.hostId.map(Int.init), "name": nearbyLaptop.name,
+        ]))
 }
 
 extension CatalogFixtures {

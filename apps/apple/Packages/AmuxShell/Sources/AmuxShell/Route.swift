@@ -35,14 +35,6 @@ public enum Route: Hashable, Sendable {
     case conversation(AgentKey)
     /// The changes one agent has made, opened from its conversation.
     case changes(AgentKey)
-    /// Typing the six-digit code one machine printed. It carries that machine,
-    /// because a code proves possession of one machine's offer and is
-    /// authenticated against it alone. There is no route without one: a
-    /// machine this phone has not found is paired by scanning its code.
-    case pairByCode(HostId)
-    /// A pairing invitation that arrived as a link, waiting to be confirmed or
-    /// abandoned. Arriving here pairs with nobody.
-    case pairConfirmation(PairingInvitation)
     case host(HostId)
     /// Signing in, pushed onto whichever stack asked for it. The Agents list
     /// and the settings sheet both offer it, so where it was opened from is a
@@ -58,7 +50,7 @@ public enum Route: Hashable, Sendable {
     public var tab: Tab {
         switch self {
         case .conversation, .changes: .agents
-        case .pairByCode, .pairConfirmation, .host: .hosts
+        case .host: .hosts
         case .signIn(let from), .paywall(let from): from
         }
     }
@@ -68,7 +60,7 @@ public enum Route: Hashable, Sendable {
     public var outlivesAccount: Bool {
         switch self {
         case .signIn: true
-        case .conversation, .changes, .pairByCode, .pairConfirmation, .host, .paywall:
+        case .conversation, .changes, .host, .paywall:
             false
         }
     }
@@ -79,11 +71,31 @@ public enum Route: Hashable, Sendable {
         switch self {
         case .conversation: "conversation"
         case .changes: "changes"
-        case .pairByCode: "pin"
-        case .pairConfirmation: "pair-confirm"
         case .host: "host"
         case .signIn: "sign-in"
         case .paywall: "paywall"
+        }
+    }
+}
+
+/// Pairing with one machine, raised as a sheet over whichever tab asked.
+public enum Pairing: Hashable, Sendable, Identifiable {
+    /// Typing the six-digit code one machine printed. It carries that machine,
+    /// because a code proves possession of one machine's offer and is
+    /// authenticated against it alone. There is no pairing by code without
+    /// one: a machine this phone has not found is paired by scanning its code.
+    case code(HostId)
+    /// A pairing invitation that arrived as a link, waiting to be confirmed or
+    /// abandoned. Arriving pairs with nobody.
+    case link(PairingInvitation)
+
+    public var id: Self { self }
+
+    /// What the sheet is called where a screen is named by a word.
+    public var name: String {
+        switch self {
+        case .code: "pin"
+        case .link: "pair-confirm"
         }
     }
 }

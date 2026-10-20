@@ -47,6 +47,55 @@ public struct PairingHint: View {
     }
 }
 
+/// The bar every pairing screen shares: what is being paired and how it is
+/// reached, and a way out. Pairing is a short task with an end, so it is a
+/// sheet over Hosts, as New Agent is, and closing it at any point writes no
+/// trust.
+struct PairingChrome: ViewModifier {
+    @Environment(\.reducesTransparency) private var reducesTransparency
+    let title: String
+    let subtitle: String?
+    let close: @MainActor () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(title)
+            .navigationSubtitle(subtitle ?? "")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    BarButton("xmark", label: String(localized: "Close"), identifier: "pair.close") { close() }
+                }
+                .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+            }
+    }
+}
+
+extension View {
+    func pairingChrome(
+        _ title: String, subtitle: String? = nil, close: @escaping @MainActor () -> Void
+    ) -> some View {
+        modifier(PairingChrome(title: title, subtitle: subtitle, close: close))
+    }
+}
+
+/// How this phone would reach the machine it is pairing with, for the bar
+/// under its name. Said because it is the difference between a code that
+/// works with no account at all and one carried across the relay: two
+/// machines of one name on two routes are otherwise one name.
+func pairingRoute(_ machine: HostView?) -> String? {
+    guard let machine else { return nil }
+    if machine.candidate && machine.reach != .online(.relay) {
+        return String(localized: "On this network")
+    }
+    switch machine.reach {
+    case .online(.direct): return String(localized: "On this network")
+    case .online(.relay): return String(localized: "Through the relay")
+    case .online(.ssh): return String(localized: "Over SSH")
+    case .online(.unspecified), .away, .offline: return nil
+    }
+}
+
 /// A pairing invitation for a machine this phone cannot see.
 ///
 /// An invitation carrying addresses is dialled on the network this phone is
@@ -63,57 +112,82 @@ public struct PairNeedsAnAccount: View {
     }
 
     public var body: some View {
-        ZStack {
-            Ground()
-            VStack(alignment: .leading, spacing: 0) {
-                Text("That host is not on this network")
-                    .designFont(.screenTitle, design)
-                    .foregroundStyle(design.ink.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 26)
-                    .identified(
-                        "pair-needs-account.title",
-                        value: "That host is not on this network")
-                Explain("""
-                    Its invitation names no address here, so it can only be reached through \
-                    the relay. Sign in and this phone can take it up.
-                    """)
-                    .padding(.top, 8)
-                Spacer(minLength: 22)
-                VStack(spacing: 10) {
-                    Button { actions(.signIn) } label: {
-                        ActionLabel("Sign In", kind: .primary, fill: true)
-                    }
-                    .buttonStyle(.amuxControl)
-                    .identified("pair-needs-account.signIn", label: "Sign In")
-                    Button { actions(.cancel) } label: {
-                        ActionLabel("Not Now", kind: .outline, fill: true)
-                    }
-                    .buttonStyle(.amuxControl)
-                    .identified("pair-needs-account.cancel", label: "Not Now")
-                }
-                Explain("The invitation is kept until then.")
-                    .padding(.top, 12)
-                    .padding(.bottom, 34)
+        PairingPanel(
+            title: String(localized: "That host is not on this network"),
+            detail: String(localized: "Its invitation names no address here, so it can only be reached through the relay. Sign in and this phone can take it up."),
+            identifier: "pair-needs-account.title"
+        ) {
+            Button { actions(.signIn) } label: {
+                ActionLabel("Sign In", kind: .primary, fill: true)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.horizontal, design.metrics.gutter)
+            .buttonStyle(.amuxControl)
+            .identified("pair-needs-account.signIn", label: "Sign In")
+            Button { actions(.cancel) } label: {
+                ActionLabel("Not Now", kind: .outline, fill: true)
+            }
+            .buttonStyle(.amuxControl)
+            .identified("pair-needs-account.cancel", label: "Not Now")
+            Explain(String(localized: "The invitation is kept until then."))
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .pairingChrome(String(localized: "Pair a Host")) { actions(.cancel) }
         .accessibilityElement(children: .contain)
         .identified("pair-needs-account", value: "not on this network")
     }
 }
 
+/// One pairing state as a heading, a sentence under it, and what there is to
+/// do at the foot of the sheet. A wait has no buttons and shows the breathing
+/// mark beside its heading.
+struct PairingPanel<Buttons: View>: View {
+    @Environment(\.design) private var design
+    let title: String
+    let detail: String?
+    var waiting = false
+    let identifier: String
+    @ViewBuilder let buttons: () -> Buttons
+
+    var body: some View {
+        ZStack {
+            Ground()
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    if waiting { StateMark(state: .working) }
+                    Text(title)
+                        .designFont(.screenTitle, design)
+                        .foregroundStyle(design.ink.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .identified(identifier, value: title)
+                }
+                if let detail {
+                    Text(detail)
+                        .designFont(.body, design)
+                        .foregroundStyle(design.inkMuted.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 8)
+                }
+                Spacer(minLength: 22)
+                VStack(spacing: 10) { buttons() }
+                    .padding(.bottom, 16)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, design.metrics.gutter)
+            .padding(.top, 16)
+        }
+    }
+}
+
 /// Adding a machine by the six-digit code it printed.
 ///
-/// The keypad is the app's own rather than the system's. A screen whose whole
-/// content is six digits has no text to edit, no selection and no other field
-/// to move to, and the system's number pad brings a keyboard's worth of
-/// behaviour — an accessory bar, a dictation key, a caret — for none of it. It
-/// also means the digits and the keys they came from are one picture, so the
-/// screen can be photographed and driven without a keyboard being up.
+/// The code goes into the system's number pad, held up for as long as there
+/// is a code to type: it is the screen every phone uses for a code, it
+/// pastes one copied on a Mac, and a hardware keyboard, VoiceOver and
+/// dictation all reach it. The six boxes are drawn over a field nobody sees,
+/// three and three as `amux pair` prints the code, and the code is tried the
+/// moment the sixth digit lands.
 public struct PairByCode: View {
     @Environment(\.design) private var design
+    @FocusState private var typing: Bool
     private let model: PairingStore
     private let actions: @MainActor (PairingAction) -> Void
 
@@ -126,16 +200,23 @@ public struct PairByCode: View {
         ZStack {
             Ground()
             VStack(alignment: .leading, spacing: 0) {
-                back
                 heading
-                boxes
-                caption
-                Spacer(minLength: 12)
-                Keypad(enabled: taking, type: type, backspace: backspace)
+                if model.phase == .needsSubscription {
+                    subscribe
+                } else {
+                    boxes
+                    caption
+                }
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.horizontal, design.metrics.gutter)
+            .padding(.top, 16)
         }
+        .pairingChrome(title, subtitle: pairingRoute(model.machine)) { actions(.cancel) }
+        // Up from the first frame, and down only when no code can help.
+        .task { typing = model.phase != .needsSubscription }
+        .onChange(of: model.phase) { _, phase in typing = phase != .needsSubscription }
         // A screen is a container of the things on it, not a name for all of
         // them. Without this the system spreads this identifier over every
         // element underneath — the title, the buttons, the rows — so
@@ -145,100 +226,92 @@ public struct PairByCode: View {
         .identified("pin", value: model.digits)
     }
 
-    /// Digits are only taken while nothing is with the machine. A code sent
-    /// twice is a code spent twice, and the machine counts attempts.
-    private var taking: Bool { model.taking }
-
-    private var back: some View {
-        HStack {
-            BackLink("Hosts", identifier: "pin.back") { actions(.cancel) }
-            Spacer()
-        }
-        .padding(.vertical, 8)
+    private var title: String {
+        guard let machine = model.machine else { return String(localized: "Pair a Host") }
+        return String(localized: "Pair \(machine.name)")
     }
 
     private var heading: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Enter the code")
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
                 .identified("pin.title", value: "Enter the code")
-            Text(instruction)
+            instruction
                 .designFont(.body, design)
                 .foregroundStyle(design.inkMuted.color)
                 .fixedSize(horizontal: false, vertical: true)
-                .identified("pin.instruction", value: instruction)
-            if let route {
-                Text(route)
-                    .designFont(.monoSmall, design)
-                    .foregroundStyle(design.inkFaint.color)
-                    .identified("pin.route", value: route)
-            }
+                .identified("pin.instruction", value: model.machine?.name ?? "")
         }
-        .padding(.top, 8)
-        .padding(.bottom, 22)
+        .padding(.bottom, 24)
     }
 
-    /// Which machine to run `amux pair` on.
-    ///
-    /// Named, where the reference said only "the host". A six-digit code proves
-    /// possession of one machine's offer and is authenticated against that
-    /// machine alone, so a person typing one into a phone that knows which is
-    /// owed the name — otherwise a code typed for the laptop and refused by the
-    /// desktop looks like a wrong code.
-    private var instruction: String {
-        guard let machine = model.machine else { return "Run amux pair on the host to get one." }
-        return "Run amux pair on \(machine.name) to get one."
-    }
-
-    /// Where the machine this code is for was found.
-    ///
-    /// Said because it is the difference between a code that will work with no
-    /// account at all and one that is being carried across the relay: two
-    /// machines with the same name on two different routes are otherwise one
-    /// name on this screen. Nothing where no machine has been pointed at,
-    /// which is a code typed before anything was found.
-    private var route: String? {
-        guard let machine = model.machine else { return nil }
-        if machine.candidate { return "On this network" }
-        switch machine.reach {
-        case .online(.direct): return "On this network"
-        case .online(.relay): return "Through the relay"
-        case .online(.ssh): return "Over SSH"
-        case .online(.unspecified), .away, .offline: return nil
-        }
+    /// Which machine to run `amux pair` on, by name: a code proves one
+    /// machine's offer and is checked against that machine alone, so a code
+    /// typed for the laptop and refused by the desktop would otherwise read
+    /// as a wrong code.
+    private var instruction: Text {
+        let command = Text(verbatim: "amux pair").font(design.font(.monoSmall))
+        guard let machine = model.machine else { return Text("Run \(command) on the host to get one.") }
+        return Text("Run \(command) on \(machine.name) to get one.")
     }
 
     private var boxes: some View {
         HStack(spacing: 8) {
-            ForEach(0..<PairingStore.codeLength, id: \.self) { index in
-                box(index)
-            }
+            group(0..<3)
+            Spacer(minLength: 10).frame(maxWidth: 18)
+            group(3..<6)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Code")
-        .accessibilityValue(spokenDigits)
-        .identified("pin.code", label: "Code", value: model.digits)
+        // The field under the boxes takes the code. It is drawn clear but
+        // kept the boxes' size, so a tap anywhere on them brings the pad
+        // back, and its text is the store's digits: anything typed or pasted
+        // is filtered down to six digits before it is shown.
+        .background {
+            TextField("", text: Binding(
+                get: { model.digits },
+                set: { typed in
+                    // While a code is with the machine nothing more is
+                    // taken: a code sent twice is a code spent twice.
+                    if model.taking { actions(.digits(typed)) }
+                }))
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+                .focused($typing)
+                .foregroundStyle(.clear)
+                .tint(.clear)
+                .accessibilityLabel(String(localized: "Code"))
+                .accessibilityValue(spokenDigits)
+                .identified("pin.code", label: String(localized: "Code"), value: model.digits)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { typing = true }
+    }
+
+    private func group(_ indices: Range<Int>) -> some View {
+        HStack(spacing: 8) {
+            ForEach(indices, id: \.self) { box($0) }
+        }
+        .accessibilityHidden(true)
     }
 
     private func box(_ index: Int) -> some View {
-        let digit = model.digits.count > index
-            ? String(Array(model.digits)[index]) : ""
-        // The box the next digit lands in is outlined. Nothing blinks: a caret
-        // would be a promise that a keyboard is coming, and none is.
-        let next = index == model.digits.count && taking
+        let digits = Array(model.digits)
+        let digit = digits.count > index ? String(digits[index]) : ""
+        // The box the next digit lands in is outlined in the accent while the
+        // pad is up; the field's own caret is hidden.
+        let next = index == digits.count && model.taking && typing
+        let shape = RoundedRectangle(cornerRadius: design.metrics.controlRadius, style: .continuous)
         return Text(digit)
-            .designFont(.mono, design)
+            .font(.system(size: 28, weight: .medium))
+            .monospacedDigit()
             .foregroundStyle(design.ink.color)
             .frame(maxWidth: .infinity)
             .frame(height: 58)
             .background {
-                let shape = RoundedRectangle(
-                    cornerRadius: design.metrics.controlRadius, style: .continuous)
                 ZStack {
                     shape.fill(design.raised.color)
                     shape.strokeBorder(
-                        next ? design.ink.color : design.hairline.color,
+                        next ? design.accent.color : design.hairline.color,
                         lineWidth: next ? 1.5 : 1)
                 }
             }
@@ -247,126 +320,71 @@ public struct PairByCode: View {
     /// The code read out as digits rather than as a number: "419" is four one
     /// nine, not four hundred and nineteen.
     private var spokenDigits: String {
-        model.digits.isEmpty ? "empty" : model.digits.map(String.init).joined(separator: " ")
+        model.digits.isEmpty
+            ? String(localized: "empty") : model.digits.map(String.init).joined(separator: " ")
     }
 
-    /// Under the boxes: when the offer runs out, or the one thing said about a
-    /// code that did not work.
+    /// Under the boxes: when the offer runs out, that the code is with the
+    /// machine, or the one thing said about a code that did not work.
     @ViewBuilder
     private var caption: some View {
-        switch model.phase {
-        // The code was right. What is missing is the route: the machine is on
-        // the far side of the relay and this account may not open a tunnel to
-        // it, which no number typed here can change. So the offer stands where
-        // the expiry would, and the keypad above it goes quiet.
-        case .needsSubscription:
+        Group {
+            switch model.phase {
+            case .refused:
+                // One sentence for a mistyped code, an expired code, a code
+                // already used and a code nobody issued. Telling them apart
+                // is exactly what somebody guessing codes would want, so the
+                // screen does not, and the digits have already gone.
+                Text(refused)
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.removed.color)
+                    .identified("pin.refused", value: refused)
+            case .checking:
+                HStack(spacing: 8) {
+                    StateMark(state: .working)
+                    Text("Checking…")
+                        .designFont(.detail, design)
+                        .foregroundStyle(design.inkMuted.color)
+                }
+                .identified("pin.checking", value: "Checking…")
+            default:
+                Text(expiry)
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.inkFaint.color)
+                    .identified("pin.expiry", value: PairingStore.offerWindow)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, 12)
+    }
+
+    private var refused: String {
+        guard let machine = model.machine else {
+            return String(localized: "That code didn’t work. Get a new one from the host.")
+        }
+        return String(localized: "That code didn’t work. Get a new one from \(machine.name).")
+    }
+
+    private var expiry: String {
+        let host = model.machine?.name ?? String(localized: "the host")
+        return String(localized: "The code expires \(PairingStore.offerWindow) after \(host) prints it.")
+    }
+
+    /// The code was right and the route is missing: the machine is on the far
+    /// side of the relay and this account may not open a tunnel to it, which
+    /// no number typed here can change. So the pad goes away and the offer
+    /// stands in its place.
+    private var subscribe: some View {
+        VStack(alignment: .leading, spacing: 14) {
             SubscribeCallToAction(
                 host: model.machine?.name, identifier: "pin.subscribe"
             ) { actions(.subscribe) }
-                .padding(.top, 14)
-        case .refused:
-            // One sentence for a mistyped code, an expired code, a code
-            // already used and a code nobody issued. Distinguishing them is
-            // exactly what somebody guessing codes would want, so the screen
-            // does not, and the digits have already gone.
-            HStack(spacing: 8) {
-                Text("That code did not work. Get a new code from the host.")
-                    .designFont(.monoSmall, design)
-                    .foregroundStyle(design.ink.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
+            Button { actions(.cancel) } label: {
+                ActionLabel("Not Now", kind: .outline, fill: true)
             }
-            .padding(.top, 10)
-            .identified(
-                "pin.refused",
-                value: "That code did not work. Get a new code from the host.")
-        case .checking:
-            Text("Checking…")
-                .designFont(.monoSmall, design)
-                .foregroundStyle(design.inkMuted.color)
-                .padding(.top, 10)
-                .identified("pin.checking", value: "Checking…")
-        default:
-            Text("The code expires \(PairingStore.offerWindow) after the host prints it.")
-                .designFont(.monoSmall, design)
-                .foregroundStyle(design.inkFaint.color)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 10)
-                .identified("pin.expiry", value: PairingStore.offerWindow)
+            .buttonStyle(.amuxControl)
+            .identified("pin.notNow", label: "Not Now")
         }
-    }
-
-    private func type(_ digit: Int) {
-        guard taking, model.digits.count < PairingStore.codeLength else { return }
-        actions(.digits(model.digits + String(digit)))
-    }
-
-    private func backspace() {
-        guard taking, !model.digits.isEmpty else { return }
-        actions(.digits(String(model.digits.dropLast())))
-    }
-}
-
-/// Ten keys and a delete, in the arrangement every phone puts digits in.
-private struct Keypad: View {
-    @Environment(\.design) private var design
-    let enabled: Bool
-    let type: (Int) -> Void
-    let backspace: () -> Void
-
-    // The keys are one piece of glass with holes in it, not ten pieces sitting
-    // near each other. Ten points apart, each plate's shadow falls across its
-    // neighbours, and when every plate is its own surface the render server
-    // composites those overlaps in an order it does not repeat: one key came
-    // back with a heavier halo than the run before, over the whole ring around
-    // it, on a screen where nothing had changed. Declaring the group is what
-    // settles it, and it is also what the keypad was drawn as — the design's
-    // own picture has one even shadow under each key rather than the doubled
-    // edge that stacking produced. No spacing, because these keys never join.
-    var body: some View {
-        GlassEffectContainer(spacing: 0) {
-            VStack(spacing: 10) {
-                ForEach([[1, 2, 3], [4, 5, 6], [7, 8, 9]], id: \.self) { row in
-                    HStack(spacing: 10) { ForEach(row, id: \.self) { key($0) } }
-                }
-                HStack(spacing: 10) {
-                    Color.clear.frame(maxWidth: .infinity).frame(height: 52)
-                    key(0)
-                    Button(action: backspace) {
-                        Image(systemName: "delete.backward")
-                            .font(.system(size: 22, weight: .regular))
-                            .foregroundStyle(enabled ? design.ink.color : design.inkFaint.color)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.amuxControl)
-                    .disabled(!enabled)
-                    .accessibilityLabel("Delete")
-                    .identified("pin.delete", label: "Delete", enabled: enabled)
-                }
-            }
-        }
-        .padding(.bottom, 12)
-    }
-
-    // The material goes on the key rather than behind it. Put behind, as a
-    // background of something clear, it is a surface of its own that the group
-    // above is free to draw after the digit, and the digit disappears under
-    // its own key.
-    private func key(_ digit: Int) -> some View {
-        Button { type(digit) } label: {
-            Text("\(digit)")
-                .font(.system(size: 27, weight: .regular))
-                .foregroundStyle(enabled ? design.ink.color : design.inkFaint.color)
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
-                .frosted(RoundedRectangle(cornerRadius: 14, style: .continuous), as: .glass)
-        }
-        .buttonStyle(.amuxControl)
-        .disabled(!enabled)
-        .accessibilityLabel("\(digit)")
-        .identified("pin.key.\(digit)", label: "\(digit)", enabled: enabled)
     }
 }
 
@@ -375,9 +393,10 @@ private struct Keypad: View {
 /// This is the whole point of pairing being two acts rather than one. Reaching
 /// this screen means a secret authenticated — over a link or over a typed code
 /// — and it means nothing else: no trust has been written on this phone or on
-/// the machine, and leaving now writes none. What is on offer is the machine's
-/// own name and the fingerprint of the key this phone would be trusting, so the
-/// person can check both against what the machine itself printed.
+/// the machine, and leaving now writes none. The code or the link is what
+/// proves this is the machine that started pairing; the screen names it and
+/// how it would be reached, so the person agrees to the machine they meant,
+/// and keeps its key underneath for anybody who wants to compare it.
 public struct PairConfirmation: View {
     @Environment(\.design) private var design
     private let model: PairingStore
@@ -389,20 +408,16 @@ public struct PairConfirmation: View {
     }
 
     public var body: some View {
-        ZStack {
-            Ground()
-            VStack(alignment: .leading, spacing: 0) {
-                switch model.phase {
-                case .confirming(let peer): offer(peer)
-                case .trusted(let name): settled(name)
-                case .refused: refused
-                case .needsSubscription: needsSubscription
-                default: checking
-                }
+        Group {
+            switch model.phase {
+            case .confirming(let peer): offer(peer)
+            case .trusted(let name): settled(name)
+            case .refused: refused
+            case .needsSubscription: needsSubscription
+            default: checking
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.horizontal, design.metrics.gutter)
         }
+        .pairingChrome(title, subtitle: subtitle) { actions(.cancel) }
         // A screen is a container of the things on it, not a name for all of
         // them. Without this the system spreads this identifier over every
         // element underneath — the title, the buttons, the rows — so
@@ -410,6 +425,33 @@ public struct PairConfirmation: View {
         // VoiceOver and for anything driving the app alike.
         .accessibilityElement(children: .contain)
         .identified("pair-confirm", value: state)
+    }
+
+    private var name: String? {
+        switch model.phase {
+        case .confirming(let peer): peer.name
+        case .trusted(let name): name
+        default: model.machine?.name
+        }
+    }
+
+    private var title: String {
+        guard let name else { return String(localized: "Pair a Host") }
+        return String(localized: "Pair \(name)")
+    }
+
+    private var subtitle: String? {
+        if case .confirming(let peer) = model.phase { return Self.route(peer.via) }
+        return pairingRoute(model.machine)
+    }
+
+    static func route(_ via: RouteKind) -> String? {
+        switch via {
+        case .direct: String(localized: "On this network")
+        case .relay: String(localized: "Through the relay")
+        case .ssh: String(localized: "Over SSH")
+        case .unspecified: nil
+        }
     }
 
     private var state: String {
@@ -426,141 +468,138 @@ public struct PairConfirmation: View {
     /// relay. Nothing about the invitation can be retried into working, so the
     /// screen offers the one thing that would.
     private var needsSubscription: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SubscribeCallToAction(
-                host: nil, identifier: "pair-confirm.subscribe"
-            ) { actions(.subscribe) }
-            Button { actions(.cancel) } label: {
-                ActionLabel("Not Now", kind: .outline, fill: true)
-            }
-            .buttonStyle(.amuxControl)
-            .identified("pair-confirm.notNow", label: "Not Now")
-        }
-        .padding(.top, 26)
-    }
-
-    private func offer(_ peer: PendingPair) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Pair with \(peer.name)?")
-                .designFont(.screenTitle, design)
-                .foregroundStyle(design.ink.color)
-                .padding(.top, 26)
-                .identified("pair-confirm.title", value: "Pair with \(peer.name)?")
-            Text("Pair only with a machine you started pairing on. This is its key.")
-                .designFont(.body, design)
-                .foregroundStyle(design.inkMuted.color)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 6)
-                .padding(.bottom, 22)
-            VStack(alignment: .leading, spacing: 12) {
-                field("Host", peer.name, mono: false, id: "name")
-                // The fingerprint is the reason this screen exists: it is what
-                // the person compares against the machine's own screen, and it
-                // is drawn whole rather than shortened, because a fingerprint
-                // with its middle taken out is not one you can check.
-                field(
-                "Fingerprint", Fingerprint.grouped(peer.fingerprint), mono: true,
-                id: "fingerprint")
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: design.metrics.cardRadius, style: .continuous)
-                    .fill(design.raised.color)
-            }
-            Explain("This invitation expires \(expiry(peer)).")
-                .padding(.top, 12)
-                .identified("pair-confirm.expiry", value: expiry(peer))
-            Spacer(minLength: 22)
-            VStack(spacing: 10) {
-                Button { actions(.confirm(peer)) } label: {
-                    ActionLabel("Pair", kind: .primary, fill: true)
-                }
-                .buttonStyle(.amuxControl)
-                .identified("pair-confirm.trust", label: "Pair")
-                Button { actions(.abandon(peer)) } label: {
+        ZStack {
+            Ground()
+            VStack(alignment: .leading, spacing: 14) {
+                SubscribeCallToAction(
+                    host: name, identifier: "pair-confirm.subscribe"
+                ) { actions(.subscribe) }
+                Button { actions(.cancel) } label: {
                     ActionLabel("Not Now", kind: .outline, fill: true)
                 }
                 .buttonStyle(.amuxControl)
-                .identified("pair-confirm.abandon", label: "Not Now")
+                .identified("pair-confirm.notNow", label: "Not Now")
+                Spacer(minLength: 0)
             }
-            .padding(.bottom, 34)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, design.metrics.gutter)
+            .padding(.top, 16)
         }
     }
 
-    /// A labelled fact about the machine, one above the other so a long
-    /// fingerprint keeps its own line rather than being squeezed beside a name.
-    private func field(_ title: String, _ value: String, mono: Bool, id: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title.uppercased())
-                .designFont(.sectionTitle, design)
-                .foregroundStyle(design.inkFaint.color)
-            Text(value)
-                .designFont(mono ? .mono : .identifier, design)
-                .foregroundStyle(design.ink.color)
-                .fixedSize(horizontal: false, vertical: true)
+    private func offer(_ peer: PendingPair) -> some View {
+        ZStack {
+            Ground()
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Pair with \(peer.name)?")
+                    .designFont(.screenTitle, design)
+                    .foregroundStyle(design.ink.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .identified("pair-confirm.title", value: "Pair with \(peer.name)?")
+                Text(about(peer))
+                    .designFont(.body, design)
+                    .foregroundStyle(design.inkMuted.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+                    .identified("pair-confirm.name", value: peer.name)
+                Explain(String(localized: "Its agents will be on this phone, and you can start new ones on it. This invitation expires \(expiry(peer))."))
+                    .padding(.top, 14)
+                    .identified("pair-confirm.expiry", value: expiry(peer))
+                Spacer(minLength: 22)
+                // The key, for anybody who wants to check it against the
+                // machine's: whole, because a fingerprint with its middle
+                // taken out is not one anybody can check.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Fingerprint")
+                        .designFont(.detail, design)
+                        .foregroundStyle(design.inkMuted.color)
+                    Text(Fingerprint.grouped(peer.fingerprint))
+                        .designFont(.monoSmall, design)
+                        .foregroundStyle(design.inkFaint.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .identified(
+                    "pair-confirm.fingerprint", label: String(localized: "Fingerprint"),
+                    value: Fingerprint.grouped(peer.fingerprint))
+                .padding(.bottom, 18)
+                VStack(spacing: 10) {
+                    Button { actions(.confirm(peer)) } label: {
+                        ActionLabel("Pair", kind: .primary, fill: true)
+                    }
+                    .buttonStyle(.amuxControl)
+                    .identified("pair-confirm.trust", label: "Pair")
+                    Button { actions(.abandon(peer)) } label: {
+                        ActionLabel("Not Now", kind: .outline, fill: true)
+                    }
+                    .buttonStyle(.amuxControl)
+                    .identified("pair-confirm.abandon", label: "Not Now")
+                }
+                .padding(.bottom, 16)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, design.metrics.gutter)
+            .padding(.top, 16)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .identified("pair-confirm.\(id)", label: title, value: value)
+    }
+
+    /// "MacBook Air · on this network": what the machine is, where this
+    /// phone knows it, and how it would be reached.
+    private func about(_ peer: PendingPair) -> String {
+        var parts: [String] = []
+        if let machine = model.machine, machine.hostId == peer.hostId, let platform = machine.platform {
+            parts.append(platform)
+        }
+        switch peer.via {
+        case .direct: parts.append(String(localized: "on this network"))
+        case .relay: parts.append(String(localized: "through the relay"))
+        case .ssh: parts.append(String(localized: "over SSH"))
+        case .unspecified: break
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// While the invitation is being authenticated. A link opens straight onto
     /// this, and it is not a screen that pairs: it is the wait before the
     /// machine has said who it is.
     private var checking: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Checking the invitation…")
-                .designFont(.bodyEmphasis, design)
-                .foregroundStyle(design.ink.color)
-            Explain("Nothing is trusted yet.")
-        }
-        .padding(.top, 26)
-        .identified("pair-confirm.checking", value: "Checking the invitation…")
+        PairingPanel(
+            title: String(localized: "Checking the invitation…"),
+            detail: String(localized: "Nothing is trusted yet."), waiting: true,
+            identifier: "pair-confirm.checking"
+        ) { EmptyView() }
     }
 
     private var refused: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // The name goes on the sentence rather than on everything under
-            // it: an identifier put on this stack would be spread over the
-            // button as well, which is the one thing here anybody presses.
-            Text("That invitation did not work")
-                .designFont(.bodyEmphasis, design)
-                .foregroundStyle(design.ink.color)
-                .identified("pair-confirm.refused", value: "That invitation did not work")
-            Explain("Get a new invitation from the host.")
+        PairingPanel(
+            title: String(localized: "That invitation didn’t work"),
+            detail: String(localized: "Get a new one from the host."),
+            identifier: "pair-confirm.refused"
+        ) {
             Button { actions(.cancel) } label: {
-                ActionLabel("Back to Hosts", kind: .outline)
+                ActionLabel("Close", kind: .outline, fill: true)
             }
             .buttonStyle(.amuxControl)
-            .identified("pair-confirm.back", label: "Back to Hosts")
+            .identified("pair-confirm.back", label: "Close")
         }
-        .padding(.top, 26)
     }
 
+    /// Drawn for the moment between the machine agreeing and the sheet
+    /// going: the sheet closes on its own once the pairing is written.
     private func settled(_ name: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // The name goes on the sentence rather than on everything under
-            // it: an identifier put on this stack would be spread over the
-            // button as well, which is the one thing here anybody presses.
-            Text("\(name) is paired")
-                .designFont(.bodyEmphasis, design)
-                .foregroundStyle(design.ink.color)
-                .identified("pair-confirm.trusted", value: name)
-            Explain("Its agents are on the Agents tab.")
-            Button { actions(.cancel) } label: {
-                ActionLabel("Done", kind: .outline)
-            }
-            .buttonStyle(.amuxControl)
-            .identified("pair-confirm.done", label: "Done")
-        }
-        .padding(.top, 26)
+        PairingPanel(
+            title: String(localized: "\(name) is paired"),
+            detail: String(localized: "Its agents are on the Agents tab."),
+            identifier: "pair-confirm.trusted"
+        ) { EmptyView() }
     }
 
     /// When the offer runs out, as a length of time rather than a clock face:
     /// the machine started it, so what matters is how long is left.
     private func expiry(_ peer: PendingPair) -> String {
         let left = Date(milliseconds: peer.expiresAtMs).timeIntervalSince(model.now)
-        return left > 0 ? "in \(Elapsed.spelled(left))" : "shortly"
+        return left > 0 ? String(localized: "in \(Elapsed.spelled(left))") : String(localized: "shortly")
     }
 }

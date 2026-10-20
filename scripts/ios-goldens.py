@@ -135,18 +135,15 @@ class Goldens:
         process = journey.amux("desk", "pair")
         pin = printed_pin(process)
         journey.tap(f"hosts.pair.{desk}")
-        journey.wait_for("pin.key.0")
-        for digit in pin:
-            journey.tap(f"pin.key.{digit}")
+        journey.wait_for("pin.code")
+        journey.type("pin.code", pin)
         journey.wait(
             lambda drawn: "pair-confirm.trust" in drawn and drawn.get("pair-confirm.name", {}).get("value") == "desk",
             "the desk's confirmation",
         )
         self.photograph("pairing", volatile=PAIRING)
         journey.tap("pair-confirm.trust")
-        journey.wait_for("pair-confirm.done")
-        journey.tap("pair-confirm.done")
-        journey.wait(lambda drawn: f"hosts.row.{desk}" in drawn and "pair-confirm.done" not in drawn, "the desk paired")
+        journey.wait(lambda drawn: f"hosts.row.{desk}" in drawn and "pair-confirm" not in drawn, "the desk paired")
         process.wait(timeout=30)
 
     def hosts(self) -> None:

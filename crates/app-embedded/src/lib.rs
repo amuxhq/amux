@@ -163,6 +163,12 @@ impl EmbeddedRuntime {
     /// Starts the installation under `config.data_dir`, creating its first
     /// profile on first start. Its profiles' cores have no threads: whoever
     /// rings for `cores` steps them.
+    ///
+    /// A relaunch starts each core from its store as every start does,
+    /// never from the checkpoint a suspend left: the rest of a checkpoint is
+    /// links, channels, calls, jobs, timers and pairings bound to the
+    /// process that ended, and what outlives it is read back from the
+    /// store, the drafts file, the trust store and the settings.
     pub async fn start_with(
         config: &StartConfig,
         overrides: EdgeOverrides,

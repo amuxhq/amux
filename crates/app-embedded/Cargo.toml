@@ -28,3 +28,4 @@ tempfile = { workspace = true }
 testnet = { workspace = true }
 tracing = { workspace = true }
 ui-runtime = { workspace = true }
+ui-view = { workspace = true }

@@ -20,6 +20,7 @@ use node::SourcePolicy;
 use patience::{PATIENCE, until};
 use provider_fakes::script::Step;
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, Relay, Topology};
+use ui_view::FleetCard;
 use wire::{Empty, StartPairingRequest, start_pairing_request};
 
 fn text(text: &str) -> Step {
@@ -719,5 +720,115 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
             ),
         ]
     );
+    embedded.shutdown().await.unwrap();
+}
+
+/// What the phone shows of the desk's agent: its fleet card, less how
+/// reachable the desk is now, and every row of its chat.
+async fn shown(app: &AppRuntime, agent: &AgentKey) -> (FleetCard, Vec<String>) {
+    let card = app.fleet_card(agent).expect("the worker's fleet card");
+    let chat = app.open_chat(agent, 50).await.unwrap();
+    let rows = || {
+        let keys = chat.keys();
+        chat.rows_for(&keys, &Default::default())
+            .iter()
+            .map(|row| format!("{:?}", row.kind))
+            .collect::<Vec<_>>()
+    };
+    eventually(app, "the chat's rows from the store", || {
+        rows()
+            .iter()
+            .any(|row| row.contains("answered from the phone"))
+    })
+    .await;
+    (card, rows())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_relaunched_after_a_suspend_shows_the_fleet_and_chat_it_left() {
+    let net = Net::start(
+        Topology::new()
+            .host_decl(HostDecl {
+                name: "desk".into(),
+                lan: true,
+                ..HostDecl::default()
+            })
+            .agent(worker()),
+    )
+    .await
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
+    let phone = only_profile(&embedded).await;
+    let desk = net.host("desk").unwrap();
+    let (pin, addrs) = pairing_pin(&net).await;
+    embedded
+        .pair(
+            phone,
+            &PairRequest::Pin {
+                host_id: desk.host_id.as_bytes().to_vec(),
+                pin,
+                addrs,
+            },
+        )
+        .await
+        .unwrap();
+    let first = app(&embedded, phone).await;
+    converse(&first, &net).await;
+    let agent = worker_key(&net);
+    let before = shown(&first, &agent).await;
+
+    // The app is suspended, then the system ends it: the checkpoint is on
+    // the drive and nothing shuts the runtime down.
+    embedded.checkpoint().await.unwrap();
+    let checkpoint = dir
+        .path()
+        .join("data")
+        .join(node::PROFILES)
+        .join(phone.to_string())
+        .join(node::CORE_CHECKPOINT);
+    assert!(
+        checkpoint.exists(),
+        "no checkpoint at {}",
+        checkpoint.display()
+    );
+    drop(first);
+    drop(embedded);
+    // With the desk gone too, all the relaunch can show is what the
+    // phone's store holds; the checkpoint left beside it is not read.
+    net.shutdown().await.unwrap();
+
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(only_profile(&embedded).await, phone);
+    let app = app(&embedded, phone).await;
+    eventually(&app, "the desk's agent in the fleet again", || {
+        app.fleet_card(&agent).is_some()
+    })
+    .await;
+    let (card, rows) = shown(&app, &agent).await;
+    assert_eq!(
+        FleetCard {
+            host_reach: before.0.host_reach,
+            ..card
+        },
+        before.0
+    );
+    assert_eq!(rows, before.1);
+
+    drop(app);
     embedded.shutdown().await.unwrap();
 }

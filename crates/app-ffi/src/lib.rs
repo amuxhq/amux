@@ -669,6 +669,10 @@ pub enum Lifecycle {
     Background,
     /// The app is about to be suspended: the analytics waiting are sent,
     /// and every profile's core is checkpointed.
+    ///
+    /// The checkpoint makes the store whole on the drive should the system
+    /// end the app; a relaunch starts from that store, not the checkpoint,
+    /// whose links, calls, jobs and timers belong to the process that ended.
     Suspending,
 }
 

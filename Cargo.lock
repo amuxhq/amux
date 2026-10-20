@@ -242,6 +242,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ui-runtime",
+ "ui-view",
  "uuid",
  "wire",
 ]

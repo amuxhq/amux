@@ -1038,7 +1038,12 @@ mod confinement {
         let mut error = std::ptr::null_mut();
         // SAFETY: the strings live for the call.
         let runtime = unsafe { amux_runtime_start(config.as_ptr(), &mut error) };
-        assert!(!runtime.is_null());
+        // A sandbox that refuses every socket fails here, even without
+        // the LAN: the edge still binds a socket to dial the relay from.
+        assert!(!runtime.is_null(), "{:?}", {
+            // SAFETY: set by the failed start.
+            unsafe { CStr::from_ptr(error) }
+        });
         let queue = std::thread::current().id();
         // SAFETY: the runtime is live for the test.
         let shared = unsafe { live_runtime(runtime) }.unwrap().shared.clone();

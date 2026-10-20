@@ -199,6 +199,9 @@ pub enum EdgeError {
     Account(std::io::Error),
     #[error("the LAN listener: {0}")]
     Lan(std::io::Error),
+    /// Without a LAN listener the edge still needs a socket to dial from.
+    #[error("the dialing socket: {0}")]
+    Dialing(std::io::Error),
     #[error("discovery: {0}")]
     Discovery(String),
     #[error("the link socket: {0}")]
@@ -333,7 +336,7 @@ impl Edge {
             }
             None => (
                 quinn::Endpoint::client(SocketAddr::from(([0, 0, 0, 0], 0)))
-                    .map_err(EdgeError::Lan)?,
+                    .map_err(EdgeError::Dialing)?,
                 None,
             ),
         };

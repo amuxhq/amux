@@ -507,8 +507,7 @@
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Components.swift": [
       {"literal": "\"\\(fingerprint.prefix(4))…\\(fingerprint.suffix(4))\"", "context": "return \"\\(fingerprint.prefix(4))…\\(fingerprint.suffix(4))\"", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
-      {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
-      {"literal": "\"chevron.left\"", "context": "Image(systemName: \"chevron.left\")", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1}
+      {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/DeleteAccount.swift": [
       {"literal": "\"delete\"", "context": ".identified(\"delete\", value: state)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -656,7 +655,6 @@
       {"literal": "\"/\"", "context": "return root + (parents + [last]).joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift": [
-      {"literal": "\"report.signed-out\"", "context": ".identified(\"report.signed-out\", label: \"Sign in to send a report\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"\\(number)\"", "context": "Text(\"\\(number)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"\\(at + 1)\"", "context": "Text(\"\\(at + 1)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"ladybug\"", "context": "Image(systemName: \"ladybug\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
@@ -671,10 +669,14 @@
       {"literal": "\"report.mark.\\(at).remove\"", "context": ".identified(\"report.mark.\\(at).remove\", label: \"Remove Box \\(at + 1)\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"report.mark.\\(at)\"", "context": ".identified(\"report.mark.\\(at)\", label: \"Box \\(at + 1)\", value: mark.note)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"report.note\"", "context": ".identified(\"report.note\", label: \"What went wrong?\", value: model.draft.note)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"report.refusal\"", "context": ".identified(\"report.refusal\", label: \"The report was not sent.\", value: why)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"report.sent\"", "context": ".identified(\"report.sent\", label: \"Sent\", value: receipt.id)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"report.frame\"", "context": ".identified(\"report.frame\", value: \"\\(marks.count) marked\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"report.cancel\"", "context": "\"Cancel\", identifier: \"report.cancel\", accessibilityLabel: \"Cancel\"", "reason": "Stable element/record identifier, not a displayed label.", "count": 1}
+      {"literal": "\"report.signed-out\"", "context": ".identified(\"report.signed-out\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.cancel\"", "context": "BarButton(\"xmark\", label: closeTitle, identifier: \"report.cancel\") { actions(.cancel) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.sending\"", "context": ".identified(\"report.sending\", label: \"Sending\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"arrow.clockwise\"", "context": "if case .failed = model.sending { return \"arrow.clockwise\" }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"arrow.up\"", "context": "return \"arrow.up\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.refusal\"", "context": ".identified(\"report.refusal\", label: \"Not sent\", value: why)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.sent\"", "context": ".identified(\"report.sent\", label: \"Report sent\", value: receipt.id)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/RowState.swift": [
       {"literal": "\"working\"", "context": "case .working: \"working\"", "reason": "Door and capture vocabulary for a row's state; a screen's wording may change without rewriting the journeys that drive it.", "count": 1},
@@ -1222,7 +1224,19 @@
       {"literal": "\"delete-blocked\"", "context": "sheet(\"delete-blocked\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"ada\"", "context": "asking: AccountId(\"ada\"), typed: \"ada@example.com\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"delete-failed\"", "context": "sheet(\"delete-failed\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ada\"", "context": "asking: AccountId(\"ada\"), typed: \"ada@example.com\", phase: .failed(\"amux.sh did not answer\")),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
+      {"literal": "\"ada\"", "context": "asking: AccountId(\"ada\"), typed: \"ada@example.com\", phase: .failed(\"amux.sh did not answer\")),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"marked\"", "context": "page(\"marked\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"The subtitle says no agents while three are listed.\"", "context": "note: \"The subtitle says no agents while three are listed.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"Says no agents\"", "context": "ReportMark(x: 16, y: 104, width: 220, height: 30, note: \"Says no agents\"),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"signed-out\"", "context": "page(\"signed-out\", signedIn: false) { ReportStore(capture: CatalogFixtures.frozenFleet, open: true) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"The list jumps when a row finishes.\"", "context": "capture: CatalogFixtures.frozenFleet, draft: ReportDraft(note: \"The list jumps when a row finishes.\"),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 2},
+      {"literal": "\"sent\"", "context": "page(\"sent\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"rep_4KX2M9\"", "context": "sending: .sent(ReportReceipt(id: \"rep_4KX2M9\", receivedAt: CatalogFixtures.now)), open: true)", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"report.\\(id)\"", "context": "id: \"report.\\(id)\", family: .report, canvas: CGSize(width: 390, height: 844),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"No agents yet · 3 hosts\"", "context": "Text(\"No agents yet · 3 hosts\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"fix-flaky-ci\"", "context": "ForEach([\"fix-flaky-ci\", \"relay-backoff\", \"docs-pass\"], id: \\.self) { name in", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"relay-backoff\"", "context": "ForEach([\"fix-flaky-ci\", \"relay-backoff\", \"docs-pass\"], id: \\.self) { name in", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"desk · Working\"", "context": "Text(\"desk · Working\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
       {"literal": "\"busy\"", "context": "fleet(\"busy\") { StoryFleet.busy() },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1726,6 +1740,14 @@
       {"literal": "\"\\(identifier).waiting\"", "context": ".identified(\"\\(identifier).waiting\", value: what)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(identifier).empty\"", "context": ".identified(\"\\(identifier).empty\", value: detail)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(identifier).failure\"", "context": ".identified(\"\\(identifier).failure\", value: reason)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+    ],
+    "apps/apple/Amux/Debug/ReportPreviews.swift": [
+      {"literal": "\"report.ready\"", "context": "#Preview(\"Report\") { StoryScreen(\"report.ready\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.marked\"", "context": "#Preview(\"Report · boxes drawn\") { StoryScreen(\"report.marked\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.signed-out\"", "context": "#Preview(\"Report · signed out\") { StoryScreen(\"report.signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.sending\"", "context": "#Preview(\"Report · sending\") { StoryScreen(\"report.sending\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.failed\"", "context": "#Preview(\"Report · not sent\") { StoryScreen(\"report.failed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"report.sent\"", "context": "#Preview(\"Report · sent\") { StoryScreen(\"report.sent\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ]
   }
 }

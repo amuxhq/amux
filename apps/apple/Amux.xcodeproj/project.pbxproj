@@ -128,6 +128,7 @@
 		666CD646F36A06D3D2B936B2 /* components.ask-question-secret-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 8FFE20A681A4FD1770F6B455 /* components.ask-question-secret-light.png */; };
 		668880252E4972BD5178FEC1 /* components.ask-permission-deny-note-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 0FD745CD5516BF276176C449 /* components.ask-permission-deny-note-light.png */; };
 		6805234D9DC817A50B5F83BD /* AmuxDesign in Frameworks */ = {isa = PBXBuildFile; productRef = C0C0812086F76FDC86EC6F93 /* AmuxDesign */; };
+		6821B208A8619572A5116582 /* ReportPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7CD999FED133CB04C027254 /* ReportPreviews.swift */; };
 		687D6AFC158EA02B38F25433 /* SnapshotTesting in Frameworks */ = {isa = PBXBuildFile; productRef = 452D6B5733E5F7617EFF32B3 /* SnapshotTesting */; };
 		6B0E85DB1DB5AC0F55A2B0EC /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 945602D9376D08934B80A0F1 /* manifest.json */; };
 		6B19BAA39C6C7A8BAC26801A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 77ECF06E521C94FBE6BCA2F1 /* PrivacyInfo.xcprivacy */; };
@@ -666,6 +667,7 @@
 		E492286D26064F7BA04BCE8A /* components.row-agent-message-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-agent-message-dark.png"; sourceTree = "<group>"; };
 		E523FB32AC2F07422CABA9F1 /* components.ask-sending-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-sending-dark.png"; sourceTree = "<group>"; };
 		E69658F30971915F8C8B8F6C /* components.composer-plus-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-plus-light.png"; sourceTree = "<group>"; };
+		E7CD999FED133CB04C027254 /* ReportPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportPreviews.swift; sourceTree = "<group>"; };
 		E7FB140A6EB9DA85DD7CFB7E /* components.row-stopped-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-stopped-light.png"; sourceTree = "<group>"; };
 		E8CE78DF417F5614935595CA /* VisibleTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisibleTree.swift; sourceTree = "<group>"; };
 		E978A77F62F5A1F9C2CD05D4 /* components.ask-permission-deny-note-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.ask-permission-deny-note-dark.png"; sourceTree = "<group>"; };
@@ -817,6 +819,7 @@
 				F20D44CE802715829BA85CFF /* HostsPreviews.swift */,
 				2F29C3D017EFCF2521645DAB /* MenuSource.swift */,
 				2D67FA937AF3288820FA3464 /* Perturbation.swift */,
+				E7CD999FED133CB04C027254 /* ReportPreviews.swift */,
 				ABB8E3AE3B61C8EF69742893 /* ReviewPreviews.swift */,
 				36DC5CBA6C18EDA76B762121 /* SettingsPreviews.swift */,
 				49AD796E9CE095BEB4462249 /* Stories.swift */,
@@ -1701,6 +1704,7 @@
 				2AB9F9F887627829BEBBB09D /* MenuSource.swift in Sources */,
 				DDDED99192D1F649C8282E0A /* Perturbation.swift in Sources */,
 				B6D27C4537AD3B1E7AC14846 /* ReportFreeze.swift in Sources */,
+				6821B208A8619572A5116582 /* ReportPreviews.swift in Sources */,
 				CAD420C705F7B9D3741E4C03 /* ReportTools.swift in Sources */,
 				49A71D4829F38FC44375521E /* ReviewPreviews.swift in Sources */,
 				F99BD8E096C2973B6CC4F697 /* RootView.swift in Sources */,

@@ -22,6 +22,7 @@ struct ComponentExample: Identifiable {
         case hosts = "Hosts"
         case pairing = "Pairing"
         case settings = "Settings"
+        case report = "Report"
     }
 
     let id: String
@@ -62,7 +63,7 @@ struct ComponentExample: Identifiable {
 /// row kind, every ask card, the composer's states and the chat's own.
 @MainActor
 enum ComponentCatalog {
-    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet + hosts + pairing + settings
+    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet + hosts + pairing + settings + report
 
     static func example(id: String) -> ComponentExample? {
         examples.first { $0.id == id }
@@ -1274,7 +1275,7 @@ struct ComponentExampleView: View {
         ZStack {
             Ground()
             example.build()
-                .padding([.chat, .fleet, .hosts, .pairing, .settings].contains(example.family) ? 0 : 18)
+                .padding([.chat, .fleet, .hosts, .pairing, .settings, .report].contains(example.family) ? 0 : 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(width: example.canvas.width, height: example.canvas.height)
@@ -1662,6 +1663,102 @@ extension ComponentCatalog {
         ComponentExample(id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: 844)) {
             NavigationStack { build() }
         }
+    }
+}
+
+extension ComponentCatalog {
+    // MARK: - Report
+
+    /// Reporting a problem, from writing it to the receipt, over a frozen
+    /// frame of the agent list.
+    fileprivate static let report: [ComponentExample] = [
+        page("ready") { ReportStore(capture: CatalogFixtures.frozenFleet, open: true) },
+        page("marked") {
+            ReportStore(
+                capture: CatalogFixtures.frozenFleet,
+                draft: ReportDraft(
+                    note: "The subtitle says no agents while three are listed.",
+                    marks: [
+                        ReportMark(x: 16, y: 104, width: 220, height: 30, note: "Says no agents"),
+                        ReportMark(x: 12, y: 300, width: 366, height: 70, note: ""),
+                    ]),
+                open: true)
+        },
+        page("signed-out", signedIn: false) { ReportStore(capture: CatalogFixtures.frozenFleet, open: true) },
+        page("sending") {
+            ReportStore(
+                capture: CatalogFixtures.frozenFleet, draft: ReportDraft(note: "The list jumps when a row finishes."),
+                sending: .sending, open: true)
+        },
+        page("failed") {
+            ReportStore(
+                capture: CatalogFixtures.frozenFleet, draft: ReportDraft(note: "The list jumps when a row finishes."),
+                sending: .failed("amux.sh did not answer"), open: true)
+        },
+        page("sent") {
+            ReportStore(
+                capture: CatalogFixtures.frozenFleet,
+                sending: .sent(ReportReceipt(id: "rep_4KX2M9", receivedAt: CatalogFixtures.now)), open: true)
+        },
+    ]
+
+    private static func page(
+        _ id: String, signedIn: Bool = true, store: @escaping @MainActor () -> ReportStore
+    ) -> ComponentExample {
+        ComponentExample(
+            id: "report.\(id)", family: .report, canvas: CGSize(width: 390, height: 844),
+            // The system bar lays its items out a frame after the page.
+            settlesLate: true
+        ) {
+            ReportScreen(model: store(), signedIn: signedIn) { _ in }
+        }
+    }
+}
+
+extension CatalogFixtures {
+    /// A frozen agent list to report on: drawn here rather than captured,
+    /// so the picture is the same on every run.
+    @MainActor static let frozenFleet: ReportCapture = {
+        let size = CGSize(width: 390, height: 844)
+        let renderer = ImageRenderer(content: FrozenFleetPicture().frame(width: size.width, height: size.height))
+        renderer.scale = 2
+        let png = renderer.uiImage?.pngData() ?? Data()
+        return ReportCapture(frame: FrozenFrame(png: png, width: size.width, height: size.height, scale: 2))
+    }()
+}
+
+/// The agent list as a report's frozen frame shows it: a title, a subtitle
+/// and three rows, enough to read as the screen it stands for.
+private struct FrozenFleetPicture: View {
+    private let design = Design.app
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Agents")
+                .designFont(.screenTitle, design)
+                .padding(.top, 70)
+            Text("No agents yet · 3 hosts")
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .padding(.top, 4)
+                .padding(.bottom, 26)
+            ForEach(["fix-flaky-ci", "relay-backoff", "docs-pass"], id: \.self) { name in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name).designFont(.bodyEmphasis, design)
+                    Text("desk · Working")
+                        .designFont(.detail, design)
+                        .foregroundStyle(design.inkMuted.color)
+                }
+                .padding(.vertical, 14)
+                Rectangle().fill(design.hairline.color).frame(height: 1)
+            }
+            Spacer()
+        }
+        .foregroundStyle(design.ink.color)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(design.ground.color)
+        .environment(\.colorScheme, .dark)
     }
 }
 

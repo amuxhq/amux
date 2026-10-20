@@ -2185,30 +2185,6 @@
         }
       }
     },
-    "Back to %@" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/DiffPage.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/SignIn.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back to %@"
-          }
-        }
-      }
-    },
-    "Back to Hosts" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Back to Hosts"
-          }
-        }
-      }
-    },
     "Background" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatOverview.swift.",
       "extractionState" : "manual",
@@ -5389,18 +5365,6 @@
         }
       }
     },
-    "Reports go to your amux account, and nobody is signed in on this phone." : {
-      "comment" : "Explains why a report cannot be sent with nobody signed in. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reports go to your amux account, and nobody is signed in on this phone."
-          }
-        }
-      }
-    },
     "Repositories" : {
       "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
       "extractionState" : "manual",
@@ -5493,18 +5457,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Retry"
-          }
-        }
-      }
-    },
-    "Retry sends your saved report." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Report.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retry sends your saved report."
           }
         }
       }
@@ -6105,18 +6057,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sign in to reach your agents from anywhere"
-          }
-        }
-      }
-    },
-    "Sign in to send a report" : {
-      "comment" : "Headline on the report screen when no account is signed in to send the report to. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in to send a report"
           }
         }
       }
@@ -6801,18 +6741,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one."
-          }
-        }
-      }
-    },
-    "The report was not sent." : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Report.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The report was not sent."
           }
         }
       }
@@ -10821,6 +10749,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Run %@ on it and scan the code with the Camera app."
+          }
+        }
+      }
+    },
+    "Sign in to send reports. They go to your amux account." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to send reports. They go to your amux account."
+          }
+        }
+      }
+    },
+    "Sending" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sending"
+          }
+        }
+      }
+    },
+    "Not sent" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not sent"
+          }
+        }
+      }
+    },
+    "Report sent" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report sent"
+          }
+        }
+      }
+    },
+    "Quote %@ if you write to us about it." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quote %@ if you write to us about it."
           }
         }
       }

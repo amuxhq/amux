@@ -196,6 +196,7 @@ public struct ChatScreen: View {
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            .reportsHere()
         }
     }
 

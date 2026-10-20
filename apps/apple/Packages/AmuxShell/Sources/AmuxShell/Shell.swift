@@ -192,6 +192,7 @@ public struct Shell: View {
                 }
             }
         }
+        .reportsHere()
         // Settings are a sheet raised from the account disc rather than a
         // tab: somewhere visited now and then does not earn a place beside
         // the two that are used all day. The sheet keeps a stack of its own,
@@ -206,6 +207,7 @@ public struct Shell: View {
         // a new message is: the list stays beneath, and Cancel puts it away.
         .sheet(isPresented: $router.composing) {
             NewAgentPage(router: self.router, stores: stores)
+                .reportsHere()
         }
         // Pairing is a short task with an end, so it is raised the same way.
         // Putting it away by hand ends it; stepping aside for a sign-in or a
@@ -216,6 +218,7 @@ public struct Shell: View {
         )) {
             if let pairing = router.pairing {
                 PairingSheet(pairing: pairing, router: router, stores: stores, actions: actions)
+                    .reportsHere()
             }
         }
         .tint(design.accentColor)
@@ -243,6 +246,7 @@ public struct Shell: View {
                 .navigationDestination(for: Route.self) { page($0) }
         }
         .tint(design.accentColor)
+        .reportsHere()
     }
 
     /// Restores the platform's edge-to-pop interaction while the custom page

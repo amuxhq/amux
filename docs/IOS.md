@@ -284,7 +284,10 @@ installation again.
 Reporting is in every build, Release included. After a system screenshot,
 or from Report a Problem, the app freezes its own frame and opens a report
 over it; the person can mark rectangles and write a note. There is no shake
-gesture. A report is a bundle (`ReportAssembly`): `report.json` at
+gesture. The offer and the report are drawn over whichever surface is on
+top, a sheet included: the app hands them down as `ReportLayers`, every
+surface that can be on top carries `reportsHere()`, and the last of those to
+appear draws them. A report is a bundle (`ReportAssembly`): `report.json` at
 `schema_version` 2 declares each part present or absent with a reason,
 beside the frozen `frame.png`, the view-state `trace.jsonl`, the tail of the
 installation's `runtime.log` as `log.txt`, and the profile's dump under

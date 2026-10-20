@@ -1885,6 +1885,66 @@
         }
       }
     },
+    "Report · boxes drawn" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ReportPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report · boxes drawn"
+          }
+        }
+      }
+    },
+    "Report · not sent" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ReportPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report · not sent"
+          }
+        }
+      }
+    },
+    "Report · sending" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ReportPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report · sending"
+          }
+        }
+      }
+    },
+    "Report · sent" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ReportPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report · sent"
+          }
+        }
+      }
+    },
+    "Report · signed out" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ReportPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report · signed out"
+          }
+        }
+      }
+    },
     "Repository" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",

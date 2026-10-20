@@ -749,6 +749,30 @@
       "shows": "A deletion amux.sh did not answer."
     },
     {
+      "id": "report.ready",
+      "shows": "A report over a frozen agent list, nothing written yet."
+    },
+    {
+      "id": "report.marked",
+      "shows": "Two boxes drawn on the frozen frame, one with its note, and a note about the whole thing."
+    },
+    {
+      "id": "report.signed-out",
+      "shows": "A report with nobody signed in to send it as, Send disabled."
+    },
+    {
+      "id": "report.sending",
+      "shows": "A report on its way, the breathing mark where Send was."
+    },
+    {
+      "id": "report.failed",
+      "shows": "A report amux.sh did not answer, its reason in red and Retry in Send's place."
+    },
+    {
+      "id": "report.sent",
+      "shows": "A sent report and the reference to quote."
+    },
+    {
       "id": "new-agent.claude",
       "shows": "Starting a Claude agent: the host, a recent directory, the name, the model and permission, and a new worktree."
     },

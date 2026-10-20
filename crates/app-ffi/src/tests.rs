@@ -379,6 +379,10 @@ fn card(chat: *const AmuxChat) -> Value {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
 fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
     let tokio = tokio::runtime::Runtime::new().unwrap();
     let net = tokio.block_on(Net::start(topology())).unwrap();
@@ -650,6 +654,10 @@ fn the_phone_pairs_opens_a_chat_answers_its_asks_and_pages_through_the_c_abi() {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
 fn no_redraw_names_a_closed_profile_or_chat_while_its_acts_are_in_flight() {
     let tokio = tokio::runtime::Runtime::new().unwrap();
     let net = tokio.block_on(Net::start(topology())).unwrap();
@@ -781,6 +789,10 @@ impl Phone {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
 fn the_profile_registry_through_the_c_abi() {
     let phone = Phone::start();
     // SAFETY: the runtime is live.
@@ -858,6 +870,10 @@ fn the_profile_registry_through_the_c_abi() {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
 fn a_suspending_input_checkpoints_every_profile_before_it_returns() {
     let phone = Phone::start();
     let checkpoint = phone
@@ -889,6 +905,10 @@ fn a_suspending_input_checkpoints_every_profile_before_it_returns() {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
 fn malformed_calls_are_refused_rather_than_crashing() {
     let phone = Phone::start();
     let mut error = std::ptr::null_mut();
@@ -912,14 +932,6 @@ fn malformed_calls_are_refused_rather_than_crashing() {
     assert!(reason.contains("no agent"), "{reason}");
     // SAFETY: returned by the library, freed once.
     unsafe { amux_string_free(error) };
-    // SAFETY: null chats and runtimes read as nothing.
-    assert!(unsafe { amux_session_keys(std::ptr::null()) }.is_null());
-    // SAFETY: as above.
-    assert!(unsafe { amux_fleet_view(std::ptr::null(), std::ptr::null()) }.is_null());
-    // SAFETY: as above.
-    assert!(unsafe { amux_session_keep_open_runs(std::ptr::null(), std::ptr::null()) }.is_null());
-    // SAFETY: a null profile is ignored.
-    unsafe { amux_profile_set_foreground(std::ptr::null(), false) };
     // SAFETY: the runtime is live; the strings live for the call.
     phone.started(unsafe {
         amux_profile_host_catalogue(phone.profile, not_json.as_ptr(), c"\"Claude\"".as_ptr())
@@ -957,6 +969,10 @@ fn outbox() -> (Arc<Outbox>, Arc<AtomicU64>) {
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "drives a tokio runtime, whose I/O driver Miri cannot run on every host"
+)]
 fn an_act_dropped_by_the_transports_shutdown_answers_that_the_runtime_stopped() {
     let transport = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
@@ -981,6 +997,10 @@ fn an_act_dropped_by_the_transports_shutdown_answers_that_the_runtime_stopped() 
 }
 
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "drives a tokio runtime, whose I/O driver Miri cannot run on every host"
+)]
 fn an_act_that_finishes_answers_once_with_its_result() {
     let transport = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
@@ -1006,6 +1026,10 @@ mod confinement {
     use super::*;
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+    )]
     fn the_cores_step_only_on_the_queue_that_steps_and_nothing_calls_the_app() {
         // Nothing in the library can call into the app: its header declares
         // no function type, and the loop's three calls are there.
@@ -1116,6 +1140,10 @@ mod confinement {
 /// watch happens to have let go of the installation first: the generation
 /// file says so, and the next start would otherwise read a crash.
 #[test]
+#[cfg_attr(
+    miri,
+    ignore = "starts an installation: SQLite's C code, files and sockets, which Miri cannot run"
+)]
 fn every_stop_leaves_the_installation_marked_clean() {
     let dir = tempfile::tempdir().unwrap();
     let data_dir = dir.path().join("data");
@@ -1151,6 +1179,48 @@ fn every_stop_leaves_the_installation_marked_clean() {
             "run {run} left {generation}"
         );
     }
+}
+
+#[test]
+fn null_handles_read_as_nothing_and_null_results_free_as_nothing() {
+    // SAFETY: null chats and fleets read as nothing.
+    assert!(unsafe { amux_session_keys(std::ptr::null()) }.is_null());
+    // SAFETY: as above.
+    assert!(unsafe { amux_fleet_view(std::ptr::null(), std::ptr::null()) }.is_null());
+    // SAFETY: as above.
+    assert!(unsafe { amux_session_keep_open_runs(std::ptr::null(), std::ptr::null()) }.is_null());
+    // SAFETY: as above.
+    let blob = unsafe { amux_session_blob(std::ptr::null(), c"[1]".as_ptr()) };
+    assert!(blob.data.is_null() && blob.len == 0);
+    // SAFETY: a null profile is ignored.
+    unsafe { amux_profile_set_foreground(std::ptr::null(), false) };
+    // SAFETY: null results free as nothing.
+    unsafe { amux_bytes_free(blob) };
+    // SAFETY: as above.
+    unsafe { amux_string_free(std::ptr::null_mut()) };
+}
+
+#[test]
+fn bytes_handed_out_read_whole_and_free_once() {
+    let bytes = AmuxBytes::leak(b"an attachment");
+    // SAFETY: the library just handed out these bytes.
+    let read = unsafe { std::slice::from_raw_parts(bytes.data, bytes.len) };
+    assert_eq!(read, b"an attachment");
+    // SAFETY: freed once.
+    unsafe { amux_bytes_free(bytes) };
+    let none = AmuxBytes::leak(&[]);
+    assert_eq!(none.len, 0);
+    // SAFETY: an empty slice frees like any other.
+    unsafe { amux_bytes_free(none) };
+}
+
+#[test]
+fn the_version_is_one_string_for_the_life_of_the_library() {
+    let first = amux_version();
+    // SAFETY: the library's static string.
+    let version = unsafe { CStr::from_ptr(first) }.to_str().unwrap();
+    assert!(!version.is_empty());
+    assert_eq!(amux_version(), first, "the same pointer every time");
 }
 
 #[test]

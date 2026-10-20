@@ -198,6 +198,13 @@ tui-set NAME *ARGS:
 fuzz-smoke *ARGS:
     {{bounded}} 1500 scripts/py scripts/fuzz-smoke.py "$@"
 
+# Run the phone's C ABI tests under the pinned nightly's Miri, which checks
+# every pointer handed across the boundary, read and freed again. Tests that
+# start an installation or a tokio runtime are ignored under Miri, each with
+# its reason. Needs the nightly's miri and rust-src components.
+miri *ARGS:
+    {{bounded}} 1500 cargo +nightly-2026-08-30 miri test --locked -p app-ffi "$@"
+
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
 cores-check:

@@ -61,6 +61,26 @@ pub struct AmuxBytes {
     pub len: usize,
 }
 
+impl AmuxBytes {
+    /// No bytes: a null pointer the caller may still free.
+    fn empty() -> AmuxBytes {
+        AmuxBytes {
+            data: std::ptr::null_mut(),
+            len: 0,
+        }
+    }
+
+    /// A copy of `bytes` the caller owns until it frees them.
+    fn leak(bytes: &[u8]) -> AmuxBytes {
+        let boxed: Box<[u8]> = bytes.into();
+        let len = boxed.len();
+        AmuxBytes {
+            data: Box::into_raw(boxed).cast(),
+            len,
+        }
+    }
+}
+
 /// The embedded installation and every profile it hosts.
 pub struct AmuxRuntime {
     shared: Arc<Shared>,
@@ -2367,34 +2387,17 @@ pub unsafe extern "C" fn amux_session_blob(
     chat: *const AmuxChat,
     hash: *const c_char,
 ) -> AmuxBytes {
-    let empty = AmuxBytes {
-        data: std::ptr::null_mut(),
-        len: 0,
-    };
     // SAFETY: the caller's contract.
     let hash: Vec<u8> = unsafe { parse(hash) }.unwrap_or_default();
-    guard(empty, || {
+    guard(AmuxBytes::empty(), || {
         // SAFETY: the caller's contract.
         let Some(open) = (unsafe { held_chat(chat) }) else {
-            return AmuxBytes {
-                data: std::ptr::null_mut(),
-                len: 0,
-            };
+            return AmuxBytes::empty();
         };
         let _entered = open.shared.handle().enter();
         match open.chat.blob(&hash) {
-            Some(bytes) => {
-                let boxed: Box<[u8]> = bytes.to_vec().into_boxed_slice();
-                let len = boxed.len();
-                AmuxBytes {
-                    data: Box::into_raw(boxed).cast(),
-                    len,
-                }
-            }
-            None => AmuxBytes {
-                data: std::ptr::null_mut(),
-                len: 0,
-            },
+            Some(bytes) => AmuxBytes::leak(&bytes),
+            None => AmuxBytes::empty(),
         }
     })
 }

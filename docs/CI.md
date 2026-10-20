@@ -32,6 +32,7 @@ Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 | Build | `ubuntu-latest`, `macos-latest`, `windows-latest` | `just release-check` |
 | Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux`, then `just journey terminal all`: every terminal story in the manifest |
 | Embedded client | `ubuntu-latest` | `just embedded-check`, `just embedded-test` |
+| Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | iOS target check | `macos-latest` | `just mobile-check` |
 | iOS gate | `macos-26` | `just ios gate` on Xcode 26.6, when a push touches the phone's paths |
 

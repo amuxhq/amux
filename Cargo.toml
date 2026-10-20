@@ -26,6 +26,7 @@ members = [
     "crates/model",
     "crates/models",
     "crates/node",
+    "crates/path-core",
     "crates/patience",
     "crates/provider-fakes",
     "crates/pty-host",
@@ -60,6 +61,7 @@ agent-core = { path = "crates/agent-core" }
 core-ring = { path = "crates/core-ring" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
+path-core = { path = "crates/path-core" }
 supervisor-core = { path = "crates/supervisor-core" }
 agent-dir = { path = "crates/agent-dir" }
 analytics = { path = "crates/analytics" }

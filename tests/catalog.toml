@@ -593,8 +593,8 @@ cargo = [
 [[suite]]
 name = "state-machine-cores"
 contract = "Each state-machine core takes one input to the outputs it wants done and ends every step by checking its cheap invariants, a checkpoint restores only under the layout it was written with, and the ring of inputs since a checkpoint resumes from the newest one with a torn tail cut."
-paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/relay-core/src", "crates/supervisor-core/src"]
-recipe = "just test -- --lib -p agent-core -p core-ring -p daemon-core -p relay-core -p supervisor-core"
+paths = ["crates/agent-core/src", "crates/core-ring/src", "crates/daemon-core/src", "crates/path-core/src", "crates/relay-core/src", "crates/supervisor-core/src"]
+recipe = "just test -- --lib -p agent-core -p core-ring -p daemon-core -p path-core -p relay-core -p supervisor-core"
 boundary = "Single daemon"
 oracle = "The exact outputs of a step, the checkpoint a restored core writes, and the inputs a ring hands back."
 real = ["in-memory SQLite store", "temporary files"]
@@ -608,6 +608,7 @@ cargo = [
   { package = "agent-core", kind = "lib", targets = ["agent_core"], features = [] },
   { package = "core-ring", kind = "lib", targets = ["core_ring"], features = [] },
   { package = "daemon-core", kind = "lib", targets = ["daemon_core"], features = [] },
+  { package = "path-core", kind = "lib", targets = ["path_core"], features = [] },
   { package = "relay-core", kind = "lib", targets = ["relay_core"], features = [] },
   { package = "supervisor-core", kind = "lib", targets = ["supervisor_core"], features = [] },
 ]

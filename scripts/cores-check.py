@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Fail when a state-machine core could block, wait or share state.
 
-The daemon, relay, agent process and supervisor each decide everything in one
+The daemon, relay, agent process and supervisor, and each link's path
+machine, decide everything in one
 `step` over typed inputs and outputs; sockets, timers, codecs and the async
 runtime belong to the drivers around them. Two facts hold that shape, and
 this check states both:
@@ -21,7 +22,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 # The ring the cores record their inputs in is held to the same rule.
-CORES = ["daemon-core", "relay-core", "agent-core", "supervisor-core", "core-ring"]
+CORES = ["daemon-core", "relay-core", "path-core", "agent-core", "supervisor-core", "core-ring"]
 RUNTIME = re.compile(r"^(tokio(-[\w-]+)?) v")
 FORBIDDEN = [
     (re.compile(r"\bMutex\b"), "a Mutex"),

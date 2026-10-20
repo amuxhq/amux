@@ -542,6 +542,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 |---|---|
 | [`daemon-core`](../crates/daemon-core/README.md) | The daemon as one function of its state and an input; it owns the profile store. |
 | [`relay-core`](../crates/relay-core/README.md) | The relay's admission and splice decisions, built on the daemon core's link state. |
+| [`path-core`](../crates/path-core/README.md) | Which path one link's packets take: candidates, probes, the carrying path and its hold-down, and which paths the account's plan allows. |
 | [`agent-core`](../crates/agent-core/README.md) | The agent process around its interpreter: incarnation, timers, queue and the open ask. |
 | [`core-ring`](../crates/core-ring/src/lib.rs) | The bounded ring of a core's inputs since its last checkpoint, in segments beside their checkpoints; the agent process's facts ring is one. |
 | [`supervisor-core`](../crates/supervisor-core/README.md) | The supervisor's update decisions: which binary to fetch, start, set aside, go with or roll back to. |
@@ -620,6 +621,7 @@ The allowed sets encode the layering above:
 | `claude` → `claude-protocol`, `pty-host`; `codex` → `codex-protocol` | | |
 | `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
 | `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
+| `path-core` | at most `daemon-core` | names links and reports dumps as the daemon core does |
 | `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
 | `supervisor-core` | at most `release`, `version-stamp` | reads release manifests and version stamps |
 | `agent` | `agent-core`, `agent-dir`, `attachments`, `claude`, `claude-protocol`, `codex`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `pty-host`, `wire` | the agent core's driver, and the only production crate that reads a provider |

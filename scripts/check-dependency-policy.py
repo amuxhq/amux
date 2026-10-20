@@ -79,10 +79,12 @@ ALLOWED_LOCAL = {
 # store, reads journals, speaks the message types and records its inputs in
 # the ring; the relay's is built from the daemon's link and routing state;
 # the agent's wraps the interpreter; the supervisor's reads release
-# manifests and version stamps.
+# manifests and version stamps; the path machine names links and reports
+# dumps as the daemon's does.
 CORES_ALLOWED_LOCAL = {
     "daemon-core": {"core-ring", "journal", "store", "wire"},
     "relay-core": {"daemon-core"},
+    "path-core": {"daemon-core"},
     "agent-core": {"core-ring", "interpret", "journal", "wire"},
     "supervisor-core": {"release", "version-stamp"},
 }

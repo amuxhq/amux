@@ -53,6 +53,9 @@ pub const AGENT_CORE_DUMP: &str = "the agent core: ";
 struct Daemon {
     id: ConnId,
     frames: mpsc::UnboundedSender<CtlFrame>,
+    /// The agent's Hello has been written to it: the daemon reads the Hello
+    /// first and drops a connection that starts with anything else.
+    greeted: bool,
 }
 
 pub(crate) struct Driver<I: Interpreter> {
@@ -82,15 +85,17 @@ pub(crate) struct Driver<I: Interpreter> {
 /// The agent's own record already has a dump's shape on disk (the facts
 /// ring and its checkpoints), and the daemon's bundle gathers it: so a dump
 /// the core asks for is asked of the daemon, which writes the bundle. One
-/// asked with no daemon connected waits, the newest of each kind, and goes
-/// right after the next Hello.
+/// asked with no daemon connected, or before the Hello on a new connection
+/// (the step of the clock before a dial can run over), waits, the newest of
+/// each kind, and goes right after the next Hello.
 #[derive(Debug, Default)]
 struct Asks {
     waiting: BTreeMap<String, CtlFrame>,
 }
 
 impl Asks {
-    /// Asks the connected daemon for a dump, or keeps the ask for the next.
+    /// Asks the connected daemon for a dump once it has the Hello, or keeps
+    /// the ask until it does.
     fn ask(&mut self, daemon: Option<&Daemon>, reason: String, invariant: String) {
         let frame = CtlFrame {
             of: Some(ctl_frame::Of::DumpAsked(wire::DumpAsked {
@@ -99,7 +104,7 @@ impl Asks {
             })),
         };
         match daemon {
-            Some(daemon) if daemon.frames.send(frame.clone()).is_ok() => {}
+            Some(daemon) if daemon.greeted && daemon.frames.send(frame.clone()).is_ok() => {}
             _ => {
                 self.waiting.insert(invariant, frame);
             }
@@ -472,7 +477,11 @@ impl<I: Interpreter> Driver<I> {
         });
         // A new connection replaces the old: a restarted daemon dials in
         // while the old one's socket may not have closed yet.
-        self.daemon = Some(Daemon { id, frames });
+        self.daemon = Some(Daemon {
+            id,
+            frames,
+            greeted: false,
+        });
         self.feed(Input::DaemonDials { connection: id }).await;
     }
 
@@ -507,12 +516,13 @@ impl<I: Interpreter> Driver<I> {
                 Output::WriteControl { connection, frame } => {
                     // Frames for a daemon that is no longer connected are
                     // dropped: whoever sent the input is gone with it.
-                    if let Some(daemon) = &self.daemon
+                    if let Some(daemon) = &mut self.daemon
                         && daemon.id == connection
                     {
                         let hello = matches!(frame.of, Some(ctl_frame::Of::Hello(_)));
                         let _ = daemon.frames.send(frame);
                         if hello {
+                            daemon.greeted = true;
                             self.asks.hello_sent(daemon);
                         }
                     }
@@ -683,6 +693,7 @@ mod tests {
             Daemon {
                 id: ConnId(1),
                 frames,
+                greeted: true,
             },
             sent,
         )
@@ -696,7 +707,8 @@ mod tests {
     }
 
     /// An admitted dump is asked of the connected daemon at once; with
-    /// none connected, the newest of each kind waits for the next Hello.
+    /// none connected, or one not yet sent the Hello, the newest of each
+    /// kind waits for the next Hello.
     #[test]
     fn an_admitted_dump_is_asked_of_the_daemon_or_waits_for_its_hello() {
         let mut asks = Asks::default();
@@ -710,9 +722,18 @@ mod tests {
 
         asks.ask(None, "the agent core: two, older".into(), "two".into());
         asks.ask(None, "the agent core: two".into(), "two".into());
-        asks.ask(None, "the agent core: a slow step".into(), String::new());
         assert!(sent.try_recv().is_err(), "nothing goes with no daemon");
-        let (next, mut sent) = daemon();
+        // A daemon that has dialled in but not yet been sent the Hello
+        // reads the Hello first.
+        let (mut next, mut sent) = daemon();
+        next.greeted = false;
+        asks.ask(
+            Some(&next),
+            "the agent core: a slow step".into(),
+            String::new(),
+        );
+        assert!(sent.try_recv().is_err(), "nothing goes before the Hello");
+        next.greeted = true;
         asks.hello_sent(&next);
         let mut waited: Vec<_> = std::iter::from_fn(|| sent.try_recv().ok().map(asked))
             .map(|asked| (asked.invariant, asked.reason))

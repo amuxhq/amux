@@ -3,11 +3,13 @@
 
 use models::{Bounds, FamilyDeliveries, check, walk};
 
-/// How long the exhaustive run may take under `just test`: the 600 s cap.
-/// Its measured times on CI's four-core runner spread from 155 s to 313 s,
-/// and twice the slowest passes the cap by 26 s. A run past it says the
-/// bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 600.0;
+/// How long the exhaustive run may take under `just test`, sized to CI's
+/// four-core runner: twice its projected time there, rounded up to a whole
+/// minute. The runner took up to 313 s at the bounds before the parent's
+/// unasked exit moved to the nightly bounds (396,826 states); on the
+/// enrolled Mac the cut bounds take 0.61 of that time, so about 191 s. A run
+/// past it says the bounds have outgrown their place.
+const BUDGET_SECONDS: f64 = 420.0;
 
 #[test]
 fn every_family_promise_holds_at_ci_bounds() {

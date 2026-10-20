@@ -87,14 +87,15 @@ pub struct FamilyDeliveries {
 }
 
 impl FamilyDeliveries {
-    /// The bounds `just test` explores exhaustively: 396,826 states in 74 s
-    /// on 4 threads of an M-series Mac. The child's unasked exit is left to
-    /// the nightly bounds, as it alone nearly tripled the states; the child
-    /// still exits when asked to, and its turn end still writes a report.
+    /// The bounds `just test` explores exhaustively. Both processes' unasked
+    /// exits are left to the nightly bounds: the child's alone nearly tripled
+    /// the states, and the parent's nearly doubled them, putting the run past
+    /// half its budget on CI's runner. Both still exit when asked to, and the
+    /// child's turn end still writes a report.
     pub const fn ci() -> Self {
         Self {
             turn_ends: 1,
-            parent_exits: 1,
+            parent_exits: 0,
             child_exits: 0,
             downs: 1,
             crashes: 1,
@@ -105,6 +106,7 @@ impl FamilyDeliveries {
     /// The larger bounds a nightly run explores.
     pub const fn nightly() -> Self {
         Self {
+            parent_exits: 1,
             child_exits: 1,
             downs: 2,
             waits: 2,

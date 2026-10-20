@@ -493,12 +493,16 @@ impl Relay {
         let client = rustls::ClientConfig::builder()
             .with_root_certificates(roots)
             .with_no_client_auth();
-        let server = CloudLinkServer::new(RelayIdentity {
-            host_id: Uuid::new_v4(),
-            name: RELAY_NAME.to_owned(),
-            authenticator: Arc::new(AccountTokens),
-            clock: Arc::new(SystemClock),
-        });
+        let server = CloudLinkServer::new(
+            RelayIdentity {
+                host_id: Uuid::new_v4(),
+                name: RELAY_NAME.to_owned(),
+                authenticator: Arc::new(AccountTokens),
+                clock: Arc::new(SystemClock),
+            },
+            // The curve reads no dump the relay's core asks for.
+            None,
+        );
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
         let task = server.serve_on_tls_tcp_listener(listener, acceptor, HANDSHAKE_TIMEOUT);

@@ -9,8 +9,9 @@
 //! account; a daemon has one of its own.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use core_ring::{DumpKind, DumpLimit};
@@ -23,6 +24,7 @@ use wire::pb;
 use super::{ByteStream, OpenError};
 use crate::HostId;
 use crate::routing::{LinkId, LinkRegistry};
+use crate::window::{self, Window};
 
 /// Prefixes the reason the forwarding core asked for a dump.
 pub const RELAY_CORE_DUMP: &str = "the relay core: ";
@@ -34,12 +36,17 @@ pub(crate) struct Relaying {
     /// The clock the core's rate window is measured by.
     epoch: Instant,
     next_stream: AtomicU64,
+    /// Where a dump the core asks for is written; unset only in tests that
+    /// never read one.
+    reports: OnceLock<PathBuf>,
 }
 
 struct Inner {
     relay: Relay,
     pipes: HashMap<StreamId, Pipe>,
     dumps: Dumps,
+    /// The core's recent history, for a dump.
+    window: Window<Relay, Input>,
 }
 
 /// The dumps the relay core asked for, reported once per kind in each
@@ -81,10 +88,27 @@ impl Relaying {
                 relay: Relay::new(daemon_core::HostId(own.into_bytes())),
                 pipes: HashMap::new(),
                 dumps: Dumps::default(),
+                window: Window::default(),
             }),
             epoch: Instant::now(),
             next_stream: AtomicU64::new(1),
+            reports: OnceLock::new(),
         })
+    }
+
+    /// Writes the dumps the core asks for into `dir`: a relay's directory
+    /// from its configuration, a daemon's its installation's reports.
+    pub(crate) fn report_to(&self, dir: PathBuf) {
+        let _ = self.reports.set(dir);
+    }
+
+    /// The core this relays with, for a test that must make it ask for a
+    /// dump.
+    #[cfg(test)]
+    fn with_relay(own: HostId, relay: Relay) -> Arc<Self> {
+        let relaying = Self::new(own);
+        relaying.inner().relay = relay;
+        relaying
     }
 
     fn inner(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -99,12 +123,14 @@ impl Relaying {
     /// for the caller to act on.
     pub(crate) fn step(&self, inputs: impl IntoIterator<Item = Input>) -> Vec<Output> {
         let now_ms = self.now_ms();
-        let mut inner = self.inner();
-        let inner = &mut *inner;
+        let mut guard = self.inner();
+        let inner = &mut *guard;
         let mut out = Vec::new();
         for input in inputs {
+            inner.window.record(&inner.relay, &input);
             inner.relay.step(input, &mut out);
         }
+        let mut dumps = Vec::new();
         out.retain(|output| match output {
             Output::Cut { stream, reason } => {
                 match inner.pipes.get_mut(stream) {
@@ -123,7 +149,13 @@ impl Relaying {
             }
             Output::Dump { reason } => {
                 if let Some(reason) = inner.dumps.reason(reason, now_ms) {
-                    tracing::error!(%reason, "the relay core asked for a dump");
+                    // Copied under the lock, rendered and written after
+                    // it: every admission waits on this lock.
+                    let held = self
+                        .reports
+                        .get()
+                        .map(|_| (inner.window.clone(), inner.relay.clone()));
+                    dumps.push((reason, held));
                 }
                 false
             }
@@ -132,7 +164,35 @@ impl Relaying {
             | Output::Displace { .. }
             | Output::Neighbor { .. } => true,
         });
+        drop(guard);
+        for (reason, held) in dumps {
+            self.write_dump(&reason, held);
+        }
         out
+    }
+
+    /// Writes one dump the core asked for: the reason, the core's state when
+    /// the window began, every input stepped since and the state now. The
+    /// relay core sees ids, prefaces and tiers, never a token (tokens are
+    /// checked before a link is admitted), so the file holds no secret.
+    fn write_dump(&self, reason: &str, held: Option<(Window<Relay, Input>, Relay)>) {
+        let (Some(dir), Some((window, relay))) = (self.reports.get(), held) else {
+            tracing::error!(%reason, "the relay core asked for a dump, with nowhere to write it");
+            return;
+        };
+        let text = window.render("the relay core", reason, &relay);
+        match window::write(dir, "relay", &text) {
+            Ok(file) => tracing::error!(
+                %reason,
+                file = %file.display(),
+                "the relay core asked for a dump"
+            ),
+            Err(error) => tracing::error!(
+                %reason,
+                %error,
+                "the relay core asked for a dump, which could not be written"
+            ),
+        }
     }
 
     /// The hosts on `user`'s account holding a link here.
@@ -720,6 +780,64 @@ mod tests {
         .await
         .expect("the far end sees the stream end")
         .ok();
+    }
+
+    /// A dump the relay core asks for leaves a file in the reports
+    /// directory: the reason, the core's state when the window began,
+    /// every input stepped since and the state now. A relay whose budget is
+    /// zero asks at its first step measured over it.
+    #[test]
+    fn a_dump_the_relay_core_asks_for_is_a_file_of_its_state_and_inputs() {
+        let reports = tempfile::tempdir().unwrap();
+        let own = HostId::new_v4();
+        let relaying = Relaying::with_relay(
+            own,
+            Relay::with_budget(
+                daemon_core::HostId(own.into_bytes()),
+                daemon_core::StepBudget { micros: 0 },
+            ),
+        );
+        relaying.report_to(reports.path().to_owned());
+        let written = || {
+            std::fs::read_dir(reports.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect::<Vec<_>>()
+        };
+        let mut now_ms = 0;
+        // Any step takes longer than nothing, given a clock fine enough.
+        while written().is_empty() {
+            now_ms += 1;
+            relaying.step([Input::Tick { now_ms }]);
+        }
+        let [file] = &written()[..] else {
+            panic!("one file: {:?}", written());
+        };
+        let name = file.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            name.starts_with("relay-") && name.ends_with(".txt"),
+            "{name}"
+        );
+        let text = std::fs::read_to_string(file).unwrap();
+        println!("{}\n{text}", file.display());
+        let header = format!("the relay core, amux {}\n", crate::version());
+        assert!(text.starts_with(&header), "{text}");
+        assert!(
+            text.contains(&format!("reason: {RELAY_CORE_DUMP}"))
+                && text.contains("over its budget of 0 µs"),
+            "{text}"
+        );
+        assert!(
+            text.contains("state at the window's start:\nRelay {"),
+            "{text}"
+        );
+        assert!(text.contains("\n1 Tick { now_ms: 1 }\n"), "{text}");
+        assert!(
+            text.contains(&format!("\n{now_ms} Tick {{ now_ms: {now_ms} }}\n")),
+            "{text}"
+        );
+        assert!(text.contains("state now:\nRelay {"), "{text}");
+        assert!(text.contains(&format!("now_ms: {now_ms},")), "{text}");
     }
 
     #[test]

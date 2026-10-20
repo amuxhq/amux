@@ -145,7 +145,10 @@ impl RelayUser {
 }
 
 impl CloudLinkServer {
-    pub fn new(identity: RelayIdentity) -> Self {
+    /// A relay writing the dumps its core asks for into `reports`. A relay
+    /// in production always has one; a test that never reads a dump passes
+    /// None, and such a dump is then only logged.
+    pub fn new(identity: RelayIdentity, reports: Option<std::path::PathBuf>) -> Self {
         let local_host = LiveLocalHost::new(local_host(
             identity.host_id,
             &identity.name,
@@ -155,9 +158,13 @@ impl CloudLinkServer {
             },
             false,
         ));
+        let relaying = Relaying::new(identity.host_id);
+        if let Some(reports) = reports {
+            relaying.report_to(reports);
+        }
         Self {
             inner: Arc::new(CloudLinkServerInner {
-                relaying: Relaying::new(identity.host_id),
+                relaying,
                 identity,
                 local_host,
                 users: RwLock::new(HashMap::new()),

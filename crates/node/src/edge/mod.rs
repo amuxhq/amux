@@ -277,6 +277,11 @@ impl Edge {
             local_host.id(),
             CoreLinks::new(runtime.clone()),
         ));
+        // The daemon forwards between its own links with a relay core of
+        // its own, whose dumps go where the profile's do.
+        if let Some(runtime) = runtime.upgrade() {
+            links.relaying().report_to(runtime.reports.clone());
+        }
         let channels = Arc::new(ChannelPool::with_device_tls(
             links,
             identity.clone(),

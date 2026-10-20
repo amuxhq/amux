@@ -69,6 +69,14 @@ The supervisor logs to `<data_dir>/supervisor.log`; the daemon logs to
 `<data_dir>/daemon.log` unless `AMUX_LOG` names another file. `<data_dir>` is
 the config's `root`, `~/.local/share/amux` by default.
 
+When the supervisor's core breaks one of its invariants it logs the reason
+and writes `<data_dir>/reports/supervisor-<unix ms>-<id>.txt`: the reason, the
+core's state when its window began, every input stepped since (at least the
+last 256) and its state now, under a header naming this build. The file
+holds what the log does (manifests, paths, exit codes, failures), no secret.
+One is written per kind of reason every ten minutes. Nothing replays it; it
+is what a step test of the supervisor core is written from by hand.
+
 ## Login items
 
 `amux init` asks once, on a terminal, whether amux should start at login.

@@ -124,12 +124,16 @@ impl Relay {
             quic_port: quic.port(),
         });
         let host_id = Uuid::new_v4();
-        let server = CloudLinkServer::new(RelayIdentity {
-            host_id,
-            name: "relay".to_owned(),
-            authenticator: Arc::new(Presented(cloud.clone())),
-            clock,
-        });
+        let server = CloudLinkServer::new(
+            RelayIdentity {
+                host_id,
+                name: "relay".to_owned(),
+                authenticator: Arc::new(Presented(cloud.clone())),
+                clock,
+            },
+            // No story reads a dump the relay's core asks for.
+            None,
+        );
         let tcp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let tcp = tcp_listener.local_addr()?;
         let http = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

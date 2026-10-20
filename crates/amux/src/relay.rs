@@ -14,11 +14,15 @@
 //! tcp_port: 9001          # the TLS listener; tokens name this port
 //! udp_port: 9001          # the QUIC listener; the TCP port when absent
 //! cloud_url: https://amux.sh
+//! reports_dir: /var/lib/amux-relay/reports  # beside this file when absent
 //! ```
 //!
 //! The certificate and key are PEM files named by `AMUX_TLS_CERT` and
 //! `AMUX_TLS_KEY`, or by `tls_cert` and `tls_key` in the file. Other keys an
-//! older relay configuration carried are ignored.
+//! older relay configuration carried are ignored. A dump the relay's core
+//! asks for (a broken invariant, a step over its budget) is a text file in
+//! `reports_dir`; the default is `reports` in the configuration file's
+//! directory.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -49,6 +53,8 @@ struct RelayConfig {
     tls_cert: Option<PathBuf>,
     #[serde(default)]
     tls_key: Option<PathBuf>,
+    #[serde(default)]
+    reports_dir: Option<PathBuf>,
 }
 
 fn default_cloud_url() -> String {
@@ -93,28 +99,46 @@ pub fn run(config: Option<&Path>) -> Result<()> {
     let cert = pem(CERT_ENV, config.tls_cert.as_deref(), "certificate")?;
     let key = pem(KEY_ENV, config.tls_key.as_deref(), "key")?;
     crate::server::log_to(&log_path())?;
+    let reports = reports_dir(&path, config.reports_dir.as_deref());
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    runtime.block_on(serve(config, cert, key))
+    runtime.block_on(serve(config, reports, cert, key))
 }
 
-async fn serve(config: RelayConfig, cert: Vec<u8>, key: Vec<u8>) -> Result<()> {
+/// Where the relay writes the dumps its core asks for: the configured
+/// directory, else `reports` beside the configuration file.
+fn reports_dir(config: &Path, configured: Option<&Path>) -> PathBuf {
+    configured.map_or_else(
+        || {
+            config
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("reports")
+        },
+        Path::to_owned,
+    )
+}
+
+async fn serve(config: RelayConfig, reports: PathBuf, cert: Vec<u8>, key: Vec<u8>) -> Result<()> {
     let tls = node::create_tls_acceptor(&cert, &key).context("loading the TLS certificate")?;
     let quic =
         node::relay_quic_server_config(&cert, &key).context("loading the TLS certificate")?;
     let clock: Arc<dyn node::Clock> = Arc::new(agent_dir::SystemClock);
-    let server = CloudLinkServer::new(RelayIdentity {
-        host_id: uuid::Uuid::new_v4(),
-        name: config.host_name.clone(),
-        authenticator: Arc::new(JwtCloudLinkAuthenticator::new(
-            &config.cloud_url,
-            config.host_name.clone(),
-            config.tcp_port,
-            clock.clone(),
-        )),
-        clock,
-    });
+    let server = CloudLinkServer::new(
+        RelayIdentity {
+            host_id: uuid::Uuid::new_v4(),
+            name: config.host_name.clone(),
+            authenticator: Arc::new(JwtCloudLinkAuthenticator::new(
+                &config.cloud_url,
+                config.host_name.clone(),
+                config.tcp_port,
+                clock.clone(),
+            )),
+            clock,
+        },
+        Some(reports),
+    );
     let tcp_addr = SocketAddr::from(([0, 0, 0, 0], config.tcp_port));
     let listener = tokio::net::TcpListener::bind(tcp_addr)
         .await
@@ -140,4 +164,20 @@ async fn serve(config: RelayConfig, cert: Vec<u8>, key: Vec<u8>) -> Result<()> {
     tcp_task.abort();
     quic_task.abort();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dumps_go_beside_the_configuration_unless_it_names_a_directory() {
+        let config = Path::new("/etc/amux/relay.yaml");
+        assert_eq!(
+            reports_dir(config, None),
+            Path::new("/etc/amux").join("reports")
+        );
+        let named = Path::new("/var/lib/amux-relay/reports");
+        assert_eq!(reports_dir(config, Some(named)), named);
+    }
 }

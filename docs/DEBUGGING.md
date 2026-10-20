@@ -123,9 +123,15 @@ failed at. An agent process whose core breaks one of its invariants says so on i
 asks its daemon for a dump of it over the control connection; the daemon writes the bundle, reason starting
 `an agent's core: ` and naming the agent, with the agent's facts ring and checkpoints for the interpreter stage and
 the daemon's own parts for the core's. The relay and the supervisor log the same kind of reason (`the relay core: `,
-`the supervisor core: `). Each process reports one per kind of reason (one per broken invariant, one for steps over
-budget) every ten minutes, and the daemon writes one agent-asked bundle per kind in the same interval, however many
-agents ask; the next one of that kind says how many were held back since.
+`the supervisor core: `) and write a text file beside it: the reason, the core's state when the driver's window began,
+every input stepped since (at least the last 256) and the state now. The supervisor writes
+`<data_dir>/reports/supervisor-<unix ms>-<id>.txt`; a relay writes `relay-<unix ms>-<id>.txt` into its configuration's
+`reports_dir` (by default `reports` beside the configuration file), and a daemon's own relay core into the
+installation's `reports/`. Neither core is a replay stage and nothing replays these files: they are what a person
+turns into a step test of that core by hand. Each process reports one per kind of reason (one per broken invariant,
+one for steps over budget) every ten minutes, and the daemon writes one agent-asked bundle per kind in the same
+interval, however many agents ask; the next one of that kind says how many were held back since. Only the daemon and
+relay cores time their steps, so only they ask for a dump of a step over its budget.
 
 ## Reading a dump
 

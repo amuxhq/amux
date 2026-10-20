@@ -52,6 +52,7 @@ pub mod supervisor;
 mod telemetry;
 mod transport;
 mod trust;
+mod window;
 mod worktree;
 
 pub use activation::{ActivationError, ActivationPipe, GO, InheritedPipe, PIPE_ENV, PREPARED};

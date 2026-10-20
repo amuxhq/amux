@@ -266,7 +266,7 @@ struct Decided {
 }
 
 /// What the current step touched; cleared as each step begins.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Touched {
     streams: Vec<StreamId>,
     links: Vec<LinkId>,
@@ -285,7 +285,9 @@ struct Told {
 
 /// The relay's whole state: the links up, which hosts of one account may
 /// reach each other, the streams decided and not yet ended, and its step
-/// budget.
+/// budget. Cloned and printed by a driver keeping its recent history for a
+/// dump.
+#[derive(Clone, Debug)]
 pub struct Relay {
     /// The relay's own host: a stream addressed to it has nothing to reach.
     own: HostId,

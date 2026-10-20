@@ -63,6 +63,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::install::{private_dir, sync_dir};
 use crate::profiles::{self, Registry};
 use crate::release::{self, Manifest, Release};
+use crate::window::{self, Window};
 
 /// The supervisor's timings and thresholds; the defaults are the
 /// parameters table's starting points.
@@ -277,13 +278,53 @@ struct Driver {
 /// Prefixes the reason the supervisor core asked for a dump.
 pub const SUPERVISOR_CORE_DUMP: &str = "the supervisor core: ";
 
-/// The dumps the supervisor core asked for, reported once per kind in each
-/// interval: a daemon restarting in a loop meets the same broken invariant
-/// at every restart.
-#[derive(Debug, Default)]
-struct Dumps(DumpLimit);
+/// The dumps the supervisor core asked for, written once per kind in each
+/// interval (a daemon restarting in a loop meets the same broken invariant
+/// at every restart), and the window each is written from.
+#[derive(Default)]
+struct Dumps {
+    limit: DumpLimit,
+    window: Window<Supervisor, core::Input>,
+}
 
 impl Dumps {
+    /// Steps one input through the core, keeping it in the window.
+    fn step(&mut self, core: &mut Supervisor, input: core::Input, out: &mut Vec<Output>) {
+        self.window.record(core, &input);
+        core.step(input, out);
+    }
+
+    /// Writes the dump the core asked for at `now_ms` under `data_dir`'s
+    /// reports, unless the limit holds it back: the reason, the core's
+    /// state when the window began, every input since and the state now.
+    /// The supervisor's state holds manifests, paths, exit codes and
+    /// failure strings, the same as its log, and no secret. Returns the
+    /// file, or why it could not be written.
+    fn dump(
+        &mut self,
+        reason: &core::DumpReason,
+        now_ms: u64,
+        core: &Supervisor,
+        data_dir: &Path,
+    ) -> Option<io::Result<PathBuf>> {
+        let said = self.reason(reason, now_ms)?;
+        let text = self.window.render("the supervisor core", &said, core);
+        let written = window::write(&data_dir.join(crate::REPORTS), "supervisor", &text);
+        match &written {
+            Ok(file) => tracing::error!(
+                reason = %said,
+                file = %file.display(),
+                "the supervisor core asked for a dump"
+            ),
+            Err(error) => tracing::error!(
+                reason = %said,
+                %error,
+                "the supervisor core asked for a dump, which could not be written"
+            ),
+        }
+        Some(written)
+    }
+
     /// The reason to report for `reason` asked for at `now_ms`, or `None`
     /// when it is held back.
     fn reason(&mut self, reason: &core::DumpReason, now_ms: u64) -> Option<String> {
@@ -300,7 +341,7 @@ impl Dumps {
                 ),
             ),
         };
-        let suppressed = self.0.admit(kind, now_ms)?;
+        let suppressed = self.limit.admit(kind, now_ms)?;
         Some(core_ring::with_suppressed(
             format!("{SUPERVISOR_CORE_DUMP}{why}"),
             suppressed,
@@ -397,8 +438,10 @@ impl Driver {
     fn step(&mut self, input: core::Input) -> Result<Option<Done>, SuperviseError> {
         let mut out = Vec::new();
         let now_ms = millis_now(&*self.clock);
-        self.core.step(core::Input::Tick { now_ms }, &mut out);
-        self.core.step(input, &mut out);
+        let core = &mut self.core;
+        self.dumps
+            .step(core, core::Input::Tick { now_ms }, &mut out);
+        self.dumps.step(core, input, &mut out);
         self.execute(out)
     }
 
@@ -500,9 +543,7 @@ impl Driver {
                 }
                 Output::Dump { reason } => {
                     let now_ms = millis_now(&*self.clock);
-                    if let Some(reason) = self.dumps.reason(&reason, now_ms) {
-                        tracing::error!(%reason, "the supervisor core asked for a dump");
-                    }
+                    self.dumps.dump(&reason, now_ms, &self.core, &self.data_dir);
                 }
             }
         }
@@ -862,6 +903,81 @@ mod tests {
             second.ends_with("(1 more like it was not dumped since the last)"),
             "{second}"
         );
+    }
+
+    /// A dump the core asks for leaves a file under the data directory's
+    /// reports: the reason, the core's state when the window began, every
+    /// input stepped since and the state now. The violation is forced at
+    /// the driver: the core's own invariants hold for every input the
+    /// supervisor model explores.
+    #[test]
+    fn a_dump_the_supervisor_core_asks_for_is_a_file_of_its_state_and_inputs() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut out = Vec::new();
+        let mut core = Supervisor::start(
+            Start {
+                params: Params::default().for_core(),
+                target: "aarch64-apple-darwin".into(),
+                running: Version::new(1, 2, 3),
+                prev: core::PrevFound::None,
+                rejected: None,
+                inherited: false,
+                now_ms: 1_000,
+            },
+            &mut out,
+        );
+        let mut dumps = Dumps::default();
+        for input in [
+            core::Input::Tick { now_ms: 1_005 },
+            core::Input::Prepared {
+                daemon: DaemonId(1),
+            },
+            core::Input::Tick { now_ms: 1_010 },
+            core::Input::Terminate,
+        ] {
+            dumps.step(&mut core, input, &mut out);
+        }
+        let broke = core::DumpReason::Violation(core::Violation {
+            invariant: "at most one daemon is in the serving phase",
+            detail: "forced by the test".into(),
+        });
+        let file = dumps
+            .dump(&broke, 1_010, &core, data_dir.path())
+            .expect("admitted")
+            .expect("written");
+        assert_eq!(
+            file.parent(),
+            Some(data_dir.path().join(crate::REPORTS).as_path())
+        );
+        let name = file.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            name.starts_with("supervisor-") && name.ends_with(".txt"),
+            "{name}"
+        );
+        let text = std::fs::read_to_string(&file).unwrap();
+        println!("{}\n{text}", file.display());
+        let header = format!("the supervisor core, amux {}\n", crate::version());
+        assert!(text.starts_with(&header), "{text}");
+        assert!(
+            text.contains(&format!(
+                "reason: {SUPERVISOR_CORE_DUMP}an invariant failed: at most one daemon is in \
+                 the serving phase: forced by the test"
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains("state at the window's start:\nSupervisor {"),
+            "{text}"
+        );
+        assert!(
+            text.contains("inputs since (4):\n1 Tick { now_ms: 1005 }\n"),
+            "{text}"
+        );
+        assert!(text.contains("4 Terminate\n"), "{text}");
+        assert!(text.contains("state now:\nSupervisor {"), "{text}");
+        assert!(text.contains("stopping: true"), "the state now: {text}");
+        // Held back within the interval: no second file.
+        assert!(dumps.dump(&broke, 1_011, &core, data_dir.path()).is_none());
     }
 
     /// Serves one response to one connection.

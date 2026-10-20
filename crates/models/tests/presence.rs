@@ -4,11 +4,11 @@
 use models::{Bounds, PresenceRouting, check, walk};
 
 /// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: twice its projected time there, rounded up to a whole
-/// minute and capped at 600 s. The runner took 339.9 s at the bounds before
-/// the CI bounds allowed only one refusal for the plan in a row (1,233,958
-/// states, about 3,630 a second), which projects to about 287 s at these
-/// bounds' 1,040,570. A run past it says the bounds have outgrown their place.
+/// four-core runner: twice its measured time there (289 s), rounded up to a
+/// whole minute. The runner took 339.9 s at the bounds before the CI bounds
+/// allowed only one refusal for the plan in a row (1,233,958 states), and
+/// twice that passed the 600 s cap. A run past it says the bounds have
+/// outgrown their place.
 const BUDGET_SECONDS: f64 = 600.0;
 
 #[test]

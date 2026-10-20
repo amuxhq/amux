@@ -66,10 +66,10 @@ def walk(seed: int | None, seeds: int | None, filters: list[str]) -> tuple[int, 
         env["TESTNET_SEED"] = str(seed)
     if seeds is not None:
         env["TESTNET_SEEDS"] = str(seeds)
-    packages = sorted({package for package, _ in targets})
-    command = ["cargo", "test", "--locked", "--no-fail-fast"]
-    for package in packages:
-        command += ["-p", package]
+    # The workspace scope and features `just test` builds with, so the stories
+    # reuse its build: naming the package instead unifies the dependencies'
+    # features differently and rebuilds every workspace crate beneath it.
+    command = ["cargo", "test", "--locked", "--no-fail-fast", "--workspace", "--features", "bundled"]
     for _, target in targets:
         command += ["--test", target]
     command += ["--", "--nocapture", *filters]

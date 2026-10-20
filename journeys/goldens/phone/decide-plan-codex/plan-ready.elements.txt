@@ -20,7 +20,7 @@ ask.choice.1 | Send back… |  | 205,770,169,44
  | More |  | 338,710,44,44
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
- | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 18,217,366,160
- | Worked <t> |  | 48,387,72,16
  | Started |  | 18,132,366,34
  | Move the journal. |  | 18,166,366,40
+ | Plan proposed, Move the journal, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 18,217,366,160
+ | Worked <t> |  | 48,387,72,16

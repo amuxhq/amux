@@ -30,6 +30,7 @@ ask.choice.1 | Send back… |  | 205,770,169,44
  | More |  | 338,710,44,44
  | Approve |  | 28,770,169,44
  | Send back… |  | 205,770,169,44
+ | Started |  | 18,66,366,34
  | Move the journal. |  | 18,99,366,40
  | Plan approved, Move the journal |  | 18,139,366,44
  | Worked <t> |  | 48,181,72,16
@@ -42,4 +43,3 @@ ask.choice.1 | Send back… |  | 205,770,169,44
  | Keep a month of logs, compressed. |  | 18,451,366,40
  | Plan proposed, Rotate the logs, Rotate the logs, 1., Rotate the daemon's log every night., 2., Compress rotated logs., 3., Delete logs older than a month. |  | 18,503,366,160
  | Worked <t> |  | 48,672,72,16
- | Started |  | 18,66,366,34

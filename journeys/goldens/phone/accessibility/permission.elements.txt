@@ -22,6 +22,6 @@ ask.deny | Deny… |  | 205,749,169,65
  | Always allow Bash, In this project, from now on |  | 28,512,346,225
  | Allow |  | 28,749,169,65
  | Deny… |  | 205,749,169,65
+ | Started |  | 18,144,366,58
  | Check the deployment once. |  | 18,202,366,106
  | Wants to run, deploy --check |  | 18,320,366,80
- | Started |  | 18,144,366,58

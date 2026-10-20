@@ -572,7 +572,12 @@ class PhoneJourney:
         drawn = geometry(elements, volatile, ids)
         geometry_label = geometry_label or label
         (actual / f"{geometry_label}.elements.txt").write_text(drawn)
+        # A volatile surface is masked where it stood before the photograph
+        # and after it: an age crossing into another digit while the display
+        # settles (9s to 19s) grows past the frame read first.
+        after = self.query()
         masks = volatile_masks(elements, volatile, screen=state.get("screen"))
+        masks += volatile_masks(uncovered(after["elements"]), volatile, screen=after.get("screen"))
         masks += volatile_masks(pictured(elements, self.frozen, png_size(png)))
         self.actions.append(f"captured {label}")
         if self.update and os.environ.get("CI"):

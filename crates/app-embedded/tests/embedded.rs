@@ -723,6 +723,11 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
     embedded.shutdown().await.unwrap();
 }
 
+fn app_card_idle(app: &AppRuntime, agent: &AgentKey) -> bool {
+    app.fleet_card(agent)
+        .is_some_and(|card| card.attention == model::Attention::Idle)
+}
+
 /// What the phone shows of the desk's agent: its fleet card, less how
 /// reachable the desk is now, and every row of its chat.
 async fn shown(app: &AppRuntime, agent: &AgentKey) -> (FleetCard, Vec<String>) {
@@ -783,6 +788,12 @@ async fn a_phone_relaunched_after_a_suspend_shows_the_fleet_and_chat_it_left() {
     let first = app(&embedded, phone).await;
     converse(&first, &net).await;
     let agent = worker_key(&net);
+    // The answer's text arrives before its turn ends; the turn's end can
+    // reach the store after the card is read, and the relaunch shows it.
+    eventually(&first, "the answering turn ended", || {
+        app_card_idle(&first, &agent)
+    })
+    .await;
     let before = shown(&first, &agent).await;
 
     // The app is suspended, then the system ends it: the checkpoint is on

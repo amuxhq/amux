@@ -675,16 +675,11 @@ public struct AgentsHome: View {
                         .identified("home.empty.explain")
                 }
                 .padding(.horizontal, design.metrics.gutter)
+                // A machine that can be paired is one this phone can reach,
+                // and one it can reach is one it has found: the cards are the
+                // whole of what there is to pair with.
                 if !pairable.isEmpty {
-                    VStack(alignment: .leading, spacing: Space.m) {
-                        CalloutStrip(callouts: pairable, act: actions)
-                        Text("Not this one? Run \(command("amux pair")) on the computer you want and scan the code it shows with the Camera app.")
-                            .designFont(.detail, design)
-                            .foregroundStyle(design.inkMuted.color)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, design.metrics.gutter)
-                            .identified("home.empty.howToPair")
-                    }
+                    CalloutStrip(callouts: pairable, act: actions)
                 } else {
                     VStack(alignment: .leading, spacing: Space.xl) {
                         if hosts.localNetwork == .denied {
@@ -751,7 +746,7 @@ public struct AgentsHome: View {
                 }
             }
             step(2) {
-                Text("Run \(command("amux pair")) on it and scan the code it shows with the Camera app.")
+                Text("Run \(command("amux pair --qr")) on it and scan the code with the Camera app.")
             }
         }
         .accessibilityElement(children: .contain)

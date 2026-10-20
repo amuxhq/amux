@@ -466,7 +466,7 @@
       {"literal": "\"unsubscribed\"", "context": "case .unsubscribed: \"unsubscribed\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"person.slash\"", "context": "case .signIn, .subscribe: \"person.slash\"", "reason": "View metadata, driving state or asset identifier, not displayed copy.", "count": 1},
       {"literal": "\"wifi.slash\"", "context": "default: \"wifi.slash\"", "reason": "View metadata, driving state or asset identifier, not displayed copy.", "count": 1},
-      {"literal": "\"home.empty.howToPair\"", "context": ".identified(\"home.empty.howToPair\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 2},
+      {"literal": "\"home.empty.howToPair\"", "context": ".identified(\"home.empty.howToPair\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"home.empty.newAgent\"", "context": ".identified(\"home.empty.newAgent\", label: \"New Agent\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"home.empty.noAgents\"", "context": ".identified(\"home.empty.noAgents\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"\\(row.children)\"", "context": "Text(\"\\(row.children)\")", "reason": "A count drawn as numerals, not a sentence.", "count": 1},

@@ -10765,18 +10765,6 @@
         }
       }
     },
-    "Not this one? Run %@ on the computer you want and scan the code it shows with the Camera app." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not this one? Run %@ on the computer you want and scan the code it shows with the Camera app."
-          }
-        }
-      }
-    },
     "Looking on this network…" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
@@ -10813,18 +10801,6 @@
         }
       }
     },
-    "Run %@ on it and scan the code it shows with the Camera app." : {
-      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Run %@ on it and scan the code it shows with the Camera app."
-          }
-        }
-      }
-    },
     "Have an amux account?" : {
       "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
       "extractionState" : "manual",
@@ -10833,6 +10809,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Have an amux account?"
+          }
+        }
+      }
+    },
+    "Run %@ on it and scan the code with the Camera app." : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run %@ on it and scan the code with the Camera app."
           }
         }
       }

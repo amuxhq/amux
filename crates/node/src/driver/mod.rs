@@ -52,7 +52,7 @@ pub use stepped::Cores;
 use store::Sqlite;
 pub use streams::{InventorySubscription, Subscription};
 use tokio::runtime::Handle;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use wire::{FetchRequest, GetRequest};
 
@@ -227,6 +227,8 @@ pub(crate) struct Driver {
     window: Arc<pairing::PairWindow>,
     /// The pairing streams the driver carries for the core.
     pairings: Arc<pairing::Carriers>,
+    /// Ends once the core is gone, its store and ring closed.
+    closed: watch::Receiver<()>,
 }
 
 /// The tasks carrying the calls the core made of peers, by call.
@@ -271,6 +273,7 @@ impl Driver {
         )
         .inspect_err(|error| tracing::warn!(%error, "the core's input ring does not open"))
         .ok();
+        let (closed, closed_seen) = watch::channel(());
         let core = CoreThread {
             daemon,
             ring,
@@ -309,6 +312,7 @@ impl Driver {
             trust: trust.clone(),
             window: window.clone(),
             pairings: pairings.clone(),
+            _closed: closed,
         };
         let driver = Self {
             inputs,
@@ -322,8 +326,16 @@ impl Driver {
             trust,
             window,
             pairings,
+            closed: closed_seen,
         };
         (driver, core)
+    }
+
+    /// Resolves once the core is gone and its store and ring are closed,
+    /// wherever the last handle on the profile was let go.
+    pub(crate) fn closed(&self) -> impl Future<Output = ()> + Send + 'static {
+        let mut closed = self.closed.clone();
+        async move { while closed.changed().await.is_ok() {} }
     }
 
     /// From now on what the core decides about hosts goes to `connections`.
@@ -638,6 +650,9 @@ pub(crate) struct CoreThread {
     trust: crate::trust::SharedTrustStore,
     window: Arc<pairing::PairWindow>,
     pairings: Arc<pairing::Carriers>,
+    /// Dropped after every other field, so whoever waits on it finds the
+    /// store and the ring closed.
+    _closed: watch::Sender<()>,
 }
 
 /// The reason a bundle the core asked for at `now_ms` is written with, or

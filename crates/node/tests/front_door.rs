@@ -306,24 +306,41 @@ async fn removing_a_profile_ends_a_dump_still_in_flight() {
     .await
     .unwrap();
 
-    door.delete_profile(Request::new(DeleteProfileRequest {
-        profile_id: created.id.clone(),
-        confirm_revision: created.revision,
-    }))
-    .await
-    .unwrap();
+    // The removal lets the dump go, then waits for the store to close
+    // before it removes the files, which this test's handle and hold
+    // still keep open.
+    let gone = Arc::downgrade(&runtime);
+    let removing = daemon.front_door();
+    let profile_id = created.id.clone();
+    let removal = tokio::spawn(async move {
+        removing
+            .delete_profile(Request::new(DeleteProfileRequest {
+                profile_id,
+                confirm_revision: created.revision,
+            }))
+            .await
+    });
     // The removal holds nothing of the runtime, and no dump does: this
     // test's handle is the last.
-    assert_eq!(
-        Arc::strong_count(&runtime),
-        1,
-        "a dump in flight holds the removed profile's runtime"
-    );
+    until("the dump let go of the runtime", || {
+        let count = Arc::strong_count(&runtime);
+        async move { (count == 1).then_some(()).ok_or(count) }
+    })
+    .await
+    .expect("a dump in flight holds the removed profile's runtime");
     release_second.send(()).unwrap();
     assert!(holding.await.unwrap());
-    let gone = Arc::downgrade(&runtime);
     drop(runtime);
+    removal.await.unwrap().unwrap();
     assert!(gone.upgrade().is_none(), "the runtime is gone");
+    assert!(
+        !install
+            .data_dir
+            .join("profiles")
+            .join(id.to_string())
+            .exists(),
+        "the profile's files are gone"
+    );
     drop(door);
     daemon.shutdown().await.unwrap();
 }

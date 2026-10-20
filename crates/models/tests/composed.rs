@@ -6,10 +6,10 @@ use models::net::agent_id;
 use models::{Bounds, ComposedNet, Machine as _, check, walk};
 
 /// How long the three exhaustive runs together may take under `just
-/// test`, sized to CI's four-core runner: twice the slower of the binary's
-/// measured times there (151 s and 105 s), rounded up to a whole minute. A
-/// run past it says the bounds have outgrown their place.
-const BUDGET_SECONDS: f64 = 360.0;
+/// test`, sized to CI's four-core runner: twice the slowest of the binary's
+/// measured times there (207 s; the README lists them all), rounded up to a
+/// whole minute. A run past it says the bounds have outgrown their place.
+const BUDGET_SECONDS: f64 = 420.0;
 
 #[test]
 fn every_composed_promise_holds_at_ci_bounds() {

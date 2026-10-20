@@ -4,9 +4,9 @@
 use models::{AgentLifecycle, Bounds, check, walk};
 
 /// How long each exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: twice the slower of the binary's measured times there
-/// (45 s and 28 s for both runs), rounded up to a whole minute. A run past it
-/// says the bounds have outgrown their place.
+/// four-core runner: twice the slowest of the binary's measured times there
+/// (45 s for both runs; the README lists them all), rounded up to a whole
+/// minute. A run past it says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 120.0;
 
 fn holds_within_budget(name: &str, model: &AgentLifecycle) {

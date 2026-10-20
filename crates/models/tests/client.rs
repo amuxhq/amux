@@ -4,9 +4,9 @@
 use models::{Bounds, ClientModel, check, walk};
 
 /// How long the exhaustive run may take under `just test`, sized to CI's
-/// four-core runner: twice the slower of its measured times there (51 s and
-/// 109 s), rounded up to a whole minute. A run past it says the bounds have
-/// outgrown their place.
+/// four-core runner: twice the slowest of its measured times there (116 s;
+/// the README lists them all), rounded up to a whole minute. A run past it
+/// says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 240.0;
 
 #[test]

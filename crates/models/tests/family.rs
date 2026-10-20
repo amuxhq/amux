@@ -4,7 +4,7 @@
 use models::{Bounds, FamilyDeliveries, check, walk};
 
 /// How long the exhaustive run may take under `just test`: the 600 s cap.
-/// Its measured times on CI's four-core runner spread from 161 s to 313 s,
+/// Its measured times on CI's four-core runner spread from 155 s to 313 s,
 /// and twice the slowest passes the cap by 26 s. A run past it says the
 /// bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 600.0;

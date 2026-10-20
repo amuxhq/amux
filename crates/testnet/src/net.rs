@@ -2119,8 +2119,10 @@ impl Net {
         }
         let runs: Vec<Weak<ProfileRuntime>> =
             daemon.profiles().iter().map(Arc::downgrade).collect();
+        eprintln!("HUNTX {:?} {}", std::time::Instant::now(), name);
         if clean {
             daemon.shutdown().await?;
+            eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "daemon down");
         } else {
             drop(daemon);
         }
@@ -3221,6 +3223,7 @@ impl Net {
         let names: Vec<String> = self.hosts.keys().cloned().collect();
         for name in &names {
             if let Ok(runtime) = self.runtime(name) {
+                eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "kill_agent");
                 for id in runtime.live() {
                     let _ = tokio::time::timeout(PATIENCE, runtime.kill_agent(id)).await;
                 }
@@ -3242,8 +3245,7 @@ impl Net {
                 None => self.take_down(name, true).await?,
             }
         }
-        // Agents of hosts that were down at the end have no daemon to
-        // stop them.
+        eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "kill agents");
         kill_agents_under(self.root.path()).await?;
         Ok(())
     }

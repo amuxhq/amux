@@ -834,12 +834,15 @@ impl Edge {
             .link_registry()
             .send_link_close_to_all(reason)
             .await;
+        eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "edge closes sent");
         tokio::time::sleep(LINK_CLOSE_FLUSH).await;
         self.shutdown.send_replace(true);
         self.reachability.close_direct_links().await;
+        eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "edge direct closed");
         if let Some(link) = self.cloud.lock().await.take() {
             link.stop().await;
         }
+        eprintln!("HUNTX {:?} {}", std::time::Instant::now(), "edge cloud");
         self.quic_endpoint
             .close(quinn::VarInt::from_u32(0), b"profile stopping");
         let tasks = std::mem::take(&mut *self.tasks.lock().unwrap());

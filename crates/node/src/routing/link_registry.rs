@@ -410,6 +410,7 @@ impl LinkRegistry {
                 .collect::<Vec<_>>()
         };
         for (link, closed) in &closing {
+            eprintln!("HUNTX {:?} close waits {:?}", std::time::Instant::now(), link);
             loop {
                 let notified = closed.notified();
                 if !self.state.read().await.writers.contains_key(link) {
@@ -417,6 +418,7 @@ impl LinkRegistry {
                 }
                 notified.await;
             }
+            eprintln!("HUNTX {:?} close gone {:?}", std::time::Instant::now(), link);
         }
         closing.into_iter().map(|(link, _)| link).collect()
     }
@@ -437,6 +439,7 @@ impl LinkRegistry {
                 .collect::<Vec<_>>()
         };
         for (link, closed) in &closing {
+            eprintln!("HUNTX {:?} close waits {:?}", std::time::Instant::now(), link);
             loop {
                 let notified = closed.notified();
                 if !self.state.read().await.writers.contains_key(link) {
@@ -444,6 +447,7 @@ impl LinkRegistry {
                 }
                 notified.await;
             }
+            eprintln!("HUNTX {:?} close gone {:?}", std::time::Instant::now(), link);
         }
         closing.into_iter().map(|(link, _)| link).collect()
     }

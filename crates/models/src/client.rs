@@ -24,10 +24,11 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+use prost::Message as _;
 use ui_state::{InputOutcome, InputState, Msg, SessionState};
 use wire::{
-    Agent, Append, Item, Kind, Lifecycle, Phase, SendInputResponse, SessionEvent, Snapshot,
-    session_event,
+    Agent, Append, ClaudeSdkItem, Item, Kind, Lifecycle, Phase, SendInputResponse, SessionEvent,
+    Snapshot, claude_sdk_item, session_event,
 };
 
 use crate::{Machine, Property};
@@ -245,6 +246,9 @@ pub struct State {
     /// identity: a session is a function of what it was fed, which is what
     /// the replay property checks.
     replay: Replay,
+    /// The messages the client was fed by the step that made this state,
+    /// in order. Outside identity: what a trace of a path records.
+    fed: Vec<Msg>,
 }
 
 #[derive(Clone)]
@@ -254,6 +258,17 @@ struct Replay {
 }
 
 impl State {
+    /// The client's session.
+    pub fn client(&self) -> &SessionState {
+        &self.client
+    }
+
+    /// The messages the client was fed by the step that made this state,
+    /// in order, the driver's Get answers among them.
+    pub fn fed(&self) -> &[Msg] {
+        &self.fed
+    }
+
     /// The client has caught up and nothing is on its way to it.
     fn at_rest(&self) -> bool {
         self.client.caught_up()
@@ -289,14 +304,15 @@ impl State {
             self.seen.reflected = true;
         }
         self.replay.since.push(msg.clone());
+        self.fed.push(msg.clone());
         let outcome = self.client.update(msg);
         if let Some(key) = &outcome.need_get {
             self.seen.got = true;
             if let Some(item) = self.daemon.get(key).cloned() {
-                self.replay
-                    .since
-                    .push(event(session_event::Of::Item(item.clone())));
-                self.client.update(event(session_event::Of::Item(item)));
+                let got = event(session_event::Of::Item(item));
+                self.replay.since.push(got.clone());
+                self.fed.push(got.clone());
+                self.client.update(got);
             }
         }
         if outcome.reloaded {
@@ -402,7 +418,17 @@ fn agent() -> Agent {
     }
 }
 
+/// An item of the agent's prose, which a client draws as its text.
 fn text_item(order: u64, revision: u64, text: &str) -> Item {
+    item(
+        order,
+        revision,
+        text,
+        claude_sdk_item::Kind::Message(wire::Text { complete: true }),
+    )
+}
+
+fn item(order: u64, revision: u64, text: &str, kind: claude_sdk_item::Kind) -> Item {
     Item {
         agent_id: AGENT_ID.to_vec(),
         key: format!("k{order}"),
@@ -410,6 +436,7 @@ fn text_item(order: u64, revision: u64, text: &str) -> Item {
         revision,
         text: text.into(),
         kind: KIND as i32,
+        body: ClaudeSdkItem { kind: Some(kind) }.encode_to_vec(),
         ..Item::default()
     }
 }
@@ -518,6 +545,7 @@ impl Machine for ClientModel {
             input: Sent::default(),
             used: Used::default(),
             seen: Seen::default(),
+            fed: Vec::new(),
         }
     }
 
@@ -581,6 +609,7 @@ impl Machine for ClientModel {
 
     fn next(&self, s: &State, action: &Action) -> Option<State> {
         let mut next = s.clone();
+        next.fed.clear();
         match action {
             Action::NewItem => {
                 let revision = next.revise();
@@ -592,7 +621,12 @@ impl Machine for ClientModel {
             Action::Arrive => {
                 let revision = next.revise();
                 let order = next.daemon.items.last().map_or(1, |item| item.order + 1);
-                let mut item = text_item(order, revision, "and then this");
+                let mut item = item(
+                    order,
+                    revision,
+                    "and then this",
+                    claude_sdk_item::Kind::Prompt(wire::Prompt {}),
+                );
                 item.input_id = INPUT.to_vec();
                 next.daemon.items.push(item.clone());
                 next.input.arrived = true;

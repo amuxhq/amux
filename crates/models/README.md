@@ -186,8 +186,11 @@ that received every write uninterrupted, which a catch-up plus the live
 stream must read as at rest, and the session as its stream last opened
 with every message since, which is what a client's dump records and must
 replay to the live session. Two states are one when they print alike, so
-the session keeps its indexes in ordered maps. The properties are in
-`src/client.rs`.
+the session keeps its indexes in ordered maps. The daemon's items are
+prose and the prompt, with real bodies, so the views draw each as its
+text. The properties are in `src/client.rs`. Seeded walks of this model
+are also the traces the phone's chat model replays: `just client-traces`
+records them (`crates/app-runtime/src/traces.rs`).
 
 ## The composed net
 

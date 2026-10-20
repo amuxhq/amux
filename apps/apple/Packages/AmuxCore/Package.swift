@@ -19,7 +19,13 @@ let package = Package(
         .target(name: "LaunchClock"),
         .target(name: "AmuxValues"),
         .target(name: "AmuxCore", dependencies: ["AmuxApp", "AmuxValues", "LaunchClock"]),
-        .testTarget(name: "AmuxCoreTests", dependencies: ["AmuxCore"]),
+        // Fixtures/client-traces is written by `just client-traces` from the
+        // Rust client model; the chat model's trace test replays it.
+        .testTarget(
+            name: "AmuxCoreTests",
+            dependencies: ["AmuxCore"],
+            resources: [.copy("Fixtures")]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

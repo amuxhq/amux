@@ -12,6 +12,8 @@
 
 mod chat;
 mod coalesce;
+#[cfg(test)]
+mod traces;
 pub mod values;
 
 use std::path::{Path, PathBuf};

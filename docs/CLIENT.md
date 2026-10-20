@@ -593,6 +593,14 @@ the fleet. `ChatModel.following` is told to the session with `follow(_:)` whenev
 from the frame's `arrivals_held`. [IOS.md](IOS.md) and
 [EMBEDDED.md](EMBEDDED.md) cover the phone side.
 
+`ChatModel`'s edge logic is the one place a chat's rows move by rules written a second time, so it is held equal to
+the Rust session by traces. [`app-runtime/src/traces.rs`](../crates/app-runtime/src/traces.rs) walks seeded schedules
+of the client model (`models::client`) and records, at every wake, the changes `take_changes()` would gather, the held
+keys, every row and the frame; `just client-traces` writes them to
+`apps/apple/Packages/AmuxCore/Tests/AmuxCoreTests/Fixtures/client-traces`, and app-runtime's tests fail while they
+differ from the model. `ChatModelTraceTests` replays each through `ChatModel` and asserts the same keys and rows at
+every cut.
+
 ## Replay and redaction
 
 [`replay-support`](../crates/replay-support/src/lib.rs) serves two purposes.

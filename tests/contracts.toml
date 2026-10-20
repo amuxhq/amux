@@ -695,6 +695,8 @@ tests = [
   "model/lib::tests::every_shared_value_has_a_schema_for_the_swift_mirrors",
   "ui-runtime/session::closing_drops_the_stream_and_a_late_result_changes_nothing",
   "swift:AmuxCoreTests/RuntimeCoordinatorTests/testASecondAccountGetsItsOwnProfileAndSwitchingPausesTheOther",
+  "swift:AmuxCoreTests/ChatModelTraceTests/testEveryRecordedTraceProjectsTheSameRowsAsTheRustModel",
+  "app-runtime/lib::traces::the_phones_trace_fixtures_are_the_client_models_current_traces",
 ]
 
 [[contract]]

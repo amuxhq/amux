@@ -20,6 +20,7 @@ ui-view = { workspace = true }
 wire = { workspace = true }
 
 [dev-dependencies]
+models = { workspace = true }
 provider-fakes = { workspace = true }
 serde_json = { workspace = true }
 testnet = { workspace = true }

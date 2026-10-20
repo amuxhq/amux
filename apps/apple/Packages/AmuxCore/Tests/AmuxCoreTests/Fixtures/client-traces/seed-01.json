@@ -1,0 +1,1264 @@
+{
+  "seed": 1,
+  "every": 3,
+  "cuts": [
+    {
+      "actions": [],
+      "messages": [],
+      "changes": {
+        "keys": [],
+        "reloaded": false,
+        "session": false
+      },
+      "keys": [],
+      "rows": [],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": {
+            "Holds": "CatchingUp"
+          },
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": "CatchingUp",
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Connecting",
+        "caught_up": false,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    },
+    {
+      "actions": [
+        "Lagged",
+        "Send",
+        "Event"
+      ],
+      "messages": [
+        "Send the prompt",
+        "Lagged",
+        "Connection Live"
+      ],
+      "changes": {
+        "keys": [],
+        "reloaded": false,
+        "session": true
+      },
+      "keys": [],
+      "rows": [],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": {
+            "Holds": "CatchingUp"
+          },
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": "CatchingUp",
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Live",
+        "caught_up": false,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [
+          {
+            "input_id": [
+              105,
+              110,
+              112,
+              117,
+              116,
+              45,
+              49
+            ],
+            "text": [
+              {
+                "Text": "and then this"
+              }
+            ],
+            "lands": "Queue",
+            "underway": "Held"
+          }
+        ],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    },
+    {
+      "actions": [
+        "Arrive",
+        "Revise(1)",
+        "Reset"
+      ],
+      "messages": [],
+      "changes": {
+        "keys": [],
+        "reloaded": false,
+        "session": false
+      },
+      "keys": [],
+      "rows": [],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": {
+            "Holds": "CatchingUp"
+          },
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": "CatchingUp",
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Live",
+        "caught_up": false,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [
+          {
+            "input_id": [
+              105,
+              110,
+              112,
+              117,
+              116,
+              45,
+              49
+            ],
+            "text": [
+              {
+                "Text": "and then this"
+              }
+            ],
+            "lands": "Queue",
+            "underway": "Held"
+          }
+        ],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    },
+    {
+      "actions": [
+        "Event",
+        "Event",
+        "InputVerdict(false)"
+      ],
+      "messages": [
+        "Opening generation 1",
+        "Snapshot r3",
+        "Sent: lost"
+      ],
+      "changes": {
+        "keys": [],
+        "reloaded": false,
+        "session": true
+      },
+      "keys": [],
+      "rows": [],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": {
+            "Holds": "CatchingUp"
+          },
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": "CatchingUp",
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Live",
+        "caught_up": false,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [
+          {
+            "input_id": [
+              105,
+              110,
+              112,
+              117,
+              116,
+              45,
+              49
+            ],
+            "text": [
+              {
+                "Text": "and then this"
+              }
+            ],
+            "lands": "Queue",
+            "underway": "Held"
+          }
+        ],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    },
+    {
+      "actions": [
+        "Event",
+        "AskPage",
+        "Page"
+      ],
+      "messages": [
+        "Item k2@r2 \"t\"",
+        "Page [\"k1\"] exhausted true"
+      ],
+      "changes": {
+        "keys": [
+          "k2",
+          "k1"
+        ],
+        "reloaded": false,
+        "session": false
+      },
+      "keys": [
+        "k1",
+        "k2"
+      ],
+      "rows": [
+        {
+          "id": "k1",
+          "order": 1,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "g6"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k2",
+          "order": 2,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "t"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        }
+      ],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": {
+            "Holds": "CatchingUp"
+          },
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": "CatchingUp",
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Live",
+        "caught_up": false,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [
+          {
+            "input_id": [
+              105,
+              110,
+              112,
+              117,
+              116,
+              45,
+              49
+            ],
+            "text": [
+              {
+                "Text": "and then this"
+              }
+            ],
+            "lands": "Queue",
+            "underway": "Held"
+          }
+        ],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    },
+    {
+      "actions": [
+        "Event",
+        "CaughtUp",
+        "Withdraw"
+      ],
+      "messages": [
+        "Item k3@r3 \"t\"",
+        "CaughtUp r3",
+        "Discard the prompt"
+      ],
+      "changes": {
+        "keys": [
+          "k3"
+        ],
+        "reloaded": false,
+        "session": true
+      },
+      "keys": [
+        "k1",
+        "k2",
+        "k3"
+      ],
+      "rows": [
+        {
+          "id": "k1",
+          "order": 1,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "g6"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k2",
+          "order": 2,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "t"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k3",
+          "order": 3,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "t"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        }
+      ],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": "Send",
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": null,
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Live",
+        "caught_up": true,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    },
+    {
+      "actions": [
+        "Event",
+        "Event",
+        "Event"
+      ],
+      "messages": [
+        "Item k4@r4 \"and then this\"",
+        "Item k1@r5 \"r5\"",
+        "Reset generation 2"
+      ],
+      "changes": {
+        "keys": [
+          "k4"
+        ],
+        "reloaded": false,
+        "session": true
+      },
+      "keys": [
+        "k1",
+        "k2",
+        "k3",
+        "k4"
+      ],
+      "rows": [
+        {
+          "id": "k1",
+          "order": 1,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "g6"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k2",
+          "order": 2,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "t"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k3",
+          "order": 3,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "t"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k4",
+          "order": 4,
+          "at_ms": 0,
+          "kind": {
+            "Prompt": {
+              "text": [
+                {
+                  "Text": "and then this"
+                }
+              ],
+              "steered": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        }
+      ],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": {
+            "Holds": "CatchingUp"
+          },
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": "CatchingUp",
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Live",
+        "caught_up": false,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    },
+    {
+      "actions": [
+        "Event",
+        "Event",
+        "Event"
+      ],
+      "messages": [
+        "Snapshot r8",
+        "Item k2@r7 \"g7\"",
+        "Item k3@r8 \"g8\""
+      ],
+      "changes": {
+        "keys": [],
+        "reloaded": false,
+        "session": true
+      },
+      "keys": [
+        "k1",
+        "k2",
+        "k3",
+        "k4"
+      ],
+      "rows": [
+        {
+          "id": "k1",
+          "order": 1,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "g6"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k2",
+          "order": 2,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "t"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k3",
+          "order": 3,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "t"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k4",
+          "order": 4,
+          "at_ms": 0,
+          "kind": {
+            "Prompt": {
+              "text": [
+                {
+                  "Text": "and then this"
+                }
+              ],
+              "steered": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        }
+      ],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": {
+            "Holds": "CatchingUp"
+          },
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": "CatchingUp",
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Live",
+        "caught_up": false,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    },
+    {
+      "actions": [
+        "CaughtUp",
+        "AskPage",
+        "Page"
+      ],
+      "messages": [
+        "CaughtUp r8",
+        "Page [\"k1\"] exhausted true"
+      ],
+      "changes": {
+        "keys": [
+          "k1",
+          "k2",
+          "k3",
+          "k4"
+        ],
+        "reloaded": true,
+        "session": true
+      },
+      "keys": [
+        "k1",
+        "k2",
+        "k3"
+      ],
+      "rows": [
+        {
+          "id": "k1",
+          "order": 1,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "g6"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k2",
+          "order": 2,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "g7"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        },
+        {
+          "id": "k3",
+          "order": 3,
+          "at_ms": 0,
+          "kind": {
+            "Prose": {
+              "text": [
+                {
+                  "Text": "g8"
+                }
+              ],
+              "streaming": false,
+              "working_note": false
+            }
+          },
+          "run": null,
+          "collapsed": false,
+          "decision": null,
+          "attention": false,
+          "parent": null
+        }
+      ],
+      "frame": {
+        "agent": {
+          "host": [
+            104,
+            111,
+            115,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            97
+          ],
+          "agent": [
+            97,
+            103,
+            101,
+            110,
+            116,
+            45,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48,
+            48
+          ]
+        },
+        "name": "worker",
+        "kind": "ClaudeSdk",
+        "phase": "Working",
+        "composer": {
+          "mode": "Send",
+          "activity": {
+            "kind": "Working",
+            "since_ms": 0,
+            "elapsed_ms": 0
+          },
+          "switched_away": false
+        },
+        "waiting": null,
+        "controls": {
+          "model": null,
+          "effort": null,
+          "permission": null,
+          "mode": null
+        },
+        "git": null,
+        "context": null,
+        "sign_in": null,
+        "connection": "Live",
+        "caught_up": true,
+        "has_older": false,
+        "arrivals_held": false,
+        "queue": [],
+        "underway": [],
+        "refused": [],
+        "ask_input": null,
+        "ended": null
+      }
+    }
+  ]
+}

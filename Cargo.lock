@@ -274,6 +274,7 @@ version = "0.2.0"
 dependencies = [
  "client",
  "model",
+ "models",
  "prost",
  "provider-fakes",
  "schemars",

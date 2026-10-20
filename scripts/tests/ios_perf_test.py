@@ -94,7 +94,9 @@ class TheJudge(unittest.TestCase):
         verdict = perf.judge(self.samples(**{"streaming hitch time": [1.7, 1.7, 1.7, 1.7, 1.7]}), baseline)
         self.assertTrue(verdict["passed"])
         self.assertIsNone(verdict["results"][0]["drift_percent"])
-        self.assertIn("ceiling only", perf.report(verdict, "pinned-mac", "Mac14,6", 1.0, []))
+        text = perf.report(verdict, "pinned-mac", "Mac14,6", 1.0, [], ("1.00 2.00 3.00", "1.50 2.00 3.00"))
+        self.assertIn("ceiling only", text)
+        self.assertIn("before the run: 1.00 2.00 3.00 · after: 1.50 2.00 3.00", text)
         self.assertIn("ceiling only", perf.summary_line(verdict["results"][0]))
 
     def test_drift_past_the_tolerance_fails_inside_the_budget(self):

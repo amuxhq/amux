@@ -469,12 +469,21 @@ def summary_line(result: dict) -> str:
     )
 
 
-def report(verdict: dict, machine_name: str, model: str, minutes: float, notes: list[str]) -> str:
+def load_average() -> str:
+    return " ".join(f"{value:.2f}" for value in os.getloadavg())
+
+
+def report(
+    verdict: dict, machine_name: str, model: str, minutes: float, notes: list[str], load: tuple[str, str]
+) -> str:
     lines = [
         "# The phone measured",
         "",
         f"Machine `{machine_name}` ({model}), the `Measured` app on the `{SIMULATOR}` simulator, "
         f"{SAMPLES} samples per metric; the run took {minutes:.1f} minutes.",
+        "",
+        # A busy Mac slows the simulator; the load says whether a miss is the app's.
+        f"Load average (1, 5, 15 minutes) before the run: {load[0]} · after: {load[1]}.",
         "",
         "The simulator reports 60 Hz and composites through the Mac's display: hitch time is display-link "
         "accounting, a proxy for a device's hitch metric.",
@@ -544,6 +553,7 @@ def main() -> int:
     if baseline is None:
         print(f"no baseline for {name}: judged on budgets alone", flush=True)
 
+    load_before = load_average()
     began = time.monotonic()
     udid = ios_simulators.ready(SIMULATOR)
     journey = PhoneJourney({"id": "perf"}, topology, udid, output=OUTPUT / "journey", app=APP)
@@ -569,7 +579,7 @@ def main() -> int:
     verdict = judge(run.samples, baseline)
     (OUTPUT / "samples.json").write_text(json.dumps(run.samples, indent=2) + "\n")
     (OUTPUT / "verdict.json").write_text(json.dumps(verdict, indent=2) + "\n")
-    text = report(verdict, name, model, minutes, run.notes)
+    text = report(verdict, name, model, minutes, run.notes, (load_before, load_average()))
     (OUTPUT / "report.md").write_text(text)
     for result in verdict["results"]:
         print(summary_line(result), flush=True)

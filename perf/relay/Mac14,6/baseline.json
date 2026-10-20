@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "model": "Mac14,6",
   "os": "26.5.2",
   "profile": "release",
@@ -7,36 +7,39 @@
   "reference_state": "one busy core (cluster warmer)",
   "cpus": 12,
   "load_before": [
-    2.7001953125,
-    3.84423828125,
-    3.82177734375
+    4.41748046875,
+    12.111328125,
+    27.14306640625
   ],
   "load_after": [
-    4.1376953125,
-    4.06982421875,
-    3.91455078125
+    5.89892578125,
+    10.2998046875,
+    24.60498046875
   ],
   "rounds": 5,
   "points": [
     {
       "connections": 10,
-      "throughput_mib_s": 188.20029076719274,
-      "open_p50_ms": 3.021208,
-      "open_p99_ms": 8.7385,
+      "admissions_per_s": 1092.1650807519557,
+      "throughput_mib_s": 192.982447595058,
+      "open_p50_ms": 2.963,
+      "open_p99_ms": 10.203917,
       "opens": 1000
     },
     {
       "connections": 100,
-      "throughput_mib_s": 188.45567108216605,
-      "open_p50_ms": 29.860875,
-      "open_p99_ms": 44.218458000000005,
+      "admissions_per_s": 1687.692502426058,
+      "throughput_mib_s": 187.34417208416923,
+      "open_p50_ms": 29.071834000000003,
+      "open_p99_ms": 33.054917,
       "opens": 10000
     },
     {
       "connections": 1000,
-      "throughput_mib_s": 154.6080153482458,
-      "open_p50_ms": 299.462,
-      "open_p99_ms": 524.9143750000001,
+      "admissions_per_s": 2273.1074189461724,
+      "throughput_mib_s": 158.62470327570693,
+      "open_p50_ms": 294.487917,
+      "open_p99_ms": 504.728292,
       "opens": 100000
     }
   ]

@@ -641,15 +641,20 @@ includes its affected light and dark goldens.
 
 ## The app icon
 
-The icon is the one published on the App Store, committed as
-`apps/apple/Amux/Assets.xcassets/AppIcon.appiconset/AppIcon.png`. Nothing in
-the build draws, scales or regenerates it: one 1024×1024 image is the whole
-set, and the asset catalogue compiler derives every size. Replacing the icon
-means replacing that file.
+The icon is the amux mark from [the logo's master](BRAND.md), committed in
+`apps/apple/Amux/Assets.xcassets/AppIcon.appiconset/` as three 1024×1024
+images, one per home-screen appearance: `AppIcon.png` on black,
+`AppIcon-Dark.png` with a transparent ground for the system's dark backdrop,
+and `AppIcon-Tinted.png`, the white silhouette the system recolours. The
+asset catalogue compiler derives every size from them, and nothing in the
+build regenerates them. `just logo` writes all three to `target/brand/` as
+`app-icon.png`, `app-icon-dark.png` and `app-icon-tinted.png`; changing the
+icon means re-exporting and copying those over the committed files.
 
 The App Store enforces three rules that a simulator build never shows:
 
-- **No alpha channel.** An icon with one is rejected outright.
+- **No alpha channel** in the default icon. An icon with one is rejected
+  outright; the dark and tinted icons keep theirs.
 - **A 120×120 iPhone icon in the bundle.** The catalogue compiler writes
   `AppIcon60x60@2x.png`; an upload without it fails with code 90022.
 - **A top-level `CFBundleIconName`.** `apps/apple/project.yml` declares it.

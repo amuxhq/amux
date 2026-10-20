@@ -41,6 +41,11 @@ timeout. The first run downloads its Python dependencies. It writes to
   silhouette, and small exports at their actual pixel sizes.
 - `monochrome-review.png`, showing large black and white versions and both
   versions at actual sizes from 16 to 128 pixels.
+- `app-icon.png`, `app-icon-dark.png` and `app-icon-tinted.png`, the iPhone
+  app's icon on black, on a transparent ground for the dark home screen, and
+  as the white silhouette for the tinted one. The mark is drawn at 80% of the
+  canvas so the rounded corners clear it. Copy them over the three images in
+  `apps/apple/Amux/Assets.xcassets/AppIcon.appiconset/`.
 - `checks.json`, reporting dimensions, bounds, transparency probes and the
   two disconnected ribbon shapes.
 

@@ -31,6 +31,27 @@ def monochrome(source):
             f'<title>amux</title><path fill="currentColor" d="{outline}"/></svg>')
 
 
+def app_icons(out, source, white):
+    """The iPhone app's icon in its three appearances, at the one size the
+    asset catalogue compiles every other size from.
+
+    The mark is drawn smaller than its own canvas puts it: the home screen
+    rounds the corners off, and the canvas's clear space alone leaves the
+    A's feet close to them. The default icon is opaque on black, because the
+    App Store rejects an icon with an alpha channel. The dark icon keeps its
+    transparency so the system's dark backdrop shows through, and the tinted
+    one is the white silhouette the system recolours."""
+    def placed(artwork, ground):
+        canvas = Image.new("RGBA", (1024, 1024), ground)
+        mark = render(artwork, round(1024 * 0.8))
+        offset = (1024 - mark.width) // 2
+        canvas.alpha_composite(mark, (offset, offset))
+        return canvas
+    placed(source, "#000000").convert("RGB").save(out / "app-icon.png")
+    placed(source, (0, 0, 0, 0)).save(out / "app-icon-dark.png")
+    placed(white, (0, 0, 0, 0)).save(out / "app-icon-tinted.png")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "target/brand")
@@ -48,6 +69,8 @@ def main():
         (args.out / f"{name}.svg").write_text(artwork)
         for size in (16, 24, 32, 48, 64, 128, 256, 512, 1024, 2048):
             render(artwork, size).save(args.out / f"{name}-{size}.png")
+
+    app_icons(args.out, source, variants["amux-white"])
 
     sheet = Image.new("RGB", (1440, 1160), "#eceef2")
     draw = ImageDraw.Draw(sheet)

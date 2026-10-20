@@ -161,12 +161,15 @@ without a drift gate. The run fails if any verdict is `FAIL`.
 
 `just relay-curve` measures how the production relay scales with the hosts holding links to it
 (`crates/qualification/src/perf/relay.rs`). At 10, 100 and 1,000 concurrent connections it starts a fresh relay on
-loopback, links that many hosts to it in pairs, one pair to an account, and measures two things: stream-open
-latency, every host opening twenty streams to its partner one after another, all hosts at once, each timed from the
-open to the partner's one-byte answer; and aggregate throughput, every host writing into one stream to its partner
-as fast as the relay takes the bytes, read over a three-second window after a second's warm-up. Each level runs
-five rounds: throughput is the median round's, and the latency percentiles are taken over every round's opens
-together, so the 99th percentile at ten connections rests on a thousand opens.
+loopback, links that many hosts to it in pairs, one pair to an account, and measures three things: link admissions per
+second, the level's hosts over the time from the first dial to the last link the relay accepted, sixty-four hosts
+dialling at once; stream-open latency, every host opening twenty streams to its partner one after another, all hosts
+at once, each timed from the open to the partner's one-byte answer; and aggregate throughput, every host writing into
+one stream to its partner as fast as the relay takes the bytes, read over a three-second window after a second's
+warm-up. Each level runs five rounds, each waiting a quarter second after the relay has let the last round's links go,
+since their teardown otherwise delays the next round's dials: admissions and throughput are the median round's, and
+the latency percentiles are taken over every round's opens together, so the 99th percentile at ten connections rests
+on a thousand opens.
 
 ```sh
 just relay-curve              # measure and print
@@ -182,10 +185,12 @@ reference state (the flood's busy core) and the load average before and after; t
 and a machine that is not enrolled.
 
 The comparison is one-sided: a run passes unless a figure is worse than its baseline by more than its band, and a
-faster run is reported as such. The bands are constants beside the workload, set from three consecutive runs of
-one build on the enrolled Mac: throughput moved by up to 4% and the median open by up to 2%, so their bands are 15%
-and 25%; the 99th percentile moved by up to 76% and at a thousand connections falls in one of two modes, so it
-fails only past double. A baseline from another model, profile, carrier or reference state is refused.
+faster run is reported as such. The bands are constants beside the workload, set from three consecutive runs of one
+build on the enrolled Mac: throughput moved by up to 4% and the median open by up to 2%, so their bands are 15% and
+25%; the 99th percentile moved by up to 76% and at a thousand connections falls in one of two modes, so it fails only
+past double. Admissions moved by up to 10% at every level over three runs with the Mac busy elsewhere, so their band
+is 25%, like the median open's; more admissions per second is better. A baseline from another model, profile, carrier
+or reference state, or one recorded before admissions were measured, is refused.
 
 On macOS the curve is bounded by the kernel's loopback, not by the relay's own code: the process spends about four
 times as long in the kernel as in user code with every core partly idle, the relay completes about 3,300 stream

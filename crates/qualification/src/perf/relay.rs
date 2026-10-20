@@ -1,6 +1,7 @@
 //! The relay's scaling curve: the production relay on loopback, held by 10,
-//! 100 and 1,000 hosts at once, measured for the bytes it carries between
-//! them and for how long a new stream through it takes to answer.
+//! 100 and 1,000 hosts at once, measured for how fast it admits their links,
+//! for the bytes it carries between them and for how long a new stream
+//! through it takes to answer.
 //!
 //! Each level starts a fresh relay serving its TLS-over-TCP carrier, the
 //! listener a deployment runs beside QUIC. QUIC is not used: the relay
@@ -8,6 +9,9 @@
 //! here dials from the same loopback address. Hosts come in pairs, one pair
 //! to an account, as a person's laptop and desktop do. Every host:
 //!
+//! - links to the relay, all hosts dialling at once up to
+//!   [`DIAL_CONCURRENCY`]; the level's hosts over the time from the first
+//!   dial to the last link the relay accepted is the admission rate;
 //! - opens [`CurveOptions::opens_per_host`] streams to its partner one after
 //!   another, all hosts at once, each timed from the open to the partner's
 //!   one-byte answer (stream-open latency);
@@ -46,14 +50,16 @@ pub const BASELINE_ROOT: &str = "perf/relay";
 /// The carrier every host links over, recorded so a baseline is only
 /// compared with a run over the same one.
 pub const CARRIER: &str = "TLS over TCP";
-const SCHEMA: u32 = 1;
+const SCHEMA: u32 = 2;
 const RELAY_NAME: &str = "localhost";
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const PHASE_TIMEOUT: Duration = Duration::from_secs(180);
 /// How many hosts dial at once: the relay finishes 128 TLS handshakes at a
 /// time and refuses none, so this only bounds the dialling side's sockets.
-const DIAL_CONCURRENCY: usize = 64;
+pub const DIAL_CONCURRENCY: usize = 64;
 const CHUNK: usize = 64 * 1024;
+/// How long a round waits after the relay has dropped its last link.
+const TEARDOWN_SETTLE: Duration = Duration::from_millis(250);
 const PING: u8 = b'p';
 const BULK: u8 = b'b';
 
@@ -67,6 +73,11 @@ const BULK: u8 = b'b';
 pub const THROUGHPUT_BAND: f64 = 0.15;
 pub const OPEN_P50_BAND: f64 = 0.25;
 pub const OPEN_P99_BAND: f64 = 1.00;
+/// Links admitted per second: three runs of one build on the enrolled Mac,
+/// busy elsewhere (load averages 39 to 140), moved by up to 10% at every
+/// level (1,054 to 1,154 at ten connections, 1,625 to 1,757 at a hundred,
+/// 2,255 to 2,422 at a thousand), so its band is the median open's.
+pub const ADMISSIONS_BAND: f64 = 0.25;
 
 #[derive(Clone, Debug)]
 pub struct CurveOptions {
@@ -100,6 +111,10 @@ impl CurveOptions {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Point {
     pub connections: usize,
+    /// Links the relay accepted per second while the level came up: the
+    /// level's hosts over the time from the first dial to the last
+    /// accepted link, the median round's.
+    pub admissions_per_s: f64,
     /// Aggregate bytes carried between hosts, MiB per second.
     pub throughput_mib_s: f64,
     /// From a stream's open to the partner's first answer, milliseconds.
@@ -163,11 +178,12 @@ impl Curve {
             load(self.load_before),
             load(self.load_after)
         );
-        println!("connections | throughput | open p50 | open p99 | opens");
+        println!("connections | admissions | throughput | open p50 | open p99 | opens");
         for point in &self.points {
             println!(
-                "{} | {:.1} MiB/s | {:.3} ms | {:.3} ms | {}",
+                "{} | {:.0} links/s | {:.1} MiB/s | {:.3} ms | {:.3} ms | {}",
                 point.connections,
+                point.admissions_per_s,
                 point.throughput_mib_s,
                 point.open_p50_ms,
                 point.open_p99_ms,
@@ -233,6 +249,13 @@ pub fn compare(run: &Curve, baseline: &Curve) -> Result<Vec<Judgement>> {
         };
         for (metric, measured, baseline, band, higher_is_better) in [
             (
+                "admissions",
+                point.admissions_per_s,
+                base.admissions_per_s,
+                ADMISSIONS_BAND,
+                true,
+            ),
+            (
                 "throughput",
                 point.throughput_mib_s,
                 base.throughput_mib_s,
@@ -273,10 +296,10 @@ pub fn compare(run: &Curve, baseline: &Curve) -> Result<Vec<Judgement>> {
 pub fn print_judgements(judgements: &[Judgement]) {
     println!("connections | metric | baseline | measured | worse by | band | verdict");
     for judgement in judgements {
-        let unit = if judgement.metric == "throughput" {
-            "MiB/s"
-        } else {
-            "ms"
+        let unit = match judgement.metric {
+            "throughput" => "MiB/s",
+            "admissions" => "links/s",
+            _ => "ms",
         };
         println!(
             "{} | {} | {:.3} {unit} | {:.3} {unit} | {:+.1}% | {:.0}% | {}",
@@ -300,6 +323,7 @@ pub async fn run(
     let load_before = load_average()?;
     let mut points = Vec::new();
     for &connections in &options.levels {
+        let mut admissions = Vec::new();
         let mut throughputs = Vec::new();
         let mut latencies = Vec::new();
         for round in 0..options.rounds {
@@ -307,18 +331,21 @@ pub async fn run(
                 .await
                 .with_context(|| format!("{connections} connections, round {}", round + 1))?;
             eprintln!(
-                "{connections} connections, round {}: {:.1} MiB/s, open p50 {:.3} ms, p99 {:.3} ms",
+                "{connections} connections, round {}: {:.0} links/s, {:.1} MiB/s, open p50 {:.3} ms, p99 {:.3} ms",
                 round + 1,
+                measured.admissions_per_s,
                 measured.throughput_mib_s,
                 percentile(&measured.latencies, 0.50),
                 percentile(&measured.latencies, 0.99),
             );
+            admissions.push(measured.admissions_per_s);
             throughputs.push(measured.throughput_mib_s);
             latencies.extend(measured.latencies);
         }
         latencies.sort();
         points.push(Point {
             connections,
+            admissions_per_s: median(admissions.into_iter()),
             throughput_mib_s: median(throughputs.into_iter()),
             open_p50_ms: percentile(&latencies, 0.50),
             open_p99_ms: percentile(&latencies, 0.99),
@@ -358,9 +385,12 @@ async fn measure(
     let accounts = (0..connections / 2)
         .map(|_| Uuid::new_v4())
         .collect::<Vec<_>>();
+    let linking = Instant::now();
     let hosts = tokio::time::timeout(PHASE_TIMEOUT, relay.link_hosts(&accounts))
         .await
         .map_err(|_| anyhow!("hosts did not all link to the relay"))??;
+    // Every host's connect returns once the relay has accepted its link.
+    let admissions_per_s = connections as f64 / linking.elapsed().as_secs_f64();
     tokio::time::timeout(PHASE_TIMEOUT, relay.wait_for_pairs(&accounts))
         .await
         .map_err(|_| anyhow!("the relay never held both hosts of every account"))?;
@@ -436,16 +466,27 @@ async fn measure(
     writing.abort_all();
     serving.abort_all();
     drop(hosts);
+    // The next round's hosts dial on the same runtimes, and this round's
+    // teardown delays those dials: ten hosts' TCP connects waited 90 to 190
+    // ms behind it, and 30 to 50 ms after the relay had let every link go,
+    // so the next round's admission rate measured the teardown. A quarter
+    // second after the last link closed, they connect in a millisecond or two.
+    tokio::time::timeout(PHASE_TIMEOUT, relay.wait_for_no_links(&accounts))
+        .await
+        .map_err(|_| anyhow!("the relay still held links after every host let go"))?;
+    tokio::time::sleep(TEARDOWN_SETTLE).await;
 
     Ok(Round {
+        admissions_per_s,
         throughput_mib_s: (to - from) as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64(),
         latencies,
     })
 }
 
-/// What one round measured: its aggregate throughput and every open's
-/// latency, sorted.
+/// What one round measured: its admission rate, its aggregate throughput
+/// and every open's latency, sorted.
 struct Round {
+    admissions_per_s: f64,
     throughput_mib_s: f64,
     latencies: Vec<Duration>,
 }
@@ -560,6 +601,16 @@ impl Relay {
     }
 }
 
+impl Relay {
+    async fn wait_for_no_links(&self, accounts: &[Uuid]) {
+        for account in accounts {
+            while !self.server.user_links(*account).await.is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
+    }
+}
+
 impl Drop for Relay {
     fn drop(&mut self) {
         self.task.abort();
@@ -626,6 +677,10 @@ mod tests {
     use super::*;
 
     fn curve(throughput: f64, p50: f64, p99: f64) -> Curve {
+        admitting(1_000.0, throughput, p50, p99)
+    }
+
+    fn admitting(admissions: f64, throughput: f64, p50: f64, p99: f64) -> Curve {
         Curve {
             schema: SCHEMA,
             model: "Mac14,6".to_owned(),
@@ -639,6 +694,7 @@ mod tests {
             rounds: 5,
             points: vec![Point {
                 connections: 10,
+                admissions_per_s: admissions,
                 throughput_mib_s: throughput,
                 open_p50_ms: p50,
                 open_p99_ms: p99,
@@ -673,6 +729,31 @@ mod tests {
         assert_eq!(failed(curve(800.0, 1.0, 2.0)), ["throughput"]);
         assert_eq!(failed(curve(1_000.0, 1.3, 2.0)), ["open p50"]);
         assert_eq!(failed(curve(1_000.0, 1.0, 4.1)), ["open p99"]);
+        assert_eq!(failed(admitting(700.0, 1_000.0, 1.0, 2.0)), ["admissions"]);
+    }
+
+    #[test]
+    fn admissions_are_judged_beside_throughput_and_more_are_better() {
+        let baseline = curve(1_000.0, 1.0, 2.0);
+        let judgements = compare(&admitting(2_000.0, 1_000.0, 1.0, 2.0), &baseline).unwrap();
+        assert_eq!(
+            judgements
+                .iter()
+                .map(|judgement| judgement.metric)
+                .collect::<Vec<_>>(),
+            ["admissions", "throughput", "open p50", "open p99"]
+        );
+        assert!(judgements.iter().all(|judgement| judgement.passed));
+        assert!(judgements[0].worse_by < 0.0, "{judgements:?}");
+        let near = compare(&admitting(800.0, 1_000.0, 1.0, 2.0), &baseline).unwrap();
+        assert!(near[0].passed, "{near:?}");
+    }
+
+    #[test]
+    fn a_baseline_without_admissions_is_refused() {
+        let mut baseline = curve(1_000.0, 1.0, 2.0);
+        baseline.schema = 1;
+        assert!(compare(&curve(1_000.0, 1.0, 2.0), &baseline).is_err());
     }
 
     #[test]

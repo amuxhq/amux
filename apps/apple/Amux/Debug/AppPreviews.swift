@@ -19,6 +19,7 @@ import SwiftUI
 #Preview("Fleet · first run, looking") { StoryScreen("fleet.first-run-looking") }
 #Preview("Fleet · first run, network refused") { StoryScreen("fleet.first-run-refused") }
 #Preview("Fleet · first run, signed out") { StoryScreen("fleet.first-run-signed-out") }
+#Preview("Fleet · first run, signed out, one found") { StoryScreen("fleet.first-run-signed-out-found") }
 #Preview("Fleet · two accounts") { StoryScreen("fleet.two-accounts") }
 #Preview("Fleet · signed out") { StoryScreen("fleet.signed-out") }
 #Preview("Fleet · profile picture") { StoryScreen("fleet.picture") }

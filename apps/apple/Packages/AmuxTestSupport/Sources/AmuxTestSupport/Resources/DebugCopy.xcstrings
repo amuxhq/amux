@@ -961,6 +961,18 @@
         }
       }
     },
+    "Fleet · first run, signed out, one found" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/AppPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fleet · first run, signed out, one found"
+          }
+        }
+      }
+    },
     "Fleet · first run, two found" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/AppPreviews.swift.",
       "extractionState" : "manual",

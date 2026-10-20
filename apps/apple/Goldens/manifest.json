@@ -805,6 +805,10 @@
       "shows": "Nothing paired on a phone with no account, offering to sign in under pairing."
     },
     {
+      "id": "fleet.first-run-signed-out-found",
+      "shows": "Nothing paired on a phone with no account, with one machine found on its network."
+    },
+    {
       "id": "fleet.busy-large-text",
       "shows": "The busy list at the largest accessibility text size."
     },

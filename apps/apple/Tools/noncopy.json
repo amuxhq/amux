@@ -1256,7 +1256,8 @@
       {"literal": "\"first-run-two-found\"", "context": "fleet(\"first-run-two-found\") { StoryFleet.firstRun(found: [StoryFleet.laptop, StoryFleet.studioFound]) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"first-run-looking\"", "context": "fleet(\"first-run-looking\") { StoryFleet.firstRun(found: []) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"first-run-refused\"", "context": "fleet(\"first-run-refused\") { StoryFleet.firstRun(found: [], network: .denied) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"first-run-signed-out\"", "context": "fleet(\"first-run-signed-out\") { StoryFleet.firstRun(found: [], accounts: 0) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"first-run-signed-out\"", "context": "fleet(\"first-run-signed-out\") { StoryFleet.firstRun(found: [], accounts: 0) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"first-run-signed-out-found\"", "context": "fleet(\"first-run-signed-out-found\") { StoryFleet.firstRun(accounts: 0) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift": [
       {"literal": "\"arrow.up.circle\"", "context": "Image(systemName: \"arrow.up.circle\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
@@ -1648,7 +1649,8 @@
       {"literal": "\"fleet.first-run-two-found\"", "context": "#Preview(\"Fleet · first run, two found\") { StoryScreen(\"fleet.first-run-two-found\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"fleet.first-run-looking\"", "context": "#Preview(\"Fleet · first run, looking\") { StoryScreen(\"fleet.first-run-looking\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"fleet.first-run-refused\"", "context": "#Preview(\"Fleet · first run, network refused\") { StoryScreen(\"fleet.first-run-refused\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"fleet.first-run-signed-out\"", "context": "#Preview(\"Fleet · first run, signed out\") { StoryScreen(\"fleet.first-run-signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"fleet.first-run-signed-out\"", "context": "#Preview(\"Fleet · first run, signed out\") { StoryScreen(\"fleet.first-run-signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"fleet.first-run-signed-out-found\"", "context": "#Preview(\"Fleet · first run, signed out, one found\") { StoryScreen(\"fleet.first-run-signed-out-found\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Debug/ChatPreviews.swift": [
       {"literal": "\"chat.conversation\"", "context": "#Preview(\"Chat · conversation\") { StoryScreen(\"chat.conversation\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

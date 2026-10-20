@@ -28,6 +28,7 @@ extension ComponentCatalog {
         fleet("first-run-looking") { StoryFleet.firstRun(found: []) },
         fleet("first-run-refused") { StoryFleet.firstRun(found: [], network: .denied) },
         fleet("first-run-signed-out") { StoryFleet.firstRun(found: [], accounts: 0) },
+        fleet("first-run-signed-out-found") { StoryFleet.firstRun(accounts: 0) },
         fleet("busy-large-text", size: .accessibility3) { StoryFleet.busy() },
         fleet("two-accounts") { StoryFleet.busy(accounts: 2) },
         fleet("signed-out") { StoryFleet.busy(accounts: 0) },

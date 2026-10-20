@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use replay_support::bundle::Bundle;
-use replay_support::replay::Verdict;
 
 const USAGE: &str = "usage: dump-replay BUNDLE";
 
@@ -28,10 +27,7 @@ fn main() -> ExitCode {
     for verdict in &verdicts {
         println!("{verdict}");
     }
-    if verdicts
-        .iter()
-        .any(|verdict| matches!(verdict.verdict, Verdict::Fails(_)))
-    {
+    if verdicts.iter().any(|verdict| verdict.verdict.failed()) {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS

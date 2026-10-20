@@ -97,6 +97,12 @@ pub fn redact(kind: Kind, target: RedactTarget) -> RedactTarget {
             RedactTarget::Step(_) => RedactTarget::Step(Vec::new()),
             // A row has no body, so any kind's redactor reads it.
             RedactTarget::Agent(agent) => ClaudeSdk::redact(RedactTarget::Agent(agent)),
+            // Walked with every body, which no kind is there to decode,
+            // emptied.
+            RedactTarget::ClientSession(history) => RedactTarget::ClientSession(redact_message(
+                &wire::ClientSessionHistory::full_name(),
+                &history,
+            )),
         },
     }
 }
@@ -163,6 +169,10 @@ pub(crate) fn redact_kind<ItemBody: Name, SnapshotBody: Name, InputBody: Name, S
         RedactTarget::Agent(agent) => {
             let name = type_name::<wire::Agent>();
             RedactTarget::Agent(scrubber.twice(|s| s.message(&name, &agent)))
+        }
+        RedactTarget::ClientSession(history) => {
+            let name = type_name::<wire::ClientSessionHistory>();
+            RedactTarget::ClientSession(scrubber.twice(|s| s.message(&name, &history)))
         }
     }
 }

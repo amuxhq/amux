@@ -1223,6 +1223,7 @@ async fn a_dump_gathers_the_host_side_of_a_peers_agents() {
         agent_ids: Vec::new(),
         reason: "gathered".to_owned(),
         automatic: false,
+        sessions: Vec::new(),
     };
 
     let bundle = net

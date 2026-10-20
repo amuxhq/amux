@@ -504,9 +504,21 @@ pub fn projection(transcript: &Transcript) -> Vec<(String, String)> {
 }
 
 /// Checks the invariants every update must keep: the run index equals a
-/// rebuild; the changed set names exactly the rows that differ.
+/// rebuild; the changed set names exactly the rows that differ; and the
+/// state and the message read back from the form a dump carries them in as
+/// themselves, so a dump's replay starts where the client stood.
 pub fn apply_checked(state: &mut SessionState, msg: Msg) -> Outcome {
     let before = projection(state.transcript());
+    assert_eq!(
+        &SessionState::from_wire(state.to_wire()).expect("a session reads back"),
+        state,
+        "the session does not read back from its dump form before {msg:?}"
+    );
+    assert_eq!(
+        Msg::from_wire(msg.to_wire()).expect("a message reads back"),
+        msg,
+        "the message does not read back from its dump form"
+    );
     let outcome = state.update(msg.clone());
     let after = projection(state.transcript());
     assert_eq!(

@@ -1,6 +1,8 @@
 //! One open chat's state: the agent's entry and snapshot, the transcript
 //! window, and this client's inputs.
 
+mod history;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use model::{Activity, ActivityKind, BlobStatus, Composer, Connection, PhaseView, Waiting};
@@ -103,7 +105,9 @@ pub struct SessionState {
     agent: Agent,
     host: Option<HostEntry>,
     state: AgentState,
-    has_snapshot: bool,
+    /// The newest snapshot as it arrived: `state` is decoded from it, and a
+    /// dump carries it so a replay decodes the same.
+    snapshot: Option<wire::Snapshot>,
     /// The catalogue last fetched for the agent, with the hash it was
     /// fetched by; what it offers shows while
     /// the newest snapshot names its hash.
@@ -230,14 +234,15 @@ impl SessionState {
     pub fn new(agent: Agent, cap: usize) -> SessionState {
         let kind = agent.kind();
         SessionState {
+            // Until a snapshot arrives the phase is the entry's (see
+            // `phase`), so this one is never read.
             state: AgentState {
                 kind,
-                phase: agent.phase(),
                 ..AgentState::default()
             },
             agent,
             host: None,
-            has_snapshot: false,
+            snapshot: None,
             catalogue: None,
             transcript: Transcript::new(kind),
             pending: None,
@@ -346,7 +351,7 @@ impl SessionState {
     }
 
     pub fn has_snapshot(&self) -> bool {
-        self.has_snapshot
+        self.snapshot.is_some()
     }
 
     /// The window on screen. During a Reset it is the old one, until the
@@ -425,7 +430,7 @@ impl SessionState {
                 cause: crate::exit_cause(&self.agent),
             };
         }
-        let phase = if self.has_snapshot {
+        let phase = if self.has_snapshot() {
             self.state.phase
         } else {
             self.agent.phase()
@@ -725,7 +730,7 @@ impl SessionState {
             Of::Snapshot(snapshot) => {
                 self.state = AgentState::from_snapshot(self.kind(), &snapshot);
                 self.offer();
-                self.has_snapshot = true;
+                self.snapshot = Some(snapshot);
                 self.queue_moved();
                 outcome.session = true;
             }

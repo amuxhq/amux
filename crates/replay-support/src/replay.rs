@@ -1,7 +1,9 @@
 //! Replaying a bundle through all four of its stages with the protocol's
 //! properties judged as each goes: the facts through the interpreter, the
-//! daemon core from its checkpoint through every input since, the store
-//! slice through the session model, and that state through the views. The
+//! daemon core from its checkpoint through every input since, each client
+//! session from its checkpoint through every message since (the store slice
+//! through the session model, for an agent no client had open), and that
+//! state through the views. The
 //! properties are the models' own (`crates/models`), the same sentences
 //! the checkers explore; a stage judges those a run of it can be judged
 //! by alone. The first stage that fails is the culprit; when none fails,
@@ -19,7 +21,7 @@ use store::Sqlite;
 use ui_state::{Msg, SessionState};
 use wire::{Kind, Step};
 
-use crate::bundle::{AgentDump, Bundle, BundleError, CoreDump, read, segments};
+use crate::bundle::{AgentDump, Bundle, BundleError, ClientHistory, CoreDump, read, segments};
 use crate::show::render_steps;
 
 /// The four stages, in the order a row passes through them.
@@ -29,7 +31,9 @@ pub enum Stage {
     Interpreter,
     /// The daemon core from its checkpoint through its inputs since.
     Core,
-    /// The store slice through the client's session model.
+    /// A client's session from its checkpoint through its messages since,
+    /// or the store slice through the session model where no client was
+    /// attached.
     Session,
     /// The session's state through the views.
     Views,
@@ -49,8 +53,10 @@ impl fmt::Display for Stage {
 /// The first step of a stage at which a property failed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failing {
-    /// The step, counted from one: the input to the core, the event to the
-    /// session; for the interpreter, the facts line.
+    /// The step, counted from one: the input to the core, the message to a
+    /// client's session or the event of a store opening; for the
+    /// interpreter, the facts line. Zero is a checkpoint that already
+    /// breaks it.
     pub step: usize,
     /// What the step was: the input's kind, the agent it was for.
     pub what: String,
@@ -76,8 +82,19 @@ pub enum Verdict {
     /// Every step held every property judged; what was replayed.
     Holds(String),
     Fails(Failing),
+    /// The manifest names something for this stage that cannot be read, so
+    /// the stage cannot be said to hold.
+    Unreadable(String),
     /// The bundle carries nothing this stage replays, and why.
     Absent(String),
+}
+
+impl Verdict {
+    /// Whether the stage did not hold: a property failed, or what it
+    /// replays could not be read.
+    pub fn failed(&self) -> bool {
+        matches!(self, Verdict::Fails(_) | Verdict::Unreadable(_))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,6 +109,7 @@ impl fmt::Display for StageVerdict {
         match &self.verdict {
             Verdict::Holds(what) => write!(f, "{stage:<12} holds   {what}"),
             Verdict::Fails(failing) => write!(f, "{stage:<12} FAILS   {failing}"),
+            Verdict::Unreadable(why) => write!(f, "{stage:<12} FAILS   unreadable: {why}"),
             Verdict::Absent(why) => write!(f, "{stage:<12} absent  {why}"),
         }
     }
@@ -274,34 +292,81 @@ impl Bundle {
         })
     }
 
-    /// Stage three for every agent: its store slice delivered to the
-    /// session model as a Subscribe opening delivers it, the window
-    /// checked after every event.
+    /// Stage three. Each session a client had open replays from its
+    /// checkpoint through every message its driver applied since, the
+    /// client's promises judged after each: a violation the client caught
+    /// stops at the message that broke it. Every other agent has its store
+    /// slice delivered to the session model as a Subscribe opening delivers
+    /// it, the window checked after every event.
     fn replay_sessions(&self) -> Verdict {
-        if self.agents.is_empty() {
+        if self.agents.is_empty() && self.clients.is_empty() {
             return Verdict::Absent("the bundle holds no agent".to_owned());
         }
+        let mut messages = 0;
+        for client in &self.clients {
+            let history = match &client.history {
+                Ok(history) => history,
+                Err(why) => {
+                    return Verdict::Unreadable(format!(
+                        "agent {}'s client session: {why}",
+                        client.agent
+                    ));
+                }
+            };
+            match replay_client(&client.agent, history) {
+                Ok(Ok(count)) => messages += count,
+                Ok(Err(failing)) => return Verdict::Fails(failing),
+                Err(why) => {
+                    return Verdict::Unreadable(format!(
+                        "agent {}'s client session: {why}",
+                        client.agent
+                    ));
+                }
+            }
+        }
+        let opened: Vec<&AgentDump> = self
+            .agents
+            .iter()
+            .filter(|agent| !self.clients.iter().any(|client| client.agent == agent.id))
+            .collect();
         let mut events = 0;
-        for agent in &self.agents {
+        for agent in &opened {
             let mut state = SessionState::new(agent.row.clone(), usize::MAX);
             for (at, of) in agent.opening().into_iter().enumerate() {
                 state.update(Msg::Event(wire::SessionEvent { of: Some(of) }));
                 events += 1;
-                if let Err(detail) = state.transcript().check() {
+                if let Some((property, detail)) = models::client::judge_session(&state) {
                     return Verdict::Fails(Failing {
                         step: at + 1,
-                        what: format!("agent {}", agent.id),
-                        property: models::client::ONE_BLOCK,
+                        what: format!("agent {}'s store opening", agent.id),
+                        property,
                         detail,
                     });
                 }
             }
         }
-        Verdict::Holds(format!(
-            "{} agent{}, {events} events, the window checked after each",
-            self.agents.len(),
-            plural(self.agents.len())
-        ))
+        let mut said = Vec::new();
+        if !self.clients.is_empty() {
+            said.push(format!(
+                "{} client session{} from {} checkpoint, {messages} messages, each judged",
+                self.clients.len(),
+                plural(self.clients.len()),
+                if self.clients.len() == 1 {
+                    "its"
+                } else {
+                    "their"
+                }
+            ));
+        }
+        if !opened.is_empty() {
+            said.push(format!(
+                "{} agent{} with no client attached from the store's opening, {events} events, \
+                 the window checked after each",
+                opened.len(),
+                plural(opened.len())
+            ));
+        }
+        Verdict::Holds(said.join("; "))
     }
 
     /// Stage four: views are functions of state, so no property judges
@@ -358,6 +423,74 @@ impl Bundle {
             }
         }
         Ok(journals)
+    }
+}
+
+/// Replays one client session from its checkpoint, judging the client's
+/// promises at the checkpoint and after every message: how many messages
+/// held, or the first that broke one. Err when a value does not read back.
+fn replay_client(agent: &str, history: &ClientHistory) -> Result<Result<usize, Failing>, String> {
+    let mut state = SessionState::from_wire(history.start.clone())?;
+    if let Some((property, detail)) = models::client::judge_session(&state) {
+        return Ok(Err(Failing {
+            step: 0,
+            what: format!("agent {agent}'s client checkpoint"),
+            property,
+            detail,
+        }));
+    }
+    let mut step = 0;
+    for traced in &history.events {
+        let Some(wire::client_traced::Event::Msg(msg)) = &traced.event else {
+            continue;
+        };
+        step += 1;
+        let msg = Msg::from_wire(msg.clone())?;
+        let what = format!(
+            "agent {agent}'s client message {}, traced {}",
+            message_kind(&msg),
+            traced.seq
+        );
+        state.update(msg);
+        if let Some((property, detail)) = models::client::judge_session(&state) {
+            return Ok(Err(Failing {
+                step,
+                what,
+                property,
+                detail,
+            }));
+        }
+    }
+    Ok(Ok(step))
+}
+
+/// What a message is, as a person reads a failing step.
+pub(crate) fn message_kind(msg: &Msg) -> String {
+    use wire::session_event::Of;
+    match msg {
+        Msg::Event(event) => match &event.of {
+            Some(Of::Snapshot(_)) => "Snapshot".to_owned(),
+            Some(Of::Item(item)) => format!("Item {} order {}", item.key, item.order),
+            Some(Of::Append(append)) => format!("Append {}", append.key),
+            Some(Of::CaughtUp(caught_up)) => format!("CaughtUp rev {}", caught_up.revision),
+            Some(Of::Lagged(_)) => "Lagged".to_owned(),
+            Some(Of::Reset(reset)) => format!("Reset generation {}", reset.generation),
+            Some(Of::Detached(_)) => "Detached".to_owned(),
+            Some(Of::Opening(opening)) => format!("Opening generation {}", opening.generation),
+            None => "an empty event".to_owned(),
+        },
+        Msg::Page { items, .. } => format!("Page of {}", items.len()),
+        Msg::Connection(connection) => format!("Connection {connection:?}"),
+        Msg::Send(_) => "Send".to_owned(),
+        Msg::Sent(..) => "Sent".to_owned(),
+        Msg::Discard(_) => "Discard".to_owned(),
+        Msg::Entry(_) => "Entry".to_owned(),
+        Msg::Host(_) => "Host".to_owned(),
+        Msg::Blob { .. } => "Blob".to_owned(),
+        Msg::Following(following) => format!("Following {following}"),
+        Msg::Reloading => "Reloading".to_owned(),
+        Msg::Window(cap) => format!("Window {cap}"),
+        Msg::Catalogue { .. } => "Catalogue".to_owned(),
     }
 }
 

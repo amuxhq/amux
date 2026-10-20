@@ -59,7 +59,10 @@ pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, StartError, StartOptions, start};
 pub use daemon_core::names::word_pairs;
 pub use driver::{CORE_DUMP, CORE_VIOLATION_DUMP, Cores, InventorySubscription, Subscription};
-pub use dump::{DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS, DUMP_SEGMENTS, DumpError, MANIFEST, pack};
+pub use dump::{
+    CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS,
+    DUMP_SEGMENTS, DumpError, MANIFEST, pack,
+};
 pub use edge::{
     ACCOUNT_FILE, CloudLinkServer, CloudOptions, DiscoveryFactory, Edge, EdgeError, EdgeOptions,
     FREE_TIER_REFRESH_INTERVAL, JwtCloudLinkAuthenticator, LAN_PORT_FILE, LINK_SOCKET, LanOptions,

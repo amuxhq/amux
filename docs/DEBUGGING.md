@@ -118,7 +118,8 @@ from the phone](#a-report-from-the-phone)).
 Some dumps nobody asks for. When the daemon's core breaks one of its cheap invariants, or a step runs over its
 budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
 A chat whose transcript fails its own check when the stream catches up or resets asks for one too, with the
-reason starting `the client's transcript: ` and that chat's part inside. The relay, the agent process and the
+reason starting `the client's transcript: ` and that chat's session inside, its trace cut at the message the check
+failed at. The relay, the agent process and the
 supervisor log the same kind of reason: `the relay core: ` and `the supervisor core: ` in the daemon's log,
 `the agent core: ` in the agent's stderr. Each process reports one per kind of reason (one per broken invariant,
 one for steps over budget) every ten minutes; the next one of that kind says how many were held back since.
@@ -127,8 +128,9 @@ one for steps over budget) every ten minutes; the next one of that kind says how
 
 A dump is, for each stage, a checkpoint and the inputs since. For the interpreter it is the facts ring's
 checkpoint and every fact after it; for the daemon core, its checkpoint, every input it stepped since and the store
-as of that checkpoint; for the session, the store slice a Subscribe opening delivers, and the client's trace of
-the order it saw (a client keeps no checkpoint; its state is rebuilt from rows). Reading a dump is therefore
+as of that checkpoint; for the session, the state a client's chat stood in when its trace began and every message
+it applied since, in the order it saw them, or, for an agent no client had open, the store slice a Subscribe opening
+delivers. Reading a dump is therefore
 running it: each stage is restored from its checkpoint and stepped through its inputs again, with the protocol's
 properties judged after every step, so the replay names the step that went wrong instead of leaving a reader to
 find it ([replaying a dump](#replaying-a-dump)). The files are laid out as:
@@ -154,14 +156,20 @@ reports/dump-<unix ms>-<id>/
   core/inputs                   every input the core stepped since, and how far each ingest read
                                 an agent's journal, one JSON line each
   core/store.sqlite             the profile's store as of that checkpoint
-  client/fleet/state.txt        a client's part, when the client adds one:
-  client/fleet/trace.txt        the structure of its state and its driver trace,
-  client/sessions/<agent>/…     with no names, paths or message text
+  client/sessions/<agent id>/   each chat the asking client had open:
+    checkpoint                  its state when its trace began (a wire.ClientSession: the rows its
+                                window held, its inputs and every value the session model keeps)
+    events                      every event its driver saw since, through the one that broke it when
+                                one did (a wire.ClientSessionEvents: each message, and the driver's
+                                own acts as it describes them)
+  client/fleet/state.txt        the fleet's part, when the client adds one: the structure of its
+  client/fleet/trace.txt        state and its driver trace, with no names, paths or message text
 ```
 
 Each agent's manifest entry names its kind, whether it is this host's own, its lifecycle and incarnation, how many
 rows the slice holds, and the files its process sent. The manifest's `core` entry counts the core's inputs and
-journal reads; when the core's part could not be had, it is null and `errors` says why. An agent with no running
+journal reads; when the core's part could not be had, it is null and `errors` says why. Its `client` entry names
+each chat session's two files and how many events it carries. An agent with no running
 process has only its specs in `part/`, and its entry in `errors` says its facts ring was not gathered. Protobuf
 files are encoded without a length prefix; journal segments keep the journal's own framing, and every frame keeps
 its length, so an offset in the store or in `core/inputs` names the same frame in the bundle. A frame still being
@@ -172,15 +180,17 @@ The core's part reveals no pairing opened after the dump: it carries the PIN or 
 dump and the randomness that pairing draws from, and every window or pairing conversation opens with fresh
 randomness the bundle never holds.
 
-The client parts come from the app runtime, which adds the fleet's and every open chat's part to the bundle the
-daemon wrote. `amux dump` from a terminal carries only the host's parts.
+A client hands the daemon its open chats inside the dump call, and the daemon writes them, redacted through each
+agent's kind, before the bundle is complete; the fleet's part the client writes into the bundle once the daemon has
+answered. `amux dump` from a terminal holds no chat open, so its bundle carries only the host's parts.
 
 ## Redaction
 
 Everything in a dump is redacted before it is written, and before it leaves the process that produced it. Only an
 interpreter can decode its kind's item and snapshot bodies, so the redactor is per kind, in `crates/interpret`:
 the agent process applies it to its facts ring, checkpoints and specs when the dump asks, and the daemon applies it
-to every row, store slice and journal frame it writes (the one place the daemon uses per-kind code). Free text
+to every row, store slice, journal frame and client session it writes (the one place the daemon uses per-kind
+code). Free text
 such as the daemon's log goes through the shared rules in `crates/redaction`. The core's part is redacted as the
 core's own values, so it still restores and replays: each protocol message in its checkpoint and inputs is walked
 as that message (an agent's opaque bodies inside them, which no kind is there to decode, are emptied), every other
@@ -207,7 +217,7 @@ target/debug/dump-replay reports/dump-<unix ms>-<id>
 ```text
 interpreter  holds   1 agent, the facts replayed to the journal's last 6 frames
 daemon core  holds   38 inputs from the checkpoint, each step judged
-session      holds   1 agent, 7 events, the window checked after each
+session      holds   1 agent with no client attached from the store's opening, 7 events, the window checked after each
 views        holds   5 rows drawn for 1 agent
 ```
 
@@ -215,16 +225,19 @@ views        holds   5 rows drawn for 1 agent
 | --- | --- | --- |
 | interpreter | each agent's facts through its interpreter, from the oldest checkpoint kept | the replay renders as the journal's frames it overlaps, redaction placeholders aside: a resume continues where the last incarnation was |
 | daemon core | the core restored from `core/checkpoint` over a copy of `core/store.sqlite`, fed every input in `core/inputs` with each journal it reads cut to where the live step found it, and a commit the live step had refused refused again | after each input: the core asks for no dump, its store keeps every invariant it checks, every row it answers is committed, and every journal read finds what the live one found (a checkpoint plus the inputs since reproduces the state) |
-| session | each agent's store slice through the session model, as a Subscribe opening delivers it | after each event: the window is one block |
+| session | each client session restored from its `checkpoint` and fed every message in its `events`; each agent no client had open, its store slice through the session model as a Subscribe opening delivers it, and the verdict says which | at the checkpoint and after each message or event: the window is one block |
 | views | that state through the chat view | nothing: views are functions of state |
 
-A stage that fails prints `FAILS`, the step (the input counted from one, for the core), the property's sentence and
-what broke it, and the command exits non-zero. The first stage that fails is the culprit. When every stage holds,
+A stage that fails prints `FAILS`, the step (the input counted from one, for the core; the message counted from one
+after the checkpoint, for a client session, with its place in the trace), the property's sentence and what broke it,
+and the command exits non-zero. A client session the manifest names whose files are missing or do not read fails
+the session stage as `unreadable`, never holds. The first stage that fails is the culprit. When every stage holds,
 the fault is in a driver or in presentation, and the daemon's log tail is where to look. A stage the bundle carries
 nothing for prints `absent` and why: a bundle from a peer has no core part.
 
 A dump the core asked for because one of its invariants broke replays to the step that broke it, naming the
-invariant. Replay it with the build that wrote it: a build with the bug fixed steps the same inputs through the fix
+invariant. A dump a chat asked for because its transcript failed its check replays that chat from its checkpoint to
+the first message that left the window broken, which can come before the CaughtUp the client checked it at. Replay it with the build that wrote it: a build with the bug fixed steps the same inputs through the fix
 and holds, unless the state the checkpoint carries was already broken, in which case it fails at the same step.
 
 The same is a library, `replay-support` (`crates/replay-support/src/bundle.rs` and `replay.rs`):
@@ -257,7 +270,7 @@ Find the item that looks wrong by its key, then compare layer by layer:
 | The journal against what the facts should mean | The interpreter decided wrong | the interpreter: add the facts as a fixture in `crates/interpret/fixtures` |
 | `store.pb` against the journal | Ingest committed something other than the steps | the daemon's ingest or store |
 | `rows(session())` against `store.pb` | The client state or views drew the right rows wrong | `ui-state` or `ui-view`: reproduce from the slice |
-| A client's `trace.txt` | The order the client saw explains what it drew | the session driver or runtime |
+| A client session's `events` (`dump-show` prints them) | The order the client saw explains what it drew | the session driver or runtime |
 | The screen against the rows | The renderer drew the right rows wrong | the terminal or the phone |
 
 A row carries its agent and key; the key finds the journal frames that wrote it, and the replayed facts show which

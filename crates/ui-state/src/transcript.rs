@@ -71,6 +71,33 @@ impl Transcript {
         }
     }
 
+    /// A transcript holding `items` as they are, with its indexes rebuilt
+    /// from them: how a dump's rows become a window again. Nothing is
+    /// checked or repaired, so a window a dump caught broken stays broken.
+    pub(crate) fn restore(kind: Kind, items: Vec<Item>, exhausted: bool) -> Transcript {
+        let mut transcript = Transcript::new(kind);
+        transcript.exhausted = exhausted;
+        for item in items {
+            let held = Held::new(kind, item);
+            transcript
+                .by_key
+                .insert(held.item.key.clone(), held.item.order);
+            if !held.item.input_id.is_empty() {
+                transcript
+                    .by_input
+                    .insert(held.item.input_id.clone(), held.item.key.clone());
+            }
+            transcript.items.insert(held.item.order, held);
+        }
+        transcript.runs = RunIndex::rebuild(&transcript);
+        transcript
+    }
+
+    /// Whether the oldest row held is known to be the agent's first.
+    pub(crate) fn exhausted(&self) -> bool {
+        self.exhausted
+    }
+
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }

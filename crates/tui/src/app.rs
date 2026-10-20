@@ -1811,16 +1811,19 @@ impl App {
     /// freezes so it is ready by the time the note is.
     fn start_dump(&self) -> crate::report::Dump {
         let client = self.client.clone();
-        let mut parts = vec![self.fleet.dump_part()];
-        if let Some(chat) = &self.chat {
-            parts.push(chat.session.dump_part());
-        }
+        let parts = [self.fleet.dump_part()];
+        let sessions = self
+            .chat
+            .iter()
+            .map(|chat| chat.session.history())
+            .collect();
         tokio::spawn(async move {
             let response = client
                 .dump(wire::DumpRequest {
                     agent_ids: Vec::new(),
                     reason: "report a problem".to_owned(),
                     automatic: false,
+                    sessions,
                 })
                 .await
                 .map_err(|error| format!("the daemon could not dump: {error}"))?;

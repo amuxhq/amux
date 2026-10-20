@@ -89,6 +89,9 @@ pub fn show(dir: &Path, agent: Option<&str>) -> Result<String, ShowError> {
             .and_then(|agents| agents.iter().find(|entry| entry["agent_id"] == *dump.id));
         agent_section(&mut out, &mut shown, dir, dump, entry)?;
     }
+    for client in &bundle.clients {
+        client_section(&mut out, &mut shown, dir, client);
+    }
     if let Some(core) = &bundle.core {
         core_section(&mut out, &mut shown, dir, core, &manifest["core"])?;
     }
@@ -190,6 +193,78 @@ fn summary(out: &mut String, manifest: &Value) {
 /// The daemon core's part: its checkpoint, every recorded line as written,
 /// and each agent row of the store as of the checkpoint, with how far its
 /// journal was committed.
+/// A client's session: the state its trace began from, then every event
+/// its driver saw, one line each.
+fn client_section(
+    out: &mut String,
+    shown: &mut BTreeSet<PathBuf>,
+    dir: &Path,
+    client: &crate::bundle::ClientDump,
+) {
+    let _ = writeln!(out, "\n== client session {} ==", client.agent);
+    let sessions = dir.join("client").join("sessions").join(&client.agent);
+    for file in ["checkpoint", "events"] {
+        shown.insert(sessions.join(file));
+    }
+    let history = match &client.history {
+        Ok(history) => history,
+        Err(why) => {
+            let _ = writeln!(out, "unreadable: {why}");
+            return;
+        }
+    };
+    let start = &history.start;
+    let rows = start
+        .transcript
+        .as_ref()
+        .map(|transcript| transcript.items.as_slice())
+        .unwrap_or_default();
+    let _ = writeln!(
+        out,
+        "-- checkpoint --\nconnection {:?} caught_up {} generation {} epoch {} cap {} following {}",
+        start.connection(),
+        start.caught_up,
+        start
+            .generation
+            .map_or_else(|| "-".to_owned(), |generation| generation.to_string()),
+        start.epoch,
+        start.cap,
+        start.following
+    );
+    let _ = writeln!(
+        out,
+        "snapshot {} inputs {} pending {} rows {}",
+        start.snapshot.as_ref().map_or_else(
+            || "none".to_owned(),
+            |snapshot| format!("rev {}", snapshot.revision)
+        ),
+        start.inputs.len(),
+        start.pending.is_some(),
+        rows.len()
+    );
+    for item in rows {
+        let _ = writeln!(
+            out,
+            "  {} order {} rev {}",
+            item.key, item.order, item.revision
+        );
+    }
+    let _ = writeln!(out, "-- events ({}) --", history.events.len());
+    for traced in &history.events {
+        let what = match &traced.event {
+            Some(wire::client_traced::Event::Msg(msg)) => {
+                match ui_state::Msg::from_wire(msg.clone()) {
+                    Ok(msg) => crate::replay::message_kind(&msg),
+                    Err(why) => format!("unreadable message: {why}"),
+                }
+            }
+            Some(wire::client_traced::Event::Driver(driver)) => format!("driver {driver}"),
+            None => "nothing".to_owned(),
+        };
+        let _ = writeln!(out, "{} @{} {what}", traced.seq, time(traced.at_ms));
+    }
+}
+
 fn core_section(
     out: &mut String,
     shown: &mut BTreeSet<PathBuf>,

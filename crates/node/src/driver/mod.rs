@@ -1224,6 +1224,7 @@ impl CoreThread {
                         agent_ids: Vec::new(),
                         reason,
                         automatic: true,
+                        sessions: Vec::new(),
                     };
                     match runtime.dump(request).await {
                         Ok(bundle) => tracing::warn!(

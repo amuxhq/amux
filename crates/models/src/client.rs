@@ -510,6 +510,17 @@ pub(crate) const UNCERTAIN_LEFT: &str = "an uncertain input absent at CaughtUp i
 pub const ONE_BLOCK: &str = "the window is one block: the rows a client holds have contiguous orders \
      and every index names a held row";
 
+/// The client's promises a run of one session can be judged by alone, as
+/// this model and a dump's replay both judge them after every message: the
+/// first broken, with what broke it.
+pub fn judge_session(session: &SessionState) -> Option<(&'static str, String)> {
+    session
+        .transcript()
+        .check()
+        .err()
+        .map(|detail| (ONE_BLOCK, detail))
+}
+
 impl Machine for ClientModel {
     type State = State;
     type Action = Action;
@@ -816,10 +827,17 @@ impl Machine for ClientModel {
                 rows_from(&s.client, s.opened_from) == rows_from(&s.whole, s.opened_from)
                     && s.client.agent_state() == s.whole.agent_state()
             }),
+            // Read back from the form a dump carries them in, as a dump's
+            // replay reads them.
             Property::always(REPLAY, |_, s: &State| {
-                let mut replayed = s.replay.from.clone();
+                let Ok(mut replayed) = SessionState::from_wire(s.replay.from.to_wire()) else {
+                    return false;
+                };
                 for msg in &s.replay.since {
-                    replayed.update(msg.clone());
+                    match Msg::from_wire(msg.to_wire()) {
+                        Ok(msg) => drop(replayed.update(msg)),
+                        Err(_) => return false,
+                    }
                 }
                 replayed == s.client
             }),
@@ -832,7 +850,7 @@ impl Machine for ClientModel {
                 !s.at_rest() || s.client.generation() == Some(s.daemon.generation)
             }),
             Property::always(ONE_BLOCK, |_, s: &State| {
-                s.client.transcript().check().is_ok()
+                judge_session(&s.client).is_none_or(|(promise, _)| promise != ONE_BLOCK)
             }),
             Property::sometimes(
                 "an append to a revision the client does not hold is answered with Get",

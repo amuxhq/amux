@@ -16,7 +16,7 @@ mod coalesce;
 mod traces;
 pub mod values;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -321,35 +321,30 @@ impl AppRuntime {
         }
     }
 
-    /// Writes a dump of the profile, with the fleet's part and every
-    /// session's, and returns the bundle's directory.
+    /// Writes a dump of the profile, with every open session for the daemon
+    /// to redact and write and the fleet's part, and returns the bundle's
+    /// directory.
     pub async fn dump(&self, reason: &str) -> Result<PathBuf, RpcError> {
+        let sessions = self
+            .fleet
+            .sessions()
+            .iter()
+            .map(|session| session.history())
+            .collect();
         let response = self
             .client
             .dump(DumpRequest {
                 agent_ids: Vec::new(),
                 reason: reason.to_owned(),
                 automatic: false,
+                sessions,
             })
             .await?;
         let bundle = PathBuf::from(response.report_path);
-        let mut parts = vec![self.fleet.dump_part()];
-        parts.extend(
-            self.fleet
-                .sessions()
-                .iter()
-                .map(|session| session.dump_part()),
-        );
-        for part in &parts {
-            write_part(&bundle, part)?;
-        }
+        ui_runtime::write_part(&bundle, &self.fleet.dump_part())
+            .map_err(|error| RpcError::Transport(format!("writing the dump: {error}")))?;
         Ok(bundle)
     }
-}
-
-fn write_part(bundle: &Path, part: &wire::DumpPart) -> Result<(), RpcError> {
-    ui_runtime::write_part(bundle, part)
-        .map_err(|error| RpcError::Transport(format!("writing the dump: {error}")))
 }
 
 impl Drop for AppRuntime {

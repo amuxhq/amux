@@ -286,6 +286,10 @@ pub enum RedactTarget {
     /// An encoded `wire::Agent`, the inventory row: its name, directory,
     /// what it is working on and its exit cause.
     Agent(Vec<u8>),
+    /// An encoded `wire::ClientSessionHistory` of the kind: a client's
+    /// session state and the messages since, with the items, snapshots and
+    /// inputs inside them, bodies included.
+    ClientSession(Vec<u8>),
 }
 
 /// An item body as the harness and goldens read it.

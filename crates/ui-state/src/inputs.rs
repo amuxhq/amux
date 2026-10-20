@@ -156,6 +156,10 @@ pub struct Inputs {
 }
 
 impl Inputs {
+    pub(crate) fn restore(sent: Vec<SentInput>) -> Inputs {
+        Inputs { sent }
+    }
+
     pub fn get(&self, id: &[u8]) -> Option<&SentInput> {
         self.sent.iter().find(|sent| sent.id == id)
     }

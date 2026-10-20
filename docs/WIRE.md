@@ -99,7 +99,7 @@ failed and whether the call took effect is unknown. Codes a client meets often:
 | `Diff(DiffRequest)` | `Diff` | The changed files on the owning host; the patch, stored as a blob, only when asked |
 | `GetCatalogue(GetCatalogueRequest)` | `CatalogueBlob` | What a provider on a host offers with no agent running: the encoded `Catalogue` and its hash. An agent's catalogue is a blob, read with `GetBlob` |
 | `ListRepositories` | `ListRepositoriesResponse` | Repositories a host offers to spawn agents in |
-| `Dump(DumpRequest)` | `DumpReport` | A debug bundle, and where it was written (see [debugging](DEBUGGING.md)) |
+| `Dump(DumpRequest)` | `DumpReport` | A debug bundle, with the asking client's open chats for the daemon to redact and write in, and where it was written (see [debugging](DEBUGGING.md)) |
 
 There are no unary list calls: a listing is `SubscribeInventory` read to
 `CaughtUp`. There is no status call: what an agent is working on is a field of

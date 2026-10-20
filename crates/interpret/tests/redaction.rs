@@ -257,7 +257,8 @@ fn target_bytes(target: &RedactTarget) -> &[u8] {
         | RedactTarget::Checkpoint(bytes)
         | RedactTarget::Spec(bytes)
         | RedactTarget::Step(bytes)
-        | RedactTarget::Agent(bytes) => bytes,
+        | RedactTarget::Agent(bytes)
+        | RedactTarget::ClientSession(bytes) => bytes,
         RedactTarget::Fact(fact) => &fact.payload,
     }
 }
@@ -532,6 +533,77 @@ fn run<I: Interpreter>(events: Vec<Event>) -> (String, BTreeSet<&'static str>) {
             let after = wire::Agent::decode(after).map_err(|error| error.to_string())?;
             if before.agent_id == after.agent_id && before.kind == after.kind {
                 Ok("decodes as the same agent".to_owned())
+            } else {
+                Err(format!("{before:?} became {after:?}"))
+            }
+        },
+        readable,
+    );
+    // A client's session as a dump carries it: the same rows, held in its
+    // window and arriving as messages since.
+    let history = wire::ClientSessionHistory {
+        agent_id: row.agent_id.clone(),
+        start: Some(wire::ClientSession {
+            agent: Some(row.clone()),
+            snapshot: slice.snapshot.clone(),
+            transcript: Some(wire::ClientTranscript {
+                items: slice.items.clone(),
+                exhausted: true,
+            }),
+            ..wire::ClientSession::default()
+        }),
+        events: Some(wire::ClientSessionEvents {
+            traced: slice
+                .items
+                .iter()
+                .enumerate()
+                .map(|(seq, item)| wire::ClientTraced {
+                    seq: seq as u64,
+                    at_ms: 0,
+                    event: Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
+                        of: Some(wire::client_session_msg::Of::Event(wire::SessionEvent {
+                            of: Some(wire::session_event::Of::Item(item.clone())),
+                        })),
+                    })),
+                })
+                .collect(),
+        }),
+    };
+    transcript.check::<I>(
+        "client session",
+        RedactTarget::ClientSession(history.encode_to_vec()),
+        |before, after| {
+            let before = wire::ClientSessionHistory::decode(before).unwrap();
+            let after =
+                wire::ClientSessionHistory::decode(after).map_err(|error| error.to_string())?;
+            let arms = |history: &wire::ClientSessionHistory| {
+                let held = history
+                    .start
+                    .iter()
+                    .flat_map(|start| start.transcript.iter())
+                    .flat_map(|transcript| transcript.items.iter());
+                let arrived = history
+                    .events
+                    .iter()
+                    .flat_map(|events| events.traced.iter())
+                    .filter_map(|traced| match &traced.event {
+                        Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
+                            of:
+                                Some(wire::client_session_msg::Of::Event(wire::SessionEvent {
+                                    of: Some(wire::session_event::Of::Item(item)),
+                                })),
+                        })) => Some(item),
+                        _ => None,
+                    });
+                held.chain(arrived)
+                    .map(|item| (item.key.clone(), I::describe_item(&item.body).arm))
+                    .collect::<Vec<_>>()
+            };
+            if arms(&before) == arms(&after) && before.agent_id == after.agent_id {
+                Ok(format!(
+                    "decodes as the same session with the same {} rows",
+                    arms(&after).len()
+                ))
             } else {
                 Err(format!("{before:?} became {after:?}"))
             }

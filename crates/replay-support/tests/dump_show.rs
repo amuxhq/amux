@@ -237,3 +237,28 @@ fn copy(from: &Path, to: &Path) {
         }
     }
 }
+
+/// A client's session prints as the state its trace began from and every
+/// event its driver saw, so nothing in the bundle is left as bytes.
+#[test]
+fn a_clients_session_prints_its_checkpoint_and_every_event() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/client_violation");
+    let printed = show::show(&dir, None).expect("the bundle prints");
+    let section = printed
+        .split("\n== client session 01aaa7bf-2866-4f4a-af4d-08abe99db157 ==\n")
+        .nth(1)
+        .expect("a section for the session")
+        .split("\n== ")
+        .next()
+        .unwrap();
+    assert!(section.starts_with("-- checkpoint --\n"), "{section}");
+    assert!(section.contains("-- events (8) --"), "{section}");
+    assert!(
+        section.contains("driver Subscribed { tail: 16 }"),
+        "{section}"
+    );
+    assert!(section.contains("order 1\n"), "{section}");
+    assert!(section.contains(" order 3\n"), "{section}");
+    assert!(section.contains("CaughtUp rev 13"), "{section}");
+    assert!(printed.contains("== other files (0) =="), "{printed}");
+}

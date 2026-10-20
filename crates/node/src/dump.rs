@@ -31,6 +31,14 @@
 //!                            spec.<n>, and dump-errors when it had any. An
 //!                            agent with no process has only its specs here,
 //!                            redacted by the daemon
+//!   client/sessions/<agent_id>/
+//!                            each session the asking client had open, for a
+//!                            replay of the client:
+//!     checkpoint             the session's state when its trace began, a
+//!                            wire.ClientSession, redacted
+//!     events                 every event its driver saw since, through the
+//!                            one that broke it when one did, a
+//!                            wire.ClientSessionEvents, redacted
 //!   core/                    the daemon core, for a replay of it:
 //!     checkpoint             its newest checkpoint, redacted
 //!     inputs                 every input stepped since, and what each
@@ -74,7 +82,10 @@ use prost::Message as _;
 use store::AgentRow;
 use tokio::sync::oneshot;
 use uuid::Uuid;
-use wire::{AgentDumpRequest, CtlFrame, DumpFile, DumpPart, DumpRequest, Kind, Step, ctl_frame};
+use wire::{
+    AgentDumpRequest, ClientSessionHistory, CtlFrame, DumpFile, DumpPart, DumpRequest, Kind, Step,
+    ctl_frame,
+};
 
 use crate::blobs::hex;
 use crate::driver::Captured;
@@ -91,6 +102,11 @@ pub const CORE: &str = "core";
 pub const CORE_CHECKPOINT: &str = "checkpoint";
 pub const CORE_INPUTS: &str = "inputs";
 pub const CORE_STORE: &str = "store.sqlite";
+/// Where a client's sessions live in a bundle, one directory per agent, and
+/// each one's files.
+pub const CLIENT_SESSIONS: &str = "client/sessions";
+pub const CLIENT_CHECKPOINT: &str = "checkpoint";
+pub const CLIENT_EVENTS: &str = "events";
 /// How often, and how far apart, a dump asks for the core again while its
 /// store's main file is being checkpointed.
 const CAPTURE_TRIES: u32 = 30;
@@ -207,7 +223,9 @@ impl ProfileRuntime {
             agents.push(entry);
             errors.append(&mut failed);
         }
+        let mut sessions = Vec::new();
         if asker == Asker::Local {
+            sessions = client_sessions(&request.sessions, &rows, &partial, &mut errors)?;
             self.gather_hosts(request, &rows, &partial, &mut agents, &mut errors)
                 .await?;
             match self.dump_log(&partial) {
@@ -226,6 +244,7 @@ impl ProfileRuntime {
             "generation": self.generation(),
             "daemon_version": crate::version(),
             "agents": agents,
+            "client": { "sessions": sessions },
             "core": core.map(|core| serde_json::json!({
                 "schema": core.schema,
                 "inputs": core.inputs,
@@ -266,6 +285,8 @@ impl ProfileRuntime {
                 agent_ids: ids.clone(),
                 reason: request.reason.clone(),
                 automatic: request.automatic,
+                // A client's sessions are this host's to write.
+                sessions: Vec::new(),
             };
             async move {
                 let host = Uuid::from_slice(&host).unwrap_or_default();
@@ -564,6 +585,49 @@ fn log_cut_note(errors: &mut Vec<String>, skipped: u64) {
 }
 
 /// One target through the kind's redactor, as the bytes it came back as.
+/// Writes each session the asking client handed in, redacted through its
+/// agent's kind, and returns their manifest entries. A session of an agent
+/// the dump does not cover is named in `errors` and left out.
+fn client_sessions(
+    sessions: &[ClientSessionHistory],
+    rows: &[AgentRow],
+    bundle: &Path,
+    errors: &mut Vec<String>,
+) -> io::Result<Vec<serde_json::Value>> {
+    let mut entries = Vec::new();
+    for history in sessions {
+        let id = Uuid::from_slice(&history.agent_id).unwrap_or_default();
+        let Some(row) = rows.iter().find(|row| row.agent.agent == history.agent_id) else {
+            errors.push(format!(
+                "{id} client session: not an agent this dump covers"
+            ));
+            continue;
+        };
+        let kind = Kind::try_from(row.kind).unwrap_or(Kind::Unspecified);
+        let bytes = redacted(kind, RedactTarget::ClientSession(history.encode_to_vec()));
+        let history = match ClientSessionHistory::decode(bytes.as_slice()) {
+            Ok(history) => history,
+            Err(error) => {
+                errors.push(format!("{id} client session: {error}"));
+                continue;
+            }
+        };
+        let events = history.events.unwrap_or_default();
+        let dir = bundle.join(CLIENT_SESSIONS).join(id.to_string());
+        let start = history.start.unwrap_or_default();
+        write_under(&dir, CLIENT_CHECKPOINT, &start.encode_to_vec())?;
+        write_under(&dir, CLIENT_EVENTS, &events.encode_to_vec())?;
+        let at = |file: &str| format!("{CLIENT_SESSIONS}/{id}/{file}");
+        entries.push(serde_json::json!({
+            "agent_id": id.to_string(),
+            "checkpoint": at(CLIENT_CHECKPOINT),
+            "events": at(CLIENT_EVENTS),
+            "traced": events.traced.len(),
+        }));
+    }
+    Ok(entries)
+}
+
 fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
     match interpret::redact(kind, target) {
         RedactTarget::ItemBody(bytes)
@@ -573,7 +637,8 @@ fn redacted(kind: Kind, target: RedactTarget) -> Vec<u8> {
         | RedactTarget::Checkpoint(bytes)
         | RedactTarget::Spec(bytes)
         | RedactTarget::Step(bytes)
-        | RedactTarget::Agent(bytes) => bytes,
+        | RedactTarget::Agent(bytes)
+        | RedactTarget::ClientSession(bytes) => bytes,
         RedactTarget::Fact(fact) => fact.payload,
     }
 }

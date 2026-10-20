@@ -148,11 +148,60 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     .await
     .unwrap();
 
+    // The asking client's open chat, as it hands it in unredacted: the
+    // rows its window held, a send of its own since and a driver act whose
+    // words name a secret.
+    let held = runtime
+        .read_store({
+            let live_key = live_key.clone();
+            move |store| store.cut(&live_key, 100).unwrap()
+        })
+        .await
+        .unwrap();
+    let client_msg = |of| wire::ClientTraced {
+        seq: 0,
+        at_ms: 0,
+        event: Some(wire::client_traced::Event::Msg(wire::ClientSessionMsg {
+            of: Some(of),
+        })),
+    };
+    let session = wire::ClientSessionHistory {
+        agent_id: live.as_bytes().to_vec(),
+        start: Some(wire::ClientSession {
+            agent: Some(runtime.agent(live).await.unwrap()),
+            snapshot: held.snapshot.clone(),
+            transcript: Some(wire::ClientTranscript {
+                items: held.held.clone(),
+                exhausted: true,
+            }),
+            ..wire::ClientSession::default()
+        }),
+        events: Some(wire::ClientSessionEvents {
+            traced: vec![
+                client_msg(wire::client_session_msg::Of::Send(sdk_prompt(
+                    b"from-the-client",
+                    &format!("again with {TOKEN}; cc {EMAIL}"),
+                ))),
+                wire::ClientTraced {
+                    seq: 1,
+                    at_ms: 0,
+                    event: Some(wire::client_traced::Event::Driver(format!(
+                        "GetFailed {{ error: \"Authorization: Bearer {KEY}\" }}"
+                    ))),
+                },
+            ],
+        }),
+    };
+    let elsewhere = wire::ClientSessionHistory {
+        agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+        ..wire::ClientSessionHistory::default()
+    };
     let bundle = runtime
         .dump(DumpRequest {
             agent_ids: Vec::new(),
             reason: format!("the chat froze; my key is {KEY}"),
             automatic: false,
+            sessions: vec![session, elsewhere.clone()],
         })
         .await
         .unwrap();
@@ -248,6 +297,54 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
         "the stopped agent's missing ring is named: {errors:?}"
     );
     assert_eq!(manifest["agents"].as_array().unwrap().len(), 2);
+    // The client's session, redacted through the agent's kind, beside a
+    // session of an agent the dump does not cover, which is named instead.
+    let client = format!("{}/{live}", node::CLIENT_SESSIONS);
+    has(format!("{client}/{}", node::CLIENT_CHECKPOINT));
+    has(format!("{client}/{}", node::CLIENT_EVENTS));
+    let sessions = manifest["client"]["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1, "{sessions:?}");
+    assert_eq!(
+        sessions[0]["checkpoint"].as_str(),
+        Some(format!("{client}/{}", node::CLIENT_CHECKPOINT).as_str())
+    );
+    let elsewhere = uuid::Uuid::from_slice(&elsewhere.agent_id).unwrap();
+    assert!(
+        errors.iter().any(|error| error
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("{elsewhere} client session"))),
+        "{errors:?}"
+    );
+    let start = wire::ClientSession::decode(
+        std::fs::read(bundle.join(&client).join(node::CLIENT_CHECKPOINT))
+            .unwrap()
+            .as_slice(),
+    )
+    .expect("the session's checkpoint reads");
+    let window = start.transcript.unwrap_or_default().items;
+    let shape = |items: &[wire::Item]| -> Vec<(String, u64, u64)> {
+        items
+            .iter()
+            .map(|item| (item.key.clone(), item.order, item.revision))
+            .collect()
+    };
+    assert_eq!(
+        shape(&window),
+        shape(&held.held),
+        "the rows keep their places"
+    );
+    assert!(
+        window.iter().any(|item| item.text.contains("<REDACTED>")),
+        "the client's rows are kept, redacted"
+    );
+    let events = wire::ClientSessionEvents::decode(
+        std::fs::read(bundle.join(&client).join(node::CLIENT_EVENTS))
+            .unwrap()
+            .as_slice(),
+    )
+    .expect("the session's events read");
+    assert_eq!(events.traced.len(), 2);
 
     let slice = wire::Step::decode(
         std::fs::read(bundle.join(format!("agents/{live}/store.pb")))
@@ -284,8 +381,8 @@ async fn a_dump_bundles_the_redacted_slice_parts_journal_tails_and_log() {
     assert!(ring_holds, "the live ring holds {KEY}");
     transcript.push(format!(
         "planted {} secrets in the prompt, a later input, the model's reply, the provider's \
-         environment, the dump reason and the daemon log; none is in any file of the bundle, \
-         as text or hex",
+         environment, the dump reason, the daemon log and the client's session; none is in any \
+         file of the bundle, as text or hex",
         PLANTED.len()
     ));
     transcript.push(format!(
@@ -354,6 +451,7 @@ async fn a_dump_of_named_agents_covers_only_them_and_an_unknown_one_is_an_error(
             agent_ids: vec![one.id.as_bytes().to_vec()],
             reason: String::new(),
             automatic: true,
+            sessions: Vec::new(),
         })
         .await
         .unwrap();

@@ -6322,7 +6322,7 @@ impl ::prost::Name for ProjectEntry {
 /// Assembles the host-side parts of a dump bundle into the reports
 /// directory: the agents' journal tails, store slices and agent parts, all
 /// redacted.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DumpRequest {
     /// Empty means every agent of the profile.
     #[prost(bytes = "vec", repeated, tag = "1")]
@@ -6332,6 +6332,12 @@ pub struct DumpRequest {
     /// Produced on an invariant violation or panic rather than on request.
     #[prost(bool, tag = "3")]
     pub automatic: bool,
+    /// The asking client's open sessions, each as its trace began and every
+    /// message since: the client stage of a replay. Unredacted as the client
+    /// holds it; the daemon redacts each through its agent's kind before it
+    /// writes it into the bundle, and passes none on to another host.
+    #[prost(message, repeated, tag = "4")]
+    pub sessions: ::prost::alloc::vec::Vec<ClientSessionHistory>,
 }
 impl ::prost::Name for DumpRequest {
     const NAME: &'static str = "DumpRequest";
@@ -6341,6 +6347,358 @@ impl ::prost::Name for DumpRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.DumpRequest".into()
+    }
+}
+/// One open chat as a client's dump carries it: the session's state when its
+/// trace began, and everything its driver saw since, in the order it saw it.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSessionHistory {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub start: ::core::option::Option<ClientSession>,
+    #[prost(message, optional, tag = "3")]
+    pub events: ::core::option::Option<ClientSessionEvents>,
+}
+impl ::prost::Name for ClientSessionHistory {
+    const NAME: &'static str = "ClientSessionHistory";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSessionHistory".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSessionHistory".into()
+    }
+}
+/// A client's session state: the rows and every value the session model
+/// keeps. Indexes over the rows are not carried; they are rebuilt from them.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSession {
+    #[prost(message, optional, tag = "1")]
+    pub agent: ::core::option::Option<Agent>,
+    #[prost(message, optional, tag = "2")]
+    pub host: ::core::option::Option<HostEntry>,
+    /// The newest snapshot, when one arrived.
+    #[prost(message, optional, tag = "3")]
+    pub snapshot: ::core::option::Option<Snapshot>,
+    /// The catalogue last fetched for the agent, with the hash it was fetched
+    /// by.
+    #[prost(message, optional, tag = "4")]
+    pub catalogue: ::core::option::Option<ClientCatalogue>,
+    #[prost(message, optional, tag = "5")]
+    pub transcript: ::core::option::Option<ClientTranscript>,
+    /// A transcript being built apart, swapped in at the next CaughtUp.
+    #[prost(message, optional, tag = "6")]
+    pub pending: ::core::option::Option<ClientTranscript>,
+    #[prost(bool, tag = "7")]
+    pub retail: bool,
+    #[prost(uint64, optional, tag = "8")]
+    pub generation: ::core::option::Option<u64>,
+    #[prost(message, repeated, tag = "9")]
+    pub inputs: ::prost::alloc::vec::Vec<ClientInput>,
+    #[prost(bool, tag = "10")]
+    pub caught_up: bool,
+    #[prost(bool, tag = "11")]
+    pub detached: bool,
+    #[prost(enumeration = "ClientConnection", tag = "12")]
+    pub connection: i32,
+    #[prost(uint32, optional, tag = "13")]
+    pub exited_under: ::core::option::Option<u32>,
+    #[prost(uint64, tag = "14")]
+    pub reach: u64,
+    #[prost(uint64, tag = "15")]
+    pub epoch: u64,
+    #[prost(message, repeated, tag = "16")]
+    pub blobs: ::prost::alloc::vec::Vec<ClientBlob>,
+    #[prost(uint64, tag = "17")]
+    pub cap: u64,
+    #[prost(bool, tag = "18")]
+    pub following: bool,
+    /// Rows held above the window while the reader is in history.
+    #[prost(message, repeated, tag = "19")]
+    pub arrivals: ::prost::alloc::vec::Vec<Item>,
+    #[prost(bool, tag = "20")]
+    pub arrivals_moved_on: bool,
+    #[prost(uint64, tag = "21")]
+    pub arrivals_changes: u64,
+    #[prost(bool, tag = "22")]
+    pub reload_owed: bool,
+}
+impl ::prost::Name for ClientSession {
+    const NAME: &'static str = "ClientSession";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSession".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSession".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientTranscript {
+    #[prost(message, repeated, tag = "1")]
+    pub items: ::prost::alloc::vec::Vec<Item>,
+    #[prost(bool, tag = "2")]
+    pub exhausted: bool,
+}
+impl ::prost::Name for ClientTranscript {
+    const NAME: &'static str = "ClientTranscript";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientTranscript".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientTranscript".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientCatalogue {
+    #[prost(bytes = "vec", tag = "1")]
+    pub hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub catalogue: ::core::option::Option<Catalogue>,
+}
+impl ::prost::Name for ClientCatalogue {
+    const NAME: &'static str = "ClientCatalogue";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientCatalogue".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientCatalogue".into()
+    }
+}
+/// One input this client sent, and what became of it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientInput {
+    #[prost(message, optional, tag = "1")]
+    pub input: ::core::option::Option<Input>,
+    #[prost(enumeration = "ClientInputState", tag = "2")]
+    pub state: i32,
+    /// Why it was refused, when its state is REJECTED.
+    #[prost(message, optional, tag = "3")]
+    pub rejected: ::core::option::Option<Rejected>,
+    #[prost(bool, tag = "4")]
+    pub seen_queued: bool,
+    #[prost(uint64, tag = "5")]
+    pub left_at: u64,
+}
+impl ::prost::Name for ClientInput {
+    const NAME: &'static str = "ClientInput";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientInput".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientInput".into()
+    }
+}
+/// An attachment's bytes in the client's cache.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientBlob {
+    #[prost(bytes = "vec", tag = "1")]
+    pub hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "ClientBlobState", tag = "2")]
+    pub state: i32,
+    /// Why the fetch failed, when its state is FAILED.
+    #[prost(string, tag = "3")]
+    pub failed: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ClientBlob {
+    const NAME: &'static str = "ClientBlob";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientBlob".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientBlob".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSessionEvents {
+    #[prost(message, repeated, tag = "1")]
+    pub traced: ::prost::alloc::vec::Vec<ClientTraced>,
+}
+impl ::prost::Name for ClientSessionEvents {
+    const NAME: &'static str = "ClientSessionEvents";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSessionEvents".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSessionEvents".into()
+    }
+}
+/// One event a session's driver saw.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientTraced {
+    /// Position in everything the driver saw since the chat opened.
+    #[prost(uint64, tag = "1")]
+    pub seq: u64,
+    /// When, on the driver's clock.
+    #[prost(int64, tag = "2")]
+    pub at_ms: i64,
+    #[prost(oneof = "client_traced::Event", tags = "3, 4")]
+    pub event: ::core::option::Option<client_traced::Event>,
+}
+/// Nested message and enum types in `ClientTraced`.
+pub mod client_traced {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Event {
+        /// A message the driver applied to the session.
+        #[prost(message, tag = "3")]
+        Msg(super::ClientSessionMsg),
+        /// Something the driver did that is not a message, as it describes it.
+        #[prost(string, tag = "4")]
+        Driver(::prost::alloc::string::String),
+    }
+}
+impl ::prost::Name for ClientTraced {
+    const NAME: &'static str = "ClientTraced";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientTraced".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientTraced".into()
+    }
+}
+/// A message the session model applies.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientSessionMsg {
+    #[prost(
+        oneof = "client_session_msg::Of",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
+    )]
+    pub of: ::core::option::Option<client_session_msg::Of>,
+}
+/// Nested message and enum types in `ClientSessionMsg`.
+pub mod client_session_msg {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Event(super::SessionEvent),
+        #[prost(message, tag = "2")]
+        Page(super::ClientPage),
+        #[prost(enumeration = "super::ClientConnection", tag = "3")]
+        Connection(i32),
+        #[prost(message, tag = "4")]
+        Send(super::Input),
+        #[prost(message, tag = "5")]
+        Sent(super::ClientSent),
+        #[prost(bytes, tag = "6")]
+        DiscardInputId(::prost::alloc::vec::Vec<u8>),
+        #[prost(message, tag = "7")]
+        Entry(super::Agent),
+        #[prost(message, tag = "8")]
+        Host(super::HostEntry),
+        #[prost(message, tag = "9")]
+        Blob(super::ClientBlob),
+        #[prost(bool, tag = "10")]
+        Following(bool),
+        #[prost(message, tag = "11")]
+        Reloading(super::ClientReloading),
+        #[prost(uint64, tag = "12")]
+        Window(u64),
+        #[prost(message, tag = "13")]
+        Catalogue(super::ClientCatalogue),
+    }
+}
+impl ::prost::Name for ClientSessionMsg {
+    const NAME: &'static str = "ClientSessionMsg";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSessionMsg".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSessionMsg".into()
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClientPage {
+    #[prost(message, repeated, tag = "1")]
+    pub items: ::prost::alloc::vec::Vec<Item>,
+    #[prost(bool, tag = "2")]
+    pub exhausted: bool,
+    #[prost(uint64, tag = "3")]
+    pub epoch: u64,
+}
+impl ::prost::Name for ClientPage {
+    const NAME: &'static str = "ClientPage";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientPage".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientPage".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientReloading {}
+impl ::prost::Name for ClientReloading {
+    const NAME: &'static str = "ClientReloading";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientReloading".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientReloading".into()
+    }
+}
+/// What became of a send.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientSent {
+    #[prost(bytes = "vec", tag = "1")]
+    pub input_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(oneof = "client_sent::Outcome", tags = "2, 3, 4")]
+    pub outcome: ::core::option::Option<client_sent::Outcome>,
+}
+/// Nested message and enum types in `ClientSent`.
+pub mod client_sent {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Outcome {
+        #[prost(message, tag = "2")]
+        Reply(super::SendInputResponse),
+        /// The transport failed before a reply.
+        #[prost(message, tag = "3")]
+        Lost(super::ClientLost),
+        /// It never left: held to send once the host is back.
+        #[prost(message, tag = "4")]
+        Held(super::ClientHeld),
+    }
+}
+impl ::prost::Name for ClientSent {
+    const NAME: &'static str = "ClientSent";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientSent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientSent".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientLost {}
+impl ::prost::Name for ClientLost {
+    const NAME: &'static str = "ClientLost";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientLost".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientLost".into()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientHeld {}
+impl ::prost::Name for ClientHeld {
+    const NAME: &'static str = "ClientHeld";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ClientHeld".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.ClientHeld".into()
     }
 }
 /// Where the bundle was written, for a caller on the same machine.
@@ -6702,6 +7060,105 @@ impl Provider {
             "PROVIDER_UNSPECIFIED" => Some(Self::Unspecified),
             "PROVIDER_CLAUDE" => Some(Self::Claude),
             "PROVIDER_CODEX" => Some(Self::Codex),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ClientConnection {
+    Connecting = 0,
+    Live = 1,
+    Reconnecting = 2,
+}
+impl ClientConnection {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Connecting => "CLIENT_CONNECTION_CONNECTING",
+            Self::Live => "CLIENT_CONNECTION_LIVE",
+            Self::Reconnecting => "CLIENT_CONNECTION_RECONNECTING",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CLIENT_CONNECTION_CONNECTING" => Some(Self::Connecting),
+            "CLIENT_CONNECTION_LIVE" => Some(Self::Live),
+            "CLIENT_CONNECTION_RECONNECTING" => Some(Self::Reconnecting),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ClientInputState {
+    Sent = 0,
+    Queued = 1,
+    Settled = 2,
+    Rejected = 3,
+    Uncertain = 4,
+    Held = 5,
+}
+impl ClientInputState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Sent => "CLIENT_INPUT_STATE_SENT",
+            Self::Queued => "CLIENT_INPUT_STATE_QUEUED",
+            Self::Settled => "CLIENT_INPUT_STATE_SETTLED",
+            Self::Rejected => "CLIENT_INPUT_STATE_REJECTED",
+            Self::Uncertain => "CLIENT_INPUT_STATE_UNCERTAIN",
+            Self::Held => "CLIENT_INPUT_STATE_HELD",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CLIENT_INPUT_STATE_SENT" => Some(Self::Sent),
+            "CLIENT_INPUT_STATE_QUEUED" => Some(Self::Queued),
+            "CLIENT_INPUT_STATE_SETTLED" => Some(Self::Settled),
+            "CLIENT_INPUT_STATE_REJECTED" => Some(Self::Rejected),
+            "CLIENT_INPUT_STATE_UNCERTAIN" => Some(Self::Uncertain),
+            "CLIENT_INPUT_STATE_HELD" => Some(Self::Held),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ClientBlobState {
+    Missing = 0,
+    Fetching = 1,
+    Ready = 2,
+    Failed = 3,
+}
+impl ClientBlobState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Missing => "CLIENT_BLOB_STATE_MISSING",
+            Self::Fetching => "CLIENT_BLOB_STATE_FETCHING",
+            Self::Ready => "CLIENT_BLOB_STATE_READY",
+            Self::Failed => "CLIENT_BLOB_STATE_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CLIENT_BLOB_STATE_MISSING" => Some(Self::Missing),
+            "CLIENT_BLOB_STATE_FETCHING" => Some(Self::Fetching),
+            "CLIENT_BLOB_STATE_READY" => Some(Self::Ready),
+            "CLIENT_BLOB_STATE_FAILED" => Some(Self::Failed),
             _ => None,
         }
     }

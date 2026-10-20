@@ -911,9 +911,9 @@ async fn a_return_whose_held_rows_fit_releases_them_without_a_fetch() {
 /// Decided: an input the runtime refused before it was written, because the
 /// agent's host could not be reached, certainly never left. The client
 /// library holds it as pending (visible, with Cancel), and once the host is
-/// reachable again sends it once more under the same id. Today it becomes a
-/// rejection and nothing sends it again. Covers a prompt and an ask answer;
-/// a stop is held the same way once it goes through the library.
+/// reachable again sends it once more under the same id. Covers a prompt
+/// and an ask answer; a stop is held the same way once it goes through the
+/// library.
 #[tokio::test]
 async fn an_input_refused_because_the_host_was_unreachable_is_held_and_sent_again_with_its_id() {
     for act in ["prompt", "answer"] {

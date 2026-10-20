@@ -44,8 +44,9 @@ const PEER: HostId = HostId([2; 16]);
 /// The account's relay, which may claim to reach the target.
 const RELAY: HostId = HostId([9; 16]);
 /// The relay's link is the oldest, as it is on a daemon that started with
-/// one; the peer's comes next, so a route through the relay is listed
-/// before one through the peer.
+/// one; the peer's comes next. Whatever the order the links came up in, a
+/// route through a peer is listed before the one through the relay, which
+/// is tried last.
 const RELAY_LINK: LinkId = LinkId(1);
 const PEER_LINK: LinkId = LinkId(2);
 /// The target's own links take ids from here, in the order they come up.

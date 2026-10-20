@@ -4,6 +4,8 @@
 
 mod support;
 
+use std::sync::Arc;
+
 use support::synthetic::*;
 use support::*;
 use tonic::Request;
@@ -254,4 +256,80 @@ async fn rename_and_delete_refuse_a_stale_revision() {
 
     drop(door);
     daemon.shutdown().await.unwrap();
+}
+
+/// Removing a profile ends the dumps its core asked for, as a shutdown
+/// does: one still waiting for the core is let go within its time and
+/// does not hold the profile's runtime, and its store, past the removal.
+#[tokio::test(flavor = "multi_thread")]
+async fn removing_a_profile_ends_a_dump_still_in_flight() {
+    let install = Install::new();
+    // Every step is over its budget, and every one asks for a dump.
+    let launch = node::Launch {
+        step_budget: daemon_core::StepBudget { micros: 0 },
+        dump_interval_ms: 0,
+        ..quiet_launch()
+    };
+    let daemon = install.start("boot-1", launch).await;
+    let door = daemon.front_door();
+    let created = door
+        .create_profile(Request::new(CreateProfileRequest {
+            label: Some("spare".to_owned()),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let id: node::ProfileId = uuid::Uuid::from_slice(&created.id).unwrap();
+    let runtime = daemon.profile(id).expect("the new profile runs").clone();
+
+    // A step between two holds of the core: the dumps it asks for wait for
+    // the core's part behind the second.
+    let (release_first, first) = std::sync::mpsc::channel::<()>();
+    let (release_second, second) = std::sync::mpsc::channel::<()>();
+    let mut held = Box::pin(runtime.read_store(move |_| first.recv().is_ok()));
+    assert!(poll_once(&mut held).await.is_pending());
+    runtime.mark_exiting(uuid::Uuid::new_v4());
+    let mut holding = Box::pin(runtime.read_store(move |_| second.recv().is_ok()));
+    assert!(poll_once(&mut holding).await.is_pending());
+    release_first.send(()).unwrap();
+    assert!(held.await.unwrap());
+    let reports = install.data_dir.join(node::REPORTS);
+    until("a dump under way", || {
+        let partial = std::fs::read_dir(&reports)
+            .into_iter()
+            .flatten()
+            .any(|entry| {
+                entry.is_ok_and(|entry| entry.file_name().to_string_lossy().starts_with(".dump-"))
+            });
+        async move { partial.then_some(()).ok_or("no dump started yet") }
+    })
+    .await
+    .unwrap();
+
+    door.delete_profile(Request::new(DeleteProfileRequest {
+        profile_id: created.id.clone(),
+        confirm_revision: created.revision,
+    }))
+    .await
+    .unwrap();
+    // The removal holds nothing of the runtime, and no dump does: this
+    // test's handle is the last.
+    assert_eq!(
+        Arc::strong_count(&runtime),
+        1,
+        "a dump in flight holds the removed profile's runtime"
+    );
+    release_second.send(()).unwrap();
+    assert!(holding.await.unwrap());
+    let gone = Arc::downgrade(&runtime);
+    drop(runtime);
+    assert!(gone.upgrade().is_none(), "the runtime is gone");
+    drop(door);
+    daemon.shutdown().await.unwrap();
+}
+
+/// Polls a future once, as far as it gets before it waits.
+async fn poll_once<F: std::future::Future + Unpin>(future: &mut F) -> std::task::Poll<F::Output> {
+    std::future::poll_fn(|cx| std::task::Poll::Ready(std::pin::Pin::new(&mut *future).poll(cx)))
+        .await
 }

@@ -40,7 +40,7 @@ tests = [
   "swift:AmuxCoreTests/ChatModelTests/testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow",
   "swift:AmuxCoreTests/ChatModelTests/testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold",
   "ui-state/spec::inputs::a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up",
-  "tui/lib::tests::detached_keeps_the_rows_and_disables_send",
+  "tui/lib::tests::detached_keeps_the_rows_and_the_draft",
 ]
 
 [[contract]]
@@ -84,17 +84,6 @@ tests = [
   "interpret/codex::an_idle_inject_is_kicked_under_either_arm",
   "interpret/codex::the_parked_arm_kicks_an_empty_turn_and_consumes_at_its_acknowledgement",
   "node/messaging::a_child_answering_exiting_to_its_parents_message_is_resumed_with_it",
-]
-
-[[contract]]
-id = "connection-drops-mid-catch-up"
-source = "worked failure"
-section = "Replication"
-claim = "A link dies halfway through a catch-up delta or right after the Snapshot: the cursor has not moved, the source replays after the old cursor, absorbs what it already holds by key and stores the cursor only at CaughtUp, while a page landing a newer revision of an old row moves no cursor; a client whose own stream lags re-tails and dedupes the overlap by key."
-tests = [
-  "testnet/spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
-  "store/conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
-  "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
 ]
 
 [[contract]]
@@ -457,16 +446,6 @@ tests = [
 # --- Invariants: session state ----------------------------------------------
 
 [[contract]]
-id = "window-contiguous"
-source = "invariant"
-section = "Session state"
-claim = "The transcript window is contiguous; rows above head append, inside upsert if newer, below oldest are dropped."
-tests = [
-  "ui-state/spec::window::page_and_live_overlap_dedupe_by_key",
-  "ui-state/spec::window::a_live_row_below_the_window_is_dropped",
-]
-
-[[contract]]
 id = "row-ids-never-move"
 source = "invariant"
 section = "Session state"
@@ -488,24 +467,6 @@ tests = [
 ]
 
 [[contract]]
-id = "appends-touch-open-items"
-source = "invariant"
-section = "Session state"
-claim = "Appends touch only items still open, not only the newest."
-tests = [
-  "interpret/lib::testkind::tests::invariants::appends_go_to_any_open_item_and_never_after_its_final",
-]
-
-[[contract]]
-id = "reset-swaps-at-caught-up"
-source = "invariant"
-section = "Session state"
-claim = "Reset swaps at the next CaughtUp."
-tests = [
-  "swift:AmuxCoreTests/ChatModelTests/testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow",
-]
-
-[[contract]]
 id = "send-only-caught-up-and-live"
 source = "invariant"
 section = "Session state"
@@ -516,7 +477,7 @@ tests = [
   "ui-runtime/session::a_send_that_raced_the_exit_is_rejected_and_the_composer_offers_resume",
   "swift:AmuxCoreTests/ChatModelTests/testADraftSentWhileCatchingUpIsHandedOnForTheLibraryToHold",
   "ui-state/spec::inputs::a_host_unreachable_rejection_holds_the_prompt_until_the_chat_catches_up",
-  "tui/lib::tests::detached_keeps_the_rows_and_disables_send",
+  "tui/lib::tests::detached_keeps_the_rows_and_the_draft",
 ]
 
 [[contract]]
@@ -530,15 +491,6 @@ tests = [
 ]
 
 # --- Invariants: agent and supervisor ---------------------------------------
-
-[[contract]]
-id = "one-shot-child-exit-rule"
-source = "invariant"
-section = "Agent and supervisor"
-claim = "A one-shot child exits only after a turn ends, with an empty queue and an empty pending set."
-tests = [
-  "interpret/lib::shared::tests::a_one_shot_agent_is_quiet_only_with_nothing_queued_running_or_pending",
-]
 
 [[contract]]
 id = "stop-goes-to-the-owner"
@@ -1477,4 +1429,52 @@ checker = "models/client::every_client_promise_holds_at_ci_bounds"
 tests = [
   "ui-state/spec::open::a_reopen_under_the_generation_a_live_reset_named_continues_the_window",
   "daemon-core/lib::sources::tests::a_catch_up_is_absorbed_whole_at_its_caught_up_and_only_then_answered",
+]
+
+[[contract]]
+id = "reset-swaps-at-caught-up"
+source = "model"
+property = { crate = "models", machine = "client", sentence = "same state under any arrival order: once the client is caught up with nothing on its way to it, it holds every item the daemon holds from the oldest order its stream opened with up, each at the daemon's newest revision, and nothing else; a row below that is the daemon's row at its order, at the newest revision or an older one" }
+checker = "models/client::every_client_promise_holds_at_ci_bounds"
+tests = [
+  "swift:AmuxCoreTests/ChatModelTests/testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow",
+]
+
+[[contract]]
+id = "window-contiguous"
+source = "model"
+property = { crate = "models", machine = "client", sentence = "the window is one block: the rows a client holds have contiguous orders and every index names a held row" }
+checker = "models/client::every_client_promise_holds_at_ci_bounds"
+tests = [
+  "ui-state/spec::window::page_and_live_overlap_dedupe_by_key",
+  "ui-state/spec::window::a_live_row_below_the_window_is_dropped",
+]
+
+[[contract]]
+id = "appends-touch-open-items"
+source = "model"
+property = { crate = "models", machine = "client", sentence = "same state under any arrival order: once the client is caught up with nothing on its way to it, it holds every item the daemon holds from the oldest order its stream opened with up, each at the daemon's newest revision, and nothing else; a row below that is the daemon's row at its order, at the newest revision or an older one" }
+checker = "models/client::every_client_promise_holds_at_ci_bounds"
+tests = [
+  "interpret/lib::testkind::tests::invariants::appends_go_to_any_open_item_and_never_after_its_final",
+]
+
+[[contract]]
+id = "one-shot-child-exit-rule"
+source = "model"
+property = { crate = "models", machine = "agent lifecycle", sentence = "a one-shot child runs a queued follow-up before exiting: when it decides it has finished, every input and message it accepted has been taken" }
+checker = "models/lifecycle::every_lifecycle_promise_holds_for_a_one_shot_child_at_ci_bounds"
+tests = [
+  "interpret/lib::shared::tests::a_one_shot_agent_is_quiet_only_with_nothing_queued_running_or_pending",
+]
+
+[[contract]]
+id = "connection-drops-mid-catch-up"
+source = "model"
+property = { crate = "models", machine = "client", sentence = "catch-up plus live equals uninterrupted delivery at every cut: once caught up with nothing on its way, the client's rows from the oldest order its stream opened with up and its agent state read as those of a client that received every event uninterrupted" }
+checker = "models/client::every_client_promise_holds_at_ci_bounds"
+tests = [
+  "testnet/spec_replication::a_stream_dying_after_its_snapshot_replays_after_the_cursor_while_a_page_lands_newer",
+  "store/conformance::a_delta_joins_above_and_only_live_records_move_the_cursor",
+  "ui-runtime/session::lagged_reopens_with_a_tail_at_once_and_dedupes_the_overlap",
 ]

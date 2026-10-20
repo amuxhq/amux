@@ -1038,7 +1038,8 @@ impl World for SimNet {
                 return failed(&sim);
             }
         }
-        Ok(())
+        // A net that never settles is a livelock, not a window that held.
+        Err(hung(what))
     }
 
     async fn shutdown(self) -> Result<(), NetError> {

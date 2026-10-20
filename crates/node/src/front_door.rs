@@ -412,6 +412,9 @@ impl ProfileService for FrontDoor {
                 .runtime
                 .stop_edge(wire::LinkCloseReason::UserShutdown)
                 .await;
+            // As at shutdown: a dump in flight would hold the runtime and
+            // its store open past the directory's removal.
+            hosted.runtime.finish_dumps().await;
             hosted.runtime.stop_background().await;
             hosted.runtime.stop_watching().await;
         }

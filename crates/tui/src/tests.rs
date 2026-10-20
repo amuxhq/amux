@@ -996,8 +996,10 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
 
 // --- Detached and Reset ----------------------------------------------------
 
+/// A chat whose host is away keeps its rows and says the host is away and
+/// the chat not current, and keeps what is being typed.
 #[test]
-fn detached_keeps_the_rows_and_disables_send() {
+fn detached_keeps_the_rows_and_the_draft() {
     let mut state = chat(replies(1, 5));
     state.update(Msg::Host(wire::HostEntry {
         host_id: b"host".to_vec(),

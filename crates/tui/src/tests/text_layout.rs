@@ -107,12 +107,9 @@ fn words_after_a_chip_that_fills_its_row_start_on_the_next_line() {
 }
 
 /// An agent's reply written as lines, one item per line with single line
-/// breaks, reads as those lines, as the agent's own interface shows it.
-///
-/// Today both clients read agent text as CommonMark, where a single line
-/// break inside a paragraph is a space ("alpha beta gamma"). Whether to
-/// keep that is a product decision; this test states the behaviour the
-/// testers expected and Claude's and Codex's own interfaces have.
+/// breaks, reads as those lines, as the agent's own interface shows it:
+/// a single line break inside a paragraph stays a line break rather than
+/// the space CommonMark makes of it ("alpha beta gamma").
 #[test]
 fn an_agents_single_line_breaks_stay_line_breaks() {
     let state = chat(vec![reply(1, "alpha\nbeta\ngamma")]);

@@ -2,23 +2,26 @@ import AmuxCore
 import AmuxDesign
 import SwiftUI
 
-/// What runs around a chat, as the terminal's overview pane lists it: the
-/// background jobs, the changed files by folder for the chosen comparison,
+/// The agent's own page, as a chat app's contact page is the person's: its
+/// name and where it runs, then what runs around the chat, as the terminal's
+/// overview pane lists it: the background jobs, the changed files by folder for the chosen comparison,
 /// the tool servers that failed and the usage windows near a limit. The
 /// task list is not repeated here; it docks above the composer.
 ///
-/// Opened from the chat's menu or its facts strip. It asks for the changed
+/// Opened by tapping the chat's title, or from its menu. It asks for the changed
 /// files while it is on screen, and again when the comparison or the
 /// agent's totals move.
 public struct ChatOverview: View {
     @Environment(\.design) private var design
     let model: ChatModel
+    let subject: ChatSubject
     let now: Date
     /// The review page for the chosen comparison.
     let review: () -> Void
 
-    public init(model: ChatModel, now: Date, review: @escaping () -> Void) {
+    public init(model: ChatModel, subject: ChatSubject, now: Date, review: @escaping () -> Void) {
         self.model = model
+        self.subject = subject
         self.now = now
         self.review = review
     }
@@ -27,9 +30,7 @@ public struct ChatOverview: View {
         let overview = model.overview
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("Overview")
-                    .designFont(.screenTitle, design)
-                    .foregroundStyle(design.ink.color)
+                place
                 if let overview, !overview.jobs.isEmpty { background(overview.jobs) }
                 changes(overview?.changes)
                 if let overview, !overview.failedServers.isEmpty { servers(overview.failedServers) }
@@ -41,6 +42,36 @@ public struct ChatOverview: View {
         .onAppear { model.showOverview(true) }
         .onDisappear { model.showOverview(false) }
         .identified("chat.overview")
+    }
+
+    // MARK: Where it runs
+
+    /// The name, and the host, folder and address in full: the title pill
+    /// shortens all three to fit the bar.
+    private var place: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            Text(subject.name)
+                .designFont(.screenTitle, design)
+                .foregroundStyle(design.ink.color)
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Space.m, verticalSpacing: Space.s) {
+                if !subject.host.isEmpty { fact(String(localized: "Host"), subject.host) }
+                if !subject.directory.isEmpty { fact(String(localized: "Directory"), subject.directory) }
+                fact(String(localized: "Address"), subject.address)
+            }
+        }
+        .identified("chat.place", label: subject.address)
+    }
+
+    private func fact(_ label: String, _ value: String) -> some View {
+        SwiftUI.GridRow {
+            Text(label)
+                .designFont(.caption, design)
+                .foregroundStyle(design.inkFaint.color)
+            Text(value)
+                .designFont(.monoSmall, design)
+                .foregroundStyle(design.inkMuted.color)
+                .textSelection(.enabled)
+        }
     }
 
     // MARK: Background

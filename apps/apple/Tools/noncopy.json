@@ -1393,7 +1393,6 @@
       {"literal": "\"chat.rename.confirm\"", "context": "String(localized: \"Rename\"), kind: .primary, id: \"chat.rename.confirm\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.delete.cancel\"", "context": "choiceButton(String(localized: \"Cancel\"), kind: .outline, id: \"chat.delete.cancel\", action: cancel)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.delete.confirm\"", "context": "choiceButton(String(localized: \"Delete\"), kind: .destructive, id: \"chat.delete.confirm\", action: confirm)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"chat.place\"", "context": ".identified(\"chat.place\", label: subject.address)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\u{2212}\\(changes.removed)\"", "context": "Text(verbatim: \"\\u{2212}\\(changes.removed)\").foregroundStyle(design.removed.color)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"chat.changes\"", "context": "\"chat.changes\", label: \"+\\(changes.added) \\u{2212}\\(changes.removed)\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"list.bullet.rectangle\"", "context": "MenuItem(title: String(localized: \"Overview\"), systemImage: \"list.bullet.rectangle\") {", "reason": "SF Symbol name, not interface copy.", "count": 1},
@@ -1430,6 +1429,7 @@
       {"literal": "\"\\(parent)/\\(name)\"", "context": "return parent.isEmpty ? name : \"\\(parent)/\\(name)\"", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ReviewPage.swift": [
+      {"literal": "\"review.against\"", "context": ".identified(\"review.against\", label: against)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"review\"", "context": ".reported(\"review\", value: \"\\(model.count)\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(model.count)\"", "context": ".reported(\"review\", value: \"\\(model.count)\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"review.back\"", "context": "BackLink(agent, identifier: \"review.back\") { actions(.back) }", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
@@ -1555,6 +1555,7 @@
       {"literal": "\"chevron.right\"", "context": "kind: \"run\", glyph: open ? \"chevron.down\" : \"chevron.right\", rail: rail, verb: words,", "reason": "SF Symbol name, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatOverview.swift": [
+      {"literal": "\"chat.place\"", "context": ".identified(\"chat.place\", label: subject.address)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"chat.overview\"", "context": ".identified(\"chat.overview\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(jobs.count)\"", "context": "SectionHead(title: String(localized: \"Background\"), trailing: \"\\(jobs.count)\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"chat.overview.job.\\(index).age.volatile\"", "context": ".reported(\"chat.overview.job.\\(index).age.volatile\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

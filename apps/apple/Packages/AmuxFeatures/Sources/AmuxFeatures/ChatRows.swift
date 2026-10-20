@@ -1140,7 +1140,8 @@ private struct FeedRule: View {
     }
 }
 
-/// A quiet line under the last reply, where the rows' text starts.
+/// A quiet line under the last reply, on the reply's own left edge: it
+/// speaks for the whole turn, not for one row of its runs.
 private struct Footer: View {
     @Environment(\.design) private var design
     let kind: String
@@ -1155,7 +1156,6 @@ private struct Footer: View {
             .designFont(.caption, design)
             .foregroundStyle(failed ? design.removed.color : design.inkFaint.color)
             .identified("chat.row.\(kind)", label: text)
-            .padding(.leading, RowGrid.text)
             .padding(.top, -4)
             .padding(.bottom, RowGrid.afterRun)
     }

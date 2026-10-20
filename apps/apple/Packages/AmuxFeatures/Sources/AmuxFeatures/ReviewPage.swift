@@ -9,7 +9,8 @@ public enum ReviewAction: Equatable, Sendable {
     case attach
 }
 
-/// An agent's uncommitted changes, read and written about with a finger.
+/// An agent's changes, uncommitted or on its branch, read and written about
+/// with a finger.
 ///
 /// The files come in the order the host's patch lists them, each under a
 /// heading that folds it. Holding a line for a moment and dragging selects
@@ -22,6 +23,9 @@ public struct ReviewPage: View {
     @Environment(\.design) private var design
     let model: ReviewModel
     let agent: String
+    /// What the changes are counted against, as the overview words it:
+    /// "Uncommitted", "vs main".
+    let against: String?
     let actions: (ReviewAction) -> Void
     @State private var listing = false
     @State private var writing = false
@@ -29,10 +33,11 @@ public struct ReviewPage: View {
     @State private var target: Int?
     @State private var frames: [ReviewLine: CGRect] = [:]
 
-    public init(model: ReviewModel, agent: String, writing: Bool = false, listing: Bool = false,
-                actions: @escaping (ReviewAction) -> Void) {
+    public init(model: ReviewModel, agent: String, against: String? = nil, writing: Bool = false,
+                listing: Bool = false, actions: @escaping (ReviewAction) -> Void) {
         self.model = model
         self.agent = agent
+        self.against = against
         self.actions = actions
         _writing = State(initialValue: writing)
         _listing = State(initialValue: listing)
@@ -104,9 +109,19 @@ public struct ReviewPage: View {
                 }
                 Spacer(minLength: 0)
             }
-            Counts(files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed)
-                .identified("review.summary", label: ChatWords.changes(
-                    files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed))
+            HStack(spacing: 6) {
+                Counts(files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed)
+                    .identified("review.summary", label: ChatWords.changes(
+                        files: model.doc.files.count, added: model.doc.added, removed: model.doc.removed))
+                if let against {
+                    Text(verbatim: "·").foregroundStyle(design.inkFaint.color)
+                    Text(verbatim: against)
+                        .foregroundStyle(design.inkMuted.color)
+                        .lineLimit(1)
+                        .identified("review.against", label: against)
+                }
+            }
+            .designFont(.monoSmall, design)
         }
         .padding(.horizontal, design.metrics.gutter)
         .padding(.top, 2)

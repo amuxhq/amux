@@ -611,7 +611,8 @@ At accessibility text sizes the phone reflows rather than cuts:
 - New Agent puts the back link above the title, and its last row always
   scrolls clear of the Start bar, whose height it measures.
 - The chat header pill stops growing at the largest ordinary size, as the
-  system's own bars do. A tap shows the place in full. The composer's model
+  system's own bars do. A tap opens the overview, which gives the place in
+  full. The composer's model
   chip gets a line of its own and wraps.
 - A step row stacks its verb, its subject (two lines, cut in the middle) and
   its counts, so a file keeps its name.

@@ -290,13 +290,15 @@ private struct ChangesPage: View {
     let stores: StoreBundle
     @State private var chat: ChatModel?
     @State private var review: ReviewModel?
+    /// What the review was frozen against, fixed as it opened.
+    @State private var against: String?
     /// Why there is no review: nothing changed, or the host was not asked.
     @State private var missing: String?
 
     var body: some View {
         Group {
             if let chat, let review {
-                ReviewPage(model: review, agent: name(chat)) { action in
+                ReviewPage(model: review, agent: name(chat), against: against) { action in
                     switch action {
                     case .back: router.pop()
                     case .attach:
@@ -322,6 +324,7 @@ private struct ChangesPage: View {
         .task {
             guard chat == nil, let model = try? stores.chat(agent) else { return }
             chat = model
+            against = ChatWords.comparison(model.comparison, base: model.base)
             switch await model.openReview() {
             case .success(let opened?): review = opened
             case .success(nil):

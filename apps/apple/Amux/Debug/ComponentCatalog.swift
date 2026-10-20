@@ -691,7 +691,7 @@ extension ComponentCatalog {
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .working),
                 strip: strip())
             ) { model in
-                ChatOverview(model: model, now: CatalogFixtures.now) {}
+                ChatOverview(model: model, subject: CatalogFixtures.subject, now: CatalogFixtures.now) {}
                     .onAppear { model.compare(comparison) }
             }
         }
@@ -710,7 +710,7 @@ extension ComponentCatalog {
             settlesLate: settlesLate
         ) {
             CatalogReview(setUp: setUp) { model in
-                ReviewPage(model: model, agent: "refactor-auth", writing: writing) { _ in }
+                ReviewPage(model: model, agent: "refactor-auth", against: "Uncommitted", writing: writing) { _ in }
             }
         }
     }

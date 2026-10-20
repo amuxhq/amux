@@ -106,7 +106,6 @@ public struct ChatScreen: View {
     let family: FamilyHeader?
     let actions: (ChatAction) -> Void
     @State private var showing: ChatOverlay?
-    @State private var placeOpen = false
     @State private var overviewOpen = false
     /// Bumped to put the keyboard down.
     @State private var putDown = 0
@@ -191,17 +190,12 @@ public struct ChatScreen: View {
         .accessibilityElement(children: .contain)
         .reported("chat", value: subject.name)
         .sheet(isPresented: $overviewOpen) {
-            ChatOverview(model: model, now: Date()) {
+            ChatOverview(model: model, subject: subject, now: Date()) {
                 overviewOpen = false
                 actions(.review)
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $placeOpen) {
-            PlaceSheet(subject: subject)
-                .presentationDetents([.height(280)])
-                .presentationDragIndicator(.visible)
         }
     }
 
@@ -261,12 +255,12 @@ public struct ChatScreen: View {
         .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
     }
 
-    /// The agent's name over where it runs; tapping it shows the place in
-    /// full.
+    /// The agent's name over where it runs; tapping it opens the agent's
+    /// overview, as tapping a name in a chat app opens its page.
     private var title: some View {
         Button {
             putDown += 1
-            placeOpen = true
+            overviewOpen = true
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 Text(subject.name)
@@ -295,25 +289,22 @@ public struct ChatScreen: View {
             .barItemSurface()
         }
         .accessibilityLabel("\(subject.name), \(placeLine)")
-        .accessibilityHint("Shows the host, directory and address in full")
+        .accessibilityHint("Opens the overview")
         .identified("chat.title", label: subject.name, value: subject.name)
         .identified(
             "chat.header", label: placeLine,
             value: detached ? "detached" : (subject.reachable ? "live" : "away"))
     }
 
-    /// "+42 −7", which opens the review.
+    /// "+42 −7", which opens the review. What the counts are against is said
+    /// on the review page rather than here: a branch's name squeezed the
+    /// pill until neither read.
     private func changesButton(_ changes: ChangeTotals) -> some View {
-        let against = model.comparison == .onBranch ? model.base : nil
-        return Button {
+        Button {
             putDown += 1
             actions(.review)
         } label: {
             HStack(spacing: Space.xs) {
-                if let against {
-                    Text(verbatim: ChatWords.comparison(.onBranch, base: against))
-                        .foregroundStyle(design.inkMuted.color)
-                }
                 Text(verbatim: "+\(changes.added)").foregroundStyle(design.added.color)
                 Text(verbatim: "\u{2212}\(changes.removed)").foregroundStyle(design.removed.color)
             }
@@ -917,39 +908,6 @@ private struct DeleteCard: View {
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
     }
 
-}
-
-/// The host, directory and address in full, to read or copy.
-private struct PlaceSheet: View {
-    @Environment(\.design) private var design
-    let subject: ChatSubject
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(subject.name)
-                .designFont(.screenTitle, design)
-                .foregroundStyle(design.ink.color)
-            if !subject.host.isEmpty { fact(String(localized: "Host"), subject.host) }
-            if !subject.directory.isEmpty { fact(String(localized: "Directory"), subject.directory) }
-            fact(String(localized: "Address"), subject.address)
-            Spacer(minLength: 0)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .identified("chat.place", label: subject.address)
-    }
-
-    private func fact(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .designFont(.caption, design)
-                .foregroundStyle(design.inkFaint.color)
-            Text(value)
-                .designFont(.mono, design)
-                .foregroundStyle(design.ink.color)
-                .textSelection(.enabled)
-        }
-    }
 }
 
 /// Lays its one subview out at its own height, never taller than `cap`.

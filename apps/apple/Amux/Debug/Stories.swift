@@ -10,6 +10,11 @@ import SwiftUI
 ///
 /// Debug-only for the same reason as the rest of the catalogue: none of this
 /// content belongs in a build somebody installs.
+///
+/// Xcode's previews of these are in the `…Previews.swift` files beside this
+/// one, a file per area: a preview refreshes by compiling the file that holds
+/// it again, so small files refresh sooner, and the canvas lists only the
+/// stories of the area open.
 extension ComponentCatalog {
     // MARK: - Fleet
 
@@ -262,65 +267,6 @@ extension ScriptedChat: OpenChat {
     public func close() {}
 }
 
-// MARK: - Previews
-
-#Preview("App") { StoryApp() }
-#Preview("App · chat open") { StoryApp(chatOpen: true) }
-#Preview("App · settings open") { StoryApp(settingsOpen: true) }
-#Preview("App · review open") { StoryApp(reviewOpen: true) }
-#Preview("App · new agent") { StoryApp(newAgentOpen: true) }
-
-#Preview("Fleet · busy") { StoryScreen("fleet.busy") }
-#Preview("Fleet · stopped open") { StoryScreen("fleet.stopped-open") }
-#Preview("Fleet · host away") { StoryScreen("fleet.away") }
-#Preview("Fleet · first run") { StoryScreen("fleet.first-run") }
-#Preview("Fleet · two accounts") { StoryScreen("fleet.two-accounts") }
-#Preview("Fleet · signed out") { StoryScreen("fleet.signed-out") }
-#Preview("Fleet · profile picture") { StoryScreen("fleet.picture") }
-
-
-#Preview("Chat · conversation") { StoryScreen("chat.conversation") }
-#Preview("Chat · working") { StoryScreen("chat.working") }
-#Preview("Chat · run open") { StoryScreen("chat.run-open") }
-#Preview("Chat · asking") { StoryScreen("chat.asking") }
-#Preview("Chat · plan") { StoryScreen("chat.plan") }
-
-#Preview("Review · page") { StoryScreen("review.page") }
-#Preview("Review · selecting") { StoryScreen("review.selection") }
-#Preview("Review · writing") { StoryScreen("review.comment") }
-#Preview("Review · editing") { StoryScreen("review.editing") }
-#Preview("Review · folded") { StoryScreen("review.folded") }
-
-#Preview("New agent · Claude") { StoryScreen("new-agent.claude") }
-#Preview("New agent · Codex") { StoryScreen("new-agent.codex") }
-#Preview("New agent · choosing a directory") { StoryScreen("new-agent.browsing") }
-#Preview("New agent · signed out") { StoryScreen("new-agent.signed-out") }
-
-#Preview("Hosts") { StoryScreen("hosts.list") }
-#Preview("Hosts · empty") { StoryScreen("hosts.empty") }
-#Preview("Host") { StoryScreen("host.page") }
-#Preview("Host · revoked") { StoryScreen("host.revoked") }
-#Preview("Host · confirm revoke") {
-    ComponentCatalog.hostPageView(host: CatalogFixtures.deskHost, confirming: true)
-        .environment(\.design, Design.app)
-}
-
-#Preview("Pair · code") { StoryScreen("pair.code-empty") }
-#Preview("Pair · typing") { StoryScreen("pair.code-typing") }
-#Preview("Pair · checking") { StoryScreen("pair.code-checking") }
-#Preview("Pair · code refused") { StoryScreen("pair.code-refused") }
-#Preview("Pair · needs a subscription") { StoryScreen("pair.code-subscribe") }
-#Preview("Pair · confirm") { StoryScreen("pair.confirm") }
-#Preview("Pair · paired") { StoryScreen("pair.trusted") }
-#Preview("Pair · link checking") { StoryScreen("pair.link-checking") }
-#Preview("Pair · link refused") { StoryScreen("pair.link-refused") }
-#Preview("Pair · needs an account") { StoryScreen("pair.needs-account") }
-
-#Preview("Asks") { StoryGallery(.asks) }
-#Preview("Chat states") { StoryGallery(.chat) }
-#Preview("Composer") { StoryGallery(.composer) }
-#Preview("Rows") { StoryGallery(.rows) }
-
 /// One catalogue example filling the preview's device, the way the app
 /// draws a screen: under the device's own safe areas, not on the fixed
 /// canvas a snapshot uses.
@@ -370,14 +316,6 @@ struct StoryGallery: View {
 }
 
 // MARK: - Foundation
-
-#Preview("Foundation") { FoundationSheet() }
-#Preview("Fleet · guides") { StoryScreen("fleet.busy").overlay { AlignmentGuides() } }
-#Preview("Working marks") { WorkingMarks() }
-#Preview("Fleet · breathing") { StoryScreen("fleet.busy").environment(\.workingMark, .breathing) }
-#Preview("Fleet · typing") { StoryScreen("fleet.busy").environment(\.workingMark, .typing) }
-#Preview("Fleet · orbit") { StoryScreen("fleet.busy").environment(\.workingMark, .orbit) }
-#Preview("Fleet · filling") { StoryScreen("fleet.busy").environment(\.workingMark, .filling) }
 
 /// The visual foundation on one page: every type role at its size, and the
 /// spacing scale every gap is taken from.

@@ -116,6 +116,8 @@ pub enum EmbeddedError {
     Account(#[from] node::AuthError),
     #[error("{0}")]
     Relay(String),
+    #[error("checkpointing profile {0}: {1}")]
+    Checkpoint(ProfileId, String),
 }
 
 /// One installation with every profile it hosts, in process.
@@ -282,6 +284,19 @@ impl EmbeddedRuntime {
         if let Some(flusher) = &self.analytics {
             flusher.flush(BACKGROUND_FLUSH).await;
         }
+    }
+
+    /// Checkpoints every profile's core, each at a passive WAL checkpoint
+    /// of its store, and waits until every one is on the drive: as the app
+    /// is about to be suspended.
+    pub async fn checkpoint(&self) -> Result<(), EmbeddedError> {
+        for runtime in self.hosted() {
+            runtime
+                .checkpoint()
+                .await
+                .map_err(|error| EmbeddedError::Checkpoint(runtime.profile(), error))?;
+        }
+        Ok(())
     }
 
     fn runtime(&self, profile: ProfileId) -> Result<Arc<ProfileRuntime>, EmbeddedError> {

@@ -91,8 +91,10 @@ runtime's; the app tells it what only the app knows.
 (the start's `StartConfig.telemetry` is its first value), and off holds back
 what is waiting too. `amux_runtime_feed(rt, input_json, &error)` feeds the
 app's life as a `Lifecycle`: `"Foreground"` says the app came to the front,
-counted at most once an hour; `"Background"` and `"Suspending"` send what is
-waiting, for a few seconds at most, before it returns. `amux_runtime_record(rt, profile, event_json)` records a
+counted at most once an hour; `"Background"` sends what is waiting, for a
+few seconds at most, before it returns; `"Suspending"` does too, then
+checkpoints every profile's core at a passive WAL checkpoint of its store and
+returns once each checkpoint is on the drive. `amux_runtime_record(rt, profile, event_json)` records a
 `UsageEvent` (the paywall opening, a purchase starting) on that profile, or on
 every profile when `profile` is null. Only a published build sends; every
 other build records nothing unless `AMUX_ANALYTICS_URL` names a server.

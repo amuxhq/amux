@@ -154,7 +154,7 @@ struct Phone {
     queue: Option<Queue>,
     /// The tickets of the acts started and not yet answered.
     tickets: RefCell<HashSet<u64>>,
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
 }
 
 impl Phone {
@@ -196,7 +196,7 @@ impl Phone {
             seen: RefCell::default(),
             queue: Some(Queue::start(runtime)),
             tickets: RefCell::default(),
-            _dir: dir,
+            dir,
         }
     }
 
@@ -858,6 +858,37 @@ fn the_profile_registry_through_the_c_abi() {
 }
 
 #[test]
+fn a_suspending_input_checkpoints_every_profile_before_it_returns() {
+    let phone = Phone::start();
+    let checkpoint = phone
+        .dir
+        .path()
+        .join("data")
+        .join(node::PROFILES)
+        .join(phone.id.to_str().unwrap())
+        .join(node::CORE_CHECKPOINT);
+    assert!(
+        !checkpoint.exists(),
+        "a fresh profile has no checkpoint yet"
+    );
+    let mut error = std::ptr::null_mut();
+    // SAFETY: the runtime is live; the strings live for the call.
+    assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Suspending\"".as_ptr(), &mut error) });
+    assert!(
+        std::fs::metadata(&checkpoint).is_ok_and(|file| file.len() > 0),
+        "no checkpoint at {}",
+        checkpoint.display()
+    );
+    // SAFETY: as above.
+    assert!(unsafe { amux_runtime_feed(phone.runtime, c"\"Foreground\"".as_ptr(), &mut error) });
+    // SAFETY: as above.
+    assert!(!unsafe { amux_runtime_feed(phone.runtime, c"\"Asleep\"".as_ptr(), &mut error) });
+    assert!(!error.is_null());
+    // SAFETY: returned by the library, freed once.
+    unsafe { amux_string_free(error) };
+}
+
+#[test]
 fn malformed_calls_are_refused_rather_than_crashing() {
     let phone = Phone::start();
     let mut error = std::ptr::null_mut();
@@ -969,103 +1000,111 @@ fn an_act_that_finishes_answers_once_with_its_result() {
     assert_eq!((answers[0].ticket, answers[0].json.as_str()), (ticket, "7"));
 }
 
-#[test]
-fn the_cores_step_only_on_the_queue_that_steps_and_nothing_calls_the_app() {
-    // Nothing in the library can call into the app: its header declares
-    // no function type, and the loop's three calls are there.
-    let header = include_str!(concat!(env!("OUT_DIR"), "/amux_app.h"));
-    assert!(!header.contains("(*"), "a function type in the header");
-    for call in [
-        "amux_runtime_wake_fd(",
-        "amux_runtime_step(",
-        "amux_runtime_feed(",
-    ] {
-        assert!(header.contains(call), "{call} is missing");
-    }
+/// What the loop's shape promises: the cores step on the app's queue and
+/// nowhere else, and nothing calls into the app.
+mod confinement {
+    use super::*;
 
-    // The app's queue is this thread, and nothing else steps.
-    let dir = tempfile::tempdir().unwrap();
-    let config = c(&json!({
-        "data_dir": dir.path().join("data"),
-        "device_name": "phone",
-        "log_path": null,
-        "discovery_scope": "",
-        "lan": false,
-        "lan_bind": null,
-        "relay_tcp": null,
-        "relay_quic": null,
-        "relay_root": null,
-        "tail": 50,
-        "telemetry": false,
-    })
-    .to_string());
-    let mut error = std::ptr::null_mut();
-    // SAFETY: the strings live for the call.
-    let runtime = unsafe { amux_runtime_start(config.as_ptr(), &mut error) };
-    assert!(!runtime.is_null());
-    let queue = std::thread::current().id();
-    // SAFETY: the runtime is live for the test.
-    let shared = unsafe { live_runtime(runtime) }.unwrap().shared.clone();
-    // SAFETY: the runtime is live.
-    let profile = take(unsafe { amux_runtime_profiles(runtime) })[0]["id"]
-        .as_str()
-        .unwrap()
-        .parse::<ProfileId>()
-        .unwrap();
-    // SAFETY: the runtime is live.
-    let fd = unsafe { amux_runtime_wake_fd(runtime) };
-    let readable = |within: i32| {
-        let mut watched = libc::pollfd {
-            fd,
-            events: libc::POLLIN,
-            revents: 0,
+    #[test]
+    fn the_cores_step_only_on_the_queue_that_steps_and_nothing_calls_the_app() {
+        // Nothing in the library can call into the app: its header declares
+        // no function type, and the loop's three calls are there.
+        let header = include_str!(concat!(env!("OUT_DIR"), "/amux_app.h"));
+        assert!(!header.contains("(*"), "a function type in the header");
+        for call in [
+            "amux_runtime_wake_fd(",
+            "amux_runtime_step(",
+            "amux_runtime_feed(",
+        ] {
+            assert!(header.contains(call), "{call} is missing");
+        }
+
+        // The app's queue is this thread, and nothing else steps.
+        let dir = tempfile::tempdir().unwrap();
+        let config = c(&json!({
+            "data_dir": dir.path().join("data"),
+            "device_name": "phone",
+            "log_path": null,
+            "discovery_scope": "",
+            "lan": false,
+            "lan_bind": null,
+            "relay_tcp": null,
+            "relay_quic": null,
+            "relay_root": null,
+            "tail": 50,
+            "telemetry": false,
+        })
+        .to_string());
+        let mut error = std::ptr::null_mut();
+        // SAFETY: the strings live for the call.
+        let runtime = unsafe { amux_runtime_start(config.as_ptr(), &mut error) };
+        assert!(!runtime.is_null());
+        let queue = std::thread::current().id();
+        // SAFETY: the runtime is live for the test.
+        let shared = unsafe { live_runtime(runtime) }.unwrap().shared.clone();
+        // SAFETY: the runtime is live.
+        let profile = take(unsafe { amux_runtime_profiles(runtime) })[0]["id"]
+            .as_str()
+            .unwrap()
+            .parse::<ProfileId>()
+            .unwrap();
+        // SAFETY: the runtime is live.
+        let fd = unsafe { amux_runtime_wake_fd(runtime) };
+        let readable = |within: i32| {
+            let mut watched = libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: one live pollfd.
+            unsafe {
+                libc::poll(&mut watched, 1, within) == 1 && watched.revents & libc::POLLIN != 0
+            }
         };
-        // SAFETY: one live pollfd.
-        unsafe { libc::poll(&mut watched, 1, within) == 1 && watched.revents & libc::POLLIN != 0 }
-    };
-    // Stepped until nothing waits, the descriptor reads quiet.
-    let deadline = Instant::now() + PATIENCE;
-    loop {
-        // SAFETY: the runtime is live.
-        take(unsafe { amux_runtime_step(runtime) });
-        if !readable(200) {
-            break;
+        // Stepped until nothing waits, the descriptor reads quiet.
+        let deadline = Instant::now() + PATIENCE;
+        loop {
+            // SAFETY: the runtime is live.
+            take(unsafe { amux_runtime_step(runtime) });
+            if !readable(200) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the runtime never went quiet");
         }
-        assert!(Instant::now() < deadline, "the runtime never went quiet");
-    }
 
-    // Another thread posts work onto the profile's core and waits on it.
-    let (stepped_on, stepped) = std::sync::mpsc::channel();
-    let embedded = shared.embedded().clone();
-    let handle = shared.handle().clone();
-    let poster = std::thread::spawn(move || {
-        handle.spawn(async move {
-            let ran_on = embedded
-                .between_steps(profile, || std::thread::current().id())
-                .await;
-            let _ = stepped_on.send(ran_on);
+        // Another thread posts work onto the profile's core and waits on it.
+        let (stepped_on, stepped) = std::sync::mpsc::channel();
+        let embedded = shared.embedded().clone();
+        let handle = shared.handle().clone();
+        let poster = std::thread::spawn(move || {
+            handle.spawn(async move {
+                let ran_on = embedded
+                    .between_steps(profile, || std::thread::current().id())
+                    .await;
+                let _ = stepped_on.send(ran_on);
+            });
         });
-    });
-    // With nobody stepping, the core does nothing, and the descriptor says
-    // something waits for it.
-    assert!(readable(5_000), "nothing woke");
-    std::thread::sleep(Duration::from_millis(300));
-    assert!(stepped.try_recv().is_err(), "the core stepped by itself");
-    // A step on this thread drains it, and the work ran here.
-    let deadline = Instant::now() + PATIENCE;
-    let ran_on = loop {
-        // SAFETY: the runtime is live.
-        take(unsafe { amux_runtime_step(runtime) });
-        if let Ok(ran_on) = stepped.recv_timeout(Duration::from_millis(100)) {
-            break ran_on;
-        }
-        assert!(Instant::now() < deadline, "the step never drained it");
-    };
-    assert_eq!(ran_on.unwrap(), queue);
-    poster.join().unwrap();
-    drop(shared);
-    // SAFETY: from `amux_runtime_start`, not used again.
-    unsafe { amux_runtime_stop(runtime) };
+        // With nobody stepping, the core does nothing, and the descriptor says
+        // something waits for it.
+        assert!(readable(5_000), "nothing woke");
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(stepped.try_recv().is_err(), "the core stepped by itself");
+        // A step on this thread drains it, and the work ran here.
+        let deadline = Instant::now() + PATIENCE;
+        let ran_on = loop {
+            // SAFETY: the runtime is live.
+            take(unsafe { amux_runtime_step(runtime) });
+            if let Ok(ran_on) = stepped.recv_timeout(Duration::from_millis(100)) {
+                break ran_on;
+            }
+            assert!(Instant::now() < deadline, "the step never drained it");
+        };
+        assert_eq!(ran_on.unwrap(), queue);
+        poster.join().unwrap();
+        drop(shared);
+        // SAFETY: from `amux_runtime_start`, not used again.
+        unsafe { amux_runtime_stop(runtime) };
+    }
 }
 
 #[test]

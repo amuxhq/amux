@@ -667,7 +667,8 @@ pub enum Lifecycle {
     Foreground,
     /// The app is leaving the screen: the analytics waiting are sent.
     Background,
-    /// The app is about to be suspended.
+    /// The app is about to be suspended: the analytics waiting are sent,
+    /// and every profile's core is checkpointed.
     Suspending,
 }
 
@@ -707,13 +708,25 @@ fn feed(runtime: &AmuxRuntime, input: Lifecycle) -> Result<(), String> {
             let _entered = runtime.handle().enter();
             runtime.embedded().client_opened();
         }
-        Lifecycle::Background | Lifecycle::Suspending => {
+        Lifecycle::Background => {
             let embedded = runtime.embedded().clone();
             runtime
                 .shared
                 .phone
                 .wait(async move { embedded.flush_analytics().await })
                 .ok_or("the runtime has stopped")?;
+        }
+        Lifecycle::Suspending => {
+            let embedded = runtime.embedded().clone();
+            runtime
+                .shared
+                .phone
+                .wait(async move {
+                    embedded.flush_analytics().await;
+                    embedded.checkpoint().await
+                })
+                .ok_or("the runtime has stopped")?
+                .map_err(|error| error.to_string())?;
         }
     }
     Ok(())

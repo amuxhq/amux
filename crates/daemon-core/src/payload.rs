@@ -31,6 +31,8 @@ pub type AgentSpec = wire::AgentSpec;
 pub type StreamPreface = wire::StreamPreface;
 /// Why a stream was refused before any byte of it was carried.
 pub type StreamRefusal = wire::StreamRefusal;
+/// Why a forwarder will not carry a link's packets to a destination.
+pub type ForwardRefusal = wire::ForwardRefusal;
 
 macro_rules! payload {
     ($($(#[$doc:meta])* $name:ident;)*) => {

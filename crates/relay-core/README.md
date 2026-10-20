@@ -1,12 +1,18 @@
 # relay-core
 
-The relay's admission and splice decisions as one function of its state and
-an input. `Relay::step` takes link events and the decoded preface of each
-stream a host opens, judges the account's claims, tier and adjacency, and
-answers with a refusal or a splice; the driver checks token signatures
-before admission and copies a spliced stream's bytes on tokio's workers. A
-daemon forwarding between its own links runs one too, as a relay with one
-account. It also keeps the adjacency discipline every host's links follow:
+The relay's admission and forwarding decisions as one function of its state
+and an input. `Relay::step` takes link events and, for each pair of hosts the
+driver has not been told about, the header of a forwarded packet; it judges
+the account's claims, tier and adjacency, and answers with a pair to forward
+between or a refusal for the sender's control link, repeated at most every
+`REFUSAL_REPEAT_MS` per destination. A pair is installed only between two
+links up on one account, both paid or both pinned, and a link going down,
+lapsing to the free plan or its token expiring ends every pair through it and
+tells both ends. The driver checks token signatures before admission and
+forwards from its table of pairs without asking again. A daemon forwarding
+between its own paired hosts runs one too, as a relay with one account whose
+links are all pinned. Streams spliced between links are still decided here,
+for the stream relay hosts use until packets are forwarded end to end. It also keeps the adjacency discipline every host's links follow:
 which of a crossed dial's two links stays, and what each link is told of its
 neighbors. Its step budget is tighter than the daemon's because admission must
 never queue.

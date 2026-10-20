@@ -159,7 +159,10 @@ impl Relaying {
                 }
                 false
             }
-            Output::Refuse { .. }
+            Output::RefuseStream { .. }
+            | Output::Refuse { .. }
+            | Output::Forward { .. }
+            | Output::Unforward { .. }
             | Output::RefuseLink { .. }
             | Output::Displace { .. }
             | Output::Neighbor { .. } => true,
@@ -242,7 +245,7 @@ impl Piper {
         // The core answers every stream opened with a refusal or a splice.
         let spliced = decided.iter().find_map(|output| match *output {
             Output::Splice { to_link, .. } => Some(Ok(to_link)),
-            Output::Refuse { reason, .. } => Some(Err(reason)),
+            Output::RefuseStream { reason, .. } => Some(Err(reason)),
             _ => None,
         });
         let to_link = match spliced.unwrap_or(Err(pb::StreamRefusal::NoRoute)) {

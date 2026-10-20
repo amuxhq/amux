@@ -7,6 +7,10 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
+use proptest::collection::vec;
+use proptest::prelude::*;
+use proptest::sample::Index;
+use proptest::test_runner::RngSeed;
 use prost::Message;
 use ui_state::{AgentKey, Attention, FleetMsg, FleetState, InputOutcome, Key, Msg, SessionState};
 use ui_view::*;
@@ -145,101 +149,144 @@ fn all_rows(state: &SessionState, opts: &ChatOptions) -> Vec<Row> {
     chat_rows(state, 0..=u64::MAX, opts)
 }
 
-/// A random walk of live items, revisions and pages; after every step the
-/// row invariants hold.
-#[test]
-fn row_ids_never_move_and_rows_by_keys_equal_rows_by_range() {
-    for kind in KINDS {
-        for seed in 1..25u64 {
-            let mut rng = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
-            let mut next = move || {
-                rng ^= rng << 13;
-                rng ^= rng >> 7;
-                rng ^= rng << 17;
-                rng
-            };
-            let mut state = SessionState::new(agent(kind), CAP);
-            state.update(snapshot(kind, Phase::Working, vec![], vec![]));
-            let start = 40;
-            let mut head = start;
-            state.update(event(session_event::Of::Item(read(kind, head, 1))));
-            state.update(caught_up());
-            let open = HashSet::new();
-            let opts = ChatOptions {
-                tools: ToolRows::Collapse { open: &open },
-            };
-            for revision in 2..60u64 {
-                let before: Vec<Key> = all_rows(&state, &opts)
-                    .into_iter()
-                    .map(|row| row.id)
-                    .collect();
-                let choice = next() % 4;
-                if choice == 3 {
+/// One step of the walk: an item at the head, a revision of a held order or a
+/// page of older reads, then the rows picked to ask for by key.
+#[derive(Clone, Debug)]
+struct Step {
+    arrival: Arrival,
+    picks: Vec<bool>,
+}
+
+#[derive(Clone, Debug)]
+enum Arrival {
+    Head(u8),
+    Revise(Index, u8),
+    Page { exhausted: bool },
+}
+
+fn step() -> impl Strategy<Value = Step> {
+    let tool = 0..3u8;
+    let arrival = prop_oneof![
+        2 => tool.clone().prop_map(Arrival::Head),
+        1 => (any::<Index>(), tool).prop_map(|(at, tool)| Arrival::Revise(at, tool)),
+        1 => prop::bool::weighted(1.0 / 7.0).prop_map(|exhausted| Arrival::Page { exhausted }),
+    ];
+    (arrival, vec(any::<bool>(), 0..=128)).prop_map(|(arrival, picks)| Step { arrival, picks })
+}
+
+/// The configuration the walk runs under: a fixed seed, so a run repeats
+/// exactly unless PROPTEST_RNG_SEED names another, and no regression files
+/// written beside the sources (a failure prints its shrunk input).
+fn cases(cases: u32) -> ProptestConfig {
+    let config = ProptestConfig::default();
+    let rng_seed = match config.rng_seed {
+        RngSeed::Random => RngSeed::Fixed(1),
+        seed => seed,
+    };
+    ProptestConfig {
+        cases,
+        rng_seed,
+        failure_persistence: None,
+        ..config
+    }
+}
+
+proptest! {
+    #![proptest_config(cases(72))]
+
+    /// A walk of live items, revisions and pages; after every step the row
+    /// invariants hold.
+    #[test]
+    fn row_ids_never_move_and_rows_by_keys_equal_rows_by_range(
+        kind in prop::sample::select(KINDS.to_vec()),
+        steps in vec(step(), 0..=58),
+    ) {
+        let mut state = SessionState::new(agent(kind), CAP);
+        state.update(snapshot(kind, Phase::Working, vec![], vec![]));
+        let start = 40;
+        let mut head = start;
+        state.update(event(session_event::Of::Item(read(kind, head, 1))));
+        state.update(caught_up());
+        let open = HashSet::new();
+        let opts = ChatOptions {
+            tools: ToolRows::Collapse { open: &open },
+        };
+        for (revision, step) in (2..).zip(steps) {
+            let before: Vec<Key> = all_rows(&state, &opts)
+                .into_iter()
+                .map(|row| row.id)
+                .collect();
+            let (order, tool) = match step.arrival {
+                Arrival::Page { exhausted } => {
                     let oldest = state.oldest_order().unwrap();
                     if oldest > 1 {
                         let items = (oldest.saturating_sub(3).max(1)..oldest)
                             .rev()
                             .map(|o| read(kind, o, revision))
                             .collect();
-                        page(&mut state, items, next() % 7 == 0);
+                        page(&mut state, items, exhausted);
                     }
-                } else {
-                    let order = if choice < 2 {
-                        head += 1;
-                        head
-                    } else {
-                        start + next() % (head - start + 1)
-                    };
-                    let tool = match next() % 3 {
-                        0 => Some(("Read", true)),
-                        1 => Some(("Bash", false)),
-                        _ => None,
-                    };
-                    state.update(event(session_event::Of::Item(item(
-                        kind, order, revision, tool,
-                    ))));
+                    (None, 0)
                 }
-                let rows = all_rows(&state, &opts);
-                let after: Vec<Key> = rows.iter().map(|row| row.id.clone()).collect();
-                // Ids keep their relative order; new ids arrive only at the edges.
-                let kept: Vec<&Key> = after.iter().filter(|id| before.contains(id)).collect();
-                assert_eq!(
-                    kept,
-                    before.iter().collect::<Vec<_>>(),
-                    "{kind:?} seed {seed}"
+                Arrival::Head(tool) => {
+                    head += 1;
+                    (Some(head), tool)
+                }
+                Arrival::Revise(at, tool) => {
+                    (Some(start + at.index((head - start + 1) as usize) as u64), tool)
+                }
+            };
+            if let Some(order) = order {
+                let tool = match tool {
+                    0 => Some(("Read", true)),
+                    1 => Some(("Bash", false)),
+                    _ => None,
+                };
+                state.update(event(session_event::Of::Item(item(
+                    kind, order, revision, tool,
+                ))));
+            }
+            let rows = all_rows(&state, &opts);
+            let after: Vec<Key> = rows.iter().map(|row| row.id.clone()).collect();
+            // Ids keep their relative order; new ids arrive only at the edges.
+            let kept: Vec<&Key> = after.iter().filter(|id| before.contains(id)).collect();
+            prop_assert_eq!(kept, before.iter().collect::<Vec<_>>());
+            if let (Some(first), Some(last)) = (before.first(), before.last()) {
+                let lo = after.iter().position(|id| id == first).unwrap();
+                let hi = after.iter().position(|id| id == last).unwrap();
+                prop_assert_eq!(
+                    hi - lo + 1,
+                    before.len(),
+                    "nothing inserted between held rows"
                 );
-                if let (Some(first), Some(last)) = (before.first(), before.last()) {
-                    let lo = after.iter().position(|id| id == first).unwrap();
-                    let hi = after.iter().position(|id| id == last).unwrap();
-                    assert_eq!(
-                        hi - lo + 1,
-                        before.len(),
-                        "nothing inserted between held rows"
-                    );
-                }
-                // Rows for keys are the same rows as by range.
-                let keys: Vec<Key> = after.iter().filter(|_| next() % 2 == 0).cloned().collect();
-                let by_keys = chat_rows_for(&state, &keys, &opts);
-                let by_range: Vec<Row> = rows
-                    .iter()
-                    .filter(|row| keys.contains(&row.id))
-                    .cloned()
-                    .collect();
-                assert_eq!(by_keys, by_range);
-                // open_below only for the oldest run, and only while older
-                // history exists.
-                let transcript = state.transcript();
-                let first = rows
-                    .iter()
-                    .find_map(|row| row.run.as_ref())
-                    .map(|run| &run.first);
-                for row in &rows {
-                    if let Some(run) = &row.run
-                        && run.open_below
-                    {
-                        assert_eq!(Some(&run.first), first);
-                        assert!(transcript.has_older());
-                    }
+            }
+            // Rows for keys are the same rows as by range.
+            let keys: Vec<Key> = after
+                .iter()
+                .zip(step.picks.iter().chain(std::iter::repeat(&false)))
+                .filter(|(_, picked)| **picked)
+                .map(|(key, _)| key.clone())
+                .collect();
+            let by_keys = chat_rows_for(&state, &keys, &opts);
+            let by_range: Vec<Row> = rows
+                .iter()
+                .filter(|row| keys.contains(&row.id))
+                .cloned()
+                .collect();
+            prop_assert_eq!(by_keys, by_range);
+            // open_below only for the oldest run, and only while older
+            // history exists.
+            let transcript = state.transcript();
+            let first = rows
+                .iter()
+                .find_map(|row| row.run.as_ref())
+                .map(|run| &run.first);
+            for row in &rows {
+                if let Some(run) = &row.run
+                    && run.open_below
+                {
+                    prop_assert_eq!(Some(&run.first), first);
+                    prop_assert!(transcript.has_older());
                 }
             }
         }

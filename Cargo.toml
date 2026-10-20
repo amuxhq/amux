@@ -173,6 +173,8 @@ zstd = { version = "0.13", default-features = false }
 # The exhaustive checker the protocol models run under; its seeded chooser
 # drives their walks.
 stateright = "0.31"
+# Generated cases with shrinking for the pure-function property tests.
+proptest = { version = "1.11", default-features = false, features = ["std"] }
 
 # Cargo defaults macOS debug profiles to split-debuginfo = "unpacked", which
 # keeps every codegen unit's object file under target/<profile>/deps for the

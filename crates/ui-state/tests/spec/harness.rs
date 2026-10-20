@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+use proptest::prelude::*;
+use proptest::test_runner::RngSeed;
 use prost::Message;
 use ui_state::{
     Connection, InputOutcome, ItemClass, Msg, Outcome, RunIndex, SessionState, Transcript,
@@ -622,31 +624,24 @@ impl Tape {
     }
 }
 
-/// A small deterministic generator for property cases.
-pub struct Rng(u64);
-
-impl Rng {
-    pub fn new(seed: u64) -> Rng {
-        Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
+/// The configuration the property tests run under: a fixed seed, so a run
+/// repeats exactly unless PROPTEST_RNG_SEED names another, and no regression
+/// files written beside the sources (a failure prints its shrunk input).
+pub fn cases(cases: u32) -> ProptestConfig {
+    let config = ProptestConfig::default();
+    let rng_seed = match config.rng_seed {
+        RngSeed::Random => RngSeed::Fixed(1),
+        seed => seed,
+    };
+    ProptestConfig {
+        cases,
+        rng_seed,
+        failure_persistence: None,
+        ..config
     }
+}
 
-    pub fn next(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        x
-    }
-
-    pub fn below(&mut self, n: u64) -> u64 {
-        self.next() % n
-    }
-
-    pub fn shuffle<T>(&mut self, items: &mut [T]) {
-        for i in (1..items.len()).rev() {
-            let j = self.below(i as u64 + 1) as usize;
-            items.swap(i, j);
-        }
-    }
+/// Any of the agent kinds.
+pub fn kinds() -> impl Strategy<Value = Kind> {
+    prop::sample::select(KINDS.to_vec())
 }

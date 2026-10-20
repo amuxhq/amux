@@ -19,6 +19,9 @@ message Message {
     NeighborDown neighbor_down = 4;
     Reauth reauth = 5;
     LinkClose link_close = 6;
+    Addresses addresses = 7;
+    ObservedAddress observed_address = 8;
+    ForwardRefused forward_refused = 9;
   }
 }
 
@@ -34,6 +37,9 @@ message Hello {
   // an earlier link from the same host proves that earlier link belongs to
   // a process that no longer exists, however healthy it still looks.
   bytes runtime_instance_id = 5;
+  // Every address the sender can be reached at, as host:port; never
+  // loopback or link-local.
+  repeated string addrs = 6;
 }
 
 message HelloAck {
@@ -49,6 +55,12 @@ message HelloAccepted {
   repeated Host neighbors = 3;
   // The acceptor's; see `Hello.runtime_instance_id`.
   bytes runtime_instance_id = 4;
+  // The acceptor's; see `Hello.addrs`.
+  repeated string addrs = 5;
+  // The address the relay saw the sender's packets come from, as host:port.
+  // Only a relay sets it, and only for a paid host: it is the candidate
+  // hole punching works from.
+  optional string observed_addr = 6;
 }
 
 // The one break-glass error: the peers share no protocol version.
@@ -66,6 +78,33 @@ message NeighborUp {
 // "I lost my last direct link to this host."
 message NeighborDown {
   bytes host_id = 1;
+}
+
+// The sender's address list changed; the whole new list, replacing the one
+// its Hello or an earlier Addresses carried.
+message Addresses {
+  repeated string addrs = 1;
+}
+
+// The relay's view of where the sender's packets now come from, sent to a
+// paid host when it changes after the handshake.
+message ObservedAddress {
+  string addr = 1;
+}
+
+// A forwarder could not deliver packets naming `dst`, sent on the control
+// link they arrived on. The packets themselves are dropped, never answered.
+message ForwardRefused {
+  bytes dst = 1;
+  ForwardRefusal reason = 2;
+}
+
+enum ForwardRefusal {
+  FORWARD_REFUSAL_UNSPECIFIED = 0;
+  FORWARD_REFUSAL_NO_ROUTE = 1;
+  FORWARD_REFUSAL_PAYMENT_REQUIRED = 2;
+  FORWARD_REFUSAL_RATE_LIMITED = 3;
+  FORWARD_REFUSAL_SHUTTING_DOWN = 4;
 }
 
 // Written by the opener as the first bytes of every non-control stream. The

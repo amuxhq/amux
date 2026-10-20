@@ -293,13 +293,26 @@ message is protobuf encoded after a big-endian `u32` byte length and is bounded
 by `MESSAGE_SIZE_LIMIT` (16 MiB). The complete control vocabulary is:
 
 - `Hello`: supported protocol versions, this host, the current neighbor
-  snapshot, the sender's runtime instance id, and an authentication token only
-  for a cloud link.
+  snapshot, the sender's runtime instance id, every address the sender can be
+  reached at (`addrs`, as `host:port`, never loopback or link-local), and an
+  authentication token only for a cloud link.
 - `HelloAck`: either the accepted version plus the acceptor's host, neighbor
-  snapshot and runtime instance id, or an error.
+  snapshot, runtime instance id and addresses, or an error. A relay accepting
+  a paid host also fills `observed_addr`, the address it saw that host's
+  packets come from.
 - `NeighborUp` and `NeighborDown`: adjacency deltas after the handshake.
+- `Addresses`: the sender's whole new address list, replacing the one its
+  `Hello` or an earlier `Addresses` carried.
+- `ObservedAddress`: a relay telling a paid host that the address its packets
+  come from has changed.
+- `ForwardRefused`: a forwarder could not deliver packets naming `dst`, with
+  one `ForwardRefusal` reason: `NO_ROUTE`, `PAYMENT_REQUIRED`,
+  `RATE_LIMITED` or `SHUTTING_DOWN`. The packets themselves are dropped.
 - `Reauth`: a fire-and-forget replacement token for a cloud link.
 - `LinkClose`: an immediate close with a reason and optional error.
+
+Hosts do not send address lists, observed addresses or forward refusals yet,
+and a receiver ignores them.
 
 A runtime instance id is 16 random bytes a host's runtime draws when it
 starts and keeps until it stops; it is not an agent's incarnation, which

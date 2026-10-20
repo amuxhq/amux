@@ -262,7 +262,15 @@ impl Daemon {
                     claims.remove(&host);
                 }
             }
-            Some(Body::HelloAck(_) | Body::Reauth(_) | Body::LinkClose(_)) | None => return,
+            Some(
+                Body::HelloAck(_)
+                | Body::Reauth(_)
+                | Body::LinkClose(_)
+                | Body::Addresses(_)
+                | Body::ObservedAddress(_)
+                | Body::ForwardRefused(_),
+            )
+            | None => return,
         }
         let before = self.routes_before(entry.claims.union(&claims).copied().collect::<Vec<_>>());
         if let Some(entry) = self.routing.links.links.get_mut(&link) {

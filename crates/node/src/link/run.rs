@@ -910,6 +910,10 @@ async fn handle_control_body(
             }
             ControlAction::Close(reason, link_close_status(&close))
         }
+        // Nothing on this side acts on address lists or forward refusals yet.
+        wire::pb::message::Body::Addresses(_)
+        | wire::pb::message::Body::ObservedAddress(_)
+        | wire::pb::message::Body::ForwardRefused(_) => ControlAction::Continue,
         wire::pb::message::Body::Hello(_) | wire::pb::message::Body::HelloAck(_) => {
             unreachable!("repeated handshake message is rejected by ConnectHandshake")
         }
@@ -1008,6 +1012,7 @@ fn connector_hello(ctx: &LinkCtx, snapshot: &[Host]) -> wire::pb::Message {
                 .as_ref()
                 .map(|auth| auth.token.token.clone()),
             runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
+            addrs: Vec::new(),
         })),
     }
 }
@@ -1025,6 +1030,8 @@ fn accepted_hello_ack(ctx: &LinkCtx, snapshot: &[Host], peer: HostId) -> wire::p
                         .map(host_to_wire)
                         .collect(),
                     runtime_instance_id: ctx.local_host.runtime_instance().to_wire(),
+                    addrs: Vec::new(),
+                    observed_addr: None,
                 },
             )),
         })),
@@ -1333,6 +1340,7 @@ mod tests {
                     neighbors: Vec::new(),
                     auth_token: auth_token.map(str::to_string),
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
+                    addrs: Vec::new(),
                 })),
             },
         )
@@ -1477,6 +1485,7 @@ mod tests {
                     neighbors: Vec::new(),
                     auth_token: None,
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
+                    addrs: Vec::new(),
                 })),
             },
         )
@@ -1577,6 +1586,7 @@ mod tests {
                     neighbors: Vec::new(),
                     auth_token: None,
                     runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
+                    addrs: Vec::new(),
                 })),
             },
         )

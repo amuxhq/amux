@@ -14,6 +14,10 @@ desktop_features := "--features bundled"
 default:
     @just --list
 
+# Export the editable logo and render its visual review sheet.
+logo *ARGS:
+    {{bounded}} 120 uv run --script scripts/logo.py "$@"
+
 # The iPhone app's recipes: `just ios build`, `just ios verify`, ... (`just --list ios`).
 mod ios 'apps/apple/justfile'
 

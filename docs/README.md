@@ -62,3 +62,4 @@
 - [CI](CI.md) — workflows, lanes, `just ci` and the Windows cross-check.
 - [Release](RELEASE.md) — shipping the iPhone app and the daemon's release feed and channels.
 - [Licensing](LICENSING.md) — how the repository is licensed.
+- [Logo](BRAND.md) — the editable vector master, `just logo` exports and the visual review.

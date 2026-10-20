@@ -289,14 +289,14 @@ under `just test`.
 
 | Model | CI bounds | States | 12 threads | 4 threads | Four-core runner | Budget | Nightly bounds | Nightly, 12 threads |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 81,268 | 13 s | 25 s | 87, 102, 72, 103 and 50 s | 240 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 493 s |
-| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag | 207,594 | 51 s | 68 s | 81, 161, 161, 77 and 113 s | 360 s | 2 crashes, power losses or reboots, 1 refused commit | 527 s |
-| Family and deliveries | 1 turn end, 1 link down, 1 crash, 1 wait | 219,380 | 23 s | 47 s | 178 s (about 191 s projected); at 396,826 states with the parent's spontaneous exit: 161, 299, 222, 313, 310 and 155 s (the first at 391,552 states, before the first listing predated the parent) | 420 s | the parent's and the child's spontaneous exits, 2 links down, 2 waits | 757 s |
-| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 1 refusal for the plan before anything else happens | 1,040,570 | 27 s | 61 s | 289, 288, 120 and 290 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 600 s | 4 up, 3 down, 3 failures, 2 refusals for the plan in a row | 431 s |
-| Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29 and 41 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
-| Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27 and 27 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
-| One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105 and 105 s | 240 s | 3 writes | 343 s |
-| Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 216,320 | 27 s | 51 s | 151, 105, 204, 207 and 139 s for all three | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
+| Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 81,268 | 13 s | 25 s | 87, 102, 72, 103, 50 and 101 s | 240 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 493 s |
+| Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag | 207,594 | 51 s | 68 s | 81, 161, 161, 77, 113 and 135 s | 360 s | 2 crashes, power losses or reboots, 1 refused commit | 527 s |
+| Family and deliveries | 1 turn end, 1 link down, 1 crash, 1 wait | 219,380 | 23 s | 47 s | 178 and 128 s (about 191 s projected); at 396,826 states with the parent's spontaneous exit: 161, 299, 222, 313, 310 and 155 s (the first at 391,552 states, before the first listing predated the parent) | 420 s | the parent's and the child's spontaneous exits, 2 links down, 2 waits | 757 s |
+| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 1 refusal for the plan before anything else happens | 1,040,570 | 27 s | 61 s | 289, 288, 120, 290 and 287 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 600 s | 4 up, 3 down, 3 failures, 2 refusals for the plan in a row | 431 s |
+| Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29, 41 and 45 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
+| Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27, 27 and 28 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
+| One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105, 105 and 107 s | 240 s | 3 writes | 343 s |
+| Composed net: a reset while presence flips, lost messages, a person's calls through a crash | 1 sever and 1 unclean reboot; 1 reordering, 1 lost message and 1 advance; 1 kill, 1 prompt and 1 stop | 33,025, 9,559 and 216,320 | 27 s | 51 s | 151, 105, 204, 207, 139 and 180 s for all three | 420 s for all three | every fault but a kill, with 1 reordering; the calls through a crash with 1 lost message | 184 s |
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), the family model's on 2026-10-20, with the development profile,
@@ -311,9 +311,10 @@ bounds on CI's four-core Linux runner, measured by CI runs
 [39409237111](https://github.com/jordanwebster/amux/actions/runs/39409237111),
 [39427905420](https://github.com/jordanwebster/amux/actions/runs/39427905420),
 [39434678894](https://github.com/jordanwebster/amux/actions/runs/39434678894),
-[39451673041](https://github.com/jordanwebster/amux/actions/runs/39451673041)
-and
+[39451673041](https://github.com/jordanwebster/amux/actions/runs/39451673041),
 [39459686545](https://github.com/jordanwebster/amux/actions/runs/39459686545)
+and
+[39489610899](https://github.com/jordanwebster/amux/actions/runs/39489610899)
 of nearly the same tree, in that order; a binary holding two machines is timed
 for both. The runner's speed varies between runs by up to two and a half
 times: presence took 288 s in one run and 120 s in the next, the composed
@@ -326,8 +327,8 @@ its six runs at the bounds that included the parent's spontaneous exit
 spread twofold, and two passed 300 s, so the parent's spontaneous exit
 moved to the nightly bounds; the cut bounds took 0.61 of the time on the
 enrolled Mac, back to back, and the budget is sized to the slowest run
-scaled by that; the first CI run at the cut bounds, 39459686545, took
-178 s. Its state count varies by under 1% from run to run
+scaled by that; the first two CI runs at the cut bounds, 39459686545 and
+39489610899, took 178 s and 128 s. Its state count varies by under 1% from run to run
 (218,332 to 219,506 at these bounds), so one of its values is not yet
 printed the same way for the same state. Presence's earlier figure
 is at bounds that allowed two refusals for the plan in a row: twice it passed

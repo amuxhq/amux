@@ -665,6 +665,19 @@ fn entropy() -> [u8; 32] {
     seed
 }
 
+/// Whether `input` opens a pairing window or a pairing conversation: the
+/// steps that draw a pairing's first secret. Every later draw is the same
+/// pairing's.
+fn opens_pairing(input: &Input) -> bool {
+    matches!(
+        input,
+        Input::ClientCall {
+            request: ClientRequest::StartPairing { .. },
+            ..
+        } | Input::PairingOpened { .. }
+    )
+}
+
 impl CoreThread {
     /// Starts the thread for `driver`, on the runtime it is called from,
     /// or holds the core for its caller to step when the driver has no
@@ -944,6 +957,11 @@ impl CoreThread {
             && answer.is_last()
         {
             self.outgoing.lock().unwrap().remove(call);
+        }
+        // A pairing draws its secrets after fresh randomness, so the seed a
+        // checkpoint or the ring holds reveals no pairing opened after it.
+        if opens_pairing(&input) {
+            self.step(runtime, Input::Entropy(entropy()), out);
         }
         self.record(&input);
         self.daemon.step(input, out);

@@ -267,6 +267,22 @@ fn a_pin_is_six_decimal_digits() {
     assert!(pin.iter().all(u8::is_ascii_digit));
 }
 
+/// A seed read from a checkpoint predicts every draw after it until fresh
+/// entropy is mixed in: the window opened after a second seed is not the
+/// one the first seed alone predicts.
+#[test]
+fn a_draw_after_fresh_entropy_is_not_the_one_the_old_seed_predicts() {
+    let predicted = Host::new(OFFERER).open_window(WindowMethod::Pin, MINUTE);
+    assert_eq!(
+        Host::new(OFFERER).open_window(WindowMethod::Pin, MINUTE),
+        predicted,
+        "one seed and no fresh entropy draw the same PIN"
+    );
+    let mut fresh = Host::new(OFFERER);
+    fresh.step(Input::Entropy([0xA5; 32]));
+    assert_ne!(fresh.open_window(WindowMethod::Pin, MINUTE), predicted);
+}
+
 #[test]
 fn too_many_wrong_secrets_lock_the_window_out_until_a_new_one_opens() {
     let mut offerer = Host::new(OFFERER);

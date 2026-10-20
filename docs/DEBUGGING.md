@@ -168,6 +168,10 @@ its length, so an offset in the store or in `core/inputs` names the same frame i
 written when the dump was taken keeps only its length prefix. The facts lines are plain JSON and the checkpoints
 are JSON, so both can be read directly.
 
+The core's part reveals no pairing opened after the dump: it carries the PIN or secret of a pairing open at the
+dump and the randomness that pairing draws from, and every window or pairing conversation opens with fresh
+randomness the bundle never holds.
+
 The client parts come from the app runtime, which adds the fleet's and every open chat's part to the bundle the
 daemon wrote. `amux dump` from a terminal carries only the host's parts.
 

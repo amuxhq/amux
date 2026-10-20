@@ -602,3 +602,114 @@ async fn a_clean_shutdown_ends_a_dump_still_waiting_for_an_agents_part() {
     .await
     .unwrap();
 }
+
+/// A bundle's core part holds the pairing randomness as of its checkpoint,
+/// and the PIN of the window open then. A window opened after the dump
+/// draws after fresh randomness, so the bundle cannot compute its PIN: a
+/// core restored from the bundle's checkpoint and fed the randomness its
+/// inputs recorded opens a window with another PIN than the live one.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
+    use daemon_core::pairing::{WindowMethod, WindowSecret};
+    use daemon_core::payload::{ClientRequest, Response};
+    use daemon_core::{CallId, Checkpoint, Daemon, Input, Output, Recorded, StepBudget};
+    use tonic::Request;
+    use wire::profile_service_server::ProfileService as _;
+    use wire::{Empty, ProfileRequest, StartPairingRequest, start_pairing_request};
+
+    let install = Install::new();
+    let daemon = install
+        .start("boot-1", support::synthetic::quiet_launch())
+        .await;
+    let runtime = runtime(&daemon, &install);
+    let door = daemon.front_door();
+    let profile = install.profile.as_bytes().to_vec();
+    let open = || {
+        let door = door.clone();
+        let profile = profile.clone();
+        async move {
+            let window = door
+                .start_pairing(Request::new(StartPairingRequest {
+                    profile_id: profile,
+                    method: Some(start_pairing_request::Method::Pin(Empty {})),
+                    ttl_seconds: None,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+            match window.secret {
+                Some(wire::pairing_window::Secret::Pin(pin)) => pin,
+                other => panic!("a PIN window, not {other:?}"),
+            }
+        }
+    };
+
+    // Mid-pairing: a window is open, a checkpoint holds it, and the dump
+    // carries that checkpoint.
+    open().await;
+    runtime.checkpoint().await.unwrap();
+    let bundle = runtime
+        .dump(DumpRequest {
+            reason: "mid-pairing".to_owned(),
+            ..DumpRequest::default()
+        })
+        .await
+        .unwrap();
+    door.cancel_pairing(Request::new(ProfileRequest {
+        profile_id: profile.clone(),
+    }))
+    .await
+    .unwrap();
+    let second = open().await;
+
+    // What the bundle can compute: its checkpoint, every randomness its
+    // inputs recorded, and the window opened next.
+    let core = bundle.join("core");
+    let checkpoint =
+        Checkpoint::from_bytes(&std::fs::read(core.join("checkpoint")).unwrap()).unwrap();
+    let store =
+        store::Sqlite::open_in_memory(support::synthetic::host(&install).as_bytes().to_vec())
+            .unwrap();
+    let mut restored = Daemon::restore(checkpoint, store).unwrap();
+    restored.set_budget(StepBudget::UNLIMITED);
+    let mut out = Vec::new();
+    let recorded: Vec<Recorded> = core_ring::inputs(&std::fs::read(core.join("inputs")).unwrap());
+    for line in recorded {
+        if let Recorded::Input(input) = line
+            && let Input::Entropy(_) = *input
+        {
+            restored.step(*input, &mut out);
+        }
+    }
+    for request in [
+        ClientRequest::CancelPairing,
+        ClientRequest::StartPairing {
+            method: WindowMethod::Pin,
+            ttl_ms: 60_000,
+        },
+    ] {
+        restored.step(
+            Input::ClientCall {
+                call: CallId(u64::MAX),
+                request,
+            },
+            &mut out,
+        );
+    }
+    let computed = out
+        .iter()
+        .find_map(|output| match output {
+            Output::Answer {
+                response: Response::PairingWindow(WindowSecret::Pin(pin)),
+                ..
+            } => Some(pin.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("the restored core opens a window: {out:?}"));
+    assert_ne!(
+        computed, second,
+        "the bundle computes the PIN of a window opened after it"
+    );
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

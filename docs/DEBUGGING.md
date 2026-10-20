@@ -119,10 +119,13 @@ Some dumps nobody asks for. When the daemon's core breaks one of its cheap invar
 budget, the daemon writes a bundle whose `reason` starts `the daemon core: ` and whose manifest says `automatic`.
 A chat whose transcript fails its own check when the stream catches up or resets asks for one too, with the
 reason starting `the client's transcript: ` and that chat's session inside, its trace cut at the message the check
-failed at. The relay, the agent process and the
-supervisor log the same kind of reason: `the relay core: ` and `the supervisor core: ` in the daemon's log,
-`the agent core: ` in the agent's stderr. Each process reports one per kind of reason (one per broken invariant,
-one for steps over budget) every ten minutes; the next one of that kind says how many were held back since.
+failed at. An agent process whose core breaks one of its invariants says so on its stderr (`the agent core: `) and
+asks its daemon for a dump of it over the control connection; the daemon writes the bundle, reason starting
+`an agent's core: ` and naming the agent, with the agent's facts ring and checkpoints for the interpreter stage and
+the daemon's own parts for the core's. The relay and the supervisor log the same kind of reason (`the relay core: `,
+`the supervisor core: `). Each process reports one per kind of reason (one per broken invariant, one for steps over
+budget) every ten minutes, and the daemon writes one agent-asked bundle per kind in the same interval, however many
+agents ask; the next one of that kind says how many were held back since.
 
 ## Reading a dump
 

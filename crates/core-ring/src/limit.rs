@@ -9,13 +9,16 @@
 //! the store between steps. A different invariant, or an overrun beside a
 //! violation, is news, so each kind keeps its own window.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// What a dump is for, as far as the limit tells dumps apart.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DumpKind {
     /// A cheap invariant failed: the invariant, as the sentence it checks.
-    Violation(&'static str),
+    /// A core names its own; a driver limiting what another process asked
+    /// for has the sentence that process sent.
+    Violation(Cow<'static, str>),
     /// A step took longer than its budget, however far over.
     OverBudget,
 }
@@ -91,7 +94,7 @@ pub fn with_suppressed(reason: String, suppressed: u64) -> String {
 mod tests {
     use super::*;
 
-    const BROKE: DumpKind = DumpKind::Violation("the generation only ever rises");
+    const BROKE: DumpKind = DumpKind::Violation(Cow::Borrowed("the generation only ever rises"));
 
     #[test]
     fn one_dump_per_kind_in_an_interval_and_the_next_counts_the_rest() {
@@ -101,7 +104,10 @@ mod tests {
         assert_eq!(limit.admit(BROKE, 1_004), None);
         // Another kind has a window of its own.
         assert_eq!(limit.admit(DumpKind::OverBudget, 7), Some(0));
-        assert_eq!(limit.admit(DumpKind::Violation("another"), 8), Some(0));
+        assert_eq!(
+            limit.admit(DumpKind::Violation("another".into()), 8),
+            Some(0)
+        );
         assert_eq!(limit.admit(BROKE, 1_005), Some(2));
         assert_eq!(limit.admit(BROKE, 1_006), None);
         assert_eq!(limit.admit(BROKE, 2_005), Some(1));

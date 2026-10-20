@@ -405,6 +405,10 @@ pub struct ProfileRuntime {
     /// crash aborts them, as it does every other task of the run; a
     /// shutdown lets them finish for [`DUMPS_FINISH_WITHIN`].
     pub(crate) core_dumps: Mutex<Option<Vec<JoinHandle<()>>>>,
+    /// The dumps this host's agents asked for that were written, by kind:
+    /// twenty agents meeting one broken invariant are one bundle in each
+    /// interval.
+    pub(crate) agent_dumps: Mutex<core_ring::DumpLimit>,
     agents: Mutex<HashMap<AgentId, Arc<AgentHandle>>>,
     pub(crate) retention: watch::Sender<Retention>,
     pub(crate) reports: PathBuf,
@@ -682,6 +686,7 @@ impl ProfileRuntime {
             push,
             background: Mutex::new(Vec::new()),
             core_dumps: Mutex::new(Some(Vec::new())),
+            agent_dumps: Mutex::new(core_ring::DumpLimit::default()),
             launch: Mutex::new(launch),
             agents: Mutex::new(HashMap::new()),
             retention: watch::Sender::new(Retention::default()),
@@ -1764,6 +1769,12 @@ impl ProfileRuntime {
                             if let (Some((_, waiting)), Some(verdict)) = (waiting, reply.verdict) {
                                 let _ = waiting.send(verdict);
                             }
+                        }
+                        Ok(Some(CtlFrame {
+                            of: Some(ctl_frame::Of::DumpAsked(asked)),
+                        })) => {
+                            let Some(me) = runtime.upgrade() else { return };
+                            me.agent_asked(id, asked);
                         }
                         Ok(Some(CtlFrame {
                             of: Some(ctl_frame::Of::Dump(part)),

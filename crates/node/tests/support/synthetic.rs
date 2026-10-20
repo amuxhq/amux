@@ -23,6 +23,9 @@ use wire::{
 use super::{Install, PATIENCE, until};
 
 /// What daemons in these tests start with: nothing is ever spawned.
+/// The one file a synthetic agent sends as its part of a dump.
+pub const SYNTHETIC_PART: &str = "synthetic";
+
 pub fn quiet_launch() -> Launch {
     Launch {
         install_path: PathBuf::from("/nonexistent/amux"),
@@ -308,6 +311,23 @@ impl SyntheticAgent {
                                 frame = agent_dir::read_frame(&mut reader) => frame,
                             };
                             let Ok(Some(frame)) = frame else { break };
+                            if let Some(ctl_frame::Of::DumpRequest(asked)) = &frame.of {
+                                // Its part of the bundle, as an agent
+                                // process sends its facts ring.
+                                let part = CtlFrame {
+                                    of: Some(ctl_frame::Of::Dump(wire::DumpPart {
+                                        dump_id: asked.dump_id.clone(),
+                                        files: vec![wire::DumpFile {
+                                            name: SYNTHETIC_PART.to_owned(),
+                                            contents: b"a synthetic agent's part".to_vec(),
+                                        }],
+                                    })),
+                                };
+                                if let Some(writer) = conn.lock().await.as_mut() {
+                                    let _ = agent_dir::write_frame(writer, &part).await;
+                                }
+                                continue;
+                            }
                             let input = match frame.of {
                                 Some(ctl_frame::Of::Input(input)) => Handed::Input(input),
                                 Some(ctl_frame::Of::AgentMessage(envelope)) => {
@@ -344,6 +364,16 @@ impl SyntheticAgent {
     /// Tells the daemon the journal grew. Waits for a connection first.
     pub async fn nudge(&self) {
         self.send(ctl_frame::Of::Nudge(Nudge {})).await;
+    }
+
+    /// Asks the daemon for a dump as an agent's core does: for a broken
+    /// invariant, or for a step over its budget when `invariant` is empty.
+    pub async fn ask_for_dump(&self, reason: &str, invariant: &str) {
+        self.send(ctl_frame::Of::DumpAsked(wire::DumpAsked {
+            reason: reason.to_owned(),
+            invariant: invariant.to_owned(),
+        }))
+        .await;
     }
 
     /// Sends one frame to the daemon, once one is connected.

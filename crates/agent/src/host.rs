@@ -28,7 +28,7 @@ use interpret::Interpreter;
 use interpret::ring::Entry;
 use tokio::io::AsyncReadExt;
 use tokio::sync::{mpsc, watch};
-use wire::{AgentSpec, CtlFrame};
+use wire::{AgentSpec, CtlFrame, ctl_frame};
 
 use crate::clock::Clock;
 use crate::dir::{self, PtyLog};
@@ -75,6 +75,43 @@ pub(crate) struct Driver<I: Interpreter> {
     exit: Option<ExitCause>,
     /// The dumps the core asked for that were reported, by kind.
     dumps: DumpLimit,
+    /// Dumps asked of the daemon while none was connected.
+    asks: Asks,
+}
+
+/// The agent's own record already has a dump's shape on disk (the facts
+/// ring and its checkpoints), and the daemon's bundle gathers it: so a dump
+/// the core asks for is asked of the daemon, which writes the bundle. One
+/// asked with no daemon connected waits, the newest of each kind, and goes
+/// right after the next Hello.
+#[derive(Debug, Default)]
+struct Asks {
+    waiting: BTreeMap<String, CtlFrame>,
+}
+
+impl Asks {
+    /// Asks the connected daemon for a dump, or keeps the ask for the next.
+    fn ask(&mut self, daemon: Option<&Daemon>, reason: String, invariant: String) {
+        let frame = CtlFrame {
+            of: Some(ctl_frame::Of::DumpAsked(wire::DumpAsked {
+                reason,
+                invariant: invariant.clone(),
+            })),
+        };
+        match daemon {
+            Some(daemon) if daemon.frames.send(frame.clone()).is_ok() => {}
+            _ => {
+                self.waiting.insert(invariant, frame);
+            }
+        }
+    }
+
+    /// The daemon has the agent's Hello: what waited goes now.
+    fn hello_sent(&mut self, daemon: &Daemon) {
+        for (_, frame) in std::mem::take(&mut self.waiting) {
+            let _ = daemon.frames.send(frame);
+        }
+    }
 }
 
 /// Everything the driver listens to.
@@ -192,6 +229,7 @@ pub(crate) async fn run<I: Interpreter>(
         jobs: jobs_tx,
         exit: None,
         dumps: DumpLimit::default(),
+        asks: Asks::default(),
     };
     // An incarnation that cannot write its first steps does not start.
     driver
@@ -472,7 +510,11 @@ impl<I: Interpreter> Driver<I> {
                     if let Some(daemon) = &self.daemon
                         && daemon.id == connection
                     {
+                        let hello = matches!(frame.of, Some(ctl_frame::Of::Hello(_)));
                         let _ = daemon.frames.send(frame);
+                        if hello {
+                            self.asks.hello_sent(daemon);
+                        }
                     }
                     Ok(())
                 }
@@ -511,8 +553,13 @@ impl<I: Interpreter> Driver<I> {
                 }
                 Output::Dump { reason } => {
                     let now = now_ms(self.clock.as_ref());
-                    if let Some(reason) = limited_dump_reason(&mut self.dumps, &reason, now) {
-                        eprintln!("amux agent: {reason}");
+                    if let Some(said) = limited_dump_reason(&mut self.dumps, &reason, now) {
+                        eprintln!("amux agent: {said}");
+                        let invariant = match &reason {
+                            DumpReason::Violation(violation) => violation.invariant.to_owned(),
+                            DumpReason::OverBudget { .. } => String::new(),
+                        };
+                        self.asks.ask(self.daemon.as_ref(), said, invariant);
                     }
                     Ok(())
                 }
@@ -565,7 +612,7 @@ fn write_failed(why: String) -> Input {
 fn limited_dump_reason(limit: &mut DumpLimit, reason: &DumpReason, now_ms: u64) -> Option<String> {
     let (kind, why) = match reason {
         DumpReason::Violation(violation) => (
-            DumpKind::Violation(violation.invariant),
+            DumpKind::Violation(violation.invariant.into()),
             violation.to_string(),
         ),
         DumpReason::OverBudget { micros, budget } => (
@@ -629,6 +676,58 @@ async fn hook_payloads(mut listener: LocalListener, events: mpsc::Sender<Provide
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn daemon() -> (Daemon, mpsc::UnboundedReceiver<CtlFrame>) {
+        let (frames, sent) = mpsc::unbounded_channel();
+        (
+            Daemon {
+                id: ConnId(1),
+                frames,
+            },
+            sent,
+        )
+    }
+
+    fn asked(frame: CtlFrame) -> wire::DumpAsked {
+        match frame.of {
+            Some(ctl_frame::Of::DumpAsked(asked)) => asked,
+            other => panic!("not a dump ask: {other:?}"),
+        }
+    }
+
+    /// An admitted dump is asked of the connected daemon at once; with
+    /// none connected, the newest of each kind waits for the next Hello.
+    #[test]
+    fn an_admitted_dump_is_asked_of_the_daemon_or_waits_for_its_hello() {
+        let mut asks = Asks::default();
+        let (connected, mut sent) = daemon();
+        asks.ask(Some(&connected), "the agent core: one".into(), "one".into());
+        let first = asked(sent.try_recv().expect("asked at once"));
+        assert_eq!(
+            (first.reason.as_str(), first.invariant.as_str()),
+            ("the agent core: one", "one")
+        );
+
+        asks.ask(None, "the agent core: two, older".into(), "two".into());
+        asks.ask(None, "the agent core: two".into(), "two".into());
+        asks.ask(None, "the agent core: a slow step".into(), String::new());
+        assert!(sent.try_recv().is_err(), "nothing goes with no daemon");
+        let (next, mut sent) = daemon();
+        asks.hello_sent(&next);
+        let mut waited: Vec<_> = std::iter::from_fn(|| sent.try_recv().ok().map(asked))
+            .map(|asked| (asked.invariant, asked.reason))
+            .collect();
+        waited.sort();
+        assert_eq!(
+            waited,
+            [
+                (String::new(), "the agent core: a slow step".to_owned()),
+                ("two".to_owned(), "the agent core: two".to_owned()),
+            ]
+        );
+        asks.hello_sent(&next);
+        assert!(sent.try_recv().is_err(), "each waited once");
+    }
 
     #[test]
     fn a_violation_the_agent_core_repeats_is_reported_once_per_interval() {

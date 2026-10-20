@@ -74,8 +74,10 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
+use core_ring::DumpKind;
 use daemon_core::Recorded;
 use interpret::RedactTarget;
 use prost::Message as _;
@@ -88,7 +90,7 @@ use wire::{
 };
 
 use crate::blobs::hex;
-use crate::driver::Captured;
+use crate::driver::{AGENT_DUMP, AGENT_VIOLATION_DUMP, Captured};
 use crate::runtime::{ProfileRuntime, to_wire};
 
 /// The rows of each agent a dump carries: the newest, which is where a
@@ -164,6 +166,65 @@ impl ProfileRuntime {
     pub async fn dump(&self, request: DumpRequest) -> Result<PathBuf, DumpError> {
         let rows = self.dump_rows(&request.agent_ids).await?;
         self.write_dump(&request, rows, Asker::Local).await
+    }
+
+    /// Writes an automatic bundle of `agent_ids` (every agent when empty)
+    /// off the caller, for `whose` asking: under the guard a shutdown waits
+    /// on, so none starts once the profile stops waiting.
+    pub(crate) fn dump_unasked(
+        self: &Arc<Self>,
+        agent_ids: Vec<Vec<u8>>,
+        reason: String,
+        whose: &'static str,
+    ) {
+        let mut dumps = self.core_dumps.lock().unwrap();
+        // A profile shutting down has stopped waiting for dumps: one
+        // started now would hold the runtime past its shutdown.
+        let Some(dumps) = dumps.as_mut() else {
+            tracing::warn!(%reason, whose, "not dumped: the profile is stopping");
+            return;
+        };
+        let weak = Arc::downgrade(self);
+        let task = tokio::spawn(async move {
+            let Some(runtime) = weak.upgrade() else {
+                return;
+            };
+            let request = DumpRequest {
+                agent_ids,
+                reason,
+                automatic: true,
+                sessions: Vec::new(),
+            };
+            match runtime.dump(request).await {
+                Ok(bundle) => tracing::warn!(bundle = %bundle.display(), whose, "dumped"),
+                Err(error) => tracing::error!(%error, whose, "dumping failed"),
+            }
+        });
+        dumps.retain(|dump| !dump.is_finished());
+        dumps.push(task);
+    }
+
+    /// An agent's core asked for a dump over its control connection: a
+    /// bundle of that agent, whose facts ring and checkpoints replay as the
+    /// interpreter stage and the daemon's parts as the core's, after this
+    /// host's own limit per kind. The agent's lifecycle state is not a
+    /// replay stage; the reason carries what its core said of it.
+    pub(crate) fn agent_asked(self: &Arc<Self>, id: Uuid, asked: wire::DumpAsked) {
+        let (kind, prefix) = if asked.invariant.is_empty() {
+            (DumpKind::OverBudget, AGENT_DUMP)
+        } else {
+            (
+                DumpKind::Violation(asked.invariant.into()),
+                AGENT_VIOLATION_DUMP,
+            )
+        };
+        let now = self.clock_now().max(0) as u64;
+        let Some(suppressed) = self.agent_dumps.lock().unwrap().admit(kind, now) else {
+            return;
+        };
+        let reason =
+            core_ring::with_suppressed(format!("{prefix}{id}: {}", asked.reason), suppressed);
+        self.dump_unasked(vec![id.as_bytes().to_vec()], reason, "an agent's core");
     }
 
     /// A paired host's call for its dump: this host's own agents among the

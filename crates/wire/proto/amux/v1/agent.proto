@@ -130,11 +130,23 @@ message CtlFrame {
     // whenever that changes. A one-shot agent waits for each one's last
     // report before it exits.
     Children children = 10;
+    // Agent to daemon: the agent's core asked for a dump. The daemon
+    // writes a bundle of the agent, after a limit of its own.
+    DumpAsked dump_asked = 11;
   }
 }
 
 message AgentDumpRequest {
   bytes dump_id = 1;
+}
+
+// Why an agent's core asked for a dump.
+message DumpAsked {
+  // As the agent reports it, saying how many like it it held back.
+  string reason = 1;
+  // The invariant that failed, as the sentence it checks; empty for a step
+  // over its budget.
+  string invariant = 2;
 }
 
 message Rename {

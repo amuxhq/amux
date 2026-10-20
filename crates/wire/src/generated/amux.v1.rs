@@ -13186,7 +13186,7 @@ impl ::prost::Name for EffectiveConfig {
 /// EOF in either direction means the peer is gone.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CtlFrame {
-    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    #[prost(oneof = "ctl_frame::Of", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
     pub of: ::core::option::Option<ctl_frame::Of>,
 }
 /// Nested message and enum types in `CtlFrame`.
@@ -13233,6 +13233,10 @@ pub mod ctl_frame {
         /// report before it exits.
         #[prost(message, tag = "10")]
         Children(super::Children),
+        /// Agent to daemon: the agent's core asked for a dump. The daemon
+        /// writes a bundle of the agent, after a limit of its own.
+        #[prost(message, tag = "11")]
+        DumpAsked(super::DumpAsked),
     }
 }
 impl ::prost::Name for CtlFrame {
@@ -13258,6 +13262,27 @@ impl ::prost::Name for AgentDumpRequest {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "/amux.v1.AgentDumpRequest".into()
+    }
+}
+/// Why an agent's core asked for a dump.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DumpAsked {
+    /// As the agent reports it, saying how many like it it held back.
+    #[prost(string, tag = "1")]
+    pub reason: ::prost::alloc::string::String,
+    /// The invariant that failed, as the sentence it checks; empty for a step
+    /// over its budget.
+    #[prost(string, tag = "2")]
+    pub invariant: ::prost::alloc::string::String,
+}
+impl ::prost::Name for DumpAsked {
+    const NAME: &'static str = "DumpAsked";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.DumpAsked".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/amux.v1.DumpAsked".into()
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

@@ -289,7 +289,7 @@ impl Dumps {
     fn reason(&mut self, reason: &core::DumpReason, now_ms: u64) -> Option<String> {
         let (kind, why) = match reason {
             core::DumpReason::Violation(violation) => (
-                DumpKind::Violation(violation.invariant),
+                DumpKind::Violation(violation.invariant.into()),
                 format!("an invariant failed: {violation}"),
             ),
             core::DumpReason::OverBudget { micros, budget } => (

@@ -53,7 +53,7 @@ impl Dumps {
     /// when it is held back.
     fn reason(&mut self, reason: &DumpReason, now_ms: u64) -> Option<String> {
         let kind = match reason {
-            DumpReason::Violation(violation) => DumpKind::Violation(violation.invariant),
+            DumpReason::Violation(violation) => DumpKind::Violation(violation.invariant.into()),
             DumpReason::OverBudget { .. } => DumpKind::OverBudget,
         };
         let suppressed = self.0.admit(kind, now_ms)?;

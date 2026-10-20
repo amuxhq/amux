@@ -255,6 +255,7 @@ version integer, and a frame a reader does not know is ignored.
 | `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
 | `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent when the agent connects with any and whenever the list changes; a one-shot agent waits for each incarnation's last report |
 | `dump` | agent → daemon | `DumpPart`, answering a dump request |
+| `dump_asked` | agent → daemon | `DumpAsked { reason, invariant }`: the agent's core asked for a dump (the invariant it broke, or none for a step over its budget). The daemon writes a bundle of this agent, its part gathered as for any dump, after a limit of its own per kind; one asked with no daemon connected waits, the newest of each kind, and goes right after the next `hello` |
 | `reply` | agent → daemon | `Verdict { id, verdict }`: the interpreter's verdict on an input, keyed by its input id, which the daemon relays as the `SendInput` reply; or on an agent message, keyed by its envelope id, which settles the message's delivery |
 
 Within one step the order is fixed: blobs the step refers to are written

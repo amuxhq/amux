@@ -66,6 +66,11 @@ pub const CORE_DUMP: &str = "the daemon core: ";
 /// invariants failed begins, so a reader tells a broken invariant from a
 /// slow step without reading the sentence after it.
 pub const CORE_VIOLATION_DUMP: &str = "the daemon core: an invariant failed: ";
+/// How the reason of a dump an agent's core asked for begins: the daemon
+/// writes it, naming the agent.
+pub const AGENT_DUMP: &str = "an agent's core: ";
+/// The same, for an invariant of the agent's core that failed.
+pub const AGENT_VIOLATION_DUMP: &str = "an agent's core: an invariant failed: ";
 /// Inputs waiting for the core. A full channel holds its senders back
 /// rather than growing.
 const INPUT_ROOM: usize = 1024;
@@ -644,7 +649,7 @@ fn limited_dump_reason(
 ) -> Option<String> {
     let (kind, why) = match reason {
         daemon_core::DumpReason::Violation(violation) => (
-            DumpKind::Violation(violation.invariant),
+            DumpKind::Violation(violation.invariant.into()),
             format!("{CORE_VIOLATION_DUMP}{violation}"),
         ),
         daemon_core::DumpReason::OverBudget { .. } => {
@@ -1208,36 +1213,7 @@ impl CoreThread {
                 let Some(reason) = limited_dump_reason(&mut self.dumps, &reason, now) else {
                     return;
                 };
-                let mut dumps = runtime.core_dumps.lock().unwrap();
-                // A profile shutting down has stopped waiting for dumps: one
-                // started now would hold the runtime past its shutdown.
-                let Some(dumps) = dumps.as_mut() else {
-                    tracing::warn!(%reason, "not dumped for the daemon core: the profile is stopping");
-                    return;
-                };
-                let weak = Arc::downgrade(runtime);
-                let task = tokio::spawn(async move {
-                    let Some(runtime) = weak.upgrade() else {
-                        return;
-                    };
-                    let request = wire::DumpRequest {
-                        agent_ids: Vec::new(),
-                        reason,
-                        automatic: true,
-                        sessions: Vec::new(),
-                    };
-                    match runtime.dump(request).await {
-                        Ok(bundle) => tracing::warn!(
-                            bundle = %bundle.display(),
-                            "dumped for the daemon core"
-                        ),
-                        Err(error) => {
-                            tracing::error!(%error, "dumping for the daemon core failed")
-                        }
-                    }
-                });
-                dumps.retain(|dump| !dump.is_finished());
-                dumps.push(task);
+                runtime.dump_unasked(Vec::new(), reason, "the daemon core");
             }
             Output::OpenChannel { channel, pin, .. } => match self.channel_reply.take() {
                 Some(reply) => {

@@ -811,3 +811,93 @@ async fn a_dump_cannot_compute_the_pin_of_a_window_opened_after_it() {
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
+
+/// An agent's core asking for a dump is a bundle of that agent, written by
+/// the daemon: its part from the process and the daemon's own beside it,
+/// the reason saying which agent asked. The daemon holds a repeat of the
+/// same kind back, as twenty agents breaking one invariant would send it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_core_asking_for_a_dump_leaves_a_bundle_of_that_agent() {
+    const INVARIANT: &str = "one open ask at most";
+    let install = Install::new();
+    // This test makes an agent's core ask on purpose.
+    install.expect_core_dumps();
+    let mut asking = support::synthetic::SyntheticAgent::new(&install, "asking", 1 << 20);
+    let other = support::synthetic::SyntheticAgent::new(&install, "other", 1 << 20);
+    asking.register_offline(&install);
+    other.register_offline(&install);
+    asking.go_live();
+    let daemon = install
+        .start("boot-1", support::synthetic::quiet_launch())
+        .await;
+    let runtime: Arc<node::ProfileRuntime> = runtime(&daemon, &install);
+
+    let violation = format!("the agent core: {INVARIANT}: two asks open");
+    asking.ask_for_dump(&violation, INVARIANT).await;
+    asking.ask_for_dump(&violation, INVARIANT).await;
+    asking
+        .ask_for_dump(
+            "the agent core: a step took 12 µs against its budget of 0 µs",
+            "",
+        )
+        .await;
+    let reasons = until("both kinds' bundles", || async {
+        let reasons = install.core_dumps();
+        (reasons.len() >= 2)
+            .then_some(reasons)
+            .ok_or("fewer than two bundles")
+    })
+    .await
+    .unwrap();
+    let id = asking.id.to_string();
+    let violations: Vec<&String> = reasons
+        .iter()
+        .filter(|reason| reason.starts_with(node::AGENT_VIOLATION_DUMP))
+        .collect();
+    assert_eq!(violations.len(), 1, "{reasons:#?}");
+    assert!(
+        violations[0].contains(&id) && violations[0].ends_with(&violation),
+        "{reasons:#?}"
+    );
+    assert!(
+        reasons
+            .iter()
+            .any(|reason| reason.starts_with(node::AGENT_DUMP)
+                && !reason.starts_with(node::AGENT_VIOLATION_DUMP)
+                && reason.contains("its budget of 0 µs")),
+        "{reasons:#?}"
+    );
+
+    for bundle in std::fs::read_dir(install.data_dir.join(node::REPORTS)).unwrap() {
+        let bundle = bundle.unwrap().path();
+        let agents: Vec<String> = std::fs::read_dir(bundle.join("agents"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(agents, vec![id.clone()], "only the agent that asked");
+        let part = bundle
+            .join("agents")
+            .join(&id)
+            .join("part")
+            .join(support::synthetic::SYNTHETIC_PART);
+        assert!(part.is_file(), "the agent's own part: {}", part.display());
+        assert!(
+            bundle.join("core/checkpoint").is_file(),
+            "the daemon's parts"
+        );
+        println!(
+            "{}: {}",
+            bundle.file_name().unwrap().to_string_lossy(),
+            serde_json::from_slice::<serde_json::Value>(
+                &std::fs::read(bundle.join(MANIFEST)).unwrap()
+            )
+            .unwrap()["reason"]
+        );
+    }
+    // The repeat stays held back.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(install.core_dumps().len(), 2);
+    drop(other);
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}

@@ -58,7 +58,10 @@ pub use activation::{ActivationError, ActivationPipe, GO, InheritedPipe, PIPE_EN
 pub use blobs::{BlobError, PATCH_MIME};
 pub use daemon::{Daemon, StartError, StartOptions, start};
 pub use daemon_core::names::word_pairs;
-pub use driver::{CORE_DUMP, CORE_VIOLATION_DUMP, Cores, InventorySubscription, Subscription};
+pub use driver::{
+    AGENT_DUMP, AGENT_VIOLATION_DUMP, CORE_DUMP, CORE_VIOLATION_DUMP, Cores, InventorySubscription,
+    Subscription,
+};
 pub use dump::{
     CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, DAEMON_LOG, DUMP_LOG_BYTES, DUMP_ROWS,
     DUMP_SEGMENTS, DumpError, MANIFEST, pack,

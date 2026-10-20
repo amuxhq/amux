@@ -17,7 +17,6 @@ public enum AccountsAction: Equatable, Sendable {
     case appearance(Appearance?)
     /// Turn sending amux.sh usage events on or off.
     case shareUsage(Bool)
-    case identity
     case support
     case report
     /// Write this phone's diagnostic dump and hand it to the share sheet.
@@ -162,14 +161,14 @@ public struct YouScreen: View {
     private let accounts: AccountRegistry
     private let appearance: Appearance?
     private let shareUsage: Bool
-    private let identity: String?
+    private let identity: Identity?
     private let actions: @MainActor (AccountsAction) -> Void
 
     public init(
         accounts: AccountRegistry,
         appearance: Appearance? = nil,
         shareUsage: Bool = true,
-        identity: String? = nil,
+        identity: Identity? = nil,
         actions: @escaping @MainActor (AccountsAction) -> Void
     ) {
         self.accounts = accounts
@@ -289,9 +288,18 @@ public struct YouScreen: View {
                 appearanceRow
                 rule(inset: 14)
                 shareUsageRow
+                // What the machines this phone pairs with know it by: its
+                // name, and its key in full to compare against the one a
+                // machine shows. Facts, not places to go: revoking a device
+                // happens on the machine, and a machine is revoked from its
+                // own page on Hosts.
                 if let identity {
                     rule(inset: 14)
-                    row("Identity", value: identity, id: "identity", mono: true) { actions(.identity) }
+                    FieldRow(label: String(localized: "Name"), value: identity.name, chevron: false)
+                        .accessibilityElement(children: .combine)
+                        .identified("you.name", label: String(localized: "Name"), value: identity.name)
+                    rule(inset: 14)
+                    fingerprint(identity.fingerprint)
                 }
             }
         }
@@ -415,6 +423,24 @@ public struct YouScreen: View {
     }
 
     // MARK: - Rows
+
+    private func fingerprint(_ key: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Fingerprint")
+                .designFont(.body, design)
+                .foregroundStyle(design.ink.color)
+            Text(Fingerprint.grouped(key))
+                .designFont(.monoSmall, design)
+                .foregroundStyle(design.inkMuted.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+        .identified("you.fingerprint", label: String(localized: "Fingerprint"), value: key)
+    }
 
     private func row(
         _ title: String, value: String, id: String, mono: Bool = false,

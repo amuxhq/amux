@@ -214,14 +214,18 @@ local-network permission as "amux finds hosts on your network so this phone
 can pair and connect to them directly." When access is denied, the Hosts tab
 says so, lists no machine and offers the Settings route.
 
-Tapping a host on the Hosts tab opens its page: how the phone reaches it,
-its platform, version, providers and addresses, that its last dial failed
-while it is offline (in words, not the dial's raw error), and its key's
-fingerprint in full. A host that no longer trusts this phone offers Pair
-Again, which opens pairing with that host. The page and the Devices sheet
-both offer Revoke, and both ask first, saying the phone stops reaching the
-machine and only pairing again brings it back. Every route the shell can
-push has a built page; `RoutePagesTests` opens each one.
+The Hosts tab is one list of paired machines, reachable first, each saying
+how the phone reaches it; machines found and not yet paired are offered as
+cards above it. Tapping a host opens its page: how the phone reaches it and,
+when it is away or offline, what that means for its agents; its platform,
+version, providers and addresses; that its last dial failed while it is
+offline (in words, not the dial's raw error); and its key's fingerprint in
+full. A host that no longer trusts this phone offers Pair Again, which opens
+pairing with that host. Revoking is the page's last row and asks first,
+saying the phone stops reaching the machine and only pairing again brings it
+back. This phone's own name and fingerprint are in Settings, under This
+phone. Every route the shell can push has a built page; `RoutePagesTests`
+opens each one.
 
 ## Foreground, background and pushes
 

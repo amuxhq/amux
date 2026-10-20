@@ -84,7 +84,7 @@ def reach_host(journey: PhoneJourney) -> list[str]:
     # Unpaired: the phone's own browser finds the desk and offers to pair.
     journey.launch()
     journey.tap("tab.hosts")
-    journey.wait_for(f"hosts.offer.{desk}", f"hosts.pair.{desk}")
+    journey.wait_for(f"hosts.pair.{desk}", f"hosts.pair.{desk}")
     journey.screen("found-not-paired")
 
     # Six digits the desk printed, typed on the phone's keypad, reach the
@@ -1671,7 +1671,7 @@ def local_network(journey: PhoneJourney) -> list[str]:
     journey.actions.append("the system says the local network was refused")
     journey.tap("tab.hosts")
     drawn = journey.wait_for("hosts.localNetwork.refused", "hosts.localNetwork.settings")
-    if f"hosts.offer.{desk}" in drawn:
+    if f"hosts.pair.{desk}" in drawn:
         raise RuntimeError("the phone offers the desk with the local network refused")
     journey.screen("refused")
 
@@ -1681,7 +1681,7 @@ def local_network(journey: PhoneJourney) -> list[str]:
     journey.actions.append("the local network granted in Settings and the app opened again")
     journey.tap("tab.hosts")
     journey.wait(
-        lambda drawn: f"hosts.offer.{desk}" in drawn and "hosts.localNetwork.refused" not in drawn,
+        lambda drawn: f"hosts.pair.{desk}" in drawn and "hosts.localNetwork.refused" not in drawn,
         "the desk found",
     )
     journey.screen("granted")

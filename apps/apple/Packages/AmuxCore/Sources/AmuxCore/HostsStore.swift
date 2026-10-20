@@ -18,8 +18,6 @@ public final class HostsStore {
     public private(set) var localNetwork: LocalNetworkPermission = .unknown
     /// The account this profile is bound to, as last read.
     public private(set) var account: AccountView?
-    /// Whether the devices sheet is up.
-    public var readingDevices = false
 
     @ObservationIgnored private var departures: [HostId: Date] = [:]
     @ObservationIgnored private let clock: @MainActor () -> Date
@@ -84,12 +82,18 @@ public final class HostsStore {
 
     public var devices: [PairedPeer] { roster?.peers ?? [] }
 
+    /// Whether the roster is older than the machines: unread, or missing a
+    /// machine this phone has since come to trust, whose page would otherwise
+    /// have no key to show.
+    public var rosterBehind: Bool {
+        guard let roster else { return true }
+        let known = Set(roster.peers.map(\.hostId))
+        return hosts.contains { $0.trusted && !known.contains($0.hostId) }
+    }
+
     public func sawLocalNetwork(_ permission: LocalNetworkPermission) {
         localNetwork = permission
     }
-
-    public func readDevices() { readingDevices = true }
-    public func stopReadingDevices() { readingDevices = false }
 
     public func host(_ id: HostId) -> HostView? { hosts.first { $0.id == id } }
 

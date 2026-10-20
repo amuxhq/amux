@@ -264,15 +264,9 @@ final class DoorHost {
         switch screen {
         case "home": router.setPath([], for: .agents); router.select(.agents)
         case "hosts":
-            stores.hosts.stopReadingDevices()
             router.setPath([], for: .hosts)
             router.select(.hosts)
         case "you", "settings": router.setPath([], for: .you); router.select(.you)
-        case "devices":
-            router.setPath([], for: .hosts)
-            router.select(.hosts)
-            stores.hosts.readDevices()
-            Task { await stores.refreshRoster() }
         case "new-agent": router.composing = true
         case "sign-in":
             composition.handle(.signIn)

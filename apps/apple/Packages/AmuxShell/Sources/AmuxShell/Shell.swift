@@ -152,9 +152,8 @@ public struct Shell: View {
     /// Whether a bottom sheet or card is up over the tab on screen.
     private var coveredByASheet: Bool {
         switch router.tab {
-        case .hosts: stores.hosts.readingDevices
         // The settings sheet's own cards cover the sheet, not a tab.
-        case .agents, .you: false
+        case .agents, .hosts, .you: false
         }
     }
 
@@ -268,7 +267,6 @@ public struct Shell: View {
                     router.open(.pairByCode(host))
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
@@ -601,8 +599,6 @@ private struct HostsTabRoot: View {
                 }
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -886,10 +882,10 @@ private struct YouTabRoot: View {
     private var you: some View {
         YouScreen(
             accounts: accounts, appearance: appearance, shareUsage: shareUsage,
-            // This phone's own key, read off the machine store the way the
-            // devices page reads it: absent until a connection has said what
-            // this device's identity is, rather than guessed at.
-            identity: stores.hosts.roster.map { Fingerprint.short($0.identity.fingerprint) }
+            // This phone's own name and key, read off the machine store:
+            // absent until a connection has said what this device's identity
+            // is, rather than guessed at.
+            identity: stores.hosts.roster?.identity
         ) { action in
             switch action {
             case .select(let id): actions(.selectAccount(id))
@@ -901,10 +897,6 @@ private struct YouTabRoot: View {
             case .appearance(let wanted): actions(.wear(wanted))
             case .shareUsage(let on): actions(.shareUsage(on))
             case .delete(let id): actions(.deleteAccount(id))
-            // This phone's key and the machines that trust it are one page,
-            // and it is the machines tab: an identity is only interesting
-            // beside what it is trusted by.
-            case .identity: router.select(.hosts)
             // Reaching a person happens on the web, where the people are.
             // There is no form in here to fill in: a message written into this
             // app would have to be carried by the same account service the

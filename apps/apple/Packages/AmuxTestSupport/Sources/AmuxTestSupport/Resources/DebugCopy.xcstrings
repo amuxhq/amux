@@ -1081,6 +1081,42 @@
         }
       }
     },
+    "Host · confirm revoke" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Host · confirm revoke"
+          }
+        }
+      }
+    },
+    "Host · revoked" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Host · revoked"
+          }
+        }
+      }
+    },
+    "Hosts · empty" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hosts · empty"
+          }
+        }
+      }
+    },
     "How should the migration roll out?" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",

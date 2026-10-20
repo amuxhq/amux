@@ -71,4 +71,18 @@ final class HostsStoreTests: XCTestCase {
         XCTAssertEqual(hosts.devices.map(\.name), ["studio"])
         XCTAssertEqual(hosts.localNetwork, .denied)
     }
+
+    /// A host's page shows its key from the roster, so the roster is read
+    /// again until it has one for every trusted machine.
+    func testTheRosterIsBehindUntilItKnowsEveryTrustedMachine() {
+        let hosts = HostsStore()
+        hosts.show([Cards.host(studio), Cards.host(found, trusted: false, candidate: true)])
+        XCTAssertTrue(hosts.rosterBehind, "never read")
+        let identity = Identity(hostId: phone.bytes, name: "phone", fingerprint: "ab")
+        hosts.show(Roster(
+            identity: identity, peers: [PairedPeer(hostId: studio.bytes, name: "studio", fingerprint: "cd")]))
+        XCTAssertFalse(hosts.rosterBehind, "a found machine has no key to show")
+        hosts.show([Cards.host(studio), Cards.host(mini, name: "mini")])
+        XCTAssertTrue(hosts.rosterBehind, "mini was paired since")
+    }
 }

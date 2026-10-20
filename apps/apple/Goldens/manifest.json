@@ -601,6 +601,22 @@
       "shows": "Editing a comment already written, with the way to delete it."
     },
     {
+      "id": "hosts.list",
+      "shows": "Every paired machine in one list, reachable first, each saying how it is reached, with one found and not paired offered above."
+    },
+    {
+      "id": "hosts.empty",
+      "shows": "No machine paired or found."
+    },
+    {
+      "id": "host.page",
+      "shows": "One machine's page: how it is reached, what it runs, its addresses and key."
+    },
+    {
+      "id": "host.revoked",
+      "shows": "A machine that no longer trusts this phone, with Pair Again."
+    },
+    {
       "id": "new-agent.claude",
       "shows": "Starting a Claude agent: the host, a recent directory, the name, the model and permission, and a new worktree."
     },

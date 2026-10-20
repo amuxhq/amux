@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import AmuxFeatures
 
-/// What a Hosts row and a group caption say about a machine.
+/// What a Hosts row and a host's page say about a machine.
 @MainActor
 final class HostsWordingTests: XCTestCase {
     private let studio = HostId(UUID(uuidString: "00000000-0000-0000-0000-000000000601")!)
@@ -25,14 +25,20 @@ final class HostsWordingTests: XCTestCase {
         return (HostsTab(model: model, actions: { _ in }), model)
     }
 
-    /// The group has said where the machine is; the row says the route.
+    private func page(_ hosts: [HostView]) -> HostPage {
+        let model = HostsStore()
+        model.show(hosts)
+        return HostPage(model: model, host: studio, actions: { _ in })
+    }
+
+    /// The row says what the machine is and the route this phone takes.
     func testALiveRowNamesItsRoute() {
         let direct = host()
-        XCTAssertEqual(tab([direct]).0.status(direct, direct.group), "Mac Studio · direct")
+        XCTAssertEqual(tab([direct]).0.status(direct), "Mac Studio · direct")
         let relayed = host(reach: .online(.relay), platform: nil)
-        XCTAssertEqual(tab([relayed]).0.status(relayed, relayed.group), "via relay")
+        XCTAssertEqual(tab([relayed]).0.status(relayed), "via relay")
         let away = host(reach: .away)
-        XCTAssertEqual(tab([away]).0.status(away, away.group), "Mac Studio · away on the free plan")
+        XCTAssertEqual(tab([away]).0.status(away), "Mac Studio · away on the free plan")
     }
 
     /// A host is away only when the relay alone sees it on the free plan,
@@ -40,7 +46,10 @@ final class HostsWordingTests: XCTestCase {
     /// names the plan as the reason.
     func testAnAwayHostNamesTheFreePlan() {
         let away = host(reach: .away)
-        XCTAssertEqual(HostPage.reach(away), "Away · the free plan does not relay between hosts")
+        XCTAssertEqual(HostPage.reach(away), "Away on the free plan")
+        XCTAssertEqual(
+            page([away]).meaning(away),
+            "The relay can see it. The free plan does not relay between hosts, so reaching it needs a subscription.")
         XCTAssertEqual(
             ChatSubject(name: "a", host: "studio", directory: "~/src", reach: .away).place,
             "studio · away on the free plan")
@@ -50,15 +59,15 @@ final class HostsWordingTests: XCTestCase {
     func testAnOfflineRowSaysTheCauseThisPhoneKnows() {
         let revoked = host(reach: .offline(.revoked), addrs: ["10.0.0.2:7"])
         XCTAssertEqual(
-            tab([revoked]).0.status(revoked, revoked.group), "Mac Studio · no longer trusts this phone")
+            tab([revoked]).0.status(revoked), "Mac Studio · no longer trusts this phone")
         let found = host(reach: .offline(.plain), addrs: ["10.0.0.2:7"])
-        XCTAssertEqual(tab([found]).0.status(found, found.group), "Mac Studio · found, not answering")
+        XCTAssertEqual(tab([found]).0.status(found), "Mac Studio · found, not answering")
         let signedOut = host(reach: .offline(.signedOut))
         XCTAssertEqual(
-            tab([signedOut]).0.status(signedOut, signedOut.group),
+            tab([signedOut]).0.status(signedOut),
             "Mac Studio · offline, this phone is signed out")
         let gone = host(reach: .offline(.plain))
-        XCTAssertEqual(tab([gone]).0.status(gone, gone.group), "Mac Studio · offline")
+        XCTAssertEqual(tab([gone]).0.status(gone), "Mac Studio · offline")
     }
 
     /// Only a departure this phone watched has an age.
@@ -68,27 +77,24 @@ final class HostsWordingTests: XCTestCase {
         let gone = host(reach: .offline(.plain))
         model.show([gone])
         now = Date(timeIntervalSince1970: 1_000 + 3 * 86_400)
-        XCTAssertEqual(view.status(gone, gone.group), "Mac Studio · offline for 3d")
+        XCTAssertEqual(view.status(gone), "Mac Studio · offline for 3d")
     }
 
-    /// A caption appears only where there is something to say.
-    func testCaptionsSayWhatIsTrueOfTheGroup() {
-        let view = tab([host()]).0
+    /// The page explains what a host's state means for its agents only where
+    /// there is something to say.
+    func testThePageSaysWhatTheStateMeans() {
+        let direct = host()
+        XCTAssertNil(page([direct]).meaning(direct))
+        let relayed = host(reach: .online(.relay))
+        XCTAssertNil(page([relayed]).meaning(relayed))
+        let gone = host(reach: .offline(.plain))
         XCTAssertEqual(
-            view.caption(.onThisNetwork, offers: true),
-            "Run amux pair on one of these and enter the code it prints.")
-        XCTAssertNil(view.caption(.onThisNetwork, offers: false))
-        XCTAssertNil(view.caption(.throughTheRelay, offers: false))
-        XCTAssertEqual(
-            view.caption(.away, offers: false),
-            "The relay can see these. The free plan does not relay between hosts, so reaching them needs a subscription.")
-        XCTAssertEqual(
-            view.caption(.offline, offers: false),
-            "Agents on an offline host report their state as unknown.")
-        let found = tab([host(reach: .offline(.plain), addrs: ["10.0.0.2:7"])]).0
+            page([gone]).meaning(gone), "Its agents report their state as unknown until it is back.")
+        let found = host(reach: .offline(.plain), addrs: ["10.0.0.2:7"])
         XCTAssertNotEqual(
-            found.caption(.offline, offers: false),
-            "Agents on an offline host report their state as unknown.",
+            page([found]).meaning(found),
+            "Its agents report their state as unknown until it is back.",
             "a host found here that no link reaches points at the network")
+        XCTAssertNil(page([host(reach: .offline(.revoked))]).meaning(host(reach: .offline(.revoked))))
     }
 }

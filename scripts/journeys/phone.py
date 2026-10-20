@@ -50,7 +50,7 @@ SCALE = 3
 VOLATILE = ".volatile"
 # This phone's own name and key, which change with the leased simulator and
 # every fresh install.
-OWN_IDENTITY = ("hosts.fact.identity", "you.identity")
+OWN_IDENTITY = ("you.name", "you.fingerprint")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 

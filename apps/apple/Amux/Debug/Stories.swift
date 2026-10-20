@@ -136,8 +136,7 @@ enum StoryFleet {
 
     static func stores(hosts: [HostView], accounts count: Int = 1, picture: Bool = false) -> Stores {
         let fleet = FleetStore(now: now)
-        let hostsStore = HostsStore(clock: { now })
-        hostsStore.show(hosts)
+        let hostsStore = CatalogFixtures.hostsStore(hosts)
         let accounts = AccountRegistry()
         let profiles = [
             ProfileView(
@@ -236,6 +235,7 @@ struct StoryApp: View {
             })
         bundle.fleet.show(invented.view, hosts: invented.hostViews)
         bundle.hosts.show(invented.hostViews)
+        if let roster = invented.hosts.roster { bundle.hosts.show(roster) }
         _app = State(initialValue: (invented.accounts, bundle))
     }
 
@@ -296,6 +296,15 @@ extension ScriptedChat: OpenChat {
 #Preview("New agent · choosing a directory") { StoryScreen("new-agent.browsing") }
 #Preview("New agent · signed out") { StoryScreen("new-agent.signed-out") }
 
+#Preview("Hosts") { StoryScreen("hosts.list") }
+#Preview("Hosts · empty") { StoryScreen("hosts.empty") }
+#Preview("Host") { StoryScreen("host.page") }
+#Preview("Host · revoked") { StoryScreen("host.revoked") }
+#Preview("Host · confirm revoke") {
+    ComponentCatalog.hostPageView(host: CatalogFixtures.deskHost, confirming: true)
+        .environment(\.design, Design.app)
+}
+
 #Preview("Asks") { StoryGallery(.asks) }
 #Preview("Chat states") { StoryGallery(.chat) }
 #Preview("Composer") { StoryGallery(.composer) }
@@ -315,7 +324,7 @@ struct StoryScreen: View {
             ZStack {
                 Ground()
                 example.build()
-                    .padding(example.family == .chat || example.family == .fleet ? 0 : 18)
+                    .padding([.chat, .fleet, .hosts].contains(example.family) ? 0 : 18)
             }
             .environment(\.design, Design.app)
             .environment(\.dynamicTypeSize, example.dynamicTypeSize)

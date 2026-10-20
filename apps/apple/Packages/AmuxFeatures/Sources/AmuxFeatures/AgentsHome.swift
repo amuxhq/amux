@@ -190,7 +190,7 @@ public struct AgentsHome: View {
         // Nothing else reaches this screen: the rest of an account's actions
         // live under You, where there is room to state what they do.
         case .signOut, .remove, .delete, .subscription, .appearance, .shareUsage,
-             .identity, .support, .report, .exportDump:
+             .support, .report, .exportDump:
             break
         }
     }
@@ -600,8 +600,8 @@ public struct AgentsHome: View {
 
     /// What the list asks of the person before its rows: pairing a machine
     /// found nearby, then whatever stands between the phone and the fleet.
-    private var callouts: [Callout] {
-        var callouts = found.compactMap { host -> Callout? in
+    private var callouts: [Callout<HomeAction>] {
+        var callouts = found.compactMap { host -> Callout<HomeAction>? in
             guard let id = host.id else { return nil }
             return Callout(
                 id: "pair.\(host.name)", glyph: "plus.circle",
@@ -1032,8 +1032,8 @@ struct StateMark: View {
 
 // MARK: - Callouts
 
-/// Something the list asks of the person, above its rows.
-struct Callout: Identifiable, Equatable {
+/// Something a list asks of the person, above its rows.
+struct Callout<Action: Equatable>: Identifiable, Equatable {
     let id: String
     let glyph: String
     let title: String
@@ -1041,14 +1041,16 @@ struct Callout: Identifiable, Equatable {
     /// The verb on its button, when it has one; otherwise the whole callout
     /// is the button.
     let button: String?
-    let act: HomeAction
+    let act: Action
+    /// What a driver names its card by.
+    var identifier: String?
 }
 
 /// The callouts: one takes the full width; more than one narrow so the next
 /// one shows at the edge, saying the strip slides.
-struct CalloutStrip: View {
-    let callouts: [Callout]
-    let act: (HomeAction) -> Void
+struct CalloutStrip<Action: Equatable>: View {
+    let callouts: [Callout<Action>]
+    let act: (Action) -> Void
 
     var body: some View {
         if callouts.count == 1, let only = callouts.first {
@@ -1074,10 +1076,10 @@ struct CalloutStrip: View {
 
 /// A callout as a card: a quiet surface with its mark, its words and its
 /// button.
-private struct CalloutCard: View {
+private struct CalloutCard<Action: Equatable>: View {
     @Environment(\.design) private var design
-    let callout: Callout
-    let act: (HomeAction) -> Void
+    let callout: Callout<Action>
+    let act: (Action) -> Void
 
     var body: some View {
         Button { act(callout.act) } label: {
@@ -1121,6 +1123,6 @@ private struct CalloutCard: View {
             .contentShape(RoundedRectangle(cornerRadius: design.metrics.controlRadius))
         }
         .buttonStyle(.amuxControl)
-        .identified("home.callout.\(callout.id)", label: callout.title)
+        .identified(callout.identifier ?? "home.callout.\(callout.id)", label: callout.title)
     }
 }

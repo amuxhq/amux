@@ -174,7 +174,7 @@ public final class StoreBundle {
         keepSessions()
         if hostsMoved {
             Task { await refreshAccount() }
-            if hosts.readingDevices || hosts.roster == nil { Task { await refreshRoster() } }
+            if hosts.rosterBehind { Task { await refreshRoster() } }
         }
     }
 

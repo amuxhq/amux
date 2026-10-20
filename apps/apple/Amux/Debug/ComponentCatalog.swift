@@ -19,6 +19,7 @@ struct ComponentExample: Identifiable {
         case chat = "Chat"
         case review = "Review"
         case fleet = "Fleet"
+        case hosts = "Hosts"
     }
 
     let id: String
@@ -59,7 +60,7 @@ struct ComponentExample: Identifiable {
 /// row kind, every ask card, the composer's states and the chat's own.
 @MainActor
 enum ComponentCatalog {
-    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet
+    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet + hosts
 
     static func example(id: String) -> ComponentExample? {
         examples.first { $0.id == id }
@@ -1244,7 +1245,7 @@ struct ComponentExampleView: View {
         ZStack {
             Ground()
             example.build()
-                .padding(example.family == .chat || example.family == .fleet ? 0 : 18)
+                .padding([.chat, .fleet, .hosts].contains(example.family) ? 0 : 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(width: example.canvas.width, height: example.canvas.height)
@@ -1433,5 +1434,93 @@ private extension QuestionResponse {
 
     static func typed(_ words: String) -> QuestionResponse {
         QuestionResponse(note: nil, other: words, picked: [])
+    }
+}
+
+extension ComponentCatalog {
+    // MARK: - Hosts
+
+    /// The machines in every group a machine can be in, with one found and
+    /// not paired, and none at all; then one machine's page, and one that no
+    /// longer trusts this phone. The revoke confirmation is the system's own
+    /// dialog, which a flat capture cannot hold; it has a preview of its own.
+    fileprivate static let hosts: [ComponentExample] = [
+        hostsList("list") { _ in },
+        hostsList("empty", hosts: []) { _ in },
+        hostPage("page", host: CatalogFixtures.deskHost),
+        hostPage("revoked", host: CatalogFixtures.oldLaptop),
+    ]
+
+    private static func hostsList(
+        _ id: String, hosts: [HostView] = CatalogFixtures.machines,
+        setUp: @escaping @MainActor (HostsStore) -> Void
+    ) -> ComponentExample {
+        ComponentExample(id: "hosts.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844)) {
+            let store = CatalogFixtures.hostsStore(hosts)
+            // In a navigation stack, as the tab holds it, so its title is the
+            // system's.
+            NavigationStack {
+                HostsTab(model: store) { _ in }
+                    .onAppear { setUp(store) }
+            }
+        }
+    }
+
+    private static func hostPage(_ id: String, host: HostView) -> ComponentExample {
+        ComponentExample(id: "host.\(id)", family: .hosts, canvas: CGSize(width: 390, height: 844)) {
+            hostPageView(host: host)
+        }
+    }
+
+    /// One machine's page as the hosts tab pushes it.
+    static func hostPageView(host: HostView, confirming: Bool = false) -> some View {
+        NavigationStack {
+            HostPage(
+                model: CatalogFixtures.hostsStore(CatalogFixtures.machines), host: host.id!,
+                confirming: confirming
+            ) { _ in }
+        }
+    }
+}
+
+extension CatalogFixtures {
+    static func machine(
+        _ index: UInt8, _ name: String, platform: String?, reach: Reach, trusted: Bool = true,
+        candidate: Bool = false, addrs: [String] = [], version: String? = "0.8.0",
+        providers: [ProviderSignIn] = [
+            ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
+        ]
+    ) -> HostView {
+        HostView(
+            hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
+            candidate: candidate, reach: reach, addrs: addrs, current: false, providers: providers,
+            lastDialError: nil, platform: platform, signedIn: nil, version: version)
+    }
+
+    static let deskHost = machine(1, "desk", platform: "Mac Studio", reach: .online(.direct), addrs: ["192.168.1.20:4433", "[fe80::1c2b:9aff:fe31:7d10]:4433"])
+    static let oldLaptop = machine(6, "old-laptop", platform: "MacBook Air", reach: .offline(.revoked))
+    static let machines: [HostView] = [
+        deskHost,
+        machine(2, "build-box", platform: "Linux", reach: .online(.relay)),
+        machine(3, "mini", platform: "Mac mini", reach: .away),
+        machine(4, "garage-pi", platform: "Linux", reach: .offline(.plain)),
+        oldLaptop,
+        machine(5, "laptop", platform: "MacBook Air", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: []),
+    ]
+
+    static func hostsStore(_ hosts: [HostView]) -> HostsStore {
+        let store = HostsStore(clock: { now })
+        store.show(hosts)
+        store.show(Roster(
+            identity: Identity(hostId: Array(repeating: 9, count: 16), name: "Ada’s iPhone", fingerprint: fingerprint(9)),
+            peers: hosts.filter(\.trusted).map {
+                PairedPeer(hostId: $0.hostId, name: $0.name, fingerprint: fingerprint($0.hostId[0]))
+            }))
+        return store
+    }
+
+    /// A key's fingerprint as the runtime writes one: 64 hex characters.
+    static func fingerprint(_ seed: UInt8) -> String {
+        (0..<32).map { String(format: "%02x", UInt8(truncatingIfNeeded: Int(seed) &* 37 &+ $0 &* 11)) }.joined()
     }
 }

@@ -11,69 +11,84 @@ public struct RuntimeFailure: Error, Sendable, Equatable, CustomStringConvertibl
     }
 }
 
+/// A moment of the app's life the runtime is told of.
+public enum Lifecycle: String, Sendable {
+    /// Somebody brought the app to the front; counted at most once an hour.
+    case foreground = "Foreground"
+    /// The app is leaving the screen: the analytics waiting are sent.
+    case background = "Background"
+    /// The app is about to be suspended: the analytics waiting are sent,
+    /// and every profile's store is made whole on the drive, should the
+    /// system end the app while it is suspended.
+    case suspending = "Suspending"
+}
+
 /// The shared Rust runtime: this phone's installation, hosted in the app's
 /// own process, with one profile per account exactly as a desktop has.
 ///
 /// Every value crosses as JSON whose Swift mirror is generated from the Rust
 /// definition, so nothing here interprets a row, a card or a host; it only
-/// hands them over. Reads return at once. Acts that wait on a machine are
-/// `async` and resume on whatever thread the library answers on.
+/// hands them over.
 ///
-/// The wake is called on a library worker with 0 whenever the profile list
-/// moved; the owner reads it again on the main actor. A profile's fleet and
-/// chats are a `Profile` opened from here.
+/// The app owns the loop: the library's cores step on one serial queue,
+/// `CoreLoop`'s, and nothing in the library ever calls into Swift. Reads
+/// return at once, on any thread. The calls that block until the cores have
+/// done something (starting, stopping, opening a profile or a chat, the
+/// profile list, a moment of the app's life) step the cores on the thread
+/// that makes them, so they are made on that queue, never on the main
+/// thread. Acts are `async`: each starts on the queue and is answered by a
+/// later step.
+///
+/// The profile list moving is told on the main actor; the owner reads it
+/// again. A profile's fleet and chats are a `Profile` opened from here.
 public final class Runtime: @unchecked Sendable {
     private let handle: OpaquePointer
-    private let waker: Unmanaged<Waker>
-    /// Held across every call into the library, so stopping waits for the
-    /// calls in flight and none starts after it. Recursive, because a call
-    /// may be made from inside another on the same thread.
-    private let lock = NSRecursiveLock()
+    private let loop: CoreLoop
+    /// Held across every read made off the queue, so a stop waits for the
+    /// reads in flight and none starts after it.
+    private let lock = NSLock()
     private var running = true
-    /// The profiles opened from this runtime, closed before it stops.
-    private let opened = NSHashTable<Profile>.weakObjects()
 
-    private init(handle: OpaquePointer, waker: Unmanaged<Waker>) {
+    private init(handle: OpaquePointer, loop: CoreLoop) {
         self.handle = handle
-        self.waker = waker
+        self.loop = loop
     }
 
-    /// Starts the runtime; blocks until every profile's store is open.
+    /// Starts the runtime; blocks, on the core queue, until every profile's
+    /// store is open. `profilesMoved` is told on the main actor whenever the
+    /// profile list moved.
     public static func start(
-        _ config: StartConfig, wake: @escaping @Sendable (UInt64) -> Void
+        _ config: StartConfig, profilesMoved: @escaping @MainActor @Sendable () -> Void
     ) throws(RuntimeFailure) -> Runtime {
-        let waker = Unmanaged.passRetained(Waker(wake))
-        var error: UnsafeMutablePointer<CChar>?
-        let started = Bridge.json(config).withCString { config in
-            amux_runtime_start(config, Waker.call, waker.toOpaque(), &error)
+        let loop = CoreLoop(profilesMoved: profilesMoved)
+        let config = Bridge.json(config)
+        let started = loop.blocking { () -> Result<Live, RuntimeFailure> in
+            var error: UnsafeMutablePointer<CChar>?
+            guard let started = config.withCString({ amux_runtime_start($0, &error) }) else {
+                return .failure(Bridge.failure(error, otherwise: "the runtime did not start"))
+            }
+            loop.run(started)
+            return .success(Live(started))
         }
-        guard let started else {
-            waker.release()
-            throw Bridge.failure(error, otherwise: "the runtime did not start")
-        }
-        return Runtime(handle: started, waker: waker)
+        return Runtime(handle: try started.get().pointer, loop: loop)
     }
 
     /// Stops the runtime and flushes every profile's store, closing every
     /// profile opened from it first. Close their chats before that; any read
-    /// after this answers nothing.
+    /// after this answers nothing, and any act answers that it stopped.
     public func stop() {
-        // One hold of the lock from the first close to the stop: no open
-        // can register a profile this misses, and a profile closing itself
-        // meanwhile does so before or after, never between. The lock is
-        // recursive, so each close's call back in is admitted.
         let wasRunning = lock.withLock {
-            for profile in opened.allObjects { profile.close() }
             defer { running = false }
             return running
         }
         guard wasRunning else { return }
-        amux_runtime_stop(handle)
-        waker.release()
+        // Only the loop is captured: this runs from `deinit` too.
+        let loop = loop
+        loop.blocking { loop.stop() }
     }
 
-    /// Runs a call on the live runtime, or answers `stopped` once it is not.
-    fileprivate func call<T>(_ stopped: T, _ body: (OpaquePointer) -> T) -> T {
+    /// Runs a read on the live runtime, or answers `stopped` once it is not.
+    private func call<T>(_ stopped: T, _ body: (OpaquePointer) -> T) -> T {
         lock.withLock { running ? body(handle) : stopped }
     }
 
@@ -83,21 +98,21 @@ public final class Runtime: @unchecked Sendable {
 
     /// Every profile, oldest first.
     public func profiles() -> [ProfileView] {
-        call([]) { Bridge.read([ProfileView].self, amux_runtime_profiles($0)) ?? [] }
+        loop.blocking { [loop] in
+            loop.live.flatMap { Bridge.read([ProfileView].self, amux_runtime_profiles($0)) } ?? []
+        }
     }
 
     /// A new profile nobody has signed in on.
     public func createProfile() async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live, callback, context in
-            amux_runtime_create_profile(live, callback, context)
-        }
+        await act(ProfileView.self) { amux_runtime_create_profile($0) }
     }
 
     /// Deletes a profile: its key, the machines it trusts and its store.
     /// The installation keeps at least one. Close it first.
     public func deleteProfile(_ profile: String) async -> Result<Nothing, RuntimeFailure> {
-        await act(Nothing.self) { live, callback, context in
-            profile.withCString { amux_runtime_delete_profile(live, $0, callback, context) }
+        await act(Nothing.self) { live in
+            profile.withCString { amux_runtime_delete_profile(live, $0) }
         }
     }
 
@@ -109,12 +124,13 @@ public final class Runtime: @unchecked Sendable {
     public func bind(
         _ profile: String?, cloud: URL, client: String, refreshToken: String
     ) async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live, callback, context in
+        let cloud = cloud.absoluteString
+        return await act(ProfileView.self) { live in
             Bridge.optional(profile) { profile in
-                cloud.absoluteString.withCString { cloud in
+                cloud.withCString { cloud in
                     client.withCString { client in
                         refreshToken.withCString { token in
-                            amux_runtime_bind(live, profile, cloud, client, token, callback, context)
+                            amux_runtime_bind(live, profile, cloud, client, token)
                         }
                     }
                 }
@@ -124,39 +140,38 @@ public final class Runtime: @unchecked Sendable {
 
     /// Signs a profile out; it stays tied to its account.
     public func signOut(_ profile: String) async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live, callback, context in
-            profile.withCString { amux_runtime_sign_out(live, $0, callback, context) }
+        await act(ProfileView.self) { live in
+            profile.withCString { amux_runtime_sign_out(live, $0) }
         }
     }
 
     /// Holds a bound profile's relay link down; its direct links and store
     /// stay.
     public func pause(_ profile: String) async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live, callback, context in
-            profile.withCString { amux_runtime_pause(live, $0, callback, context) }
+        await act(ProfileView.self) { live in
+            profile.withCString { amux_runtime_pause(live, $0) }
         }
     }
 
     public func resume(_ profile: String) async -> Result<ProfileView, RuntimeFailure> {
-        await act(ProfileView.self) { live, callback, context in
-            profile.withCString { amux_runtime_resume(live, $0, callback, context) }
+        await act(ProfileView.self) { live in
+            profile.withCString { amux_runtime_resume(live, $0) }
         }
     }
 
     /// Every profile whose trust store holds a machine, oldest first.
     public func trusting(_ host: HostId) async -> Result<[String], RuntimeFailure> {
-        await act([String].self) { live, callback, context in
-            Bridge.json(host.bytes).withCString {
-                amux_runtime_trusting_profiles(live, $0, callback, context)
-            }
+        let host = Bridge.json(host.bytes)
+        return await act([String].self) { live in
+            host.withCString { amux_runtime_trusting_profiles(live, $0) }
         }
     }
 
     /// Opens pairing mode on a profile and answers the link its QR code
     /// would carry. Only a driving build offers one.
     public func offerPairing(_ profile: String) async -> Result<String, RuntimeFailure> {
-        await act(String.self) { live, callback, context in
-            profile.withCString { amux_runtime_offer_pairing(live, $0, callback, context) }
+        await act(String.self) { live in
+            profile.withCString { amux_runtime_offer_pairing(live, $0) }
         }
     }
 
@@ -185,17 +200,33 @@ public final class Runtime: @unchecked Sendable {
     /// A bearer for a profile's account service. The profile alone holds
     /// the refresh token, so this is the only way this app gets a fresh one.
     public func accessToken(_ profile: String) async -> Result<Bearer, RuntimeFailure> {
-        await act(Bearer.self) { live, callback, context in
-            profile.withCString { amux_runtime_access_token(live, $0, callback, context) }
+        await act(Bearer.self) { live in
+            profile.withCString { amux_runtime_access_token(live, $0) }
         }
     }
 
     /// Asks the account service what a profile's account buys now, over its
     /// relay link, so the relay's tier follows a purchase at once.
     public func refreshEntitlement(_ profile: String) async -> Result<Nothing, RuntimeFailure> {
-        await act(Nothing.self) { live, callback, context in
-            profile.withCString { amux_runtime_refresh_entitlement(live, $0, callback, context) }
+        await act(Nothing.self) { live in
+            profile.withCString { amux_runtime_refresh_entitlement(live, $0) }
         }
+    }
+
+    // MARK: - The app's life
+
+    /// Tells the runtime of a moment of the app's life, on the core queue,
+    /// and waits until it is carried out: a suspending app's stores are
+    /// whole on the drive when this returns.
+    @discardableResult
+    public func feed(_ input: Lifecycle) async -> Result<Nothing, RuntimeFailure> {
+        let text = Bridge.json(input.rawValue)
+        return await loop.later { live -> Result<Nothing, RuntimeFailure> in
+            var error: UnsafeMutablePointer<CChar>?
+            let fed = text.withCString { amux_runtime_feed(live, $0, &error) }
+            guard fed else { return .failure(Bridge.failure(error, otherwise: Bridge.stoppedReason)) }
+            return .success(Nothing())
+        } ?? .failure(RuntimeFailure(Bridge.stoppedReason))
     }
 
     // MARK: - Product analytics
@@ -204,23 +235,6 @@ public final class Runtime: @unchecked Sendable {
     /// set it; off holds back what is waiting as well as what comes next.
     public func setTelemetry(_ on: Bool) {
         call(()) { amux_runtime_set_telemetry($0, on) }
-    }
-
-    /// Somebody brought the app to the front; counted at most once an hour.
-    public func foreground() {
-        call(()) { amux_runtime_foreground($0) }
-    }
-
-    /// The app is leaving the screen: sends what analytics is waiting, for
-    /// a few seconds at most, before the system may suspend it.
-    public func background() async {
-        _ = await Bridge.value(Nothing?.self) { callback, context in
-            let ran = call(false) { live in
-                amux_runtime_background(live, callback, context)
-                return true
-            }
-            if !ran { Bridge.stopped(callback, context) }
-        }
     }
 
     /// Records what only the app sees, on the profile it concerns, or on
@@ -235,32 +249,28 @@ public final class Runtime: @unchecked Sendable {
 
     // MARK: - Profiles
 
-    /// Opens a profile's fleet; blocks until it has caught up with the
-    /// profile's store, so the first read draws what this phone holds. The
-    /// wake is called with a chat's id when it moved, or 0 when the fleet
-    /// did.
+    /// Opens a profile's fleet; blocks, on the core queue, until it has
+    /// caught up with the profile's store, so the first read draws what this
+    /// phone holds. The wake is told on the main actor a chat's id when it
+    /// moved, or 0 when the fleet did.
     public func open(
-        _ profile: String, wake: @escaping @Sendable (UInt64) -> Void
+        _ profile: String, wake: @escaping @MainActor @Sendable (UInt64) -> Void
     ) throws(RuntimeFailure) -> Profile {
-        let waker = Unmanaged.passRetained(Waker(wake))
-        var error: UnsafeMutablePointer<CChar>?
-        // Opened and registered under one hold of the lock: a stop that
-        // runs between the two would close the profiles it saw and miss
-        // this one, which would then outlive the runtime unclosed.
-        let open: Profile? = call(nil) { live in
-            let opened = profile.withCString {
-                amux_profile_open(live, $0, Waker.call, waker.toOpaque(), &error)
+        let opened = loop.blocking { [self, loop] () -> Result<Profile, RuntimeFailure> in
+            guard let live = loop.live else {
+                return .failure(RuntimeFailure(Bridge.stoppedReason))
             }
-            guard let opened else { return nil }
-            let open = Profile(id: profile, handle: opened, waker: waker, runtime: self)
-            self.opened.add(open)
-            return open
+            var error: UnsafeMutablePointer<CChar>?
+            guard let opened = profile.withCString({ amux_profile_open(live, $0, &error) }) else {
+                return .failure(Bridge.failure(error, otherwise: "the profile did not open"))
+            }
+            let open = Profile(id: profile, handle: opened, runtime: self, loop: loop)
+            // Registered on the queue before the next step, so no redraw of
+            // the new fleet goes unheard.
+            loop.watch(open, wake: wake)
+            return .success(open)
         }
-        guard let open else {
-            waker.release()
-            throw Bridge.failure(error, otherwise: "the profile did not open")
-        }
-        return open
+        return try opened.get()
     }
 
     // MARK: - Acts
@@ -268,16 +278,9 @@ public final class Runtime: @unchecked Sendable {
     /// Runs an act the library answers once with `{"Ok": T}` or
     /// `{"Err": reason}`.
     private func act<T: Decodable & Sendable>(
-        _ type: T.Type,
-        _ body: @escaping (OpaquePointer, AmuxCallback, UnsafeMutableRawPointer) -> Void
+        _ type: T.Type, _ start: @escaping @Sendable (OpaquePointer) -> UInt64
     ) async -> Result<T, RuntimeFailure> {
-        await Bridge.answer(T.self) { callback, context in
-            let ran = self.call(false) { live in
-                body(live, callback, context)
-                return true
-            }
-            if !ran { Bridge.stopped(callback, context) }
-        }
+        Bridge.answer(T.self, await loop.answer { start($0) })
     }
 }
 
@@ -286,42 +289,42 @@ public final class Profile: @unchecked Sendable {
     /// The profile's id in the installation's registry.
     public let id: String
     private let handle: OpaquePointer
-    private let waker: Unmanaged<Waker>
+    /// The number the library's redraws name this fleet by.
+    let fleet: UInt64
     /// The runtime it was opened from, which outlives it.
     public let runtime: Runtime
+    private let loop: CoreLoop
     /// Held across every call into the library, so closing waits for the
-    /// calls in flight and none starts after it.
+    /// calls in flight and none starts after it. Recursive, because a call
+    /// may be made from inside another on the same thread.
     private let lock = NSRecursiveLock()
     private var open = true
 
-    fileprivate init(id: String, handle: OpaquePointer, waker: Unmanaged<Waker>, runtime: Runtime) {
+    fileprivate init(id: String, handle: OpaquePointer, runtime: Runtime, loop: CoreLoop) {
         self.id = id
         self.handle = handle
-        self.waker = waker
+        self.fleet = amux_profile_fleet_id(handle)
         self.runtime = runtime
+        self.loop = loop
     }
 
     /// Closes the profile's fleet; its wake stops. Close its chats first.
+    /// The library keeps what an open profile needs alive however the
+    /// runtime is, so this is safe after a stop as well as before.
     public func close() {
-        // The flag turns and the library is told under the runtime's lock,
-        // so a stop sees this profile either still open, and closes it, or
-        // already closed in the library, never closed in name only.
-        let wasOpen = runtime.call(false) { _ in
-            lock.withLock {
-                defer { open = false }
-                if open { amux_profile_close(handle) }
-                return open
-            }
+        let wasOpen = lock.withLock {
+            defer { open = false }
+            if open { amux_profile_close(handle) }
+            return open
         }
-        if wasOpen { waker.release() }
+        if wasOpen { loop.forget(self) }
     }
 
     deinit { close() }
 
-    /// Runs a call on the open profile of a running runtime, or answers
-    /// `closed` once either is not.
+    /// Runs a call on the open profile, or answers `closed` once it is not.
     private func call<T>(_ closed: T, _ body: (OpaquePointer) -> T) -> T {
-        runtime.call(closed) { _ in lock.withLock { open ? body(handle) : closed } }
+        lock.withLock { open ? body(handle) : closed }
     }
 
     // MARK: - The fleet
@@ -393,49 +396,41 @@ public final class Profile: @unchecked Sendable {
     /// Reaches and authenticates a machine; nothing is trusted until the
     /// attempt is confirmed.
     public func beginPair(_ request: PairRequest) async -> Result<PendingPair, RuntimeFailure> {
-        await act(PendingPair.self) { live, callback, context in
-            Bridge.json(request).withCString {
-                amux_profile_begin_pair(live, $0, callback, context)
-            }
+        let request = Bridge.json(request)
+        return await act(PendingPair.self) { live in
+            request.withCString { amux_profile_begin_pair(live, $0) }
         }
     }
 
     public func confirmPair(_ pending: PendingPair) async -> Result<Paired, RuntimeFailure> {
-        await act(Paired.self) { live, callback, context in
-            Bridge.json(pending.token).withCString {
-                amux_profile_confirm_pair(live, $0, callback, context)
-            }
+        let token = Bridge.json(pending.token)
+        return await act(Paired.self) { live in
+            token.withCString { amux_profile_confirm_pair(live, $0) }
         }
     }
 
     public func abandonPair(_ pending: PendingPair) async -> Result<Nothing, RuntimeFailure> {
-        await act(Nothing.self) { live, callback, context in
-            Bridge.json(pending.token).withCString {
-                amux_profile_abandon_pair(live, $0, callback, context)
-            }
+        let token = Bridge.json(pending.token)
+        return await act(Nothing.self) { live in
+            token.withCString { amux_profile_abandon_pair(live, $0) }
         }
     }
 
     /// Stops trusting a machine, telling it so where it can be reached.
     public func unpair(_ host: HostId) async -> Result<Nothing, RuntimeFailure> {
-        await act(Nothing.self) { live, callback, context in
-            Bridge.json(host.bytes).withCString {
-                amux_profile_unpair(live, $0, callback, context)
-            }
+        let host = Bridge.json(host.bytes)
+        return await act(Nothing.self) { live in
+            host.withCString { amux_profile_unpair(live, $0) }
         }
     }
 
     /// This phone's identity in the profile and the machines it trusts.
     public func roster() async -> Result<Roster, RuntimeFailure> {
-        await act(Roster.self) { live, callback, context in
-            amux_profile_roster(live, callback, context)
-        }
+        await act(Roster.self) { amux_profile_roster($0) }
     }
 
     public func account() async -> Result<AccountView, RuntimeFailure> {
-        await act(AccountView.self) { live, callback, context in
-            amux_profile_account(live, callback, context)
-        }
+        await act(AccountView.self) { amux_profile_account($0) }
     }
 
     /// A bearer for the profile's account service.
@@ -451,18 +446,17 @@ public final class Profile: @unchecked Sendable {
     /// Writes a dump of this profile with the fleet's and every open chat's
     /// part, and answers the bundle's directory.
     public func dump(reason: String) async -> Result<String, RuntimeFailure> {
-        await act(String.self) { live, callback, context in
-            reason.withCString { amux_profile_dump(live, $0, callback, context) }
+        await act(String.self) { live in
+            reason.withCString { amux_profile_dump(live, $0) }
         }
     }
 
     // MARK: - Agents
 
     public func createAgent(_ agent: NewAgent) async -> Result<AgentKey, RuntimeFailure> {
-        await act(AgentKey.self) { live, callback, context in
-            Bridge.json(agent).withCString {
-                amux_profile_create_agent(live, $0, callback, context)
-            }
+        let agent = Bridge.json(agent)
+        return await act(AgentKey.self) { live in
+            agent.withCString { amux_profile_create_agent(live, $0) }
         }
     }
 
@@ -471,11 +465,10 @@ public final class Profile: @unchecked Sendable {
     public func hostCatalogue(
         on host: HostId, provider: Provider
     ) async -> Result<Catalogue, RuntimeFailure> {
-        await act(Catalogue.self) { live, callback, context in
-            Bridge.json(host.bytes).withCString { host in
-                Bridge.json(provider).withCString { provider in
-                    amux_profile_host_catalogue(live, host, provider, callback, context)
-                }
+        let (host, provider) = (Bridge.json(host.bytes), Bridge.json(provider))
+        return await act(Catalogue.self) { live in
+            host.withCString { host in
+                provider.withCString { amux_profile_host_catalogue(live, host, $0) }
             }
         }
     }
@@ -484,21 +477,19 @@ public final class Profile: @unchecked Sendable {
     public func directories(
         on host: HostId, matching query: String, limit: UInt32
     ) async -> Result<Directories, RuntimeFailure> {
-        await act(Directories.self) { live, callback, context in
-            Bridge.json(host.bytes).withCString { host in
-                query.withCString { query in
-                    amux_profile_directories(live, host, query, limit, callback, context)
-                }
+        let host = Bridge.json(host.bytes)
+        return await act(Directories.self) { live in
+            host.withCString { host in
+                query.withCString { amux_profile_directories(live, host, $0, limit) }
             }
         }
     }
 
     public func act(_ act: AgentAct, on agent: AgentKey) async -> Result<Nothing, RuntimeFailure> {
-        await self.act(Nothing.self) { live, callback, context in
-            Bridge.json(agent).withCString { agent in
-                Bridge.json(act).withCString { act in
-                    amux_profile_agent_act(live, agent, act, callback, context)
-                }
+        let (agent, act) = (Bridge.json(agent), Bridge.json(act))
+        return await self.act(Nothing.self) { live in
+            agent.withCString { agent in
+                act.withCString { amux_profile_agent_act(live, agent, $0) }
             }
         }
     }
@@ -506,32 +497,29 @@ public final class Profile: @unchecked Sendable {
     // MARK: - Chats
 
     /// Opens an agent's chat with `tail` rows, or the configured number when
-    /// zero. Blocks until the rows this phone holds are applied, so the
-    /// first read is right even with the agent's host away.
+    /// zero. Blocks, on the core queue, until the rows this phone holds are
+    /// applied, so the first read is right even with the agent's host away.
     public func openChat(_ agent: AgentKey, tail: UInt32 = 0) throws(RuntimeFailure) -> Chat {
-        var error: UnsafeMutablePointer<CChar>?
-        let opened = call(nil) { live in
-            Bridge.json(agent).withCString { amux_session_open(live, $0, tail, &error) }
+        let agent = Bridge.json(agent)
+        let opened = loop.blocking { [self] () -> Result<Live, RuntimeFailure> in
+            var error: UnsafeMutablePointer<CChar>?
+            let opened = call(nil) { live in
+                agent.withCString { amux_session_open(live, $0, tail, &error) }
+            }
+            guard let opened else {
+                return .failure(Bridge.failure(error, otherwise: "the chat did not open"))
+            }
+            return .success(Live(opened))
         }
-        guard let opened else {
-            throw Bridge.failure(error, otherwise: "the chat did not open")
-        }
-        return Chat(handle: opened)
+        return Chat(handle: try opened.get().pointer, loop: loop)
     }
 
     // MARK: - Acts
 
     private func act<T: Decodable & Sendable>(
-        _ type: T.Type,
-        _ body: @escaping (OpaquePointer, AmuxCallback, UnsafeMutableRawPointer) -> Void
+        _ type: T.Type, _ start: @escaping @Sendable (OpaquePointer) -> UInt64
     ) async -> Result<T, RuntimeFailure> {
-        await Bridge.answer(T.self) { callback, context in
-            let ran = self.call(false) { live in
-                body(live, callback, context)
-                return true
-            }
-            if !ran { Bridge.stopped(callback, context) }
-        }
+        Bridge.answer(T.self, await loop.answer { [self] _ in call(nil) { start($0) } })
     }
 }
 
@@ -552,18 +540,169 @@ public struct Nothing: Decodable, Sendable, Equatable {
     public init(from decoder: any Decoder) throws {}
 }
 
-/// The owner's wake, held where the library can reach it from its worker.
-private final class Waker: @unchecked Sendable {
-    let wake: @Sendable (UInt64) -> Void
+/// A pointer the library handed back, carried from the core queue to the
+/// thread that asked for it.
+struct Live: @unchecked Sendable {
+    let pointer: OpaquePointer
 
-    init(_ wake: @escaping @Sendable (UInt64) -> Void) {
-        self.wake = wake
+    init(_ pointer: OpaquePointer) {
+        self.pointer = pointer
+    }
+}
+
+/// The one serial queue the library's cores step on.
+///
+/// The library never calls into Swift. Whenever something waits for a step
+/// it makes a descriptor readable; a dispatch source watching that
+/// descriptor from this queue steps, and what the step hands back is
+/// carried out from here: each act's answer goes to whoever awaits its
+/// ticket, and the fleets and chats to redraw, and whether the profile list
+/// moved, go to the main actor. The cores' timers sleep on the library's own
+/// thread and come back as ordinary inputs that make the descriptor
+/// readable, so nothing here arms one.
+final class CoreLoop: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "amux.core", qos: .userInitiated)
+    private let onQueue = DispatchSpecificKey<Bool>()
+    private let profilesMoved: @MainActor @Sendable () -> Void
+
+    // On the queue only.
+    /// The runtime, from its start until its stop.
+    private(set) var live: OpaquePointer?
+    private var source: DispatchSourceRead?
+    /// The acts started and not yet answered, by ticket.
+    private var waiting: [UInt64: CheckedContinuation<String, Never>] = [:]
+
+    // Under the lock: written on the queue and by a close, read on the main
+    // actor.
+    private let lock = NSLock()
+    /// Each open fleet's wake, by the number redraws name it by.
+    private var wakes: [UInt64: @MainActor @Sendable (UInt64) -> Void] = [:]
+    /// The profiles opened, closed before the runtime stops.
+    private let opened = NSHashTable<Profile>.weakObjects()
+
+    init(profilesMoved: @escaping @MainActor @Sendable () -> Void) {
+        self.profilesMoved = profilesMoved
+        queue.setSpecific(key: onQueue, value: true)
     }
 
-    /// What the library calls, with the waker as its context.
-    static let call: AmuxWake = { context, chat in
-        guard let context else { return }
-        Unmanaged<Waker>.fromOpaque(context).takeUnretainedValue().wake(chat)
+    /// Runs `body` on the queue and waits for it: how a library call that
+    /// blocks until the cores have done something is made, since it steps
+    /// them on the thread that makes it. Not `queue.sync`, which runs the
+    /// block on the calling thread where it can.
+    func blocking<T>(_ body: @escaping @Sendable () -> T) -> T {
+        if DispatchQueue.getSpecific(key: onQueue) == true { return body() }
+        let done = Done<T>()
+        queue.async {
+            done.value = body()
+            done.signal.signal()
+        }
+        done.signal.wait()
+        return done.value!
+    }
+
+    /// Runs `body` on the queue with the live runtime, and answers what it
+    /// did, or nil once the runtime has stopped.
+    func later<T: Sendable>(_ body: @escaping @Sendable (OpaquePointer) -> T) async -> T? {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in continuation.resume(returning: live.map(body)) }
+        }
+    }
+
+    /// Starts an act on the queue and waits for the step that answers its
+    /// ticket. `start` answers the ticket, or nil when what it acts on is
+    /// closed; an act that cannot start answers that the runtime stopped.
+    func answer(_ start: @escaping @Sendable (OpaquePointer) -> UInt64?) async -> String {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                guard let live, let ticket = start(live), ticket != 0 else {
+                    continuation.resume(returning: Bridge.stoppedAnswer)
+                    return
+                }
+                waiting[ticket] = continuation
+            }
+        }
+    }
+
+    /// Watches a started runtime's descriptor. On the queue.
+    func run(_ runtime: OpaquePointer) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        live = runtime
+        let source = DispatchSource.makeReadSource(
+            fileDescriptor: amux_runtime_wake_fd(runtime), queue: queue)
+        source.setEventHandler { [weak self] in self?.step() }
+        source.resume()
+        self.source = source
+    }
+
+    /// Closes every profile still open, stops the runtime, and answers every
+    /// act still waiting that it stopped. On the queue.
+    func stop() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        for profile in lock.withLock({ opened.allObjects }) { profile.close() }
+        source?.cancel()
+        source = nil
+        if let live { amux_runtime_stop(live) }
+        live = nil
+        let unanswered = waiting
+        waiting = [:]
+        for continuation in unanswered.values { continuation.resume(returning: Bridge.stoppedAnswer) }
+    }
+
+    func watch(_ profile: Profile, wake: @escaping @MainActor @Sendable (UInt64) -> Void) {
+        lock.withLock {
+            opened.add(profile)
+            wakes[profile.fleet] = wake
+        }
+    }
+
+    func forget(_ profile: Profile) {
+        lock.withLock {
+            opened.remove(profile)
+            wakes[profile.fleet] = nil
+        }
+    }
+
+    private func step() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard let live, let stepped = Bridge.read(Stepped.self, amux_runtime_step(live)) else {
+            return
+        }
+        for answer in stepped.answers {
+            waiting.removeValue(forKey: answer.ticket)?.resume(returning: answer.json)
+        }
+        guard stepped.profiles || !stepped.redraws.isEmpty else { return }
+        DispatchQueue.main.async { [self] in
+            MainActor.assumeIsolated {
+                // Read here, not on the queue: a fleet closed since the step
+                // is not woken.
+                for redraw in stepped.redraws {
+                    lock.withLock { wakes[redraw.fleet] }?(redraw.chat)
+                }
+                if stepped.profiles { profilesMoved() }
+            }
+        }
+    }
+
+    /// What a step hands back.
+    private struct Stepped: Decodable, Sendable {
+        struct Redraw: Decodable, Sendable {
+            let fleet: UInt64
+            let chat: UInt64
+        }
+
+        struct Answer: Decodable, Sendable {
+            let ticket: UInt64
+            let json: String
+        }
+
+        let profiles: Bool
+        let redraws: [Redraw]
+        let answers: [Answer]
+    }
+
+    private final class Done<T>: @unchecked Sendable {
+        var value: T?
+        let signal = DispatchSemaphore(value: 0)
     }
 }
 
@@ -597,18 +736,15 @@ public enum Bridge {
         return try? JSONDecoder().decode(T.self, from: data)
     }
 
-    /// Waits for a callback's one `{"Ok": T}` or `{"Err": reason}`.
+    /// What an act answers once the runtime has stopped, in the library's
+    /// own words for it.
+    static let stoppedReason = "the runtime has stopped"
+    static let stoppedAnswer = #"{"Err":"the runtime has stopped"}"#
+
+    /// An act's one `{"Ok": T}` or `{"Err": reason}`.
     static func answer<T: Decodable & Sendable>(
-        _ type: T.Type, _ call: (AmuxCallback, UnsafeMutableRawPointer) -> Void
-    ) async -> Result<T, RuntimeFailure> {
-        let text: String = await withCheckedContinuation { continuation in
-            let reply = Unmanaged.passRetained(Reply(continuation)).toOpaque()
-            call({ context, json in
-                guard let context else { return }
-                let reply = Unmanaged<Reply>.fromOpaque(context).takeRetainedValue()
-                reply.continuation.resume(returning: json.map { String(cString: $0) } ?? "null")
-            }, reply)
-        }
+        _ type: T.Type, _ text: String
+    ) -> Result<T, RuntimeFailure> {
         guard let answer = try? JSONDecoder().decode(Answer<T>.self, from: Data(text.utf8)) else {
             return .failure(RuntimeFailure("the runtime answered what this build cannot read"))
         }
@@ -618,33 +754,9 @@ public enum Bridge {
         }
     }
 
-    /// Answers a callback at once for a call that can no longer be made, so
-    /// whoever waits on it is not left waiting.
-    static func stopped(_ callback: AmuxCallback, _ context: UnsafeMutableRawPointer) {
-        #"{"Err":"the runtime has stopped"}"#.withCString { callback(context, $0) }
-    }
-
-    /// Decodes a callback's JSON that is the value itself, not an answer.
-    static func value<T: Decodable & Sendable>(
-        _ type: T.Type, _ call: (AmuxCallback, UnsafeMutableRawPointer) -> Void
-    ) async -> T? {
-        let text: String = await withCheckedContinuation { continuation in
-            let reply = Unmanaged.passRetained(Reply(continuation)).toOpaque()
-            call({ context, json in
-                guard let context else { return }
-                let reply = Unmanaged<Reply>.fromOpaque(context).takeRetainedValue()
-                reply.continuation.resume(returning: json.map { String(cString: $0) } ?? "null")
-            }, reply)
-        }
-        return try? JSONDecoder().decode(T.self, from: Data(text.utf8))
-    }
-
-    private final class Reply: @unchecked Sendable {
-        let continuation: CheckedContinuation<String, Never>
-
-        init(_ continuation: CheckedContinuation<String, Never>) {
-            self.continuation = continuation
-        }
+    /// An act's JSON that is the value itself, not an answer.
+    static func value<T: Decodable & Sendable>(_ type: T.Type, _ text: String) -> T? {
+        try? JSONDecoder().decode(T.self, from: Data(text.utf8))
     }
 
     private enum Answer<T: Decodable>: Decodable {

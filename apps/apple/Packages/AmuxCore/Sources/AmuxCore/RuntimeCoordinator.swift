@@ -44,7 +44,9 @@ public final class RuntimeCoordinator {
         }
     }
 
-    public typealias Starter = @Sendable (StartConfig, @escaping @Sendable (UInt64) -> Void)
+    /// Starts an installation, telling the closure it is handed on the main
+    /// actor whenever the profile list moves.
+    public typealias Starter = @Sendable (StartConfig, @escaping @MainActor @Sendable () -> Void)
         throws(RuntimeFailure) -> Runtime
 
     /// The installation, once started.
@@ -114,8 +116,8 @@ public final class RuntimeCoordinator {
     public init(
         registry: AccountRegistry, support: URL, deviceName: String,
         signedOut: StoreBundle, options: Options = Options(),
-        starter: @escaping Starter = { config, wake throws(RuntimeFailure) in
-            try Runtime.start(config, wake: wake)
+        starter: @escaping Starter = { config, profilesMoved throws(RuntimeFailure) in
+            try Runtime.start(config, profilesMoved: profilesMoved)
         }
     ) {
         self.registry = registry
@@ -168,9 +170,7 @@ public final class RuntimeCoordinator {
                 try FileManager.default.createDirectory(
                     at: directory, withIntermediateDirectories: true)
                 Signposts.emit(.storeReadBegan)
-                started = .success(try starter(config) { _ in
-                    Task { @MainActor [weak self] in self?.profilesMoved() }
-                })
+                started = .success(try starter(config) { [weak self] in self?.profilesMoved() })
                 Signposts.emit(.nodeStarted)
             } catch let failure as RuntimeFailure {
                 started = .failure(failure)
@@ -194,7 +194,7 @@ public final class RuntimeCoordinator {
             storeFailure = nil
             // The setting may have moved while the runtime was starting.
             runtime.setTelemetry(shareUsage)
-            if active { runtime.foreground() }
+            if active { Task { await runtime.feed(.foreground) } }
             if !found.isEmpty { runtime.discovered(found.map(\.found)) }
             profilesMoved()
             answer(runtime)
@@ -242,11 +242,9 @@ public final class RuntimeCoordinator {
             let expected = opening
             if !markedStoreRead { Signposts.emit(.fleetOpenBegan) }
             do {
-                let opened = try runtime.open(id) { chat in
-                    Task { @MainActor [weak self] in
-                        guard self?.opening == expected else { return }
-                        stores.woke(chat)
-                    }
+                let opened = try runtime.open(id) { [weak self] chat in
+                    guard self?.opening == expected else { return }
+                    stores.woke(chat)
                 }
                 profile = opened
                 fed = stores
@@ -440,12 +438,19 @@ public final class RuntimeCoordinator {
         steer()
         if active {
             discovery?.start()
-            runtime?.foreground()
+            if let runtime { Task { await runtime.feed(.foreground) } }
             start()
         } else {
             discovery?.stop()
-            if let runtime { Task.detached { await runtime.background() } }
+            if let runtime { Task { await runtime.feed(.background) } }
         }
+    }
+
+    /// The app is about to be suspended: what analytics is waiting is sent,
+    /// and every profile's store is made whole on the drive before this
+    /// returns, should the system end the app while it is suspended.
+    public func suspending() async {
+        await runtime?.feed(.suspending)
     }
 
     /// Records what only the app sees, on the account on screen.

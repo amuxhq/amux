@@ -129,6 +129,7 @@
       {"literal": "\"removed\"", "context": "removed: ramp(\"removed\", base.removed),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Sources/AmuxApp.swift": [
+      {"literal": "\"suspending\"", "context": "let held = UIApplication.shared.beginBackgroundTask(withName: \"suspending\") { [weak self] in", "reason": "Background task name the system logs, not app interface copy.", "count": 1},
       {"literal": "\"AMUX_COMPONENT_SNAPSHOTS\"", "context": "if ProcessInfo.processInfo.environment[\"AMUX_COMPONENT_SNAPSHOTS\"] == \"1\" {", "reason": "Debug snapshot-harness environment key, not app interface copy.", "count": 1},
       {"literal": "\"1\"", "context": "if ProcessInfo.processInfo.environment[\"AMUX_COMPONENT_SNAPSHOTS\"] == \"1\" {", "reason": "Boolean-like harness protocol value with no authored words.", "count": 1}
     ],
@@ -362,10 +363,13 @@
       {"literal": "\"present\"", "context": "\"dump\": dumpAbsent.map { [\"absent\": [\"reason\": $0]] as Any } ?? \"present\",", "reason": "Report bundle layout key or path, read by the account service, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift": [
+      {"literal": "\"amux.core\"", "context": "private let queue = DispatchQueue(label: \"amux.core\", qos: .userInitiated)", "reason": "Dispatch queue label for debugging tools, not app interface copy.", "count": 1},
+      {"literal": "\"Suspending\"", "context": "case suspending = \"Suspending\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
+      {"literal": "\"Background\"", "context": "case background = \"Background\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
+      {"literal": "\"Foreground\"", "context": "case foreground = \"Foreground\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
       {"literal": "\"host_id\"", "context": "case hostId = \"host_id\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
       {"literal": "\"null\"", "context": "guard let data = try? JSONEncoder().encode(value) else { return \"null\" }", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
-      {"literal": "\"null\"", "context": "reply.continuation.resume(returning: json.map { String(cString: $0) } ?? \"null\")", "reason": "Bridge JSON key or literal, not interface copy.", "count": 2},
-      {"literal": "#\"{\"Err\":\"the runtime has stopped\"}\"#", "context": "#\"{\"Err\":\"the runtime has stopped\"}\"#.withCString { callback(context, $0) }", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
+      {"literal": "#\"{\"Err\":\"the runtime has stopped\"}\"#", "context": "static let stoppedAnswer = #\"{\"Err\":\"the runtime has stopped\"}\"#", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
       {"literal": "\"Ok\"", "context": "case ok = \"Ok\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1},
       {"literal": "\"Err\"", "context": "case err = \"Err\"", "reason": "Bridge JSON key or literal, not interface copy.", "count": 1}
     ],

@@ -14,6 +14,7 @@ import Foundation
 /// says which with `follow`. Close it before the runtime stops.
 public final class Chat: ChatSource, @unchecked Sendable {
     private let handle: OpaquePointer
+    private let loop: CoreLoop
     /// Held across every call into the library, so stopping waits for the
     /// calls in flight and none starts after it. Recursive, because a call
     /// may be made from inside another on the same thread.
@@ -22,8 +23,9 @@ public final class Chat: ChatSource, @unchecked Sendable {
     /// What the owner's wake names this chat by.
     public let id: UInt64
 
-    init(handle: OpaquePointer) {
+    init(handle: OpaquePointer, loop: CoreLoop) {
         self.handle = handle
+        self.loop = loop
         self.id = amux_session_id(handle)
     }
 
@@ -143,8 +145,9 @@ public final class Chat: ChatSource, @unchecked Sendable {
     // MARK: - Acts
 
     public func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
-        await act(SendOutcome.self) { live, callback, context in
-            Bridge.json(draft).withCString { amux_session_send(live, $0, callback, context) }
+        let draft = Bridge.json(draft)
+        return await act(SendOutcome.self) { live in
+            draft.withCString { amux_session_send(live, $0) }
         }
     }
 
@@ -152,26 +155,19 @@ public final class Chat: ChatSource, @unchecked Sendable {
     public func answer(
         _ ask: String, choice: Int, note: String? = nil
     ) async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
+        await value(ActOutcome.self) { live in
             ask.withCString { ask in
-                if let note {
-                    note.withCString {
-                        amux_session_answer(live, ask, UInt32(choice), $0, callback, context)
-                    }
-                } else {
-                    amux_session_answer(live, ask, UInt32(choice), nil, callback, context)
-                }
+                Bridge.optional(note) { amux_session_answer(live, ask, UInt32(choice), $0) }
             }
         }
     }
 
     /// Answers a question card with one response per question, in order.
     public func answer(_ ask: String, responses: [QuestionResponse]) async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
+        let responses = Bridge.json(responses)
+        return await value(ActOutcome.self) { live in
             ask.withCString { ask in
-                Bridge.json(responses).withCString { responses in
-                    amux_session_answer_questions(live, ask, responses, callback, context)
-                }
+                responses.withCString { amux_session_answer_questions(live, ask, $0) }
             }
         }
     }
@@ -181,12 +177,11 @@ public final class Chat: ChatSource, @unchecked Sendable {
     public func replyInstead(
         _ ask: String, text: String, soFar: [QuestionResponse]
     ) async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
+        let soFar = Bridge.json(soFar)
+        return await value(ActOutcome.self) { live in
             ask.withCString { ask in
                 text.withCString { text in
-                    Bridge.json(soFar).withCString { soFar in
-                        amux_session_reply_instead(live, ask, text, soFar, callback, context)
-                    }
+                    soFar.withCString { amux_session_reply_instead(live, ask, text, $0) }
                 }
             }
         }
@@ -195,30 +190,32 @@ public final class Chat: ChatSource, @unchecked Sendable {
     /// Submits a form ask with the person's values, one per field in the
     /// form's order; the shared view checks and encodes them.
     public func answerForm(_ ask: String, values: [FormValue]) async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
+        let values = Bridge.json(values)
+        return await value(ActOutcome.self) { live in
             ask.withCString { ask in
-                Bridge.json(values).withCString {
-                    amux_session_answer_form(live, ask, $0, callback, context)
-                }
+                values.withCString { amux_session_answer_form(live, ask, $0) }
             }
         }
     }
 
     public func withdraw(_ input: [UInt8]) async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
-            Bridge.json(input).withCString { amux_session_withdraw(live, $0, callback, context) }
+        let input = Bridge.json(input)
+        return await value(ActOutcome.self) { live in
+            input.withCString { amux_session_withdraw(live, $0) }
         }
     }
 
     public func sendNow(_ input: [UInt8]) async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
-            Bridge.json(input).withCString { amux_session_send_now(live, $0, callback, context) }
+        let input = Bridge.json(input)
+        return await value(ActOutcome.self) { live in
+            input.withCString { amux_session_send_now(live, $0) }
         }
     }
 
     public func resend(_ input: [UInt8]) async -> SendOutcome? {
-        await value(SendOutcome?.self) { live, callback, context in
-            Bridge.json(input).withCString { amux_session_resend(live, $0, callback, context) }
+        let input = Bridge.json(input)
+        return await value(SendOutcome?.self) { live in
+            input.withCString { amux_session_resend(live, $0) }
         } ?? nil
     }
 
@@ -235,41 +232,38 @@ public final class Chat: ChatSource, @unchecked Sendable {
     }
 
     public func interrupt() async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
-            amux_session_interrupt(live, callback, context)
-        }
+        await value(ActOutcome.self) { amux_session_interrupt($0) }
     }
 
     public func switchBack() async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
-            amux_session_switch_back(live, callback, context)
-        }
+        await value(ActOutcome.self) { amux_session_switch_back($0) }
     }
 
     /// Sends a pick from the settings view in the agent's kind.
     public func command(_ draft: Draft) async -> CommandOutcome? {
-        await value(CommandOutcome.self) { live, callback, context in
-            Bridge.json(draft).withCString { amux_session_command(live, $0, callback, context) }
+        let draft = Bridge.json(draft)
+        return await value(CommandOutcome.self) { live in
+            draft.withCString { amux_session_command(live, $0) }
         }
     }
 
     public func change(_ setting: SettingChange) async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
-            Bridge.json(setting).withCString { amux_session_change_setting(live, $0, callback, context) }
+        let setting = Bridge.json(setting)
+        return await value(ActOutcome.self) { live in
+            setting.withCString { amux_session_change_setting(live, $0) }
         }
     }
 
     /// Starts an exited agent again with the composer's draft.
     public func resume(with draft: Draft) async -> ActOutcome? {
-        await value(ActOutcome.self) { live, callback, context in
-            Bridge.json(draft).withCString { amux_session_resume(live, $0, callback, context) }
+        let draft = Bridge.json(draft)
+        return await value(ActOutcome.self) { live in
+            draft.withCString { amux_session_resume(live, $0) }
         }
     }
 
     public func pageOlder(_ rows: UInt32) async -> PageOutcome? {
-        await value(PageOutcome.self) { live, callback, context in
-            amux_session_page_older(live, rows, callback, context)
-        }
+        await value(PageOutcome.self) { amux_session_page_older($0, rows) }
     }
 
     /// The agent's diff for `comparison` as its host froze it, with its
@@ -277,20 +271,18 @@ public final class Chat: ChatSource, @unchecked Sendable {
     public func review(
         _ comparison: Comparison
     ) async -> Result<FrozenReview, RuntimeFailure> {
-        await act(FrozenReview.self) { live, callback, context in
-            Bridge.json(comparison).withCString {
-                amux_session_review(live, $0, callback, context)
-            }
+        let comparison = Bridge.json(comparison)
+        return await act(FrozenReview.self) { live in
+            comparison.withCString { amux_session_review(live, $0) }
         }
     }
 
     /// Fetches the files changed for `comparison`, without a patch; the
     /// overview lists them from then on.
     public func openOverview(_ comparison: Comparison) async -> Result<Overview, RuntimeFailure> {
-        await act(Overview.self) { live, callback, context in
-            Bridge.json(comparison).withCString {
-                amux_session_open_overview(live, $0, callback, context)
-            }
+        let comparison = Bridge.json(comparison)
+        return await act(Overview.self) { live in
+            comparison.withCString { amux_session_open_overview(live, $0) }
         }
     }
 
@@ -298,13 +290,13 @@ public final class Chat: ChatSource, @unchecked Sendable {
     public func putBlob(
         _ data: Data, name: String, mime: String
     ) async -> Result<BlobRef, RuntimeFailure> {
-        await act(BlobRef.self) { live, callback, context in
+        await act(BlobRef.self) { live in
             data.withUnsafeBytes { bytes in
                 name.withCString { name in
                     mime.withCString { mime in
                         amux_session_put_blob(
                             live, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count,
-                            name, mime, callback, context)
+                            name, mime)
                     }
                 }
             }
@@ -321,29 +313,19 @@ public final class Chat: ChatSource, @unchecked Sendable {
         return Data(bytes: data, count: bytes.len)
     }
 
+    /// Starts an act on the core queue and waits for its `{"Ok": T}` or
+    /// `{"Err": reason}`.
     private func act<T: Decodable & Sendable>(
-        _ type: T.Type,
-        _ body: @escaping (OpaquePointer, AmuxCallback, UnsafeMutableRawPointer) -> Void
+        _ type: T.Type, _ start: @escaping @Sendable (OpaquePointer) -> UInt64
     ) async -> Result<T, RuntimeFailure> {
-        await Bridge.answer(T.self) { callback, context in
-            let ran = self.call(false) { live in
-                body(live, callback, context)
-                return true
-            }
-            if !ran { Bridge.stopped(callback, context) }
-        }
+        Bridge.answer(T.self, await loop.answer { [self] _ in call(nil) { start($0) } })
     }
 
+    /// Starts an act on the core queue and waits for its JSON that is the
+    /// value itself.
     private func value<T: Decodable & Sendable>(
-        _ type: T.Type,
-        _ body: @escaping (OpaquePointer, AmuxCallback, UnsafeMutableRawPointer) -> Void
+        _ type: T.Type, _ start: @escaping @Sendable (OpaquePointer) -> UInt64
     ) async -> T? {
-        await Bridge.value(T.self) { callback, context in
-            let ran = self.call(false) { live in
-                body(live, callback, context)
-                return true
-            }
-            if !ran { Bridge.stopped(callback, context) }
-        }
+        Bridge.value(T.self, await loop.answer { [self] _ in call(nil) { start($0) } })
     }
 }

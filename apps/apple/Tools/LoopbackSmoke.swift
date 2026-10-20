@@ -11,45 +11,36 @@ private func fail(_ code: Int, _ message: String) -> NSError {
     NSError(domain: "LoopbackSmoke", code: code, userInfo: [NSLocalizedDescriptionKey: message])
 }
 
-/// One callback's answer, waited for on a condition.
-private final class Answer: @unchecked Sendable {
-    let condition = NSCondition()
-    var json: String?
-
-    func wait(_ what: String) throws -> Any {
-        condition.lock()
-        defer { condition.unlock() }
-        let deadline = Date().addingTimeInterval(30)
-        while json == nil {
-            guard condition.wait(until: deadline) else { throw fail(6, "no answer to \(what) within 30 seconds") }
+/// What one step handed back: the answers to acts by ticket, as JSON text.
+private func step(_ runtime: OpaquePointer, within seconds: Double) throws -> [UInt64: String] {
+    // This thread is the smoke's one queue: it watches the wake descriptor
+    // and steps when it is readable, as the app's core queue does.
+    var watched = pollfd(fd: amux_runtime_wake_fd(runtime), events: Int16(POLLIN), revents: 0)
+    guard poll(&watched, 1, Int32(seconds * 1000)) > 0 else { return [:] }
+    let stepped = try read(amux_runtime_step(runtime)) as? [String: Any] ?? [:]
+    var answers: [UInt64: String] = [:]
+    for answer in stepped["answers"] as? [[String: Any]] ?? [] {
+        if let ticket = (answer["ticket"] as? NSNumber)?.uint64Value, let json = answer["json"] as? String {
+            answers[ticket] = json
         }
-        return try JSONSerialization.jsonObject(with: Data(json!.utf8), options: [.fragmentsAllowed])
     }
+    return answers
 }
 
-/// The runtime wakes its host on every change; this smoke reads snapshots
-/// instead, so a wake has nothing to do.
-private func woke(_ context: UnsafeMutableRawPointer?, _ chat: UInt64) {}
-
-private func answered(_ context: UnsafeMutableRawPointer?, _ json: UnsafePointer<CChar>?) {
-    guard let context, let json else { return }
-    let answer = Unmanaged<Answer>.fromOpaque(context).takeRetainedValue()
-    answer.condition.lock()
-    answer.json = String(cString: json)
-    answer.condition.broadcast()
-    answer.condition.unlock()
-}
-
-/// Calls one bridge entry that answers through a callback and returns what
-/// its `Ok` carried, or throws what its `Err` said.
-private func ask(_ what: String, _ call: (AmuxCallback, UnsafeMutableRawPointer) -> Void) throws -> Any {
-    let answer = Answer()
-    call(answered, Unmanaged.passRetained(answer).toOpaque())
-    let reply = try answer.wait(what)
-    guard let result = reply as? [String: Any], let ok = result["Ok"] else {
-        throw fail(7, "\(what) was refused: \(reply)")
+/// Steps until the act under `ticket` is answered, and returns what its
+/// `Ok` carried, or throws what its `Err` said.
+private func ask(_ runtime: OpaquePointer, _ what: String, _ ticket: UInt64) throws -> Any {
+    guard ticket != 0 else { throw fail(7, "\(what) did not start") }
+    let deadline = Date().addingTimeInterval(30)
+    while Date() < deadline {
+        guard let json = try step(runtime, within: 0.05)[ticket] else { continue }
+        let reply = try JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed])
+        guard let result = reply as? [String: Any], let ok = result["Ok"] else {
+            throw fail(7, "\(what) was refused: \(reply)")
+        }
+        return ok
     }
-    return ok
+    throw fail(6, "no answer to \(what) within 30 seconds")
 }
 
 private func read(_ bytes: UnsafeMutablePointer<CChar>?) throws -> Any {
@@ -62,14 +53,14 @@ private func json(_ value: Any) -> String {
     String(decoding: try! JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys]), as: UTF8.self)
 }
 
-/// Reads until `found` answers something, for at most thirty seconds. The
-/// runtime wakes its host on every change; polling a snapshot here is bounded
-/// test observation, not how the app reads.
-private func until<T>(_ what: String, _ found: () throws -> T?) throws -> T {
+/// Reads until `found` answers something, stepping meanwhile, for at most
+/// thirty seconds. A step names what to redraw; reading a snapshot after
+/// each one here is bounded test observation, not how the app reads.
+private func until<T>(_ runtime: OpaquePointer, _ what: String, _ found: () throws -> T?) throws -> T {
     let deadline = Date().addingTimeInterval(30)
     while Date() < deadline {
         if let value = try found() { return value }
-        Thread.sleep(forTimeInterval: 0.05)
+        _ = try step(runtime, within: 0.05)
     }
     throw fail(1, "\(what) did not happen within 30 seconds")
 }
@@ -90,7 +81,7 @@ private func smoke() throws {
         "lan_bind": "127.0.0.1:0",
     ]
     var error: UnsafeMutablePointer<CChar>?
-    guard let runtime = json(config).withCString({ amux_runtime_start($0, woke, nil, &error) }) else {
+    guard let runtime = json(config).withCString({ amux_runtime_start($0, &error) }) else {
         let reason = error.map { String(cString: $0) } ?? "no reason"
         if let error { amux_string_free(error) }
         throw fail(3, "the runtime did not start: \(reason)")
@@ -101,27 +92,27 @@ private func smoke() throws {
     guard let id = listed.first?["id"] as? String else {
         throw fail(3, "the installation lists no profile")
     }
-    guard let profile = id.withCString({ amux_profile_open(runtime, $0, woke, nil, &error) }) else {
+    guard let profile = id.withCString({ amux_profile_open(runtime, $0, &error) }) else {
         let reason = error.map { String(cString: $0) } ?? "no reason"
         if let error { amux_string_free(error) }
         throw fail(3, "the profile did not open: \(reason)")
     }
     defer { amux_profile_close(profile) }
 
-    let pending = try ask("pairing") { callback, context in
-        json(["Link": link]).withCString { amux_profile_begin_pair(profile, $0, callback, context) }
-    }
+    let pending = try ask(runtime, "pairing", json(["Link": link]).withCString {
+        amux_profile_begin_pair(profile, $0)
+    })
     guard let pending = pending as? [String: Any], let token = pending["token"] else {
         throw fail(5, "pairing answered no token: \(pending)")
     }
     guard pending["name"] as? String == machine else {
         throw fail(5, "the link reached \(pending["name"] ?? "nobody"), not \(machine)")
     }
-    let paired = try ask("confirming") { callback, context in
-        json(token).withCString { amux_profile_confirm_pair(profile, $0, callback, context) }
-    }
+    let paired = try ask(runtime, "confirming", json(token).withCString {
+        amux_profile_confirm_pair(profile, $0)
+    })
 
-    let host = try until("\(machine) online and trusted") { () -> [String: Any]? in
+    let host = try until(runtime, "\(machine) online and trusted") { () -> [String: Any]? in
         let hosts = try read(amux_fleet_hosts(profile)) as? [[String: Any]] ?? []
         return hosts.first {
             $0["name"] as? String == machine && $0["trusted"] as? Bool == true
@@ -129,7 +120,7 @@ private func smoke() throws {
         }
     }
     let via = (host["reach"] as? [String: Any])?["Online"] ?? "none"
-    let names = try until("\(agent) in the fleet") { () -> [String]? in
+    let names = try until(runtime, "\(agent) in the fleet") { () -> [String]? in
         let view = try read(amux_fleet_view(profile, nil)) as? [String: Any] ?? [:]
         let sections = view["sections"] as? [[String: Any]] ?? []
         let rows = sections.flatMap { $0["rows"] as? [[String: Any]] ?? [] }

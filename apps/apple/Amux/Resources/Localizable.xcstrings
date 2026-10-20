@@ -9781,6 +9781,18 @@
         }
       }
     },
+    "the runtime has stopped": {
+      "comment": "English app copy. Used in apps/apple/Packages/AmuxCore/Sources/AmuxCore/Runtime.swift.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the runtime has stopped"
+          }
+        }
+      }
+    },
     "the upload was stopped": {
       "comment": "English app copy. Used in ios/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Reporting.swift.",
       "extractionState": "manual",

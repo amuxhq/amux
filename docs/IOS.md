@@ -55,9 +55,24 @@ frame after a launch is what the phone last held. It opens the fleet of the
 profile on screen and feeds that profile's `StoreBundle`: the fleet, hosts,
 pairing and New Agent stores one account's screens draw from.
 
-The runtime wakes Swift at most once per main-thread turn, naming the fleet
-or the chat that moved. The bundle takes that one's changes and reads again
-only what changed. A chat is a `ChatModel` over an open `Chat`:
+Swift owns the loop. The library's cores step on one serial queue,
+`CoreLoop`'s in `Runtime.swift`; links, channels and gRPC run on one confined
+Rust thread, which never calls into Swift. Whenever something waits for a
+step, the library makes a descriptor readable, and a dispatch source watching
+it from the core queue steps there. A step hands back what to do: the fleets
+and chats that moved, which go to the main actor by fleet and chat number;
+the answers to acts, each to whoever awaits its ticket; and whether to read
+the profile list again. The cores' timers sleep on the confined Rust thread
+and come back as ordinary inputs that make the descriptor readable, so Swift
+arms none. Reads return at once on the main thread. Every call that blocks
+until the cores have done something (starting and stopping, opening a profile
+or a chat, the profile list, a moment of the app's life) steps them on the
+thread that makes it, so it is made on the core queue, never on the main
+thread, even when the main thread waits for it.
+
+A redraw names the fleet or the chat that moved. The bundle takes that one's
+changes and reads again only what changed. A chat is a `ChatModel` over an
+open `Chat`:
 
 - It holds the chat's row keys, oldest first: the session's window. Keys
   never move, and the list changes only at its two edges: newer keys above
@@ -224,7 +239,15 @@ agent's source. Put away, the browser stops and forgets what it found, and
 only the chats a push opens keep a source. Coming back to the front starts
 the browser again and lists every agent again.
 
-The same two moments drive [product analytics](ANALYTICS.md), which the
+The runtime is told of each moment as a lifecycle input, fed on the core
+queue: Foreground on coming to the front, Background on going to the back,
+and Suspending when the app is put away and the system is about to suspend it
+(and when a push that woke it in the background is done). Suspending makes
+every profile's store whole on the drive before it returns, under background
+time the app asks for, so a phone the system ends while suspended opens next
+time on what it last showed.
+
+The same moments drive [product analytics](ANALYTICS.md), which the
 runtime keeps and sends: coming to the front counts the app as opened (at
 most once an hour), and going to the back sends what is waiting before the
 system may suspend the app. The paywall opening and a purchase starting are

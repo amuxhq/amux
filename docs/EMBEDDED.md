@@ -199,13 +199,13 @@ a view value means adding it there.
 Everything crosses as JSON; every returned string is the caller's to free with
 `amux_string_free`, and every `AmuxBytes` with `amux_bytes_free`. A null
 return means the call failed, and a panic is caught at the boundary and reads
-as a failure. Reads return at once. Acts that wait take a callback, called
-once on a worker thread with a JSON result the callback borrows until it
-returns.
+as a failure. Reads return at once. An act that waits returns a ticket at
+once, and its JSON result comes back from a later `amux_runtime_step` under
+that ticket; nothing in the library calls into the client.
 
 | Family | Handle | What it covers |
 | --- | --- | --- |
-| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the profile list and its wake, the registry (create, delete, bind, sign out, pause, resume), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting, foreground, background flush, the app's own events) |
+| `amux_runtime_*` | `AmuxRuntime` | The installation: start and stop, the wake descriptor and the step, lifecycle inputs (foreground, background, suspending), the profile list, the registry (create, delete, bind, sign out, pause, resume), source policy, discovered machines, bearers, entitlement refresh, which profiles trust a host, product analytics (the setting and the app's own events) |
 | `amux_profile_*` | `AmuxProfile` | One profile open on screen: pairing, the roster, account state, creating agents and listing directories, renaming, stopping and deleting agents, the dump |
 | `amux_fleet_*` | `AmuxProfile` | That profile's fleet: rows, cards, family headers, hosts, and taking its changes |
 | `amux_session_*` | `AmuxChat` | One open chat: keys and rows by key, the ask card, overview, settings and frame, taking changes; sending, answering, withdrawing, interrupting, resuming, paging, blobs and the review |
@@ -215,8 +215,9 @@ close every chat before its profile and every profile before stopping the
 runtime.
 
 ```c
-AmuxRuntime *rt = amux_runtime_start(config_json, list_wake, context, &error);
-AmuxProfile *p = amux_profile_open(rt, profile_id, wake, context, &error);
+AmuxRuntime *rt = amux_runtime_start(config_json, &error);
+/* watch amux_runtime_wake_fd(rt); call amux_runtime_step(rt) when readable */
+AmuxProfile *p = amux_profile_open(rt, profile_id, &error);
 AmuxChat *chat = amux_session_open(p, agent_key_json, 0, &error);
 /* ... */
 amux_session_close(chat);

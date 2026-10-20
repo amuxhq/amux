@@ -1316,22 +1316,35 @@ extension ComponentCatalog {
     /// provider's model, effort, permission and mode, and the worktree
     /// switch; once more with the provider signed out there.
     fileprivate static let newAgent: [ComponentExample] = [
+        newAgent("claude", provider: .claude, signedIn: true),
         newAgent("codex", provider: .codex, signedIn: true),
+        newAgent("browsing", provider: .claude, signedIn: true, browsing: true),
         newAgent("signed-out", provider: .claude, signedIn: false),
         newAgent("large-text", provider: .claude, signedIn: true, size: .accessibility3, height: 2400),
     ]
 
     private static func newAgent(
-        _ id: String, provider: NewAgentStore.Provider, signedIn: Bool,
+        _ id: String, provider: NewAgentStore.Provider, signedIn: Bool, browsing: Bool = false,
         size: DynamicTypeSize = .large, height: CGFloat = 1100
     ) -> ComponentExample {
         ComponentExample(
             id: "new-agent.\(id)", family: .chat, canvas: CGSize(width: 390, height: height),
             dynamicTypeSize: size,
-            readinessIdentifier: "new-agent.worktree", readinessValue: "on"
+            readinessIdentifier: browsing ? "new-agent.browse" : "new-agent.worktree",
+            readinessValue: browsing ? "" : "on",
+            // The system bar lays its items out a frame after the form.
+            settlesLate: true
         ) {
             let (store, hosts) = CatalogFixtures.newAgent(provider: provider, signedIn: signedIn)
-            NewAgent(model: store, hosts: hosts) { _ in }
+            // The chooser is drawn on its own: a capture leaves out what the
+            // screen presents, and the form under it is the other stories.
+            if browsing {
+                NewAgentDirectories(model: store) { _ in }
+            } else {
+                NavigationStack {
+                    NewAgent(model: store, hosts: hosts) { _ in }
+                }
+            }
         }
     }
 }
@@ -1350,12 +1363,23 @@ extension CatalogFixtures {
                 ProviderSignIn(provider: .claude, signedIn: signedIn),
                 ProviderSignIn(provider: .codex, signedIn: true),
             ],
+            lastDialError: nil, platform: "macOS", signedIn: nil, version: nil),
+        HostView(
+            hostId: Array(repeating: 8, count: 16), name: "laptop", local: false, trusted: true,
+            candidate: false, reach: .away, addrs: [], current: false, providers: [],
             lastDialError: nil, platform: "macOS", signedIn: nil, version: nil)])
         let store = NewAgentStore()
         store.open(on: desk)
         store.listed(.success(Directories(
-            recent: [Directory(path: "~/src/amux", name: "amux", lastUsedMs: 5)],
-            repositories: [], roots: ["~/src"])), asked: store.asking())
+            recent: [
+                Directory(path: "~/src/amux", name: "amux", lastUsedMs: 5),
+                Directory(path: "~/src/amuxcloud", name: "amuxcloud", lastUsedMs: 4),
+                Directory(path: "~/src/promo", name: "promo", lastUsedMs: 3),
+            ],
+            repositories: [
+                Directory(path: "~/src/dotfiles", name: "dotfiles", lastUsedMs: 0),
+                Directory(path: "~/src/skills", name: "skills", lastUsedMs: 0),
+            ], roots: ["~/src"])), asked: store.asking())
         for offered in NewAgentStore.Provider.allCases {
             let catalogue = offered == .codex ? codexCatalogue : claudeCatalogue
             store.offered(.success(catalogue), for: offered, asked: store.askingOffer(for: offered))

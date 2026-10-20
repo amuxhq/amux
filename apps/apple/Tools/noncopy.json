@@ -76,7 +76,6 @@
       {"literal": "\"home\"", "context": "case \"home\": router.setPath([], for: .agents); router.select(.agents)", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
       {"literal": "\"you\"", "context": "case \"you\", \"settings\": router.setPath([], for: .you); router.select(.you)", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
       {"literal": "\"devices\"", "context": "case \"devices\":", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
-      {"literal": "\"new-agent\"", "context": "case \"new-agent\": router.open(.newAgent)", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
       {"literal": "\"sign-in\"", "context": "case \"sign-in\":", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
       {"literal": "\"paywall\"", "context": "case \"paywall\":", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
       {"literal": "\"pin\"", "context": "case \"pin\":", "reason": "Door reply or wire value for a driver, never drawn.", "count": 1},
@@ -96,7 +95,9 @@
       {"literal": "\"the app has no delegate to hand a push to\"", "context": "guard let delegate else { return .error(\"the app has no delegate to hand a push to\") }", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"no push payload at \\(path)\"", "context": "else { return .error(\"no push payload at \\(path)\") }", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"the app in the background\"", "context": "let reached = await until(10, \"the app in the background\") {", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"the app in the background\"", "context": "return await until(seconds, \"the app in the background\") {", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+      {"literal": "\"the app in the background\"", "context": "return await until(seconds, \"the app in the background\") {", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"new-agent\"", "context": "case \"new-agent\": router.composing = true", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent\"", "context": "screen: composition.map { $0.router.composing ? \"new-agent\" : $0.router.top?.name ?? $0.router.tab.rawValue }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Debug/DoorServer.swift": [
       {"literal": "\"the driving door could not open: \\(error)\"", "context": "fatalError(\"the driving door could not open: \\(error)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -555,20 +556,13 @@
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift": [
       {"literal": "\"new-agent\"", "context": ".identified(\"new-agent\", value: model.directory)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"new-agent.title\"", "context": ".identified(\"new-agent.title\", value: \"New Agent\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.no-hosts\"", "context": ".identified(\"new-agent.no-hosts\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"folder\"", "context": "Image(systemName: \"folder\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
-      {"literal": "\"chevron.right\"", "context": "Image(systemName: \"chevron.right\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.directory\"", "context": "\"new-agent.directory\", label: \"Directory\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"new-agent.directory.unavailable\"", "context": ".identified(\"new-agent.directory.unavailable\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.refusal\"", "context": ".identified(\"new-agent.refusal\", value: failure)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.recent.\\(project.name)\"", "context": "\"new-agent.recent.\\(project.name)\", label: \"Start in \\(project.name)\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"new-agent.start\"", "context": "\"new-agent.start\", label: \"Start on \\(machineName)\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"new-agent.provider.\\(provider.rawValue)\"", "context": "\"new-agent.provider.\\(provider.rawValue)\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"asterisk\"", "context": "case .claude: \"asterisk\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"chevron.left.forwardslash.chevron.right\"", "context": "case .codex: \"chevron.left.forwardslash.chevron.right\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"exclamationmark.triangle\"", "context": "Image(systemName: \"exclamationmark.triangle\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
-      {"literal": "\"new-agent.browse.done\"", "context": ".identified(\"new-agent.browse.done\", label: \"Done\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.browse\"", "context": ".identified(\"new-agent.browse\", value: model.query)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"magnifyingglass\"", "context": "Image(systemName: \"magnifyingglass\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.search\"", "context": ".identified(\"new-agent.search\", label: \"Search repositories\", value: model.query)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -582,9 +576,7 @@
       {"literal": "\"~/somewhere/else\"", "context": "TextField(\"~/somewhere/else\", text: Binding(", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"new-agent.typed\"", "context": ".identified(\"new-agent.typed\", label: \"Or a path\", value: model.typed)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.typed.use\"", "context": "\"new-agent.typed.use\", label: \"Use This Path\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"new-agent.back\"", "context": "BackLink(\"Agents\", identifier: \"new-agent.back\") {", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
       {"literal": "\"new-agent.name\"", "context": ".identified(\"new-agent.name\", label: \"Name\", value: model.name)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"new-agent.host.\\(host.id?.description ?? host.name)\"", "context": "\"new-agent.host.\\(host.id?.description ?? host.name)\", label: spoken(host),", "reason": "Accessibility identifier a driver reads, not interface copy.", "count": 1},
       {"literal": "\"new-agent.signed-out\"", "context": ".identified(\"new-agent.signed-out\", value: model.provider.rawValue)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.offer.unavailable\"", "context": ".identified(\"new-agent.offer.unavailable\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.offer.asking\"", "context": ".identified(\"new-agent.offer.asking\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -594,7 +586,11 @@
       {"literal": "\"new-agent.mode\"", "context": "String(localized: \"Mode\"), id: \"new-agent.mode\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.worktree\"", "context": ".identified(\"new-agent.worktree\", label: \"New worktree\", value: model.newWorktree ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"on\"", "context": ".identified(\"new-agent.worktree\", label: \"New worktree\", value: model.newWorktree ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"off\"", "context": ".identified(\"new-agent.worktree\", label: \"New worktree\", value: model.newWorktree ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"off\"", "context": ".identified(\"new-agent.worktree\", label: \"New worktree\", value: model.newWorktree ? \"on\" : \"off\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.cancel\"", "context": "BarButton(\"xmark\", label: String(localized: \"Cancel\"), identifier: \"new-agent.cancel\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.host\"", "context": "name: String(localized: \"Host, \\(value)\"), identifier: \"new-agent.host\", items: items,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.provider\"", "context": "name: String(localized: \"Agent, \\(model.provider.title)\"), identifier: \"new-agent.provider\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.browse.done\"", "context": "BarButton(\"checkmark\", label: String(localized: \"Done\"), identifier: \"new-agent.browse.done\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift": [
       {"literal": "\"pin\"", "context": ".identified(\"pin\", value: model.digits)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -758,7 +754,6 @@
     "apps/apple/Packages/AmuxShell/Sources/AmuxShell/Route.swift": [
       {"literal": "\"conversation\"", "context": "case .conversation: \"conversation\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"changes\"", "context": "case .changes: \"changes\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
-      {"literal": "\"new-agent\"", "context": "case .newAgent: \"new-agent\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"pin\"", "context": "case .pairByCode: \"pin\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"pair-confirm\"", "context": "case .pairConfirmation: \"pair-confirm\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"host\"", "context": "case .host: \"host\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -1128,12 +1123,8 @@
       {"literal": "\"codex\"", "context": "newAgent(\"codex\", provider: .codex, signedIn: true),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"signed-out\"", "context": "newAgent(\"signed-out\", provider: .claude, signedIn: false),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"new-agent.\\(id)\"", "context": "id: \"new-agent.\\(id)\", family: .chat, canvas: CGSize(width: 390, height: height),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"new-agent.worktree\"", "context": "readinessIdentifier: \"new-agent.worktree\", readinessValue: \"on\"", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"on\"", "context": "readinessIdentifier: \"new-agent.worktree\", readinessValue: \"on\"", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"approved\"", "context": "status: .approved, statusWord: \"approved\", risk: \"low\", rationale: \"Local only.\",", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"desk\"", "context": "hostId: desk.bytes, name: \"desk\", local: false, trusted: true, candidate: false,", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"~/src/amux\"", "context": "recent: [Directory(path: \"~/src/amux\", name: \"amux\", lastUsedMs: 5)],", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"~/src\"", "context": "repositories: [], roots: [\"~/src\"])), asked: store.asking())", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"GPT-6-Astra\"", "context": "OfferedModel(value: \"gpt-6-astra\", displayName: \"GPT-6-Astra\", description: \"Frontier agentic coding model.\", efforts: [\"low\", \"medium\", \"high\"], resolvedModel: \"\", defaultEffort: \"medium\"),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"gpt-6-sol\"", "context": "OfferedModel(value: \"gpt-6-sol\", displayName: \"GPT-6-Sol\", description: \"Smaller, faster and cheaper.\", efforts: [\"low\", \"medium\"], resolvedModel: \"\", defaultEffort: \"low\"),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"GPT-6-Sol\"", "context": "OfferedModel(value: \"gpt-6-sol\", displayName: \"GPT-6-Sol\", description: \"Smaller, faster and cheaper.\", efforts: [\"low\", \"medium\"], resolvedModel: \"\", defaultEffort: \"low\"),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
@@ -1172,7 +1163,22 @@
       {"literal": "\"crates/amux-ui/src/pairing.rs\"", "context": "r(\"w02\", 21, .explore(verb: .read, subject: \"crates/amux-ui/src/pairing.rs\", state: .succeeded, result: \"\")),", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"crates/amux-ui/src/pairing.rs\"", "context": "r(\"w03\", 22, .fileChange(files: [FileRow(path: \"crates/amux-ui/src/pairing.rs\", change: .edited, added: 0, removed: 1, line: nil)], state: .succeeded)),", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"crates/wire/src/codes.rs\"", "context": "r(\"c05\", 5, .explore(verb: .read, subject: \"crates/wire/src/codes.rs\", state: .succeeded, result: \"\")),", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"editing\"", "context": "review(\"editing\", editing: 0) { F.comment($0) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"editing\"", "context": "review(\"editing\", editing: 0) { F.comment($0) },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"claude\"", "context": "newAgent(\"claude\", provider: .claude, signedIn: true),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"browsing\"", "context": "newAgent(\"browsing\", provider: .claude, signedIn: true, browsing: true),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.browse\"", "context": "readinessIdentifier: browsing ? \"new-agent.browse\" : \"new-agent.worktree\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.worktree\"", "context": "readinessIdentifier: browsing ? \"new-agent.browse\" : \"new-agent.worktree\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"on\"", "context": "readinessValue: browsing ? \"\" : \"on\",", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"~/src/amux\"", "context": "Directory(path: \"~/src/amux\", name: \"amux\", lastUsedMs: 5),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"~/src/amuxcloud\"", "context": "Directory(path: \"~/src/amuxcloud\", name: \"amuxcloud\", lastUsedMs: 4),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"amuxcloud\"", "context": "Directory(path: \"~/src/amuxcloud\", name: \"amuxcloud\", lastUsedMs: 4),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"~/src/promo\"", "context": "Directory(path: \"~/src/promo\", name: \"promo\", lastUsedMs: 3),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"promo\"", "context": "Directory(path: \"~/src/promo\", name: \"promo\", lastUsedMs: 3),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"~/src/dotfiles\"", "context": "Directory(path: \"~/src/dotfiles\", name: \"dotfiles\", lastUsedMs: 0),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"dotfiles\"", "context": "Directory(path: \"~/src/dotfiles\", name: \"dotfiles\", lastUsedMs: 0),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"~/src/skills\"", "context": "Directory(path: \"~/src/skills\", name: \"skills\", lastUsedMs: 0),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"skills\"", "context": "Directory(path: \"~/src/skills\", name: \"skills\", lastUsedMs: 0),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"~/src\"", "context": "], roots: [\"~/src\"])), asked: store.asking())", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
       {"literal": "\"busy\"", "context": "fleet(\"busy\") { StoryFleet.busy() },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1222,7 +1228,11 @@
       {"literal": "\"review.selection\"", "context": "#Preview(\"Review · selecting\") { StoryScreen(\"review.selection\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"review.comment\"", "context": "#Preview(\"Review · writing\") { StoryScreen(\"review.comment\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"review.editing\"", "context": "#Preview(\"Review · editing\") { StoryScreen(\"review.editing\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"review.folded\"", "context": "#Preview(\"Review · folded\") { StoryScreen(\"review.folded\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"review.folded\"", "context": "#Preview(\"Review · folded\") { StoryScreen(\"review.folded\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.claude\"", "context": "#Preview(\"New agent · Claude\") { StoryScreen(\"new-agent.claude\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.codex\"", "context": "#Preview(\"New agent · Codex\") { StoryScreen(\"new-agent.codex\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.browsing\"", "context": "#Preview(\"New agent · choosing a directory\") { StoryScreen(\"new-agent.browsing\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"new-agent.signed-out\"", "context": "#Preview(\"New agent · signed out\") { StoryScreen(\"new-agent.signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AskCardView.swift": [
       {"literal": "\"arrow.up.circle\"", "context": "Image(systemName: \"arrow.up.circle\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
@@ -1595,7 +1605,7 @@
       {"literal": "\"fingerprint\"", "context": "id: \"fingerprint\", label: String(localized: \"Fingerprint\"),", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/BarBack.swift": [
-      {"literal": "\"chevron.left\"", "context": "Image(systemName: \"chevron.left\")", "reason": "SF Symbol name, not interface copy.", "count": 1}
+      {"literal": "\"chevron.left\"", "context": "BarButton(\"chevron.left\", label: String(localized: \"Back\"), identifier: identifier, action: action)", "reason": "SF Symbol name, not interface copy.", "count": 1}
     ]
   }
 }

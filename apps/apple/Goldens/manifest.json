@@ -601,6 +601,14 @@
       "shows": "Editing a comment already written, with the way to delete it."
     },
     {
+      "id": "new-agent.claude",
+      "shows": "Starting a Claude agent: the host, a recent directory, the name, the model and permission, and a new worktree."
+    },
+    {
+      "id": "new-agent.browsing",
+      "shows": "Choosing the directory a new agent starts in: recent ones, the host's repositories, and a typed path."
+    },
+    {
       "id": "new-agent.codex",
       "shows": "Starting a Codex agent from the host's catalogue: model, effort, permission and mode picked, a new worktree on."
     },

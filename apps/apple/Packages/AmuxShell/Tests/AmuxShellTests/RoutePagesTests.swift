@@ -24,12 +24,12 @@ final class RoutePagesTests: XCTestCase {
         // elements never reach the root this test reads. The pages are the
         // same either way.
         let routes: [Route] = [
-            .conversation(agent), .changes(agent), .newAgent, .pairByCode(machine),
+            .conversation(agent), .changes(agent), .pairByCode(machine),
             .pairConfirmation(invitation), .host(machine), .signIn(.agents), .paywall(.agents),
         ]
         for route in routes {
             switch route {
-            case .conversation, .changes, .newAgent, .pairByCode, .pairConfirmation, .host, .signIn,
+            case .conversation, .changes, .pairByCode, .pairConfirmation, .host, .signIn,
                  .paywall:
                 break
             }

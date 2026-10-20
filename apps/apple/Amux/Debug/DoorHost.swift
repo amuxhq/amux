@@ -273,7 +273,7 @@ final class DoorHost {
             router.select(.hosts)
             stores.hosts.readDevices()
             Task { await stores.refreshRoster() }
-        case "new-agent": router.open(.newAgent)
+        case "new-agent": router.composing = true
         case "sign-in":
             composition.handle(.signIn)
         case "paywall":
@@ -611,7 +611,8 @@ final class DoorHost {
         let leaves = ([window] + DoorWindow.others).flatMap(VisibleTree.elements(of:))
             .filter { !named.contains($0.identifier) }
         return .state(VisibleState(
-            screen: composition?.router.top?.name ?? composition?.router.tab.rawValue ?? "none",
+            screen: composition.map { $0.router.composing ? "new-agent" : $0.router.top?.name ?? $0.router.tab.rawValue }
+                ?? "none",
             typeSize: typeSize.doorName,
             voiceOver: UIAccessibility.isVoiceOverRunning,
             elements: declared + leaves,

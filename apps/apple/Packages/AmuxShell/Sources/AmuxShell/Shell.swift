@@ -191,6 +191,11 @@ public struct Shell: View {
         )) {
             settings
         }
+        // Starting an agent is raised over whatever tab asked for it, the way
+        // a new message is: the list stays beneath, and Cancel puts it away.
+        .sheet(isPresented: $router.composing) {
+            NewAgentPage(router: self.router, stores: stores)
+        }
         .tint(design.accentColor)
         .reported("shell", value: router.tab.rawValue)
         .simultaneousGesture(backGesture)
@@ -241,8 +246,6 @@ public struct Shell: View {
             ChatPage(agent: agent, router: router, stores: stores)
         case .changes(let agent):
             ChangesPage(agent: agent, router: router, stores: stores)
-        case .newAgent:
-            NewAgentPage(router: router, stores: stores)
         case .pairByCode(let host):
             PairByCodePage(host: host, router: router, stores: stores, actions: actions)
         case .pairConfirmation(let invitation):
@@ -501,7 +504,7 @@ private struct AgentsTab: View {
             case .open(let agent):
                 stores.fleet.opened(agent)
                 router.open(.conversation(agent))
-            case .newAgent: router.open(.newAgent)
+            case .newAgent: router.composing = true
             case .openExceptions: router.select(.hosts)
             case .switchAccount(let id): actions(.selectAccount(id))
             case .addAccount: actions(.addAccount)
@@ -585,7 +588,7 @@ private struct HostsTabRoot: View {
             switch action {
             case .open(let host): router.open(.host(host))
             case .pair(let host): router.open(.pairByCode(host))
-            case .newAgent: router.open(.newAgent)
+            case .newAgent: router.composing = true
             // Revoking goes nowhere: the list it happens on is the list it
             // changes, and the machine leaves it when the runtime says so.
             case .revoke(let host): stores.revoke(host)
@@ -610,33 +613,36 @@ private struct HostsTabRoot: View {
 /// round trip and the screen is useful before it arrives, so nothing waits on
 /// it.
 private struct NewAgentPage: View {
+    @Environment(\.design) private var design
     let router: Router
     let stores: StoreBundle
 
     var body: some View {
-        NewAgent(model: stores.newAgent, hosts: stores.hosts) { action in
-            switch action {
-            // A different machine means a different set of directories, so
-            // pointing at one asks it what it has.
-            case .point(let host): stores.point(at: host)
-            case .search: stores.searchDirectories()
-            // Starting is the one thing on this screen that leaves the phone.
-            // Leaving is what the confirmation below does, when the machine
-            // says the agent exists — a screen that left on the press would be
-            // claiming something it has not been told.
-            case .start: stores.startAgent()
-            case .cancel: router.pop()
+        NavigationStack {
+            NewAgent(model: stores.newAgent, hosts: stores.hosts) { action in
+                switch action {
+                // A different machine means a different set of directories,
+                // so pointing at one asks it what it has.
+                case .point(let host): stores.point(at: host)
+                case .search: stores.searchDirectories()
+                // Starting is the one thing on this screen that leaves the
+                // phone. Leaving is what the confirmation below does, when the
+                // machine says the agent exists — a screen that left on the
+                // press would be claiming something it has not been told.
+                case .start: stores.startAgent()
+                case .cancel: router.composing = false
+                }
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .tint(design.accentColor)
         .onAppear { stores.startNewAgent(on: stores.hosts.online.first?.id) }
-        // The conversation replaces this page rather than sitting on top of it:
-        // going back from an agent that was just started belongs at the list it
+        // The sheet goes and the conversation opens over the list: going
+        // back from an agent that was just started belongs at the list it
         // joined, not at the form that made it.
         .onChange(of: stores.newAgent.created) { _, started in
             guard let started else { return }
             stores.fleet.opened(started)
-            router.show(.conversation(started))
+            router.started(started)
         }
     }
 }

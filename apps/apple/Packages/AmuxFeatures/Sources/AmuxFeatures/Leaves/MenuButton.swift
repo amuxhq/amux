@@ -11,6 +11,8 @@ struct MenuItem {
     var destructive = false
     /// The current one of a set of choices, ticked.
     var chosen = false
+    /// Listed but not choosable, such as a host that cannot be reached.
+    var disabled = false
     let action: () -> Void
 }
 
@@ -112,7 +114,8 @@ private struct MenuTrigger: UIViewRepresentable {
         button.menu = UIMenu(children: items.map { item in
             let action = UIAction(
                 title: item.title, image: item.systemImage.flatMap { UIImage(systemName: $0) },
-                attributes: item.destructive ? .destructive : [],
+                attributes: UIMenuElement.Attributes(item.destructive ? [.destructive] : [])
+                    .union(item.disabled ? [.disabled] : []),
                 state: item.chosen ? .on : .off
             ) { _ in item.action() }
             action.subtitle = item.subtitle

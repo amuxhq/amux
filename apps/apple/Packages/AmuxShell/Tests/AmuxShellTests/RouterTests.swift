@@ -214,13 +214,29 @@ final class RouterTests: XCTestCase {
         XCTAssertEqual(router.path, [.conversation(agent)])
     }
 
+    func testNewAgentIsASheetAndWhatItStartsOpensOverTheList() {
+        let router = Router()
+        router.open(.conversation(agent()))
+        router.select(.hosts)
+        router.composing = true
+        XCTAssertEqual(router.tab, .hosts, "raised over the tab that asked for it")
+        let started = agent()
+        router.started(started)
+        XCTAssertFalse(router.composing)
+        XCTAssertEqual(router.tab, .agents)
+        XCTAssertEqual(router.path, [.conversation(started)], "going back from it leads to the list")
+    }
+
+    func testLeavingAnAccountPutsNewAgentAway() {
+        let router = Router()
+        router.composing = true
+        router.leaveAccount()
+        XCTAssertFalse(router.composing)
+    }
+
     func testEveryRouteBelongsToOneTab() {
         XCTAssertEqual(Route.conversation(agent()).tab, .agents)
         XCTAssertEqual(Route.changes(agent()).tab, .agents)
-        // Starting an agent is an agent thing, wherever it was reached from:
-        // the machine is one of three answers on the page rather than the
-        // subject of it, and what it leaves behind is a conversation.
-        XCTAssertEqual(Route.newAgent.tab, .agents)
         XCTAssertEqual(Route.pairByCode(machine).tab, .hosts)
         XCTAssertEqual(Route.host(HostId(UUID())).tab, .hosts)
         XCTAssertEqual(Route.signIn(.you).tab, .you)

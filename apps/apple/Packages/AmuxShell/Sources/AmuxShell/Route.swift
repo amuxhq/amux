@@ -35,7 +35,6 @@ public enum Route: Hashable, Sendable {
     case conversation(AgentKey)
     /// The changes one agent has made, opened from its conversation.
     case changes(AgentKey)
-    case newAgent
     /// Typing the six-digit code one machine printed. It carries that machine,
     /// because a code proves possession of one machine's offer and is
     /// authenticated against it alone. There is no route without one: a
@@ -58,7 +57,7 @@ public enum Route: Hashable, Sendable {
     /// its tab with it, so the tab bar always agrees with what is on screen.
     public var tab: Tab {
         switch self {
-        case .conversation, .changes, .newAgent: .agents
+        case .conversation, .changes: .agents
         case .pairByCode, .pairConfirmation, .host: .hosts
         case .signIn(let from), .paywall(let from): from
         }
@@ -69,7 +68,7 @@ public enum Route: Hashable, Sendable {
     public var outlivesAccount: Bool {
         switch self {
         case .signIn: true
-        case .conversation, .changes, .newAgent, .pairByCode, .pairConfirmation, .host, .paywall:
+        case .conversation, .changes, .pairByCode, .pairConfirmation, .host, .paywall:
             false
         }
     }
@@ -80,7 +79,6 @@ public enum Route: Hashable, Sendable {
         switch self {
         case .conversation: "conversation"
         case .changes: "changes"
-        case .newAgent: "new-agent"
         case .pairByCode: "pin"
         case .pairConfirmation: "pair-confirm"
         case .host: "host"

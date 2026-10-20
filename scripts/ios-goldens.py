@@ -273,7 +273,7 @@ class Goldens:
         )
         journey.app({"kind": "settle"})
         self.photograph("large-text", "new-agent")
-        journey.tap("new-agent.back")
+        journey.tap("new-agent.cancel")
         journey.wait(lambda drawn: "new-agent" not in drawn, "the fleet again")
         journey.app({"kind": "settle"})
         self.open(

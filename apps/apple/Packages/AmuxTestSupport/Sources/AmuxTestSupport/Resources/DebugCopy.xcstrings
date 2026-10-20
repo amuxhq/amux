@@ -289,6 +289,18 @@
         }
       }
     },
+    "App · new agent" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App · new agent"
+          }
+        }
+      }
+    },
     "App · review open" : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
       "extractionState" : "manual",
@@ -1209,6 +1221,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Meta"
+          }
+        }
+      }
+    },
+    "New agent · Claude" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New agent · Claude"
+          }
+        }
+      }
+    },
+    "New agent · Codex" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New agent · Codex"
+          }
+        }
+      }
+    },
+    "New agent · choosing a directory" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New agent · choosing a directory"
+          }
+        }
+      }
+    },
+    "New agent · signed out" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New agent · signed out"
           }
         }
       }

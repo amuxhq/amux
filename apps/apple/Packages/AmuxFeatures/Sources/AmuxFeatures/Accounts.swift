@@ -360,7 +360,7 @@ public struct YouScreen: View {
                     .foregroundStyle(design.inkMuted.color)
             }
         }
-        .tint(design.ink.color)
+        .tint(design.accent.color)
         .oneSwitch(String(localized: "Share Usage, Counts and choices, never what you type"), isOn: isOn)
         .padding(.horizontal, 14)
         .padding(.vertical, 9)

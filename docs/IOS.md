@@ -608,7 +608,8 @@ At accessibility text sizes the phone reflows rather than cuts:
 - The Agents header puts the account disc and New Agent on a line above the
   title, with the subtitle's facts one to a line. A row's second line keeps
   two lines, and its place keeps one line and loses its middle.
-- New Agent puts the back link above the title, and its last row always
+- New Agent is a sheet with the system's bar, so its title and Cancel need
+  nothing of their own; its rows are settings rows, and its last row always
   scrolls clear of the Start bar, whose height it measures.
 - The chat header pill stops growing at the largest ordinary size, as the
   system's own bars do. A tap opens the overview, which gives the place in

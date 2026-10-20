@@ -95,7 +95,7 @@ class Audit(GOLDENS.Goldens):
         self.journey.tap("tab.agents")
         self.journey.wait_for("home.newAgent")
         self.journey.tap("home.newAgent")
-        self.journey.wait_for("new-agent.title")
+        self.journey.wait_for("new-agent")
         self.audit("new-agent")
 
 

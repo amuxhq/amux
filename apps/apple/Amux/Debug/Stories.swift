@@ -208,10 +208,12 @@ struct StoryApp: View {
     ///     tapped it would see it.
     ///   - settingsOpen: raises the settings sheet over the list.
     ///   - reviewOpen: opens the first agent's chat and its review over it.
+    ///   - newAgentOpen: raises New Agent over the list.
     init(
         chatOpen: Bool = false,
         settingsOpen: Bool = false,
         reviewOpen: Bool = false,
+        newAgentOpen: Bool = false,
         _ fleet: @escaping @MainActor () -> StoryFleet.Stores = { StoryFleet.busy() }
     ) {
         let invented = fleet()
@@ -221,6 +223,7 @@ struct StoryApp: View {
             if reviewOpen { router.open(.changes(first.card.agent)) }
         }
         if settingsOpen { router.select(.you) }
+        if newAgentOpen { router.composing = true }
         _router = State(initialValue: router)
         let bundle = StoreBundle(
             account: AccountId("ada"), clock: { StoryFleet.now },
@@ -265,6 +268,7 @@ extension ScriptedChat: OpenChat {
 #Preview("App · chat open") { StoryApp(chatOpen: true) }
 #Preview("App · settings open") { StoryApp(settingsOpen: true) }
 #Preview("App · review open") { StoryApp(reviewOpen: true) }
+#Preview("App · new agent") { StoryApp(newAgentOpen: true) }
 
 #Preview("Fleet · busy") { StoryScreen("fleet.busy") }
 #Preview("Fleet · stopped open") { StoryScreen("fleet.stopped-open") }
@@ -286,6 +290,11 @@ extension ScriptedChat: OpenChat {
 #Preview("Review · writing") { StoryScreen("review.comment") }
 #Preview("Review · editing") { StoryScreen("review.editing") }
 #Preview("Review · folded") { StoryScreen("review.folded") }
+
+#Preview("New agent · Claude") { StoryScreen("new-agent.claude") }
+#Preview("New agent · Codex") { StoryScreen("new-agent.codex") }
+#Preview("New agent · choosing a directory") { StoryScreen("new-agent.browsing") }
+#Preview("New agent · signed out") { StoryScreen("new-agent.signed-out") }
 
 #Preview("Asks") { StoryGallery(.asks) }
 #Preview("Chat states") { StoryGallery(.chat) }

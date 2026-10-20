@@ -62,6 +62,11 @@ public final class Router {
     public var hostsPath: [Route] = [] { didSet { departed(oldValue, hostsPath) } }
     public var youPath: [Route] = [] { didSet { departed(oldValue, youPath) } }
 
+    /// Whether New Agent is up: a sheet over whichever tab asked for it, as
+    /// a new message is in a chat app, rather than a page in a stack. Putting
+    /// it away leaves everything beneath it where it was.
+    public var composing = false { didSet { arrived?() } }
+
     /// A link that is not navigation, kept until whatever it answers comes
     /// for it. A sign-in callback can arrive before the sign-in that started
     /// it is listening — during a cold start the system hands the link over
@@ -143,9 +148,19 @@ public final class Router {
     /// in is about the account arriving and the list of accounts about none,
     /// so those stay.
     public func leaveAccount() {
+        // New Agent offers one account's machines.
+        composing = false
         for tab in Tab.allCases {
             setPath(path(tab).filter(\.outlivesAccount), for: tab)
         }
+    }
+
+    /// Puts New Agent away and opens the agent it started, straight over
+    /// the list: going back from it leads to the list it joined.
+    public func started(_ agent: AgentKey) {
+        composing = false
+        setPath([], for: .agents)
+        open(.conversation(agent))
     }
 
     public func pop() {

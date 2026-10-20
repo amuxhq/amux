@@ -1117,18 +1117,6 @@
         }
       }
     },
-    "%@, not signed in" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, not signed in"
-          }
-        }
-      }
-    },
     "%@-minute limit" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatWords.swift.",
       "extractionState" : "manual",
@@ -2505,18 +2493,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose"
-          }
-        }
-      }
-    },
-    "Choose a directory" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose a directory"
           }
         }
       }
@@ -8293,18 +8269,6 @@
         }
       }
     },
-    "away, cannot start here" : {
-      "comment" : "English app copy. Substituted values appear as %@. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "away, cannot start here"
-          }
-        }
-      }
-    },
     "blocked by %@" : {
       "comment" : "English app copy. Substituted values appear as %@. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/DeleteAccount.swift.",
       "extractionState" : "manual",
@@ -9273,18 +9237,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "offline while this phone is signed out"
-          }
-        }
-      }
-    },
-    "offline, cannot start here" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "offline, cannot start here"
           }
         }
       }
@@ -10401,6 +10353,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save"
+          }
+        }
+      }
+    },
+    "Where" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where"
+          }
+        }
+      }
+    },
+    "Host, %@" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Host, %@"
+          }
+        }
+      }
+    },
+    "Not signed in on %@" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not signed in on %@"
+          }
+        }
+      }
+    },
+    "Agent, %@" : {
+      "comment" : "English app copy. Used in apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent, %@"
           }
         }
       }

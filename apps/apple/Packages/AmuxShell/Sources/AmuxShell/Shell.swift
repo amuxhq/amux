@@ -88,6 +88,18 @@ private func leave(for url: URL) {
     #endif
 }
 
+/// This app's own page in the system's settings. A local network this phone
+/// refused is granted back there and nowhere else: iOS asks once, and this
+/// app has no second ask to offer.
+@MainActor
+private func openSystemSettings() {
+    #if canImport(UIKit)
+    if let url = URL(string: UIApplication.openSettingsURLString) {
+        UIApplication.shared.open(url)
+    }
+    #endif
+}
+
 /// The app: three tabs, a stack under each, and a title menu on the Agents
 /// tab that names the account whose fleet is on show.
 ///
@@ -504,6 +516,7 @@ private struct AgentsTab: View {
             case .subscribe: actions(.subscribe)
             case .openSettings: router.select(.you)
             case .pair(let host): router.pairing = .code(host)
+            case .openSystemSettings: openSystemSettings()
             // The one place the list is allowed to regroup. Data arriving
             // never reorders what a thumb is already travelling towards.
             case .refresh: stores.fleet.refreshOrder(now: stores.now())
@@ -577,13 +590,7 @@ private struct HostsTabRoot: View {
             // Revoking goes nowhere: the list it happens on is the list it
             // changes, and the machine leaves it when the runtime says so.
             case .revoke(let host): stores.revoke(host)
-            // A local network this phone refused is granted back in the
-            // system's settings and nowhere else: iOS asks once, and this app
-            // has no second ask to offer.
-            case .openSystemSettings:
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
+            case .openSystemSettings: openSystemSettings()
             }
         }
     }

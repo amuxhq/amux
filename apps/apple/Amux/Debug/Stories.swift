@@ -24,6 +24,10 @@ extension ComponentCatalog {
         fleet("away") { StoryFleet.busy(away: true) },
         fleet("no-agents") { StoryFleet.noAgents() },
         fleet("first-run") { StoryFleet.firstRun() },
+        fleet("first-run-two-found") { StoryFleet.firstRun(found: [StoryFleet.laptop, StoryFleet.studioFound]) },
+        fleet("first-run-looking") { StoryFleet.firstRun(found: []) },
+        fleet("first-run-refused") { StoryFleet.firstRun(found: [], network: .denied) },
+        fleet("first-run-signed-out") { StoryFleet.firstRun(found: [], accounts: 0) },
         fleet("busy-large-text", size: .accessibility3) { StoryFleet.busy() },
         fleet("two-accounts") { StoryFleet.busy(accounts: 2) },
         fleet("signed-out") { StoryFleet.busy(accounts: 0) },
@@ -89,6 +93,7 @@ enum StoryFleet {
     static let studio = host(2, "studio", platform: "macOS")
     static let pi = host(3, "garage-pi", platform: "Linux")
     static let laptop = host(4, "laptop", platform: "macOS", trusted: false, candidate: true)
+    static let studioFound = host(5, "studio", platform: "macOS", trusted: false, candidate: true)
 
     static func busy(
         stoppedOpen: Bool = false, away: Bool = false, accounts: Int = 1, picture: Bool = false
@@ -139,9 +144,13 @@ enum StoryFleet {
         return stores
     }
 
-    static func firstRun() -> Stores {
-        let stores = Self.stores(hosts: [laptop])
-        stores.fleet.show(FleetView(sections: [], needYou: 0, working: 0), hosts: [laptop])
+    /// Nothing paired, with what this phone has found on its network.
+    static func firstRun(
+        found: [HostView] = [laptop], network: LocalNetworkPermission = .granted, accounts: Int = 1
+    ) -> Stores {
+        let stores = Self.stores(hosts: found, accounts: accounts)
+        stores.hosts.sawLocalNetwork(network)
+        stores.fleet.show(FleetView(sections: [], needYou: 0, working: 0), hosts: found)
         return stores
     }
 

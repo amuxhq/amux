@@ -263,30 +263,10 @@ public struct HostsTab: View {
         return parts.joined(separator: ", ")
     }
 
-    /// Why there is nothing on this network, when the reason is that nobody
-    /// let this app look.
-    ///
-    /// Said here rather than left as an empty list, because the two are
-    /// indistinguishable on screen and only one of them is fixable: iOS asks
-    /// once and an app that was refused can never ask again, so the only way
-    /// back is the system's own settings.
     private var refusedNetwork: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("amux can’t see this network")
-                .designFont(model.hosts.isEmpty ? .screenTitle : .bodyEmphasis, design)
-                .foregroundStyle(design.ink.color)
-            Explain("""
-                Nobody let amux look at the network this phone is on, so no host on it \
-                can be found. Turn on Local Network for amux in Settings.
-                """)
-            Button { actions(.openSystemSettings) } label: {
-                ActionLabel("Open Settings", kind: .outline)
-            }
-            .buttonStyle(.plain)
-            .identified("hosts.localNetwork.settings", label: "Open Settings")
+        LocalNetworkRefused(heading: model.hosts.isEmpty, identifier: "hosts.localNetwork") {
+            actions(.openSystemSettings)
         }
-        .accessibilityElement(children: .contain)
-        .identified("hosts.localNetwork.refused", value: "amux can’t see this network")
     }
 
     /// Nothing paired and nothing found, drawn as the agent list's first run

@@ -24,6 +24,9 @@ public enum HomeAction: Equatable, Sendable {
     /// one: a code is typed for a particular machine, and a machine that has
     /// not been found is reached by scanning the code it prints instead.
     case pair(HostId)
+    /// Take the person to this app's page in the system's settings, the only
+    /// place a refused local network can be granted again.
+    case openSystemSettings
     case openExceptions
     /// The list was pulled, or the screen came back into view. Only then may
     /// the ordering regroup.
@@ -114,10 +117,9 @@ public struct AgentsHome: View {
         .navigationTitle("Agents")
         .navigationSubtitle(subtitle)
         // Pulled down from under the title, as a chat app's search is. It
-        // matches what a row says, as the terminal's filter does.
-        .searchable(
-            text: $words, placement: .navigationBarDrawer(displayMode: .automatic),
-            prompt: Text("Search"))
+        // matches what a row says, as the terminal's filter does. Only over a
+        // list: an empty phone has nothing to search.
+        .modifier(FleetSearch(shown: !model.rows.isEmpty || filtering, words: $words))
         .onChange(of: filter) { _, filter in actions(.filter(filter)) }
         .toolbar {
             // Under the large title the bar's own subtitle sits tight against
@@ -285,16 +287,8 @@ public struct AgentsHome: View {
         if !model.rows.isEmpty || filtering {
             return model.needYou == 0 ? "" : "\(model.needYou) need you"
         }
-        if !model.loaded { return "" }
-        if !model.machines.isEmpty {
-            let count = model.machines.count
-            return "No agents yet · \(count) host\(count == 1 ? "" : "s")"
-        }
-        // Not "Not signed in" and not "Not subscribed". A phone with no agents
-        // is a phone that has paired with nothing, whatever its account is
-        // doing: amux is free on the network this phone is already on, so an
-        // empty list is never evidence that something has to be bought.
-        return "Nothing paired yet"
+        // An empty phone says so in its own heading, under the title.
+        return ""
     }
 
     // MARK: - The list
@@ -655,39 +649,156 @@ public struct AgentsHome: View {
     ///
     /// A splash would teach that this is a service you subscribe to; an empty
     /// list teaches that it is a client for machines you own. So the one
-    /// action is pairing, and an account is offered under it as what pairing
-    /// is not: reaching those machines when you are not on their network. A
-    /// phone that has already found something on this network leads with that
-    /// — there is nothing to type and nothing to sign into, and the machine is
-    /// right there.
+    /// action is pairing, and an account is offered under it, quietly, as
+    /// what pairing is not: reaching those machines when you are not on their
+    /// network.
+    ///
+    /// A machine this phone has found leads, as the card the Hosts tab draws
+    /// for it: there is nothing to type and nothing to sign into, and the
+    /// machine is right there. Without one, the screen says it is still
+    /// looking — it updates itself when a machine turns up — and what to do
+    /// on the computer, which is where both steps happen.
     ///
     /// There is no Pair button of its own. Pairing is always with a particular
-    /// machine: one this phone has found is offered by name above, and one it
-    /// has not found prints a code to scan. A button that opened a keypad for
-    /// no machine at all led to a code that could not be sent anywhere.
+    /// machine: one this phone has found is offered by name, and one it has
+    /// not found prints a code to scan. A button that opened a keypad for no
+    /// machine at all led to a code that could not be sent anywhere.
     private var nothingPairedYet: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Space.xl) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("No agents yet")
+                    Text("Pair your first host")
                         .designFont(.screenTitle, design)
                         .foregroundStyle(design.ink.color)
-                        .identified("home.empty.firstRun", value: "No agents yet")
-                    Explain("Pair with a host and its agents appear here.")
+                        .identified("home.empty.firstRun", value: "Pair your first host")
+                    Explain("amux runs agents on your computers. Pair one and its agents appear here.")
                         .identified("home.empty.explain")
                 }
-                if !found.isEmpty { offers }
-                PairingHint()
-                    .identified("home.empty.howToPair")
+                .padding(.horizontal, design.metrics.gutter)
+                if !pairable.isEmpty {
+                    VStack(alignment: .leading, spacing: Space.m) {
+                        CalloutStrip(callouts: pairable, act: actions)
+                        Text("Not this one? Run \(command("amux pair")) on the computer you want and scan the code it shows with the Camera app.")
+                            .designFont(.detail, design)
+                            .foregroundStyle(design.inkMuted.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, design.metrics.gutter)
+                            .identified("home.empty.howToPair")
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: Space.xl) {
+                        if hosts.localNetwork == .denied {
+                            LocalNetworkRefused(heading: false, identifier: "home.localNetwork") {
+                                actions(.openSystemSettings)
+                            }
+                        } else {
+                            looking
+                        }
+                        steps
+                    }
+                    .padding(.horizontal, design.metrics.gutter)
+                }
                 if !signedIn {
-                    SignInCallToAction(identifier: "home.empty.signIn") { actions(.signIn) }
+                    haveAnAccount.padding(.horizontal, design.metrics.gutter)
                 }
             }
-            .padding(.horizontal, design.metrics.gutter)
             .padding(.top, 30)
             .padding(.bottom, 120)
         }
         .scrollIndicators(.hidden)
+    }
+
+    /// Every machine this phone has found and not paired, as the Hosts tab
+    /// offers them.
+    private var pairable: [Callout<HomeAction>] {
+        found.compactMap { host in
+            guard let id = host.id else { return nil }
+            return Callout(
+                id: "pair.\(host.name)", glyph: "plus.circle",
+                title: String(localized: "\(host.name) is nearby"),
+                detail: String(localized: "Pair it to see its agents here"),
+                button: String(localized: "Pair"), act: .pair(id),
+                identifier: "home.pair.\(id)")
+        }
+    }
+
+    /// That the screen is not finished: browsing runs while the app is
+    /// open, and a machine that starts advertising appears here by itself.
+    private var looking: some View {
+        HStack(spacing: 10) {
+            StateMark(state: .working)
+            Text("Looking on this network…")
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+        }
+        .accessibilityElement(children: .combine)
+        .identified("home.empty.looking", value: "Looking on this network…")
+    }
+
+    /// What to do on the computer, in order. Both steps happen there, so
+    /// nothing here is a command to copy; the one thing worth carrying across
+    /// is the address, sent by whatever reaches that computer.
+    private var steps: some View {
+        VStack(alignment: .leading, spacing: Space.l) {
+            step(1) {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    Text("On your computer, install amux from \(Text(verbatim: "amux.sh").font(design.font(.bodyEmphasis))).")
+                    ShareLink(item: Self.site) {
+                        ActionLabel("Send Link", kind: .outline)
+                    }
+                    .buttonStyle(.amuxControl)
+                    .identified("home.empty.sendLink", label: "Send Link")
+                }
+            }
+            step(2) {
+                Text("Run \(command("amux pair")) on it and scan the code it shows with the Camera app.")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .identified("home.empty.howToPair")
+    }
+
+    private static let site = URL(string: "https://amux.sh")!
+
+    private func step(_ number: Int, @ViewBuilder _ content: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.m) {
+            Text(verbatim: "\(number)")
+                .designFont(.caption, design)
+                .fontWeight(.semibold)
+                .foregroundStyle(design.ink.color)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(design.sunken.color))
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+            content()
+                .designFont(.body, design)
+                .foregroundStyle(design.ink.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func command(_ text: String) -> Text {
+        Text(verbatim: text).font(design.font(.mono))
+    }
+
+    /// An account, offered under pairing as what it adds rather than as a
+    /// step: amux is free on the network this phone is on.
+    private var haveAnAccount: some View {
+        HStack(spacing: 4) {
+            Text("Have an amux account?")
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+            Button { actions(.signIn) } label: {
+                Text("Sign In")
+                    .designFont(.detail, design)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(design.accent.color)
+                    .thumbTarget(y: 13)
+            }
+            .buttonStyle(.amuxControl)
+            .identified("home.empty.signIn", label: "Sign In")
+            .reclaimingThumbTarget(y: 13)
+        }
     }
 
     /// Paired, and nothing running yet.
@@ -703,10 +814,13 @@ public struct AgentsHome: View {
                     .padding(.top, Space.l)
             }
             VStack(alignment: .leading, spacing: 18) {
-                // No headline of its own: the subtitle under the title already
-                // says there are no agents and how many hosts there are.
-                Explain("Start an agent on a host and it appears here.")
-                    .identified("home.empty.noAgents")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No agents yet")
+                        .designFont(.screenTitle, design)
+                        .foregroundStyle(design.ink.color)
+                    Explain("Start an agent on a host and it appears here.")
+                        .identified("home.empty.noAgents")
+                }
                 if canStartAnAgent {
                     Button { actions(.newAgent) } label: {
                         ActionLabel("New Agent", kind: .primary, fill: true)
@@ -723,60 +837,10 @@ public struct AgentsHome: View {
         .scrollIndicators(.hidden)
     }
 
-    /// The machines on this network this phone has found and not paired with.
-    ///
-    /// Offered here and not only on the Hosts tab because this is where
-    /// somebody is standing when they have nothing: the shortest true sentence
-    /// about an empty phone on a network with a host on it is that the host is
-    /// right there.
+    /// The machines on this network this phone has found and not paired with,
+    /// offered above the list as well as on the Hosts tab: this is where
+    /// somebody is standing when one turns up.
     private var found: [HostView] { hosts.candidates(.onThisNetwork) }
-
-    private var offers: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHead(title: "On this network")
-            RowGroup(items: found) { host in offer(host) }
-        }
-    }
-
-    private func offer(_ host: HostView) -> some View {
-        HStack(spacing: 11) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(host.name)
-                    .designFont(.identifier, design)
-                    .foregroundStyle(design.ink.color)
-                Text(offered(host))
-                    .designFont(.monoSmall, design)
-                    .foregroundStyle(design.inkFaint.color)
-            }
-            Spacer(minLength: 6)
-            Button { if let id = host.id { actions(.pair(id)) } } label: {
-                ActionLabel("Pair", kind: .outline)
-            }
-            .buttonStyle(.amuxRow)
-            .accessibilityLabel("Pair with \(host.name)")
-            .identified("home.pair.\(host.id?.description ?? host.name)", label: "Pair with \(host.name)")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minHeight: 44)
-        .accessibilityElement(children: .contain)
-        .identified("home.offer.\(host.id?.description ?? host.name)", label: spokenOffer(host), value: "found")
-    }
-
-    private func offered(_ host: HostView) -> String {
-        var parts: [String] = []
-        if let platform = host.platform { parts.append(platform) }
-        parts.append("found")
-        return parts.joined(separator: " · ")
-    }
-
-    private func spokenOffer(_ host: HostView) -> String {
-        var parts = [host.name]
-        if let platform = host.platform { parts.append(platform) }
-        parts.append("found, not paired")
-        return parts.joined(separator: ", ")
-    }
-
 }
 
 extension FleetGate {
@@ -1093,6 +1157,22 @@ struct CalloutStrip<Action: Equatable>: View {
             .contentMargins(.horizontal, Space.margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollIndicators(.hidden)
+        }
+    }
+}
+
+/// The fleet's search field, there only while there is a fleet to search.
+private struct FleetSearch: ViewModifier {
+    let shown: Bool
+    @Binding var words: String
+
+    func body(content: Content) -> some View {
+        if shown {
+            content.searchable(
+                text: $words, placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: Text("Search"))
+        } else {
+            content
         }
     }
 }

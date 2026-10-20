@@ -789,6 +789,22 @@
       "shows": "A phone paired with nothing, with one machine found on its network."
     },
     {
+      "id": "fleet.first-run-two-found",
+      "shows": "Nothing paired yet, with two machines found on this network."
+    },
+    {
+      "id": "fleet.first-run-looking",
+      "shows": "Nothing paired and nothing found yet: still looking, and the two steps on the computer."
+    },
+    {
+      "id": "fleet.first-run-refused",
+      "shows": "Nothing paired on a phone refused the local network."
+    },
+    {
+      "id": "fleet.first-run-signed-out",
+      "shows": "Nothing paired on a phone with no account, offering to sign in under pairing."
+    },
+    {
       "id": "fleet.busy-large-text",
       "shows": "The busy list at the largest accessibility text size."
     },

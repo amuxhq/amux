@@ -47,6 +47,40 @@ public struct PairingHint: View {
     }
 }
 
+/// Why nothing on this network can be found, when the reason is that nobody
+/// let this app look.
+///
+/// Said rather than left as an empty list, because the two are
+/// indistinguishable on screen and only one of them is fixable: iOS asks once
+/// and an app that was refused can never ask again, so the only way back is
+/// the system's own settings.
+struct LocalNetworkRefused: View {
+    @Environment(\.design) private var design
+    /// Drawn as the screen's heading when nothing else on it is one.
+    let heading: Bool
+    let identifier: String
+    let openSettings: @MainActor () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("amux can’t see this network")
+                .designFont(heading ? .screenTitle : .bodyEmphasis, design)
+                .foregroundStyle(design.ink.color)
+            Explain("""
+                Nobody let amux look at the network this phone is on, so no host on it \
+                can be found. Turn on Local Network for amux in Settings.
+                """)
+            Button { openSettings() } label: {
+                ActionLabel("Open Settings", kind: .outline)
+            }
+            .buttonStyle(.plain)
+            .identified("\(identifier).settings", label: "Open Settings")
+        }
+        .accessibilityElement(children: .contain)
+        .identified("\(identifier).refused", value: "amux can’t see this network")
+    }
+}
+
 /// The bar every pairing screen shares: what is being paired and how it is
 /// reached, and a way out. Pairing is a short task with an end, so it is a
 /// sheet over Hosts, as New Agent is, and closing it at any point writes no

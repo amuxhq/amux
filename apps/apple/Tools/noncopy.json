@@ -1634,7 +1634,8 @@
       {"literal": "\"fleet.busy\"", "context": "#Preview(\"Fleet · typing\") { StoryScreen(\"fleet.busy\").environment(\\.workingMark, .typing) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"fleet.busy\"", "context": "#Preview(\"Fleet · orbit\") { StoryScreen(\"fleet.busy\").environment(\\.workingMark, .orbit) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"fleet.busy\"", "context": "#Preview(\"Fleet · filling\") { StoryScreen(\"fleet.busy\").environment(\\.workingMark, .filling) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"fleet.no-matches\"", "context": "#Preview(\"Fleet · no matches\") { StoryScreen(\"fleet.no-matches\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"fleet.no-matches\"", "context": "#Preview(\"Fleet · no matches\") { StoryScreen(\"fleet.no-matches\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"fleet.no-agents\"", "context": "#Preview(\"Fleet · no agents\") { StoryScreen(\"fleet.no-agents\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Amux/Debug/ChatPreviews.swift": [
       {"literal": "\"chat.conversation\"", "context": "#Preview(\"Chat · conversation\") { StoryScreen(\"chat.conversation\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

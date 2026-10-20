@@ -13,6 +13,7 @@ import SwiftUI
 #Preview("Fleet · busy") { StoryScreen("fleet.busy") }
 #Preview("Fleet · stopped open") { StoryScreen("fleet.stopped-open") }
 #Preview("Fleet · host away") { StoryScreen("fleet.away") }
+#Preview("Fleet · no agents") { StoryScreen("fleet.no-agents") }
 #Preview("Fleet · first run") { StoryScreen("fleet.first-run") }
 #Preview("Fleet · two accounts") { StoryScreen("fleet.two-accounts") }
 #Preview("Fleet · signed out") { StoryScreen("fleet.signed-out") }

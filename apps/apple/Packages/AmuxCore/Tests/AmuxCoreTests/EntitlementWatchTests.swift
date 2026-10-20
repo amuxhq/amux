@@ -46,7 +46,7 @@ final class EntitlementWatchTests: XCTestCase {
         answer = Entitlement.none
         await watch.look()
         XCTAssertEqual(registry.selectedAccount?.entitlement, Entitlement.none)
-        XCTAssertEqual(registry.selectedAccount?.entitlement.summary, "Not subscribed · hosts on this network still work")
+        XCTAssertEqual(registry.selectedAccount?.entitlement.summary, "Not subscribed")
         XCTAssertEqual(relinked, [ada], "the relay link was not asked to read the lapse")
 
         let bought = Entitlement.active(grant: .purchased(.web), renews: nil)

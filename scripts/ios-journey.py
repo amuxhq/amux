@@ -1508,7 +1508,7 @@ def purchase_restore(journey: PhoneJourney) -> list[str]:
     recorded = [call for call in record["cloud"] if call.startswith("recordPurchase")]
     if len(recorded) != 2 or "restore" not in record["store"]:
         raise RuntimeError(f"the purchase was not offered to amux.sh again by a restore: {record!r}")
-    journey.tap("paywall.buy")
+    journey.tap("paywall.back")
     journey.wait(lambda drawn: "paywall" not in drawn, "the paywall closed")
 
     # The relay link reads what the account buys again, and the same

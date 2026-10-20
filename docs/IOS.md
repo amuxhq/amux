@@ -151,7 +151,8 @@ profile registry creates, binds, signs out, pauses and deletes them.
   ask.
 
 Remove from This Phone (an account's section in Settings, or the menu on
-any account row) takes an account off the phone and leaves it on amux.sh. The
+any account row) asks first in the system's dialog, pointing at the row it
+was asked from, then takes an account off the phone and leaves it on amux.sh. The
 registry deletes the account's profile: its key, its trust store, the hosts
 it paired and its store. The installation keeps at least one profile, so
 removing the last account first creates a fresh unbound one. The hosts keep

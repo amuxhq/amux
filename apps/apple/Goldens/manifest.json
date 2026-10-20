@@ -657,6 +657,50 @@
       "shows": "An invitation naming a machine only the relay can reach, on a phone with no account."
     },
     {
+      "id": "settings.two-accounts",
+      "shows": "Settings with two accounts, the selected one's relay and actions, this phone and help."
+    },
+    {
+      "id": "settings.signed-out",
+      "shows": "Settings on a phone with no account signed in."
+    },
+    {
+      "id": "settings.delete",
+      "shows": "Asking before an account is deleted, with the address typed to confirm."
+    },
+    {
+      "id": "settings.sign-in",
+      "shows": "Signing in: what an account adds, and continuing on amux.sh."
+    },
+    {
+      "id": "settings.sign-in-waiting",
+      "shows": "Signing in while amux.sh is open."
+    },
+    {
+      "id": "settings.sign-in-failed",
+      "shows": "A sign-in that did not finish, and why."
+    },
+    {
+      "id": "settings.sign-in-mismatched",
+      "shows": "Signing back in as a different account than the one asked for."
+    },
+    {
+      "id": "settings.paywall",
+      "shows": "Subscribing: the plans, the one chosen, and restoring a purchase."
+    },
+    {
+      "id": "settings.paywall-confirming",
+      "shows": "A purchase waiting for amux.sh to confirm it."
+    },
+    {
+      "id": "settings.paywall-unconfirmed",
+      "shows": "A purchase amux.sh could not be reached to confirm."
+    },
+    {
+      "id": "settings.paywall-subscribed",
+      "shows": "An account subscribed through the App Store."
+    },
+    {
       "id": "new-agent.claude",
       "shows": "Starting a Claude agent: the host, a recent directory, the name, the model and permission, and a new worktree."
     },

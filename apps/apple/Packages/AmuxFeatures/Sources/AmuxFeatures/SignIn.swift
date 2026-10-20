@@ -30,16 +30,10 @@ public enum SignInAction: Equatable, Sendable {
 public struct SignIn: View {
     @Environment(\.design) private var design
     private let model: SignInStore
-    private let back: String
     private let actions: @MainActor (SignInAction) -> Void
 
-    public init(
-        model: SignInStore,
-        back: String = "Agents",
-        actions: @escaping @MainActor (SignInAction) -> Void
-    ) {
+    public init(model: SignInStore, actions: @escaping @MainActor (SignInAction) -> Void) {
         self.model = model
-        self.back = back
         self.actions = actions
     }
 
@@ -47,15 +41,14 @@ public struct SignIn: View {
         ZStack {
             Ground()
             VStack(alignment: .leading, spacing: 0) {
-                backButton
                 heading
-                facts
                 Spacer(minLength: 22)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.horizontal, design.metrics.gutter)
             foot
         }
+        .backBar("sign-in.back") { actions(.cancel) }
         // A screen is a container of the things on it, not a name for all of
         // them. Without this the system spreads this identifier over every
         // element underneath, and everything on the screen answers to the
@@ -74,14 +67,6 @@ public struct SignIn: View {
         }
     }
 
-    private var backButton: some View {
-        HStack {
-            BackLink(back, identifier: "sign-in.back") { actions(.cancel) }
-            Spacer()
-        }
-        .padding(.vertical, 8)
-    }
-
     private var heading: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Sign in")
@@ -98,50 +83,17 @@ public struct SignIn: View {
         .padding(.bottom, 26)
     }
 
-    /// What an account is for, in the one sentence the reference gives it.
-    ///
-    /// It says nothing about the local network, because there is no local
-    /// discovery: pairing itself goes over the relay, which is what the
-    /// account buys. If discovery ever arrives, this is the line that changes.
+    /// What an account is for, and that a subscription bought on the web is
+    /// not bought again here, in one sentence naming where the signing-in
+    /// happens.
     ///
     /// Signing back into an account this phone already lists says which, so
     /// the page is about that account rather than about accounts in general.
     private var explanation: String {
         if case .returning(let account) = model.intent {
-            return "Sign back in as \(account.email)."
+            return String(localized: "Sign back in as \(account.email).")
         }
-        return "An account lets this phone reach your hosts from anywhere."
-    }
-
-    /// The two things worth knowing before pressing the button: where the
-    /// signing-in happens, and that a subscription bought on the web is not
-    /// bought again here.
-    private var facts: some View {
-        VStack(spacing: 0) {
-            fact("arrow.up.forward.square", "Signed in on \(model.host)", id: "where")
-            Rectangle()
-                .fill(design.hairline.color)
-                .frame(height: design.metrics.hairline)
-                .padding(.leading, 40)
-            fact("creditcard", "Web subscriptions carry over", id: "billing")
-        }
-    }
-
-    private func fact(_ glyph: String, _ text: String, id: String) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: glyph)
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(design.inkMuted.color)
-                .frame(width: 26, alignment: .leading)
-            Text(text)
-                .designFont(.body, design)
-                .foregroundStyle(design.ink.color)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 14)
-        .accessibilityElement(children: .combine)
-        .identified("sign-in.\(id)", value: text)
+        return String(localized: "An account lets this phone reach your hosts from anywhere, and a subscription bought on \(model.host) carries over.")
     }
 
     /// The hand-off, and everything said about it.
@@ -155,15 +107,16 @@ public struct SignIn: View {
             BottomAction {
                 VStack(spacing: 10) {
                     trouble
-                    Button { actions(pressed) } label: {
-                        ActionLabel(title, kind: .primary, fill: true)
+                    if model.working {
+                        WaitingLine(title: title)
+                            .identified("sign-in.continue", label: title, value: state, enabled: false)
+                    } else {
+                        Button { actions(pressed) } label: {
+                            ActionLabel(title, kind: .primary, fill: true)
+                        }
+                        .buttonStyle(.amuxControl)
+                        .identified("sign-in.continue", label: title, value: state)
                     }
-                    .buttonStyle(.amuxControl)
-                    .disabled(model.working)
-                    .opacity(model.working ? 0.5 : 1)
-                    .identified(
-                        "sign-in.continue", label: title, value: state,
-                        enabled: !model.working)
                     if case .mismatched = model.phase {
                         Button { actions(.discard) } label: {
                             ActionLabel("Cancel", kind: .quiet, fill: true)
@@ -234,7 +187,7 @@ public struct SignIn: View {
     private var caption: some View {
         if case .signedIn(let account) = model.phase {
             Text("Signed in as \(account.email)")
-                .designFont(.monoSmall, design)
+                .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
                 .identified("sign-in.signed-in", value: account.email)
         } else {
@@ -242,7 +195,7 @@ public struct SignIn: View {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 11, weight: .semibold))
                 Text("Opens \(model.host) in Safari")
-                    .designFont(.monoSmall, design)
+                    .designFont(.detail, design)
             }
             .foregroundStyle(design.inkFaint.color)
             .accessibilityElement(children: .combine)

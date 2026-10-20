@@ -236,8 +236,7 @@ final class Composition {
         // Taking an account off this phone: its profile — its key, the
         // machines it paired, what it held — is deleted. The account on
         // amux.sh is untouched.
-        case .confirmRemoval:
-            guard let id = removal.account else { break }
+        case .confirmRemoval(let id):
             removal.dismiss()
             Task { [cloud] in try? await cloud.forgetSession(id) }
             forget(id)

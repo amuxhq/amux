@@ -1561,6 +1561,18 @@
         }
       }
     },
+    "Paywall" : {
+      "comment" : "English app copy. Used in apps/apple/Amux/Debug/SettingsPreviews.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paywall"
+          }
+        }
+      }
+    },
     "Pick up where you left off and rerun the tests." : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",

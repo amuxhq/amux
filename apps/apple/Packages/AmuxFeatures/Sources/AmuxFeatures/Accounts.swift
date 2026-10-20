@@ -9,8 +9,12 @@ public enum AccountsAction: Equatable, Sendable {
     /// Sign back into an account this phone still remembers.
     case signIn(AccountId)
     case signOut(AccountId)
-    /// Take an account off this phone, leaving it on amux.sh.
+    /// Ask about taking an account off this phone, leaving it on amux.sh.
     case remove(AccountId)
+    /// Take it off, once asked. It names the account, because the system's
+    /// dialog may report being put away before the press it was put away by.
+    case confirmRemoval(AccountId)
+    case cancelRemoval
     case delete(AccountId)
     /// Open what this account has bought.
     case subscription
@@ -162,6 +166,8 @@ public struct YouScreen: View {
     private let appearance: Appearance?
     private let shareUsage: Bool
     private let identity: Identity?
+    /// The account being asked about removing, if one is.
+    private let removing: AccountId?
     private let actions: @MainActor (AccountsAction) -> Void
 
     public init(
@@ -169,12 +175,14 @@ public struct YouScreen: View {
         appearance: Appearance? = nil,
         shareUsage: Bool = true,
         identity: Identity? = nil,
+        removing: AccountId? = nil,
         actions: @escaping @MainActor (AccountsAction) -> Void
     ) {
         self.accounts = accounts
         self.appearance = appearance
         self.shareUsage = shareUsage
         self.identity = identity
+        self.removing = removing
         self.actions = actions
     }
 
@@ -184,14 +192,6 @@ public struct YouScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     accountList
-                    // Offered here and nowhere above it. A phone with nobody
-                    // signed in is not a broken phone — it pairs and it runs
-                    // agents on this network — so the account is put where
-                    // somebody has come looking for one, said as the thing it
-                    // adds rather than as something missing.
-                    if !signedIn {
-                        SignInCallToAction(identifier: "you.signIn") { actions(.add) }
-                    }
                     if let entry = accounts.selectedAccount { account(entry) }
                     phone
                     help
@@ -206,18 +206,17 @@ public struct YouScreen: View {
         .identified("you", value: accounts.selectedAccount?.account.email ?? "none")
     }
 
-    /// Whether any account on this phone is signed in. An account listed with
-    /// Sign In beside it is remembered, not signed in.
-    private var signedIn: Bool { accounts.accounts.contains(where: \.signedIn) }
-
     private var accountList: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHead(title: "Accounts")
             VStack(spacing: 0) {
                 ForEach(accounts.accounts) { entry in
-                    AccountRow(
-                        entry: entry, selected: entry.id == accounts.selected, actions: actions)
+                    let selected = entry.id == accounts.selected
+                    AccountRow(entry: entry, selected: selected, actions: actions)
                         .padding(.horizontal, 14)
+                        // The selected account is asked about from its own
+                        // section's row below; any other, from its row here.
+                        .removalDialog(entry, asking: !selected && removing == entry.id, actions: actions)
                         // On the row itself, because the account's own section
                         // below is only ever the selected account's, and an
                         // account signed out of is the one most likely to be
@@ -232,24 +231,59 @@ public struct YouScreen: View {
                         }
                     rule(inset: 14)
                 }
-                Button { actions(.add) } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 14, weight: .semibold))
-                            .frame(width: 30)
-                        Text("Add Account")
-                            .designFont(.body, design)
-                        Spacer(minLength: 0)
+                if accounts.accounts.isEmpty {
+                    signIn
+                } else {
+                    Button { actions(.add) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .semibold))
+                                .frame(width: 30)
+                            Text("Add Account")
+                                .designFont(.body, design)
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(design.accent.color)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 13)
+                        .contentShape(Rectangle())
                     }
-                    .foregroundStyle(design.accent.color)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 13)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.amuxRow)
+                    .identified("you.add", label: "Add Account")
                 }
-                .buttonStyle(.amuxRow)
-                .identified("you.add", label: "Add Account")
             }
         }
+    }
+
+    /// The first account, offered where the accounts would be. A phone with
+    /// nobody signed in is not a broken phone — it pairs and runs agents on
+    /// this network — so it is said as what an account adds rather than as
+    /// something missing. An account this phone remembers is signed back into
+    /// from its own row instead.
+    private var signIn: some View {
+        Button { actions(.add) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(design.accent.color)
+                    .frame(width: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Sign In")
+                        .designFont(.body, design)
+                        .foregroundStyle(design.accent.color)
+                    Text("Reach your agents from anywhere")
+                        .designFont(.caption, design)
+                        .foregroundStyle(design.inkMuted.color)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.amuxRow)
+        .accessibilityElement(children: .combine)
+        .identified("you.signIn", label: "Sign In")
     }
 
     /// The selected account's own actions, under the list they continue.
@@ -271,6 +305,7 @@ public struct YouScreen: View {
                 action("Sign Out", id: "signOut") { actions(.signOut(entry.id)) }
                 rule()
                 action("Remove from This Phone", id: "remove") { actions(.remove(entry.id)) }
+                    .removalDialog(entry, asking: removing == entry.id, actions: actions)
                 rule()
                 // The one destructive thing on the page, in the colour this
                 // app keeps for exactly that.
@@ -417,7 +452,7 @@ public struct YouScreen: View {
                 .designFont(.caption, design)
                 .foregroundStyle(design.inkFaint.color)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 14)
                 .identified("you.help.caption")
         }
     }
@@ -484,5 +519,31 @@ public struct YouScreen: View {
             .fill(design.hairline.color)
             .frame(height: design.metrics.hairline)
             .padding(.leading, inset)
+    }
+}
+
+extension View {
+    /// Asks before an account is taken off this phone, in the system's dialog
+    /// held by the row it was asked from, so it points there.
+    ///
+    /// It sits beside Delete Account and must never be mistaken for it, so
+    /// what stays is said first: the account on amux.sh, what it pays for, and
+    /// every agent on every host are untouched. What goes is this phone's own
+    /// part — the sign-in, and the hosts it paired for that account, which are
+    /// paired again if the account comes back. Nothing is typed to confirm
+    /// it, because nothing here cannot be put back by signing in.
+    func removalDialog(
+        _ entry: AccountEntry, asking: Bool, actions: @escaping @MainActor (AccountsAction) -> Void
+    ) -> some View {
+        confirmationDialog(
+            String(localized: "Remove \(entry.account.email) from this phone?"),
+            isPresented: Binding(get: { asking }, set: { if !$0, asking { actions(.cancelRemoval) } }),
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Remove"), role: .destructive) { actions(.confirmRemoval(entry.id)) }
+                .accessibilityIdentifier("remove.confirm")
+        } message: {
+            Text("Your amux.sh account, its subscription, and your agents and files on your hosts stay as they are. This phone signs out and forgets the hosts it paired for this account.")
+        }
     }
 }

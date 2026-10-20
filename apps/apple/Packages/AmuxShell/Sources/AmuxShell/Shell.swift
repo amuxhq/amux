@@ -53,7 +53,7 @@ public enum ShellAction: Equatable, Sendable {
     /// said first, over the page it was asked from.
     case removeAccount(AccountId)
     /// The answer to that question.
-    case confirmRemoval
+    case confirmRemoval(AccountId)
     case cancelRemoval
     /// Somebody asked to give up an account for good. What that costs is a
     /// question the app asks before anything leaves this phone.
@@ -539,7 +539,7 @@ private struct SignInPage: View {
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
-        SignIn(model: model, back: from.title) { action in
+        SignIn(model: model) { action in
             switch action {
             case .cancel, .done: router.pop()
             case .start: actions(.handOffSignIn)
@@ -547,8 +547,6 @@ private struct SignInPage: View {
             case .discard: actions(.discardSignIn)
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -564,17 +562,18 @@ private struct PaywallPage: View {
     let actions: @MainActor (ShellAction) -> Void
 
     var body: some View {
-        Paywall(model: model, back: from.title) { action in
+        Paywall(model: model) { action in
             switch action {
-            case .cancel, .done: router.pop()
+            case .cancel: router.pop()
             case .choose(let period): model.choose(period)
             case .buy: actions(.buySubscription)
             case .restore: actions(.restorePurchases)
             case .retry: actions(.retryPurchase)
+            // The App Store's own page, the one place a subscription bought
+            // there is changed or cancelled.
+            case .manage: leave(for: AmuxCloudService.appStoreSubscriptions)
             }
         }
-        // The screen draws its own header, so the bar would be a second one.
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -863,6 +862,7 @@ struct LinkAsked {
 /// and deleting all leave here, because each of them either changes what the
 /// whole app is pointed at or reaches something outside it.
 private struct YouTabRoot: View {
+    @Environment(\.reducesTransparency) private var reducesTransparency
     let router: Router
     let accounts: AccountRegistry
     let stores: StoreBundle
@@ -888,25 +888,19 @@ private struct YouTabRoot: View {
                 }
             }
         ) {
-            RemoveAccountOverlay(
-                accounts: accounts, model: removal,
-                actions: { asked in
-                    switch asked {
-                    case .cancel: actions(.cancelRemoval)
-                    case .confirm: actions(.confirmRemoval)
-                    }
-                }
-            ) {
-                you
-            }
+            you
         }
         .navigationTitle(Tab.you.title)
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
+            // The app's own circle in ink, as New Agent's and pairing's: the
+            // system's role button takes the sheet's accent tint.
             ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .close) { router.select(router.beneath) }
-                    .accessibilityIdentifier("you.close")
+                BarButton("xmark", label: String(localized: "Close"), identifier: "you.close") {
+                    router.select(router.beneath)
+                }
             }
+            .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
         }
     }
 
@@ -916,7 +910,8 @@ private struct YouTabRoot: View {
             // This phone's own name and key, read off the machine store:
             // absent until a connection has said what this device's identity
             // is, rather than guessed at.
-            identity: stores.hosts.roster?.identity
+            identity: stores.hosts.roster?.identity,
+            removing: removal.account
         ) { action in
             switch action {
             case .select(let id): actions(.selectAccount(id))
@@ -924,6 +919,8 @@ private struct YouTabRoot: View {
             case .signIn(let id): actions(.signInAgain(id))
             case .signOut(let id): actions(.signOutAccount(id))
             case .remove(let id): actions(.removeAccount(id))
+            case .confirmRemoval(let id): actions(.confirmRemoval(id))
+            case .cancelRemoval: actions(.cancelRemoval)
             case .subscription: actions(.subscribe)
             case .appearance(let wanted): actions(.wear(wanted))
             case .shareUsage(let on): actions(.shareUsage(on))

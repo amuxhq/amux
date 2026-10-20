@@ -281,7 +281,7 @@ struct StoryScreen: View {
             ZStack {
                 Ground()
                 example.build()
-                    .padding([.chat, .fleet, .hosts, .pairing].contains(example.family) ? 0 : 18)
+                    .padding([.chat, .fleet, .hosts, .pairing, .settings].contains(example.family) ? 0 : 18)
             }
             .environment(\.design, Design.app)
             .environment(\.dynamicTypeSize, example.dynamicTypeSize)

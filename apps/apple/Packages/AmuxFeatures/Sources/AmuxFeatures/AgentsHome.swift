@@ -189,8 +189,8 @@ public struct AgentsHome: View {
         case .signIn(let id): actions(.signInAgain(id))
         // Nothing else reaches this screen: the rest of an account's actions
         // live under You, where there is room to state what they do.
-        case .signOut, .remove, .delete, .subscription, .appearance, .shareUsage,
-             .support, .report, .exportDump:
+        case .signOut, .remove, .confirmRemoval, .cancelRemoval, .delete, .subscription,
+             .appearance, .shareUsage, .support, .report, .exportDump:
             break
         }
     }

@@ -412,19 +412,13 @@ extension Grant {
 }
 
 extension Entitlement {
-    /// What the relay will carry, and where that was bought.
-    ///
-    /// Written as what it does rather than as a status word, because the whole
-    /// question a person has here is whether their machines can be reached
-    /// from anywhere. The unsubscribed line says the other half in the same
-    /// breath: amux is free on the network a phone is already on, and an
-    /// account that has bought nothing has lost nothing there.
+    /// Whether the relay carries this account's hosts, in two words. Where
+    /// it was bought, and that hosts on this network work without it, are
+    /// said on the page this opens, not on a row too narrow to hold them.
     public var summary: String {
         switch self {
-        case .active(.purchased(.appStore), _): "Subscribed through the App Store"
-        case .active(.purchased(.web), _): "Subscribed on the web"
-        case .active(.granted, _): "Included with this account"
-        case .none, .lapsed: "Not subscribed · hosts on this network still work"
+        case .active: "Subscribed"
+        case .none, .lapsed: "Not subscribed"
         }
     }
 }

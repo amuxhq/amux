@@ -52,3 +52,48 @@ public struct BarButton: View {
         .identified(identifier, label: label)
     }
 }
+
+/// What a pushed page shows while the one thing on it is under way: the
+/// breathing mark and what is happening, in ink, where the button was. A
+/// button greyed out to say "wait" is a button that cannot be read.
+struct WaitingLine: View {
+    @Environment(\.design) private var design
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            StateMark(state: .working)
+            Text(title)
+                .designFont(.bodyEmphasis, design)
+                .foregroundStyle(design.ink.color)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension View {
+    /// A pushed page's bar: the back circle on its own, with the page's
+    /// heading in its content rather than beside it.
+    func backBar(_ identifier: String, back: @escaping @MainActor () -> Void) -> some View {
+        modifier(BackBar(identifier: identifier, back: back))
+    }
+}
+
+private struct BackBar: ViewModifier {
+    @Environment(\.reducesTransparency) private var reducesTransparency
+    let identifier: String
+    let back: @MainActor () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .navigationBarBackButtonHidden(true)
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    BarBack(identifier: identifier) { back() }
+                }
+                .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
+            }
+    }
+}

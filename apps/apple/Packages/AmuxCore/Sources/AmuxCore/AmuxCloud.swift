@@ -502,7 +502,7 @@ public actor AmuxCloudService: CloudService {
 
     /// Where an App Store subscription is managed. It is the system's own page
     /// and not a page this cloud can offer.
-    static let appStoreSubscriptions = URL(string: "https://apps.apple.com/account/subscriptions")!
+    public static let appStoreSubscriptions = URL(string: "https://apps.apple.com/account/subscriptions")!
 }
 
 // MARK: - What the cloud answers

@@ -21,6 +21,7 @@ struct ComponentExample: Identifiable {
         case fleet = "Fleet"
         case hosts = "Hosts"
         case pairing = "Pairing"
+        case settings = "Settings"
     }
 
     let id: String
@@ -61,7 +62,7 @@ struct ComponentExample: Identifiable {
 /// row kind, every ask card, the composer's states and the chat's own.
 @MainActor
 enum ComponentCatalog {
-    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet + hosts + pairing
+    static let examples: [ComponentExample] = rows + asks + composer + chat + overview + review + newAgent + fleet + hosts + pairing + settings
 
     static func example(id: String) -> ComponentExample? {
         examples.first { $0.id == id }
@@ -1246,7 +1247,7 @@ struct ComponentExampleView: View {
         ZStack {
             Ground()
             example.build()
-                .padding([.chat, .fleet, .hosts, .pairing].contains(example.family) ? 0 : 18)
+                .padding([.chat, .fleet, .hosts, .pairing, .settings].contains(example.family) ? 0 : 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(width: example.canvas.width, height: example.canvas.height)
@@ -1551,6 +1552,66 @@ extension ComponentCatalog {
             return NavigationStack { PairConfirmation(model: store) { _ in } }
         }
     }
+}
+
+extension ComponentCatalog {
+    // MARK: - Settings
+
+    /// The settings sheet with two accounts and with none, and every page it
+    /// opens: signing in, subscribing, and deleting an account. Removing one
+    /// asks in the system's dialog, which a flat capture cannot hold; it has
+    /// a preview of its own.
+    fileprivate static let settings: [ComponentExample] = [
+        sheet("two-accounts") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },
+        sheet("signed-out") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 0) }.settings },
+        sheet("delete") {
+            let stores = StoryFleet.busy()
+            return DeleteAccountOverlay(
+                entry: stores.accounts.selectedAccount, model: DeletionStore(asking: AccountId("ada")),
+                actions: { _ in }
+            ) { YouScreen(accounts: stores.accounts) { _ in } }
+        },
+        sheet("sign-in") { SignIn(model: SignInStore()) { _ in } },
+        sheet("sign-in-waiting") { SignIn(model: SignInStore(phase: .handingOff)) { _ in } },
+        sheet("sign-in-failed") {
+            SignIn(model: SignInStore(phase: .failed("amux.sh did not answer"))) { _ in }
+        },
+        sheet("sign-in-mismatched") {
+            SignIn(
+                model: SignInStore(
+                    phase: .mismatched(wanted: CatalogFixtures.ada, got: CatalogFixtures.lovelace),
+                    intent: .returning(CatalogFixtures.ada))) { _ in }
+        },
+        sheet("paywall") { Paywall(model: PaywallStore(plans: CatalogFixtures.plans)) { _ in } },
+        sheet("paywall-confirming") {
+            Paywall(model: PaywallStore(plans: CatalogFixtures.plans, phase: .confirming)) { _ in }
+        },
+        sheet("paywall-unconfirmed") {
+            Paywall(
+                model: PaywallStore(plans: CatalogFixtures.plans, phase: .unconfirmed(.unreachable))) { _ in }
+        },
+        sheet("paywall-subscribed") {
+            Paywall(
+                model: PaywallStore(
+                    entitlement: .active(grant: .purchased(.appStore), renews: CatalogFixtures.now.addingTimeInterval(86_400 * 300)),
+                    plans: CatalogFixtures.plans, phase: .entitled(.purchased(.appStore)))) { _ in }
+        },
+    ]
+
+    private static func sheet(_ id: String, build: @escaping @MainActor () -> some View) -> ComponentExample {
+        ComponentExample(id: "settings.\(id)", family: .settings, canvas: CGSize(width: 390, height: 844)) {
+            NavigationStack { build() }
+        }
+    }
+}
+
+extension CatalogFixtures {
+    static let ada = SignedInAccount(id: AccountId("ada"), email: "ada@example.com", displayName: "Ada")
+    static let lovelace = SignedInAccount(id: AccountId("ada-work"), email: "ada@lovelace.dev", displayName: "Lovelace Labs")
+    static let plans = [
+        Plan(id: Plan.monthlyID, period: .monthly, price: "$4.99"),
+        Plan(id: Plan.yearlyID, period: .yearly, price: "$49.99", saving: "Save 17%"),
+    ]
 }
 
 extension CatalogFixtures {

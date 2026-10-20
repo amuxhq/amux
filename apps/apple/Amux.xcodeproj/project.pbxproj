@@ -75,6 +75,7 @@
 		373B9E307D71E299CCABC0C9 /* components.row-thinking-open-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 46F61B24F0A41E2181570BB6 /* components.row-thinking-open-light.png */; };
 		37C414F45F97D31F2E0A9DF8 /* components.composer-thinking-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 0B532BFA62A04F92591A2642 /* components.composer-thinking-light.png */; };
 		3B0A858360AE296919E3CACA /* components.row-file-change-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 7373A86D3D26B4BA4658A302 /* components.row-file-change-light.png */; };
+		3CAE89CC370060DFAC551CB8 /* SettingsPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36DC5CBA6C18EDA76B762121 /* SettingsPreviews.swift */; };
 		3D33F386332339E9EC6274EC /* components.review-comment-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 24D850FF88E8405E812B186F /* components.review-comment-light.png */; };
 		3E1B1DFE53B9D3F682997BBE /* components.chat-conversation-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = BA0ECFF045EE2CF7858A26DA /* components.chat-conversation-dark.png */; };
 		3E2FA888510A19B4D00C635F /* components.ask-codex-command-large-text-light.png in Resources */ = {isa = PBXBuildFile; fileRef = D571B8B0EF85F90BA6191E07 /* components.ask-codex-command-large-text-light.png */; };
@@ -438,6 +439,7 @@
 		351FC4C659500A7FA80AC3C1 /* components.composer-settings-codex-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.composer-settings-codex-light.png"; sourceTree = "<group>"; };
 		35ED0CE4A533E8878FBD1675 /* AmuxFeatures */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxFeatures; path = Packages/AmuxFeatures; sourceTree = SOURCE_ROOT; };
 		368A0445AC16BBBED1ACA499 /* components.row-prompt-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-prompt-dark.png"; sourceTree = "<group>"; };
+		36DC5CBA6C18EDA76B762121 /* SettingsPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPreviews.swift; sourceTree = "<group>"; };
 		378A49F55033C98D9F8BB5F5 /* components.row-ask-form-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.row-ask-form-dark.png"; sourceTree = "<group>"; };
 		37F1F76966F0F1B7A14313E7 /* ComponentCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComponentCatalog.swift; sourceTree = "<group>"; };
 		3833EDDCB75A548858BEC2BF /* components.chat-stop-cuts-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "components.chat-stop-cuts-light.png"; sourceTree = "<group>"; };
@@ -816,6 +818,7 @@
 				2F29C3D017EFCF2521645DAB /* MenuSource.swift */,
 				2D67FA937AF3288820FA3464 /* Perturbation.swift */,
 				ABB8E3AE3B61C8EF69742893 /* ReviewPreviews.swift */,
+				36DC5CBA6C18EDA76B762121 /* SettingsPreviews.swift */,
 				49AD796E9CE095BEB4462249 /* Stories.swift */,
 				E8CE78DF417F5614935595CA /* VisibleTree.swift */,
 			);
@@ -1704,6 +1707,7 @@
 				BD68D3CF9F5A540F6C3FCE62 /* ScriptedChat.swift in Sources */,
 				05DFFA86753B995BB850DE4C /* ScriptedCloud.swift in Sources */,
 				CE11C489AB20BA6178BB5061 /* ScriptedStore.swift in Sources */,
+				3CAE89CC370060DFAC551CB8 /* SettingsPreviews.swift in Sources */,
 				715AA5D2603E575492541590 /* Stories.swift in Sources */,
 				894FA032EAF19BFC5E92664F /* Trace.swift in Sources */,
 				08A81513DFEF3EE1567A6A5E /* VisibleTree.swift in Sources */,

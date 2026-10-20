@@ -225,7 +225,6 @@
       {"literal": "\"-._~\"", "context": "allowed.insert(charactersIn: \"-._~\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"\\(key)=\\(value)\"", "context": "return \"\\(key)=\\(value)\"", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"&\"", "context": "}.joined(separator: \"&\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
-      {"literal": "\"https://apps.apple.com/account/subscriptions\"", "context": "static let appStoreSubscriptions = URL(string: \"https://apps.apple.com/account/subscriptions\")!", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"__typename\"", "context": "case typeName = \"__typename\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"Purchased\"", "context": "guard typeName == \"Purchased\", let provider else { return .granted }", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"REVENUE_CAT\"", "context": "return .purchased(provider == \"REVENUE_CAT\" ? .appStore : .web)", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -238,7 +237,8 @@
       {"literal": "\"+\"", "context": ".replacingOccurrences(of: \"+\", with: \"%2B\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"login_hint\"", "context": "components.queryItems?.append(URLQueryItem(name: \"login_hint\", value: account.email))", "reason": "OpenID Connect authorize parameter name or value; not interface copy.", "count": 1},
       {"literal": "\"select_account\"", "context": "components.queryItems?.append(URLQueryItem(name: \"prompt\", value: \"select_account\"))", "reason": "OpenID Connect authorize parameter name or value; not interface copy.", "count": 1},
-      {"literal": "\"prompt\"", "context": "components.queryItems?.append(URLQueryItem(name: \"prompt\", value: \"select_account\"))", "reason": "OpenID Connect authorize parameter name or value; not interface copy.", "count": 1}
+      {"literal": "\"prompt\"", "context": "components.queryItems?.append(URLQueryItem(name: \"prompt\", value: \"select_account\"))", "reason": "OpenID Connect authorize parameter name or value; not interface copy.", "count": 1},
+      {"literal": "\"https://apps.apple.com/account/subscriptions\"", "context": "public static let appStoreSubscriptions = URL(string: \"https://apps.apple.com/account/subscriptions\")!", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxCore/Sources/AmuxCore/Coding.swift": [
       {"literal": "\"not an RFC 3339 timestamp: \\(text)\"", "context": "debugDescription: \"not an RFC 3339 timestamp: \\(text)\"))", "reason": "Decoder or invariant diagnostic retained for debugging; not displayed by a view.", "count": 1},
@@ -442,11 +442,13 @@
       {"literal": "\"remove\"", "context": "action(\"Remove from This Phone\", id: \"remove\") { actions(.remove(entry.id)) }", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"minus.circle\"", "context": "Label(\"Remove from This Phone\", systemImage: \"minus.circle\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"subscription\"", "context": "\"Relay\", value: entry.entitlement.summary, id: \"subscription\"", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"you.signIn\"", "context": "SignInCallToAction(identifier: \"you.signIn\") { actions(.add) }", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"square.and.arrow.up\"", "context": "glyphRow(\"Export Diagnostics\", glyph: \"square.and.arrow.up\", id: \"dump\") {", "reason": "SF Symbol name, not interface copy.", "count": 1},
       {"literal": "\"dump\"", "context": "glyphRow(\"Export Diagnostics\", glyph: \"square.and.arrow.up\", id: \"dump\") {", "reason": "Row identifier suffix, not interface copy.", "count": 1},
       {"literal": "\"you.name\"", "context": ".identified(\"you.name\", label: String(localized: \"Name\"), value: identity.name)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"you.fingerprint\"", "context": ".identified(\"you.fingerprint\", label: String(localized: \"Fingerprint\"), value: key)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"you.fingerprint\"", "context": ".identified(\"you.fingerprint\", label: String(localized: \"Fingerprint\"), value: key)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"person.crop.circle\"", "context": "Image(systemName: \"person.crop.circle\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
+      {"literal": "\"you.signIn\"", "context": ".identified(\"you.signIn\", label: \"Sign In\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"remove.confirm\"", "context": ".accessibilityIdentifier(\"remove.confirm\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/AgentsHome.swift": [
       {"literal": "\"home\"", "context": ".identified(\"home\", value: accounts.gate.name)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -622,15 +624,17 @@
       {"literal": "\"paywall.\\(plan.period.rawValue)\"", "context": "\"paywall.\\(plan.period.rawValue)\",", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"paywall.terms\"", "context": ".identified(\"paywall.terms\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"paywall.subscribed\"", "context": ".identified(\"paywall.subscribed\", value: grant.named)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"paywall.buy\"", "context": "\"paywall.buy\", label: title, value: state,", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"failed\"", "context": "note(\"That did not go through\", reason, id: \"failed\", value: reason)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"pending\"", "context": "id: \"pending\", value: \"pending\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 2},
       {"literal": "\"unconfirmed\"", "context": "Self.trouble(why), Self.unconfirmed(why), id: \"unconfirmed\", value: why.named)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\".!?\"", "context": "guard let last = trimmed.last, !\".!?\".contains(last) else { return trimmed }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\".\"", "context": "return trimmed + \".\"", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"paywall.\\(id)\"", "context": ".identified(\"paywall.\\(id)\", label: detail, value: value)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"paywall.back\"", "context": "BackLink(back, identifier: \"paywall.back\") { actions(.cancel) }", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
-      {"literal": "\"paywall.restore\"", "context": "\"paywall.restore\", label: \"Restore Purchases\",", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1}
+      {"literal": "\"paywall.restore\"", "context": "\"paywall.restore\", label: \"Restore Purchases\",", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
+      {"literal": "\"paywall.back\"", "context": ".backBar(\"paywall.back\") { actions(.cancel) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"paywall.manage\"", "context": ".identified(\"paywall.manage\", label: \"Manage Subscription\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"paywall.buy\"", "context": ".identified(\"paywall.buy\", label: title, value: state, enabled: false)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"paywall.buy\"", "context": ".identified(\"paywall.buy\", label: title, value: state)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/PlaceNames.swift": [
       {"literal": "\".local\"", "context": "let suffix = \".local\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
@@ -646,14 +650,6 @@
       {"literal": "\"~\"", "context": "guard let last = parts.last else { return \"~\" }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\".\"", "context": "if part.hasPrefix(\".\"), part.count > 1 { return String(part.prefix(2)) }", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},
       {"literal": "\"/\"", "context": "return root + (parents + [last]).joined(separator: \"/\")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1}
-    ],
-    "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/RemoveAccount.swift": [
-      {"literal": "\"remove\"", "context": ".identified(\"remove\", value: entry.account.email)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"remove.confirm\"", "context": "choiceButton(String(localized: \"Remove\"), kind: .destructive, id: \"remove.confirm\") { actions(.confirm) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"remove.cancel\"", "context": "choiceButton(String(localized: \"Cancel\"), kind: .outline, id: \"remove.cancel\") { actions(.cancel) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"checkmark\"", "context": "Consequence(\"checkmark\", kept: true,", "reason": "SF Symbol name, not interface copy.", "count": 1},
-      {"literal": "\"checkmark\"", "context": "Consequence(\"checkmark\", kept: true, \"Your agents and files stay on your hosts.\")", "reason": "SF Symbol name, not interface copy.", "count": 1},
-      {"literal": "\"xmark\"", "context": "Consequence(\"xmark\", kept: false,", "reason": "SF Symbol name, not interface copy.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/Report.swift": [
       {"literal": "\"report.signed-out\"", "context": ".identified(\"report.signed-out\", label: \"Sign in to send a report\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
@@ -689,20 +685,16 @@
       {"literal": "\"failed\"", "context": "case .failed: \"failed\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
       {"literal": "\"sign-in.title\"", "context": ".identified(\"sign-in.title\", value: \"Sign in\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"sign-in.explanation\"", "context": ".identified(\"sign-in.explanation\", value: explanation)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"arrow.up.forward.square\"", "context": "fact(\"arrow.up.forward.square\", \"Signed in on \\(model.host)\", id: \"where\")", "reason": "View metadata, driving state or asset identifier, not displayed copy.", "count": 1},
-      {"literal": "\"where\"", "context": "fact(\"arrow.up.forward.square\", \"Signed in on \\(model.host)\", id: \"where\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"creditcard\"", "context": "fact(\"creditcard\", \"Web subscriptions carry over\", id: \"billing\")", "reason": "View metadata, driving state or asset identifier, not displayed copy.", "count": 1},
-      {"literal": "\"billing\"", "context": "fact(\"creditcard\", \"Web subscriptions carry over\", id: \"billing\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"sign-in.\\(id)\"", "context": ".identified(\"sign-in.\\(id)\", value: text)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"sign-in.failed\"", "context": ".identified(\"sign-in.failed\", value: reason)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"sign-in.signed-in\"", "context": ".identified(\"sign-in.signed-in\", value: account.email)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"lock.fill\"", "context": "Image(systemName: \"lock.fill\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"sign-in.opens\"", "context": ".identified(\"sign-in.opens\", value: model.host)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"sign-in.back\"", "context": "BackLink(back, identifier: \"sign-in.back\") { actions(.cancel) }", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
-      {"literal": "\"sign-in.continue\"", "context": "\"sign-in.continue\", label: title, value: state,", "reason": "Protocol field, accessibility identifier, model value or SF Symbol; not interface copy.", "count": 1},
       {"literal": "\"sign-in.mismatch\"", "context": ".identified(\"sign-in.mismatch\", value: got.email)", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"sign-in.discard\"", "context": ".identified(\"sign-in.discard\", label: \"Cancel\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
-      {"literal": "\"mismatched\"", "context": "case .mismatched: \"mismatched\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1}
+      {"literal": "\"mismatched\"", "context": "case .mismatched: \"mismatched\"", "reason": "Protocol field, enum tag, resource path or machine-readable format; preserve its exact spelling.", "count": 1},
+      {"literal": "\"sign-in.back\"", "context": ".backBar(\"sign-in.back\") { actions(.cancel) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"sign-in.continue\"", "context": ".identified(\"sign-in.continue\", label: title, value: state, enabled: false)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"sign-in.continue\"", "context": ".identified(\"sign-in.continue\", label: title, value: state)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/StoreFailure.swift": [
       {"literal": "\"externaldrive.badge.exclamationmark\"", "context": "Image(systemName: \"externaldrive.badge.exclamationmark\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
@@ -750,9 +742,9 @@
       {"literal": "\"photo.jpg\"", "context": "model?.attach(jpeg, name: \"photo.jpg\", mime: \"image/jpeg\", image: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"image/jpeg\"", "context": "model?.attach(jpeg, name: \"photo.jpg\", mime: \"image/jpeg\", image: true)", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
       {"literal": "\"application/octet-stream\"", "context": "mime: type?.preferredMIMEType ?? \"application/octet-stream\",", "reason": "Protocol field, format syntax, file or media type; not interface copy.", "count": 1},
-      {"literal": "\"you.close\"", "context": ".accessibilityIdentifier(\"you.close\")", "reason": "Accessibility identifier a driver reads, not interface copy.", "count": 1},
       {"literal": "\"review.empty\"", "context": ".identified(\"review.empty\")", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"review.back\"", "context": "BarBack(identifier: \"review.back\") { router.pop() }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+      {"literal": "\"review.back\"", "context": "BarBack(identifier: \"review.back\") { router.pop() }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"you.close\"", "context": "BarButton(\"xmark\", label: String(localized: \"Close\"), identifier: \"you.close\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
     "apps/apple/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Door.swift": [
       {"literal": "\"scroll\"", "context": "case \"scroll\":", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -1193,7 +1185,23 @@
       {"literal": "\"MacBook Air\"", "context": "static let nearbyLaptop = machine(5, \"laptop\", platform: \"MacBook Air\", reach: .online(.direct), trusted: false, candidate: true, version: nil, providers: [])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"MacBook Air\"", "context": "static let relayLaptop = machine(5, \"laptop\", platform: \"MacBook Air\", reach: .online(.relay), trusted: false, candidate: true, version: nil, providers: [])", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
       {"literal": "\"host_id\"", "context": "\"host_id\": nearbyLaptop.hostId.map(Int.init), \"name\": nearbyLaptop.name,", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
-      {"literal": "\"name\"", "context": "\"host_id\": nearbyLaptop.hostId.map(Int.init), \"name\": nearbyLaptop.name,", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
+      {"literal": "\"name\"", "context": "\"host_id\": nearbyLaptop.hostId.map(Int.init), \"name\": nearbyLaptop.name,", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"two-accounts\"", "context": "sheet(\"two-accounts\") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 2) }.settings },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"signed-out\"", "context": "sheet(\"signed-out\") { StoryApp(settingsOpen: true) { StoryFleet.busy(accounts: 0) }.settings },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"ada\"", "context": "entry: stores.accounts.selectedAccount, model: DeletionStore(asking: AccountId(\"ada\")),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"sign-in-waiting\"", "context": "sheet(\"sign-in-waiting\") { SignIn(model: SignInStore(phase: .handingOff)) { _ in } },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"sign-in-failed\"", "context": "sheet(\"sign-in-failed\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"sign-in-mismatched\"", "context": "sheet(\"sign-in-mismatched\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"paywall\"", "context": "sheet(\"paywall\") { Paywall(model: PaywallStore(plans: CatalogFixtures.plans)) { _ in } },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"paywall-confirming\"", "context": "sheet(\"paywall-confirming\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"paywall-unconfirmed\"", "context": "sheet(\"paywall-unconfirmed\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"paywall-subscribed\"", "context": "sheet(\"paywall-subscribed\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.\\(id)\"", "context": "ComponentExample(id: \"settings.\\(id)\", family: .settings, canvas: CGSize(width: 390, height: 844)) {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"ada\"", "context": "static let ada = SignedInAccount(id: AccountId(\"ada\"), email: \"ada@example.com\", displayName: \"Ada\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"ada-work\"", "context": "static let lovelace = SignedInAccount(id: AccountId(\"ada-work\"), email: \"ada@lovelace.dev\", displayName: \"Lovelace Labs\")", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"$4.99\"", "context": "Plan(id: Plan.monthlyID, period: .monthly, price: \"$4.99\"),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"$49.99\"", "context": "Plan(id: Plan.yearlyID, period: .yearly, price: \"$49.99\", saving: \"Save 17%\"),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1},
+      {"literal": "\"Save 17%\"", "context": "Plan(id: Plan.yearlyID, period: .yearly, price: \"$49.99\", saving: \"Save 17%\"),", "reason": "Controlled fixture data or provider/user content, preserved verbatim.", "count": 1}
     ],
     "apps/apple/Amux/Debug/Stories.swift": [
       {"literal": "\"busy\"", "context": "fleet(\"busy\") { StoryFleet.busy() },", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
@@ -1642,6 +1650,30 @@
       {"literal": "\"new-agent.codex\"", "context": "#Preview(\"New agent · Codex\") { StoryScreen(\"new-agent.codex\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.browsing\"", "context": "#Preview(\"New agent · choosing a directory\") { StoryScreen(\"new-agent.browsing\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"new-agent.signed-out\"", "context": "#Preview(\"New agent · signed out\") { StoryScreen(\"new-agent.signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
+    ],
+    "apps/apple/Amux/Debug/SettingsPreviews.swift": [
+      {"literal": "\"Settings · two accounts\"", "context": "#Preview(\"Settings · two accounts\") { StoryScreen(\"settings.two-accounts\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.two-accounts\"", "context": "#Preview(\"Settings · two accounts\") { StoryScreen(\"settings.two-accounts\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Settings · signed out\"", "context": "#Preview(\"Settings · signed out\") { StoryScreen(\"settings.signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.signed-out\"", "context": "#Preview(\"Settings · signed out\") { StoryScreen(\"settings.signed-out\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Settings · remove account\"", "context": "#Preview(\"Settings · remove account\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"ada\"", "context": "YouScreen(accounts: stores.accounts, removing: AccountId(\"ada\")) { _ in }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Settings · delete account\"", "context": "#Preview(\"Settings · delete account\") { StoryScreen(\"settings.delete\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.delete\"", "context": "#Preview(\"Settings · delete account\") { StoryScreen(\"settings.delete\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.sign-in\"", "context": "#Preview(\"Sign in\") { StoryScreen(\"settings.sign-in\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Sign in · waiting\"", "context": "#Preview(\"Sign in · waiting\") { StoryScreen(\"settings.sign-in-waiting\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.sign-in-waiting\"", "context": "#Preview(\"Sign in · waiting\") { StoryScreen(\"settings.sign-in-waiting\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Sign in · failed\"", "context": "#Preview(\"Sign in · failed\") { StoryScreen(\"settings.sign-in-failed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.sign-in-failed\"", "context": "#Preview(\"Sign in · failed\") { StoryScreen(\"settings.sign-in-failed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Sign in · another account\"", "context": "#Preview(\"Sign in · another account\") { StoryScreen(\"settings.sign-in-mismatched\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.sign-in-mismatched\"", "context": "#Preview(\"Sign in · another account\") { StoryScreen(\"settings.sign-in-mismatched\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.paywall\"", "context": "#Preview(\"Paywall\") { StoryScreen(\"settings.paywall\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Paywall · confirming\"", "context": "#Preview(\"Paywall · confirming\") { StoryScreen(\"settings.paywall-confirming\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.paywall-confirming\"", "context": "#Preview(\"Paywall · confirming\") { StoryScreen(\"settings.paywall-confirming\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Paywall · not confirmed\"", "context": "#Preview(\"Paywall · not confirmed\") { StoryScreen(\"settings.paywall-unconfirmed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.paywall-unconfirmed\"", "context": "#Preview(\"Paywall · not confirmed\") { StoryScreen(\"settings.paywall-unconfirmed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"Paywall · subscribed\"", "context": "#Preview(\"Paywall · subscribed\") { StoryScreen(\"settings.paywall-subscribed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
+      {"literal": "\"settings.paywall-subscribed\"", "context": "#Preview(\"Paywall · subscribed\") { StoryScreen(\"settings.paywall-subscribed\") }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ]
   }
 }

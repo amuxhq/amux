@@ -198,13 +198,16 @@ extension View {
 /// What a navigation bar item stands on. With glass the bar draws its own
 /// capsule around its items and this adds nothing; with less transparency
 /// asked for, the bar's capsule is hidden and the item draws a flat one of
-/// the same shape, so it still reads as a button in the bar.
+/// the same shape and at least the same 44 points, so it still reads as a
+/// button in the bar and is as easy to press.
 private struct BarItemSurface: ViewModifier {
     @Environment(\.reducesTransparency) private var reducesTransparency
 
     func body(content: Content) -> some View {
         if reducesTransparency {
-            content.frosted(Capsule(), as: .glass)
+            content
+                .frame(minWidth: 44, minHeight: 44)
+                .frosted(Capsule(), as: .glass)
         } else {
             content
         }

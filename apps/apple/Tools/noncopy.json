@@ -458,7 +458,7 @@
       {"literal": "\"home.newAgent\"", "context": ".identified(\"home.newAgent\", label: \"New Agent\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"home.subtitle\"", "context": "LargeSubtitle(text: subtitle, identifier: \"home.subtitle\")", "reason": "Stable element/record identifier, not a displayed label.", "count": 1},
       {"literal": "\"chevron.down\"", "context": "Image(systemName: \"chevron.down\")", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
-      {"literal": "\"person\"", "context": "accountMenu { Image(systemName: \"person\") }", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
+      {"literal": "\"person\"", "context": "accountMenu { Image(systemName: \"person\").accessibilityLabel(\"Switch account\") }", "reason": "SF Symbol asset name, not a displayed label.", "count": 1},
       {"literal": "\"home.row.\\(row.id)\"", "context": ".identified(\"home.row.\\(row.id)\", label: spoken(row, state), value: state.name)", "reason": "Stable element/record identifier, not a displayed label.", "count": 2},
       {"literal": "\"home.row.\\(row.id).age.volatile\"", "context": ".reported(\"home.row.\\(row.id).age.volatile\")", "reason": "Stable driving identifier for a surface a compared screenshot masks, not a displayed label.", "count": 1},
       {"literal": "\", \"", "context": "return parts.joined(separator: \", \")", "reason": "Formatting, numeric or punctuation syntax with no authored words.", "count": 1},

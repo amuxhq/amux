@@ -226,7 +226,7 @@ public struct ChatScreen: View {
     private static let narrowestTitle: CGFloat = 96
     /// The bar's margins, the way back and the gaps between the three
     /// pieces, measured on a 402-point phone with less transparency.
-    private static let barSpends: CGFloat = 152
+    private static let barSpends: CGFloat = 160
 
     private var detached: Bool { model.frame?.waiting == .detached }
 

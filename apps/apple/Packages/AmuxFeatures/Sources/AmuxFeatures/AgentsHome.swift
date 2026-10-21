@@ -224,7 +224,7 @@ public struct AgentsHome: View {
             // margin the + keeps on the other side.
             .padding(.leading, -Space.s)
         } else {
-            accountMenu { Image(systemName: "person") }
+            accountMenu { Image(systemName: "person").accessibilityLabel("Switch account") }
                 .barItemSurface()
         }
     }
@@ -397,7 +397,14 @@ public struct AgentsHome: View {
             .padding(.horizontal, Space.margin)
         }
         .scrollIndicators(.hidden)
+        // The strip lays out at the chips' drawn height; its reach spills
+        // into the gaps above and below, which hold nothing to press.
+        .reclaimingThumbTarget(y: Self.chipReach)
     }
+
+    /// How far a chip's press reaches past its drawn capsule, above and
+    /// below, to make the 44 points a thumb needs.
+    private static let chipReach: CGFloat = 6
 
     /// A count rides after the name in a fainter ink, as a mail folder's
     /// does, so the name still reads first.
@@ -417,9 +424,9 @@ public struct AgentsHome: View {
             .designFont(.caption, design)
             .fontWeight(.medium)
             .padding(.horizontal, Space.m)
-            .frame(height: 32)
+            .frame(minWidth: 44, minHeight: 32, maxHeight: 32)
             .background(Capsule().fill(on ? design.ink.color : design.sunken.color))
-            .contentShape(Capsule())
+            .thumbTarget(y: Self.chipReach)
         }
         .buttonStyle(.amuxControl)
         .accessibilityAddTraits(on ? .isSelected : [])

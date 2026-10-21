@@ -458,7 +458,7 @@ struct GridRow: View {
             if opens {
                 // A one-line row is under 44 pt: its target reaches into the
                 // gaps around it, which leaves the chat drawn as it was.
-                Button(action: toggle) { layout.thumbTarget(y: GridRow.reach) }
+                Button(action: toggle) { layout.thumbTarget(y: GridRow.reach).frame(minHeight: 44) }
                     .buttonStyle(.amuxRow)
             } else {
                 layout

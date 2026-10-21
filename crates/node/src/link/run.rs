@@ -1853,6 +1853,65 @@ mod tests {
     mod addresses {
         use super::*;
 
+        /// A free plan takes back the address the relay saw, so no peer
+        /// punches to it, while the host's own addresses still pass over
+        /// the link.
+        #[tokio::test]
+        async fn entitlement_a_lapsed_host_stops_telling_its_observed_address_and_still_lists_its_own()
+         {
+            let local = crate::routing::LiveLocalHost::new(host(1));
+            local.set_listed(vec!["192.0.2.7:4100".parse().unwrap()]);
+            local.set_public("203.0.113.9:41000".parse().unwrap());
+            let peer = host(2);
+            let links = Arc::new(LinkRegistry::new(local.id()));
+            let (connector_carrier, acceptor_carrier) = carrier_pair().await;
+            let ctx = LinkCtx::new_live(local.clone(), links).with_authenticated_peer(peer.id);
+            let task = tokio::spawn(run_link(
+                ctx,
+                acceptor_carrier.clone(),
+                crate::routing::ConnectRole::Acceptor,
+            ));
+            let (mut sink, mut source) = connector_carrier.control();
+            send_hello(&mut sink, &peer, None).await;
+            let Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
+                outcome: Some(wire::pb::hello_ack::Outcome::Accepted(accepted)),
+            })) = read_message(&mut source).await.unwrap().unwrap().body
+            else {
+                panic!("the host accepts its peer");
+            };
+            assert_eq!(accepted.public_addr.as_deref(), Some("203.0.113.9:41000"));
+
+            local.clear_public();
+            let next = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Some(wire::pb::message::Body::Addresses(addresses)) =
+                        read_message(&mut source).await.unwrap().unwrap().body
+                    {
+                        return addresses;
+                    }
+                }
+            })
+            .await
+            .expect("the change is sent");
+            assert_eq!(next.public_addr, None, "the observed address is gone");
+            assert_eq!(
+                next.addrs,
+                ["192.0.2.7:4100"],
+                "its own addresses still pass"
+            );
+
+            // Cleared twice is one change.
+            local.clear_public();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(300), read_message(&mut source))
+                    .await
+                    .is_err(),
+                "nothing more is sent"
+            );
+            connector_carrier.close(wire::pb::LinkCloseReason::UserShutdown);
+            let _ = task.await;
+        }
+
         #[tokio::test]
         async fn a_link_tells_its_peer_where_this_host_is_and_again_when_that_changes() {
             let local = crate::routing::LiveLocalHost::new(host(1));

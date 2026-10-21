@@ -96,6 +96,13 @@ impl LiveLocalHost {
         });
     }
 
+    /// The account no longer pays for punching: no link tells a peer the
+    /// address the relay saw, so no peer punches to it.
+    pub(crate) fn clear_public(&self) {
+        self.addresses
+            .send_if_modified(|own| own.public.take().is_some());
+    }
+
     pub(crate) fn id(&self) -> Uuid {
         self.host.id
     }

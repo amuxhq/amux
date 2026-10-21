@@ -1162,6 +1162,67 @@ mod tests {
     }
 
     #[test]
+    fn a_payment_refusal_with_no_free_path_leaves_the_link_nothing_to_carry_on() {
+        let mut paths = Paths::with_budget(0, true, StepBudget::UNLIMITED);
+        step(&mut paths, Input::ForwardingUp { link: RELAY });
+        step(&mut paths, Input::LinkUp);
+        let out = answer(&mut paths, relayed(), 80);
+        assert_eq!(carry(&out), Some(relayed()));
+
+        let out = step(
+            &mut paths,
+            Input::ForwardRefused {
+                link: RELAY,
+                reason: ForwardRefusal::PaymentRequired,
+            },
+        );
+        assert_eq!(paths.carrying(), None, "the link goes down");
+        assert!(probes(&out).is_empty());
+        let out = tick(&mut paths, PROBE_INTERVAL_MS * 3);
+        assert!(probes(&out).is_empty(), "the refused relay is never probed");
+    }
+
+    #[test]
+    fn a_free_account_uses_discovered_and_listed_addresses_and_byte_streams() {
+        let discovered = addr("192.168.1.30:4433");
+        let mut paths = Paths::with_budget(0, false, StepBudget::UNLIMITED);
+        step(&mut paths, Input::LinkUp);
+        let out = step(
+            &mut paths,
+            Input::Candidate {
+                addr: discovered,
+                source: Source::Discovery,
+            },
+        );
+        assert_eq!(probes(&out), vec![Path::Direct(discovered)]);
+        let out = step(
+            &mut paths,
+            Input::Candidate {
+                addr: lan(),
+                source: Source::Listed,
+            },
+        );
+        assert_eq!(probes(&out), vec![Path::Direct(lan())]);
+        let out = step(
+            &mut paths,
+            Input::Candidate {
+                addr: public(),
+                source: Source::Observed,
+            },
+        );
+        assert!(
+            probes(&out).is_empty(),
+            "the observed address is not punched"
+        );
+        let out = answer(&mut paths, Path::Direct(lan()), 4);
+        assert_eq!(carry(&out), Some(Path::Direct(lan())));
+
+        let ssh = Path::Framed(PathId(3));
+        let out = step(&mut paths, Input::PacketArrived { path: ssh });
+        assert_eq!(probes(&out), vec![ssh], "a byte stream is free too");
+    }
+
+    #[test]
     fn an_address_the_peer_lists_stays_through_a_lapse() {
         let mut paths = up(true);
         step(

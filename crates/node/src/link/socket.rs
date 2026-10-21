@@ -1558,7 +1558,7 @@ impl UdpPoller for Writable {
 
 /// An address in its plain family: an IPv4-mapped IPv6 address as IPv4,
 /// the form the OS socket reports arrivals in.
-fn plain(addr: SocketAddr) -> SocketAddr {
+pub(crate) fn plain(addr: SocketAddr) -> SocketAddr {
     match addr {
         SocketAddr::V6(v6) => match v6.ip().to_ipv4_mapped() {
             Some(ip) => SocketAddr::new(ip.into(), v6.port()),

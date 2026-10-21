@@ -210,14 +210,32 @@ impl PathDriver {
         );
     }
 
-    /// The account's plan, as the relay last said it.
+    /// The account's plan, as the relay last said it. A machine ignores
+    /// an address only the relay's observation gave while the plan is
+    /// free, so paying again gives each machine those addresses afresh.
     pub(crate) fn plan(&self, paid: bool) {
         let mut state = self.lock();
         if state.paid == paid {
             return;
         }
         state.paid = paid;
-        self.step_all(&mut state, || Input::Plan { paid });
+        let peers: Vec<HostId> = state.machines.keys().copied().collect();
+        for peer in peers {
+            let mut inputs = vec![Input::Plan { paid }];
+            if paid {
+                inputs.extend(
+                    state.machines[&peer]
+                        .candidates
+                        .iter()
+                        .filter(|(_, source)| **source == Source::Observed)
+                        .map(|(addr, source)| Input::Candidate {
+                            addr: *addr,
+                            source: *source,
+                        }),
+                );
+            }
+            self.step(&mut state, peer, inputs);
+        }
     }
 
     /// The host's network changed: every path is suspect, and each machine
@@ -350,6 +368,7 @@ impl PathDriver {
     fn step(&self, state: &mut State, peer: HostId, inputs: Vec<Input>) {
         let mut queue = std::collections::VecDeque::from(inputs);
         let now_ms = self.now_ms();
+        let paid = state.paid;
         let mut out = Vec::new();
         while let Some(input) = queue.pop_front() {
             let next_nonce = &mut state.next_nonce;
@@ -380,15 +399,27 @@ impl PathDriver {
                     Output::Carry { path } => self.carry(peer, machine, path),
                     Output::SendOnAll { paths } => {
                         // Until a link is up its first flight chose where
-                        // its packets go, and while one path still carries
-                        // it the link stays there until the machine names
-                        // the next.
-                        if !machine.links.is_empty() && self.socket.carrying(peer).is_none() {
+                        // its packets go, and while a path that only
+                        // stopped answering still carries it the link stays
+                        // there until the machine names the next. A path
+                        // the machine gave up (a refused forwarding link, a
+                        // dropped address) gives way to the paths it still
+                        // names; with none named the route stays, so the
+                        // peer coming back on it is still answered.
+                        let kept = self
+                            .socket
+                            .carrying(peer)
+                            .is_some_and(|path| paths.iter().any(|p| same_path(*p, path)));
+                        if !machine.links.is_empty() && !kept && !paths.is_empty() {
                             self.socket.send_on_all(peer, paths, false);
                         }
                     }
                     Output::DropCandidate { addr } => {
-                        machine.candidates.remove(&addr);
+                        // An address the relay observed, dropped by a
+                        // lapse, is the peer's still: paying again uses it.
+                        if !(machine.candidates.get(&addr) == Some(&Source::Observed) && !paid) {
+                            machine.candidates.remove(&addr);
+                        }
                         machine.probes.remove(&Path::Direct(addr));
                         machine.probes.remove(&Path::Punched(addr));
                     }
@@ -468,6 +499,17 @@ impl State {
                 kind: None,
             }
         })
+    }
+}
+
+/// Whether two paths are one: the same peer address, however named and in
+/// whichever family form, or the same forwarding link or byte stream.
+fn same_path(a: Path, b: Path) -> bool {
+    match (a, b) {
+        (Path::Direct(a) | Path::Punched(a), Path::Direct(b) | Path::Punched(b)) => {
+            super::socket::plain(a) == super::socket::plain(b)
+        }
+        (a, b) => a == b,
     }
 }
 
@@ -834,6 +876,133 @@ mod tests {
             "quinn saw no move"
         );
         assert!(linked.client.close_reason().is_none(), "the link stayed up");
+    }
+
+    /// The relay refusing the link for the account's plan takes the relay
+    /// path away at once: with the LAN gone nothing carries the link and
+    /// no packet of it goes to the relay; when the LAN returns the link
+    /// carries on there, its stream still open, and the refused relay is
+    /// never probed again.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn entitlement_a_payment_refusal_leaves_the_link_only_its_free_paths() {
+        let linked = linked(true).await;
+        for paths in [&linked.laptop_paths, &linked.desk_paths] {
+            paths.plan(true);
+        }
+        let server = linked.server.clone();
+        tokio::spawn(async move {
+            let (mut send, mut recv) = server.accept_bi().await.unwrap();
+            let mut line = [0; 4];
+            while recv.read_exact(&mut line).await.is_ok() {
+                send.write_all(&line).await.unwrap();
+            }
+        });
+        let (mut send, mut recv) = linked.client.open_bi().await.unwrap();
+        echoed(&mut send, &mut recv, b"lan1").await;
+        linked.cut(true);
+        linked
+            .carried(Path::Forwarded(RELAY), |path| {
+                path == Path::Forwarded(RELAY)
+            })
+            .await;
+        echoed(&mut send, &mut recv, b"rly1").await;
+
+        linked
+            .laptop_paths
+            .forward_refused(linked.desk, RELAY, ForwardRefusal::PaymentRequired);
+        linked
+            .desk_paths
+            .forward_refused(linked.laptop, RELAY, ForwardRefusal::PaymentRequired);
+        assert_eq!(linked.laptop_paths.carrying(linked.desk), None);
+        assert_eq!(linked.desk_paths.carrying(linked.laptop), None);
+        assert_eq!(
+            linked.laptop_paths.socket.carrying(linked.desk),
+            None,
+            "the socket sends nothing more through the relay"
+        );
+
+        linked.cut(false);
+        linked
+            .carried(Path::Direct(linked.lan), |path| {
+                matches!(path, Path::Direct(_))
+            })
+            .await;
+        echoed(&mut send, &mut recv, b"lan2").await;
+        // Past the probe interval the relay would have been probed again,
+        // were it not refused.
+        tokio::time::sleep(Duration::from_millis(path_core::PROBE_INTERVAL_MS + 500)).await;
+        for (paths, peer) in [
+            (&linked.laptop_paths, linked.desk),
+            (&linked.desk_paths, linked.laptop),
+        ] {
+            assert!(
+                !paths.lock().machines[&peer]
+                    .probes
+                    .contains_key(&Path::Forwarded(RELAY)),
+                "the refused relay is not probed"
+            );
+            assert!(matches!(paths.carrying(peer), Some(Path::Direct(_))));
+        }
+        assert!(linked.client.close_reason().is_none(), "the link stayed up");
+    }
+
+    /// While the account is free, an address only the relay's observation
+    /// gave is never probed, so never punched to; paying probes it, a lapse
+    /// forgets the probe, and paying again probes it once more. An address
+    /// the peer lists itself is used on either plan.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn entitlement_a_free_plan_never_probes_an_observed_address() {
+        let linked = linked(false).await;
+        linked
+            .carried(Path::Direct(linked.lan), |path| {
+                matches!(path, Path::Direct(_))
+            })
+            .await;
+        // An address that never answers, so a probe on it stays out.
+        let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let observed = silent.local_addr().unwrap();
+        let listed = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let listed = listed.local_addr().unwrap();
+        let paths = &linked.laptop_paths;
+        let probed = |path: Path| {
+            paths.lock().machines[&linked.desk]
+                .probes
+                .contains_key(&path)
+        };
+        paths.addresses(
+            linked.desk,
+            &[
+                PeerAddress {
+                    addr: observed,
+                    source: Source::Observed,
+                },
+                PeerAddress {
+                    addr: listed,
+                    source: Source::Listed,
+                },
+            ],
+        );
+        assert!(
+            probed(Path::Direct(listed)),
+            "a listed address is used free"
+        );
+        assert!(!probed(Path::Punched(observed)), "free: no punching");
+
+        paths.plan(true);
+        assert!(probed(Path::Punched(observed)), "paid: the punch goes out");
+
+        paths.plan(false);
+        assert!(!probed(Path::Punched(observed)), "a lapse forgets it");
+
+        paths.plan(true);
+        assert!(
+            probed(Path::Punched(observed)),
+            "paying again punches to the address the peer still has"
+        );
+        assert!(
+            matches!(paths.carrying(linked.desk), Some(Path::Direct(_))),
+            "the LAN carries the link throughout"
+        );
     }
 
     /// A link the laptop dialled at the desk's address, as a pairing does,

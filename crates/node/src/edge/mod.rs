@@ -549,10 +549,11 @@ impl Edge {
             .lock()
             .unwrap()
             .push(follow_plan(&edge.status, &edge.connections));
-        edge.tasks
-            .lock()
-            .unwrap()
-            .push(plan_paths(&edge.status, &edge.paths));
+        edge.tasks.lock().unwrap().push(plan_paths(
+            &edge.status,
+            &edge.paths,
+            edge.local_host.clone(),
+        ));
         if signed_in {
             edge.start_cloud().await;
         }
@@ -1213,8 +1214,13 @@ pub fn interface_addrs() -> Vec<std::net::IpAddr> {
 }
 
 /// Tells the path machines whether the account pays, whenever the relay
-/// says.
-fn plan_paths(status: &RuntimeStatus, paths: &Arc<PathDriver>) -> JoinHandle<()> {
+/// says. A free account's links stop telling peers the address the relay
+/// saw, since reaching it is punching.
+fn plan_paths(
+    status: &RuntimeStatus,
+    paths: &Arc<PathDriver>,
+    local_host: LiveLocalHost,
+) -> JoinHandle<()> {
     let mut observed = status.subscribe();
     let paths = Arc::downgrade(paths);
     tokio::spawn(async move {
@@ -1225,7 +1231,11 @@ fn plan_paths(status: &RuntimeStatus, paths: &Arc<PathDriver>) -> JoinHandle<()>
             let Some(paths) = paths.upgrade() else {
                 return;
             };
-            paths.plan(tier == crate::Tier::Pro);
+            let paid = tier == crate::Tier::Pro;
+            if !paid {
+                local_host.clear_public();
+            }
+            paths.plan(paid);
         }
     })
 }

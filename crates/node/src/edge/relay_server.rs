@@ -864,6 +864,50 @@ mod tests {
         relay.serving.close();
     }
 
+    /// A host whose NAT gives it a new port comes back from there with
+    /// the token it was given at the old one and is answered at once: the
+    /// relay's QUIC sees senders from one IP at one stand-in IP, which is
+    /// all a token names.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_host_returning_from_a_new_port_skips_its_retry() {
+        let relay = relay().await;
+        let udp_addr = relay.serving.udp_addr().unwrap();
+        let endpoint = LinkEndpoint::bind("127.0.0.1:0".parse().unwrap(), None).unwrap();
+        let first = endpoint
+            .connect_with(relay.client.clone(), udp_addr, NAME)
+            .unwrap()
+            .await
+            .unwrap();
+        patience::until("the relay's tokens to arrive", || {
+            let received = first.stats().frame_rx.new_token;
+            async move {
+                (received >= 1)
+                    .then_some(())
+                    .ok_or_else(|| format!("{received} tokens"))
+            }
+        })
+        .await
+        .unwrap();
+        first.close(0_u32.into(), b"done");
+        let old_port = endpoint.socket.local_addr().unwrap();
+        endpoint.socket.rebind(
+            LinkSocket::on_udp(std::net::UdpSocket::bind("127.0.0.1:0").unwrap()).unwrap(),
+        );
+        assert_ne!(endpoint.socket.local_addr().unwrap(), old_port);
+        let second = endpoint
+            .connect_with(relay.client.clone(), udp_addr, NAME)
+            .unwrap()
+            .await
+            .unwrap();
+        assert_eq!(
+            relay.server.retries_sent(),
+            1,
+            "the host presented its token from the new port"
+        );
+        second.close(0_u32.into(), b"done");
+        relay.serving.close();
+    }
+
     /// A host presenting a token skips the Retry but not the relay's
     /// per-source limit: its handshake counts as an attempt, so a source
     /// that spent its attempts is not taken on again however it proves its

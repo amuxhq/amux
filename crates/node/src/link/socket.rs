@@ -240,22 +240,47 @@ pub struct ProbeAnswered {
 
 /// Stand-ins live in a unique-local IPv6 prefix (`fd61:6d75:7800::/48`)
 /// that no real path uses, so a stand-in is never mistaken for an address.
+/// The next 16 bits say what the last 64 hold: a counter, with every
+/// stand-in on one port, or the IP of the address a sender was heard at.
 const STAND_IN_PREFIX: [u16; 3] = [0xfd61, 0x6d75, 0x7800];
 const STAND_IN_PORT: u16 = 1;
+const COUNTED: u16 = 0;
+const FROM_IPV4: u16 = 4;
+const FROM_IPV6: u16 = 6;
 
-fn stand_in_addr(index: u64) -> SocketAddr {
+fn stand_in_ip(kind: u16, bits: u64) -> IpAddr {
     let [a, b, c] = STAND_IN_PREFIX;
-    let ip = Ipv6Addr::new(
+    IpAddr::V6(Ipv6Addr::new(
         a,
         b,
         c,
-        0,
-        (index >> 48) as u16,
-        (index >> 32) as u16,
-        (index >> 16) as u16,
-        index as u16,
-    );
-    SocketAddr::new(IpAddr::V6(ip), STAND_IN_PORT)
+        kind,
+        (bits >> 48) as u16,
+        (bits >> 32) as u16,
+        (bits >> 16) as u16,
+        bits as u16,
+    ))
+}
+
+fn counted_stand_in(index: u64) -> SocketAddr {
+    SocketAddr::new(stand_in_ip(COUNTED, index), STAND_IN_PORT)
+}
+
+/// The one stand-in IP every sender from `ip` is given, each on a port of
+/// its own. quinn validates an address by its IP alone (a Retry or
+/// NEW_TOKEN token names the IP it was sent to), so a sender that comes
+/// back from a new port on the same IP, as one does when its NAT gives it
+/// a new mapping, presents a token the server honours. An IPv6 address is
+/// folded into the 64 bits, so two could share a stand-in IP; their
+/// stand-ins still differ by port.
+fn stand_in_ip_for(ip: IpAddr) -> IpAddr {
+    match ip.to_canonical() {
+        IpAddr::V4(v4) => stand_in_ip(FROM_IPV4, u32::from(v4).into()),
+        IpAddr::V6(v6) => {
+            let bits = u128::from(v6);
+            stand_in_ip(FROM_IPV6, (bits >> 64) as u64 ^ bits as u64)
+        }
+    }
 }
 
 /// Who a stand-in stands for. A sender that has not said who it is (the
@@ -344,6 +369,8 @@ enum Arrival {
 #[derive(Default)]
 struct State {
     next_stand_in: u64,
+    /// The port the last stand-in given for an address took.
+    next_port: u16,
     /// When arrivals next look for unclaimed peers past their time.
     next_sweep: Option<Instant>,
     peers: HashMap<Peer, PeerState>,
@@ -397,8 +424,7 @@ impl State {
     /// none.
     fn mint(&mut self, peer: Peer, now: Instant, expiry: Expiry) -> &mut PeerState {
         if !self.peers.contains_key(&peer) {
-            let stand_in = stand_in_addr(self.next_stand_in);
-            self.next_stand_in += 1;
+            let stand_in = self.new_stand_in(peer);
             let route = match peer {
                 Peer::Host(_) => Route::Unset,
                 Peer::Unnamed(path) => Route::Carrying(path),
@@ -415,6 +441,24 @@ impl State {
             );
         }
         self.peers.get_mut(&peer).expect("just minted")
+    }
+
+    /// A stand-in no peer holds: for a sender known by its address, one
+    /// sharing the IP of every sender from that address's IP.
+    fn new_stand_in(&mut self, peer: Peer) -> SocketAddr {
+        if let Peer::Unnamed(Path::Direct(addr) | Path::Punched(addr)) = peer {
+            let ip = stand_in_ip_for(addr.ip());
+            for _ in 0..u16::MAX {
+                self.next_port = self.next_port.wrapping_add(1).max(1);
+                let stand_in = SocketAddr::new(ip, self.next_port);
+                if !self.by_stand_in.contains_key(&stand_in) {
+                    return stand_in;
+                }
+            }
+        }
+        let stand_in = counted_stand_in(self.next_stand_in);
+        self.next_stand_in += 1;
+        stand_in
     }
 
     /// The stand-in of the sender of an arrival, an unnamed one minted to
@@ -1907,6 +1951,46 @@ mod tests {
         assert_eq!(fake.take_sent(), vec![(back, QUIC.to_vec())]);
         fake.push(back, QUIC);
         assert_eq!(receive(&socket).unwrap().0, over_udp);
+    }
+
+    /// Senders from one IP stand in at one IP, each on a port of its own,
+    /// so quinn's address validation, which names only the IP, carries
+    /// over to a sender's new port; senders from other IPs, hosts and byte
+    /// streams stand in elsewhere.
+    #[test]
+    fn socket_senders_from_one_ip_share_a_stand_in_ip() {
+        let (fake, socket, _own) = fake_socket();
+        let mut heard = Vec::new();
+        for from in [
+            "192.0.2.70:5000",
+            "192.0.2.70:5001",
+            "[::ffff:192.0.2.70]:5002",
+            "192.0.2.71:5000",
+            "[2001:db8::7]:5000",
+            "[2001:db8::7]:5001",
+        ] {
+            fake.push(from.parse().unwrap(), QUIC);
+            heard.push(receive(&socket).unwrap().0);
+        }
+        let host = socket.stand_in(HostId::new_v4());
+        let path = socket.add_framed(Arc::new(Recorded::default()));
+        let on_stream = socket.stand_in_on(path);
+        let ip = |at: SocketAddr| at.ip();
+        assert_eq!(ip(heard[0]), ip(heard[1]));
+        assert_eq!(ip(heard[0]), ip(heard[2]));
+        assert_ne!(ip(heard[0]), ip(heard[3]));
+        assert_eq!(ip(heard[4]), ip(heard[5]));
+        assert_ne!(ip(heard[0]), ip(heard[4]));
+        let mut all = heard.clone();
+        all.extend([host, on_stream]);
+        let unique: std::collections::HashSet<_> = all.iter().collect();
+        assert_eq!(unique.len(), all.len(), "every stand-in is its own");
+        for stand_in in all {
+            let IpAddr::V6(v6) = stand_in.ip() else {
+                panic!("{stand_in} is not in the stand-in prefix");
+            };
+            assert_eq!(v6.segments()[..3], STAND_IN_PREFIX);
+        }
     }
 
     #[test]

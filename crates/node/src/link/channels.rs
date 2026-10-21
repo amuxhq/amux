@@ -7,15 +7,12 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, RwLock, Weak};
 use std::task::{Context, Poll, ready};
-use std::time::Duration;
 
 use futures_util::future::BoxFuture;
-use rustls::pki_types::ServerName;
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
 use tonic::codegen::http;
 use tonic::transport::{Channel, Endpoint};
@@ -25,12 +22,11 @@ use super::{ByteStream, LinkCarrier, OpenError};
 use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
 use crate::driver::{CoreLinks, core_error};
-use crate::identity::{DeviceIdentity, IdentityError};
-use crate::routing::{LinkId, LinkRegistry, Route, core_host};
+use crate::identity::IdentityError;
+use crate::routing::{LinkId, LinkRegistry, Route};
 use crate::transport::{Compressed, channel_from_single_io, configure_tonic_endpoint_keepalive};
 use crate::trust::SharedTrustStore;
 
-const CHANNEL_TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const HTTP2_FRAME_HEADER_LEN: usize = 9;
 const HTTP2_DATA_FRAME: u8 = 0;
 
@@ -67,8 +63,8 @@ pub enum ChannelError {
         "Pairing could not reach this host. Check that both devices are online and signed in to the same cloud account."
     )]
     CloudPairingUnavailable,
-    #[error("stream refused: {0:?}")]
-    Refused(pb::StreamRefusal),
+    #[error("the forwarder refused to carry the link: {0:?}")]
+    Refused(pb::ForwardRefusal),
     #[error("no live link to host {host_id}")]
     LinkUnavailable { host_id: HostId },
     #[error("channel handshake failed: {0}")]
@@ -79,21 +75,25 @@ pub enum ChannelError {
     Tls(String),
 }
 
-/// How a stream to a host is secured.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Handshake {
-    /// Whatever the route allows: none on a direct link of our own.
-    Any,
-    /// The pinned TLS handshake inside the stream, whatever the route.
-    Pinned,
-    /// None: the link the stream rides authenticated both ends.
-    None,
-}
+/// Dials an end-to-end link to a host through a forwarder: the relay, or
+/// a paired daemon forwarding for its hosts.
+pub(crate) trait ForwardedDial: Send + Sync + 'static {
+    /// Brings up a link to `peer` whose packets the forwarder at the far
+    /// end of `through` carries, returning once it is registered.
+    fn dial_through(
+        &self,
+        peer: HostId,
+        through: LinkId,
+    ) -> BoxFuture<'_, Result<(), ChannelError>>;
 
-#[derive(Clone)]
-struct ChannelSecurity {
-    identity: DeviceIdentity,
-    trust_store: SharedTrustStore,
+    /// Dials `peer`'s pairing service through the forwarder at the far end
+    /// of `through`, presenting no certificate: the host answers only while
+    /// its pairing window is open.
+    fn pair_through(
+        &self,
+        peer: HostId,
+        through: LinkId,
+    ) -> BoxFuture<'_, Result<Channel, ChannelError>>;
 }
 
 /// A calls channel kept for reuse, and whether the one connection under it
@@ -149,16 +149,6 @@ impl Ending {
             core.report(daemon_core::Input::ChannelAnswered { channel: *channel });
         }
     }
-
-    /// Tells the core the far host refused this host's certificate as no
-    /// longer trusted.
-    fn tell_revoked(&self, peer: HostId) {
-        if let Some((core, _)) = self.tell.get() {
-            core.report(daemon_core::Input::PeerRevoked {
-                host: core_host(peer),
-            });
-        }
-    }
 }
 
 pub struct ChannelPool {
@@ -169,8 +159,10 @@ pub struct ChannelPool {
     opening: std::sync::Mutex<HashMap<ChannelKey, Arc<tokio::sync::Mutex<()>>>>,
     lifetimes: RwLock<HashMap<ChannelKey, Vec<Weak<CancellationToken>>>>,
     links: Arc<LinkRegistry>,
-    security: Option<ChannelSecurity>,
-    handshake_timeout: Duration,
+    /// Where a channel's pin comes from when no core gives one.
+    trust_store: Option<SharedTrustStore>,
+    /// How a link through a forwarder is dialled, once the edge is up.
+    forwarded: OnceLock<Arc<dyn ForwardedDial>>,
     bulk_response_holds: std::sync::Mutex<HashMap<HostId, PendingBulkResponseHold>>,
     /// Hosts no channel opens to while the link stays up: a fault a test
     /// network injects.
@@ -269,31 +261,23 @@ impl ChannelPool {
             opening: std::sync::Mutex::new(HashMap::new()),
             lifetimes: RwLock::new(HashMap::new()),
             links,
-            security: None,
-            handshake_timeout: CHANNEL_TLS_HANDSHAKE_TIMEOUT,
+            trust_store: None,
+            forwarded: OnceLock::new(),
             bulk_response_holds: std::sync::Mutex::new(HashMap::new()),
             refused: std::sync::Mutex::default(),
         }
     }
 
-    pub(crate) fn with_device_tls(
-        links: Arc<LinkRegistry>,
-        identity: DeviceIdentity,
-        trust_store: SharedTrustStore,
-    ) -> Self {
+    pub(crate) fn with_trust(links: Arc<LinkRegistry>, trust_store: SharedTrustStore) -> Self {
         Self {
-            by_key: RwLock::new(HashMap::new()),
-            opening: std::sync::Mutex::new(HashMap::new()),
-            lifetimes: RwLock::new(HashMap::new()),
-            links,
-            security: Some(ChannelSecurity {
-                identity,
-                trust_store,
-            }),
-            handshake_timeout: CHANNEL_TLS_HANDSHAKE_TIMEOUT,
-            bulk_response_holds: std::sync::Mutex::new(HashMap::new()),
-            refused: std::sync::Mutex::default(),
+            trust_store: Some(trust_store),
+            ..Self::new(links)
         }
+    }
+
+    /// Dials links through forwarders with `dial` from now on.
+    pub(crate) fn dial_forwarded_with(&self, dial: Arc<dyn ForwardedDial>) {
+        let _ = self.forwarded.set(dial);
     }
 
     /// From now on every channel to `peer` is refused while `refuse`
@@ -395,27 +379,24 @@ impl ChannelPool {
         }
 
         let opened = std::time::Instant::now();
-        let (link, carrier) = self.carrier(key.route).await?;
-        let pinned = self.security.as_ref().and_then(|security| {
-            security
-                .trust_store
+        let (link, carrier) = self.carrier(key.peer, key.route).await?;
+        let pinned = self.trust_store.as_ref().and_then(|trust_store| {
+            trust_store
                 .read()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .pubkey_for_host(key.peer)
                 .map(<[u8]>::to_vec)
         });
-        // A profile's channels open at its core's word, with the key it
-        // gives; a pool with no core pins from the trust store itself.
-        let (telling, pin) = match self.links.core() {
+        // A profile's channels open at its core's word, which refuses a
+        // host no key is pinned for; a pool with no core asks the trust
+        // store itself.
+        let telling = match self.links.core() {
             Some(core) => match core.want_channel(link, key.peer, key.class, pinned).await {
-                Ok(opening) => {
-                    let telling = Telling {
-                        core: core.clone(),
-                        channel: opening.channel,
-                        told: false,
-                    };
-                    (Some(telling), Some(opening.pin.0))
-                }
+                Ok(opening) => Some(Telling {
+                    core: core.clone(),
+                    channel: opening.channel,
+                    told: false,
+                }),
                 Err(refusal) => {
                     return Err(match refusal {
                         daemon_core::payload::ChannelError::Unpinned => unpinned(key.peer),
@@ -425,10 +406,13 @@ impl ChannelPool {
                     });
                 }
             },
-            None => (None, pinned),
+            None if pinned.is_none() && self.trust_store.is_some() => {
+                return Err(unpinned(key.peer));
+            }
+            None => None,
         };
         if refused {
-            let refusal = ChannelError::Refused(pb::StreamRefusal::NoRoute);
+            let refusal = ChannelError::Refused(pb::ForwardRefusal::NoRoute);
             if let Some(telling) = telling {
                 telling.failed(core_error(&refusal));
             }
@@ -436,25 +420,18 @@ impl ChannelPool {
         }
         let ended = Arc::new(Ending::default());
         let secured = async {
-            let (stream, handshake) = self
-                .open_stream_on(carrier, key.peer, key.route, Handshake::Any)
-                .await?;
-            self.secure_channel(
-                key,
-                Watched::new(stream, ended.clone()),
-                &ended,
-                handshake,
-                pin,
-            )
-            .await
-            .map(|channel| (channel, handshake))
+            let stream = carrier
+                .open_stream()
+                .await
+                .map_err(|error| map_open_error(error, key.route))?;
+            Ok(self.channel_over(key, Watched::new(stream, ended.clone()), &ended))
         }
         .await;
         // A refusal set while the channel was opening holds for it too, so
         // no channel opens once it is set.
         let secured = match secured {
             Ok(_) if self.refuses(key.peer) => {
-                Err(ChannelError::Refused(pb::StreamRefusal::NoRoute))
+                Err(ChannelError::Refused(pb::ForwardRefusal::NoRoute))
             }
             secured => secured,
         };
@@ -467,11 +444,10 @@ impl ChannelPool {
                 Err(error) => telling.failed(core_error(error)),
             }
         }
-        let (channel, handshake) = secured?;
+        let channel = secured?;
         tracing::debug!(
             peer = %key.peer,
             class = ?key.class,
-            ?handshake,
             elapsed_ms = opened.elapsed().as_millis(),
             "opened a link stream"
         );
@@ -490,16 +466,22 @@ impl ChannelPool {
         Ok(channel)
     }
 
-    pub(crate) async fn pairing_stream(
+    /// A channel to `peer`'s pairing service through `forwarder`.
+    pub(crate) async fn pairing_channel(
         &self,
         peer: HostId,
-        route: Route,
-    ) -> Result<ByteStream, ChannelError> {
-        let (_, carrier) = self.carrier(route).await?;
-        let (stream, _) = self
-            .open_stream_on(carrier, peer, route, Handshake::Pinned)
-            .await?;
-        Ok(stream)
+        forwarder: HostId,
+    ) -> Result<Channel, ChannelError> {
+        let (through, _) = self
+            .links
+            .native_carrier_to_peer(forwarder)
+            .await
+            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
+        self.forwarded
+            .get()
+            .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?
+            .pair_through(peer, through)
+            .await
     }
 
     pub(crate) fn drop_host(&self, host: HostId) {
@@ -527,45 +509,14 @@ impl ChannelPool {
         self.cancel_where(gone);
     }
 
-    /// Opens a stream to `peer` on `route`, saying how it is secured. A
-    /// stream to a paired host on a host-to-host link of our own is plain:
-    /// the link authenticated both ends when it came up, so the stream
-    /// carries no handshake. Every other stream handshakes inside, and
-    /// does not wait to be accepted first either: the handshake's first
-    /// flight leaves with the preface, and a refusal comes back out of
-    /// the handshake with its reason. Only an opener that asks for the
-    /// pinned handshake outright, pairing, waits for the answer first.
-    async fn open_stream_on(
+    /// The link a channel to `peer` on `route` rides and its carrier. A
+    /// route through a forwarder rides a link of `peer`'s own, whose
+    /// packets the forwarder carries: the one up, or one dialled now.
+    async fn carrier(
         &self,
-        carrier: Arc<dyn LinkCarrier>,
         peer: HostId,
         route: Route,
-        wanted: Handshake,
-    ) -> Result<(ByteStream, Handshake), ChannelError> {
-        let plain = wanted == Handshake::Any
-            && matches!(route, Route::Direct(link) if link.peer() == peer)
-            && carrier.kind().pins_peer();
-        let mut stream = carrier
-            .open_stream(pb::StreamPreface {
-                dst: peer.as_bytes().to_vec(),
-                plain,
-            })
-            .await
-            .map_err(|error| map_open_error(error, route))?;
-        if plain {
-            return Ok((stream, Handshake::None));
-        }
-        if wanted == Handshake::Pinned {
-            stream
-                .accepted()
-                .await
-                .map_err(|error| map_open_error(error, route))?;
-        }
-        Ok((stream, Handshake::Pinned))
-    }
-
-    /// The link `route` rides and its carrier, while it is up.
-    async fn carrier(&self, route: Route) -> Result<(LinkId, Arc<dyn LinkCarrier>), ChannelError> {
+    ) -> Result<(LinkId, Arc<dyn LinkCarrier>), ChannelError> {
         match route {
             Route::Direct(link) => self
                 .links
@@ -575,26 +526,36 @@ impl ChannelPool {
                 .ok_or(ChannelError::LinkUnavailable {
                     host_id: link.peer(),
                 }),
-            Route::Via(relay) => self
-                .links
-                .native_carrier_to_peer(relay)
-                .await
-                .ok_or(ChannelError::LinkUnavailable { host_id: relay }),
+            Route::Via(forwarder) => {
+                if let Some(up) = self.links.native_carrier_to_peer(peer).await {
+                    return Ok(up);
+                }
+                let (through, _) = self
+                    .links
+                    .native_carrier_to_peer(forwarder)
+                    .await
+                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
+                let dial = self
+                    .forwarded
+                    .get()
+                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })?;
+                dial.dial_through(peer, through).await?;
+                self.links
+                    .native_carrier_to_peer(peer)
+                    .await
+                    .ok_or(ChannelError::LinkUnavailable { host_id: forwarder })
+            }
         }
     }
 
-    async fn secure_channel(
+    /// The channel over a stream of the link: its handshake authenticated
+    /// both ends, so the stream carries the channel's bytes at once.
+    fn channel_over(
         &self,
         key: ChannelKey,
         stream: Watched<ByteStream>,
         ended: &Arc<Ending>,
-        handshake: Handshake,
-        pin: Option<Vec<u8>>,
-    ) -> Result<Channel, ChannelError> {
-        let security = self
-            .security
-            .as_ref()
-            .ok_or_else(|| ChannelError::Handshake("device identity is unavailable".to_string()))?;
+    ) -> Channel {
         let lifetime = Arc::new(CancellationToken::new());
         {
             let mut lifetimes = self
@@ -606,36 +567,8 @@ impl ChannelPool {
             tracked.push(Arc::downgrade(&lifetime));
         }
         let stream = crate::transport::ShutdownIo::new_shared(stream, lifetime);
-        let io: Box<dyn crate::transport::BoxedGrpcInner> = match handshake {
-            Handshake::None => Box::new(stream),
-            Handshake::Pinned | Handshake::Any => {
-                let pin = pin.ok_or_else(|| unpinned(key.peer))?;
-                let config = security.identity.client_tls_config_pinned(key.peer, pin)?;
-                let connector = TlsConnector::from(Arc::new(config));
-                let server_name = ServerName::try_from("amux-device".to_string())
-                    .map_err(|error| ChannelError::Tls(error.to_string()))?;
-                let tls = tokio::time::timeout(
-                    self.handshake_timeout,
-                    connector.connect(server_name, stream),
-                )
-                .await
-                .map_err(|_| ChannelError::Handshake("TLS handshake timed out".to_string()))?
-                .map_err(|error| match OpenError::carried(&error) {
-                    // The stream was not waited on: the open's answer is
-                    // read here, under the handshake, and is the error.
-                    Some(OpenError::Refused(reason)) => ChannelError::Refused(*reason),
-                    Some(OpenError::LinkClosed) => ChannelError::LinkUnavailable {
-                        host_id: route_link_peer(key.route),
-                    },
-                    _ => ChannelError::Tls(error.to_string()),
-                })?;
-                Box::new(tls)
-            }
-        };
-        // Compressed above the handshake, so the relay copies it as it
-        // copies any ciphertext; the acceptor wraps its end the same way
-        // (`TunnelDispatcher`).
-        let tls = Compressed::new(TrustAnswer::new(io, key.peer, ended.clone()));
+        // The acceptor wraps its end the same way (`TunnelDispatcher`).
+        let io = Compressed::new(TrustAnswer::new(stream, ended.clone()));
         let endpoint = configure_tonic_endpoint_keepalive(Endpoint::from_static("https://peer"));
         let hold = (key.class == ChannelClass::Bulk).then(|| {
             self.bulk_response_holds
@@ -643,14 +576,14 @@ impl ChannelPool {
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .remove(&key.peer)
         });
-        Ok(match hold.flatten() {
+        match hold.flatten() {
             Some(hold) => channel_from_single_io(
                 endpoint,
                 "held native link channel",
-                HoldAfterFirstDataFrame::new(tls, hold),
+                HoldAfterFirstDataFrame::new(io, hold),
             ),
-            None => channel_from_single_io(endpoint, "native link channel", tls),
-        })
+            None => channel_from_single_io(endpoint, "native link channel", io),
+        }
     }
 
     fn cancel_where(&self, predicate: impl Fn(&ChannelKey) -> bool) {
@@ -751,40 +684,22 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Watched<T> {
 /// certificate as no longer trusted.
 pub const TRUST_REVOKED: &str = "the host no longer trusts this machine";
 
-/// Reads the far host's answer to this host's certificate off a channel's
-/// TLS stream. In TLS 1.3 the client's handshake finishes before the server
-/// has judged the client's certificate, so the answer comes with the first
-/// read: application data means it was taken, and a certificate_revoked
-/// alert means the host no longer trusts this one. Either is told to the
-/// profile's core, once the channel is reported open, and the refusal fails
-/// the read with an error [`PeerChannel`] names to the caller.
+/// Tells the profile's core when the far host first answers on a channel:
+/// its first bytes say the host took the link this channel rides.
 struct TrustAnswer<T> {
     inner: T,
-    peer: HostId,
     channel: Arc<Ending>,
     answered: bool,
 }
 
 impl<T> TrustAnswer<T> {
-    fn new(inner: T, peer: HostId, channel: Arc<Ending>) -> Self {
+    fn new(inner: T, channel: Arc<Ending>) -> Self {
         Self {
             inner,
-            peer,
             channel,
             answered: false,
         }
     }
-}
-
-fn revoked_certificate(error: &io::Error) -> bool {
-    matches!(
-        error
-            .get_ref()
-            .and_then(|inner| inner.downcast_ref::<rustls::Error>()),
-        Some(rustls::Error::AlertReceived(
-            rustls::AlertDescription::CertificateRevoked
-        ))
-    )
 }
 
 impl<T: AsyncRead + Unpin> AsyncRead for TrustAnswer<T> {
@@ -801,14 +716,6 @@ impl<T: AsyncRead + Unpin> AsyncRead for TrustAnswer<T> {
                     self.channel.tell_answered();
                 }
                 Poll::Ready(Ok(()))
-            }
-            Err(error) if !self.answered && revoked_certificate(&error) => {
-                self.answered = true;
-                self.channel.tell_revoked(self.peer);
-                Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    TRUST_REVOKED,
-                )))
             }
             Err(error) => Poll::Ready(Err(error)),
         }
@@ -864,12 +771,12 @@ impl tower::Service<http::Request<tonic::body::Body>> for PeerChannel {
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.0.poll_ready(cx).map_err(name_refusal)
+        self.0.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, request: http::Request<tonic::body::Body>) -> Self::Future {
         let response = self.0.call(request);
-        Box::pin(async move { response.await.map_err(name_refusal) })
+        Box::pin(async move { response.await.map_err(Into::into) })
     }
 }
 
@@ -880,30 +787,6 @@ pub(crate) fn peer_client(channel: Channel) -> PeerClient {
     wire::peer_service_client::PeerServiceClient::new(PeerChannel::new(channel))
         .max_decoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
         .max_encoding_message_size(wire::CHANNEL_MESSAGE_SIZE_LIMIT)
-}
-
-/// The status for a transport error: Unauthenticated when [`TrustAnswer`]
-/// failed the stream because the host refused this one's certificate.
-/// HTTP/2 keeps only an I/O error's kind and text, so those are what is
-/// matched.
-fn name_refusal(error: tonic::transport::Error) -> tower::BoxError {
-    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
-    while let Some(current) = source {
-        if let Some(io) = current.downcast_ref::<io::Error>() {
-            if io.kind() == io::ErrorKind::PermissionDenied && io.to_string() == TRUST_REVOKED {
-                return Box::new(tonic::Status::unauthenticated(TRUST_REVOKED));
-            }
-            // A plain stream is not waited on, so the host's refusal of it
-            // is read, not answered at the open.
-            if let Some(reason) = OpenError::refusal(io) {
-                return Box::new(tonic::Status::unavailable(format!(
-                    "stream refused: {reason:?}"
-                )));
-            }
-        }
-        source = current.source();
-    }
-    Box::new(error)
 }
 
 enum Http2ReadState {
@@ -1041,9 +924,6 @@ pub(crate) struct InboundStream {
     /// The host at the far end of that link, authenticated by it.
     pub(crate) adjacent_peer: HostId,
     pub(crate) stream: ByteStream,
-    /// The stream is the adjacent peer's own, over a direct link, and
-    /// carries no handshake: the link's authentication is the stream's.
-    pub(crate) plain: bool,
 }
 
 pub(crate) fn serve_inbound_streams(
@@ -1055,14 +935,7 @@ pub(crate) fn serve_inbound_streams(
             let dispatcher = dispatcher.clone();
             tokio::spawn(async move {
                 if let Err(error) = dispatcher.dispatch_link_stream(inbound).await {
-                    if error.is_peer_leaving() {
-                        // The peer opened this and left before it said who it
-                        // was, which is what a stream on a superseded link
-                        // does. Nothing here was refused.
-                        tracing::debug!(%error, "a peer left a native link stream unfinished");
-                    } else {
-                        tracing::warn!(%error, "dispatcher rejected native link stream");
-                    }
+                    tracing::warn!(%error, "dispatcher rejected native link stream");
                 }
             });
         }
@@ -1077,7 +950,6 @@ fn unpinned(peer: HostId) -> ChannelError {
 
 fn map_open_error(error: OpenError, route: Route) -> ChannelError {
     match error {
-        OpenError::Refused(reason) => ChannelError::Refused(reason),
         OpenError::LinkClosed => ChannelError::LinkUnavailable {
             host_id: route_link_peer(route),
         },

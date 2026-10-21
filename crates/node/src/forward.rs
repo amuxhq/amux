@@ -254,7 +254,7 @@ impl ProfileRuntime {
             // On a free account the relay lists the account's hosts and
             // opens no tunnel between them; the host already reads away.
             Ok(Err(crate::link::ChannelError::Refused(
-                wire::pb::StreamRefusal::PaymentRequired,
+                wire::pb::ForwardRefusal::PaymentRequired,
             ))) => Err(ForwardError::Lapsed {
                 host,
                 name: self.host_name(host),

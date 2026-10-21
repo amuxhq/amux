@@ -28,6 +28,7 @@ use quinn::{AsyncUdpSocket, UdpPoller};
 use tokio::sync::mpsc;
 
 use super::framed::FramedKind;
+use super::link_log::PathKind;
 use crate::HostId;
 
 /// What the socket layer sits on: the OS socket in production, the
@@ -242,7 +243,9 @@ struct State {
     /// routes this host chose.
     by_addr: HashMap<SocketAddr, HostId>,
     by_framed: HashMap<PathId, HostId>,
-    forwarding: HashMap<LinkId, SocketAddr>,
+    /// Each forwarding link's forwarder, by the forwarder's stand-in, and
+    /// what kind of path a link carried through it is.
+    forwarding: HashMap<LinkId, (SocketAddr, PathKind)>,
     forwarders: HashMap<SocketAddr, LinkId>,
     framed: HashMap<PathId, Arc<dyn FramedIo>>,
     next_path: u64,
@@ -294,6 +297,12 @@ impl State {
             .get_mut(&Peer::Host(host))
             .expect("stand-in just made")
             .route = route;
+    }
+
+    /// The forwarding link whose forwarder sent this arrival, if one did.
+    fn forwarder_of(&self, arrival: Arrival) -> Option<LinkId> {
+        let stand_in = self.peers.get(&self.sender(arrival))?.stand_in;
+        self.forwarders.get(&stand_in).copied()
     }
 
     /// The peer a QUIC packet came from: the host that path leads to, or an
@@ -494,19 +503,32 @@ impl LinkSocket {
         }
     }
 
-    /// Names the forwarder a forwarding link reaches: packets for a peer
-    /// carried on `Path::Forwarded(link)` go to `via` behind the header.
-    pub fn add_forwarding(&self, link: LinkId, via: SocketAddr) {
+    /// Names the forwarder a forwarding link reaches by its stand-in on
+    /// this socket: packets for a peer carried on `Path::Forwarded(link)`
+    /// go behind the header on whatever path carries the forwarder, UDP or
+    /// a byte stream, and forwarded packets from it are for this socket.
+    pub fn add_forwarding(&self, link: LinkId, via: SocketAddr, kind: PathKind) {
         let mut state = self.lock();
-        state.forwarding.insert(link, via);
+        state.forwarding.insert(link, (via, kind));
         state.forwarders.insert(via, link);
     }
 
     pub fn remove_forwarding(&self, link: LinkId) {
         let mut state = self.lock();
-        if let Some(via) = state.forwarding.remove(&link) {
+        if let Some((via, _)) = state.forwarding.remove(&link) {
             state.forwarders.remove(&via);
         }
+    }
+
+    /// The forwarding link whose forwarder stands behind `stand_in`.
+    pub fn forwarding_link(&self, stand_in: SocketAddr) -> Option<LinkId> {
+        self.lock().forwarders.get(&stand_in).copied()
+    }
+
+    /// What kind of path a link carried through `link` is: through the
+    /// relay or through a paired daemon.
+    pub fn forwarded_kind(&self, link: LinkId) -> Option<PathKind> {
+        self.lock().forwarding.get(&link).map(|(_, kind)| *kind)
     }
 
     /// Makes this the socket of a forwarder: a forwarded packet arriving
@@ -586,11 +608,34 @@ impl LinkSocket {
                         "an unnamed sender cannot be reached through a forwarder",
                     ));
                 };
-                let via = self.lock().forwarding.get(&link).copied().ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::NotConnected, "no such forwarding link")
-                })?;
-                self.substrate()
-                    .send_to(&encode_forwarded(host, packet), via)
+                let (forwarder, path) = {
+                    let state = self.lock();
+                    let (via, _) = state.forwarding.get(&link).copied().ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::NotConnected, "no such forwarding link")
+                    })?;
+                    let forwarder = *state.by_stand_in.get(&via).ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::NotConnected, "the forwarder is gone")
+                    })?;
+                    let path = match (&forwarder, &state.peers[&forwarder].route) {
+                        (Peer::Unnamed(path), _) | (Peer::Host(_), Route::Carrying(path)) => *path,
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::NotConnected,
+                                "no one path carries the forwarder",
+                            ));
+                        }
+                    };
+                    (forwarder, path)
+                };
+                // Forwarding is one hop: a forwarder is never reached
+                // through another.
+                if matches!(path, Path::Forwarded(_)) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotConnected,
+                        "a forwarder reached through a forwarder",
+                    ));
+                }
+                self.send_on(forwarder, path, &encode_forwarded(host, packet))
             }
             Path::Framed(id) => {
                 let io = self.lock().framed.get(&id).cloned().ok_or_else(|| {
@@ -653,9 +698,7 @@ impl LinkSocket {
                     let stand_in = state.stand_in(Peer::Host(host));
                     // A link someone dialled to us through a forwarder is
                     // answered the way it came until a route is chosen.
-                    if let Arrival::Udp(via) = arrival
-                        && let Some(link) = state.forwarders.get(&via).copied()
-                    {
+                    if let Some(link) = state.forwarder_of(arrival) {
                         let peer = state.peers.get_mut(&Peer::Host(host)).expect("stand-in");
                         if matches!(peer.route, Route::Unset) {
                             peer.route = Route::Carrying(Path::Forwarded(link));
@@ -684,11 +727,7 @@ impl LinkSocket {
     /// forwarder it sends through, whose packets name their sender.
     fn forwards(&self, arrival: Arrival) -> bool {
         let state = self.lock();
-        state.forward_sink.is_some()
-            && match arrival {
-                Arrival::Udp(via) => !state.forwarders.contains_key(&via),
-                Arrival::Framed(_) => true,
-            }
+        state.forward_sink.is_some() && state.forwarder_of(arrival).is_none()
     }
 }
 
@@ -1089,7 +1128,8 @@ mod tests {
         // Through a forwarder: the header names the destination going out
         // and the sender coming in, and quinn sees neither.
         let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
-        socket.add_forwarding(LinkId(9), relay);
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(9), via, PathKind::RelayUdp);
         socket.set_carrying(a, Path::Forwarded(LinkId(9)));
         socket.try_send(&transmit(stand_in_a, QUIC)).unwrap();
         assert_eq!(fake.take_sent(), vec![(relay, encode_forwarded(a, QUIC))]);
@@ -1139,7 +1179,8 @@ mod tests {
     fn socket_forwarded_dial_is_answered_through_its_forwarder() {
         let (fake, socket, _own) = fake_socket();
         let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
-        socket.add_forwarding(LinkId(3), relay);
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(3), via, PathKind::RelayUdp);
         let peer = HostId::new_v4();
         fake.push(relay, &encode_forwarded(peer, QUIC));
         let (stand_in, packet) = receive(&socket).unwrap();
@@ -1161,7 +1202,8 @@ mod tests {
         let lan: SocketAddr = "192.0.2.10:5000".parse().unwrap();
         let public: SocketAddr = "203.0.113.5:5000".parse().unwrap();
         let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
-        socket.add_forwarding(LinkId(1), relay);
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(1), via, PathKind::RelayUdp);
         let stand_in = socket.stand_in(peer);
 
         // No route yet: dropped as a lost packet would be.
@@ -1213,7 +1255,8 @@ mod tests {
         let peer = HostId::new_v4();
         let lan: SocketAddr = "192.0.2.10:5000".parse().unwrap();
         let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
-        socket.add_forwarding(LinkId(1), relay);
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(1), via, PathKind::RelayUdp);
 
         socket.probe(peer, Path::Direct(lan), 11).unwrap();
         socket.probe(peer, Path::Forwarded(LinkId(1)), 12).unwrap();

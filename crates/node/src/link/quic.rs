@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, ready};
+use std::task::{Context, Poll};
 use std::{future, io};
 
 use futures_util::future::BoxFuture;
@@ -10,8 +10,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 use wire::{self, pb};
 
 use super::carrier::{
-    AsyncStream, BoxIoFuture, ByteStream, CarrierKind, ControlSink, ControlSource, ControlWrite,
-    LinkCarrier, OpenError,
+    AsyncStream, ByteStream, CarrierKind, ControlSink, ControlSource, ControlWrite, LinkCarrier,
+    OpenError,
 };
 use super::framed::{FramedKind, StreamEndpoint};
 use super::link_log::PathKind;
@@ -21,7 +21,6 @@ use crate::HostId;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::trust::SharedTrustStore;
 
-const STREAM_ACCEPTED: u8 = 0;
 const CONTROL_QUEUE_CAPACITY: usize = 32;
 pub(crate) const DEVICE_SERVER_NAME: &str = "amux-device.local";
 // Quinn's first Initial PTO is about one second with its default initial RTT.
@@ -94,6 +93,43 @@ impl LinkEndpoint {
         config.token_store(self.tokens.for_server(addr));
         self.endpoint
             .connect_with(config, self.socket.stand_in_at(addr), server_name)
+    }
+
+    /// Dials `peer` through the forwarder at the far end of `through`: the
+    /// relay, or a paired daemon. The packets go behind the header naming
+    /// `peer` until a path of the peer's own carries the link; a peer some
+    /// path already carries is dialled on it.
+    pub(crate) fn connect_through(
+        &self,
+        mut config: quinn::ClientConfig,
+        peer: HostId,
+        through: super::socket::LinkId,
+        server_name: &str,
+    ) -> Result<quinn::Connecting, quinn::ConnectError> {
+        let stand_in = self.socket.stand_in(peer);
+        if self.socket.path_of(stand_in).is_none() {
+            self.socket
+                .set_carrying(peer, super::socket::Path::Forwarded(through));
+        }
+        config.token_store(self.tokens.for_server(stand_in));
+        self.endpoint.connect_with(config, stand_in, server_name)
+    }
+
+    /// The kind of path a link through the forwarding link `through` runs
+    /// on.
+    pub(crate) fn forwarded_kind(&self, through: super::socket::LinkId) -> PathKind {
+        self.socket
+            .forwarded_kind(through)
+            .unwrap_or(PathKind::ViaDaemon)
+    }
+
+    /// The kind of path a connection from `remote` arrived on, where it is
+    /// a forwarder's: through the relay or through a paired daemon.
+    pub(crate) fn arrived_forwarded(&self, remote: SocketAddr) -> Option<PathKind> {
+        match self.socket.path_of(remote)? {
+            super::socket::Path::Forwarded(through) => Some(self.forwarded_kind(through)),
+            _ => None,
+        }
     }
 
     /// The network address a connection's remote stand-in stands for, or
@@ -173,7 +209,10 @@ pub struct QuicCarrier {
     kind: CarrierKind,
     path: PathKind,
     connection: quinn::Connection,
-    inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<(pb::StreamPreface, ByteStream)>>,
+    /// Whether the connection is on a byte stream's endpoint of its own,
+    /// whose stand-ins mean nothing on the profile's socket.
+    alone: bool,
+    inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<ByteStream>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
     /// Asks the control writer to finish its stream, answering once the
     /// peer has acknowledged everything on it.
@@ -302,6 +341,24 @@ impl QuicCarrier {
         Ok(Self::new(connection, CarrierKind::RelayQuic, Some(control)))
     }
 
+    /// Dials `peer` through the forwarder at the far end of `through`,
+    /// pinning the key paired for it as a direct dial does.
+    pub(crate) async fn connect_through(
+        endpoint: &LinkEndpoint,
+        through: super::socket::LinkId,
+        identity: &DeviceIdentity,
+        trust_store: SharedTrustStore,
+        peer: HostId,
+    ) -> Result<Self, ConnectError> {
+        let config = identity.quic_client_config_for_peer(trust_store, peer)?;
+        let connection = endpoint
+            .connect_through(config, peer, through, DEVICE_SERVER_NAME)?
+            .await?;
+        let control = connection.open_bi().await?;
+        Ok(Self::new(connection, CarrierKind::Quic, Some(control))
+            .with_path(endpoint.forwarded_kind(through)))
+    }
+
     /// Dials the far end of a byte stream, the only connection on its
     /// endpoint.
     pub(crate) async fn connect_over_stream(
@@ -319,7 +376,9 @@ impl QuicCarrier {
             stream_path(stream.kind()),
         );
         stream.carry(connection.clone());
-        Ok(Self::new(connection, kind, Some(control)).with_path(path))
+        Ok(Self::new(connection, kind, Some(control))
+            .with_path(path)
+            .alone())
     }
 
     /// Answers the connection the far end of a byte stream opens.
@@ -331,7 +390,9 @@ impl QuicCarrier {
             stream_path(stream.kind()),
         );
         stream.carry(connection.clone());
-        Ok(Self::from_accepted_with_kind(connection, kind).with_path(path))
+        Ok(Self::from_accepted_with_kind(connection, kind)
+            .with_path(path)
+            .alone())
     }
 
     /// The trusted host whose key the handshake pinned, if the far end
@@ -359,6 +420,11 @@ impl QuicCarrier {
         Self::new(connection, kind, None)
     }
 
+    fn alone(mut self) -> Self {
+        self.alone = true;
+        self
+    }
+
     /// Names the path the link runs on, where its kind alone does not say:
     /// a direct link's address, known to whoever dialled or answered it.
     pub(crate) fn with_path(mut self, path: PathKind) -> Self {
@@ -384,11 +450,13 @@ impl QuicCarrier {
                 return;
             }
 
+            // Every stream after the control stream belongs to the host at
+            // the other end: the link's handshake authenticated it.
             while let Ok((send, recv)) = driver_connection.accept_bi().await {
-                let inbound = inbound_tx.clone();
-                tokio::spawn(async move {
-                    prepare_inbound_stream(send, recv, inbound).await;
-                });
+                let stream = Box::new(QuicByteStream { send, recv }) as ByteStream;
+                if inbound_tx.send(stream).is_err() {
+                    return;
+                }
             }
         });
 
@@ -414,6 +482,7 @@ impl QuicCarrier {
             kind,
             path: kind.path(),
             connection,
+            alone: false,
             inbound: tokio::sync::Mutex::new(inbound),
             control: Mutex::new(Some((
                 ControlSink {
@@ -428,20 +497,19 @@ impl QuicCarrier {
         }
     }
 
-    async fn next_inbound(&self) -> Option<(pb::StreamPreface, ByteStream)> {
+    async fn next_inbound(&self) -> Option<ByteStream> {
         self.inbound.lock().await.recv().await
     }
 }
 
-/// Adapts one already-accepted QUIC bidirectional stream to Tokio IO without
-/// the native-link stream admission marker. The direct pairing server uses
-/// this for its single HTTP/2 connection after the QUIC handshake itself has
+/// Adapts one accepted QUIC bidirectional stream to Tokio IO: the pairing
+/// server's single HTTP/2 connection, once the QUIC handshake itself has
 /// classified the peer as pre-trust pairing traffic.
 pub(crate) fn accepted_quic_bidi_stream(
     send: quinn::SendStream,
     recv: quinn::RecvStream,
 ) -> ByteStream {
-    Box::new(QuicByteStream::accepted(send, recv))
+    Box::new(QuicByteStream { send, recv })
 }
 
 impl LinkCarrier for QuicCarrier {
@@ -457,34 +525,18 @@ impl LinkCarrier for QuicCarrier {
             .expect("a link control stream can only be taken once")
     }
 
-    fn open_stream(
-        &self,
-        preface: pb::StreamPreface,
-    ) -> BoxFuture<'_, Result<ByteStream, OpenError>> {
+    fn open_stream(&self) -> BoxFuture<'_, Result<ByteStream, OpenError>> {
         Box::pin(async move {
-            let (mut send, recv) = self
+            let (send, recv) = self
                 .connection
                 .open_bi()
                 .await
                 .map_err(map_connection_open_error)?;
-            let preface_len = prost::Message::encoded_len(&preface);
-            if preface_len > wire::MESSAGE_SIZE_LIMIT {
-                return Err(OpenError::Io(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!(
-                        "stream preface is {preface_len} bytes; limit is {}",
-                        wire::MESSAGE_SIZE_LIMIT
-                    ),
-                )));
-            }
-            write_proto(&mut send, &preface)
-                .await
-                .map_err(map_write_error)?;
-            Ok(Box::new(QuicByteStream::opened(send, recv)) as ByteStream)
+            Ok(Box::new(QuicByteStream { send, recv }) as ByteStream)
         })
     }
 
-    fn accept_stream(&self) -> BoxFuture<'_, Option<(pb::StreamPreface, ByteStream)>> {
+    fn accept_stream(&self) -> BoxFuture<'_, Option<ByteStream>> {
         Box::pin(self.next_inbound())
     }
 
@@ -521,7 +573,7 @@ impl LinkCarrier for QuicCarrier {
     }
 
     fn remote_address(&self) -> Option<SocketAddr> {
-        Some(self.connection.remote_address())
+        (!self.alone).then(|| self.connection.remote_address())
     }
 
     fn path_kind(&self) -> PathKind {
@@ -638,25 +690,6 @@ fn close_reason_from_connection(error: quinn::ConnectionError) -> pb::LinkCloseR
     }
 }
 
-async fn prepare_inbound_stream(
-    mut send: quinn::SendStream,
-    mut recv: quinn::RecvStream,
-    inbound: mpsc::UnboundedSender<(pb::StreamPreface, ByteStream)>,
-) {
-    match read_proto::<pb::StreamPreface>(&mut recv, wire::MESSAGE_SIZE_LIMIT).await {
-        Ok(Some(preface)) => {
-            let stream = Box::new(QuicByteStream::pending(send, recv)) as ByteStream;
-            if let Err(error) = inbound.send((preface, stream)) {
-                let (_, mut stream) = error.0;
-                let _ = stream.reset(pb::StreamRefusal::ShuttingDown).await;
-            }
-        }
-        Ok(None) | Err(_) => {
-            reset_stream_pair(&mut send, &mut recv, pb::StreamRefusal::NotAdjacent);
-        }
-    }
-}
-
 async fn run_control_stream(
     stream: oneshot::Receiver<
         Result<(quinn::SendStream, quinn::RecvStream), quinn::ConnectionError>,
@@ -765,18 +798,6 @@ async fn write_frame(
     send.write_all(bytes).await
 }
 
-async fn write_proto<M: prost::Message>(
-    send: &mut quinn::SendStream,
-    message: &M,
-) -> Result<(), quinn::WriteError> {
-    let encoded_len = message.encoded_len();
-    let mut bytes = Vec::with_capacity(encoded_len);
-    message
-        .encode(&mut bytes)
-        .expect("encoding into a Vec cannot fail");
-    write_frame(send, &bytes, None).await
-}
-
 async fn read_proto<M: prost::Message + Default>(
     recv: &mut quinn::RecvStream,
     limit: usize,
@@ -812,129 +833,10 @@ fn map_connection_open_error(error: quinn::ConnectionError) -> OpenError {
     }
 }
 
-fn map_write_error(error: quinn::WriteError) -> OpenError {
-    match error {
-        quinn::WriteError::Stopped(code) => OpenError::Refused(refusal_from_varint(code)),
-        quinn::WriteError::ConnectionLost(_) | quinn::WriteError::ClosedStream => {
-            OpenError::LinkClosed
-        }
-        error => OpenError::Io(io::Error::from(error)),
-    }
-}
-
-/// What a read that found no acceptance byte says about the open.
-fn map_read_error(error: io::Error) -> OpenError {
-    match error
-        .get_ref()
-        .and_then(|inner| inner.downcast_ref::<quinn::ReadError>())
-    {
-        Some(quinn::ReadError::Reset(code)) => OpenError::Refused(refusal_from_varint(*code)),
-        Some(quinn::ReadError::ConnectionLost(_)) => OpenError::LinkClosed,
-        _ => OpenError::Io(error),
-    }
-}
-
-fn refusal_from_varint(code: quinn::VarInt) -> pb::StreamRefusal {
-    pb::StreamRefusal::try_from(code.into_inner() as i32).unwrap_or(pb::StreamRefusal::Unspecified)
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum Admission {
-    /// Opened to this end: the acceptance byte goes out ahead of its first
-    /// read or write.
-    Pending,
-    /// Opened by this end: the far end's answer is read ahead of its first
-    /// read, while writes go out at once behind the preface.
-    Opened,
-    Accepted,
-    Closed,
-}
-
+/// One bidirectional stream of a link.
 struct QuicByteStream {
     send: quinn::SendStream,
     recv: quinn::RecvStream,
-    admission: Admission,
-    accept_offset: usize,
-}
-
-impl QuicByteStream {
-    fn pending(send: quinn::SendStream, recv: quinn::RecvStream) -> Self {
-        Self::with_admission(send, recv, Admission::Pending)
-    }
-
-    fn opened(send: quinn::SendStream, recv: quinn::RecvStream) -> Self {
-        Self::with_admission(send, recv, Admission::Opened)
-    }
-
-    fn accepted(send: quinn::SendStream, recv: quinn::RecvStream) -> Self {
-        Self::with_admission(send, recv, Admission::Accepted)
-    }
-
-    fn with_admission(
-        send: quinn::SendStream,
-        recv: quinn::RecvStream,
-        admission: Admission,
-    ) -> Self {
-        Self {
-            send,
-            recv,
-            admission,
-            accept_offset: 0,
-        }
-    }
-
-    /// The far end's answer to a stream this end opened: nothing to read
-    /// until it has accepted, and its refusal is the reason it was reset
-    /// with.
-    fn poll_answer(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), OpenError>> {
-        if self.admission != Admission::Opened {
-            return Poll::Ready(Ok(()));
-        }
-        let mut status = [0_u8; 1];
-        let mut buf = ReadBuf::new(&mut status);
-        let answer = match ready!(AsyncRead::poll_read(Pin::new(&mut self.recv), cx, &mut buf)) {
-            Ok(()) if buf.filled().is_empty() => Err(OpenError::Io(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "QUIC stream ended before it was accepted",
-            ))),
-            Ok(()) if status[0] == STREAM_ACCEPTED => Ok(()),
-            Ok(()) => Err(OpenError::Io(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("invalid QUIC stream-open status {}", status[0]),
-            ))),
-            Err(error) => Err(map_read_error(error)),
-        };
-        self.admission = match answer {
-            Ok(()) => Admission::Accepted,
-            Err(_) => Admission::Closed,
-        };
-        Poll::Ready(answer)
-    }
-
-    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if self.admission != Admission::Pending {
-            return Poll::Ready(Ok(()));
-        }
-        while self.accept_offset < 1 {
-            let written = match AsyncWrite::poll_write(
-                Pin::new(&mut self.send),
-                cx,
-                &[STREAM_ACCEPTED][self.accept_offset..],
-            ) {
-                Poll::Ready(result) => result?,
-                Poll::Pending => return Poll::Pending,
-            };
-            if written == 0 {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "could not accept QUIC stream",
-                )));
-            }
-            self.accept_offset += written;
-        }
-        self.admission = Admission::Accepted;
-        Poll::Ready(Ok(()))
-    }
 }
 
 impl AsyncRead for QuicByteStream {
@@ -943,14 +845,7 @@ impl AsyncRead for QuicByteStream {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if let Err(error) = ready!(self.poll_answer(cx)) {
-            return Poll::Ready(Err(error.into_io()));
-        }
-        match self.poll_accept(cx) {
-            Poll::Ready(Ok(())) => AsyncRead::poll_read(Pin::new(&mut self.recv), cx, buf),
-            Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
-            Poll::Pending => Poll::Pending,
-        }
+        AsyncRead::poll_read(Pin::new(&mut self.recv), cx, buf)
     }
 }
 
@@ -960,65 +855,24 @@ impl AsyncWrite for QuicByteStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        match self.poll_accept(cx) {
-            Poll::Ready(Ok(())) => AsyncWrite::poll_write(Pin::new(&mut self.send), cx, buf),
-            Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
-            Poll::Pending => Poll::Pending,
-        }
+        AsyncWrite::poll_write(Pin::new(&mut self.send), cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match self.poll_accept(cx) {
-            Poll::Ready(Ok(())) => AsyncWrite::poll_flush(Pin::new(&mut self.send), cx),
-            Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
-            Poll::Pending => Poll::Pending,
-        }
+        AsyncWrite::poll_flush(Pin::new(&mut self.send), cx)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match self.poll_accept(cx) {
-            Poll::Ready(Ok(())) => {
-                self.admission = Admission::Closed;
-                AsyncWrite::poll_shutdown(Pin::new(&mut self.send), cx)
-            }
-            Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
-            Poll::Pending => Poll::Pending,
-        }
+        AsyncWrite::poll_shutdown(Pin::new(&mut self.send), cx)
     }
 }
 
 impl AsyncStream for QuicByteStream {
-    fn reset(&mut self, code: pb::StreamRefusal) -> BoxIoFuture<'_, ()> {
-        reset_stream_pair(&mut self.send, &mut self.recv, code);
-        self.admission = Admission::Closed;
-        Box::pin(future::ready(Ok(())))
+    fn reset(&mut self) {
+        let code = quinn::VarInt::from_u32(0);
+        let _ = self.send.reset(code);
+        let _ = self.recv.stop(code);
     }
-
-    fn accepted(&mut self) -> BoxFuture<'_, Result<(), OpenError>> {
-        Box::pin(future::poll_fn(move |cx| self.poll_answer(cx)))
-    }
-}
-
-impl Drop for QuicByteStream {
-    fn drop(&mut self) {
-        if self.admission == Admission::Pending {
-            reset_stream_pair(
-                &mut self.send,
-                &mut self.recv,
-                pb::StreamRefusal::ShuttingDown,
-            );
-        }
-    }
-}
-
-fn reset_stream_pair(
-    send: &mut quinn::SendStream,
-    recv: &mut quinn::RecvStream,
-    code: pb::StreamRefusal,
-) {
-    let code = quinn::VarInt::from_u32(code as u32);
-    let _ = send.reset(code);
-    let _ = recv.stop(code);
 }
 
 #[cfg(test)]
@@ -1282,83 +1136,30 @@ mod tests {
         drop(blackhole);
     }
 
-    fn preface(byte: u8) -> pb::StreamPreface {
-        pb::StreamPreface {
-            dst: vec![byte],
-            plain: false,
-        }
-    }
-
-    #[tokio::test]
-    async fn refusal_code_survives_a_reset() {
-        let pair = loopback_pair().await;
-        let client = pair.client.clone();
-        let opening = tokio::spawn(async move {
-            let mut stream = client.open_stream(preface(1)).await?;
-            stream.accepted().await
-        });
-        let (_, mut inbound) = pair.server.accept_stream().await.unwrap();
-        inbound
-            .reset(pb::StreamRefusal::PaymentRequired)
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            opening.await.unwrap(),
-            Err(OpenError::Refused(pb::StreamRefusal::PaymentRequired))
-        ));
-    }
-
-    /// An opener that does not wait sends behind its preface at once; a
-    /// refusal then comes out of its first read, with its reason.
-    #[tokio::test]
-    async fn an_unwaited_stream_sends_at_once_and_reads_its_refusal() {
-        let pair = loopback_pair().await;
-        let mut stream = pair.client.open_stream(preface(1)).await.unwrap();
-        stream.write_all(b"hello").await.unwrap();
-        let (got, mut inbound) = pair.server.accept_stream().await.unwrap();
-        assert_eq!(got, preface(1));
-        let mut greeting = [0_u8; 5];
-        inbound.read_exact(&mut greeting).await.unwrap();
-        assert_eq!(&greeting, b"hello");
-
-        inbound
-            .reset(pb::StreamRefusal::ShuttingDown)
-            .await
-            .unwrap();
-        let mut answer = [0_u8; 1];
-        let error = stream.read_exact(&mut answer).await.unwrap_err();
-        assert_eq!(
-            OpenError::refusal(&error),
-            Some(pb::StreamRefusal::ShuttingDown)
-        );
-    }
-
+    /// A stream reaches the far end with its first bytes, and one the far
+    /// end does not read never holds up another.
     #[tokio::test]
     async fn two_streams_do_not_block_each_other_under_a_slow_reader() {
         let pair = loopback_pair().await;
-        let client = pair.client.clone();
-        let first_open = tokio::spawn(async move { client.open_stream(preface(1)).await.unwrap() });
-        let (_, mut slow_reader) = pair.server.accept_stream().await.unwrap();
-        slow_reader.flush().await.unwrap();
-        let mut first = first_open.await.unwrap();
-
+        let mut first = pair.client.open_stream().await.unwrap();
+        first.write_all(b"first").await.unwrap();
+        let mut slow_reader = pair.server.accept_stream().await.unwrap();
         let blocked_writer = tokio::spawn(async move {
             let payload = vec![7_u8; 8 * 1024 * 1024];
             first.write_all(&payload).await
         });
 
-        let client = pair.client.clone();
-        let second_open =
-            tokio::spawn(async move { client.open_stream(preface(2)).await.unwrap() });
-        let (got, mut fast_stream) =
+        let mut second = pair.client.open_stream().await.unwrap();
+        second.write_all(b"second").await.unwrap();
+        let mut fast_stream =
             tokio::time::timeout(Duration::from_secs(1), pair.server.accept_stream())
                 .await
                 .expect("second stream was blocked by the unread first stream")
                 .unwrap();
-        assert_eq!(got, preface(2));
+        let mut greeting = [0_u8; 6];
+        fast_stream.read_exact(&mut greeting).await.unwrap();
+        assert_eq!(&greeting, b"second");
         fast_stream.write_all(b"ok").await.unwrap();
-        let mut second = second_open.await.unwrap();
         let mut response = [0_u8; 2];
         tokio::time::timeout(Duration::from_secs(1), second.read_exact(&mut response))
             .await
@@ -1366,10 +1167,7 @@ mod tests {
             .unwrap();
         assert_eq!(&response, b"ok");
 
-        slow_reader
-            .reset(pb::StreamRefusal::ShuttingDown)
-            .await
-            .unwrap();
+        slow_reader.reset();
         assert!(blocked_writer.await.unwrap().is_err());
     }
 

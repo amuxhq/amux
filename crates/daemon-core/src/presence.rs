@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::Daemon;
 use crate::ids::{HostId, LinkId, TimerId};
 use crate::io::Output;
-use crate::payload::{ChannelError, ForwardRefusal, StreamRefusal};
+use crate::payload::{ChannelError, ForwardRefusal};
 
 /// How long after a failed try the next one is made, doubling after each
 /// failure up to [`RETRY_MAX_MS`].
@@ -288,7 +288,7 @@ impl Daemon {
                     known.active = None;
                 }
                 if known.active.is_none() {
-                    if *error == ChannelError::Refused(StreamRefusal::PaymentRequired) {
+                    if *error == ChannelError::Refused(ForwardRefusal::PaymentRequired) {
                         known.reached = Some(Reached::Away);
                         known.refused_for_plan = true;
                     } else {
@@ -473,7 +473,7 @@ impl Daemon {
         out: &mut Vec<Output>,
     ) {
         self.touched.host(host);
-        if *error == ChannelError::Refused(StreamRefusal::PaymentRequired)
+        if *error == ChannelError::Refused(ForwardRefusal::PaymentRequired)
             || self.attempt_barred(host, false)
         {
             return;
@@ -820,7 +820,7 @@ mod tests {
         })
     }
 
-    fn refused(refusal: StreamRefusal) -> Tried {
+    fn refused(refusal: ForwardRefusal) -> Tried {
         Tried::Failed(ChannelError::Refused(refusal))
     }
 
@@ -952,7 +952,7 @@ mod tests {
         up(&mut daemon, 1, DESK, CarrierKind::Direct);
         let direct = Route::Direct(LinkId(1));
         tick(&mut daemon, 0);
-        let out = concluded(&mut daemon, DESK, direct, refused(StreamRefusal::NoRoute));
+        let out = concluded(&mut daemon, DESK, direct, refused(ForwardRefusal::NoRoute));
         assert_eq!(retry_at(&out, DESK), Some(RETRY_FIRST_MS));
 
         let mut now = RETRY_FIRST_MS;
@@ -961,7 +961,7 @@ mod tests {
             tick(&mut daemon, now);
             let out = fire(&mut daemon, DESK);
             assert_eq!(attempts(&out), vec![(DESK, direct)]);
-            let out = concluded(&mut daemon, DESK, direct, refused(StreamRefusal::NoRoute));
+            let out = concluded(&mut daemon, DESK, direct, refused(ForwardRefusal::NoRoute));
             let at = retry_at(&out, DESK).expect("the next try is armed");
             pauses.push(at - now);
             now = at;
@@ -978,7 +978,7 @@ mod tests {
         assert_eq!(retry_at(&out, DESK), Some(now));
         let out = fire(&mut daemon, DESK);
         assert_eq!(attempts(&out), vec![(DESK, direct)]);
-        let out = concluded(&mut daemon, DESK, direct, refused(StreamRefusal::NoRoute));
+        let out = concluded(&mut daemon, DESK, direct, refused(ForwardRefusal::NoRoute));
         assert_eq!(retry_at(&out, DESK), Some(now + RETRY_FIRST_MS));
 
         // A channel opening ends the retry and its timer.
@@ -1019,7 +1019,7 @@ mod tests {
             &mut daemon,
             LAPTOP,
             Route::Direct(LinkId(2)),
-            refused(StreamRefusal::NoRoute),
+            refused(ForwardRefusal::NoRoute),
         );
         down(&mut daemon, 2);
         assert_eq!(attempts(&fire(&mut daemon, LAPTOP)), Vec::new());
@@ -1065,7 +1065,7 @@ mod tests {
             &mut daemon,
             LAPTOP,
             via,
-            refused(StreamRefusal::PaymentRequired),
+            refused(ForwardRefusal::PaymentRequired),
         );
         tick(&mut daemon, 10);
 
@@ -1274,13 +1274,13 @@ mod tests {
             &mut daemon,
             DESK,
             Route::Via(RELAY),
-            refused(StreamRefusal::PaymentRequired),
+            refused(ForwardRefusal::PaymentRequired),
         );
         let out = step(
             &mut daemon,
             Input::CallsFailed {
                 host: DESK,
-                error: ChannelError::Refused(StreamRefusal::PaymentRequired),
+                error: ChannelError::Refused(ForwardRefusal::PaymentRequired),
             },
         );
         assert_eq!(out, Vec::new(), "the host already reads away");

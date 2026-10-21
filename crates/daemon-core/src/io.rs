@@ -763,7 +763,7 @@ pub enum Job {
 mod tests {
     use super::*;
     use crate::payload::{
-        Answer, ClientRequest, JobResult, PeerFailure, PeerReply, PeerRequest, StreamRefusal,
+        Answer, ClientRequest, ForwardRefusal, JobResult, PeerFailure, PeerReply, PeerRequest,
     };
 
     #[test]
@@ -802,7 +802,7 @@ mod tests {
             },
             Input::ChannelClosed {
                 channel: ChannelId(4),
-                reason: ChannelError::Refused(StreamRefusal::PaymentRequired),
+                reason: ChannelError::Refused(ForwardRefusal::PaymentRequired),
             },
             Input::LinkDown {
                 link: LinkId(1),
@@ -811,7 +811,7 @@ mod tests {
             Input::AttemptConcluded {
                 host: HostId([1; 16]),
                 route: Route::Via(HostId([2; 16])),
-                tried: Tried::Failed(ChannelError::Refused(StreamRefusal::PaymentRequired)),
+                tried: Tried::Failed(ChannelError::Refused(ForwardRefusal::PaymentRequired)),
             },
             Input::Timer {
                 id: TimerId::Retry(HostId([1; 16])),

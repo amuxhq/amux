@@ -19,7 +19,8 @@ use wire::pb;
 
 use crate::driver::CoreLinks;
 use crate::link::LinkCarrier as NativeLinkCarrier;
-use crate::link::piper::Relaying;
+use crate::link::link_log::PathKind;
+use crate::link::relaying::Relaying;
 use crate::routing::types::{LinkId, core_host, host_from_core};
 use crate::routing::wire::{neighbor_down_message, neighbor_up_message};
 use crate::routing::{ConnectRole, Host, RuntimeInstance};
@@ -50,10 +51,12 @@ impl LinkRegistry {
             core: None,
             relaying,
             user,
+            refusals: tokio::sync::broadcast::channel(16).0,
+            last_refusals: std::sync::Mutex::default(),
         }
     }
 
-    /// The core that decides which streams these links carry.
+    /// The core that decides which links forward to each other.
     pub(crate) fn relaying(&self) -> &Arc<Relaying> {
         &self.relaying
     }
@@ -81,6 +84,8 @@ pub struct LinkRegistry {
     relaying: Arc<Relaying>,
     /// The account these links are on, as the forwarding core knows it.
     user: relay_core::UserId,
+    refusals: tokio::sync::broadcast::Sender<(HostId, pb::ForwardRefusal)>,
+    last_refusals: std::sync::Mutex<HashMap<HostId, pb::ForwardRefusal>>,
 }
 
 pub(crate) fn relay_tier(tier: Tier) -> relay_core::Tier {
@@ -102,13 +107,17 @@ pub enum LinkRole {
     CloudRelay,
 }
 
-/// The physical carrier underneath a direct routing link. Relay routes are
-/// identified by `Route::Via`; direct routes use this tag to distinguish SSH
-/// from a network connection.
+/// What carries a host-to-host link's packets: the network, SSH, or a
+/// forwarder (the relay, or a paired daemon) between the two hosts.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum LinkCarrier {
     Direct,
     Ssh,
+    /// A link through a forwarder is the two hosts' own, but takes no part
+    /// in forwarding or in what links are told of their neighbors:
+    /// forwarding is one hop, and the hosts it reaches are the
+    /// forwarder's to tell.
+    Forwarded,
 }
 
 /// How this daemon authenticated a live link. Only token-admitted links
@@ -283,6 +292,32 @@ impl LinkRegistry {
         let (close_tx, close_rx) = mpsc::channel(1);
         let closed = Arc::new(Notify::new());
         let mut state = self.state.write().await;
+        if carrier == LinkCarrier::Forwarded {
+            self.last_refusals
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(&host.id);
+            let old = state.writers.insert(
+                link,
+                LinkWriter {
+                    host: host.clone(),
+                    tx: outgoing_tx,
+                    close_tx,
+                    closed,
+                    role,
+                    admission,
+                    carrier,
+                    native_carrier,
+                },
+            );
+            drop(state);
+            if let Some(old) = old {
+                old.closed.notify_waiters();
+                audit::link_down(old.host.id, &link, "replaced");
+            }
+            audit::link_up(host.id, &link, role);
+            return Some(Registration { close_rx });
+        }
         // The forwarding core settles which of two direct links to one peer
         // stays and what every link is told of its neighbors; it is asked
         // under the lock, so what it says and the writers held agree.
@@ -319,12 +354,25 @@ impl LinkRegistry {
                 displaced.push((id, writer));
             }
         }
+        // Packets are forwarded through a link on the profile's own socket:
+        // the host's link to the relay, and a pinned link to a paired
+        // daemon. A link over a byte stream of its own has no stand-in
+        // there.
+        let on_socket = native_carrier
+            .as_ref()
+            .and_then(|carrier| carrier.remote_address());
+        // A link admitted by a token is a relay's link to a host, which
+        // forwards for the host rather than through it.
+        let through = match (role, admission) {
+            (LinkRole::CloudRelay, LinkAdmission::PinnedKey) => Some(PathKind::RelayUdp),
+            (LinkRole::Peer, LinkAdmission::PinnedKey) => Some(PathKind::ViaDaemon),
+            (_, LinkAdmission::CloudToken { .. }) => None,
+        };
         self.relaying.admitted(
             link.core(),
             outgoing_tx.clone(),
-            native_carrier
-                .as_ref()
-                .and_then(|carrier| carrier.remote_address()),
+            on_socket,
+            through.filter(|_| on_socket.is_some()),
         );
         let new = NewLink {
             link: link.core(),
@@ -368,7 +416,9 @@ impl LinkRegistry {
         let Some(writer) = state.writers.remove(link) else {
             return;
         };
-        self.report_down(&state, link);
+        if writer.carrier != LinkCarrier::Forwarded {
+            self.report_down(&state, link);
+        }
         let peer = writer.host.id;
         drop(state);
         writer.closed.notify_waiters();
@@ -404,12 +454,56 @@ impl LinkRegistry {
         host_id: HostId,
         request: LinkCloseRequest,
     ) -> Vec<LinkId> {
+        self.close_where(|writer| writer.host.id == host_id, request)
+            .await
+    }
+
+    /// Closes every link to `host` through a forwarder, which refused to
+    /// carry it, and waits until they are gone; whoever dials one now is
+    /// told.
+    pub(crate) async fn close_forwarded(&self, host: HostId, reason: pb::ForwardRefusal) {
+        self.last_refusals
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(host, reason);
+        let _ = self.refusals.send((host, reason));
+        self.close_where(
+            |writer| writer.host.id == host && writer.carrier == LinkCarrier::Forwarded,
+            LinkCloseRequest::Superseded,
+        )
+        .await;
+    }
+
+    /// Why a forwarder last refused to carry links to `host`, until a link
+    /// to it through one comes up. A forwarder repeats a refusal only every
+    /// few seconds, so a dial in between hears nothing and this is what it
+    /// was refused for.
+    pub(crate) fn last_refusal(&self, host: HostId) -> Option<pb::ForwardRefusal> {
+        self.last_refusals
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&host)
+            .copied()
+    }
+
+    /// The refusals forwarders send from now on, by the host refused.
+    pub(crate) fn forward_refusals(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<(HostId, pb::ForwardRefusal)> {
+        self.refusals.subscribe()
+    }
+
+    async fn close_where(
+        &self,
+        closes: impl Fn(&LinkWriter) -> bool,
+        request: LinkCloseRequest,
+    ) -> Vec<LinkId> {
         let closing = {
             let state = self.state.read().await;
             state
                 .writers
                 .iter()
-                .filter(|(_, writer)| writer.host.id == host_id)
+                .filter(|(_, writer)| closes(writer))
                 .map(|(link, writer)| {
                     let _ = writer.close_tx.try_send(request);
                     (*link, writer.closed.clone())
@@ -493,21 +587,6 @@ impl LinkRegistry {
                     })
                     .flatten()
             })
-    }
-
-    /// The carrier of the link the forwarding core names `link`, while it
-    /// is registered.
-    pub(crate) async fn native_carrier_of(
-        &self,
-        link: daemon_core::LinkId,
-    ) -> Option<Arc<dyn NativeLinkCarrier>> {
-        self.state
-            .read()
-            .await
-            .writers
-            .iter()
-            .find(|(id, _)| id.core() == link)
-            .and_then(|(_, writer)| writer.native_carrier.clone())
     }
 
     pub(crate) async fn update_cloud_tier(&self, link: &LinkId, tier: Tier) {

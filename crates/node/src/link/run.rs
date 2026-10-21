@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use uuid::Uuid;
 use wire::{self, PROTOCOL_VERSION};
 
-use super::link_log::{EarlyData, LinkEvent, LinkTransition};
+use super::link_log::{EarlyData, LinkEvent, LinkTransition, PathKind};
 use super::{LinkCarrier as Carrier, read_message, write_message};
 use crate::net_error::{self, status as protocol_status};
 use crate::routing::{
@@ -354,7 +354,7 @@ pub async fn run_link(
     let peer_frame;
     let ((peer_host, peer_instance), peer_neighbors, snapshot) = match role {
         crate::routing::ConnectRole::Connector => {
-            let snapshot = ctx.links.neighbor_snapshot().await;
+            let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
             write_message(&mut sink, &connector_hello(&ctx, &snapshot)).await?;
             tracing::debug!(path = %carrier.path_stats(), "sent Hello");
             let first = read_first(&mut source, "HelloAck").await?;
@@ -439,7 +439,7 @@ pub async fn run_link(
                 ctx = provider.context_for(&user).await;
                 session = Some(LinkAuthSession::new(user, authenticator));
             }
-            let snapshot = ctx.links.neighbor_snapshot().await;
+            let snapshot = neighbor_snapshot(&ctx, carrier.as_ref()).await;
             let peer = match accept_peer_hello(&ctx, hello, session.as_ref()) {
                 Ok(peer) => peer,
                 Err(error) => {
@@ -472,6 +472,25 @@ pub async fn run_link(
         snapshot.into_iter().map(|host| host.id).collect(),
     )
     .await
+}
+
+/// Whether `carrier` is two hosts' own link whose packets a forwarder
+/// carries: the relay, or a paired daemon.
+fn forwarded(carrier: &dyn Carrier) -> bool {
+    carrier.kind() == super::CarrierKind::Quic
+        && matches!(
+            carrier.path_kind(),
+            PathKind::RelayUdp | PathKind::RelayTcp | PathKind::ViaDaemon
+        )
+}
+
+/// The neighbors a link's handshake lists: none on a link through a
+/// forwarder, since forwarding is one hop.
+async fn neighbor_snapshot(ctx: &LinkCtx, carrier: &dyn Carrier) -> Vec<Host> {
+    if forwarded(carrier) {
+        return Vec::new();
+    }
+    ctx.links.neighbor_snapshot().await
 }
 
 async fn read_first(
@@ -542,6 +561,7 @@ async fn run_established(
         .unwrap_or(LinkAdmission::PinnedKey);
     let carrier_tag = match carrier.kind() {
         super::CarrierKind::Ssh => RoutingCarrier::Ssh,
+        _ if forwarded(carrier.as_ref()) => RoutingCarrier::Forwarded,
         _ => ctx.routing_carrier,
     };
     let (out_tx, mut out_rx) = mpsc::channel(256);
@@ -590,6 +610,9 @@ async fn run_established(
             (LinkRole::CloudRelay, _) => daemon_core::payload::CarrierKind::Relay,
             (LinkRole::Peer, RoutingCarrier::Ssh) => daemon_core::payload::CarrierKind::Ssh,
             (LinkRole::Peer, RoutingCarrier::Direct) => daemon_core::payload::CarrierKind::Direct,
+            (LinkRole::Peer, RoutingCarrier::Forwarded) => {
+                daemon_core::payload::CarrierKind::Forwarded
+            }
         },
         resumed: None,
     });
@@ -667,7 +690,7 @@ async fn run_established(
                 }
             }
             stream = carrier.accept_stream() => {
-                let Some((preface, stream)) = stream else {
+                let Some(stream) = stream else {
                     if let Some((reason, status)) =
                         last_word(&ctx, link, &mut handshake, &mut source).await
                     {
@@ -676,12 +699,7 @@ async fn run_established(
                     }
                     break;
                 };
-                // Only a stream the adjacent peer opened on a host-to-host
-                // link of its own can be plain; a relay forwards its openers'
-                // streams with their handshakes inside, whatever their
-                // prefaces say.
-                let plain = preface.plain && carrier.kind().pins_peer();
-                spawn_inbound_dispatch(ctx.clone(), link, peer_host.id, preface, stream, plain);
+                spawn_inbound_dispatch(ctx.clone(), peer_host.id, stream);
             }
             _ = maybe_policy_sleep(auth_expiry), if acceptor_auth.is_some() => {
                 audit::auth_jwt_failure("link authorization expired");
@@ -805,40 +823,22 @@ async fn last_word(
     None
 }
 
-fn spawn_inbound_dispatch(
-    ctx: LinkCtx,
-    link: LinkId,
-    peer: HostId,
-    preface: wire::pb::StreamPreface,
-    mut stream: super::ByteStream,
-    plain: bool,
-) {
+/// Hands a stream the peer opened to this host's server. A stream is its
+/// opener's own: the link's handshake authenticated the host at its other
+/// end, and nothing on a link reaches any other host. A context with no
+/// server, a relay's, resets it.
+fn spawn_inbound_dispatch(ctx: LinkCtx, peer: HostId, mut stream: super::ByteStream) {
     tokio::spawn(async move {
-        let destination = HostId::from_slice(&preface.dst).ok();
-        // `link_role` is CloudRelay on a relay's accepting context and on an
-        // embedder's attached relay connector, so those contexts forward even
-        // streams addressed to their own host. A daemon-configured cloud
-        // connector keeps the Peer role from `link_connector_ctx`; its local
-        // binding is registered as CloudRelay separately, so streams addressed
-        // to that daemon over the relay still arrive at its inbound dispatcher.
-        if destination == Some(ctx.local_host.id()) && ctx.link_role != LinkRole::CloudRelay {
-            if let Some(sender) = &ctx.incoming_streams_tx {
-                let inbound = super::InboundStream {
-                    adjacent_peer: peer,
-                    stream,
-                    plain,
-                };
-                if let Err(error) = sender.send(inbound).await {
-                    let mut stream = error.0.stream;
-                    let _ = stream.reset(wire::pb::StreamRefusal::ShuttingDown).await;
-                }
-            } else {
-                let _ = stream.reset(wire::pb::StreamRefusal::ShuttingDown).await;
-            }
-        } else {
-            let _ = super::Piper::new(ctx.links.clone())
-                .pipe(link, preface, stream)
-                .await;
+        let Some(sender) = &ctx.incoming_streams_tx else {
+            stream.reset();
+            return;
+        };
+        let inbound = super::InboundStream {
+            adjacent_peer: peer,
+            stream,
+        };
+        if let Err(mut error) = sender.send(inbound).await {
+            error.0.stream.reset();
         }
     });
 }
@@ -933,10 +933,22 @@ async fn handle_control_body(
             }
             ControlAction::Close(reason, link_close_status(&close))
         }
-        // Nothing on this side acts on address lists or forward refusals yet.
-        wire::pb::message::Body::Addresses(_)
-        | wire::pb::message::Body::ObservedAddress(_)
-        | wire::pb::message::Body::ForwardRefused(_) => ControlAction::Continue,
+        // The links the forwarder no longer carries go before the core
+        // hears why, so it reads the host by the refusal and not by a
+        // link that merely went.
+        wire::pb::message::Body::ForwardRefused(refused) => {
+            if let Ok(host) = HostId::from_slice(&refused.dst) {
+                let reason = wire::pb::ForwardRefusal::try_from(refused.reason)
+                    .unwrap_or(wire::pb::ForwardRefusal::Unspecified);
+                ctx.links.close_forwarded(host, reason).await;
+            }
+            ctx.report_frame(link, wire::pb::message::Body::ForwardRefused(refused));
+            ControlAction::Continue
+        }
+        // Nothing on this side acts on address lists yet.
+        wire::pb::message::Body::Addresses(_) | wire::pb::message::Body::ObservedAddress(_) => {
+            ControlAction::Continue
+        }
         wire::pb::message::Body::Hello(_) | wire::pb::message::Body::HelloAck(_) => {
             unreachable!("repeated handshake message is rejected by ConnectHandshake")
         }
@@ -1248,18 +1260,9 @@ fn link_error_status(error: LinkError) -> tonic::Status {
 
 #[cfg(test)]
 mod tests {
-    use futures_util::future::BoxFuture;
-    use tokio::sync::{Notify, mpsc};
-
     use super::*;
-    use crate::link::{
-        ByteStream, CarrierKind, ControlSink, ControlSource, LinkCarrier, OpenError, QuicCarrier,
-    };
-    use crate::routing::{Capabilities, LinkProperties};
-
-    struct BlockingOpenCarrier {
-        opened: Notify,
-    }
+    use crate::link::{ControlSink, ControlSource, LinkCarrier, QuicCarrier};
+    use crate::routing::Capabilities;
 
     #[derive(Clone)]
     struct FixedAuthenticator(AuthenticatedLinkUser);
@@ -1271,44 +1274,6 @@ mod tests {
             _token: &str,
         ) -> Result<AuthenticatedLinkUser, tonic::Status> {
             Ok(self.0.clone())
-        }
-    }
-
-    impl BlockingOpenCarrier {
-        fn new() -> Self {
-            Self {
-                opened: Notify::new(),
-            }
-        }
-    }
-
-    impl LinkCarrier for BlockingOpenCarrier {
-        fn kind(&self) -> CarrierKind {
-            CarrierKind::RelayTcp
-        }
-
-        fn control(&self) -> (ControlSink, ControlSource) {
-            panic!("registered destination carrier does not run a control loop")
-        }
-
-        fn open_stream(
-            &self,
-            _preface: wire::pb::StreamPreface,
-        ) -> BoxFuture<'_, Result<ByteStream, OpenError>> {
-            Box::pin(async move {
-                self.opened.notify_one();
-                future::pending().await
-            })
-        }
-
-        fn accept_stream(&self) -> BoxFuture<'_, Option<(wire::pb::StreamPreface, ByteStream)>> {
-            Box::pin(future::pending())
-        }
-
-        fn close(&self, _reason: wire::pb::LinkCloseReason) {}
-
-        fn closed(&self) -> BoxFuture<'_, wire::pb::LinkCloseReason> {
-            Box::pin(future::pending())
         }
     }
 
@@ -1678,96 +1643,5 @@ mod tests {
         );
         task.await.unwrap().unwrap();
         assert!(links.link_to_peer(peer.id).await.is_none());
-    }
-
-    #[tokio::test]
-    async fn blocked_destination_open_does_not_stall_origin_control_messages() {
-        let local = host(1);
-        let origin = host(2);
-        let destination = host(3);
-        let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
-        let destination_carrier = Arc::new(BlockingOpenCarrier::new());
-        let destination_link = LinkId::new(destination.id);
-        let (destination_messages, _destination_rx) = mpsc::channel(8);
-        let _destination_close = links
-            .register_with_details(
-                destination_link,
-                destination.clone(),
-                destination_messages,
-                LinkProperties {
-                    role: LinkRole::Peer,
-                    admission: LinkAdmission::PinnedKey,
-                    carrier: RoutingCarrier::Direct,
-                    runtime_instance: crate::routing::RuntimeInstance::random(),
-                    direct_order: None,
-                },
-                &[],
-                Some(destination_carrier.clone()),
-            )
-            .await;
-
-        let (origin_carrier, local_carrier) = carrier_pair().await;
-        let ctx = LinkCtx::new(local.clone(), links).with_authenticated_peer(origin.id);
-        let link_task = tokio::spawn(run_link(
-            ctx,
-            local_carrier,
-            crate::routing::ConnectRole::Acceptor,
-        ));
-        let (mut sink, mut source) = origin_carrier.control();
-        write_message(
-            &mut sink,
-            &wire::pb::Message {
-                body: Some(wire::pb::message::Body::Hello(wire::pb::Hello {
-                    supported_protocol_versions: vec![PROTOCOL_VERSION],
-                    host: Some(host_to_wire(&origin)),
-                    neighbors: Vec::new(),
-                    auth_token: None,
-                    runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
-                    addrs: Vec::new(),
-                })),
-            },
-        )
-        .await
-        .unwrap();
-        let ack = read_message(&mut source).await.unwrap().unwrap();
-        assert!(matches!(
-            ack.body,
-            Some(wire::pb::message::Body::HelloAck(wire::pb::HelloAck {
-                outcome: Some(wire::pb::hello_ack::Outcome::Accepted(_)),
-            }))
-        ));
-
-        let stream_open = tokio::spawn({
-            let carrier = origin_carrier.clone();
-            async move {
-                carrier
-                    .open_stream(wire::pb::StreamPreface {
-                        dst: destination.id.as_bytes().to_vec(),
-                        plain: false,
-                    })
-                    .await
-            }
-        });
-        tokio::time::timeout(
-            Duration::from_secs(1),
-            destination_carrier.opened.notified(),
-        )
-        .await
-        .expect("origin stream did not reach the blocked destination");
-
-        // The control loop reads the origin's close, and the link ends,
-        // while the stream to the destination is still blocked opening.
-        write_message(
-            &mut sink,
-            &link_close(wire::pb::LinkCloseReason::UserShutdown),
-        )
-        .await
-        .unwrap();
-        let _ = tokio::time::timeout(Duration::from_secs(1), link_task)
-            .await
-            .expect("blocked stream dispatch stalled the origin control loop")
-            .unwrap();
-
-        stream_open.abort();
     }
 }

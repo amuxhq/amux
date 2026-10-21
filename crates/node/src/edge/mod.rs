@@ -289,11 +289,7 @@ impl Edge {
         if let Some(runtime) = runtime.upgrade() {
             links.relaying().report_to(runtime.reports.clone());
         }
-        let channels = Arc::new(ChannelPool::with_device_tls(
-            links,
-            identity.clone(),
-            trust.clone(),
-        ));
+        let channels = Arc::new(ChannelPool::with_trust(links, trust.clone()));
         let connections = ConnectionManager::new(channels.clone(), analytics.clone());
         if let Some(runtime) = runtime.upgrade() {
             runtime
@@ -309,14 +305,13 @@ impl Edge {
             .with_incoming_streams(incoming_streams_tx.clone())
             .with_clock(clock.clone());
         let dispatcher = TunnelDispatcher::new(
-            &identity,
             trust.clone(),
             pair_mode.clone(),
             connections.trusted_connections(),
             trusted_tx,
             pairing_tx,
             DEVICE_TLS_HANDSHAKE_TIMEOUT,
-        )?
+        )
         .with_link_ctx(link_ctx.clone());
 
         let mut tasks = vec![
@@ -333,13 +328,16 @@ impl Edge {
             ),
         ];
 
-        let quic_server = identity.quic_server_config(trust.clone())?;
+        // Every profile answers on its one socket: hosts on its network
+        // dial it there, and hosts anywhere reach it through the relay or a
+        // paired daemon, whose forwarded packets arrive on the same socket.
+        let quic_server = Some(identity.quic_server_config(trust.clone())?);
         let (quic_endpoint, lan_addr) = match &options.lan {
             Some(lan) => {
                 let endpoint = LinkEndpoint::new(
                     bind_lan(dir, lan).map_err(EdgeError::Lan)?,
                     identity.host_id,
-                    Some(quic_server),
+                    quic_server,
                 )
                 .map_err(EdgeError::Lan)?;
                 let addr = endpoint.local_addr().map_err(EdgeError::Lan)?;
@@ -347,19 +345,27 @@ impl Edge {
                     &dir.join(LAN_PORT_FILE),
                     addr.port().to_string().as_bytes(),
                 );
-                tasks.push(dispatcher.serve_quic_endpoint(endpoint.clone(), shutdown.subscribe()));
                 tracing::info!(%addr, host = %identity.host_id, "listening for direct links");
                 (endpoint, Some(addr))
             }
-            // Listening for nothing, the profile still dials from one
-            // socket of both families.
+            // Listening on no known port, the profile still dials and is
+            // reached through forwarders from one socket of both families.
             None => (
                 LinkSocket::bind_dual_stack(DUAL_STACK_ANY, None)
-                    .and_then(|substrate| LinkEndpoint::new(substrate, identity.host_id, None))
+                    .and_then(|substrate| {
+                        LinkEndpoint::new(substrate, identity.host_id, quic_server)
+                    })
                     .map_err(EdgeError::Dialing)?,
                 None,
             ),
         };
+        tasks.push(dispatcher.serve_quic_endpoint(quic_endpoint.clone(), shutdown.subscribe()));
+        // The daemon forwards packets between its paired hosts on the same
+        // socket, and sends its own through the relay and its peers.
+        channels
+            .link_registry()
+            .relaying()
+            .forward_on(quic_endpoint.socket.clone());
 
         let platform = options
             .discovery

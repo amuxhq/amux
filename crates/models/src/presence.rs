@@ -37,9 +37,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::fmt;
 
-use daemon_core::payload::{
-    CarrierKind, ChannelClass, ChannelError, ForwardRefusal, PublicKey, StreamRefusal,
-};
+use daemon_core::payload::{CarrierKind, ChannelClass, ChannelError, ForwardRefusal, PublicKey};
 use daemon_core::{
     ChannelId, Checkpoint, Daemon, HostId, HostView, Input, LinkId, Output, Presence, Route,
     StartOptions, StepBudget, TimerId, Tried,
@@ -705,8 +703,8 @@ impl Machine for PresenceRouting {
 fn failure(concluded: Concluded) -> Option<ChannelError> {
     match concluded {
         Concluded::Ok => None,
-        Concluded::Refused => Some(ChannelError::Refused(StreamRefusal::NoRoute)),
-        Concluded::Payment => Some(ChannelError::Refused(StreamRefusal::PaymentRequired)),
+        Concluded::Refused => Some(ChannelError::Refused(ForwardRefusal::NoRoute)),
+        Concluded::Payment => Some(ChannelError::Refused(ForwardRefusal::PaymentRequired)),
         Concluded::Timeout => Some(ChannelError::Handshake("the handshake timed out".into())),
         Concluded::Gone => Some(ChannelError::LinkClosed),
     }
@@ -797,7 +795,7 @@ impl PresenceRouting {
                 ..
             }
             | Input::ChannelClosed { reason: error, .. } => {
-                *error == ChannelError::Refused(StreamRefusal::PaymentRequired)
+                *error == ChannelError::Refused(ForwardRefusal::PaymentRequired)
             }
             _ => false,
         };

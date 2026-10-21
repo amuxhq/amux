@@ -543,18 +543,13 @@ mod tests {
             assert_eq!(connector.kind(), carrier_kind);
             assert_eq!(acceptor.kind(), carrier_kind);
 
-            let preface = wire::pb::StreamPreface {
-                dst: vec![7; 16],
-                plain: true,
-            };
-            let mut opened = connector.open_stream(preface.clone()).await.unwrap();
+            let mut opened = connector.open_stream().await.unwrap();
             opened.write_all(b"across the stream").await.unwrap();
-            let (received, mut accepted) =
+            let mut accepted =
                 tokio::time::timeout(Duration::from_secs(5), acceptor.accept_stream())
                     .await
                     .expect("the stream arrives")
                     .unwrap();
-            assert_eq!(received, preface);
             let mut read = [0; 17];
             accepted.read_exact(&mut read).await.unwrap();
             assert_eq!(&read, b"across the stream");

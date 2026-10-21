@@ -306,6 +306,11 @@ impl Forwarder {
             Input::LinkDown { link } => Some(link),
             _ => None,
         };
+        // A plan changing may turn a refusal into a pair: the core is asked
+        // afresh about every destination, not only after the repeat window.
+        if matches!(input, Input::TierChanged { .. }) {
+            self.lock().refused.clear();
+        }
         let (out, mut actions) = self.ask([
             Input::Tick {
                 now_ms: self.now_ms(),
@@ -755,6 +760,26 @@ mod tests {
             );
         }
         assert_eq!(rig.links.take(), vec![]);
+    }
+
+    /// A host refused while its plan was free is forwarded for as soon as
+    /// the plan is Pro, not only once the refusal's repeat window is over.
+    #[tokio::test(start_paused = true)]
+    async fn forwarder_forwards_at_once_once_a_refused_plan_is_pro() {
+        let rig = rig();
+        rig.up(1, ALICE, DESK, Some(Tier::Pro));
+        rig.up(2, ALICE, LAPTOP, Some(Tier::Free));
+        assert_eq!(
+            rig.packet(1, LAPTOP, QUIC),
+            Forwarded::Dropped(ForwardRefusal::PaymentRequired)
+        );
+        rig.forwarder.step(Input::TierChanged {
+            link: LinkId(2),
+            tier: Tier::Pro,
+        });
+        rig.links.take();
+        assert_eq!(rig.packet(1, LAPTOP, QUIC), Forwarded::Sent);
+        assert_eq!(rig.links.take(), vec![sent(2, DESK, QUIC)]);
     }
 
     #[tokio::test(start_paused = true)]

@@ -197,11 +197,10 @@ pub(crate) enum Ask {
     Ready(ClientRequest),
 }
 
-/// A channel the core said to open, under the id it gave, handshaking
-/// against the key it gave.
+/// A channel the core said to open, under the id it gave. The link it
+/// rides already pinned the peer's key.
 pub(crate) struct Opened {
     pub(crate) channel: ChannelId,
-    pub(crate) pin: PublicKey,
 }
 
 /// A profile's core thread, from the shell's side.
@@ -1230,9 +1229,9 @@ impl CoreThread {
                 };
                 runtime.dump_unasked(Vec::new(), reason, "the daemon core");
             }
-            Output::OpenChannel { channel, pin, .. } => match self.channel_reply.take() {
+            Output::OpenChannel { channel, .. } => match self.channel_reply.take() {
                 Some(reply) => {
-                    if reply.send(Ok(Opened { channel, pin })).is_err() {
+                    if reply.send(Ok(Opened { channel })).is_err() {
                         // Nobody waits to open it: it never opened.
                         self.again.push_back(Input::ChannelClosed {
                             channel,

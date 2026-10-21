@@ -20,8 +20,8 @@ use uuid::Uuid;
 
 use crate::auth::jwt::JwtValidator;
 use crate::link::framed::{FramedKind, FramedPath};
-use crate::link::piper::Relaying;
 use crate::link::quic::{stream_carrier_kind, stream_path};
+use crate::link::relaying::Relaying;
 use crate::link::socket::{LinkSocket, Path, PathId};
 use crate::link::{CarrierKind, ChannelPool, LinkEndpoint, QuicCarrier, run_link};
 use crate::resource_limits::{
@@ -778,7 +778,10 @@ mod tests {
         );
 
         let through = LinkId(1);
-        endpoint.socket.add_forwarding(through, udp_addr);
+        let via = endpoint.socket.stand_in_at(udp_addr);
+        endpoint
+            .socket
+            .add_forwarding(through, via, crate::link::link_log::PathKind::RelayUdp);
         let mut answers = endpoint.socket.probe_answers();
         let mut answered = None;
         for nonce in 0..50 {
@@ -821,7 +824,12 @@ mod tests {
                 .unwrap(),
             );
             links.push(link(id, carrier, &format!("{account}/free")).await);
-            endpoint.socket.add_forwarding(LinkId(1), udp_addr);
+            let via = endpoint.socket.stand_in_at(udp_addr);
+            endpoint.socket.add_forwarding(
+                LinkId(1),
+                via,
+                crate::link::link_log::PathKind::RelayUdp,
+            );
             hosts.push((id, endpoint));
         }
         let mut answers = hosts[0].1.socket.probe_answers();

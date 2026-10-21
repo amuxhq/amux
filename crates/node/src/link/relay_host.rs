@@ -96,16 +96,14 @@ impl RelayHost {
         self.id
     }
 
-    /// Opens a stream through the relay to `peer`. Its bytes may follow at
-    /// once; a refusal surfaces as the stream's first failed read.
-    pub async fn open(&self, peer: HostId) -> std::io::Result<ByteStream> {
+    /// Opens a stream on the link to the relay. The relay carries no
+    /// streams to other hosts, so nothing reaches `_peer` this way: hosts
+    /// reach each other over links of their own, forwarded by the relay.
+    pub async fn open(&self, _peer: HostId) -> std::io::Result<ByteStream> {
         self.carrier
-            .open_stream(pb::StreamPreface {
-                dst: peer.as_bytes().to_vec(),
-                plain: false,
-            })
+            .open_stream()
             .await
-            .map_err(super::OpenError::into_io)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::NotConnected, error))
     }
 
     /// The next stream another host opened to this one, or None once the

@@ -28,7 +28,8 @@ The decisions this page describes are made in two state-machine cores, and
 ([`crates/daemon-core`](../crates/daemon-core/README.md)) decides pairing and
 trust, presence and routes, replication, families and deliveries; the
 forwarding core ([`crates/relay-core`](../crates/relay-core/README.md))
-decides which streams a relay splices. The promises are written once, as
+decides which pairs of hosts a relay or a daemon forwards packets
+between. The promises are written once, as
 properties the checker explores over those cores in
 [`crates/models`](../crates/models/README.md), and the sentences there are
 the specification; this page explains them. `cargo run -p models --bin
@@ -228,10 +229,15 @@ Routing has two rules:
 1. **Advertise only adjacency.** A node tells its neighbors only about hosts
    to which it has a direct live link. It never repeats a neighbor learned from
    someone else.
-2. **Forward only to adjacency.** A relay forwards a stream only when it has a
-   direct live link to the stream preface's destination.
+2. **Forward only to adjacency.** A relay, or a daemon forwarding for its
+   paired hosts, forwards a packet only when it has a live link to the host
+   the packet's header names, and only between the pairs its core installs.
 
-A route is therefore direct or via one adjacent relay. Non-recursive
+A route is therefore direct or via one adjacent forwarder. Either way the two
+hosts hold one link of their own, pinned at pairing: through a forwarder its
+packets travel behind a header naming the other end, and the forwarder reads
+nothing else of them. A link through a forwarder lists no neighbors of its
+own, so forwarding never takes a second hop. Non-recursive
 forwarding makes routes loop-free and limits them to one relay without route
 lists, hop counts or split horizon. Presence follows from the first rule; it
 is not a separate wire claim. Direct routes win over relayed routes. Route
@@ -355,68 +361,35 @@ updating", never as a silent absence. A failed or expired cloud token closes
 the link with `AUTH_EXPIRED`. Reauthentication is not acknowledged; success is
 silence and failure is a close.
 
-### Stream preface and refusal
+### Streams
 
-Every non-control stream starts with one length-prefixed `StreamPreface`:
-`dst`, the destination host id, and `plain`, described under channel
-authority below. There is no source, stream id, payload, data message or
-close message in the control vocabulary. The pinned channel handshake, or
-the link itself for a plain stream, proves the caller. Graceful stream finish
-is close. A reset before acceptance is a refused open and carries one
-`StreamRefusal` code:
-
-- `STREAM_REFUSAL_NO_ROUTE`: the destination has no adjacent live link, or the route vanished
-  while opening it.
-- `STREAM_REFUSAL_PAYMENT_REQUIRED`: a cloud-relay link at either end was admitted as free.
-- `STREAM_REFUSAL_RATE_LIMITED`: the relay refused the origin's stream-open rate.
-- `STREAM_REFUSAL_NOT_ADJACENT`: the destination is invalid, is the relay itself, or the
-  stream did not provide a valid preface.
-- `STREAM_REFUSAL_SHUTTING_DOWN`: the accepting link is closing.
-- `STREAM_REFUSAL_UNSPECIFIED`: an unknown or unmapped reset code.
+A stream after the control stream carries no preface: it belongs to the
+host at the other end of its link, whom the link's handshake authenticated,
+and no stream on a link reaches any other host. There is no source,
+destination, stream id, payload, data message or close message in the
+control vocabulary. Graceful stream finish is close; a reset abandons the
+stream. A forwarder that will not carry a pair says so on the sender's link
+with `ForwardRefused` (chapter 6), not on a stream.
 
 ### Channel authority and classes
 
-After the preface is accepted, the endpoints run TLS 1.3 inside the stream.
-The server reads the live trust store and the client pins the expected peer.
-This is the authority decision for calls on relay QUIC, relay TCP and SSH,
-and for any stream whose opener is not the host at the other end of the
-link. Relays only copy its ciphertext.
+The link is the authority for every call on it. Its QUIC handshake is
+mutual TLS 1.3: the acceptor reads the live trust store and the dialler pins
+the key paired for the host it dialled. That is the same handshake on every
+route, the same network, SSH or through a forwarder, so a channel's stream
+carries no handshake of its own and its first bytes leave at once. A host
+presenting no certificate while a pairing window is open is admitted for
+pairing only, on any route; through the relay that is the same exchange as
+on the same network.
 
-No opener waits to be accepted before it sends. On every route the
-handshake's first flight leaves in the same flight as the preface, and a
-refusal comes back as the reset it always was, read under the handshake
-instead of before it: the channel fails with the refusal's reason, exactly
-as it did when the open was answered first. Only pairing, whose opener asks
-for the pinned handshake outright, waits for the answer. A relay still waits
-for the host to accept before it copies anything, so what it forwards and
-refuses is unchanged; the opener's first bytes sit in the relay's stream
-for that moment. Across a 100 ms path this takes one round trip off every
-stream through the relay.
-
-A stream from a paired host over a link of its own, direct or over SSH, is
-`plain`:
-the link's mutual TLS already authenticated both ends, so the stream carries
-no handshake at all; the first channel bytes leave with the preface, and a
-refusal comes back out of the opener's first read as `UNAVAILABLE` ("stream
-refused"). The acceptor honours `plain` only on such a link from a host in
-its trust store, and attributes the stream to that host. A relay
-forwards every stream with `plain` cleared, since it vouches for nobody. On
-a phone reaching a host across a 100 ms path this takes two round trips and
-a handshake's worth of CPU off every stream, which is what brings
-reconciliation at launch inside its budget.
-
-A server that does not hold the client's pin refuses its certificate with the
-TLS `certificate_revoked` alert. Only a host that pins the server presents a
-certificate there, so the alert tells it the server has revoked it. Over a
-relay nothing else carries that news: no link joins the two hosts to close
-with `USER_REVOKED`. The client records the revocation when it reads the
-alert, fails the call as `UNAUTHENTICATED` ("the host no longer trusts this
-machine"), and lists the host as revoked and offline. The mark clears when
-the server next accepts the client's certificate on either route.
+A host that revoked another refuses its handshake, and closes any link it
+held with `USER_REVOKED`; the revoked host records the revocation and lists
+the host as revoked and offline.
 
 The channel pool (`crates/node/src/link/channels.rs`) selects a live link by
-peer and route, opens a stream, performs that handshake, and gives the result
-to tonic as one HTTP/2 channel. It has three channel classes:
+peer and route, dialling one through the forwarder when the route is a
+forwarder's and none is up, opens a stream, and gives it to tonic as one
+HTTP/2 channel. It has three channel classes:
 
 - `Calls`: one cached channel per peer and route. The inventory subscription,
   forwarded calls, `Fetch`, `GetBlob`, `Diff` and every other one-shot call
@@ -438,10 +411,10 @@ around it.
 ### Compression
 
 Every channel to a paired host is compressed, in all three classes, on every
-route: one streaming zstd compressor each way, between HTTP/2 and the channel's
-TLS (or the plain stream), so a relay copies the compressed ciphertext
-without knowing it is there (`crates/node/src/transport/compress.rs`). The
-opener wraps its end in `ChannelPool::secure_channel`; the acceptor wraps its
+route: one streaming zstd compressor each way, between HTTP/2 and the stream,
+inside the link's encryption, so a forwarder carries it without knowing it is
+there (`crates/node/src/transport/compress.rs`). The opener wraps its end in
+`ChannelPool::channel_over`; the acceptor wraps its
 end as `TunnelDispatcher` hands a paired host's stream to `PeerService`.
 Pairing channels, the link's control stream and local sockets are not
 compressed. Nothing on the wire announces it: both ends always compress.
@@ -459,42 +432,55 @@ table sizes are on [Parameters](PARAMETERS.md).
 
 ## Chapter 6: Relay forwarding and entitlement
 
-A relay receives a non-control stream and asks its core
-(`crates/relay-core`) whether to carry it: the core judges the preface, the
-plan on both ends, the opener's rate and the account's adjacency, and answers
-with a refusal, which is reset before a byte is copied, or the link to splice
-it onto. The driver opens a stream there with the same `dst` and `plain`
-cleared, waits for its acceptance so a refusal keeps its reason, and copies
-bytes in both directions until each side ends
-(`crates/node/src/link/piper.rs`). A link lapsing to the free plan has the
-core cut every stream through it, including one still opening. It does
-not parse channel bytes or keep protocol-level stream ids, sources, payload
-buffers or close state. Either end may open, so a host reached through a relay
-can call back on the same link, and one relay can pipe between QUIC and TCP
-carriers in either direction. Any node pipes a stream whose preface names
-another host, under the same rules; a stream that names the node itself goes
-to its own services.
+Packets are forwarded per pair of hosts. A host reaching a peer through a
+forwarder sends its link's QUIC packets to the forwarder behind a 17-byte
+header (a kind byte, then the destination's host id); the forwarder rewrites
+the header to name the sender and sends the packet on its own link to the
+destination, which sees it arrive from the sender
+(`crates/node/src/link/socket.rs`). The first packet for a pair the
+forwarder has not judged asks its core (`crates/relay-core`), which installs
+the pair when both links are up on one account and both paid, or both
+pinned; the driver forwards from its table without asking again until the
+core removes the pair (`crates/node/src/link/forwarder.rs`). A link going
+down, a lapse to the free plan or a token's expiry removes every pair
+through it, and both ends are told. Packets from a host whose own link to
+the relay is not admitted yet are held for up to a second and released the
+moment it is. The forwarder reads no packet beyond its header.
+
+A forwarder that will not carry a pair answers on the sender's control link
+with `ForwardRefused`, naming the destination and why, at most once per
+destination every few seconds: `NO_ROUTE` when it holds no link to the
+destination, `PAYMENT_REQUIRED` when the account's plan carries no
+connections between hosts, `RATE_LIMITED`, `SHUTTING_DOWN`. The host closes
+its links to that destination through the forwarder before its core hears
+why, so presence reads the host away on a payment refusal while no other
+route carries it, and offline at once on no route.
+
+A daemon forwards the same way for its own paired hosts: it is a forwarder
+with one account and no plan, whose pairs are between pinned links. A phone
+reaching desktop B through desktop A sends to A with a header naming B, and
+A forwards over its own link with B.
 
 The cloud relay is the same code run as `amux server start --cloud`
 (`crates/amux/src/relay.rs` and `crates/node/src/edge/relay_server.rs`). It is
 not an installation: no profiles, no agents, no supervisor. It accepts every
-host of an account over QUIC and a TLS-over-TCP fallback, checks each host's
-connection token against the account service's signing keys, advertises each
-host's adjacency to the others, and forwards streams between them. The account
+host of an account over QUIC and a TLS-over-TCP fallback on one socket, checks
+each host's connection token against the account service's signing keys,
+advertises each host's adjacency to the others, and forwards packets between
+them, across UDP and TCP alike. The account
 service that mints those tokens is a separate deployment; see
 [the cloud](CLOUD.md).
 
 Every link records how it was admitted. A tier belongs to a token-admitted
 link on the cloud relay only: `CloudToken { free | pro }`. Direct device and
-SSH links are `PinnedKey`. A self-hosted relay between paired peers therefore
-never consults an account or tier and pipes their streams normally.
+SSH links are `PinnedKey`. A daemon forwarding between paired peers therefore
+never consults an account or tier.
 
-The cloud relay refuses an open with `PAYMENT_REQUIRED` when either its origin
-link or its destination link was token-admitted as free. Neighbor control
-continues, so a free account receives presence but no call or pairing channel.
-Reauthentication may change a link's tier. The relay also refuses a missing
-route, its own address, malformed prefaces and excess opens with the specific
-codes above.
+The cloud relay forwards nothing between two hosts when either link was
+token-admitted as free. Neighbor control continues, so a free account
+receives presence but no call or pairing connection through the relay.
+Reauthentication may change a link's tier, and a pair refused while free is
+installed as soon as both are paid.
 
 The cloud listener serves QUIC on UDP beside the TCP fallback using the same
 WebPKI certificate and key. Devices try QUIC immediately and begin TCP after a
@@ -502,13 +488,11 @@ WebPKI certificate and key. Devices try QUIC immediately and begin TCP after a
 A TCP-only win records that relay host as UDP-blocked for one hour, suppressing
 QUIC attempts until the memory expires. The memory is process-local.
 
-The fallback's limits are honest. Yamux gives the same symmetric open/accept
-interface and per-stream windows, but all streams still share one ordered TCP
-byte stream. Packet loss can therefore cause cross-stream head-of-line
-blocking; the connection cannot migrate across a network change; and losing
-it ends every stream it carries. TCP is only a cloud-relay fallback. A direct
-LAN whose UDP is blocked is offline unless another route, such as the relay or
-SSH, is available.
+The fallback's limits are honest. Over TCP a link's QUIC packets are framed,
+each behind its length, on one ordered byte stream: a lost segment holds up
+every stream of every link it carries, and losing the connection loses the
+path. TCP is only a cloud-relay fallback. A direct LAN whose UDP is blocked
+is offline unless another route, such as the relay or SSH, is available.
 
 ## Chapter 7: The front door and the amux.v1 services
 
@@ -804,11 +788,10 @@ is described in [attachments](ATTACHMENTS.md).
 ## What the wire deliberately does not have
 
 There are no transitive neighbor advertisements, route lists, source routes,
-hop caps, split horizon, per-channel forwarding records, stream data messages,
-housekeeping acknowledgements, a second pairing protocol, transitive trust,
-transitive presence, or multi-hop call forwarding. Link loss closes its
-streams; callers reconnect over the best current route instead of trying to
-splice byte streams between links.
+hop caps, split horizon, stream prefaces, stream data messages, housekeeping
+acknowledgements, a second pairing protocol, transitive trust, transitive
+presence, or multi-hop forwarding. Link loss closes its streams; callers
+reconnect over the best current route.
 
-That small vocabulary is the point: adjacency chooses where bytes may go, the
-stream carries them, and the pinned channel handshake decides who may call.
+That small vocabulary is the point: adjacency chooses where packets may go,
+the link carries them, and its pinned handshake decides who may call.

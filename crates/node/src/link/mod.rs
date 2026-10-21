@@ -3,9 +3,9 @@ pub(crate) mod channels;
 pub mod forwarder;
 pub mod framed;
 pub mod link_log;
-pub(crate) mod piper;
 pub(crate) mod quic;
 pub(crate) mod relay_host;
+pub(crate) mod relaying;
 pub(crate) mod run;
 pub mod socket;
 pub(crate) mod validation;
@@ -19,7 +19,6 @@ pub use channels::{
     TRUST_REVOKED,
 };
 pub(crate) use channels::{ChannelKey, InboundStream, peer_client, serve_inbound_streams};
-pub(crate) use piper::Piper;
 pub use quic::QuicCarrier;
 pub(crate) use quic::{LinkEndpoint, accepted_quic_bidi_stream};
 pub use run::{LinkCtx, LinkError, run_link};

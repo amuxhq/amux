@@ -165,7 +165,7 @@ everything else in them is the core's driver:
 | Process | Core | Driver | What the driver holds |
 |---|---|---|---|
 | daemon | [`daemon-core`](../crates/daemon-core/README.md), one per profile | [`node::driver`](../crates/node/src/driver/mod.rs) | the profile's sockets, links, channels and calls in flight, its timers and the jobs it runs |
-| relay | [`relay-core`](../crates/relay-core/README.md) | [`node`'s relay server](../crates/node/src/edge/relay_server.rs) and its splice | accepted links and the byte copies of spliced streams |
+| relay | [`relay-core`](../crates/relay-core/README.md) | [`node`'s relay server](../crates/node/src/edge/relay_server.rs) and its forwarder | accepted links and the packets forwarded between pairs |
 | agent process | [`agent-core`](../crates/agent-core/README.md) | [`agent`](../crates/agent/src/lib.rs) | the provider child, the control socket, the journal writer and the hook and tool sockets |
 | supervisor | [`supervisor-core`](../crates/supervisor-core/README.md) | [`node::supervisor`](../crates/node/src/supervisor/mod.rs) | the daemon child, its readiness pipe and exit, the release feed and the binaries on disk |
 
@@ -433,16 +433,16 @@ catch-ups lands first; the inventory's only records the new generation.
 **The relay** is the same binary run as `amux server start --cloud`
 ([`crates/amux/src/relay.rs`](../crates/amux/src/relay.rs)). A signed-in
 profile keeps one cloud link to it, over QUIC with a TLS-over-TCP fallback,
-authenticated by a short-lived token from the account service. The relay
-routes streams only between hosts of the same account and forwards bytes it
-cannot read. A link whose account has no subscription carries presence and
-control messages only: the relay refuses every application stream to or
-from it. Which streams it carries is the relay core's decision
+authenticated by a short-lived token from the account service. Hosts of
+one account hold links of their own through it, and the relay forwards their
+packets, which it cannot read, per pair of hosts. A link whose account has no
+subscription carries presence and control messages only: the relay forwards
+nothing to or from it. Which pairs it forwards is the relay core's decision
 ([`relay-core`](../crates/relay-core/src/lib.rs)), one state machine for
 every account; its driver
-([`link/piper.rs`](../crates/node/src/link/piper.rs)) copies the bytes. Every daemon
-can forward the same way for its own paired hosts, and a link admitted by a
-pinned key has no tier to check. The account service is a separate
+([`link/forwarder.rs`](../crates/node/src/link/forwarder.rs)) moves the
+packets. Every daemon forwards the same way for its own paired hosts, and a
+link admitted by a pinned key has no tier to check. The account service is a separate
 deployment; [the phone and amux.sh](CLOUD.md) describes what the app asks of
 it.
 
@@ -543,7 +543,7 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | Crate | What it is |
 |---|---|
 | [`daemon-core`](../crates/daemon-core/README.md) | The daemon as one function of its state and an input; it owns the profile store. |
-| [`relay-core`](../crates/relay-core/README.md) | The relay's admission and splice decisions, built on the daemon core's link state. |
+| [`relay-core`](../crates/relay-core/README.md) | The relay's admission and forwarding decisions, built on the daemon core's link state. |
 | [`path-core`](../crates/path-core/README.md) | Which path one link's packets take: candidates, probes, the carrying path and its hold-down, and which paths the account's plan allows. |
 | [`agent-core`](../crates/agent-core/README.md) | The agent process around its interpreter: incarnation, timers, queue and the open ask. |
 | [`core-ring`](../crates/core-ring/src/lib.rs) | The bounded ring of a core's inputs since its last checkpoint, in segments beside their checkpoints; the agent process's facts ring is one. |

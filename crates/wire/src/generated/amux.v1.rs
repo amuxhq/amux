@@ -1247,30 +1247,6 @@ impl ::prost::Name for ForwardRefused {
         "/amux.v1.ForwardRefused".into()
     }
 }
-/// Written by the opener as the first bytes of every non-control stream. The
-/// destination is routing information only; the pinned handshake inside the
-/// stream establishes the caller's authority, unless the stream is `plain`.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct StreamPreface {
-    #[prost(bytes = "vec", tag = "1")]
-    pub dst: ::prost::alloc::vec::Vec<u8>,
-    /// The stream carries no handshake of its own: the opener is the host at
-    /// the near end of the link it arrived on, already authenticated by that
-    /// link, and the stream's bytes start at once. Honoured only on a direct
-    /// link to a paired host; a relay never forwards a plain stream as plain.
-    #[prost(bool, tag = "2")]
-    pub plain: bool,
-}
-impl ::prost::Name for StreamPreface {
-    const NAME: &'static str = "StreamPreface";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.StreamPreface".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "/amux.v1.StreamPreface".into()
-    }
-}
 /// Fire-and-forget credential refresh on the cloud link, sent before the
 /// current token expires. There is no acknowledgement — the protocol never
 /// acknowledges housekeeping; it only signals state changes. The receiver's
@@ -1388,45 +1364,6 @@ impl ForwardRefusal {
             "FORWARD_REFUSAL_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
             "FORWARD_REFUSAL_RATE_LIMITED" => Some(Self::RateLimited),
             "FORWARD_REFUSAL_SHUTTING_DOWN" => Some(Self::ShuttingDown),
-            _ => None,
-        }
-    }
-}
-/// A stream reset before acceptance carries one of these refusal reasons.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum StreamRefusal {
-    Unspecified = 0,
-    NoRoute = 1,
-    PaymentRequired = 2,
-    RateLimited = 3,
-    NotAdjacent = 4,
-    ShuttingDown = 5,
-}
-impl StreamRefusal {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "STREAM_REFUSAL_UNSPECIFIED",
-            Self::NoRoute => "STREAM_REFUSAL_NO_ROUTE",
-            Self::PaymentRequired => "STREAM_REFUSAL_PAYMENT_REQUIRED",
-            Self::RateLimited => "STREAM_REFUSAL_RATE_LIMITED",
-            Self::NotAdjacent => "STREAM_REFUSAL_NOT_ADJACENT",
-            Self::ShuttingDown => "STREAM_REFUSAL_SHUTTING_DOWN",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "STREAM_REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
-            "STREAM_REFUSAL_NO_ROUTE" => Some(Self::NoRoute),
-            "STREAM_REFUSAL_PAYMENT_REQUIRED" => Some(Self::PaymentRequired),
-            "STREAM_REFUSAL_RATE_LIMITED" => Some(Self::RateLimited),
-            "STREAM_REFUSAL_NOT_ADJACENT" => Some(Self::NotAdjacent),
-            "STREAM_REFUSAL_SHUTTING_DOWN" => Some(Self::ShuttingDown),
             _ => None,
         }
     }

@@ -27,10 +27,6 @@ pub type Hello = wire::AgentHello;
 pub type ControlFrame = wire::CtlFrame;
 /// What an agent is started with.
 pub type AgentSpec = wire::AgentSpec;
-/// The preface that opens a stream over a link, naming where it goes.
-pub type StreamPreface = wire::StreamPreface;
-/// Why a stream was refused before any byte of it was carried.
-pub type StreamRefusal = wire::StreamRefusal;
 /// Why a forwarder will not carry a link's packets to a destination.
 pub type ForwardRefusal = wire::ForwardRefusal;
 
@@ -81,6 +77,9 @@ pub enum CarrierKind {
     Ssh,
     /// A connection to a relay, which reaches the hosts it claims.
     Relay,
+    /// The peer's own connection, its packets forwarded by the relay or by
+    /// a paired daemon.
+    Forwarded,
 }
 
 /// What a channel carries.
@@ -105,8 +104,8 @@ pub enum ChannelError {
     Unpinned,
     /// The link went before the channel opened.
     LinkClosed,
-    /// The far end refused the stream before carrying any of it.
-    Refused(#[serde(with = "codec::numbered")] StreamRefusal),
+    /// The forwarder between the two hosts would not carry the link.
+    Refused(#[serde(with = "codec::numbered")] ForwardRefusal),
     /// The handshake failed or took too long, in the driver's words.
     Handshake(String),
     /// The connection under an open channel ended.

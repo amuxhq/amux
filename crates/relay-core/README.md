@@ -11,16 +11,15 @@ lapsing to the free plan or its token expiring ends every pair through it and
 tells both ends. The driver checks token signatures before admission and
 forwards from its table of pairs without asking again. A daemon forwarding
 between its own paired hosts runs one too, as a relay with one account whose
-links are all pinned. Streams spliced between links are still decided here,
-for the stream relay hosts use until packets are forwarded end to end. It also keeps the adjacency discipline every host's links follow:
-which of a crossed dial's two links stays, and what each link is told of its
-neighbors. Its step budget is tighter than the daemon's because admission must
-never queue.
+links are all pinned. It also keeps the adjacency discipline every host's
+links follow: which of a crossed dial's two links stays, and what each link is
+told of its neighbors. Its step budget is tighter than the daemon's because
+admission must never queue.
 
 What belongs inside: anything whose interleaving with the core's state can
 matter is in the core; anything that only produces a result is a job the
 driver runs and reports back as an input; transport and codec are the
-driver's, so the core sees decoded messages and never a byte of a stream.
+driver's, so the core sees decoded messages and never a byte of a packet.
 Nothing inside a step locks, spawns, awaits or reads the clock. The
 invariants cheap enough to check at a step's end are checked inside `step`
 in production, and a violation is a dump: the step appends `Output::Dump`

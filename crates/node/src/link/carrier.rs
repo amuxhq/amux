@@ -1,6 +1,4 @@
-use std::future::Future;
 use std::io;
-use std::pin::Pin;
 
 use futures_util::future::BoxFuture;
 use prost::Message as _;
@@ -10,17 +8,8 @@ use wire::{self, pb};
 
 /// A bidirectional byte stream carried by a link.
 pub trait AsyncStream: AsyncRead + AsyncWrite + Send + Unpin {
-    /// Rejects an unopened stream, preserving the application refusal reason.
-    fn reset(&mut self, code: pb::StreamRefusal) -> BoxFuture<'_, io::Result<()>>;
-
-    /// Waits for the far end to accept a stream this end opened. A stream
-    /// is handed back as soon as its preface is written, so that the bytes
-    /// behind it leave in the same flight; an opener that must know the
-    /// answer before it sends, or wants a refusal's reason rather than a
-    /// failed read, waits here.
-    fn accepted(&mut self) -> BoxFuture<'_, Result<(), OpenError>> {
-        Box::pin(std::future::ready(Ok(())))
-    }
+    /// Abandons the stream both ways: the far end's reads and writes fail.
+    fn reset(&mut self);
 }
 
 pub type ByteStream = Box<dyn AsyncStream>;
@@ -37,13 +26,6 @@ pub enum CarrierKind {
 }
 
 impl CarrierKind {
-    /// Whether the link's own handshake pinned the adjacent host's key, as
-    /// on every host-to-host link; a stream between those two hosts then
-    /// needs no handshake of its own. A relay's link pinned only the relay.
-    pub fn pins_peer(self) -> bool {
-        matches!(self, Self::Quic | Self::Ssh)
-    }
-
     /// The path a carrier of this kind runs on, where nothing more is
     /// known: a QUIC link's address says whether it is on the same network.
     pub fn path(self) -> super::link_log::PathKind {
@@ -59,50 +41,17 @@ impl CarrierKind {
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
-    #[error("stream refused: {0:?}")]
-    Refused(pb::StreamRefusal),
     #[error("link closed")]
     LinkClosed,
     #[error("stream I/O failed: {0}")]
     Io(#[source] io::Error),
 }
 
-impl OpenError {
-    /// A refusal read from a stream that was not waited on, as the I/O
-    /// error it surfaces as there.
-    pub(crate) fn into_io(self) -> io::Error {
-        match self {
-            Self::Refused(reason) => {
-                io::Error::new(io::ErrorKind::ConnectionRefused, Self::Refused(reason))
-            }
-            Self::LinkClosed => io::Error::new(io::ErrorKind::NotConnected, Self::LinkClosed),
-            Self::Io(error) => error,
-        }
-    }
-
-    /// The refusal an I/O error carries, if it was one.
-    pub(crate) fn refusal(error: &io::Error) -> Option<pb::StreamRefusal> {
-        match Self::carried(error) {
-            Some(Self::Refused(reason)) => Some(*reason),
-            _ => None,
-        }
-    }
-
-    /// What an I/O error from a stream that was not waited on says about
-    /// its open, if that is what it says.
-    pub(crate) fn carried(error: &io::Error) -> Option<&Self> {
-        error.get_ref()?.downcast_ref::<Self>()
-    }
-}
-
 pub trait LinkCarrier: Send + Sync + 'static {
     fn kind(&self) -> CarrierKind;
     fn control(&self) -> (ControlSink, ControlSource);
-    fn open_stream(
-        &self,
-        preface: pb::StreamPreface,
-    ) -> BoxFuture<'_, Result<ByteStream, OpenError>>;
-    fn accept_stream(&self) -> BoxFuture<'_, Option<(pb::StreamPreface, ByteStream)>>;
+    fn open_stream(&self) -> BoxFuture<'_, Result<ByteStream, OpenError>>;
+    fn accept_stream(&self) -> BoxFuture<'_, Option<ByteStream>>;
     fn close(&self, reason: pb::LinkCloseReason);
     fn closed(&self) -> BoxFuture<'_, pb::LinkCloseReason>;
     /// Why the connection closed, if it has: read at once, for a link
@@ -174,5 +123,3 @@ pub async fn write_message(sink: &mut ControlSink, message: &pb::Message) -> io:
 pub async fn read_message(source: &mut ControlSource) -> io::Result<Option<pb::Message>> {
     source.rx.recv().await.transpose()
 }
-
-pub(super) type BoxIoFuture<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + Send + 'a>>;

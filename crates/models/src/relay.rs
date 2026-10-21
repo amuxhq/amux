@@ -305,10 +305,7 @@ impl RelayModel {
                         s.dumped = Some(format!("{reason:?} on {label}"));
                     }
                 }
-                Output::RefuseStream { .. }
-                | Output::Splice { .. }
-                | Output::RefuseLink { .. }
-                | Output::Displace { .. } => {
+                Output::RefuseLink { .. } | Output::Displace { .. } => {
                     if s.dumped.is_none() {
                         s.dumped = Some(format!("unexpected {output:?} on {label}"));
                     }

@@ -229,7 +229,7 @@ pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> 
     // two packets is what Chromium's QUIC starts with.
     let mut congestion = quinn::congestion::CubicConfig::default();
     congestion.initial_window(32 * 1200);
-    let mut transport = quinn::TransportConfig::default();
+    let mut transport = quic_transport_base();
     transport
         .keep_alive_interval(Some(keep_alive))
         .max_idle_timeout(Some(
@@ -241,6 +241,21 @@ pub(crate) fn quic_transport_config() -> std::sync::Arc<quinn::TransportConfig> 
         .max_concurrent_uni_streams(0_u32.into())
         .congestion_controller_factory(std::sync::Arc::new(congestion));
     std::sync::Arc::new(transport)
+}
+
+/// What every QUIC connection's transport starts from. Every datagram is
+/// [`MAX_DATAGRAM`](crate::link::socket::MAX_DATAGRAM) bytes on every path,
+/// so a path switch never needs a new MTU search: discovery is off and the
+/// MTU is set here rather than left to quinn's defaults, which turn
+/// discovery off only while the socket says it may fragment.
+pub(crate) fn quic_transport_base() -> quinn::TransportConfig {
+    let mtu = u16::try_from(crate::link::socket::MAX_DATAGRAM).expect("the datagram size fits");
+    let mut transport = quinn::TransportConfig::default();
+    transport
+        .mtu_discovery_config(None)
+        .initial_mtu(mtu)
+        .min_mtu(mtu);
+    transport
 }
 
 /// Every QUIC endpoint's config. None offers to grease the fixed bit: the

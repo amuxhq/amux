@@ -19,6 +19,7 @@ use std::fmt;
 use std::io::{self, IoSliceMut};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::task::{Context, Poll, Waker};
 
@@ -175,6 +176,34 @@ fn encode_probe_kind(kind: u8, from: HostId, nonce: u64) -> [u8; PROBE_LEN] {
     datagram[1..17].copy_from_slice(from.as_bytes());
     datagram[17..].copy_from_slice(&nonce.to_be_bytes());
     datagram
+}
+
+/// How many packets that arrived on byte-stream paths may wait for quinn,
+/// across every such path of the socket; past it the oldest is dropped, as
+/// a full UDP receive buffer drops, and QUIC sends it again.
+const FRAMED_RECV_QUEUE: usize = 1024;
+
+/// How many receive errors in a row one poll skips before it yields, so a
+/// substrate failing every receive cannot hold the runtime's thread.
+const RECV_ERRORS_PER_POLL: usize = 64;
+
+/// What the socket dropped rather than hand quinn an error, which would
+/// end a connection (a send) or the endpoint (a receive).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Drops {
+    /// Sends that failed on the carrying path, or had nowhere to go.
+    pub sends: u64,
+    /// Receive errors the substrate reported.
+    pub receive_errors: u64,
+    /// Byte-stream arrivals dropped from a full receive queue.
+    pub framed_arrivals: u64,
+}
+
+#[derive(Default)]
+struct DropCounts {
+    sends: AtomicU64,
+    receive_errors: AtomicU64,
+    framed_arrivals: AtomicU64,
 }
 
 /// A byte-stream path's sending half. Sending queues the packet and never
@@ -348,6 +377,7 @@ pub struct LinkSocket {
     substrate: RwLock<Arc<dyn Datagrams>>,
     own: HostId,
     state: Mutex<State>,
+    drops: DropCounts,
 }
 
 impl fmt::Debug for LinkSocket {
@@ -366,6 +396,7 @@ impl LinkSocket {
             substrate: RwLock::new(substrate),
             own,
             state: Mutex::new(State::default()),
+            drops: DropCounts::default(),
         }))
     }
 
@@ -523,6 +554,10 @@ impl LinkSocket {
     /// One packet arrived on a byte-stream path.
     pub fn deliver_framed(&self, path: PathId, packet: Vec<u8>) {
         let mut state = self.lock();
+        if state.inbound.len() >= FRAMED_RECV_QUEUE {
+            state.inbound.pop_front();
+            self.drops.framed_arrivals.fetch_add(1, Ordering::Relaxed);
+        }
         state.inbound.push_back((path, packet));
         if let Some(waker) = state.recv_waker.take() {
             waker.wake();
@@ -621,6 +656,20 @@ impl LinkSocket {
         let (sender, receiver) = mpsc::unbounded_channel();
         self.lock().probe_answers = Some(sender);
         receiver
+    }
+
+    /// What the socket has dropped so far instead of failing quinn.
+    pub fn drops(&self) -> Drops {
+        Drops {
+            sends: self.drops.sends.load(Ordering::Relaxed),
+            receive_errors: self.drops.receive_errors.load(Ordering::Relaxed),
+            framed_arrivals: self.drops.framed_arrivals.load(Ordering::Relaxed),
+        }
+    }
+
+    fn dropped_send(&self, destination: SocketAddr, error: &io::Error) {
+        self.drops.sends.fetch_add(1, Ordering::Relaxed);
+        tracing::debug!(%destination, %error, "link socket dropped a send");
     }
 
     /// The largest datagram every path of this peer carries.
@@ -762,20 +811,37 @@ impl AsyncUdpSocket for LinkSocket {
         Box::pin(Writable(self))
     }
 
+    /// Only `WouldBlock` reaches quinn: it ends a connection on any other
+    /// send error, and a link must outlive the path under it failing (a
+    /// network going away, a forwarder gone). Any other failure is a lost
+    /// packet, which QUIC recovers from or, if the path never comes back,
+    /// the link's idle timeout ends.
     fn try_send(&self, transmit: &Transmit) -> io::Result<()> {
+        // Each transmit is one datagram sent as it is: segmentation and ECN
+        // marks are not carried by every path.
+        debug_assert!(transmit.segment_size.is_none(), "one datagram per transmit");
         let (peer, route) = {
             let state = self.lock();
-            let peer = *state
-                .by_stand_in
-                .get(&transmit.destination)
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::AddrNotAvailable, "not a stand-in address")
-                })?;
+            let Some(peer) = state.by_stand_in.get(&transmit.destination).copied() else {
+                drop(state);
+                self.dropped_send(
+                    transmit.destination,
+                    &io::Error::new(io::ErrorKind::AddrNotAvailable, "not a stand-in address"),
+                );
+                return Ok(());
+            };
             (peer, state.peers[&peer].route.clone())
         };
         match route {
             Route::Unset => Ok(()),
-            Route::Carrying(path) => self.send_on(peer, path, transmit.contents),
+            Route::Carrying(path) => match self.send_on(peer, path, transmit.contents) {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => Err(error),
+                Err(error) => {
+                    self.dropped_send(transmit.destination, &error);
+                    Ok(())
+                }
+                Ok(()) => Ok(()),
+            },
             Route::All(paths) => {
                 // One path refusing is a lost copy; only every path being
                 // full holds quinn back.
@@ -783,7 +849,11 @@ impl AsyncUdpSocket for LinkSocket {
                 for path in paths {
                     match self.send_on(peer, path, transmit.contents) {
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-                        _ => blocked = false,
+                        Err(error) => {
+                            self.dropped_send(transmit.destination, &error);
+                            blocked = false;
+                        }
+                        Ok(()) => blocked = false,
                     }
                 }
                 if blocked {
@@ -802,6 +872,7 @@ impl AsyncUdpSocket for LinkSocket {
         meta: &mut [RecvMeta],
     ) -> Poll<io::Result<usize>> {
         let buf = &mut bufs[0];
+        let mut errors = 0;
         loop {
             let framed = {
                 let mut state = self.lock();
@@ -824,7 +895,25 @@ impl AsyncUdpSocket for LinkSocket {
                 }
                 None => match self.substrate().poll_recv(cx, buf) {
                     Poll::Ready(Ok((len, from))) => (len, Arrival::Udp(from)),
-                    Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                    // A substrate that cannot register a wakeup: try again
+                    // on the runtime's next turn.
+                    Poll::Ready(Err(error)) if error.kind() == io::ErrorKind::WouldBlock => {
+                        cx.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
+                    // quinn ends the endpoint, and every link on it, on a
+                    // receive error; a network change says nothing about
+                    // the next datagram.
+                    Poll::Ready(Err(error)) => {
+                        self.drops.receive_errors.fetch_add(1, Ordering::Relaxed);
+                        tracing::debug!(%error, "link socket skipped a receive error");
+                        errors += 1;
+                        if errors >= RECV_ERRORS_PER_POLL {
+                            cx.waker().wake_by_ref();
+                            return Poll::Pending;
+                        }
+                        continue;
+                    }
                     Poll::Pending => return Poll::Pending,
                 },
             };
@@ -841,6 +930,11 @@ impl AsyncUdpSocket for LinkSocket {
             };
             return Poll::Ready(Ok(1));
         }
+    }
+
+    /// Every path carries one datagram at a time; `try_send` relies on it.
+    fn max_transmit_segments(&self) -> usize {
+        1
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -992,6 +1086,10 @@ mod tests {
         sent: Mutex<Vec<(SocketAddr, Vec<u8>)>>,
         incoming: Mutex<VecDeque<(SocketAddr, Vec<u8>)>>,
         blocked: Mutex<Vec<SocketAddr>>,
+        /// Addresses every send to fails, as on a network that went away.
+        unreachable: Mutex<Vec<SocketAddr>>,
+        /// Receive errors to report before the next datagram.
+        recv_errors: Mutex<usize>,
     }
 
     impl Fake {
@@ -1012,6 +1110,9 @@ mod tests {
             if self.blocked.lock().unwrap().contains(&to) {
                 return Err(io::ErrorKind::WouldBlock.into());
             }
+            if self.unreachable.lock().unwrap().contains(&to) {
+                return Err(io::ErrorKind::NetworkUnreachable.into());
+            }
             self.sent.lock().unwrap().push((to, buf.to_vec()));
             Ok(())
         }
@@ -1021,6 +1122,12 @@ mod tests {
             _cx: &mut Context<'_>,
             buf: &mut [u8],
         ) -> Poll<io::Result<(usize, SocketAddr)>> {
+            let mut errors = self.recv_errors.lock().unwrap();
+            if *errors > 0 {
+                *errors -= 1;
+                return Poll::Ready(Err(io::ErrorKind::NetworkDown.into()));
+            }
+            drop(errors);
             match self.incoming.lock().unwrap().pop_front() {
                 Some((from, datagram)) => {
                     buf[..datagram.len()].copy_from_slice(&datagram);
@@ -1210,9 +1317,90 @@ mod tests {
         socket.deliver_framed(path, QUIC.to_vec());
         assert_eq!(receive(&socket), Some((socket.stand_in(b), QUIC.to_vec())));
 
-        // An address that is not a stand-in is refused.
-        let error = socket.try_send(&transmit(lan, QUIC)).unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::AddrNotAvailable);
+        // An address that is not a stand-in goes nowhere, as a lost packet.
+        socket.try_send(&transmit(lan, QUIC)).unwrap();
+        assert!(fake.take_sent().is_empty());
+        assert_eq!(socket.drops().sends, 1);
+    }
+
+    /// quinn ends a connection on any send error but `WouldBlock`, so a
+    /// failing path loses the packet instead and the link lives on.
+    #[test]
+    fn socket_failed_sends_are_lost_packets() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let lan: SocketAddr = "192.0.2.10:5000".parse().unwrap();
+        let stand_in = socket.stand_in(peer);
+        socket.set_carrying(peer, Path::Direct(lan));
+
+        fake.unreachable.lock().unwrap().push(lan);
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(socket.drops().sends, 1);
+        // Through a forwarding link that is gone.
+        socket.set_carrying(peer, Path::Forwarded(LinkId(5)));
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(socket.drops().sends, 2);
+        // On a byte stream that has ended.
+        let path = socket.add_framed(Arc::new(Recorded::default()));
+        socket.remove_framed(path);
+        socket.set_carrying(peer, Path::Framed(path));
+        socket.try_send(&transmit(stand_in, QUIC)).unwrap();
+        assert_eq!(socket.drops().sends, 3);
+        assert!(fake.take_sent().is_empty());
+
+        // A full substrate still holds quinn back.
+        socket.set_carrying(peer, Path::Direct(lan));
+        fake.unreachable.lock().unwrap().clear();
+        fake.blocked.lock().unwrap().push(lan);
+        let error = socket.try_send(&transmit(stand_in, QUIC)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(socket.drops().sends, 3);
+    }
+
+    #[test]
+    fn socket_skips_receive_errors() {
+        let (fake, socket, _own) = fake_socket();
+        let lan: SocketAddr = "192.0.2.10:5000".parse().unwrap();
+        // More errors than one poll skips: that poll yields, the next goes on.
+        *fake.recv_errors.lock().unwrap() = RECV_ERRORS_PER_POLL + 2;
+        fake.push(lan, QUIC);
+        assert_eq!(receive(&socket), None);
+        let (_, packet) = receive(&socket).expect("the datagram behind the errors");
+        assert_eq!(packet, QUIC);
+        assert_eq!(
+            socket.drops().receive_errors,
+            RECV_ERRORS_PER_POLL as u64 + 2
+        );
+    }
+
+    #[test]
+    fn socket_framed_receive_queue_drops_the_oldest() {
+        let (_fake, socket, _own) = fake_socket();
+        let path = socket.add_framed(Arc::new(Recorded::default()));
+        let packet = |i: usize| [0x40, (i >> 8) as u8, i as u8].to_vec();
+        for i in 0..FRAMED_RECV_QUEUE + 3 {
+            socket.deliver_framed(path, packet(i));
+        }
+        assert_eq!(socket.drops().framed_arrivals, 3);
+        let mut received = Vec::new();
+        while let Some((_, got)) = receive(&socket) {
+            received.push(got);
+        }
+        assert_eq!(received.len(), FRAMED_RECV_QUEUE);
+        assert_eq!(received[0], packet(3));
+        assert_eq!(received.last(), Some(&packet(FRAMED_RECV_QUEUE + 2)));
+    }
+
+    #[test]
+    fn socket_transport_keeps_every_datagram_at_the_one_size() {
+        let config = format!("{:?}", crate::identity::quic_transport_config());
+        for field in [
+            "initial_mtu: 1200",
+            "min_mtu: 1200",
+            "mtu_discovery_config: None",
+        ] {
+            assert!(config.contains(field), "{field} in {config}");
+        }
     }
 
     #[test]
@@ -1585,5 +1773,167 @@ mod tests {
                 .expect("stream round trip");
         assert_eq!(reply, b"over the stand-in");
         assert_eq!(server.remote_address(), dialler);
+    }
+
+    /// A real UDP substrate that can be made to fail, as a network change
+    /// fails it.
+    struct Flaky {
+        inner: Arc<dyn Datagrams>,
+        refuse_sends: std::sync::atomic::AtomicBool,
+        recv_errors: std::sync::atomic::AtomicUsize,
+    }
+
+    impl Flaky {
+        fn loopback() -> Arc<Self> {
+            Arc::new(Self {
+                inner: LinkSocket::bind_dual_stack("127.0.0.1:0".parse().unwrap(), None).unwrap(),
+                refuse_sends: Default::default(),
+                recv_errors: Default::default(),
+            })
+        }
+    }
+
+    impl Datagrams for Flaky {
+        fn send_to(&self, buf: &[u8], to: SocketAddr) -> io::Result<()> {
+            if self.refuse_sends.load(Ordering::SeqCst) {
+                return Err(io::ErrorKind::NetworkUnreachable.into());
+            }
+            self.inner.send_to(buf, to)
+        }
+
+        fn poll_send_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.inner.poll_send_ready(cx)
+        }
+
+        fn poll_recv(
+            &self,
+            cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<(usize, SocketAddr)>> {
+            let take = |left: usize| left.checked_sub(1);
+            if self
+                .recv_errors
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, take)
+                .is_ok()
+            {
+                return Poll::Ready(Err(io::ErrorKind::NetworkDown.into()));
+            }
+            self.inner.poll_recv(cx, buf)
+        }
+
+        fn local_addr(&self) -> io::Result<SocketAddr> {
+            self.inner.local_addr()
+        }
+    }
+
+    /// A link between two hosts' sockets over loopback on flaky
+    /// substrates, carried on the server's address.
+    struct Loopback {
+        client_net: Arc<Flaky>,
+        server_net: Arc<Flaky>,
+        client_socket: Arc<LinkSocket>,
+        server_socket: Arc<LinkSocket>,
+        client: quinn::Connection,
+        server: quinn::Connection,
+        _endpoints: (quinn::Endpoint, quinn::Endpoint),
+    }
+
+    async fn loopback(transport: Arc<quinn::TransportConfig>) -> Loopback {
+        let server_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let client_identity = DeviceIdentity::for_test(HostId::new_v4());
+        let (client_net, server_net) = (Flaky::loopback(), Flaky::loopback());
+        let server_socket = LinkSocket::bind(server_net.clone(), server_identity.host_id).unwrap();
+        let client_socket = LinkSocket::bind(client_net.clone(), client_identity.host_id).unwrap();
+        let mut server_config = server_identity
+            .quic_server_config(trust_for(&client_identity))
+            .unwrap();
+        server_config.transport_config(transport.clone());
+        let server_endpoint = endpoint(server_socket.clone(), Some(server_config));
+        let client_endpoint = endpoint(client_socket.clone(), None);
+        let server_addr = server_socket.local_addr().unwrap();
+        client_socket.set_carrying(server_identity.host_id, Path::Direct(server_addr));
+        let mut config = client_identity
+            .quic_client_config_for_peer(trust_for(&server_identity), server_identity.host_id)
+            .unwrap();
+        config.transport_config(transport);
+        let stand_in = client_socket.stand_in(server_identity.host_id);
+        let connect = async {
+            client_endpoint
+                .connect_with(config, stand_in, crate::link::quic::DEVICE_SERVER_NAME)
+                .unwrap()
+                .await
+                .unwrap()
+        };
+        let accept = async { server_endpoint.accept().await.unwrap().await.unwrap() };
+        let (client, server) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(connect, accept)
+        })
+        .await
+        .expect("handshake completes");
+        Loopback {
+            client_net,
+            server_net,
+            client_socket,
+            server_socket,
+            client,
+            server,
+            _endpoints: (client_endpoint, server_endpoint),
+        }
+    }
+
+    async fn round_trip(link: &Loopback, message: &[u8]) -> Vec<u8> {
+        let echo = async {
+            let (mut send, mut recv) = link.server.accept_bi().await.unwrap();
+            let got = recv.read_to_end(64).await.unwrap();
+            send.write_all(&got).await.unwrap();
+            send.finish().unwrap();
+            let _ = send.stopped().await;
+        };
+        let ask = async {
+            let (mut send, mut recv) = link.client.open_bi().await.unwrap();
+            send.write_all(message).await.unwrap();
+            send.finish().unwrap();
+            recv.read_to_end(64).await.unwrap()
+        };
+        let ((), reply) =
+            tokio::time::timeout(Duration::from_secs(10), async { tokio::join!(echo, ask) })
+                .await
+                .expect("stream round trip");
+        reply
+    }
+
+    /// A link whose carrying path refuses every send stays up, and ends
+    /// only by its idle timeout, not by quinn giving up on the error.
+    #[tokio::test]
+    async fn socket_link_outlives_a_path_refusing_every_send() {
+        const IDLE: Duration = Duration::from_secs(2);
+        let mut transport = crate::identity::quic_transport_base();
+        transport
+            .keep_alive_interval(Some(Duration::from_millis(300)))
+            .max_idle_timeout(Some(IDLE.try_into().unwrap()));
+        let link = loopback(Arc::new(transport)).await;
+        assert_eq!(round_trip(&link, b"before").await, b"before");
+
+        link.client_net.refuse_sends.store(true, Ordering::SeqCst);
+        let refused = tokio::time::Instant::now();
+        tokio::time::sleep(IDLE / 2).await;
+        assert!(link.client_socket.drops().sends > 0, "keepalives were sent");
+        assert_eq!(link.client.close_reason(), None, "a refused send is a loss");
+
+        let reason = tokio::time::timeout(Duration::from_secs(15), link.client.closed())
+            .await
+            .expect("the idle timeout ends the link");
+        assert_eq!(reason, quinn::ConnectionError::TimedOut);
+        assert!(refused.elapsed() >= IDLE);
+    }
+
+    /// A receive error is skipped: the endpoint goes on driving its links.
+    #[tokio::test]
+    async fn socket_receive_error_leaves_the_endpoint_running() {
+        let link = loopback(crate::identity::quic_transport_config()).await;
+        link.server_net.recv_errors.store(5, Ordering::SeqCst);
+        assert_eq!(round_trip(&link, b"after errors").await, b"after errors");
+        assert_eq!(link.server_socket.drops().receive_errors, 5);
+        assert_eq!(link.server.close_reason(), None);
     }
 }

@@ -702,7 +702,7 @@ pub(crate) async fn stream_pair(
     let client = crate::transport::relay_quic_client_config_with_roots(roots)
         .expect("a client configuration");
     // A test's paused clock jumps past any idle timeout in one step.
-    let mut transport = quinn::TransportConfig::default();
+    let mut transport = crate::identity::quic_transport_base();
     transport.max_idle_timeout(None);
     let transport = std::sync::Arc::new(transport);
     let mut server = server;

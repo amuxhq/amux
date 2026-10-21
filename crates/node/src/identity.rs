@@ -349,8 +349,10 @@ impl ClientCertVerifier for PinnedClientCertVerifier {
         } else {
             // Revoked, not an unknown issuer: only a host that trusts this
             // one presents its certificate here, so the refusal tells it
-            // this host no longer trusts it, and the alert this raises is
-            // how that host learns so over a relay.
+            // this host no longer trusts it. The dialler reads the
+            // certificate_revoked alert closing its handshake as that, on
+            // any route, which is how a host revoked while its link was
+            // down learns it.
             emit_mtls_audit("client certificate pubkey is not trusted");
             Err(TlsError::InvalidCertificate(CertificateError::Revoked))
         }

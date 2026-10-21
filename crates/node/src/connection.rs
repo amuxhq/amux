@@ -165,6 +165,14 @@ impl ConnectionManager {
         });
     }
 
+    /// `peer` refused this host's certificate in a link's handshake: it no
+    /// longer trusts this one.
+    pub(crate) fn peer_revoked(&self, peer: HostId) {
+        self.report(Input::PeerRevoked {
+            host: core_host(peer),
+        });
+    }
+
     /// The account's plan changed, so what the relay carries changed with
     /// it; the core tries again every host the relay carried or refused.
     pub(crate) fn plan_changed(&self) {

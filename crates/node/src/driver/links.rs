@@ -116,6 +116,7 @@ pub(crate) fn core_error(error: &ChannelError) -> payload::ChannelError {
         ChannelError::CloudPairingUnavailable
         | ChannelError::Handshake(_)
         | ChannelError::Identity(_)
-        | ChannelError::Tls(_) => payload::ChannelError::Handshake(error.to_string()),
+        | ChannelError::Tls(_)
+        | ChannelError::Revoked => payload::ChannelError::Handshake(error.to_string()),
     }
 }

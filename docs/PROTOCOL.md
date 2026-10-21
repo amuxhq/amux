@@ -382,9 +382,14 @@ presenting no certificate while a pairing window is open is admitted for
 pairing only, on any route; through the relay that is the same exchange as
 on the same network.
 
-A host that revoked another refuses its handshake, and closes any link it
-held with `USER_REVOKED`; the revoked host records the revocation and lists
-the host as revoked and offline.
+A host that revoked another closes any link it held with `USER_REVOKED`,
+and refuses the revoked host's certificate in every later handshake with
+TLS's `certificate_revoked` alert. Only a host that pins this one presents
+its certificate, so the revoked host reads either as the revocation, on any
+route: one whose links were down when it was revoked learns it at its next
+dial. It records the revocation, closes its other links to the host, lists
+the host as revoked and offline, and fails the call as `UNAUTHENTICATED`
+("the host no longer trusts this machine").
 
 The channel pool (`crates/node/src/link/channels.rs`) selects a live link by
 peer and route, dialling one through the forwarder when the route is a

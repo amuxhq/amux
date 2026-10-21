@@ -73,6 +73,26 @@ pub enum ChannelError {
     Identity(#[from] IdentityError),
     #[error("channel TLS failed: {0}")]
     Tls(String),
+    /// The far host refused this host's certificate in the link's
+    /// handshake: it no longer trusts this one.
+    #[error("{TRUST_REVOKED}")]
+    Revoked,
+}
+
+/// What a call to a host says when that host refused this host's
+/// certificate as no longer trusted.
+pub const TRUST_REVOKED: &str = "the host no longer trusts this machine";
+
+impl ChannelError {
+    /// The status a call that found no channel fails with: one refused as
+    /// no longer trusted is `UNAUTHENTICATED`, naming that; any other is
+    /// `UNAVAILABLE`.
+    pub fn status(&self) -> tonic::Status {
+        match self {
+            ChannelError::Revoked => tonic::Status::unauthenticated(TRUST_REVOKED),
+            _ => tonic::Status::unavailable(self.to_string()),
+        }
+    }
 }
 
 /// Dials an end-to-end link to a host through a forwarder: the relay, or

@@ -201,6 +201,29 @@ pub enum ConnectError {
     Handshake(#[from] quinn::ConnectionError),
 }
 
+impl ConnectError {
+    /// The far host closed the handshake refusing this host's certificate
+    /// as no longer trusted.
+    pub(crate) fn refused_as_revoked(&self) -> bool {
+        matches!(self, ConnectError::Handshake(error) if refused_as_revoked(error))
+    }
+}
+
+/// Whether the far end closed the connection with TLS's
+/// `certificate_revoked` alert: a host that pins this one presents its
+/// certificate, so the alert is the host saying it no longer trusts this
+/// one (the acceptor's verifier in identity.rs raises it).
+fn refused_as_revoked(error: &quinn::ConnectionError) -> bool {
+    matches!(
+        error,
+        quinn::ConnectionError::ConnectionClosed(close)
+            if close.error_code
+                == quinn::TransportErrorCode::crypto(
+                    rustls::AlertDescription::CertificateRevoked.into()
+                )
+    )
+}
+
 /// Addresses in the order a dial tries them: as given, but the two
 /// families taking turns, so one family failing never holds up the other.
 fn alternate_families(addrs: impl IntoIterator<Item = SocketAddr>) -> Vec<SocketAddr> {
@@ -746,7 +769,14 @@ pub(crate) fn stream_path(kind: FramedKind) -> PathKind {
     }
 }
 
+/// Why the connection closed, as a link close reason. The far end
+/// refusing this host's certificate once the handshake seemed done (in TLS
+/// 1.3 a client's handshake ends before the server has judged its
+/// certificate) is its word that it no longer trusts this one.
 fn close_reason_from_connection(error: quinn::ConnectionError) -> pb::LinkCloseReason {
+    if refused_as_revoked(&error) {
+        return pb::LinkCloseReason::UserRevoked;
+    }
     match error {
         quinn::ConnectionError::ApplicationClosed(close) => {
             pb::LinkCloseReason::try_from(close.error_code.into_inner() as i32)

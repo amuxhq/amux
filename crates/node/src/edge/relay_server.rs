@@ -890,9 +890,9 @@ mod tests {
         .unwrap();
         first.close(0_u32.into(), b"done");
         let old_port = endpoint.socket.local_addr().unwrap();
-        endpoint.socket.rebind(
-            LinkSocket::on_udp(std::net::UdpSocket::bind("127.0.0.1:0").unwrap()).unwrap(),
-        );
+        endpoint
+            .socket
+            .rebind(LinkSocket::on_udp(std::net::UdpSocket::bind("127.0.0.1:0").unwrap()).unwrap());
         assert_ne!(endpoint.socket.local_addr().unwrap(), old_port);
         let second = endpoint
             .connect_with(relay.client.clone(), udp_addr, NAME)

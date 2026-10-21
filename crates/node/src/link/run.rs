@@ -745,6 +745,7 @@ async fn run_established(
                     Some(LinkCloseRequest::Superseded) => tonic::Status::unavailable("direct link superseded"),
                     Some(LinkCloseRequest::CallsFailed) => tonic::Status::unavailable("no call channel opened on the link"),
                     Some(LinkCloseRequest::ForwarderGone) => tonic::Status::unavailable("the link to the forwarder carrying it went"),
+                    Some(LinkCloseRequest::PeerRevoked) => tonic::Status::permission_denied("the peer no longer trusts this host"),
                     Some(LinkCloseRequest::Revoked) => {
                         let _ = write_message(&mut sink, &link_close(wire::pb::LinkCloseReason::UserRevoked)).await;
                         close_reason = wire::pb::LinkCloseReason::UserRevoked;
@@ -778,9 +779,7 @@ async fn run_established(
     // first, or the control stream simply ended with it. This side has not
     // closed the carrier yet, so any reason it gives is the peer's.
     if carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) {
-        ctx.report(daemon_core::Input::PeerRevoked {
-            host: core_host(peer_host.id),
-        });
+        peer_revoked(&ctx, link, peer_host.id).await;
     }
     // Drain control messages already queued before closing, most importantly
     // the protocol close emitted for an invalid inbound frame.
@@ -928,9 +927,7 @@ async fn handle_control_body(
             let reason = wire::pb::LinkCloseReason::try_from(close.reason)
                 .unwrap_or(wire::pb::LinkCloseReason::Unspecified);
             if reason == wire::pb::LinkCloseReason::UserRevoked {
-                ctx.report(daemon_core::Input::PeerRevoked {
-                    host: core_host(link.peer()),
-                });
+                peer_revoked(ctx, link, link.peer()).await;
             }
             ControlAction::Close(reason, link_close_status(&close))
         }
@@ -1134,6 +1131,15 @@ fn link_close_status(close: &wire::pb::LinkClose) -> Option<tonic::Status> {
 
 fn should_audit_auth_refresh_failure(status: &tonic::Status) -> bool {
     net_error::code_of(status) != Some(wire::ErrorCode::PaymentRequired)
+}
+
+/// `peer` said on `link` that it no longer trusts this host. Its other
+/// links go first, so no call that hears of it picks one of them.
+async fn peer_revoked(ctx: &LinkCtx, link: LinkId, peer: HostId) {
+    ctx.links.forsake(peer, link).await;
+    ctx.report(daemon_core::Input::PeerRevoked {
+        host: core_host(peer),
+    });
 }
 
 async fn cleanup_link(ctx: &LinkCtx, link: LinkId, reason: wire::pb::LinkCloseReason) {

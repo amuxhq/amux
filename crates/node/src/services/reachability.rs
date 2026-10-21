@@ -581,7 +581,7 @@ impl ForwardedDialer {
             ),
         )
         .await?
-        .map_err(|error| ChannelError::Handshake(error.to_string()))?;
+        .map_err(|error| dial_failed(context, peer, error))?;
         let shutdown = inner.direct_shutdown.lock().unwrap().subscribe();
         let (_, connector_task, abort_on_drop) = establish_carrier(
             context,
@@ -590,8 +590,7 @@ impl ForwardedDialer {
             LinkCarrier::Forwarded,
             shutdown,
         )
-        .await
-        .map_err(ChannelError::Handshake)?;
+        .await?;
         tokio::spawn(await_connector(connector_task, abort_on_drop));
         Ok(())
     }
@@ -695,7 +694,7 @@ async fn establish_reachability_link(
                     prepare_direct_carrier(&context, attempt.peer, addr),
                 )
                 .await
-                .map_err(|_| "the QUIC handshake timed out".to_owned())
+                .map_err(|_| DialError::Failed("the QUIC handshake timed out".to_owned()))
                 .and_then(|result| result);
                 match prepared {
                     Ok(carrier) => match establish_carrier(
@@ -741,14 +740,14 @@ async fn establish_reachability_link(
                 prepare_ssh_carrier(&context, attempt.peer, &target, profile),
             )
             .await
-            .map_err(|_| "the QUIC handshake over SSH timed out".to_owned())
+            .map_err(|_| DialError::Failed("the QUIC handshake over SSH timed out".to_owned()))
             .and_then(|result| result)
             {
                 Ok(carrier) => carrier,
                 Err(error) => {
                     context
                         .connections
-                        .record_reachability_error(attempt.peer, &error)
+                        .record_reachability_error(attempt.peer, error.to_string())
                         .await;
                     tracing::warn!(error = %error, "failed to prepare SSH Link transport");
                     return None;
@@ -774,7 +773,7 @@ async fn establish_reachability_link(
                 Err(error) => {
                     context
                         .connections
-                        .record_reachability_error(attempt.peer, &error)
+                        .record_reachability_error(attempt.peer, error.to_string())
                         .await;
                     tracing::warn!(error = %error, "SSH Link establishment failed");
                 }
@@ -791,31 +790,31 @@ async fn prepare_ssh_carrier(
     peer: HostId,
     target: &str,
     profile: crate::ProfileId,
-) -> Result<Arc<dyn NativeLinkCarrier>, String> {
-    let io = spawn_ssh_relay(target, profile).map_err(|error| error.to_string())?;
-    let stream =
-        StreamEndpoint::new(io, FramedKind::Ssh, None).map_err(|error| error.to_string())?;
+) -> Result<Arc<dyn NativeLinkCarrier>, DialError> {
+    let failed = |error: &dyn std::fmt::Display| DialError::Failed(error.to_string());
+    let io = spawn_ssh_relay(target, profile).map_err(|error| failed(&error))?;
+    let stream = StreamEndpoint::new(io, FramedKind::Ssh, None).map_err(|error| failed(&error))?;
     let config = context
         .identity
         .quic_client_config_for_peer(context.trust_store.clone(), peer)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| failed(&error))?;
     QuicCarrier::connect_over_stream(stream, config, DEVICE_SERVER_NAME)
         .await
         .map(|carrier| Arc::new(carrier) as Arc<dyn NativeLinkCarrier>)
-        .map_err(|error| error.to_string())
+        .map_err(|error| dial_failed(context, peer, error))
 }
 
 async fn prepare_direct_carrier(
     context: &ReachabilityLinkContext,
     peer: HostId,
     addr: std::net::SocketAddr,
-) -> Result<Arc<dyn NativeLinkCarrier>, String> {
+) -> Result<Arc<dyn NativeLinkCarrier>, DialError> {
     let endpoint = context
         .quic_endpoint
         .lock()
         .unwrap()
         .clone()
-        .ok_or_else(|| "direct QUIC endpoint is not configured".to_string())?;
+        .ok_or_else(|| DialError::Failed("direct QUIC endpoint is not configured".to_owned()))?;
     let transport = context.quic_transport.lock().unwrap().clone();
     QuicCarrier::connect_direct_with_transport(
         &endpoint,
@@ -827,7 +826,55 @@ async fn prepare_direct_carrier(
     )
     .await
     .map(|carrier| Arc::new(carrier) as Arc<dyn NativeLinkCarrier>)
-    .map_err(|error| error.to_string())
+    .map_err(|error| dial_failed(context, peer, error))
+}
+
+/// Why a link to a peer did not come up.
+#[derive(Debug)]
+enum DialError {
+    /// The peer refused this host's certificate: it no longer trusts this
+    /// one. The profile's core has been told.
+    Revoked,
+    Failed(String),
+}
+
+impl std::fmt::Display for DialError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DialError::Revoked => f.write_str(crate::link::TRUST_REVOKED),
+            DialError::Failed(error) => f.write_str(error),
+        }
+    }
+}
+
+impl From<DialError> for ChannelError {
+    fn from(error: DialError) -> Self {
+        match error {
+            DialError::Revoked => ChannelError::Revoked,
+            DialError::Failed(error) => ChannelError::Handshake(error),
+        }
+    }
+}
+
+/// The peer's handshake refusing this host's certificate is the peer
+/// saying it no longer trusts this one, on whichever route the dial took:
+/// a host revoked while its links were down learns it here, when it next
+/// dials, as it would from the link's close had it been up.
+fn revoked(context: &ReachabilityLinkContext, peer: HostId) -> DialError {
+    context.connections.peer_revoked(peer);
+    DialError::Revoked
+}
+
+fn dial_failed(
+    context: &ReachabilityLinkContext,
+    peer: HostId,
+    error: crate::link::quic::ConnectError,
+) -> DialError {
+    if error.refused_as_revoked() {
+        revoked(context, peer)
+    } else {
+        DialError::Failed(error.to_string())
+    }
 }
 
 async fn establish_carrier(
@@ -836,7 +883,7 @@ async fn establish_carrier(
     native_carrier: Arc<dyn NativeLinkCarrier>,
     carrier: LinkCarrier,
     shutdown_rx: watch::Receiver<bool>,
-) -> Result<(Host, JoinHandle<Result<(), tonic::Status>>, AbortTaskOnDrop), String> {
+) -> Result<(Host, JoinHandle<Result<(), tonic::Status>>, AbortTaskOnDrop), DialError> {
     let connector_ctx =
         LinkConnectorCtx::new_live(context.local_host.clone(), context.channels.link_registry())
             .with_expected_peer(peer)
@@ -845,17 +892,23 @@ async fn establish_carrier(
     let (connector_task, established_rx) =
         crate::routing::spawn_connector_with_establishment_and_shutdown(
             connector_ctx,
-            native_carrier,
+            native_carrier.clone(),
             shutdown_rx,
         );
     let abort_on_failure = AbortTaskOnDrop(connector_task.abort_handle());
-    let host = match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established_rx).await {
-        Ok(Ok(Ok(host))) => host,
-        Ok(Ok(Err(status))) => return Err(status.to_string()),
-        Ok(Err(_)) => return Err("reachability Link task ended before establishment".to_string()),
-        Err(_) => return Err("reachability Link establishment timed out".to_string()),
+    let failed = match tokio::time::timeout(DIRECT_LINK_ESTABLISHMENT_TIMEOUT, established_rx).await
+    {
+        Ok(Ok(Ok(host))) => return Ok((host, connector_task, abort_on_failure)),
+        Ok(Ok(Err(status))) => status.to_string(),
+        Ok(Err(_)) => "reachability Link task ended before establishment".to_owned(),
+        Err(_) => "reachability Link establishment timed out".to_owned(),
     };
-    Ok((host, connector_task, abort_on_failure))
+    // The handshake seemed done, but the peer refused the certificate
+    // after it, as TLS 1.3 lets a server.
+    if native_carrier.close_reason() == Some(wire::pb::LinkCloseReason::UserRevoked) {
+        return Err(revoked(context, peer));
+    }
+    Err(DialError::Failed(failed))
 }
 
 fn persist_working_addr(

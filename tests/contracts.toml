@@ -602,6 +602,7 @@ tests = [
   "testnet/spec_network::a_pairing_window_is_one_shot_attempt_capped_and_expires",
   "testnet/spec_network::profiles_and_accounts_share_no_keys_windows_presence_or_administration",
   "testnet/spec_network::revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_the_relay",
+  "testnet/spec_network::a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_through_the_relay",
   "testnet/spec_network::hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tcp",
   "testnet/spec_network::malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_carries_on",
   "testnet/spec_network::a_subscriber_that_stops_reading_is_closed_while_one_beside_it_keeps_its_stream",

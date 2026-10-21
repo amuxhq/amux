@@ -178,6 +178,8 @@ pub(crate) enum LinkCloseRequest {
     Revoked,
     /// The link it was carried through, to a forwarder, went.
     ForwarderGone,
+    /// The peer said on another link that it no longer trusts this host.
+    PeerRevoked,
     /// A call could not open a channel on the link while it stayed up: it
     /// closes as a dead connection would, and the host reads offline until
     /// a channel opens on a link that replaces it.
@@ -439,6 +441,27 @@ impl LinkRegistry {
         drop(state);
         writer.closed.notify_waiters();
         audit::link_down(peer, link, "removed");
+    }
+
+    /// `host` said on `told` that it no longer trusts this host: its other
+    /// links are no use, so they leave the registry at once, before anyone
+    /// is told and a call picks one, and are asked to close.
+    pub(crate) async fn forsake(&self, host: HostId, told: LinkId) {
+        let others: Vec<LinkId> = {
+            let state = self.state.read().await;
+            state
+                .writers
+                .iter()
+                .filter(|(link, writer)| writer.host.id == host && **link != told)
+                .map(|(link, writer)| {
+                    let _ = writer.close_tx.try_send(LinkCloseRequest::PeerRevoked);
+                    *link
+                })
+                .collect()
+        };
+        for link in others {
+            self.remove(&link).await;
+        }
     }
 
     /// The current neighbor set, as a handshake snapshot.

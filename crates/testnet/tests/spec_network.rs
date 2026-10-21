@@ -971,6 +971,69 @@ async fn discovery_advertises_a_listener_and_finds_a_paired_host_at_its_new_addr
     net.shutdown().await.unwrap();
 }
 
+/// A host revoked while it was away has no link to hear the revocation
+/// close: it learns it when it next dials, from the desk's handshake
+/// refusing its certificate, and reads the desk as no longer trusting it
+/// rather than as offline.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_through_the_relay() {
+    let mut net = Net::start_with(
+        Topology::new()
+            .relay(&["ada"])
+            .host_decl(relay_host("desk", "ada"))
+            .host_decl(relay_host("tablet", "ada"))
+            .agent(
+                testnet::AgentDecl::new("worker", "desk")
+                    .prompt("Watch the build.")
+                    .steps(vec![
+                        provider_fakes::script::Step::Text {
+                            chunks: vec!["Watching.".to_owned()],
+                        },
+                        provider_fakes::script::Step::TurnEnd,
+                    ]),
+            ),
+        testnet::NetOptions::default(),
+    )
+    .await
+    .unwrap();
+    let desk = host_id(&net, "desk");
+    let worker = net.agent("worker").unwrap().id;
+    net.trust("desk", "tablet").await.unwrap();
+    net.trust("tablet", "desk").await.unwrap();
+    until_via(&net, "tablet", "desk", LiveRoute::Relay).await;
+    open_session(&edge(&net, "tablet"), desk, worker)
+        .await
+        .expect("the tablet reaches the desk through the relay");
+
+    net.stop_daemon("tablet").await.unwrap();
+    net.untrust("desk", "tablet").await.unwrap();
+    net.restart_daemon("tablet").await.unwrap();
+
+    // Back up, the tablet hears from the relay that the desk is online and
+    // tries it: the desk's handshake refuses its certificate.
+    let mut fleet = net.observe_inventory("tablet").await.unwrap();
+    row_until(
+        &mut fleet,
+        desk,
+        "the tablet to read the desk as no longer trusting it",
+        |row| row.revoked == Some(true),
+    )
+    .await;
+    let refused = open_session(&edge(&net, "tablet"), desk, worker)
+        .await
+        .expect_err("a revoked host opens nothing");
+    assert_eq!(
+        (refused.code(), refused.message()),
+        (tonic::Code::Unauthenticated, node::TRUST_REVOKED),
+        "a call through the relay is refused as no longer trusted"
+    );
+    println!(
+        "the tablet, revoked while stopped, dialled through the relay and reads the desk as revoked"
+    );
+
+    net.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_the_relay() {
     // The phone reaches the desk directly, with the relay beside it as a
@@ -1055,11 +1118,17 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
         let unasked = peer_inventory_hosts(&edge(&net, "desk"), id)
             .await
             .expect_err("the desk calls no host it forgot");
+        // The desk refuses the key by name, on either route, so the host
+        // can tell it is no longer trusted from any other failure.
+        assert_eq!(
+            (refused.code(), refused.message()),
+            (tonic::Code::Unauthenticated, node::TRUST_REVOKED),
+            "{host}'s reopen is refused as no longer trusted"
+        );
         println!(
             "{host} revoked: session {session_end}, inventory {inventory_end}; \
-             it reads the desk as revoked and its reopen is refused: {:?}; \
+             it reads the desk as revoked and its reopen is refused; \
              the desk calling it: {:?}; the desk sees it {:?}",
-            refused.code(),
             unasked.code(),
             edge(&net, "desk").via(id).await,
         );

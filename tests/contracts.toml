@@ -613,11 +613,34 @@ tests = [
 id = "links-one-kind-every-route"
 source = "testing page"
 section = "Boundaries"
-claim = "Many daemons: every host reaches every host it trusts over one end-to-end QUIC link pinned at pairing, whatever path carries it; one agent's session is reached and streamed live on the same network, over SSH into the far host's link socket (whose pinned handshake refuses a key it does not trust) and between hosts bound to IPv6 alone, and each host's link log names the path."
+claim = "Many daemons: every host reaches every host it trusts over one end-to-end QUIC link pinned at pairing, whatever path carries it; one agent's session is reached and streamed live on the same network, through the relay over UDP, through the relay over TCP from a network that blocks UDP, over SSH into the far host's link socket (whose pinned handshake refuses a key it does not trust), through another daemon both hosts are paired with, and between hosts bound to IPv6 alone, and each host's link log names the path."
 tests = [
   "testnet/spec_links::route_lan_reaches_a_session_on_the_same_network",
+  "testnet/spec_links::route_relay_udp_reaches_a_session_through_the_relays_forwarding",
+  "testnet/spec_links::route_relay_tcp_reaches_a_session_from_a_network_that_blocks_udp",
   "testnet/spec_links::route_ssh_reaches_a_session_through_the_far_hosts_link_socket",
+  "testnet/spec_links::route_via_daemon_reaches_a_session_through_a_paired_host",
   "testnet/spec_links::ipv6_only_hosts_link_and_stream_a_session",
+]
+
+[[contract]]
+id = "links-entitlement"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: on a free account a host sees the account's hosts through the relay and reads them away, and the relay forwards nothing between them, while hosts that reach each other on one network or over SSH still do; a lapse mid-session stops forwarding at once, tells each end once, closes the link the relay carried and leaves both hosts reading each other away."
+tests = [
+  "testnet/spec_links::entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_reach",
+  "testnet/spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
+]
+
+[[contract]]
+id = "links-pairing-through-the-relay"
+source = "testing page"
+section = "Boundaries"
+claim = "Many daemons: pairing through the relay is the same pinned-handshake pairing as on one network, carried by the relay's forwarding for a paid account, after which the link runs through the relay; on a free account the relay forwards no pairing, the attempt is refused for the plan and the responder's window stays open."
+tests = [
+  "testnet/spec_links::pairing_relay_paid_pairs_through_the_relay_and_reaches_a_session",
+  "testnet/spec_links::pairing_relay_free_refused_leaves_the_window_open",
 ]
 
 [[contract]]
@@ -1192,6 +1215,7 @@ checker = "models/presence::every_presence_promise_holds_at_ci_bounds"
 tests = [
   "testnet/spec_network::a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro",
   "testnet/spec_network::a_call_to_a_host_only_a_lapsed_account_reached_names_the_lapse_at_once",
+  "testnet/spec_links::entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_reach",
   "daemon-core/lib::presence::tests::a_forward_refused_for_the_plan_reads_the_host_away_while_nothing_else_carries_it",
   "daemon-core/lib::presence::tests::a_forward_refused_after_the_forwarder_let_the_host_go_says_nothing",
 ]
@@ -1283,6 +1307,8 @@ tests = [
   "relay-core/lib::tests::a_packet_between_two_paid_hosts_of_one_account_installs_their_pair",
   "relay-core/lib::tests::a_paid_link_and_a_pinned_link_are_never_paired",
   "relay-core/lib::tests::a_daemon_forwards_between_its_pinned_links_whose_keys_neither_lapse_nor_expire",
+  "testnet/spec_links::route_via_daemon_reaches_a_session_through_a_paired_host",
+  "testnet/spec_links::pairing_relay_free_refused_leaves_the_window_open",
 ]
 
 [[contract]]
@@ -1302,6 +1328,7 @@ checker = "models/relay::every_relay_forwarding_promise_holds_at_ci_bounds"
 tests = [
   "relay-core/lib::tests::a_lapse_to_free_ends_every_pair_through_the_link_and_tells_both_ends",
   "relay-core/lib::tests::an_expired_token_ends_every_pair_through_the_link_until_a_fresh_one_comes",
+  "testnet/spec_links::entitlement_lapse_stops_forwarding_and_both_hosts_read_away_told_once",
 ]
 
 [[contract]]

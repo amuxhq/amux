@@ -38,8 +38,6 @@ use crate::{Clock, HostId};
 const CLOUD_TLS_HANDSHAKE_CONCURRENCY: usize = 128;
 /// How long a host on plain TCP has for the QUIC handshake inside it.
 const STREAM_HANDSHAKE: Duration = Duration::from_secs(10);
-/// How long a closed connection's stream is held for the far end to end it.
-const CLOSE_DRAIN: Duration = Duration::from_secs(1);
 type CloudTlsTransport = tokio_rustls::server::TlsStream<TcpStream>;
 
 /// Who the relay is and how it checks a host's connection token.
@@ -562,17 +560,8 @@ async fn carry_stream(
         () = path.closed() => None,
     };
     lock(&streams).remove(&path.id);
-    let Some(connection) = connection else {
-        return;
-    };
-    tokio::select! {
-        _ = connection.closed() => {
-            // The far end ends the stream once it has the close.
-            let _ = tokio::time::timeout(CLOSE_DRAIN, path.closed()).await;
-        }
-        () = path.closed() => {
-            connection.close(0_u32.into(), b"the byte stream ended");
-        }
+    if let Some(connection) = connection {
+        path.carry(connection).await;
     }
 }
 

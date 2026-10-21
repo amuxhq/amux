@@ -21,7 +21,7 @@ use crate::auth::CredentialProvider;
 use crate::auth::cloud::{
     CloudError, CloudRoutingConnectionDetails, fetch_routing_connection_details,
 };
-use crate::link::framed::{FramedKind, StreamEndpoint};
+use crate::link::framed::FramedKind;
 use crate::link::{LinkCarrier, QuicCarrier};
 use crate::routing::{
     Host, LinkConnectorAuth, LinkConnectorCtx, LinkConnectorRefreshReceiver,
@@ -505,11 +505,10 @@ async fn run_cloud_connection_with_details(
         .quic_override
         .as_ref()
         .map(|relay| relay.client.clone());
+    let tcp_endpoint = ctx.transport.quic_endpoint.clone();
     let tcp = async move {
         let stream = cloud_routing_stream(&tcp_host, tcp_port, fixture_transport)
             .await
-            .map_err(|error| error.to_string())?;
-        let stream = StreamEndpoint::new(stream, FramedKind::RelayTcp, None)
             .map_err(|error| error.to_string())?;
         let client = match tcp_client {
             Some(client) => client,
@@ -517,10 +516,16 @@ async fn run_cloud_connection_with_details(
                 crate::transport::relay_quic_client_config().map_err(|error| error.to_string())?
             }
         };
-        QuicCarrier::connect_over_stream(stream, client, &tcp_host)
-            .await
-            .map(|carrier| Arc::new(carrier) as Arc<dyn LinkCarrier>)
-            .map_err(|error| error.to_string())
+        QuicCarrier::connect_framed(
+            &tcp_endpoint,
+            stream,
+            FramedKind::RelayTcp,
+            client,
+            &tcp_host,
+        )
+        .await
+        .map(|carrier| Arc::new(carrier) as Arc<dyn LinkCarrier>)
+        .map_err(|error| error.to_string())
     };
     let (carrier, relay_carrier) = tokio::time::timeout(
         CLOUD_ROUTING_ESTABLISHMENT_TIMEOUT,

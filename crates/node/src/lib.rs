@@ -82,7 +82,7 @@ pub use install::{
     AGENTS, CORE_CHECKPOINT, CORE_RING, GENERATION, HOST_ID, INSTALLATION_LOCK, InstallationLock,
     LockError, PROFILES, REGISTRY, REPLICAS, REPORTS, STORE, write_durably,
 };
-pub use link::{PeerChannel, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, socket};
+pub use link::{PeerChannel, PeerClient, forwarder, framed, link_log, socket};
 pub use offers::{CatalogueError, HostCatalogue, PROVIDERS, Provider};
 pub use outbox::{DrainReport, HttpSender, NoopSender, Push, PushError, PushFuture, PushSender};
 pub use pairing::PairingAdmin;

@@ -42,7 +42,8 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     println!("desk on the relay over QUIC; phone, UDP blocked, over TCP");
 
     // One relay joins the two carriers: each host reaches the other and
-    // calls it, through a tunnel the relay pipes but cannot read.
+    // calls it, over their own link, which the relay forwards but cannot
+    // read.
     until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     let from_phone = peer_inventory_hosts(&edge(&net, "phone"), desk)
         .await
@@ -59,8 +60,8 @@ async fn hosts_on_one_account_reach_each_other_through_the_relay_over_quic_or_tc
     assert_eq!(links, expected, "one relay link per host");
     println!("desk and phone call each other through the relay");
 
-    // The relay carries links but serves nothing: a stream addressed to
-    // the relay itself is refused.
+    // The relay forwards links but serves nothing: a call addressed to the
+    // relay itself is refused.
     let relay_id = net.relay().unwrap().host_id();
     let refused = peer_inventory_hosts(&edge(&net, "phone"), relay_id)
         .await
@@ -1031,30 +1032,34 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
 
     // Revoking closes every stream the revoked host holds, at once, and
     // neither route lets it back in: the desk no longer holds its key, and
-    // says so when the host tries. The relay may still say the host is
+    // its link closing said why, so the host reads the desk as no longer
+    // trusting it rather than as gone. The relay may still say the host is
     // online, as it says of any host on the account; saying so grants
     // nothing.
     for (host, mut session, mut inventory) in held {
         let id = host_id(&net, host);
+        let mut fleet = net.observe_inventory(host).await.unwrap();
         net.untrust("desk", host).await.unwrap();
         let session_end = ended(&mut session, &format!("{host}'s session")).await;
         let inventory_end = ended(&mut inventory, &format!("{host}'s inventory")).await;
+        row_until(
+            &mut fleet,
+            desk,
+            &format!("{host} to read the desk as no longer trusting it"),
+            |row| row.revoked == Some(true),
+        )
+        .await;
         let refused = open_session(&edge(&net, host), desk, worker)
             .await
             .expect_err("a revoked host opens nothing");
         let unasked = peer_inventory_hosts(&edge(&net, "desk"), id)
             .await
             .expect_err("the desk calls no host it forgot");
-        // The desk refuses the key by name, on either route, so the host
-        // can tell it is no longer trusted from any other failure.
-        assert_eq!(
-            (refused.code(), refused.message()),
-            (tonic::Code::Unauthenticated, node::TRUST_REVOKED),
-            "{host}'s reopen is refused as no longer trusted"
-        );
         println!(
             "{host} revoked: session {session_end}, inventory {inventory_end}; \
+             it reads the desk as revoked and its reopen is refused: {:?}; \
              the desk calling it: {:?}; the desk sees it {:?}",
+            refused.code(),
             unasked.code(),
             edge(&net, "desk").via(id).await,
         );
@@ -1071,7 +1076,7 @@ async fn revoking_a_host_closes_what_it_holds_open_over_a_direct_link_and_over_t
 
     // The relay's word that the tablet is online is what lets it pair
     // again, by the code the desk shows, with neither side reconnecting:
-    // the exchange runs inside a tunnel the relay pipes and cannot read,
+    // the exchange runs over a handshake the relay forwards and cannot read,
     // with a QR secret as well as a PIN.
     let links_before = net.relay().unwrap().links("ada").await;
     let started = start_pairing(&net, "desk", qr_window()).await.unwrap();
@@ -1371,10 +1376,11 @@ fn relay_host(name: &str, account: &str) -> testnet::HostDecl {
 }
 
 /// An account that lapses from Pro to Free stops being carried at once:
-/// the relay "refuses to carry any stream to or from a free link", so a
-/// host the relay alone reaches is away and nothing reaches it through the
-/// relay any more, even over a channel that was opened while the account
-/// was Pro. A host told the peer is away must not still be able to call it.
+/// the relay stops forwarding between the account's hosts and tells each
+/// end, so a host the relay alone reaches is away and nothing reaches it
+/// through the relay any more, even over a channel that was opened while
+/// the account was Pro. A host told the peer is away must not still be
+/// able to call it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_lapsed_account_stops_carrying_calls_the_relay_carried_while_it_was_pro() {
     let topology = Topology::new()
@@ -1455,13 +1461,21 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
     let (desk, phone) = (host_id(&net, "desk"), host_id(&net, "phone"));
     assert_eq!(tier(&net, "desk"), Some(node::Tier::Free));
 
-    // On a free account the relay lists the account's hosts and opens no
-    // tunnel between them, for calls or for pairing; the refused pairing
+    // On a free account the relay lists the account's hosts and forwards
+    // nothing between them, for calls or for pairing; the refused pairing
     // leaves the responder's window open, as the secret never reached it.
     until_via(&net, "desk", "phone", LiveRoute::Relay).await;
     let call = peer_inventory_hosts(&edge(&net, "phone"), desk)
         .await
-        .expect_err("no tunnel on a free account");
+        .expect_err("nothing forwarded on a free account");
+    let mut phones_fleet = net.observe_inventory("phone").await.unwrap();
+    row_until(
+        &mut phones_fleet,
+        desk,
+        "the phone to read the desk away, refused for the plan",
+        |row| row.presence() == wire::Presence::Away,
+    )
+    .await;
     let started = start_pairing(&net, "desk", pin_window()).await.unwrap();
     let pairing = begin_pair(
         &net,
@@ -1471,7 +1485,7 @@ async fn a_free_link_lists_its_hosts_and_opens_nothing_until_a_refresh_brings_pr
         Vec::new(),
     )
     .await
-    .expect_err("no pairing tunnel on a free account");
+    .expect_err("no pairing forwarded on a free account");
     assert!(edge(&net, "desk").pairing_active());
     println!(
         "free: listed via the relay; call {:?}; pairing {:?}",

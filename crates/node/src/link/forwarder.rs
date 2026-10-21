@@ -30,10 +30,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use daemon_core::DumpReason;
 use daemon_core::payload::ForwardRefusal;
-use relay_core::{Input, Output, REFUSAL_REPEAT_MS, Relay};
+pub use relay_core::REFUSAL_REPEAT_MS;
+use relay_core::{Input, Output, Relay};
 use tokio::time::Instant;
 
-use super::socket::{LinkId, encode_forwarded};
+use super::socket::{LinkId, encode_delivered};
 use crate::HostId;
 
 /// What the forwarder keeps of packets from senders not yet admitted.
@@ -443,7 +444,7 @@ impl Forwarder {
     fn send(&self, pair: Pair, payload: &[u8]) -> Forwarded {
         match self
             .links
-            .send(pair.to, &encode_forwarded(pair.source, payload))
+            .send(pair.to, &encode_delivered(pair.source, payload))
         {
             Ok(()) => Forwarded::Sent,
             Err(_) => Forwarded::Dropped(ForwardRefusal::NoRoute),
@@ -684,7 +685,7 @@ mod tests {
     }
 
     fn sent(link: u64, source: HostId, payload: &[u8]) -> Wrote {
-        Wrote::Sent(LinkId(link), encode_forwarded(source, payload))
+        Wrote::Sent(LinkId(link), encode_delivered(source, payload))
     }
 
     fn refused(link: u64, dst: HostId, reason: ForwardRefusal) -> Wrote {

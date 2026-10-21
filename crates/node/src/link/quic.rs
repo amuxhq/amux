@@ -95,6 +95,18 @@ impl LinkEndpoint {
             .connect_with(config, self.socket.stand_in_at(addr), server_name)
     }
 
+    /// Dials whoever answers at the far end of the byte-stream path `path`
+    /// on this endpoint's socket.
+    pub(crate) fn connect_on_framed(
+        &self,
+        config: quinn::ClientConfig,
+        path: super::socket::PathId,
+        server_name: &str,
+    ) -> Result<quinn::Connecting, quinn::ConnectError> {
+        self.endpoint
+            .connect_with(config, self.socket.stand_in_on(path), server_name)
+    }
+
     /// Dials `peer` through the forwarder at the far end of `through`: the
     /// relay, or a paired daemon. The packets go behind the header naming
     /// `peer` until a path of the peer's own carries the link; a peer some
@@ -357,6 +369,35 @@ impl QuicCarrier {
         let control = connection.open_bi().await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
             .with_path(endpoint.forwarded_kind(through)))
+    }
+
+    /// Dials the far end of `io`, a byte stream made one more path of the
+    /// profile's socket, so the link is on the profile's socket like a UDP
+    /// one and packets can be forwarded across it: the host's link to the
+    /// relay over TLS on TCP.
+    pub(crate) async fn connect_framed<IO>(
+        endpoint: &LinkEndpoint,
+        io: IO,
+        kind: FramedKind,
+        config: quinn::ClientConfig,
+        server_name: &str,
+    ) -> Result<Self, ConnectError>
+    where
+        IO: AsyncRead + AsyncWrite + Send + 'static,
+    {
+        let path = super::framed::FramedPath::attach(&endpoint.socket, io, kind);
+        let connection = tokio::select! {
+            connection = async {
+                endpoint.connect_on_framed(config, path.id, server_name)?.await.map_err(ConnectError::from)
+            } => connection?,
+            () = path.closed() => return Err(ConnectError::StreamEnded),
+        };
+        let control = connection.open_bi().await?;
+        tokio::spawn(path.carry(connection.clone()));
+        Ok(
+            Self::new(connection, stream_carrier_kind(kind), Some(control))
+                .with_path(stream_path(kind)),
+        )
     }
 
     /// Dials the far end of a byte stream, the only connection on its

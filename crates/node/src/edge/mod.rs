@@ -631,6 +631,14 @@ impl Edge {
         self.connections.stored_reachability_error(host).await
     }
 
+    /// The refusals forwarders send this profile from now on: the host each
+    /// names, and why the forwarder will not carry links to it.
+    pub fn forward_refusals(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<(HostId, wire::pb::ForwardRefusal)> {
+        self.channels.link_registry().forward_refusals()
+    }
+
     /// Moves the profile's link socket onto a new substrate, for a device
     /// whose network changed under it: links migrate with their QUIC
     /// connections, and peers see them arrive from the new address.

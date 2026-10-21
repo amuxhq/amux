@@ -141,14 +141,15 @@ impl TunnelDispatcher {
                 // stand-in the link socket shows quinn; a host dialled through
                 // a forwarder has none of its own here.
                 let addr = endpoint.address_of(incoming.remote_address());
-                let path = endpoint
-                    .arrived_forwarded(incoming.remote_address())
-                    .unwrap_or_else(|| PathKind::of_addr(addr));
+                let forwarded = endpoint.arrived_forwarded(incoming.remote_address());
+                let path = forwarded.unwrap_or_else(|| PathKind::of_addr(addr));
 
                 // Stateless address validation and per-source admission both
                 // happen before accepting the Incoming, so quinn has not yet
-                // allocated connection or TLS handshake state.
-                if !incoming.remote_address_validated() {
+                // allocated connection or TLS handshake state. A host dialled
+                // through a forwarder needs neither: the forwarder names the
+                // sender, and carries only hosts it admitted.
+                if forwarded.is_none() && !incoming.remote_address_validated() {
                     match dispatcher
                         .admit_external_quic_handshake(addr.ip(), incoming.orig_dst_cid())
                         .await
@@ -170,7 +171,20 @@ impl TunnelDispatcher {
                         error.into_incoming().ignore();
                     }
                     continue;
-                };
+                }
+                // A token from an earlier connection skips the Retry, not
+                // the limit.
+                if forwarded.is_none()
+                    && !dispatcher
+                        .external_quic_retries
+                        .lock()
+                        .await
+                        .admit_validated(addr.ip(), incoming.orig_dst_cid())
+                {
+                    tracing::warn!(peer = %addr, "external QUIC handshake rate limit exceeded");
+                    incoming.ignore();
+                    continue;
+                }
                 let permit = match dispatcher
                     .external_quic_handshake_slots
                     .clone()

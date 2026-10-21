@@ -56,9 +56,10 @@ const FIXED_BIT: u8 = 0x40;
 const KIND_FORWARDED: u8 = 0x00;
 const KIND_PROBE: u8 = 0x01;
 const KIND_PROBE_ANSWER: u8 = 0x02;
+const KIND_DELIVERED: u8 = 0x03;
 
 /// The bytes forwarding adds in front of a QUIC packet: the kind and a
-/// host id.
+/// host id, the same on the way to a forwarder and from it.
 pub const FORWARD_HEADER: usize = 1 + 16;
 const PROBE_LEN: usize = 1 + 16 + 8;
 
@@ -72,11 +73,16 @@ pub const MAX_DATAGRAM: usize = 1200;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PacketKind<'a> {
     Quic(&'a [u8]),
-    /// A packet through a forwarder. On its way to the forwarder `host`
-    /// names the destination; the forwarder rewrites it to the sender, so
-    /// on arrival it names where the packet came from. The payload is a
-    /// QUIC packet or a probe.
+    /// A packet on its way to a forwarder, for it to forward to `host`.
+    /// The payload is a QUIC packet or a probe.
     Forwarded {
+        host: HostId,
+        payload: &'a [u8],
+    },
+    /// A packet a forwarder delivers: `host` sent it. A kind of its own,
+    /// since a daemon both forwards for its paired hosts and sends through
+    /// them, so where a packet arrives from cannot say which it is.
+    Delivered {
         host: HostId,
         payload: &'a [u8],
     },
@@ -106,13 +112,15 @@ pub fn parse(datagram: &[u8]) -> Result<PacketKind<'_>, Malformed> {
         return Ok(PacketKind::Quic(datagram));
     }
     match first {
-        KIND_FORWARDED => {
+        KIND_FORWARDED | KIND_DELIVERED => {
             if datagram.len() <= FORWARD_HEADER {
                 return Err(Malformed::Length);
             }
-            Ok(PacketKind::Forwarded {
-                host: host_at(datagram),
-                payload: &datagram[FORWARD_HEADER..],
+            let (host, payload) = (host_at(datagram), &datagram[FORWARD_HEADER..]);
+            Ok(if first == KIND_FORWARDED {
+                PacketKind::Forwarded { host, payload }
+            } else {
+                PacketKind::Delivered { host, payload }
             })
         }
         KIND_PROBE | KIND_PROBE_ANSWER => {
@@ -135,9 +143,19 @@ fn host_at(datagram: &[u8]) -> HostId {
     HostId::from_bytes(datagram[1..17].try_into().expect("sixteen bytes"))
 }
 
-pub fn encode_forwarded(host: HostId, payload: &[u8]) -> Vec<u8> {
+/// `payload` on its way to a forwarder, for `dst`.
+pub fn encode_forwarded(dst: HostId, payload: &[u8]) -> Vec<u8> {
+    encode_behind_header(KIND_FORWARDED, dst, payload)
+}
+
+/// `payload` as a forwarder delivers it, from `sender`.
+pub fn encode_delivered(sender: HostId, payload: &[u8]) -> Vec<u8> {
+    encode_behind_header(KIND_DELIVERED, sender, payload)
+}
+
+fn encode_behind_header(kind: u8, host: HostId, payload: &[u8]) -> Vec<u8> {
     let mut datagram = Vec::with_capacity(FORWARD_HEADER + payload.len());
-    datagram.push(KIND_FORWARDED);
+    datagram.push(kind);
     datagram.extend_from_slice(host.as_bytes());
     datagram.extend_from_slice(payload);
     datagram
@@ -422,6 +440,14 @@ impl LinkSocket {
         state.stand_in(peer)
     }
 
+    /// The address quinn dials to reach whoever answers on the byte-stream
+    /// path `path`: the stand-in arrivals on that path map to.
+    pub fn stand_in_on(&self, path: PathId) -> SocketAddr {
+        let mut state = self.lock();
+        let peer = state.sender(Arrival::Framed(path));
+        state.stand_in(peer)
+    }
+
     /// The network address behind a stand-in, where it is one: an unnamed
     /// sender's address, or the address carrying a host's link. None for a
     /// byte stream or a forwarder.
@@ -506,7 +532,7 @@ impl LinkSocket {
     /// Names the forwarder a forwarding link reaches by its stand-in on
     /// this socket: packets for a peer carried on `Path::Forwarded(link)`
     /// go behind the header on whatever path carries the forwarder, UDP or
-    /// a byte stream, and forwarded packets from it are for this socket.
+    /// a byte stream, and packets it delivers are answered through it.
     pub fn add_forwarding(&self, link: LinkId, via: SocketAddr, kind: PathKind) {
         let mut state = self.lock();
         state.forwarding.insert(link, (via, kind));
@@ -531,9 +557,8 @@ impl LinkSocket {
         self.lock().forwarding.get(&link).map(|(_, kind)| *kind)
     }
 
-    /// Makes this the socket of a forwarder: a forwarded packet arriving
-    /// from anyone but a forwarder this socket sends through names where it
-    /// is going, and goes to `sink` instead of quinn.
+    /// Makes this the socket of a forwarder: a packet sent to it to
+    /// forward goes to `sink`. Without one such packets are dropped.
     pub fn forward_to(&self, sink: Arc<dyn ForwardSink>) {
         self.lock().forward_sink = Some(sink);
     }
@@ -683,7 +708,7 @@ impl LinkSocket {
                 self.answered(ProbeAnswered { from, nonce });
                 None
             }
-            PacketKind::Forwarded { host, payload } if self.forwards(arrival) => {
+            PacketKind::Forwarded { host, payload } => {
                 let (sink, sender) = {
                     let mut state = self.lock();
                     let peer = state.sender(arrival);
@@ -692,7 +717,7 @@ impl LinkSocket {
                 sink.arrived(sender, host, payload);
                 None
             }
-            PacketKind::Forwarded { host, payload } => match parse(payload).ok()? {
+            PacketKind::Delivered { host, payload } => match parse(payload).ok()? {
                 PacketKind::Quic(_) => {
                     let mut state = self.lock();
                     let stand_in = state.stand_in(Peer::Host(host));
@@ -715,19 +740,9 @@ impl LinkSocket {
                     self.answered(ProbeAnswered { from, nonce });
                     None
                 }
-                PacketKind::Forwarded { .. } => None,
+                PacketKind::Forwarded { .. } | PacketKind::Delivered { .. } => None,
             },
         }
-    }
-}
-
-impl LinkSocket {
-    /// Whether a forwarded packet arriving this way is for this socket to
-    /// forward: it is a forwarder's, and the packet did not come from a
-    /// forwarder it sends through, whose packets name their sender.
-    fn forwards(&self, arrival: Arrival) -> bool {
-        let state = self.lock();
-        state.forward_sink.is_some() && state.forwarder_of(arrival).is_none()
     }
 }
 
@@ -1061,6 +1076,15 @@ mod tests {
                 payload: QUIC
             })
         );
+        let delivered = encode_delivered(host, QUIC);
+        assert_eq!(delivered.len(), FORWARD_HEADER + QUIC.len());
+        assert_eq!(
+            parse(&delivered),
+            Ok(PacketKind::Delivered {
+                host,
+                payload: QUIC
+            })
+        );
         assert_eq!(
             parse(&encode_probe(host, 7)),
             Ok(PacketKind::Probe {
@@ -1077,7 +1101,7 @@ mod tests {
         );
 
         assert_eq!(parse(&[]), Err(Malformed::Empty));
-        assert_eq!(parse(&[0x03, 0]), Err(Malformed::UnknownKind(0x03)));
+        assert_eq!(parse(&[0x04, 0]), Err(Malformed::UnknownKind(0x04)));
         // A header with nothing behind it, and probes of the wrong length.
         assert_eq!(parse(&forwarded[..FORWARD_HEADER]), Err(Malformed::Length));
         assert_eq!(
@@ -1133,7 +1157,7 @@ mod tests {
         socket.set_carrying(a, Path::Forwarded(LinkId(9)));
         socket.try_send(&transmit(stand_in_a, QUIC)).unwrap();
         assert_eq!(fake.take_sent(), vec![(relay, encode_forwarded(a, QUIC))]);
-        fake.push(relay, &encode_forwarded(a, QUIC));
+        fake.push(relay, &encode_delivered(a, QUIC));
         assert_eq!(receive(&socket), Some((stand_in_a, QUIC.to_vec())));
         // Still the same stand-in on the old path: the switch is invisible.
         fake.push(lan, QUIC);
@@ -1182,7 +1206,7 @@ mod tests {
         let via = socket.stand_in_at(relay);
         socket.add_forwarding(LinkId(3), via, PathKind::RelayUdp);
         let peer = HostId::new_v4();
-        fake.push(relay, &encode_forwarded(peer, QUIC));
+        fake.push(relay, &encode_delivered(peer, QUIC));
         let (stand_in, packet) = receive(&socket).unwrap();
         assert_eq!(
             (socket.peer_of(stand_in), packet),
@@ -1193,6 +1217,45 @@ mod tests {
             fake.take_sent(),
             vec![(relay, encode_forwarded(peer, QUIC))]
         );
+    }
+
+    /// A forwarder's sink that keeps what it is handed.
+    #[derive(Default)]
+    struct Kept(Mutex<Vec<(SocketAddr, HostId, Vec<u8>)>>);
+
+    impl ForwardSink for Kept {
+        fn arrived(&self, sender: SocketAddr, dst: HostId, payload: &[u8]) {
+            self.0.lock().unwrap().push((sender, dst, payload.to_vec()));
+        }
+    }
+
+    #[test]
+    fn socket_of_a_daemon_forwards_for_a_host_it_also_sends_through() {
+        let (fake, socket, _own) = fake_socket();
+        let kept = Arc::new(Kept::default());
+        socket.forward_to(kept.clone());
+        let laptop: SocketAddr = "192.0.2.30:7000".parse().unwrap();
+        let via = socket.stand_in_at(laptop);
+        socket.add_forwarding(LinkId(4), via, PathKind::ViaDaemon);
+        let (desk, phone) = (HostId::new_v4(), HostId::new_v4());
+
+        // Sent to forward: to the sink, though the link is one this socket
+        // sends through.
+        fake.push(laptop, &encode_forwarded(desk, QUIC));
+        assert_eq!(receive(&socket), None);
+        assert_eq!(
+            kept.0.lock().unwrap().as_slice(),
+            [(via, desk, QUIC.to_vec())]
+        );
+
+        // Delivered: this socket's own, from the host it names.
+        fake.push(laptop, &encode_delivered(phone, QUIC));
+        let (stand_in, packet) = receive(&socket).unwrap();
+        assert_eq!(
+            (socket.peer_of(stand_in), packet),
+            (Some(phone), QUIC.to_vec())
+        );
+        assert_eq!(kept.0.lock().unwrap().len(), 1);
     }
 
     #[test]
@@ -1270,7 +1333,7 @@ mod tests {
 
         // A probe is answered on the path it came by and never reaches quinn.
         fake.push(lan, &encode_probe(peer, 21));
-        fake.push(relay, &encode_forwarded(peer, &encode_probe(peer, 22)));
+        fake.push(relay, &encode_delivered(peer, &encode_probe(peer, 22)));
         assert_eq!(receive(&socket), None);
         assert_eq!(
             fake.take_sent(),
@@ -1284,7 +1347,7 @@ mod tests {
         fake.push(lan, &encode_probe_answer(peer, 11));
         fake.push(
             relay,
-            &encode_forwarded(peer, &encode_probe_answer(peer, 12)),
+            &encode_delivered(peer, &encode_probe_answer(peer, 12)),
         );
         // Malformed datagrams are dropped on the way.
         fake.push(lan, &[0x07]);

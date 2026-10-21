@@ -105,6 +105,10 @@ pub(crate) trait ForwardedDial: Send + Sync + 'static {
 struct Cached {
     channel: Channel,
     ended: Arc<Ending>,
+    /// The link the channel rides. A route through a forwarder outlives
+    /// the link of the peer's own it was carried on, and a channel on a
+    /// link going is not yet ended while its connection lingers.
+    link: LinkId,
 }
 
 /// Whether the connection under a channel has ended, and the core to tell
@@ -361,11 +365,12 @@ impl ChannelPool {
                     host_id: route_link_peer(key.route),
                 });
             }
-            if !cached.ended.has_ended() {
+            if !cached.ended.has_ended() && self.links.native_carrier(&cached.link).await.is_some()
+            {
                 return Ok(cached.channel);
             }
-            // Forget the ended channel, unless another call already put a
-            // fresh one in its place.
+            // Forget the ended channel, or the one whose link went, unless
+            // another call already put a fresh one in its place.
             let mut by_key = self
                 .by_key
                 .write()
@@ -460,6 +465,7 @@ impl ChannelPool {
                     Cached {
                         channel: channel.clone(),
                         ended,
+                        link,
                     },
                 );
         }
@@ -679,10 +685,6 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Watched<T> {
         result
     }
 }
-
-/// The message a call carries when the host it called refused this host's
-/// certificate as no longer trusted.
-pub const TRUST_REVOKED: &str = "the host no longer trusts this machine";
 
 /// Tells the profile's core when the far host first answers on a channel:
 /// its first bytes say the host took the link this channel rides.

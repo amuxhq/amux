@@ -86,6 +86,32 @@ where
         Admission::Retry
     }
 
+    /// Whether to take a sender that proved its address without a Retry
+    /// just now, by a token from an earlier connection. It is counted
+    /// against its source's limit as a new attempt, so a token skips the
+    /// round trip but never the limit; an attempt that answered a Retry
+    /// was counted when the Retry went out.
+    pub(crate) fn admit_validated(&mut self, source: K, attempt: A) -> bool {
+        self.admit_validated_at(source, attempt, Instant::now())
+    }
+
+    fn admit_validated_at(&mut self, source: K, attempt: A, now: Instant) -> bool {
+        self.prune(now);
+        let attempts = self.entries.entry(source).or_default();
+        if attempts.iter().any(|known| known.id == attempt) {
+            return true;
+        }
+        if attempts.len() >= self.limit {
+            return false;
+        }
+        attempts.push_back(Attempt {
+            id: attempt,
+            first: now,
+            last: now,
+        });
+        true
+    }
+
     fn prune(&mut self, now: Instant) {
         let window = self.window;
         self.entries.retain(|_, attempts| {
@@ -137,5 +163,21 @@ mod tests {
         // The budget still has room for a new attempt.
         assert_eq!(retries.admit_at("peer", 2, resent), Admission::Retry);
         assert_eq!(retries.admit_at("peer", 3, resent), Admission::Refused);
+    }
+
+    #[test]
+    fn a_token_skips_the_retry_but_not_the_limit() {
+        let start = Instant::now();
+        let mut retries = admission(2);
+        // The attempt that answered its Retry was counted then.
+        assert_eq!(retries.admit_at("peer", 1, start), Admission::Retry);
+        assert!(retries.admit_validated_at("peer", 1, start));
+        // Attempts presenting tokens count as new ones.
+        assert!(retries.admit_validated_at("peer", 2, start));
+        assert!(!retries.admit_validated_at("peer", 3, start));
+        assert_eq!(retries.admit_at("peer", 4, start), Admission::Refused);
+        assert!(retries.admit_validated_at("other", 3, start));
+        let later = start + Duration::from_secs(60);
+        assert!(retries.admit_validated_at("peer", 3, later));
     }
 }

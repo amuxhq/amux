@@ -434,10 +434,13 @@ table sizes are on [Parameters](PARAMETERS.md).
 
 Packets are forwarded per pair of hosts. A host reaching a peer through a
 forwarder sends its link's QUIC packets to the forwarder behind a 17-byte
-header (a kind byte, then the destination's host id); the forwarder rewrites
-the header to name the sender and sends the packet on its own link to the
-destination, which sees it arrive from the sender
-(`crates/node/src/link/socket.rs`). The first packet for a pair the
+header (the kind byte `0x00`, then the destination's host id); the forwarder
+rewrites the header to the kind `0x03` and the sender's host id and sends the
+packet on its own link to the destination, which sees it arrive from the
+sender (`crates/node/src/link/socket.rs`). The two kinds keep the directions
+apart: a daemon both forwards for its paired hosts and sends through them, so
+which link a packet arrived on cannot say whether it is to be forwarded or
+was delivered. The first packet for a pair the
 forwarder has not judged asks its core (`crates/relay-core`), which installs
 the pair when both links are up on one account and both paid, or both
 pinned; the driver forwards from its table without asking again until the
@@ -459,7 +462,17 @@ route carries it, and offline at once on no route.
 A daemon forwards the same way for its own paired hosts: it is a forwarder
 with one account and no plan, whose pairs are between pinned links. A phone
 reaching desktop B through desktop A sends to A with a header naming B, and
-A forwards over its own link with B.
+A forwards over its own link with B. A host's link to the relay over TCP is a
+path of the same socket as its UDP links, so the relay forwards to and from
+it as to any other.
+
+A forwarded arrival needs neither a Retry nor a place under the per-source
+handshake limit at the host answering it: the forwarder names the sender and
+carries only hosts it admitted. Arrivals with an address of their own get
+both, and a returning host's address-validation token skips the Retry but
+still counts against the limit. While a host has a link of its own on a path
+of its own to a peer, that link carries the peer's calls ahead of one a
+forwarder carries.
 
 The cloud relay is the same code run as `amux server start --cloud`
 (`crates/amux/src/relay.rs` and `crates/node/src/edge/relay_server.rs`). It is

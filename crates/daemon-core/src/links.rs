@@ -92,8 +92,10 @@ impl LinkRegistry {
     }
 
     /// Every route to `host`, the one a fresh call takes first: its own
-    /// links, newest first, since a second link to a peer is a crossed dial
-    /// whose newer link is the one both sides keep; then each peer that
+    /// links, those on a path of their own before those a forwarder
+    /// carries, and newest first within each, since a second link to a
+    /// peer is a crossed dial whose newer link is the one both sides keep;
+    /// then each peer that
     /// claims to reach it, in the order their links came up; and last the
     /// account's relay. The relay claims every host on the account and
     /// refuses to carry a channel while the plan has no connections between
@@ -107,6 +109,7 @@ impl LinkRegistry {
             .filter(|(_, link)| link.peer == host)
             .map(|(id, _)| Route::Direct(*id))
             .collect();
+        routes.sort_by_key(|route| self.rank(*route));
         let relayed = |link: &&Link| link.kind == CarrierKind::Relay;
         let peers = self.links.values().filter(|link| !relayed(link));
         for link in peers.chain(self.links.values().filter(relayed)) {
@@ -116,6 +119,20 @@ impl LinkRegistry {
             }
         }
         routes
+    }
+
+    /// How far `route` is from the host it reaches, lower being nearer: a
+    /// link on a path of its own, then a link a forwarder carries, then a
+    /// route through a peer that claims the host. A nearer route takes a
+    /// host's traffic from a farther one.
+    pub fn rank(&self, route: Route) -> u8 {
+        match route {
+            Route::Direct(link) => match self.links.get(&link) {
+                Some(link) if link.kind == CarrierKind::Forwarded => 1,
+                _ => 0,
+            },
+            Route::Via(_) => 2,
+        }
     }
 
     /// Whether `host` is a relay this host links to: one whose claims are

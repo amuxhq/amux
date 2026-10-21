@@ -292,6 +292,21 @@ impl FramedPath {
             let _ = stop.send(());
         }
     }
+
+    /// Ties `connection`, carried on this path, and the stream together:
+    /// the stream ending closes the connection, and the connection closing
+    /// ends the stream once the far end has had the close.
+    pub(crate) async fn carry(self, connection: quinn::Connection) {
+        tokio::select! {
+            _ = connection.closed() => {
+                // The far end ends the stream once it has the close.
+                let _ = tokio::time::timeout(CLOSE_DRAIN, self.closed()).await;
+            }
+            () = self.closed() => {
+                connection.close(0_u32.into(), b"the byte stream ended");
+            }
+        }
+    }
 }
 
 impl Drop for FramedPath {

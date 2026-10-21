@@ -196,8 +196,11 @@ impl Daemon {
             .hosts
             .get(&host)
             .and_then(|known| known.active);
+        let links = &self.routing.links;
         match route {
-            Route::Direct(_) if !active.is_some_and(|active| active.is_direct()) => {
+            Route::Direct(_)
+                if active.is_none_or(|active| links.rank(route) < links.rank(active)) =>
+            {
                 self.start_attempt(host, route, out);
             }
             Route::Via(_) if active.is_some() => {}
@@ -252,10 +255,13 @@ impl Daemon {
                 known.refused_for_plan = false;
                 known.retry = None;
                 let old = known.active;
-                // A direct route carrying the host's traffic stays the one
-                // that does when a channel opens through a relay.
+                // A route carrying the host's traffic stays the one that
+                // does when a channel opens on a farther one: a link of
+                // the host's own over a link a forwarder carries, either
+                // over a route through a peer or the relay.
+                let links = &self.routing.links;
                 known.active = match old {
-                    Some(active) if active.is_direct() && !route.is_direct() => Some(active),
+                    Some(active) if links.rank(active) < links.rank(route) => Some(active),
                     _ => Some(route),
                 };
                 let now_active = known.active;
@@ -885,6 +891,43 @@ mod tests {
         assert_eq!(view(&daemon, DESK).routes, vec![Route::Direct(LinkId(3))]);
         down(&mut daemon, 3);
         assert_eq!(view(&daemon, DESK), HostView::default());
+    }
+
+    #[test]
+    fn a_hosts_link_on_a_path_of_its_own_takes_its_traffic_from_one_a_forwarder_carries() {
+        let mut daemon = daemon();
+        step(
+            &mut daemon,
+            Input::TrustRead {
+                store: crate::trust::TrustStore::of_hosts(vec![DESK]),
+            },
+        );
+        let (forwarded, own) = (Route::Direct(LinkId(1)), Route::Direct(LinkId(2)));
+        let out = up(&mut daemon, 1, DESK, CarrierKind::Forwarded);
+        assert_eq!(attempts(&out), vec![(DESK, forwarded)]);
+        concluded(&mut daemon, DESK, forwarded, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(forwarded));
+
+        // The newer link, on the same network, is listed first, is tried
+        // although the forwarded one carries the host, and takes over.
+        let out = up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        assert_eq!(attempts(&out), vec![(DESK, own)]);
+        assert_eq!(view(&daemon, DESK).routes, vec![own, forwarded]);
+        let out = concluded(&mut daemon, DESK, own, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(own));
+        assert!(out.contains(&Output::DropRoute {
+            host: DESK,
+            route: forwarded
+        }));
+
+        // A forwarded link coming up later is listed after it, is not
+        // tried, and a channel opening on it takes nothing over.
+        let later = Route::Direct(LinkId(3));
+        let out = up(&mut daemon, 3, DESK, CarrierKind::Forwarded);
+        assert_eq!(attempts(&out), Vec::new());
+        assert_eq!(view(&daemon, DESK).routes, vec![own, later, forwarded]);
+        concluded(&mut daemon, DESK, later, Tried::Opened);
+        assert_eq!(view(&daemon, DESK).active, Some(own));
     }
 
     #[test]

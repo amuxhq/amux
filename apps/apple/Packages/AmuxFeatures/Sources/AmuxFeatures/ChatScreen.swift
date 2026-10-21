@@ -112,6 +112,9 @@ public struct ChatScreen: View {
     /// The screen's height and its header's, which bound how tall a docked
     /// card may grow.
     @State private var screenHeight: CGFloat?
+    @State private var screenWidth: CGFloat?
+    /// How wide the bar's trailing pill is, which the title gives way to.
+    @State private var trailingWidth: CGFloat = 44
     @State private var headerHeight: CGFloat = 0
 
     public init(
@@ -183,7 +186,10 @@ public struct ChatScreen: View {
                 askRoom: screenHeight.map { max(0, $0 - headerHeight - Self.feedGlimpse) },
                 openOverview: { overviewOpen = true }, actions: actions)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: {
+            screenHeight = $0.height
+            screenWidth = $0.width
+        }
         .navigationBarBackButtonHidden(true)
         .toolbarTitleDisplayMode(.inline)
         .toolbar { bar }
@@ -201,6 +207,26 @@ public struct ChatScreen: View {
     }
 
     // MARK: - The header
+
+    /// The title pill's width at most: what the bar has left once the way
+    /// back and the trailing pill are drawn, and never more than 220.
+    ///
+    /// The bar does not shrink an item to fit. Given items wider than
+    /// itself, it folds every one of them into its own overflow menu, the
+    /// way back with them, so a long name or a long exit reason took the
+    /// way back off the screen. It spaces its items further apart when
+    /// their shared glass is hidden, as it is with less transparency, so
+    /// what it spends besides the pills is counted for that case.
+    private var titleWidth: CGFloat {
+        guard let screenWidth else { return Self.widestTitle }
+        return min(Self.widestTitle, max(Self.narrowestTitle, screenWidth - trailingWidth - Self.barSpends))
+    }
+
+    private static let widestTitle: CGFloat = 220
+    private static let narrowestTitle: CGFloat = 96
+    /// The bar's margins, the way back and the gaps between the three
+    /// pieces, measured on a 402-point phone with less transparency.
+    private static let barSpends: CGFloat = 152
 
     private var detached: Bool { model.frame?.waiting == .detached }
 
@@ -244,6 +270,7 @@ public struct ChatScreen: View {
                 overflow
             }
             .barItemSurface()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingWidth = $0 }
         }
         .sharedBackgroundVisibility(reducesTransparency ? .hidden : .automatic)
     }
@@ -277,7 +304,7 @@ public struct ChatScreen: View {
             // size the pill would no longer fit it.
             .dynamicTypeSize(...DynamicTypeSize.xLarge)
             .padding(.horizontal, Space.m)
-            .frame(maxWidth: 220, alignment: .leading)
+            .modifier(Capped(width: titleWidth))
             .frame(height: 36)
             .barItemSurface()
         }
@@ -304,6 +331,9 @@ public struct ChatScreen: View {
             .designFont(.caption, design)
             .monospacedDigit()
             .dynamicTypeSize(...DynamicTypeSize.xLarge)
+            // Counts never break across lines: on a narrow phone the title
+            // beside them gives way instead.
+            .fixedSize()
             .padding(.leading, Space.m)
             .padding(.trailing, Space.xs)
             .frame(height: 36)
@@ -925,5 +955,33 @@ struct HeightCap: Layout {
     private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
         guard let cap else { return proposal }
         return ProposedViewSize(width: proposal.width, height: min(proposal.height ?? cap, cap))
+    }
+}
+
+/// Lays its one subview out at its own width, never wider than `cap`.
+/// The system's bar asks an item how wide it would like to be without
+/// offering a width, and a frame with a maximum width passes that question
+/// straight to what it holds, so a pill capped by a frame still reported
+/// the full width of its longest line.
+struct WidthCap: Layout {
+    let cap: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let subview = subviews.first else { return .zero }
+        let wanted = proposal.width ?? subview.sizeThatFits(.unspecified).width
+        return subview.sizeThatFits(ProposedViewSize(width: min(wanted, cap), height: proposal.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
+/// `WidthCap` as a modifier.
+struct Capped: ViewModifier {
+    let width: CGFloat
+
+    func body(content: Content) -> some View {
+        WidthCap(cap: width) { content }
     }
 }

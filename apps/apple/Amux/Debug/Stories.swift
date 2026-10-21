@@ -46,6 +46,10 @@ extension ComponentCatalog {
             settlesLate: true
         ) { StoryApp(chatOpen: true) },
         ComponentExample(
+            id: "fleet.chat-exited", family: .fleet, canvas: CGSize(width: 390, height: 844),
+            settlesLate: true
+        ) { StoryApp(chatOpen: true, chatPhase: .exited(cause: .failed("while the daemon was away"))) },
+        ComponentExample(
             id: "fleet.app", family: .fleet, canvas: CGSize(width: 390, height: 844),
             settlesLate: true
         ) { StoryApp() },
@@ -236,6 +240,7 @@ struct StoryApp: View {
         settingsOpen: Bool = false,
         reviewOpen: Bool = false,
         newAgentOpen: Bool = false,
+        chatPhase: PhaseView = .idle,
         _ fleet: @escaping @MainActor () -> StoryFleet.Stores = { StoryFleet.busy() }
     ) {
         let invented = fleet()
@@ -251,7 +256,7 @@ struct StoryApp: View {
             account: AccountId("ada"), clock: { StoryFleet.now },
             opener: { _ in
                 let chat = ScriptedChat(
-                    rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: .idle),
+                    rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(phase: chatPhase),
                     strip: ScriptedChat.strip(model: "opus 4.6", git: CatalogFixtures.git))
                 chat.working = CatalogFixtures.review
                 return chat

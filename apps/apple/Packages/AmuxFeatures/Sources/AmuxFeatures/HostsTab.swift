@@ -54,17 +54,8 @@ public struct HostsTab: View {
         .navigationTitle("Hosts")
         .navigationSubtitle(subtitle)
         .toolbar {
-            // Drawn as the agent list draws its own: the bar's subtitle sits
-            // tight against the display face's short descenders.
-            if !subtitle.isEmpty {
-                ToolbarItem(placement: .largeSubtitle) {
-                    Text(subtitle)
-                        .designFont(.detail, design)
-                        .foregroundStyle(design.inkMuted.color)
-                        .padding(.top, Space.xs)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .identified("hosts.subtitle", value: subtitle)
-                }
+            ToolbarItem(placement: .largeSubtitle) {
+                LargeSubtitle(text: subtitle, identifier: "hosts.subtitle")
             }
         }
         // A screen is a container of the things on it, not a name for all of

@@ -53,6 +53,34 @@ public struct BarButton: View {
     }
 }
 
+/// A tab's line under its large title, in the list's preview type and a
+/// breath below the title: the bar's own subtitle sits tight against the
+/// display face's short descenders.
+///
+/// The bar keeps the item whether or not there is anything to say. Adding or
+/// removing it while the screen is up leaves the bar laid out for the old
+/// height: a line appearing clips the top of the large title, one going away
+/// drops the bar to its small title. An empty item still costs the bar's
+/// 6 pt gap under the title, which is the price of a title that stays whole.
+struct LargeSubtitle: View {
+    @Environment(\.design) private var design
+    let text: String
+    let identifier: String
+
+    var body: some View {
+        if text.isEmpty {
+            Color.clear.frame(height: 0)
+        } else {
+            Text(text)
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .padding(.top, Space.xs)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .identified(identifier, value: text)
+        }
+    }
+}
+
 /// What a pushed page shows while the one thing on it is under way: the
 /// breathing mark and what is happening, in ink, where the button was. A
 /// button greyed out to say "wait" is a button that cannot be read.

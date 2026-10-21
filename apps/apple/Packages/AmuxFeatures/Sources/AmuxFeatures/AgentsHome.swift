@@ -122,17 +122,8 @@ public struct AgentsHome: View {
         .modifier(FleetSearch(shown: !model.rows.isEmpty || filtering, words: $words))
         .onChange(of: filter) { _, filter in actions(.filter(filter)) }
         .toolbar {
-            // Under the large title the bar's own subtitle sits tight against
-            // the display face's short descenders; drawn here it takes the
-            // list's preview type and a breath of space from the title.
-            if !subtitle.isEmpty {
-                ToolbarItem(placement: .largeSubtitle) {
-                    Text(subtitle)
-                        .designFont(.detail, design)
-                        .foregroundStyle(design.inkMuted.color)
-                        .padding(.top, Space.xs)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            ToolbarItem(placement: .largeSubtitle) {
+                LargeSubtitle(text: subtitle, identifier: "home.subtitle")
             }
             ToolbarItem(placement: .topBarLeading) {
                 accountMenu
@@ -147,7 +138,7 @@ public struct AgentsHome: View {
                         .prominentBarButton()
                         .tint(design.accent.color)
                         .accessibilityLabel("New Agent")
-                        .accessibilityIdentifier("home.newAgent")
+                        .identified("home.newAgent", label: "New Agent")
                 }
                 // The bar sets its buttons on glass of its own; with less
                 // transparency asked for, the button's own fill is enough.
@@ -270,7 +261,7 @@ public struct AgentsHome: View {
             label()
         }
         .accessibilityLabel("Switch account")
-        .accessibilityIdentifier("home.accounts")
+        .identified("home.accounts", label: "Switch account")
     }
 
     /// Under the title, only what needs saying: whose fleet this is when the

@@ -853,6 +853,10 @@
       "shows": "The whole app with an agent's chat pushed over the list: no tab bar under the composer."
     },
     {
+      "id": "fleet.chat-exited",
+      "shows": "The whole app with a chat open on an agent that exited while its daemon was away: the long exit reason truncates in the title pill, and the bar keeps the way back."
+    },
+    {
       "id": "fleet.app",
       "shows": "The whole app on the list: the account disc top left, the + top right, and two tabs."
     },

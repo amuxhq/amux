@@ -313,6 +313,14 @@ qa *ARGS:
 perf *ARGS:
     set -e; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 1800 target/release/perf "$@"
 
+# Records the release flood under an Instruments template on this Mac, for
+# reading what the daemon's core thread spends its time on and waits for
+# (docs/PERFORMANCE.md): `just perf-profile 'System Trace' 15s` stops the run
+# 15 s in (the agents it leaves ignore SIGTERM and are killed), `just perf-profile 'Time
+# Profiler'` records it whole. Trace and report land in target/perf-profile/.
+perf-profile TEMPLATE LIMIT="300s":
+    set -e; {{bounded}} 2400 cargo build --locked --release -p qualification --bin perf --features bundled,perf; {{bounded}} 2400 cargo build --locked --release -p amux -p provider-fakes --bins; mkdir -p target/perf-profile; out="target/perf-profile/$(date +%Y%m%d-%H%M%S)"; window=; case "{{TEMPLATE}}" in "System Trace") window="--window 300s" ;; esac; {{bounded}} 1800 xcrun xctrace record --template "{{TEMPLATE}}" $window --no-prompt --time-limit "{{LIMIT}}" --env TESTNET_BINARIES="$PWD/target/release" --target-stdout "$out.log" --output "$out.trace" --launch -- "$PWD/target/release/perf" --only flood || echo "xctrace exited $? (a time limit ends the run this way)"; pkill -9 -f "$PWD/target/release/amux agent" || true; pkill -9 -f "$PWD/target/release/fake-" || true; pkill -9 -f "$PWD/target/release/perf --cluster-warmer" || true; test -d "$out.trace"; echo "$out.trace"
+
 # Records the loopback scaling curve of the production relay at 10, 100 and
 # 1,000 connections (aggregate throughput, stream-open latency p50 and p99);
 # --baseline records, --compare judges within noise (docs/PERFORMANCE.md).

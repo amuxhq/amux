@@ -36,6 +36,15 @@ just perf -- --only flood --baseline
 `just perf` builds the `perf` binary in release with the `bundled,perf` features and runs it; the binary refuses to
 run from a debug build. The binary accepts nothing but `--baseline` and `--only flood`.
 
+`just perf-profile 'System Trace' 15s` records the flood under Instruments on this Mac and stops it 15 s in, for
+reading what the daemon's core thread does and waits on; `just perf-profile 'Time Profiler'` samples a whole run.
+The trace and the run's report land in `target/perf-profile/`, and `xctrace export --xpath` turns a trace's
+`context-switch`, `syscall` and `time-profile` tables into XML. Two things about Instruments shape the recipe: a
+System Trace attributes to the process only the threads still alive when the recording stops, so a recording of
+the flood phase must end inside it, and the record of the capacity phase (which ends the run) comes from a whole
+run; and only the process `xctrace` launched itself is symbolicated, so the recipe launches `perf` directly rather
+than through a shell. A run killed by the time limit leaves its agent processes behind; the recipe kills them.
+
 For the whole run a child process keeps one core busy. An otherwise idle Apple Silicon machine lets its cores drop
 into a low-power state between bursts and measures several times slower with wider spread; one busy core is the
 repeatable reference state baselines are recorded in (`one busy core (cluster warmer)` in the report and the

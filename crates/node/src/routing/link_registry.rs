@@ -176,6 +176,8 @@ pub(crate) enum LinkCloseRequest {
     /// close code, so the peer learns it even when closing the connection
     /// drops the message.
     Revoked,
+    /// The link it was carried through, to a forwarder, went.
+    ForwarderGone,
     /// A call could not open a channel on the link while it stayed up: it
     /// closes as a dead connection would, and the host reads offline until
     /// a channel opens on a link that replaces it.
@@ -414,7 +416,8 @@ impl LinkRegistry {
     }
 
     /// Removes a link; if it was the last link to its peer, other links
-    /// learn `NeighborDown(peer)`.
+    /// learn `NeighborDown(peer)`. The links carried through it close: a
+    /// link through a forwarder has no other path.
     pub(crate) async fn remove(&self, link: &LinkId) {
         let mut state = self.state.write().await;
         let Some(writer) = state.writers.remove(link) else {
@@ -422,6 +425,15 @@ impl LinkRegistry {
         };
         if writer.carrier != LinkCarrier::Forwarded {
             self.report_down(&state, link);
+        }
+        for carried in state.writers.values().filter(|carried| {
+            carried
+                .native_carrier
+                .as_ref()
+                .and_then(|carrier| carrier.forwarded_through())
+                == Some(link.core())
+        }) {
+            let _ = carried.close_tx.try_send(LinkCloseRequest::ForwarderGone);
         }
         let peer = writer.host.id;
         drop(state);

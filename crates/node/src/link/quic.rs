@@ -135,11 +135,17 @@ impl LinkEndpoint {
             .unwrap_or(PathKind::ViaDaemon)
     }
 
-    /// The kind of path a connection from `remote` arrived on, where it is
-    /// a forwarder's: through the relay or through a paired daemon.
-    pub(crate) fn arrived_forwarded(&self, remote: SocketAddr) -> Option<PathKind> {
+    /// The forwarding link a connection from `remote` arrived through, and
+    /// the kind of path that makes it: through the relay or through a
+    /// paired daemon.
+    pub(crate) fn arrived_forwarded(
+        &self,
+        remote: SocketAddr,
+    ) -> Option<(super::socket::LinkId, PathKind)> {
         match self.socket.path_of(remote)? {
-            super::socket::Path::Forwarded(through) => Some(self.forwarded_kind(through)),
+            super::socket::Path::Forwarded(through) => {
+                Some((through, self.forwarded_kind(through)))
+            }
             _ => None,
         }
     }
@@ -224,6 +230,8 @@ pub struct QuicCarrier {
     /// Whether the connection is on a byte stream's endpoint of its own,
     /// whose stand-ins mean nothing on the profile's socket.
     alone: bool,
+    /// The forwarding link a link through a forwarder is carried on.
+    through: Option<super::socket::LinkId>,
     inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<ByteStream>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
     /// Asks the control writer to finish its stream, answering once the
@@ -368,7 +376,8 @@ impl QuicCarrier {
             .await?;
         let control = connection.open_bi().await?;
         Ok(Self::new(connection, CarrierKind::Quic, Some(control))
-            .with_path(endpoint.forwarded_kind(through)))
+            .with_path(endpoint.forwarded_kind(through))
+            .carried_through(Some(through)))
     }
 
     /// Dials the far end of `io`, a byte stream made one more path of the
@@ -466,6 +475,13 @@ impl QuicCarrier {
         self
     }
 
+    /// Names the forwarding link this link's packets go through, where
+    /// they go through one.
+    pub(crate) fn carried_through(mut self, through: Option<super::socket::LinkId>) -> Self {
+        self.through = through;
+        self
+    }
+
     /// Names the path the link runs on, where its kind alone does not say:
     /// a direct link's address, known to whoever dialled or answered it.
     pub(crate) fn with_path(mut self, path: PathKind) -> Self {
@@ -524,6 +540,7 @@ impl QuicCarrier {
             path: kind.path(),
             connection,
             alone: false,
+            through: None,
             inbound: tokio::sync::Mutex::new(inbound),
             control: Mutex::new(Some((
                 ControlSink {
@@ -619,6 +636,10 @@ impl LinkCarrier for QuicCarrier {
 
     fn path_kind(&self) -> PathKind {
         self.path
+    }
+
+    fn forwarded_through(&self) -> Option<super::socket::LinkId> {
+        self.through
     }
 
     fn path_stats(&self) -> String {

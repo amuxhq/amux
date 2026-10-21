@@ -166,6 +166,78 @@ async fn route_relay_udp_reaches_a_session_through_the_relays_forwarding() {
     net.shutdown().await.unwrap();
 }
 
+/// Signing out ends what the relay carries for this machine: the link to a
+/// host the relay alone reaches closes with the relay link, so the laptop
+/// reads the desk offline and itself signed out, the two facts a client
+/// words as "this machine is signed out". Signing in again reaches the
+/// desk's session as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn route_relay_signing_out_closes_the_links_the_relay_carried_until_signing_in() {
+    let said = "said through the relay before signing out";
+    let topology = Topology::new()
+        .relay(&["ada"])
+        .host_decl(on_the_relay("desk"))
+        .host_decl(on_the_relay("laptop"))
+        .agent(worker_saying(said));
+    let mut net = Net::start(topology).await.unwrap();
+    let (desk, laptop) = (host_id(&net, "desk"), host_id(&net, "laptop"));
+    net.trust("desk", "laptop").await.unwrap();
+    net.trust("laptop", "desk").await.unwrap();
+    let mut fleet = net.observe_inventory("laptop").await.unwrap();
+
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
+    row_until(
+        &mut fleet,
+        desk,
+        "the laptop to read the desk online",
+        |row| row.presence() == wire::Presence::Online,
+    )
+    .await;
+    streams_live(&net, &["laptop"], "worker", said).await;
+
+    door(&net, "laptop")
+        .await
+        .logout_profile(wire::ProfileRequest {
+            profile_id: profile(&net, "laptop"),
+        })
+        .await
+        .unwrap();
+    row_until(
+        &mut fleet,
+        laptop,
+        "the laptop to read itself signed out",
+        |row| row.account_signed_in == Some(false),
+    )
+    .await;
+    row_until(
+        &mut fleet,
+        desk,
+        "the laptop to read the desk offline",
+        |row| row.presence() == wire::Presence::Offline,
+    )
+    .await;
+
+    // Signed in again, the laptop links to the desk through the relay anew
+    // and the session is current again.
+    net.sign_in("laptop", "ada").await.unwrap();
+    until_via(&net, "laptop", "desk", LiveRoute::Relay).await;
+    row_until(
+        &mut fleet,
+        desk,
+        "the laptop to read the desk online again",
+        |row| row.presence() == wire::Presence::Online,
+    )
+    .await;
+    net.current("laptop", "worker").await.unwrap();
+    net.observe("laptop", "worker", 10)
+        .await
+        .unwrap()
+        .observe_until(observe::caught_up, PATIENCE)
+        .await
+        .unwrap();
+    net.shutdown().await.unwrap();
+}
+
 /// The same through the relay where the laptop's network eats UDP: its
 /// link to the relay is TLS on TCP, the desk's (reaching the relay over
 /// UDP alone) is UDP, and the relay forwards the laptop's link to the desk

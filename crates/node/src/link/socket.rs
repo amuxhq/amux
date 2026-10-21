@@ -539,10 +539,21 @@ impl LinkSocket {
         state.forwarders.insert(via, link);
     }
 
+    /// Forgets a forwarding link, and with it the path through it of every
+    /// peer it carried: a link dialled to one of them later goes through
+    /// whichever forwarding link reaches the forwarder then.
     pub fn remove_forwarding(&self, link: LinkId) {
         let mut state = self.lock();
         if let Some((via, _)) = state.forwarding.remove(&link) {
             state.forwarders.remove(&via);
+        }
+        let through = Path::Forwarded(link);
+        for peer in state.peers.values_mut() {
+            match &mut peer.route {
+                Route::Carrying(path) if *path == through => peer.route = Route::Unset,
+                Route::All(paths) => paths.retain(|path| *path != through),
+                _ => {}
+            }
         }
     }
 
@@ -1128,6 +1139,31 @@ mod tests {
         assert!(socket.max_datagram(peer) + FORWARD_HEADER <= 1280 - 40 - 8);
         // The fake reports a v4 address; quinn still sees an IPv6 socket.
         assert!(AsyncUdpSocket::local_addr(&*socket).unwrap().is_ipv6());
+    }
+
+    /// A forwarding link that goes takes the paths through it: the peer it
+    /// carried has none until a link through the forwarder's next one sets
+    /// it, so a dial then is not sent into the old one.
+    #[test]
+    fn removing_a_forwarding_link_unsets_the_paths_through_it() {
+        let (fake, socket, _own) = fake_socket();
+        let (a, b) = (HostId::new_v4(), HostId::new_v4());
+        let lan: SocketAddr = "192.0.2.10:5000".parse().unwrap();
+        let relay: SocketAddr = "198.51.100.1:443".parse().unwrap();
+        let via = socket.stand_in_at(relay);
+        socket.add_forwarding(LinkId(9), via, PathKind::RelayUdp);
+        socket.set_carrying(a, Path::Forwarded(LinkId(9)));
+        socket.set_carrying(b, Path::Direct(lan));
+        let (stand_in_a, stand_in_b) = (socket.stand_in(a), socket.stand_in(b));
+
+        socket.remove_forwarding(LinkId(9));
+        assert_eq!(socket.path_of(stand_in_a), None);
+        assert_eq!(socket.path_of(stand_in_b), Some(Path::Direct(lan)));
+
+        socket.add_forwarding(LinkId(10), via, PathKind::RelayUdp);
+        socket.set_carrying(a, Path::Forwarded(LinkId(10)));
+        socket.try_send(&transmit(stand_in_a, QUIC)).unwrap();
+        assert_eq!(fake.take_sent(), vec![(relay, encode_forwarded(a, QUIC))]);
     }
 
     #[test]

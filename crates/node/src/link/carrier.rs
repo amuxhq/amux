@@ -63,6 +63,11 @@ pub trait LinkCarrier: Send + Sync + 'static {
     fn path_kind(&self) -> super::link_log::PathKind {
         self.kind().path()
     }
+    /// The forwarding link a link through a forwarder is carried on: it
+    /// has no other path, so it ends when that link does.
+    fn forwarded_through(&self) -> Option<daemon_core::LinkId> {
+        None
+    }
     /// What the carrier's path has seen so far, for the link's logs: round
     /// trip, losses, packets. Empty where the carrier keeps no such count.
     /// The address the far end's packets arrive from, as this side's QUIC

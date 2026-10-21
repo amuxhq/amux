@@ -744,6 +744,7 @@ async fn run_established(
                     Some(LinkCloseRequest::TrustReplaced) => tonic::Status::permission_denied("peer trust was replaced"),
                     Some(LinkCloseRequest::Superseded) => tonic::Status::unavailable("direct link superseded"),
                     Some(LinkCloseRequest::CallsFailed) => tonic::Status::unavailable("no call channel opened on the link"),
+                    Some(LinkCloseRequest::ForwarderGone) => tonic::Status::unavailable("the link to the forwarder carrying it went"),
                     Some(LinkCloseRequest::Revoked) => {
                         let _ = write_message(&mut sink, &link_close(wire::pb::LinkCloseReason::UserRevoked)).await;
                         close_reason = wire::pb::LinkCloseReason::UserRevoked;

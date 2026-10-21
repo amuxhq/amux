@@ -142,7 +142,8 @@ impl TunnelDispatcher {
                 // a forwarder has none of its own here.
                 let addr = endpoint.address_of(incoming.remote_address());
                 let forwarded = endpoint.arrived_forwarded(incoming.remote_address());
-                let path = forwarded.unwrap_or_else(|| PathKind::of_addr(addr));
+                let path = forwarded.map_or_else(|| PathKind::of_addr(addr), |(_, kind)| kind);
+                let through = forwarded.map(|(through, _)| through);
 
                 // Stateless address validation and per-source admission both
                 // happen before accepting the Incoming, so quinn has not yet
@@ -231,7 +232,7 @@ impl TunnelDispatcher {
                     };
                     drop(_permit);
                     match dispatcher
-                        .dispatch_quic(connection, addr, path, connection_shutdown)
+                        .dispatch_quic(connection, addr, path, through, connection_shutdown)
                         .await
                     {
                         Ok(()) => {}
@@ -296,6 +297,7 @@ impl TunnelDispatcher {
         connection: quinn::Connection,
         addr: std::net::SocketAddr,
         path: PathKind,
+        through: Option<daemon_core::LinkId>,
         shutdown_rx: watch::Receiver<bool>,
     ) -> Result<(), DispatchError> {
         match self.classify_quic(&connection)? {
@@ -305,7 +307,11 @@ impl TunnelDispatcher {
                 })?;
                 run_link(
                     ctx.with_authenticated_peer(peer).with_shutdown(shutdown_rx),
-                    std::sync::Arc::new(QuicCarrier::from_accepted(connection).with_path(path)),
+                    std::sync::Arc::new(
+                        QuicCarrier::from_accepted(connection)
+                            .with_path(path)
+                            .carried_through(through),
+                    ),
                     crate::routing::ConnectRole::Acceptor,
                 )
                 .await

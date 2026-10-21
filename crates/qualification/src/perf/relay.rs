@@ -515,6 +515,8 @@ async fn answer(mut stream: ByteStream, received: Arc<AtomicU64>) {
 struct Relay {
     server: CloudLinkServer,
     addr: std::net::SocketAddr,
+    /// The QUIC handshake each host makes inside its TLS stream.
+    quic_client: quinn::ClientConfig,
     connector: tokio_rustls::TlsConnector,
     task: tokio::task::JoinHandle<()>,
 }
@@ -529,8 +531,15 @@ impl Relay {
             signing_key.serialize_pem().as_bytes(),
         )
         .context("load the relay's certificate")?;
+        let quic = node::relay_quic_server_config(
+            cert.pem().as_bytes(),
+            signing_key.serialize_pem().as_bytes(),
+        )
+        .context("the relay's QUIC configuration")?;
         let mut roots = rustls::RootCertStore::empty();
         roots.add(cert.der().clone())?;
+        let quic_client = node::harness::relay_quic_client_config_with_roots(roots.clone())
+            .context("the relay's QUIC client configuration")?;
         let client = rustls::ClientConfig::builder()
             .with_root_certificates(roots)
             .with_no_client_auth();
@@ -546,10 +555,11 @@ impl Relay {
         );
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
-        let task = server.serve_on_tls_tcp_listener(listener, acceptor, HANDSHAKE_TIMEOUT);
+        let task = server.serve_on_tls_tcp_listener(listener, acceptor, quic, HANDSHAKE_TIMEOUT);
         Ok(Self {
             server,
             addr,
+            quic_client,
             connector: tokio_rustls::TlsConnector::from(Arc::new(client)),
             task,
         })
@@ -567,6 +577,7 @@ impl Relay {
         {
             let slots = slots.clone();
             let connector = self.connector.clone();
+            let quic_client = self.quic_client.clone();
             let addr = self.addr;
             let token = account.to_string();
             dialling.spawn(async move {
@@ -577,10 +588,15 @@ impl Relay {
                     .connect(RELAY_NAME.try_into()?, tcp)
                     .await
                     .context("TLS handshake with the relay")?;
-                let host =
-                    RelayHost::connect(tls, token, SystemTime::now() + Duration::from_secs(3600))
-                        .await
-                        .context("link to the relay")?;
+                let host = RelayHost::connect(
+                    tls,
+                    quic_client,
+                    RELAY_NAME,
+                    token,
+                    SystemTime::now() + Duration::from_secs(3600),
+                )
+                .await
+                .context("link to the relay")?;
                 Ok::<_, anyhow::Error>((index, Arc::new(host)))
             });
         }

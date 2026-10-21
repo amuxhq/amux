@@ -12,8 +12,9 @@ use tokio::sync::{Mutex, mpsc, watch};
 use tokio::task::JoinHandle;
 use wire::pb;
 
+use super::framed::{FramedKind, StreamEndpoint};
 use super::run::spawn_connector_with_auth_establishment_and_shutdown;
-use super::{ByteStream, CarrierKind, InboundStream, LinkCarrier, LinkCtx, MuxCarrier, MuxRole};
+use super::{ByteStream, InboundStream, LinkCarrier, LinkCtx, QuicCarrier};
 use crate::routing::{
     Capabilities, LinkConnectorAuth, LinkConnectorToken, LinkConnectorTokenRefresher, LinkRegistry,
     LiveLocalHost, local_host,
@@ -22,17 +23,20 @@ use crate::{HostId, Tier};
 
 pub struct RelayHost {
     id: HostId,
-    carrier: Arc<MuxCarrier>,
+    carrier: Arc<QuicCarrier>,
     inbound: Mutex<mpsc::Receiver<InboundStream>>,
     link: JoinHandle<Result<(), tonic::Status>>,
     _shutdown: watch::Sender<bool>,
 }
 
 impl RelayHost {
-    /// Links to a relay over `io`, a byte stream to its TCP carrier,
+    /// Links to a relay over `io`, a byte stream to its TCP carrier, with
+    /// the QUIC handshake `quic` makes to `server_name` inside it,
     /// presenting `token`, and returns once the relay has accepted the link.
     pub async fn connect<IO>(
         io: IO,
+        quic: quinn::ClientConfig,
+        server_name: &str,
         token: String,
         expires_at: SystemTime,
     ) -> Result<Self, tonic::Status>
@@ -52,11 +56,13 @@ impl RelayHost {
         );
         let ctx = LinkCtx::new_live(LiveLocalHost::new(host), Arc::new(LinkRegistry::new(id)))
             .with_incoming_streams(inbound_tx);
-        let carrier = Arc::new(MuxCarrier::new(
-            io,
-            MuxRole::Connector,
-            CarrierKind::RelayTcp,
-        ));
+        let stream = StreamEndpoint::new(io, FramedKind::RelayTcp, None)
+            .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+        let carrier = Arc::new(
+            QuicCarrier::connect_over_stream(stream, quic, server_name)
+                .await
+                .map_err(|error| tonic::Status::unavailable(error.to_string()))?,
+        );
         let auth = LinkConnectorAuth::with_free_refresh_interval(
             LinkConnectorToken {
                 token,

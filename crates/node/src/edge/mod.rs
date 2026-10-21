@@ -45,7 +45,9 @@ use crate::discovery::{Advertisement, Discovery, FoundHosts, local_pairing_addrs
 use crate::dispatcher::TunnelDispatcher;
 use crate::driver::CoreLinks;
 use crate::identity::{DeviceIdentity, IdentityError};
-use crate::link::{CarrierKind, ChannelPool, MuxCarrier, MuxRole, run_link, serve_inbound_streams};
+use crate::link::framed::{FramedKind, StreamEndpoint};
+use crate::link::quic::DEVICE_SERVER_NAME;
+use crate::link::{ChannelPool, LinkCarrier, QuicCarrier, run_link, serve_inbound_streams};
 use crate::routing::{
     Capabilities, ConnectRole, LinkConnectorCtx, LinkCtx, LinkRegistry, LiveLocalHost, LiveRoute,
     local_host,
@@ -63,6 +65,8 @@ const DEVICE_TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 pub const LAN_PORT_FILE: &str = "lan_port";
 /// The local socket an SSH relay hands a peer's link to.
 pub const LINK_SOCKET: &str = "link.sock";
+/// How long a link handed over on the link socket has for its handshake.
+const LINK_SOCKET_HANDSHAKE: Duration = Duration::from_secs(10);
 /// How long links get to carry their LinkClose before the edge stops.
 const LINK_CLOSE_FLUSH: Duration = Duration::from_millis(200);
 
@@ -397,7 +401,13 @@ impl Edge {
             tasks.extend(reachability.spawn_startup_links());
         }
         if options.link_socket {
-            tasks.push(serve_link_socket(dir, link_ctx, shutdown.subscribe())?);
+            tasks.push(serve_link_socket(
+                dir,
+                link_ctx,
+                identity.quic_server_config(trust.clone())?,
+                trust.clone(),
+                shutdown.subscribe(),
+            )?);
         }
 
         let edge = Arc::new(Self {
@@ -753,11 +763,11 @@ impl Edge {
         }
     }
 
-    /// Links this edge to `other` in process, as a direct link over a
-    /// loopback carrier. Both must already trust each other: the acceptor
-    /// admits the connector as the host its trust store names, the way a
-    /// pinned handshake would. The link lives until the returned handle is
-    /// severed or dropped.
+    /// Links this edge to `other` in process, as a direct link: one QUIC
+    /// connection over a duplex pipe, each end pinning the other's key as
+    /// a handshake over the network would. Both must already trust each
+    /// other. The link lives until the returned handle is severed or
+    /// dropped.
     pub fn link_in_process(self: &Arc<Self>, other: &Arc<Edge>) -> Result<LoopbackLink, String> {
         if !self.is_trusted(other.host_id()) || !other.is_trusted(self.host_id()) {
             return Err("an in-process link joins two hosts that trust each other".to_owned());
@@ -768,22 +778,53 @@ impl Edge {
             inner: near,
             carried: carried.clone(),
         };
-        let connector = Arc::new(MuxCarrier::new(near, MuxRole::Connector, CarrierKind::Quic));
-        let acceptor = Arc::new(MuxCarrier::new(far, MuxRole::Acceptor, CarrierKind::Quic));
-        let accept_ctx = other.link_ctx().with_authenticated_peer(self.host_id());
-        let connect_ctx = self.link_ctx().with_expected_peer(other.host_id());
+        let client = self
+            .identity
+            .quic_client_config_for_peer(self.trust.clone(), other.host_id())
+            .map_err(|error| error.to_string())?;
+        let server = other
+            .identity
+            .quic_server_config(other.trust.clone())
+            .map_err(|error| error.to_string())?;
+        let connecting = StreamEndpoint::new(near, FramedKind::InProcess, None)
+            .map_err(|error| error.to_string())?;
+        let accepting = StreamEndpoint::new(far, FramedKind::InProcess, Some(server))
+            .map_err(|error| error.to_string())?;
+        let endpoints = [connecting.endpoint.clone(), accepting.endpoint.clone()];
         let (accepted_tx, accepted) = watch::channel(None);
-        tokio::spawn({
-            let acceptor = acceptor.clone();
-            async move {
-                let end = run_link(accept_ctx, acceptor, ConnectRole::Acceptor).await;
-                accepted_tx.send_replace(Some(end.err().map(|error| error.to_string())));
+        let accept_ctx = other.link_ctx();
+        let accept_trust = other.trust.clone();
+        tokio::spawn(async move {
+            let end = match QuicCarrier::accept_over_stream(accepting).await {
+                Ok(carrier) => match carrier.pinned_peer(&accept_trust) {
+                    Some(peer) => run_link(
+                        accept_ctx.with_authenticated_peer(peer),
+                        Arc::new(carrier),
+                        ConnectRole::Acceptor,
+                    )
+                    .await
+                    .err()
+                    .map(|error| error.to_string()),
+                    None => Some("the connector presented no trusted key".to_owned()),
+                },
+                Err(error) => Some(error.to_string()),
+            };
+            accepted_tx.send_replace(Some(end));
+        });
+        let connect_ctx = self.link_ctx().with_expected_peer(other.host_id());
+        tokio::spawn(async move {
+            match QuicCarrier::connect_over_stream(connecting, client, DEVICE_SERVER_NAME).await {
+                Ok(carrier) => {
+                    let _ = crate::link::run::spawn_connector_with_establishment(
+                        connect_ctx,
+                        Arc::new(carrier),
+                    );
+                }
+                Err(error) => tracing::warn!(%error, "an in-process link failed its handshake"),
             }
         });
-        let _ =
-            crate::link::run::spawn_connector_with_establishment(connect_ctx, connector.clone());
         Ok(LoopbackLink {
-            carriers: [connector, acceptor],
+            endpoints,
             carried,
             accepted,
         })
@@ -869,7 +910,7 @@ impl Drop for Edge {
 
 /// An in-process link between two edges.
 pub struct LoopbackLink {
-    carriers: [Arc<MuxCarrier>; 2],
+    endpoints: [quinn::Endpoint; 2],
     carried: Arc<AtomicU64>,
     /// How the accepting edge's side of the link ended, once it has: the
     /// error it ended with, or none.
@@ -901,8 +942,11 @@ impl LoopbackLink {
     /// carrier just stops, and each side's link runtime cleans up as it
     /// does for any connection that went away.
     pub fn sever(&self) {
-        for carrier in &self.carriers {
-            crate::link::LinkCarrier::close(carrier.as_ref(), wire::LinkCloseReason::Unspecified);
+        for endpoint in &self.endpoints {
+            endpoint.close(
+                quinn::VarInt::from_u32(wire::LinkCloseReason::Unspecified as u32),
+                b"severed",
+            );
         }
     }
 }
@@ -1042,6 +1086,8 @@ pub(crate) async fn wait_for(mut shutdown: watch::Receiver<bool>) {
 fn serve_link_socket(
     dir: &Path,
     ctx: LinkCtx,
+    server: quinn::ServerConfig,
+    trust: SharedTrustStore,
     shutdown: watch::Receiver<bool>,
 ) -> Result<JoinHandle<()>, EdgeError> {
     let path = dir.join(LINK_SOCKET);
@@ -1054,11 +1100,44 @@ fn serve_link_socket(
         loop {
             match listener.accept().await {
                 Ok(stream) => {
-                    let carrier =
-                        Arc::new(MuxCarrier::new(stream, MuxRole::Acceptor, CarrierKind::Ssh));
+                    let stream =
+                        match StreamEndpoint::new(stream, FramedKind::Ssh, Some(server.clone())) {
+                            Ok(stream) => stream,
+                            Err(error) => {
+                                tracing::warn!(%error, "an SSH link could not get an endpoint");
+                                continue;
+                            }
+                        };
                     let ctx = ctx.clone();
+                    let trust = trust.clone();
                     tokio::spawn(async move {
-                        if let Err(error) = run_link(ctx, carrier, ConnectRole::Acceptor).await {
+                        let carrier = match tokio::time::timeout(
+                            LINK_SOCKET_HANDSHAKE,
+                            QuicCarrier::accept_over_stream(stream),
+                        )
+                        .await
+                        {
+                            Ok(Ok(carrier)) => carrier,
+                            Ok(Err(error)) => {
+                                tracing::warn!(%error, "an SSH link failed its handshake");
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::warn!("an SSH link's handshake timed out");
+                                return;
+                            }
+                        };
+                        // Only a paired host's key opens a link here; the
+                        // far end of SSH is no more trusted than the LAN.
+                        let Some(peer) = carrier.pinned_peer(&trust) else {
+                            tracing::warn!("an SSH link presented no trusted key");
+                            carrier.close(wire::LinkCloseReason::Unspecified);
+                            return;
+                        };
+                        let ctx = ctx.with_authenticated_peer(peer);
+                        if let Err(error) =
+                            run_link(ctx, Arc::new(carrier), ConnectRole::Acceptor).await
+                        {
                             tracing::warn!(%error, "an SSH link ended with an error");
                         }
                     });

@@ -17,8 +17,9 @@ use tokio_rustls::TlsAcceptor;
 use uuid::Uuid;
 
 use crate::auth::jwt::JwtValidator;
+use crate::link::framed::{FramedKind, StreamEndpoint};
 use crate::link::piper::Relaying;
-use crate::link::{CarrierKind, ChannelPool, MuxCarrier, MuxRole, QuicCarrier, run_link};
+use crate::link::{CarrierKind, ChannelPool, QuicCarrier, run_link};
 use crate::resource_limits::{
     Admission, EXTERNAL_QUIC_TLS_HANDSHAKE_CONCURRENCY, EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_LIMIT,
     EXTERNAL_QUIC_TLS_HANDSHAKE_RATE_WINDOW, QUIC_RETRY_REPEAT_INTERVAL, RetryAdmission,
@@ -31,6 +32,8 @@ use crate::transport::tcp_incoming;
 use crate::{Clock, HostId};
 
 const CLOUD_TLS_HANDSHAKE_CONCURRENCY: usize = 128;
+/// How long a host on plain TCP has for the QUIC handshake inside it.
+const STREAM_HANDSHAKE: Duration = Duration::from_secs(10);
 type CloudTlsTransport = tokio_rustls::server::TlsStream<TcpStream>;
 
 /// Who the relay is and how it checks a host's connection token.
@@ -172,19 +175,28 @@ impl CloudLinkServer {
         }
     }
 
-    /// Serves plain TCP: a relay behind a TLS terminator, or a test.
-    pub fn serve_on_tcp_listener(&self, listener: TcpListener) -> JoinHandle<()> {
-        spawn_cloud_carrier_server(self.clone(), tcp_incoming(listener))
+    /// Serves plain TCP: a relay behind a TLS terminator, or a test. Each
+    /// connection carries QUIC packets, answered with `quic` as the UDP
+    /// listener answers them.
+    pub fn serve_on_tcp_listener(
+        &self,
+        listener: TcpListener,
+        quic: quinn::ServerConfig,
+    ) -> JoinHandle<()> {
+        spawn_cloud_carrier_server(self.clone(), tcp_incoming(listener), quic, STREAM_HANDSHAKE)
     }
 
+    /// Serves TLS on TCP, for hosts whose UDP does not get through: QUIC
+    /// packets inside the TLS stream, answered with `quic`.
     pub fn serve_on_tls_tcp_listener(
         &self,
         listener: TcpListener,
         acceptor: TlsAcceptor,
+        quic: quinn::ServerConfig,
         handshake_timeout: Duration,
     ) -> JoinHandle<()> {
         let incoming = cloud_tls_incoming(listener, acceptor, handshake_timeout);
-        spawn_cloud_carrier_server(self.clone(), incoming)
+        spawn_cloud_carrier_server(self.clone(), incoming, quic, handshake_timeout)
     }
 
     pub fn serve_on_quic_endpoint(
@@ -440,7 +452,12 @@ fn cloud_tls_incoming(
     })
 }
 
-fn spawn_cloud_carrier_server<I, IO>(service: CloudLinkServer, incoming: I) -> JoinHandle<()>
+fn spawn_cloud_carrier_server<I, IO>(
+    service: CloudLinkServer,
+    incoming: I,
+    quic: quinn::ServerConfig,
+    handshake_timeout: Duration,
+) -> JoinHandle<()>
 where
     I: Stream<Item = Result<IO, std::io::Error>> + Send + 'static,
     IO: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -450,14 +467,33 @@ where
         while let Some(item) = incoming.next().await {
             match item {
                 Ok(io) => {
+                    let stream =
+                        match StreamEndpoint::new(io, FramedKind::RelayTcp, Some(quic.clone())) {
+                            Ok(stream) => stream,
+                            Err(error) => {
+                                tracing::warn!(error = %error, "cloud stream got no endpoint");
+                                continue;
+                            }
+                        };
                     let service = service.clone();
                     tokio::spawn(async move {
+                        let carrier = match tokio::time::timeout(
+                            handshake_timeout,
+                            QuicCarrier::accept_over_stream(stream),
+                        )
+                        .await
+                        {
+                            Ok(Ok(carrier)) => Arc::new(carrier),
+                            Ok(Err(error)) => {
+                                tracing::warn!(error = %error, "cloud QUIC handshake over TCP failed");
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::warn!("cloud QUIC handshake over TCP timed out");
+                                return;
+                            }
+                        };
                         let ctx = service.accepting_link_ctx().await;
-                        let carrier = Arc::new(MuxCarrier::new(
-                            io,
-                            MuxRole::Acceptor,
-                            CarrierKind::RelayTcp,
-                        ));
                         if let Err(error) =
                             run_link(ctx, carrier, crate::routing::ConnectRole::Acceptor).await
                         {

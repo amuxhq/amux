@@ -13,14 +13,16 @@ use crate::HostId;
 use crate::connection::ConnectionManager;
 use crate::discovery::{Discovery, DiscoveryEvent, FoundHosts};
 use crate::identity::DeviceIdentity;
-use crate::link::{
-    CarrierKind, ChannelPool, LinkCarrier as NativeLinkCarrier, MuxCarrier, MuxRole, QuicCarrier,
-};
+use crate::link::framed::{FramedKind, StreamEndpoint};
+use crate::link::quic::DEVICE_SERVER_NAME;
+use crate::link::{ChannelPool, LinkCarrier as NativeLinkCarrier, QuicCarrier};
 use crate::routing::{Host, LinkCarrier, LinkConnectorCtx, LiveLocalHost, Route};
 use crate::transport::spawn_ssh_relay;
 use crate::trust::{Reachability, SharedTrustStore};
 
 const DIRECT_LINK_ESTABLISHMENT_TIMEOUT: Duration = Duration::from_secs(10);
+/// SSH's own connection setup comes ahead of the QUIC handshake through it.
+const SSH_LINK_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 // Quinn's first Initial PTO is about one second with its default initial RTT.
 // Two seconds lets one lost handshake packet retransmit while still moving
 // through several black-holed candidate addresses in a few seconds.
@@ -593,10 +595,15 @@ async fn establish_reachability_link(
             None
         }
         Reachability::Ssh { target, profile } => {
-            let carrier = match spawn_ssh_relay(&target, profile).map_err(|error| error.to_string())
+            let carrier = match tokio::time::timeout(
+                SSH_LINK_HANDSHAKE_TIMEOUT,
+                prepare_ssh_carrier(&context, attempt.peer, &target, profile),
+            )
+            .await
+            .map_err(|_| "the QUIC handshake over SSH timed out".to_owned())
+            .and_then(|result| result)
             {
-                Ok(io) => Arc::new(MuxCarrier::new(io, MuxRole::Connector, CarrierKind::Ssh))
-                    as Arc<dyn NativeLinkCarrier>,
+                Ok(carrier) => carrier,
                 Err(error) => {
                     context
                         .connections
@@ -634,6 +641,27 @@ async fn establish_reachability_link(
             None
         }
     }
+}
+
+/// Runs `amux relay` on the far host over SSH and dials its link socket
+/// through the session, pinning the peer's key as a direct dial does.
+async fn prepare_ssh_carrier(
+    context: &ReachabilityLinkContext,
+    peer: HostId,
+    target: &str,
+    profile: crate::ProfileId,
+) -> Result<Arc<dyn NativeLinkCarrier>, String> {
+    let io = spawn_ssh_relay(target, profile).map_err(|error| error.to_string())?;
+    let stream =
+        StreamEndpoint::new(io, FramedKind::Ssh, None).map_err(|error| error.to_string())?;
+    let config = context
+        .identity
+        .quic_client_config_for_peer(context.trust_store.clone(), peer)
+        .map_err(|error| error.to_string())?;
+    QuicCarrier::connect_over_stream(stream, config, DEVICE_SERVER_NAME)
+        .await
+        .map(|carrier| Arc::new(carrier) as Arc<dyn NativeLinkCarrier>)
+        .map_err(|error| error.to_string())
 }
 
 async fn prepare_direct_carrier(

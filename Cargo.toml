@@ -122,7 +122,6 @@ http-body-util = "0.1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 futures-util = "0.3"
-yamux = "0.14"
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
 gethostname = "1"

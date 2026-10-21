@@ -63,7 +63,7 @@ task here.
 | `runtime.rs` | The repositories scan; the daily check-in | Blocking directory walk; a sleep until the check-in is due. |
 | `retention.rs` | The retention sweep loop | Sleeps between sweeps and removes files. |
 | `offers.rs` | Writing a provider's offer copy | Blocking file IO. |
-| `link/mux.rs`, `link/quic.rs` | Per link: the connection driver, the control stream, the close watcher; per stream: reading its preface | A carrier must be polled continuously, and a slow preface must not stall the link. |
+| `link/quic.rs`, `link/framed.rs` | Per link: the connection driver, the control stream, the close watcher; per stream: reading its preface | A carrier must be polled continuously, and a slow preface must not stall the link. |
 | `link/run.rs` | Per link: running it; per inbound stream: delivering it here or piping it on | A link lives as long as its carrier; a stream waits on its handshake or pipe. |
 | `link/piper.rs` | Per spliced stream: the copy both ways | Bytes are copied until both directions end. |
 | `link/channels.rs` | The inbound stream loop and one per inbound stream | Awaits streams and their handshakes. |
@@ -94,7 +94,7 @@ slots shared between the tasks above.
 | `link/piper.rs` | `Relaying`: the forwarding core and its copies | A relay shares one forwarding core across every account and every link task steps it; its step budget is 1 ms, so a short lock is cheaper than a thread to queue on, and a cut reaches a copy in the same step. |
 | `routing/link_registry.rs` | `state`, the live links | Link tasks register and remove them; channel openers, relaying and closing read them. |
 | `link/channels.rs` | Cached channels, one opener lock per channel key, each channel's cancellation, the test hooks for held bulk answers and refused peers | Concurrent calls share a channel and wait on one opener; the core's route drops cancel what ran on a route. |
-| `link/mux.rs`, `link/quic.rs`, `link/relay_host.rs` | The inbound stream receiver; the control stream halves | A carrier is shared, so its receiver is awaited and its control stream taken once through `&self`. |
+| `link/quic.rs`, `link/relay_host.rs` | The inbound stream receiver; the control stream halves | A carrier is shared, so its receiver is awaited and its control stream taken once through `&self`. |
 | `link/run.rs` | An accepted link's authenticated user; the establishment signal; the entitlement refresh receiver | The link's reauthentication writes what admission and the expiry timer read; the signal is taken once by whichever side ends first; the refresh receiver passes from one cloud link run to the next. |
 | `transport/io.rs`, `transport/single_io.rs` | Live trusted connections per peer; the one stream handed to tonic | Accepts register and drops remove connections while trust changes close them; tonic takes the stream from its own task. |
 | `runtime.rs` | `launch`, `agents`, `background`, `recent`, `join_hook`, `replicas` (source policy, open sources, when each replica was last read), `replica_blobs` | Settings and live agent handles read and written from gRPC handlers, the core thread and tasks; replica files and their recency are the driver's, handed to the core's retention as an input. |

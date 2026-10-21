@@ -350,10 +350,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::link::{
-        CarrierKind, ControlSink, ControlSource, LinkCarrier as NativeLinkCarrier, MuxCarrier,
-        MuxRole,
-    };
+    use crate::link::{ControlSink, ControlSource, LinkCarrier as NativeLinkCarrier, QuicCarrier};
     use crate::routing::{
         Capabilities, Host, LinkAdmission, LinkCarrier, LinkProperties, LinkRole,
     };
@@ -373,24 +370,15 @@ mod tests {
     }
 
     struct CarrierPair {
-        connector: Arc<MuxCarrier>,
-        acceptor: Arc<MuxCarrier>,
+        connector: Arc<QuicCarrier>,
+        acceptor: Arc<QuicCarrier>,
         _connector_control: (ControlSink, ControlSource),
         _acceptor_control: (ControlSink, ControlSource),
     }
 
     async fn carriers() -> CarrierPair {
-        let (connector_io, acceptor_io) = tokio::io::duplex(2 * 1024 * 1024);
-        let connector = Arc::new(MuxCarrier::new(
-            connector_io,
-            MuxRole::Connector,
-            CarrierKind::RelayTcp,
-        ));
-        let acceptor = Arc::new(MuxCarrier::new(
-            acceptor_io,
-            MuxRole::Acceptor,
-            CarrierKind::RelayTcp,
-        ));
+        let (connector, acceptor) =
+            crate::link::quic::stream_pair(crate::link::framed::FramedKind::RelayTcp).await;
         let (mut connector_sink, connector_source) = connector.control();
         let (acceptor_sink, mut acceptor_source) = acceptor.control();
         crate::link::write_message(&mut connector_sink, &pb::Message { body: None })
@@ -436,8 +424,8 @@ mod tests {
     }
 
     async fn incoming(
-        opener: Arc<MuxCarrier>,
-        receiver: Arc<MuxCarrier>,
+        opener: Arc<QuicCarrier>,
+        receiver: Arc<QuicCarrier>,
         destination: HostId,
     ) -> (
         tokio::task::JoinHandle<Result<ByteStream, OpenError>>,
@@ -448,9 +436,15 @@ mod tests {
             dst: destination.as_bytes().to_vec(),
             plain: false,
         };
+        // The open is done once the relay has answered it: a QUIC stream
+        // is handed back as soon as its preface is written.
         let opening = tokio::spawn({
             let preface = preface.clone();
-            async move { opener.open_stream(preface).await }
+            async move {
+                let mut stream = opener.open_stream(preface).await?;
+                stream.accepted().await?;
+                Ok(stream)
+            }
         });
         let (received, stream) =
             tokio::time::timeout(Duration::from_secs(1), receiver.accept_stream())
@@ -464,8 +458,8 @@ mod tests {
     async fn assert_refusal(
         piper: &Piper,
         origin_link: LinkId,
-        opener: Arc<MuxCarrier>,
-        receiver: Arc<MuxCarrier>,
+        opener: Arc<QuicCarrier>,
+        receiver: Arc<QuicCarrier>,
         destination: HostId,
         expected: pb::StreamRefusal,
     ) {

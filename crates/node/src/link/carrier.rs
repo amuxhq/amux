@@ -36,6 +36,15 @@ pub enum CarrierKind {
     Ssh,
 }
 
+impl CarrierKind {
+    /// Whether the link's own handshake pinned the adjacent host's key, as
+    /// on every host-to-host link; a stream between those two hosts then
+    /// needs no handshake of its own. A relay's link pinned only the relay.
+    pub fn pins_peer(self) -> bool {
+        matches!(self, Self::Quic | Self::Ssh)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
     #[error("stream refused: {0:?}")]

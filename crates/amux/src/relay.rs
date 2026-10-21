@@ -145,14 +145,14 @@ async fn serve(config: RelayConfig, reports: PathBuf, cert: Vec<u8>, key: Vec<u8
         .with_context(|| format!("listening on TCP {tcp_addr}"))?;
     tracing::info!(addr = %tcp_addr, "listening for cloud TLS carriers");
     let udp_addr = SocketAddr::from(([0, 0, 0, 0], config.udp_port.unwrap_or(config.tcp_port)));
-    let endpoint = node::quic_endpoint(Some(quic), udp_addr)
+    let endpoint = node::quic_endpoint(Some(quic.clone()), udp_addr)
         .with_context(|| format!("listening on UDP {udp_addr}"))?;
     tracing::info!(addr = %udp_addr, "listening for cloud QUIC carriers");
     println!(
         "amux relay {} listening on TCP {tcp_addr} and UDP {udp_addr}, tokens from {}",
         config.host_name, config.cloud_url
     );
-    let tcp_task = server.serve_on_tls_tcp_listener(listener, tls, HANDSHAKE_TIMEOUT);
+    let tcp_task = server.serve_on_tls_tcp_listener(listener, tls, quic, HANDSHAKE_TIMEOUT);
     let quic_task = server.serve_on_quic_endpoint(endpoint.clone(), HANDSHAKE_TIMEOUT);
     crate::server::terminated().await;
     tracing::info!("relay stopping");

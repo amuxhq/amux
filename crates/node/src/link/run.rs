@@ -664,10 +664,11 @@ async fn run_established(
                     }
                     break;
                 };
-                // Only a stream the adjacent peer opened on a direct link of
-                // its own can be plain; a relay forwards its openers' streams
-                // with their handshakes inside, whatever their prefaces say.
-                let plain = preface.plain && carrier.kind() == super::CarrierKind::Quic;
+                // Only a stream the adjacent peer opened on a host-to-host
+                // link of its own can be plain; a relay forwards its openers'
+                // streams with their handshakes inside, whatever their
+                // prefaces say.
+                let plain = preface.plain && carrier.kind().pins_peer();
                 spawn_inbound_dispatch(ctx.clone(), link, peer_host.id, preface, stream, plain);
             }
             _ = maybe_policy_sleep(auth_expiry), if acceptor_auth.is_some() => {
@@ -1231,8 +1232,7 @@ mod tests {
 
     use super::*;
     use crate::link::{
-        ByteStream, CarrierKind, ControlSink, ControlSource, LinkCarrier, MuxCarrier, MuxRole,
-        OpenError,
+        ByteStream, CarrierKind, ControlSink, ControlSource, LinkCarrier, OpenError, QuicCarrier,
     };
     use crate::routing::{Capabilities, LinkProperties};
 
@@ -1302,20 +1302,8 @@ mod tests {
         }
     }
 
-    fn mux_pair() -> (Arc<MuxCarrier>, Arc<MuxCarrier>) {
-        let (connector_io, acceptor_io) = tokio::io::duplex(1024 * 1024);
-        (
-            Arc::new(MuxCarrier::new(
-                connector_io,
-                MuxRole::Connector,
-                CarrierKind::RelayTcp,
-            )),
-            Arc::new(MuxCarrier::new(
-                acceptor_io,
-                MuxRole::Acceptor,
-                CarrierKind::RelayTcp,
-            )),
-        )
+    async fn carrier_pair() -> (Arc<QuicCarrier>, Arc<QuicCarrier>) {
+        crate::link::quic::stream_pair(crate::link::framed::FramedKind::RelayTcp).await
     }
 
     fn authenticated_user(
@@ -1384,7 +1372,7 @@ mod tests {
             SystemTime::now() + Duration::from_secs(60),
             crate::Tier::Free,
         );
-        let (connector_carrier, acceptor_carrier) = mux_pair();
+        let (connector_carrier, acceptor_carrier) = carrier_pair().await;
         let ctx = LinkCtx::new(local, links.clone())
             .with_authenticated_peer(peer.id)
             .with_token_authenticator(Arc::new(FixedAuthenticator(user)));
@@ -1430,7 +1418,7 @@ mod tests {
         );
         let session = LinkAuthSession::new(initial, FixedAuthenticator(other_user));
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
-        let (connector_carrier, acceptor_carrier) = mux_pair();
+        let (connector_carrier, acceptor_carrier) = carrier_pair().await;
         let mut ctx = LinkCtx::new(local, links).with_authenticated_peer(peer.id);
         ctx.acceptor_session = Some(session.clone());
         let task = tokio::spawn(run_link(
@@ -1468,7 +1456,7 @@ mod tests {
         let local = host(1);
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
-        let (connector_carrier, acceptor_carrier) = mux_pair();
+        let (connector_carrier, acceptor_carrier) = carrier_pair().await;
         let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
@@ -1513,7 +1501,7 @@ mod tests {
         let local = host(1);
         let peer = host(2);
         let links = Arc::new(LinkRegistry::new(crate::HostId::nil()));
-        let (connector_carrier, acceptor_carrier) = mux_pair();
+        let (connector_carrier, acceptor_carrier) = carrier_pair().await;
         let ctx = LinkCtx::new(local, links.clone()).with_authenticated_peer(peer.id);
         let task = tokio::spawn(run_link(
             ctx,
@@ -1560,17 +1548,7 @@ mod tests {
             )
             .await;
 
-        let (origin_io, local_io) = tokio::io::duplex(1024 * 1024);
-        let origin_carrier = Arc::new(MuxCarrier::new(
-            origin_io,
-            MuxRole::Connector,
-            CarrierKind::RelayTcp,
-        ));
-        let local_carrier = Arc::new(MuxCarrier::new(
-            local_io,
-            MuxRole::Acceptor,
-            CarrierKind::RelayTcp,
-        ));
+        let (origin_carrier, local_carrier) = carrier_pair().await;
         let ctx = LinkCtx::new(local.clone(), links).with_authenticated_peer(origin.id);
         let link_task = tokio::spawn(run_link(
             ctx,

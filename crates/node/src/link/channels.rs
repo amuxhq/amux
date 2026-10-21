@@ -21,7 +21,7 @@ use tonic::codegen::http;
 use tonic::transport::{Channel, Endpoint};
 use wire::pb;
 
-use super::{ByteStream, CarrierKind, LinkCarrier, OpenError};
+use super::{ByteStream, LinkCarrier, OpenError};
 use crate::HostId;
 use crate::dispatcher::TunnelDispatcher;
 use crate::driver::{CoreLinks, core_error};
@@ -528,7 +528,7 @@ impl ChannelPool {
     }
 
     /// Opens a stream to `peer` on `route`, saying how it is secured. A
-    /// stream to a paired host on a direct QUIC link of our own is plain:
+    /// stream to a paired host on a host-to-host link of our own is plain:
     /// the link authenticated both ends when it came up, so the stream
     /// carries no handshake. Every other stream handshakes inside, and
     /// does not wait to be accepted first either: the handshake's first
@@ -544,7 +544,7 @@ impl ChannelPool {
     ) -> Result<(ByteStream, Handshake), ChannelError> {
         let plain = wanted == Handshake::Any
             && matches!(route, Route::Direct(link) if link.peer() == peer)
-            && carrier.kind() == CarrierKind::Quic;
+            && carrier.kind().pins_peer();
         let mut stream = carrier
             .open_stream(pb::StreamPreface {
                 dst: peer.as_bytes().to_vec(),

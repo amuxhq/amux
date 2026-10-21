@@ -13,6 +13,7 @@ use super::carrier::{
     AsyncStream, BoxIoFuture, ByteStream, CarrierKind, ControlSink, ControlSource, ControlWrite,
     LinkCarrier, OpenError,
 };
+use super::framed::{FramedKind, StreamEndpoint};
 use crate::HostId;
 use crate::identity::{DeviceIdentity, IdentityError};
 use crate::trust::SharedTrustStore;
@@ -23,6 +24,10 @@ pub(crate) const DEVICE_SERVER_NAME: &str = "amux-device.local";
 // Quinn's first Initial PTO is about one second with its default initial RTT.
 // Two seconds lets one lost handshake packet retransmit without allowing one
 // black-holed DNS candidate to consume the cloud connection's whole dial.
+/// How long a closing link waits for its last control messages, its
+/// LinkClose among them, to be acknowledged before the connection closes
+/// under them.
+const CLOSE_LINGER: std::time::Duration = std::time::Duration::from_secs(1);
 pub(crate) const RELAY_QUIC_HANDSHAKE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(2);
 
@@ -49,6 +54,8 @@ pub enum ConnectError {
         port: u16,
         failures: String,
     },
+    #[error("the byte stream ended before a QUIC connection arrived on it")]
+    StreamEnded,
     #[error("QUIC connection setup failed: {0}")]
     Setup(#[from] quinn::ConnectError),
     #[error("QUIC handshake failed: {0}")]
@@ -60,6 +67,9 @@ pub struct QuicCarrier {
     connection: quinn::Connection,
     inbound: tokio::sync::Mutex<mpsc::UnboundedReceiver<(pb::StreamPreface, ByteStream)>>,
     control: Mutex<Option<(ControlSink, ControlSource)>>,
+    /// Asks the control writer to finish its stream, answering once the
+    /// peer has acknowledged everything on it.
+    finish_control: Mutex<Option<oneshot::Sender<oneshot::Sender<()>>>>,
     closed: watch::Sender<Option<pb::LinkCloseReason>>,
 }
 
@@ -176,6 +186,46 @@ impl QuicCarrier {
         Ok(Self::new(connection, CarrierKind::RelayQuic, Some(control)))
     }
 
+    /// Dials the far end of a byte stream, the only connection on its
+    /// endpoint.
+    pub(crate) async fn connect_over_stream(
+        stream: StreamEndpoint,
+        config: quinn::ClientConfig,
+        server_name: &str,
+    ) -> Result<Self, ConnectError> {
+        let connection = stream
+            .endpoint
+            .connect_with(config, stream.far, server_name)?
+            .await?;
+        let control = connection.open_bi().await?;
+        let kind = stream_carrier_kind(stream.kind());
+        stream.carry(connection.clone());
+        Ok(Self::new(connection, kind, Some(control)))
+    }
+
+    /// Answers the connection the far end of a byte stream opens.
+    pub(crate) async fn accept_over_stream(stream: StreamEndpoint) -> Result<Self, ConnectError> {
+        let incoming = stream.accept().await.ok_or(ConnectError::StreamEnded)?;
+        let connection = incoming.await?;
+        let kind = stream_carrier_kind(stream.kind());
+        stream.carry(connection.clone());
+        Ok(Self::from_accepted_with_kind(connection, kind))
+    }
+
+    /// The trusted host whose key the handshake pinned, if the far end
+    /// presented one the trust store knows.
+    pub(crate) fn pinned_peer(&self, trust_store: &SharedTrustStore) -> Option<HostId> {
+        let certificates = self
+            .connection
+            .peer_identity()?
+            .downcast::<Vec<rustls::pki_types::CertificateDer<'static>>>()
+            .ok()?;
+        let trust_store = trust_store.read().ok()?;
+        crate::identity::host_id_for_certificate(&trust_store, certificates.first()?)
+            .ok()
+            .flatten()
+    }
+
     pub(crate) fn from_accepted(connection: quinn::Connection) -> Self {
         Self::from_accepted_with_kind(connection, CarrierKind::Quic)
     }
@@ -219,10 +269,12 @@ impl QuicCarrier {
 
         let (control_write_tx, control_write_rx) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
         let (control_read_tx, control_read_rx) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
+        let (finish_control, finish_rx) = oneshot::channel();
         tokio::spawn(run_control_stream(
             control_stream_rx,
             control_write_rx,
             control_read_tx,
+            finish_rx,
         ));
         let monitor_connection = connection.clone();
         let monitor_closed = closed.clone();
@@ -245,6 +297,7 @@ impl QuicCarrier {
                     rx: control_read_rx,
                 },
             ))),
+            finish_control: Mutex::new(Some(finish_control)),
             closed,
         }
     }
@@ -311,10 +364,34 @@ impl LinkCarrier for QuicCarrier {
 
     fn close(&self, reason: pb::LinkCloseReason) {
         self.closed.send_replace(Some(reason));
-        self.connection.close(
-            quinn::VarInt::from_u32(reason as u32),
-            reason.as_str_name().as_bytes(),
-        );
+        let close = {
+            let connection = self.connection.clone();
+            move || {
+                connection.close(
+                    quinn::VarInt::from_u32(reason as u32),
+                    reason.as_str_name().as_bytes(),
+                )
+            }
+        };
+        // Closing a QUIC connection drops what its streams have not yet
+        // delivered, so the control stream is finished first and the
+        // connection closed once the peer has it all, its LinkClose too.
+        let finish = self
+            .finish_control
+            .lock()
+            .expect("control finish lock poisoned")
+            .take();
+        match (finish, tokio::runtime::Handle::try_current()) {
+            (Some(finish), Ok(runtime)) => {
+                let (finished, delivered) = oneshot::channel();
+                let _ = finish.send(finished);
+                runtime.spawn(async move {
+                    let _ = tokio::time::timeout(CLOSE_LINGER, delivered).await;
+                    close();
+                });
+            }
+            _ => close(),
+        }
     }
 
     fn path_stats(&self) -> String {
@@ -354,6 +431,59 @@ impl LinkCarrier for QuicCarrier {
     }
 }
 
+/// Two carriers joined by one QUIC connection over an in-memory pipe, as a
+/// relay and a host on TCP are: the connector checks a self-signed
+/// certificate, and the acceptor asks for none.
+#[cfg(test)]
+pub(crate) async fn stream_pair(
+    kind: FramedKind,
+) -> (std::sync::Arc<QuicCarrier>, std::sync::Arc<QuicCarrier>) {
+    const NAME: &str = "relay.test";
+    let rcgen::CertifiedKey { cert, signing_key } =
+        rcgen::generate_simple_self_signed(vec![NAME.to_owned()]).expect("a certificate");
+    let der = rustls::pki_types::CertificateDer::from(cert.der().to_vec());
+    let server = crate::transport::relay_quic_server_config_from_der(
+        vec![der.clone()],
+        rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
+            signing_key.serialize_der(),
+        )),
+    )
+    .expect("a server configuration");
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(der).expect("the certificate as a root");
+    let client = crate::transport::relay_quic_client_config_with_roots(roots)
+        .expect("a client configuration");
+    // A test's paused clock jumps past any idle timeout in one step.
+    let mut transport = quinn::TransportConfig::default();
+    transport.max_idle_timeout(None);
+    let transport = std::sync::Arc::new(transport);
+    let mut server = server;
+    server.transport_config(transport.clone());
+    let mut client = client;
+    client.transport_config(transport);
+    let (near, far) = tokio::io::duplex(2 * 1024 * 1024);
+    let connecting = StreamEndpoint::new(near, kind, None).expect("an endpoint");
+    let accepting = StreamEndpoint::new(far, kind, Some(server)).expect("an endpoint");
+    let (connector, acceptor) = tokio::join!(
+        QuicCarrier::connect_over_stream(connecting, client, NAME),
+        QuicCarrier::accept_over_stream(accepting),
+    );
+    (
+        std::sync::Arc::new(connector.expect("the connector's handshake")),
+        std::sync::Arc::new(acceptor.expect("the acceptor's handshake")),
+    )
+}
+
+/// What a link over a byte stream is to the rest of the host. An
+/// in-process link stands for a direct one.
+fn stream_carrier_kind(kind: FramedKind) -> CarrierKind {
+    match kind {
+        FramedKind::RelayTcp => CarrierKind::RelayTcp,
+        FramedKind::Ssh => CarrierKind::Ssh,
+        FramedKind::InProcess => CarrierKind::Quic,
+    }
+}
+
 fn close_reason_from_connection(error: quinn::ConnectionError) -> pb::LinkCloseReason {
     match error {
         quinn::ConnectionError::ApplicationClosed(close) => {
@@ -389,12 +519,13 @@ async fn run_control_stream(
     >,
     writes: mpsc::Receiver<ControlWrite>,
     reads: mpsc::Sender<io::Result<pb::Message>>,
+    finish: oneshot::Receiver<oneshot::Sender<()>>,
 ) {
     let Ok(Ok((send, recv))) = stream.await else {
         return;
     };
     let read = read_control_messages(recv, reads);
-    let write = write_control_messages(send, writes);
+    let write = write_control_messages(send, writes, finish);
     tokio::pin!(read);
     tokio::pin!(write);
     tokio::select! {
@@ -426,13 +557,31 @@ async fn read_control_messages(
 async fn write_control_messages(
     mut send: quinn::SendStream,
     mut receiver: mpsc::Receiver<ControlWrite>,
+    mut finish: oneshot::Receiver<oneshot::Sender<()>>,
 ) {
-    while let Some(ControlWrite {
-        bytes,
-        declared_len,
-        result,
-    }) = receiver.recv().await
-    {
+    let mut finished = None;
+    let mut listening = true;
+    loop {
+        let write = tokio::select! {
+            write = receiver.recv() => write,
+            answer = &mut finish, if listening => {
+                listening = false;
+                // What was queued before the close still goes out.
+                if let Ok(answer) = answer {
+                    finished = Some(answer);
+                    receiver.close();
+                }
+                continue;
+            }
+        };
+        let Some(ControlWrite {
+            bytes,
+            declared_len,
+            result,
+        }) = write
+        else {
+            break;
+        };
         let write_result = write_frame(&mut send, &bytes, declared_len)
             .await
             .map_err(io::Error::from);
@@ -454,6 +603,10 @@ async fn write_control_messages(
         }
     }
     let _ = send.finish();
+    if let Some(answer) = finished {
+        let _ = send.stopped().await;
+        let _ = answer.send(());
+    }
 }
 
 async fn write_frame(

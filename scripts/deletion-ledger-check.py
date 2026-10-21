@@ -646,6 +646,15 @@ ROWS = [
             r"delivery\.kind",
         ],
     ),
+    Row(
+        "yamux",
+        "streams multiplexed by yamux over TLS on TCP and SSH: every link is a QUIC connection, its packets framed over a byte stream where UDP does not reach",
+        [
+            r"yamux",
+            r"MuxCarrier|MuxRole",
+            r"link/mux\.rs",
+        ],
+    ),
 ]
 
 # Files that name removed things on purpose, to hold them gone.

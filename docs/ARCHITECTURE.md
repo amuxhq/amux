@@ -396,11 +396,13 @@ daemon.
 
 Each profile holds links to the hosts it trusts: direct QUIC on the local
 network, SSH (`amux relay` joining the SSH session to the profile's
-`link.sock`), or through a relay. Every link carries a control stream and
-application streams. A direct QUIC link is itself the pinned handshake,
-and the streams on it between the two paired hosts are plain; inside every
-other stream the two hosts run a TLS handshake pinned to the keys they
-exchanged when they paired, so a relay never grants authority. Pairing, the
+`link.sock`), or through a relay. Every link is a QUIC connection carrying
+a control stream and application streams; over SSH and TLS on TCP its
+packets are framed over the byte stream. A link between two hosts, direct
+or over SSH, is itself the pinned handshake, and the streams on it between
+the two paired hosts are plain; inside every stream a relay carries the two
+hosts run a TLS handshake pinned to the keys they exchanged when they
+paired, so a relay never grants authority. Pairing, the
 handshake, routing and the relay's forwarding rule are on
 [the link protocol](PROTOCOL.md) page.
 

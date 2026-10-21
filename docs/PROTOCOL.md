@@ -56,7 +56,7 @@ The layers have separate jobs:
   bidirectional byte streams.
 - A **link** is the live relationship with one adjacent node. Its control
   stream exchanges identity, protocol version, adjacency and link lifetime.
-- A **stream** is one native QUIC stream or one yamux stream. Its first message
+- A **stream** is one QUIC stream. Its first message
   says where it is going; after admission, its bytes are opaque to a relay.
 - A **channel** is the end-to-end call connection inside that stream. Its
   pinned TLS handshake, not its carrier or route, decides call authority.
@@ -262,8 +262,13 @@ additional streams, finish and typed reset, and link close.
 | --- | --- | --- | --- |
 | Direct device link | QUIC/TLS 1.3, ALPN `amux/2` | pinned mutual TLS | yes |
 | Preferred cloud link | QUIC/TLS 1.3, ALPN `amux/2` | WebPKI certificate, then hello token | yes |
-| Cloud fallback | TLS over TCP, then symmetric yamux | WebPKI certificate, then hello token | no |
-| SSH link | symmetric yamux over SSH stdio | pinned peer reached through SSH | no |
+| Cloud fallback | QUIC packets framed inside TLS over TCP | WebPKI certificate, then hello token | no |
+| SSH link | QUIC packets framed over SSH stdio into `link.sock` | pinned mutual TLS | no |
+
+Every link is a QUIC connection. Where it runs over a byte stream (TLS on TCP
+to the relay, an SSH session, the testnet's in-process pipe) each QUIC packet
+crosses the stream behind a two-byte big-endian length, so a frame holds at
+most 65,535 bytes.
 
 Device QUIC has session tickets, resumption and 0-RTT disabled. It permits only
 bidirectional application streams, at most 64 concurrently. The keepalive and
@@ -284,7 +289,10 @@ and doubling to thirty; an away host is retried the same way. A client
 releases what it held for the host when it reads online again.
 
 An SSH link reaches the far daemon through `amux relay`, a hidden command the
-SSH session runs, which joins its stdio to the profile's `link.sock`.
+SSH session runs, which joins its stdio to the profile's `link.sock`. The QUIC
+handshake through it pins both hosts' keys as a direct one does; the far
+daemon takes the peer from the key it presented and refuses one it does not
+trust.
 
 ### Link control
 
@@ -385,12 +393,13 @@ refuses is unchanged; the opener's first bytes sit in the relay's stream
 for that moment. Across a 100 ms path this takes one round trip off every
 stream through the relay.
 
-A stream from a paired host over a direct QUIC link of its own is `plain`:
+A stream from a paired host over a link of its own, direct or over SSH, is
+`plain`:
 the link's mutual TLS already authenticated both ends, so the stream carries
 no handshake at all; the first channel bytes leave with the preface, and a
 refusal comes back out of the opener's first read as `UNAVAILABLE` ("stream
-refused"). The acceptor honours `plain` only on a direct QUIC link from a
-host in its trust store, and attributes the stream to that host. A relay
+refused"). The acceptor honours `plain` only on such a link from a host in
+its trust store, and attributes the stream to that host. A relay
 forwards every stream with `plain` cleared, since it vouches for nobody. On
 a phone reaching a host across a 100 ms path this takes two round trips and
 a handshake's worth of CPU off every stream, which is what brings

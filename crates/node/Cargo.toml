@@ -38,7 +38,6 @@ tokio-rustls = { workspace = true }
 tokio-util = { workspace = true }
 tower = { workspace = true }
 webpki-roots = { workspace = true }
-yamux = { workspace = true }
 # The dump path's redactor: the one place the daemon decodes a body.
 interpret = { workspace = true }
 journal = { workspace = true }

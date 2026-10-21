@@ -7,12 +7,16 @@
 //! TCP and move to UDP without noticing.
 
 use std::io;
+use std::net::{Ipv6Addr, SocketAddr};
 use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{mpsc, watch};
 
-use super::socket::{FramedIo, LinkSocket, PathId};
+use super::socket::{Datagrams, FramedIo, LinkSocket, Path, PathId};
+use crate::HostId;
 
 /// The largest packet a frame holds: its length is two bytes.
 pub const MAX_FRAME: usize = u16::MAX as usize;
@@ -30,6 +34,109 @@ pub enum FramedKind {
     Ssh,
     /// The duplex the testnet links two in-process hosts with.
     InProcess,
+}
+
+/// How long a closed connection may take to put its close on the stream
+/// before the stream ends under it.
+const CLOSE_DRAIN: Duration = Duration::from_secs(1);
+
+/// A QUIC endpoint of its own whose one path is a byte stream, so a link
+/// over TLS on TCP, SSH or the testnet's duplex is a QUIC connection like
+/// any other, with the handshake that pins its peer.
+pub(crate) struct StreamEndpoint {
+    pub(crate) endpoint: quinn::Endpoint,
+    /// Where a dialler sends: the far end of the stream.
+    pub(crate) far: SocketAddr,
+    path: FramedPath,
+}
+
+impl StreamEndpoint {
+    /// An endpoint on `io`, answering connections when given a server
+    /// configuration and dialling otherwise.
+    pub(crate) fn new<IO>(
+        io: IO,
+        kind: FramedKind,
+        server: Option<quinn::ServerConfig>,
+    ) -> io::Result<Self>
+    where
+        IO: AsyncRead + AsyncWrite + Send + 'static,
+    {
+        // The stream has one far end, so one stand-in serves both ways:
+        // whatever arrives on it comes from that end.
+        let far_end = HostId::nil();
+        let socket = LinkSocket::bind(Arc::new(StreamOnly), far_end)?;
+        let path = FramedPath::attach(&socket, io, kind);
+        socket.set_carrying(far_end, Path::Framed(path.id));
+        let far = socket.stand_in(far_end);
+        let runtime = quinn::default_runtime()
+            .ok_or_else(|| io::Error::other("no async runtime for a QUIC endpoint"))?;
+        let endpoint = quinn::Endpoint::new_with_abstract_socket(
+            crate::identity::quic_endpoint_config(),
+            server,
+            socket,
+            runtime,
+        )?;
+        Ok(Self {
+            endpoint,
+            far,
+            path,
+        })
+    }
+
+    pub(crate) fn kind(&self) -> FramedKind {
+        self.path.kind
+    }
+
+    /// The first connection the far end opens; None if the stream ends
+    /// first.
+    pub(crate) async fn accept(&self) -> Option<quinn::Incoming> {
+        tokio::select! {
+            incoming = self.endpoint.accept() => incoming,
+            () = self.path.closed() => None,
+        }
+    }
+
+    /// Ties `connection` and the stream together: the stream ending closes
+    /// the connection, and the connection closing ends the stream once its
+    /// close has gone out.
+    pub(crate) fn carry(self, connection: quinn::Connection) {
+        let Self { endpoint, path, .. } = self;
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = connection.closed() => {
+                    let _ = tokio::time::timeout(CLOSE_DRAIN, endpoint.wait_idle()).await;
+                }
+                () = path.closed() => {
+                    connection.close(0_u32.into(), b"the byte stream ended");
+                }
+            }
+            drop(path);
+        });
+    }
+}
+
+/// The substrate under a stream's endpoint: no datagrams, only the stream.
+struct StreamOnly;
+
+impl Datagrams for StreamOnly {
+    fn send_to(&self, _: &[u8], _: SocketAddr) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::NotConnected,
+            "a byte stream's endpoint sends only on the stream",
+        ))
+    }
+
+    fn poll_recv(
+        &self,
+        _: &mut Context<'_>,
+        _: &mut [u8],
+    ) -> Poll<io::Result<(usize, SocketAddr)>> {
+        Poll::Pending
+    }
+
+    fn local_addr(&self) -> io::Result<SocketAddr> {
+        Ok(SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 0))
+    }
 }
 
 /// A byte stream read and written a packet at a time.
@@ -94,9 +201,8 @@ async fn read_packet<R: AsyncRead + Unpin>(io: &mut R, buf: &mut Vec<u8>) -> io:
     Ok(len)
 }
 
-/// A byte stream registered as a path of a [`LinkSocket`]. Dropping it
-/// leaves the stream running; [`FramedPath::close`] or the stream ending
-/// removes the path.
+/// A byte stream registered as a path of a [`LinkSocket`]. Closing or
+/// dropping it, or the stream ending, removes the path.
 pub struct FramedPath {
     pub id: PathId,
     pub kind: FramedKind,
@@ -146,10 +252,20 @@ impl FramedPath {
                     }
                 }
             };
-            tokio::select! {
-                () = write => {}
-                () = read => {}
-                _ = &mut stopped => {}
+            let stopped = tokio::select! {
+                () = write => false,
+                () = read => false,
+                _ = &mut stopped => true,
+            };
+            // A closed path still sends what was queued: a connection's
+            // close is the last packet on the stream.
+            if stopped {
+                while let Ok(packet) = outgoing.try_recv() {
+                    if write_packet(&mut writer, &packet).await.is_err() {
+                        break;
+                    }
+                }
+                let _ = writer.flush().await;
             }
             let _ = writer.shutdown().await;
             if let Some(socket) = socket.upgrade() {
@@ -175,6 +291,12 @@ impl FramedPath {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
+    }
+}
+
+impl Drop for FramedPath {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
@@ -404,5 +526,46 @@ mod tests {
         a_path.closed().await;
         assert_eq!(a.framed_kind(a_path.id), None);
         assert_eq!(b.framed_kind(b_path.id), None);
+    }
+
+    #[tokio::test]
+    async fn framed_quic_link_reports_the_stream_it_runs_over() {
+        use tokio::io::AsyncReadExt as _;
+
+        use crate::link::{CarrierKind, LinkCarrier};
+
+        for (kind, carrier_kind) in [
+            (FramedKind::RelayTcp, CarrierKind::RelayTcp),
+            (FramedKind::Ssh, CarrierKind::Ssh),
+            (FramedKind::InProcess, CarrierKind::Quic),
+        ] {
+            let (connector, acceptor) = crate::link::quic::stream_pair(kind).await;
+            assert_eq!(connector.kind(), carrier_kind);
+            assert_eq!(acceptor.kind(), carrier_kind);
+
+            let preface = wire::pb::StreamPreface {
+                dst: vec![7; 16],
+                plain: true,
+            };
+            let mut opened = connector.open_stream(preface.clone()).await.unwrap();
+            opened.write_all(b"across the stream").await.unwrap();
+            let (received, mut accepted) =
+                tokio::time::timeout(Duration::from_secs(5), acceptor.accept_stream())
+                    .await
+                    .expect("the stream arrives")
+                    .unwrap();
+            assert_eq!(received, preface);
+            let mut read = [0; 17];
+            accepted.read_exact(&mut read).await.unwrap();
+            assert_eq!(&read, b"across the stream");
+
+            connector.close(wire::pb::LinkCloseReason::UserShutdown);
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(5), acceptor.closed())
+                    .await
+                    .expect("the far end hears the close"),
+                wire::pb::LinkCloseReason::UserShutdown
+            );
+        }
     }
 }

@@ -103,8 +103,10 @@ impl Relay {
     /// credentials timed by `clock`.
     pub async fn start(decl: &RelayDecl, clock: Arc<dyn Clock>) -> std::io::Result<Self> {
         let (quic_server, quic_client, quic_root, quic_root_pem) = quic_configs();
-        let quic_endpoint =
-            node::quic_endpoint(Some(quic_server), SocketAddr::from(([127, 0, 0, 1], 0)))?;
+        let quic_endpoint = node::quic_endpoint(
+            Some(quic_server.clone()),
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+        )?;
         let quic = quic_endpoint.local_addr()?;
         let mut state = CloudState::default();
         for account in &decl.accounts {
@@ -139,7 +141,7 @@ impl Relay {
         let http = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", http.local_addr()?);
         let tasks = vec![
-            server.serve_on_tcp_listener(tcp_listener),
+            server.serve_on_tcp_listener(tcp_listener, quic_server),
             server.serve_on_quic_endpoint(quic_endpoint.clone(), QUIC_HANDSHAKE),
             tokio::spawn(serve_cloud(http, cloud.clone())),
         ];

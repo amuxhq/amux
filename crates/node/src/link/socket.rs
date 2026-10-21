@@ -616,6 +616,21 @@ impl State {
         }
     }
 
+    /// A known host probed this host, or answered its probe, from an
+    /// address: its packets from there are its own from now on. A host's
+    /// path machine probes a path before it carries the link there, and a
+    /// packet it sends on a path to another of this host's addresses may
+    /// leave from another of its own, which this host must know it by
+    /// before the link's packets follow.
+    fn probed_from(&mut self, host: HostId, arrival: Arrival) {
+        if let Arrival::Udp(addr) = arrival
+            && self.peers.contains_key(&Peer::Host(host))
+            && self.by_addr.get(&addr) != Some(&host)
+        {
+            self.learn(host, Path::Direct(addr));
+        }
+    }
+
     fn tell(&mut self, event: PathEvent) {
         if let Some(events) = &self.path_events
             && events.send(event).is_err()
@@ -1329,11 +1344,13 @@ impl LinkSocket {
                 state.arrived(peer, path, now);
                 Some((stand_in, 0))
             }
-            PacketKind::Probe { nonce, .. } => {
+            PacketKind::Probe { from, nonce } => {
+                self.lock().probed_from(from, arrival);
                 self.reply(arrival, &encode_probe_answer(self.own, nonce));
                 None
             }
             PacketKind::ProbeAnswer { from, nonce } => {
+                self.lock().probed_from(from, arrival);
                 self.answered(ProbeAnswered { from, nonce });
                 None
             }
@@ -1876,6 +1893,39 @@ mod tests {
     fn socket_endpoints_never_offer_to_grease_the_fixed_bit() {
         let config = format!("{:?}", crate::identity::quic_endpoint_config());
         assert!(config.contains("grease_quic_bit: false"), "{config}");
+    }
+
+    /// A known host probing from another of its addresses is known there
+    /// from then on: its link's packets from that address reach the same
+    /// stand-in, so its path machine can move the link there.
+    #[test]
+    fn socket_knows_a_host_at_the_address_it_probes_from() {
+        let (fake, socket, _own) = fake_socket();
+        let peer = HostId::new_v4();
+        let (first, second): (SocketAddr, SocketAddr) = (
+            "127.0.0.1:7000".parse().unwrap(),
+            "192.168.1.9:7000".parse().unwrap(),
+        );
+        socket.set_carrying(peer, Path::Direct(first));
+        let stand_in = socket.stand_in(peer);
+
+        fake.push(second, &encode_probe(peer, 7));
+        assert_eq!(
+            receive(&socket),
+            None,
+            "a probe is answered, not handed to quinn"
+        );
+        fake.push(second, QUIC);
+        assert_eq!(receive(&socket).map(|(at, _)| at), Some(stand_in));
+
+        // A host this socket never heard of teaches it nothing.
+        let stranger = HostId::new_v4();
+        let third: SocketAddr = "192.168.1.10:7000".parse().unwrap();
+        fake.push(third, &encode_probe(stranger, 8));
+        assert_eq!(receive(&socket), None);
+        fake.push(third, QUIC);
+        assert_ne!(receive(&socket).map(|(at, _)| at), Some(stand_in));
+        assert_eq!(socket.peer_of(socket.stand_in_at(third)), None);
     }
 
     #[test]

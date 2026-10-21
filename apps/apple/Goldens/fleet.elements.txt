@@ -18,8 +18,6 @@ home.newAgent | New Agent |  | 338,62,44,44
 home.accounts | Switch account |  | 24,66,36,36
 home.subtitle |  | 1 need you | 16,166,370,22
 hosts |  | 1 reachable | 0,174,402,617
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,180,370,65
-hosts.subtitle |  | 1 reachable | 16,166,370,22
  | All |  | 16,194,44,44
  | Needs you, 1 |  | 68,194,103,44
  | Working |  | 179,194,76,44

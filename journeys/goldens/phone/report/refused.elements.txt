@@ -5,8 +5,8 @@ home.chip.needsYou | Needs you | off | 68,172,87,44
 home.chip.working | Working | off | 163,172,76,44
 home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
 home.row.<desk-work>.age.volatile | <volatile>
-home.accounts | Switch account |  | 19,69,30,30
 home.newAgent | New Agent |  | 338,62,44,44
+home.accounts | Switch account |  | 19,69,30,30
 report.screen |  | failed | 0,62,402,778
 report.frame |  | 0 marked | 80,123,242,526
 report.refusal | Not sent | amux.sh could not take this report | 16,693,298,18

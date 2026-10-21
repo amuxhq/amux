@@ -78,21 +78,21 @@ class ComparingScreens(unittest.TestCase):
         ]
         self.assertEqual(
             phone.volatile_masks(elements, ("pair-confirm.fingerprint",)),
-            ["1020,312,93,42", "48,900,1074,120"],
+            ["996,312,141,42", "24,900,1122,120"],
         )
-        self.assertEqual(phone.volatile_masks(elements), ["1020,312,93,42"])
+        self.assertEqual(phone.volatile_masks(elements), ["996,312,141,42"])
 
     def test_a_tab_behind_a_pushed_page_masks_nothing(self):
         elements = [element("hosts.fact.identity", 0, 10, 1, 1), element("chat.row.turn-end", 0, 20, 1, 1)]
         named = ("hosts.fact.identity", "chat.row.turn-end")
-        self.assertEqual(phone.volatile_masks(elements, named, screen="chat"), ["0,60,3,3"])
+        self.assertEqual(phone.volatile_masks(elements, named, screen="chat"), ["0,60,27,3"])
         self.assertEqual(len(phone.volatile_masks(elements, named, screen="hosts")), 2)
 
     def test_a_reported_photograph_masks_what_moved_on_the_frozen_screen(self):
         frozen = [element(f"home.row.{AGENT}.age.volatile", 300, 160, 40, 20)]
         # The whole 400-point display, drawn at half size from (100, 50).
         drawn = [element("report.frame", 100, 50, 200, 437)]
-        self.assertEqual(phone.volatile_masks(phone.pictured(drawn, frozen, (1200, 2622))), ["750,390,60,30"])
+        self.assertEqual(phone.volatile_masks(phone.pictured(drawn, frozen, (1200, 2622))), ["726,390,108,30"])
         self.assertEqual(phone.pictured([], frozen, (1200, 2622)), [])
 
     def test_geometry_names_ids_and_drops_volatile_words(self):

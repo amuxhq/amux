@@ -5,8 +5,25 @@ home.chip.needsYou | Needs you | off | 68,172,87,44
 home.chip.working | Working | off | 163,172,76,44
 home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
 home.row.<desk-work>.age.volatile | <volatile>
-home.accounts | Switch account |  | 19,69,30,30
 home.newAgent | New Agent |  | 338,62,44,44
+home.accounts | Switch account |  | 19,69,30,30
 report.prompt | Report |  | 101,689,104,45
+ | Report |  | 101,689,104,45
+ | All |  | 16,172,44,44
+ | Needs you |  | 68,172,87,44
+ | Working |  | 163,172,76,44
+ | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> |  | 16,218,370,64
+ | Agents |  | 16,127,116,42
+ | Switch account |  | 19,69,30,30
+ | New Agent |  | 338,62,44,44
+ | Search |  | 16,175,370,0
+ | Agents |  | 111,795,94,54
+ | Agents |  | 140,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 229,830,29,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Hosts |  | 197,795,94,54
+ | Hosts |  | 230,830,29,12
  | Agents | selected | 111,795,94,54
  | Hosts |  | 197,795,94,54

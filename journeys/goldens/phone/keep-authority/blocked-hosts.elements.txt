@@ -1,14 +1,5 @@
 shell |  | hosts | 0,62,402,778
 home |  | signed-out | 0,196,402,595
-home.chip.all | All | on | 16,194,44,44
-home.chip.needsYou | Needs you | off | 68,194,87,44
-home.chip.working | Working | off | 163,194,76,44
-home.callout.exceptions | desk offline |  | 16,244,370,60
-home.row.<guarded> | guarded, desk is offline, desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread | host-offline | 16,312,370,65
-home.row.<guarded>.age.volatile | <volatile>
-home.row.<guarded>.second |  |  | 40,347,79,18
-home.accounts | Switch account |  | 19,69,30,30
-home.subtitle |  | ada | 16,166,370,22
 hosts |  | 1 offline | 0,196,402,595
 hosts.row.<desk> | desk, macOS, offline while this phone is signed out, its agents’ state is unknown | offline | 16,202,370,65
 hosts.subtitle |  | 1 offline | 16,166,370,22

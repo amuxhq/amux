@@ -1,10 +1,5 @@
 shell |  | hosts | 0,62,402,778
 home |  | signed-out | 0,174,402,617
-home.empty.firstRun |  | Pair your first host | 16,204,214,32
-home.empty.explain |  |  | 16,244,368,37
-home.pair.<desk> | desk is nearby |  | 16,305,370,60
-home.empty.signIn | Sign In |  | 184,376,48,44
-home.accounts | Switch account |  | 24,66,36,36
 hosts |  |  | 0,174,402,617
 hosts.pair.<desk> | desk is nearby |  | 16,180,370,60
  | desk is nearby, Pair it to see its agents here, Pair |  | 16,180,370,60

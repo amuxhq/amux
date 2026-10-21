@@ -17,8 +17,6 @@ home.row.<decision-sdk>.age.volatile | <volatile>
 home.newAgent | New Agent |  | 338,62,44,44
 home.accounts | Switch account |  | 24,66,36,36
 hosts |  | 1 reachable | 0,174,402,617
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,180,370,65
-hosts.subtitle |  | 1 reachable | 16,144,370,22
  | All |  | 16,172,44,44
  | Needs you |  | 68,172,87,44
  | Working |  | 163,172,76,44

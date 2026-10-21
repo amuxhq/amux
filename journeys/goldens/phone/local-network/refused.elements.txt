@@ -1,13 +1,5 @@
 shell |  | hosts | 0,62,402,778
 home |  | signed-out | 0,174,402,617
-home.empty.firstRun |  | Pair your first host | 16,204,214,32
-home.empty.explain |  |  | 16,244,368,37
-home.localNetwork.refused |  | amux can’t see this network | 16,305,368,139
-home.localNetwork.settings | Open Settings |  | 16,399,141,44
-home.empty.howToPair |  |  | 16,467,370,153
-home.empty.sendLink | Send Link |  | 52,520,106,44
-home.empty.signIn | Sign In |  | 184,632,48,44
-home.accounts | Switch account |  | 24,66,36,36
 hosts |  |  | 0,174,402,617
 hosts.localNetwork.refused |  | amux can’t see this network | 17,204,368,151
 hosts.localNetwork.settings | Open Settings |  | 17,311,141,44

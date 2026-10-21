@@ -1,12 +1,5 @@
 shell |  | you | 0,62,402,778
 home |  | signed-out | 0,174,402,617
-home.empty.firstRun |  | Pair your first host | 16,204,214,32
-home.empty.explain |  |  | 16,244,368,37
-home.empty.looking |  | Looking on this network… | 16,305,194,18
-home.empty.howToPair |  |  | 16,347,370,153
-home.empty.sendLink | Send Link |  | 52,400,106,44
-home.empty.signIn | Sign In |  | 184,511,48,44
-home.accounts | Switch account |  | 24,66,36,36
 you |  | none | 0,70,402,708
 you.signIn | Sign In |  | 16,94,370,59
 you.appearance |  | system | 16,195,370,50
@@ -22,14 +15,14 @@ you.dump | Export Diagnostics |  | 16,562,370,46
 you.help.caption |  |  | 16,616,310,32
 you.close | Close |  | 326,4,56,36
 sign-in |  | ready | 0,132,402,708
-sign-in.title |  | Sign in | 21,140,80,32
-sign-in.explanation |  | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. | 21,178,361,59
+sign-in.title |  | Sign in | 16,140,80,32
+sign-in.explanation |  | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. | 16,178,361,59
 sign-in.continue | Continue on amux.sh | ready | 26,746,350,44
 sign-in.opens |  | amux.sh | 111,800,180,18
 sign-in.back | Back |  | 20,82,56,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
- | Looking on this network… |  | 16,305,194,18
+ | Looking on this network… |  | 18,305,192,18
  | 1 |  | 25,351,5,16
  | On your computer, install amux from amux.sh. |  | 52,348,231,39
  | Send Link |  | 52,400,106,44
@@ -47,8 +40,8 @@ sign-in.back | Back |  | 20,82,56,36
  | Agents |  | 141,830,35,12
  | Hosts |  | 197,795,94,54
  | Hosts |  | 230,830,29,12
- | Sign in |  | 21,140,80,32
- | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. |  | 21,178,361,59
+ | Sign in |  | 16,140,80,32
+ | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. |  | 16,178,361,59
  | Continue on amux.sh |  | 26,746,350,44
  | Opens amux.sh in Safari |  | 113,800,178,18
  | Back |  | 20,82,56,36

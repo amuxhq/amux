@@ -1,11 +1,5 @@
 shell |  | you | 0,62,402,778
 home |  | ready | 0,174,402,617
-home.empty.firstRun |  | Pair your first host | 16,204,214,32
-home.empty.explain |  |  | 16,244,368,37
-home.empty.looking |  | Looking on this network… | 16,305,194,18
-home.empty.howToPair |  |  | 16,347,370,153
-home.empty.sendLink | Send Link |  | 52,400,106,44
-home.accounts | Switch account |  | 19,69,30,30
 you |  | ada@example.com | 0,70,402,708
 account.ada@example.com | ada, ada@example.com | selected | 30,94,342,59
 you.add | Add Account |  | 16,153,370,46
@@ -26,14 +20,14 @@ you.dump | Export Diagnostics |  | 16,835,370,46
 you.help.caption |  |  | 16,888,310,32
 you.close | Close |  | 326,4,56,36
 sign-in |  | ada@example.com | 0,132,402,708
-sign-in.title |  | Sign in | 21,140,80,32
-sign-in.explanation |  | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. | 21,178,361,59
+sign-in.title |  | Sign in | 16,140,80,32
+sign-in.explanation |  | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. | 16,178,361,59
 sign-in.continue | Done | ada@example.com | 26,746,350,44
 sign-in.signed-in |  | ada@example.com | 94,800,215,18
 sign-in.back | Back |  | 20,82,56,36
  | Pair your first host |  | 16,204,214,32
  | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
- | Looking on this network… |  | 18,305,192,18
+ | Looking on this network… |  | 16,305,194,18
  | 1 |  | 25,351,5,16
  | On your computer, install amux from amux.sh. |  | 52,348,231,39
  | Send Link |  | 52,400,106,44
@@ -49,8 +43,8 @@ sign-in.back | Back |  | 20,82,56,36
  | Agents |  | 141,830,35,12
  | Hosts |  | 197,795,94,54
  | Hosts |  | 230,830,29,12
- | Sign in |  | 21,140,80,32
- | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. |  | 21,178,361,59
+ | Sign in |  | 16,140,80,32
+ | An account lets this phone reach your hosts from anywhere, and a subscription bought on amux.sh carries over. |  | 16,178,361,59
  | Done |  | 26,746,350,44
  | Signed in as ada@example.com |  | 94,800,215,18
  | Back |  | 20,82,56,36

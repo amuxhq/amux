@@ -5,8 +5,8 @@ home.chip.needsYou | Needs you | off | 68,172,87,44
 home.chip.working | Working | off | 163,172,76,44
 home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
 home.row.<desk-work>.age.volatile | <volatile>
-home.accounts | Switch account |  | 19,69,30,30
 home.newAgent | New Agent |  | 338,62,44,44
+home.accounts | Switch account |  | 19,69,30,30
 report.screen |  | sent | 0,62,402,778
 report.sent | Report sent | report-7 | 0,116,402,74
 report.cancel | Close |  | 20,66,56,36

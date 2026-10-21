@@ -118,7 +118,7 @@ def is_volatile(identifier: str, named: tuple[str, ...] = ()) -> bool:
 # somebody has been to is kept and still reports its elements while another
 # tab, or a page pushed over it, is on screen; one never reached for is not
 # built and reports nothing.
-TAB_ROOTS = {"agents": "home.", "hosts": "hosts.", "you": "you."}
+TAB_ROOTS = {"agents": "home.", "hosts": "hosts."}
 
 
 # Pages pushed over a tab, which hide the tab's root beneath them.
@@ -143,6 +143,12 @@ def on_screen(identifier: str, screen: str | None) -> bool:
     return root is None or screen is None or TAB_ROOTS.get(screen) == root
 
 
+# How far either side of a volatile surface its mask reaches: its words are
+# as wide as they are in this run, and an age that read "18s" when the golden
+# was taken is wider than one reading "17s" now.
+VOLATILE_SLACK = 8
+
+
 def volatile_masks(
     elements: list[dict], named: tuple[str, ...] = (), scale: int = SCALE, screen: str | None = None
 ) -> list[str]:
@@ -155,8 +161,9 @@ def volatile_masks(
         if not is_volatile(element["identifier"], named) or not on_screen(element["identifier"], screen):
             continue
         frame = element["frame"]
-        x, y = max(0, int(frame["x"] * scale)), max(0, int(frame["y"] * scale))
-        width = int((frame["x"] + frame["width"]) * scale + 0.999) - x
+        x = max(0, int((frame["x"] - VOLATILE_SLACK) * scale))
+        y = max(0, int(frame["y"] * scale))
+        width = int((frame["x"] + frame["width"] + VOLATILE_SLACK) * scale + 0.999) - x
         height = int((frame["y"] + frame["height"]) * scale + 0.999) - y
         masks.append(f"{x},{y},{width},{height}")
     return masks
@@ -597,7 +604,12 @@ class PhoneJourney:
         alone, so a masked region never churns."""
         self.app({"kind": "settle"})
         state = self.query()
-        elements = uncovered(state["elements"])
+        # A tab not on screen still reports what it holds, and its bar's items
+        # come and go from that report while it is hidden.
+        elements = [
+            element for element in uncovered(state["elements"])
+            if on_screen(element["identifier"], state.get("screen"))
+        ]
         actual = self.output / "actual"
         actual.mkdir(parents=True, exist_ok=True)
         png = actual / f"{label}.png"

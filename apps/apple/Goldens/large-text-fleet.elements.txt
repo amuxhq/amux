@@ -17,10 +17,8 @@ home.row.<planner>.age.volatile | <volatile>
 home.row.<planner>.second |  |  | 40,670,339,78
 home.newAgent | New Agent |  | 338,62,44,44
 home.accounts | Switch account |  | 21,66,42,36
-home.subtitle |  | 2 need you | 16,82,370,26
+home.subtitle |  | 2 need you | 16,74,370,34
 hosts |  | 1 reachable | 0,174,402,617
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,180,370,111
-hosts.subtitle |  | 1 reachable | 16,164,92,26
  | All |  | 16,114,60,44
  | Needs you, 2 |  | 84,114,191,44
  | Working |  | 283,114,140,44

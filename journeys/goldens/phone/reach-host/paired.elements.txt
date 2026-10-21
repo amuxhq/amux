@@ -1,12 +1,5 @@
 shell |  | hosts | 0,62,402,778
 home |  | signed-out | 0,174,402,617
-home.chip.all | All | on | 16,172,44,44
-home.chip.needsYou | Needs you | off | 68,172,87,44
-home.chip.working | Working | off | 163,172,76,44
-home.row.<desk-work> | desk-work, Idle, desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,218,370,64
-home.row.<desk-work>.age.volatile | <volatile>
-home.newAgent | New Agent |  | -22,-22,44,44
-home.accounts | Switch account |  | -12,-18,24,36
 hosts |  | 1 reachable | 0,174,402,617
 hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,180,370,65
 hosts.subtitle |  | 1 reachable | 16,144,370,22

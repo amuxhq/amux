@@ -1,26 +1,6 @@
 shell |  | agents | 0,62,402,778
 home |  | signed-out | 0,116,402,675
-home.chip.all | All | on | 16,114,60,44
-home.chip.needsYou | Needs you 2 | off | 84,114,191,44
-home.chip.working | Working | off | 283,114,140,44
-home.row.<dialog> | dialog, Needs you, Claude is showing a form from a tool server this build can't read. Attach to Claude's terminal to answer it, or stop the agent., desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 16,160,370,150
-home.row.<dialog>.age.volatile | <volatile>
-home.row.<dialog>.second |  |  | 40,219,343,78
-home.row.<asker> | asker, Needs you, Which changes should the release notes keep?, desk, /tmp/amux-phone-journey/net/desk/work, <age> | needs-you | 16,310,370,150
-home.row.<asker>.age.volatile | <volatile>
-home.row.<asker>.second |  |  | 40,370,345,78
-home.row.<keeper> | keeper, Idle, The recovery state is safely stored., desk, /tmp/amux-phone-journey/net/desk/work, <age>, unread | idle | 16,460,370,150
-home.row.<keeper>.age.volatile | <volatile>
-home.row.<keeper>.second |  |  | 40,520,308,78
-home.row.<planner> | planner, Idle, The pairing errors all come from one table in the wire crate, so they can share one string., desk, /tmp/amux-phone-journey/net/desk/work, <age> | idle | 16,610,370,150
-home.row.<planner>.age.volatile | <volatile>
-home.row.<planner>.second |  |  | 40,670,339,78
-home.newAgent | New Agent |  | 338,62,44,44
-home.accounts | Switch account |  | 21,66,42,36
-home.subtitle |  | 2 need you | 16,82,370,26
-hosts |  | 1 reachable | 0,213,402,578
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,219,370,111
-hosts.subtitle |  | 1 reachable | 16,179,370,26
+hosts |  | 1 reachable | 0,221,402,570
 new-agent |  | /private/tmp/amux-phone-journey/net/desk/work | 0,132,402,708
 new-agent.host | Host, desk | desk | 16,185,370,114
 new-agent.directory | Directory | /private/tmp/amux-phone-journey/net/desk/work | 16,299,370,232

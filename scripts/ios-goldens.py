@@ -214,14 +214,18 @@ class Goldens:
         journey = self.journey
         self.open("planner", lambda drawn: labelled(drawn, "share one string"), "the answered chat")
         journey.app({"kind": "dynamicType", "size": "accessibility3"})
-        for name, text in (
+        # One at a time: two attached together land in the draft in whichever
+        # order they finish.
+        for count, (name, text) in enumerate((
             ("pairing-errors-before-and-after.md", "# Pairing errors\n"),
             ("relay.log", "relay up\n"),
-        ):
+        ), start=1):
             journey.app({
                 "kind": "attach", "agent": "planner", "attachment": "file", "name": name,
                 "mime": "text/plain", "base64": base64.b64encode(text.encode()).decode(),
             })
+            chip = "chat.attachment" if count == 1 else f"chat.attachment#{count}"
+            journey.wait(lambda drawn, chip=chip: chip in drawn, f"{name} in the draft")
         journey.wait(
             lambda drawn: "chat.attachment#2" in drawn and "chat.attachment.remove#2" in drawn,
             "both chips in the draft",

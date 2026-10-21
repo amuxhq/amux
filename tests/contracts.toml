@@ -648,10 +648,10 @@ tests = [
 id = "links-launch-resumes"
 source = "testing page"
 section = "Boundaries"
-claim = "Many daemons: a host's launch sends its first flight to every host it remembers; the first launch with no ticket for a host is a full handshake with no early data, a relaunch resumes with the ticket and its Hello and catch-up calls are accepted as 0-RTT data, a host that lost its tickets refuses the early data and the same calls go again after the handshake, and a host that restarted keeping its tickets is still resumed; each launch's link log says whether the link resumed, how its early data fared and how long the catch-up took from the first packet."
+claim = "Many daemons: a host's launch sends its first flight to every host it remembers; the first launch with no ticket for a host is a full handshake with no early data, a relaunch resumes with the ticket, its Hello and catch-up calls are accepted as 0-RTT data and its token skips the Retry, so the catch-up arrives within one round trip of its first packet, a host that lost its tickets refuses the early data and the same calls go again after the handshake, and a host that restarted keeping its tickets is still resumed; each launch's link log says whether the link resumed, how its early data fared and how long the catch-up took from the first packet."
 tests = [
   "testnet/spec_links::first_launch_full_handshake_costs_two_round_trips",
-  "testnet/spec_links::resume_accepted_sends_the_relaunchs_calls_as_early_data",
+  "testnet/spec_links::resume_accepted_catches_up_within_one_round_trip",
   "testnet/spec_links::resume_rejected_resends_the_early_calls_after_the_handshake",
   "testnet/spec_links::resume_after_host_restart_still_resumes",
 ]
@@ -1671,7 +1671,7 @@ checker = "models/single_daemon::every_single_daemon_promise_holds_at_ci_bounds"
 tests = [
   "daemon-core/lib::links::tests::a_resumed_link_naming_the_key_pinned_for_its_peer_comes_up",
   "daemon-core/lib::links::tests::a_resumed_link_naming_a_key_not_pinned_is_refused_before_anything_rides_it",
-  "testnet/spec_links::resume_accepted_sends_the_relaunchs_calls_as_early_data",
+  "testnet/spec_links::resume_accepted_catches_up_within_one_round_trip",
 ]
 
 [[contract]]

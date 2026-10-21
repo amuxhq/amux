@@ -882,10 +882,12 @@ async fn first_launch_full_handshake_costs_two_round_trips() {
 }
 
 /// A relaunch resumes the link with the ticket the desk gave the laptop:
-/// its Hello and catch-up calls go as 0-RTT data the desk accepts, and the
-/// link log times the catch-up from the link's first packet.
+/// its Hello and catch-up calls go as 0-RTT data the desk accepts, and with
+/// the address-validation token its last process kept no Retry intervenes,
+/// so the link log times the catch-up within one round trip of the link's
+/// first packet.
 #[tokio::test(flavor = "multi_thread")]
-async fn resume_accepted_sends_the_relaunchs_calls_as_early_data() {
+async fn resume_accepted_catches_up_within_one_round_trip() {
     let mut net = linked_through_a_slow_network().await;
     let mark = relaunch(&mut net, "laptop").await;
 

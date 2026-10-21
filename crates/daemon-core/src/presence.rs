@@ -529,7 +529,9 @@ impl Daemon {
     /// the host, it reads away when the refusal is for the plan and offline
     /// at once when the forwarder holds no link to it, and is tried again
     /// in the background. A refusal for the rate or a shutdown says
-    /// nothing of the host.
+    /// nothing of the host, and neither does one for a route no longer
+    /// listed: the forwarder already said it no longer reaches the host,
+    /// and what it refused was sent before that.
     pub(crate) fn forward_refused(
         &mut self,
         link: LinkId,
@@ -540,6 +542,14 @@ impl Daemon {
         let Some(forwarder) = self.routing.links.link(link).map(|link| link.peer) else {
             return;
         };
+        if !self
+            .routing
+            .links
+            .routes_to(host)
+            .contains(&Route::Via(forwarder))
+        {
+            return;
+        }
         let away = match reason {
             ForwardRefusal::PaymentRequired => true,
             ForwardRefusal::NoRoute => false,
@@ -1138,6 +1148,26 @@ mod tests {
             route: Route::Via(RELAY)
         }));
         assert!(daemon.presence().retrying(DESK));
+    }
+
+    #[test]
+    fn a_forward_refused_after_the_forwarder_let_the_host_go_says_nothing() {
+        let mut daemon = relayed_desk();
+        frame(
+            &mut daemon,
+            1,
+            Body::NeighborDown(wire::NeighborDown {
+                host_id: DESK.0.to_vec(),
+            }),
+        );
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
+        let out = forward_refused(&mut daemon, 1, DESK, ForwardRefusal::PaymentRequired);
+        assert_eq!(out, Vec::new());
+
+        // Its own link coming up is tried, and it reads offline meanwhile,
+        // not away for what the relay refused before it let the host go.
+        up(&mut daemon, 2, DESK, CarrierKind::Direct);
+        assert_eq!(view(&daemon, DESK).presence, Presence::Offline);
     }
 
     #[test]

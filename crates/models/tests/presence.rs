@@ -8,7 +8,10 @@ use models::{Bounds, PresenceRouting, check, walk};
 /// the README lists them all), rounded up to a whole minute. The runner took
 /// 339.9 s at the bounds before the CI bounds allowed only one refusal for
 /// the plan in a row (1,233,958 states), and twice that passed the 600 s
-/// cap. A run past it says the bounds have outgrown their place.
+/// cap. With the relay refusing the host's packets the bounds explore
+/// 1,184,108 states, 70 s on four of the enrolled Mac's threads, about
+/// 330 s projected on the runner, which no runner has timed yet. A run past
+/// it says the bounds have outgrown their place.
 const BUDGET_SECONDS: f64 = 600.0;
 
 #[test]

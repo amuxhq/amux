@@ -89,10 +89,16 @@ properties are in `src/single_daemon.rs`.
 
 ## Presence and routing
 
-`PresenceRouting` follows what one host reads as on a real daemon core
-whose links to the account's relay and to one peer are already up. The
-host's own links come up and go, the peer and the relay start and stop
-claiming to reach it, each attempt the core asks for opens a channel, is
+`PresenceRouting` follows what one host reads as on a real daemon core at
+launch: its links to the account's relay and to one peer are up, and
+neither has said anything of the host, which this daemon remembers and
+dials at once on every path. So the host's own links may come up before
+any claim of it, whether their packets go on the network or through the
+relay end to end (to the core both are the host's own link), every other
+one over SSH; they go, the peer and the relay start and stop claiming to
+reach it, the relay refuses the host's packets for the plan while it
+lapses (and, at the nightly bounds, for no route while its claim lingers),
+each attempt the core asks for opens a channel, is
 refused, times out, is refused by the relay for the account's plan or
 fails because its route went, a call opens a channel of its own on the
 first route (its direct link may go under it, and the call then tries the
@@ -332,7 +338,7 @@ under `just test`.
 | Replication | 2 keys, cap 1, revisions up to 4, 2 generations, 2 in flight, 1 loss in a row | 81,268 | 13 s | 25 s | 87, 102, 72, 103 and 50 s | 240 s | 3 keys, cap 2, revisions up to 5, 3 in flight | 493 s |
 | Single daemon | 4 frames, 2 checkpoints, 1 crash, power loss or reboot, 1 subscription, 1 lag | 207,594 | 51 s | 68 s | 81, 161, 161, 77 and 113 s | 360 s | 2 crashes, power losses or reboots, 1 refused commit | 527 s |
 | Family and deliveries | 1 turn end, 1 link down, 1 crash, 1 wait | 219,380 | 23 s | 47 s | 178 s (about 191 s projected); at 396,826 states with the parent's spontaneous exit: 161, 299, 222, 313, 310 and 155 s (the first at 391,552 states, before the first listing predated the parent) | 420 s | the parent's and the child's spontaneous exits, 2 links down, 2 waits | 757 s |
-| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 1 refusal for the plan before anything else happens | 1,040,570 | 27 s | 61 s | 289, 288, 120 and 290 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 600 s | 4 up, 3 down, 3 failures, 2 refusals for the plan in a row | 431 s |
+| Presence and routing | 3 links or claims up, 2 down, 2 refused or timed-out attempts or calls finding no channel, 1 call opening its own channel, 2 plan changes, 1 refusal for the plan, of a channel or of the host's packets, before anything else happens | 1,184,108 | 34 s | 70 s | none yet at these bounds (about 330 s projected); at 1,040,570 states, before the relay refused packets: 289, 288, 120 and 290 s (339.9 s at 1,233,958 states with 2 refusals for the plan in a row) | 600 s | 4 up, 3 down, 3 failures, 2 refusals for the plan in a row, the relay refusing for no route | 431 s before the relay refused packets |
 | Agent lifecycle, one-shot child and parentless agent | 3 daemon connections, 3 inputs, 2 messages, 2 asks, 1 unasked provider exit, 2 stops or kills | 1,296,718 and 71,250 | 9 s | 18 s | 45, 28, 44, 29 and 41 s for both | 120 s each | 4 connections, 3 messages, 2 unasked exits | 81 s |
 | Supervisor update, both platforms' swaps | 2 releases, 2 supervisor crashes, 2 daemon crashes, 1 failed start, 5 timers firing, 1 `amux update` | 5,819,060 and 4,850,638 | 7 s | 8 s | 17, 27, 25, 27 and 27 s for both | 60 s each | 3 releases, 2 failed starts, 6 timers firing | 124 s |
 | One open chat | 2 writes, 1 lag, 1 reset, 2 pages over a three-item opening, a tail of 2, pages of 1 | 1,217,819 | 10 s | 24 s | 51, 109, 116, 105 and 105 s | 240 s | 3 writes | 343 s |
@@ -342,7 +348,8 @@ under `just test`.
 
 Measured on 2026-10-18 and 2026-10-19 on the enrolled Mac (Mac14,6, 12
 cores), the family model's on 2026-10-20 and the path machine's and the
-relay's forwarding on 2026-10-21 (with the Mac busy, load about 35 and 20), with the development profile,
+relay's forwarding on 2026-10-21 (with the Mac busy, load about 35 and 20;
+presence's again that day at load about 15), with the development profile,
 which optimises SQLite, the store and the models; `MODELS_THREADS=4` gives
 the four-thread figure. The checker runs on every core the machine has; the
 verdict and the state count do not depend on the number of threads (the

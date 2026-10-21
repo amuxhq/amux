@@ -31,3 +31,38 @@ enum MenuSource {
         _ = action.perform(perform, with: button, with: nil)
     }
 }
+
+/// The system's dialogs: a confirmation dialog or an alert, which SwiftUI
+/// presents as a `UIAlertController`.
+enum DialogSource {
+    /// The dialog on screen, the one presented last.
+    @MainActor
+    static func shown(in window: UIWindow) -> UIAlertController? {
+        var top = window.rootViewController
+        var found: UIAlertController?
+        while let presented = top?.presentedViewController {
+            if let alert = presented as? UIAlertController { found = alert }
+            top = presented
+        }
+        return found
+    }
+
+    /// Presses the dialog's button titled `label`.
+    ///
+    /// A dialog's buttons do not answer an activation from inside the
+    /// process, as a presented menu's rows do not, so the button's own
+    /// handler is run, after the dialog is put away, which is the order a
+    /// tap runs it in.
+    @MainActor
+    static func press(_ label: String, in alert: UIAlertController) -> Bool {
+        typealias Handler = @convention(block) (UIAlertAction) -> Void
+        guard let action = alert.actions.first(where: { $0.title == label }) else { return false }
+        guard let block = action.value(forKey: "handler") else {
+            alert.dismiss(animated: true)
+            return true
+        }
+        let handler = unsafeBitCast(block as AnyObject, to: Handler.self)
+        alert.dismiss(animated: true) { handler(action) }
+        return true
+    }
+}

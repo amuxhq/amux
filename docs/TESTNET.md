@@ -483,7 +483,7 @@ what holds the port.
 | A host's own record | `fleet HOST` (its own agents and its trusted peers', as its clients show them; rows a host it no longer trusts left behind are listed apart), `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
 | The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
 | Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui close PANE`, `tui list` |
-| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the menu that is open), `phone type TEXT --into ID`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
+| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone choose LABEL` (an item of the dialog or menu that is open), `phone type TEXT --into ID`, `phone search TEXT`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
 | Files to test with | `make-file NAME SIZE [--fill zero\|random\|text]`: a file below the folder (no `..`), up to 2g |
 | Ledger | `ledger read`, `ledger findings`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME [--new\|--duplicate-of TESTER/NAME]`, `ledger done SUMMARY` |
@@ -517,7 +517,9 @@ it cannot break the install, then installs and launches that copy browsing the n
 commands talk to the app's door, which serves several connections at once. `phone tap` waits up to ten seconds for
 its element to be on screen and enabled, taps again while the app has not yet drawn a just-enabled control able to
 take it, then waits for the screen to change and the app to settle, so the screen a tap opens is there for the next
-command. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`; a `phone pair`
+command. `phone type` and `phone search` settle too. `phone shot` waits for two pictures a moment apart to agree, so
+a sheet still sliding is not caught halfway, and takes the last one after about six seconds of a screen that keeps
+moving. The phone finds hosts by real mDNS, so a host it pairs with needs `--lan` and `--bonjour`; a `phone pair`
 that fails closes the pairing window it opened, so the next attempt can open one. `phone open --relay` and
 `phone connect ACCOUNT` reach accounts through the net's relay instead; signing in reads what the account may do
 from the net's account service, as the app does from amux.sh.

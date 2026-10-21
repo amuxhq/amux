@@ -13,7 +13,9 @@
       {"literal": "\"top\"", "context": "case \"top\": y = top", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"bottom\"", "context": "case \"bottom\": y = bottom", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"scroll goes up, down, top or bottom, not \\(direction)\"", "context": "default: return .error(\"scroll goes up, down, top or bottom, not \\(direction)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"no menu offers \\(label)\"", "context": "return .error(\"no menu offers \\(label)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"the dialog on screen offers no \\(label)\"", "context": "return .error(\"the dialog on screen offers no \\(label)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"no dialog or menu offers \\(label)\"", "context": "return .error(\"no dialog or menu offers \\(label)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"no search field on screen\"", "context": "return .error(\"no search field on screen\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"\\(identifier) offers no action named \\(action)\"", "context": "return .error(\"\\(identifier) offers no action named \\(action)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"amux-cloud-script\"", "context": "if let json = Self.said(\"amux-cloud-script\"),", "reason": "Debug driving protocol, scripted credential, or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"the design has no colour token named \\(token)\"", "context": "return .error(\"the design has no colour token named \\(token)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -28,7 +30,7 @@
       {"literal": "\"finish \\(transaction)\"", "context": "case .finish(let transaction): \"finish \\(transaction)\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"unfinished\"", "context": "case .unfinished: \"unfinished\"", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"-\\(name)\"", "context": "guard let flag = arguments.firstIndex(of: \"-\\(name)\"),", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
-      {"literal": "\"no window on screen\"", "context": "guard let window = DoorWindow.current else { return .error(\"no window on screen\") }", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 8},
+      {"literal": "\"no window on screen\"", "context": "guard let window = DoorWindow.current else { return .error(\"no window on screen\") }", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 9},
       {"literal": "\"capture failed: the window would not draw\"", "context": "return .error(\"capture failed: the window would not draw\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
       {"literal": "\"no element named \\(identifier)\"", "context": "return .error(\"no element named \\(identifier)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 5},
       {"literal": "\"\\(identifier) did not activate\"", "context": "return .error(\"\\(identifier) did not activate\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
@@ -109,7 +111,8 @@
       {"literal": "\"the door did not answer\"", "context": "private var value: DoorReply = .error(\"the door did not answer\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Debug/MenuSource.swift": [
-      {"literal": "\"performWithSender:target:\"", "context": "let perform = NSSelectorFromString(\"performWithSender:target:\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
+      {"literal": "\"performWithSender:target:\"", "context": "let perform = NSSelectorFromString(\"performWithSender:target:\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1},
+      {"literal": "\"handler\"", "context": "guard let block = action.value(forKey: \"handler\") else {", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}
     ],
     "apps/apple/Amux/Debug/DoorWindow.swift": [
       {"literal": "\"capture failed: \\(error.localizedDescription)\"", "context": "return .error(\"capture failed: \\(error.localizedDescription)\")", "reason": "Debug driving/replay protocol or harness diagnostic; not app interface copy.", "count": 1}

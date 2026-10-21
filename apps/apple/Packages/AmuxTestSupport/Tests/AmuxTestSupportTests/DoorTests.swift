@@ -53,6 +53,7 @@ final class DoorTests: XCTestCase {
             .choose(label: "Rename"),
             .perform(identifier: "review.line.0.0.2", action: "Select line"),
             .type(identifier: "composer.field", text: "hello"),
+            .search(text: "auth"),
             .paste(identifier: "composer.field", text: "a paste worth naming"),
             .scroll(direction: "up"),
             .scroll(direction: "bottom", identifier: "chat.settings.workmode.plan"),

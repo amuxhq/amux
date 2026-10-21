@@ -111,7 +111,7 @@ extension View {
 /// chat's overview raised has to offer the report over that sheet, and
 /// Report a Problem, pressed in Settings, has to open over Settings. So the
 /// app hands the drawing down, every surface that can be on top carries
-/// `reportsHere()`, and each surface registers as it appears. The last to
+/// `surface()`, and each surface registers as it appears. The last to
 /// appear and not yet gone is the top one, and only it draws.
 @MainActor
 @Observable
@@ -139,28 +139,6 @@ public final class ReportLayers {
 
 extension EnvironmentValues {
     @Entry public var reportLayers: ReportLayers? = nil
-}
-
-extension View {
-    /// Draws the offer and the report over this surface while it is the top
-    /// one on screen.
-    public func reportsHere() -> some View {
-        modifier(ReportsHere())
-    }
-}
-
-private struct ReportsHere: ViewModifier {
-    @Environment(\.reportLayers) private var layers
-    @State private var layer = UUID()
-
-    func body(content: Content) -> some View {
-        content
-            .overlay {
-                if let layers, layers.isTop(layer) { layers.draw() }
-            }
-            .onAppear { layers?.enter(layer) }
-            .onDisappear { layers?.leave(layer) }
-    }
 }
 
 /// What the report screen asked for.

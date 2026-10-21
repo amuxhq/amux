@@ -86,7 +86,7 @@ public struct NewAgent: View {
         .sheet(isPresented: Binding(get: { model.browsing }, set: { model.browsing = $0 })) {
             NewAgentDirectories(model: model, actions: actions)
                 .presentationDetents([.medium, .large])
-                .reportsHere()
+                .surface()
         }
         .onChange(of: model.machine.flatMap { hosts.host($0)?.online }, initial: true) { _, online in
             if let online { model.machineReached(online) }

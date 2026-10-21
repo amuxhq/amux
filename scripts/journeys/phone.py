@@ -519,6 +519,12 @@ class PhoneJourney:
         self.app({"kind": "choose", "label": label})
         self.actions.append(f"choose {label!r}")
 
+    def search(self, text: str) -> None:
+        """The screen's search field made to hold `text`, as a person pulls
+        it into view, clears it and types."""
+        self.app({"kind": "search", "text": text})
+        self.actions.append(f"search {text!r}")
+
     def perform(self, identifier: str, action: str) -> None:
         """An element's named accessibility action, as VoiceOver offers it."""
         self.app({"kind": "perform", "identifier": identifier, "action": action})

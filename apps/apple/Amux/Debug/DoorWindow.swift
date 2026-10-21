@@ -23,6 +23,27 @@ enum DoorWindow {
             .sorted { $0.windowLevel > $1.windowLevel }
     }
 
+    /// Whether the system is still moving something on screen: a sheet
+    /// sliding, the keyboard rising, a page pushing. Those run as Core
+    /// Animation animations the app's own drawing never shows, so a
+    /// picture drawn by the app holds still while the display does not.
+    @MainActor
+    static var animating: Bool {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.flatMap(\.windows).contains { !$0.isHidden && moving($0.layer) }
+    }
+
+    /// Only an animation that ends counts. Liquid Glass keeps animations
+    /// of endless duration on its layers, tracking the views it sits on,
+    /// for as long as it is on screen.
+    @MainActor
+    private static func moving(_ layer: CALayer) -> Bool {
+        let ending = layer.animationKeys()?.contains { key in
+            layer.animation(forKey: key)?.duration.isFinite == true
+        } ?? false
+        return ending || layer.sublayers?.contains(where: moving) ?? false
+    }
+
     /// The first text input inside a view, which is what a SwiftUI text field
     /// actually is once it has been laid out.
     @MainActor
@@ -40,6 +61,19 @@ enum DoorWindow {
         var found: [UIView] = []
         if view is any UIKeyInput { found.append(view) }
         for subview in view.subviews { found += allTextViews(in: subview) }
+        return found
+    }
+
+    /// The search field on show, the one drawn last when a sheet's covers
+    /// another's. A field under a hidden view is a screen that is not on
+    /// show, such as another tab's.
+    @MainActor
+    static func searchField(in view: UIView) -> UISearchTextField? {
+        guard !view.isHidden else { return nil }
+        var found = view as? UISearchTextField
+        for subview in view.subviews {
+            if let deeper = searchField(in: subview) { found = deeper }
+        }
         return found
     }
 

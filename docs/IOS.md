@@ -286,7 +286,7 @@ or from Report a Problem, the app freezes its own frame and opens a report
 over it; the person can mark rectangles and write a note. There is no shake
 gesture. The offer and the report are drawn over whichever surface is on
 top, a sheet included: the app hands them down as `ReportLayers`, every
-surface that can be on top carries `reportsHere()`, and the last of those to
+surface that can be on top carries `surface()`, and the last of those to
 appear draws them. A report is a bundle (`ReportAssembly`): `report.json` at
 `schema_version` 2 declares each part present or absent with a reason,
 beside the frozen `frame.png`, the view-state `trace.jsonl`, the tail of the
@@ -344,10 +344,16 @@ door drives the running app itself. It never opens a screen with invented
 state behind it; every picture it takes is of the app. `query` returns what
 is drawn, with accessibility identifiers, labels, values, frames and enabled
 states; `tap`, `type`, `paste` and `scroll` act the way a finger does;
+`search` makes the system search field on show hold some text, since that
+field takes no name from the screen; `choose` picks an item by its title
+from a dialog or a menu the system drew, whose items carry no names;
+`perform` runs an element's named accessibility action, which is how a hold
+or a drag that has one is driven;
 `pairByCode` and `pair` pair with a machine by the code or link it printed;
 `appearance`, `dynamicType` and `assist` change how the app draws; `geometry`
 says whether identified elements report their frames, which a tap needs and a
-measurement leaves off; `settle` waits for the screen to stop moving;
+measurement leaves off; `settle` waits for the app to stop drawing and for
+the system to finish moving a sheet, a page or the keyboard;
 `capture` photographs it. `connect`
 signs the app into a served relay, and `cloud` and `store` script what the
 account service and the App Store answer, for journeys about accounts and
@@ -365,6 +371,16 @@ timeout 120 target/debug/xtask door --simulator golden \
   '{"kind":"settle"}' '{"kind":"query"}' \
   '{"kind":"capture","path":"/tmp/amux-home.png"}'
 ```
+
+A sheet is a presentation of its own, and SwiftUI hands what a sheet's
+views declare up only as far as the sheet. So every surface that can be on
+top, the tabs and each sheet, carries `surface()`, which hands its
+elements to the door as well as drawing the report over the top one; a
+named element is looked for on the top surface first.
+
+Three gestures have no in-process way in: drawing a box on a report,
+scrubbing the review page's file strip, and swiping back from the screen's
+edge. They have no accessibility action either, so they are checked by eye.
 
 `open` goes where a person would tap to: a tab (`home`, `hosts`, `you`), or
 a page (`conversation`, `pin`, `new-agent`, ...) about a machine or agent the
